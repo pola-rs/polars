@@ -221,6 +221,7 @@ impl SQLExprVisitor<'_> {
                 polars_bail!(SQLSyntax: "complex field access chains are currently unsupported: {:?}", access_chain[0])
             },
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
+            SQLExpr::Exists { subquery, negated } => self.visit_exists(subquery, *negated),
             SQLExpr::Extract {
                 field,
                 syntax: _,
@@ -403,6 +404,23 @@ impl SQLExprVisitor<'_> {
             SpecialEq::new(Arc::new(lf.logical_plan)),
             vec![(new_name.clone(), reduce_expr.alias(new_name))],
         ))
+    }
+
+    /// Visit a `[NOT] EXISTS (subquery)` expression appearing outside the
+    /// shapes `rewrite_subquery_conjuncts` lowers directly to a semi/anti join
+    /// or count-filter (a top-level WHERE conjunct): inside an `OR` chain,
+    /// `CASE`, or the SELECT list. Such an `EXISTS` is decorrelated ahead of
+    /// time into a boolean flag column (see `decorrelate_exists_subqueries`);
+    /// this just resolves the node to that column, negating for `NOT EXISTS`
+    /// (safe unconditionally: `EXISTS` is never NULL, so no 3VL nuance here).
+    fn visit_exists(&mut self, subquery: &Subquery, negated: bool) -> PolarsResult<Expr> {
+        let Some(flag) = self.ctx.exists_subquery_expr(subquery) else {
+            polars_bail!(
+                SQLInterface:
+                "EXISTS subquery is not supported in this position: {:?}", subquery
+            );
+        };
+        Ok(if negated { flag.not() } else { flag })
     }
 
     /// Visit a single SQL identifier.

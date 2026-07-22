@@ -143,3 +143,105 @@ def test_not_exists_inequality_null_edge_case() -> None:
         compare_with="sqlite",
         expected={"a": [1, 2]},
     )
+
+
+# --- EXISTS in general expression position (OR / CASE / SELECT list) -------
+#
+# None of these shapes are a whole WHERE filter or a top-level AND-conjunct
+# of it, so they can't be lowered to a semi/anti join or count-filter; they
+# exercise the decorrelated boolean flag column path instead.
+
+
+def test_exists_or_predicate() -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a FROM t1 WHERE a = 99 "
+            "OR EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": [2, 3]},
+    )
+
+
+def test_not_exists_or_predicate() -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a FROM t1 WHERE a = 99 "
+            "OR NOT EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": [1]},
+    )
+
+
+def test_equality_correlated_exists_in_or_position() -> None:
+    # An equality correlation, but not a top-level AND-conjunct, so this must
+    # go through the general decorrelation path rather than the semi-join
+    # fast path.
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a FROM t1 WHERE a = 99 "
+            "OR EXISTS (SELECT 1 FROM t2 WHERE t2.g = t1.b) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": [1, 2]},
+    )
+
+
+def test_exists_in_case_expression() -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a, CASE WHEN EXISTS "
+            "(SELECT 1 FROM t1 AS x WHERE x.b < t1.b) THEN 1 ELSE 0 END AS flag "
+            "FROM t1 ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": [1, 2, 3], "flag": [0, 1, 1]},
+    )
+
+
+def test_exists_in_select_list() -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a, EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b) AS e "
+            "FROM t1 ORDER BY a"
+        ),
+        compare_with=None,
+        expected={"a": [1, 2, 3], "e": [False, True, True]},
+    )
+
+
+def test_not_exists_in_select_list() -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a, NOT EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b) AS e "
+            "FROM t1 ORDER BY a"
+        ),
+        compare_with=None,
+        expected={"a": [1, 2, 3], "e": [True, False, False]},
+    )
+
+
+def test_uncorrelated_exists_in_expression_position() -> None:
+    # Uncorrelated EXISTS is a constant boolean, broadcast onto every row.
+    assert_sql_matches(
+        frames=_frames(),
+        query="SELECT a FROM t1 WHERE a = 1 OR EXISTS (SELECT 1 FROM t2) ORDER BY a",
+        compare_with="sqlite",
+        expected={"a": [1, 2, 3]},
+    )
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a FROM t1 WHERE a = 1 "
+            "OR EXISTS (SELECT 1 FROM t2 WHERE g > 1000) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": [1]},
+    )

@@ -591,6 +591,157 @@ impl SQLContext {
         Ok(Some((joined, result_name)))
     }
 
+    // Lower every `[NOT] EXISTS` subquery reachable from `sql_exprs` that
+    // wasn't already claimed by the top-level semi/anti-join or count-filter
+    // fast paths (in `rewrite_subquery_conjuncts`) into a decorrelated boolean
+    // flag column over `lf`, registering it in `exists_subqueries` so the
+    // expression visitor can resolve the `EXISTS` node to that column
+    // (negating it for `NOT EXISTS`). This is what lets `EXISTS` appear inside
+    // `OR` chains, `CASE`, or the SELECT list, where it can't be lowered to a
+    // join directly. Subquery shapes this can't soundly express are left
+    // untouched; the visitor then bails with a clear "not supported" error.
+    pub(crate) fn decorrelate_exists_subqueries(
+        &mut self,
+        mut lf: LazyFrame,
+        outer_schema: &Schema,
+        sql_exprs: &[&SQLExpr],
+    ) -> PolarsResult<LazyFrame> {
+        let mut candidates = Vec::new();
+        for e in sql_exprs {
+            collect_exists_predicates(e, &mut candidates);
+        }
+        for exists_expr in candidates {
+            let SQLExpr::Exists { subquery, .. } = exists_expr else {
+                unreachable!("collect_exists_predicates only collects SQLExpr::Exists nodes")
+            };
+            let key = subquery.to_string();
+            if self.exists_subqueries.contains_key(&key) {
+                continue;
+            }
+            if let Some((new_lf, name)) =
+                self.try_decorrelate_exists_subquery(lf.clone(), outer_schema, subquery)?
+            {
+                lf = new_lf;
+                self.exists_subqueries.insert(key, name);
+            }
+        }
+        Ok(lf)
+    }
+
+    // Attempt the decorrelation of a single `EXISTS` subquery into a boolean
+    // flag column: `count(*) > 0` over the correlated match set, using the
+    // same row-index + `join_where` + group_by + left-join-back machinery as
+    // `try_decorrelate_scalar_subquery` (and `try_rewrite_exists_as_count_filter`,
+    // whose result this folds straight into a filter instead of a column).
+    // When the subquery has no correlation predicate at all, the flag is a
+    // single constant boolean broadcast onto every outer row instead, since
+    // no join is needed to know whether the (fixed) inner relation is
+    // non-empty. Returns `None` for subquery shapes `eligible_subquery_select`
+    // or `scalar_correlation_predicate`/`try_parse_inner_only_expr` can't
+    // soundly classify.
+    fn try_decorrelate_exists_subquery(
+        &mut self,
+        lf: LazyFrame,
+        outer_schema: &Schema,
+        subquery: &Query,
+    ) -> PolarsResult<Option<(LazyFrame, PlSmallStr)>> {
+        let Some(select) = eligible_subquery_select(subquery) else {
+            return Ok(None);
+        };
+
+        let mut ctx = self.isolated();
+        let Some((inner_names, inner_lf, inner_schema)) =
+            ctx.resolve_subquery_from(&select.from[0])?
+        else {
+            return Ok(None);
+        };
+
+        let mut corr_preds = Vec::new();
+        let mut local_filters = Vec::new();
+        if let Some(selection) = &select.selection {
+            for conj in MintermIter::new(selection) {
+                if let Some(pred) =
+                    scalar_correlation_predicate(conj, &inner_names, &inner_schema, outer_schema)
+                {
+                    corr_preds.push(pred);
+                } else if let Some(filter) =
+                    ctx.try_parse_inner_only_expr(conj, &inner_schema, outer_schema)?
+                {
+                    local_filters.push(filter);
+                } else {
+                    return Ok(None);
+                }
+            }
+        }
+
+        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
+        let flag_name = format_pl_smallstr!("{prefix}exists");
+        let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
+
+        if corr_preds.is_empty() {
+            // Uncorrelated: the inner relation doesn't depend on the outer
+            // row, so its existence is a single constant boolean, broadcast
+            // onto every outer row (mirrors the uncorrelated scalar-subquery
+            // broadcast in `process_subqueries`).
+            let inner_flag = inner_filtered.select([len().gt(lit(0)).alias(flag_name.clone())]);
+            inner_flag.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
+            let joined = concat_lf_horizontal(
+                [lf, inner_flag],
+                HConcatOptions {
+                    broadcast_unit_length: true,
+                    ..Default::default()
+                },
+            )?;
+            return Ok(Some((joined, flag_name)));
+        }
+
+        let idx_name = format_pl_smallstr!("{prefix}idx");
+        let count_name = format_pl_smallstr!("{prefix}cnt");
+
+        // Rename inner columns to collision-free names so they can't clash
+        // with outer columns of the same name (as in a self-correlated
+        // `t1 AS x` subquery over outer `t1`).
+        let rename_from: Vec<PlSmallStr> = inner_schema.iter_names().cloned().collect();
+        let rename_to: Vec<PlSmallStr> = rename_from
+            .iter()
+            .map(|name| prefixed_inner(&prefix, name))
+            .collect();
+        let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
+        inner_renamed.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
+
+        let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
+
+        let outer_indexed = lf.with_row_index(idx_name.clone(), None);
+        let matched = outer_indexed
+            .clone()
+            .join_builder()
+            .with(inner_renamed)
+            .how(JoinType::Inner)
+            .join_where(join_preds);
+        let grouped = matched
+            .group_by([col(idx_name.clone())])
+            .agg([len().alias(count_name.clone())]);
+
+        let joined = outer_indexed
+            .join_builder()
+            .with(grouped)
+            .left_on([col(idx_name.clone())])
+            .right_on([col(idx_name.clone())])
+            .how(JoinType::Left)
+            .coalesce(JoinCoalesce::CoalesceColumns)
+            .maintain_order(MaintainOrderJoin::Left)
+            .finish()
+            .with_columns([col(count_name.clone())
+                .fill_null(lit(0))
+                .gt(lit(0))
+                .alias(flag_name.clone())])
+            .drop(Selector::ByName {
+                names: Arc::from([idx_name, count_name]),
+                strict: true,
+            });
+        Ok(Some((joined, flag_name)))
+    }
+
     #[cfg(not(feature = "semi_anti_join"))]
     fn try_rewrite_exists_as_join(
         &mut self,
@@ -1071,6 +1222,86 @@ fn collect_subqueries<'a>(expr: &'a SQLExpr, out: &mut Vec<&'a Query>) {
                     } = arg
                     {
                         collect_subqueries(e, out);
+                    }
+                }
+            }
+        },
+        _ => {},
+    }
+}
+
+// Collect `[NOT] EXISTS` nodes reachable from an SQL expression through the
+// same expression-nesting positions `collect_subqueries` walks (an `EXISTS`
+// is a leaf here: its own inner query is decorrelated as a unit, not
+// recursed into). Positions not covered here simply leave the `EXISTS` to the
+// generic expression visitor, which bails with a clear error.
+fn collect_exists_predicates<'a>(expr: &'a SQLExpr, out: &mut Vec<&'a SQLExpr>) {
+    use sqlparser::ast::{FunctionArg, FunctionArgExpr, FunctionArguments};
+    match expr {
+        SQLExpr::Exists { .. } => out.push(expr),
+        SQLExpr::Nested(e)
+        | SQLExpr::UnaryOp { expr: e, .. }
+        | SQLExpr::Cast { expr: e, .. }
+        | SQLExpr::Ceil { expr: e, .. }
+        | SQLExpr::Floor { expr: e, .. }
+        | SQLExpr::Extract { expr: e, .. }
+        | SQLExpr::IsNull(e)
+        | SQLExpr::IsNotNull(e)
+        | SQLExpr::IsTrue(e)
+        | SQLExpr::IsNotTrue(e)
+        | SQLExpr::IsFalse(e)
+        | SQLExpr::IsNotFalse(e)
+        | SQLExpr::Collate { expr: e, .. } => collect_exists_predicates(e, out),
+        SQLExpr::BinaryOp { left, right, .. } => {
+            collect_exists_predicates(left, out);
+            collect_exists_predicates(right, out);
+        },
+        SQLExpr::Between {
+            expr, low, high, ..
+        } => {
+            collect_exists_predicates(expr, out);
+            collect_exists_predicates(low, out);
+            collect_exists_predicates(high, out);
+        },
+        SQLExpr::InList { expr, list, .. } => {
+            collect_exists_predicates(expr, out);
+            list.iter().for_each(|e| collect_exists_predicates(e, out));
+        },
+        SQLExpr::Like { expr, pattern, .. } | SQLExpr::ILike { expr, pattern, .. } => {
+            collect_exists_predicates(expr, out);
+            collect_exists_predicates(pattern, out);
+        },
+        SQLExpr::Case {
+            operand,
+            conditions,
+            else_result,
+            ..
+        } => {
+            if let Some(op) = operand {
+                collect_exists_predicates(op, out);
+            }
+            for when in conditions {
+                collect_exists_predicates(&when.condition, out);
+                collect_exists_predicates(&when.result, out);
+            }
+            if let Some(e) = else_result {
+                collect_exists_predicates(e, out);
+            }
+        },
+        SQLExpr::Function(func) => {
+            if let FunctionArguments::List(list) = &func.args {
+                for arg in &list.args {
+                    if let FunctionArg::Unnamed(FunctionArgExpr::Expr(e))
+                    | FunctionArg::Named {
+                        arg: FunctionArgExpr::Expr(e),
+                        ..
+                    }
+                    | FunctionArg::ExprNamed {
+                        arg: FunctionArgExpr::Expr(e),
+                        ..
+                    } = arg
+                    {
+                        collect_exists_predicates(e, out);
                     }
                 }
             }

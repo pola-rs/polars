@@ -224,6 +224,12 @@ pub struct SQLContext {
     // column that its decorrelated lowering materialised. Populated per-SELECT
     // and consulted by the expression visitor.
     pub(crate) correlated_subqueries: PlHashMap<String, PlSmallStr>,
+    // Maps a `[NOT] EXISTS` subquery (by its inner query's rendered SQL text,
+    // ignoring negation) to the boolean outer column its decorrelated lowering
+    // materialised. Populated per-SELECT and consulted by the expression
+    // visitor; `NOT EXISTS` negates the resolved column rather than getting a
+    // separate entry.
+    pub(crate) exists_subqueries: PlHashMap<String, PlSmallStr>,
 }
 
 impl Default for SQLContext {
@@ -238,6 +244,7 @@ impl Default for SQLContext {
             lp_arena: Default::default(),
             expr_arena: Default::default(),
             correlated_subqueries: Default::default(),
+            exists_subqueries: Default::default(),
         }
     }
 }
@@ -403,6 +410,15 @@ impl SQLContext {
     // outer column its lowering produced, keyed by the subquery's SQL text.
     pub(crate) fn correlated_subquery_expr(&self, subquery: &Query) -> Option<Expr> {
         self.correlated_subqueries
+            .get(&subquery.to_string())
+            .map(|name| col(name.clone()))
+    }
+
+    // Resolve a (previously decorrelated) `[NOT] EXISTS` subquery to the
+    // boolean outer column its lowering produced, keyed by the inner query's
+    // SQL text (negation is applied by the caller).
+    pub(crate) fn exists_subquery_expr(&self, subquery: &Query) -> Option<Expr> {
+        self.exists_subqueries
             .get(&subquery.to_string())
             .map(|name| col(name.clone()))
     }
@@ -1424,6 +1440,7 @@ impl SQLContext {
 
         // Correlated-subquery lowerings are scoped to a single SELECT.
         self.correlated_subqueries.clear();
+        self.exists_subqueries.clear();
 
         // Parse named windows first, as they may be referenced in the SELECT clause
         self.register_named_windows(&select_stmt.named_window)?;
@@ -1511,6 +1528,8 @@ impl SQLContext {
                 .collect();
             if !proj_exprs.is_empty() {
                 lf = self.decorrelate_scalar_subqueries(lf, &schema, &proj_exprs)?;
+                schema = self.get_frame_schema(&mut lf)?;
+                lf = self.decorrelate_exists_subqueries(lf, &schema, &proj_exprs)?;
                 schema = self.get_frame_schema(&mut lf)?;
             }
         }
@@ -2000,6 +2019,13 @@ impl SQLContext {
             let residual_exprs: Vec<&SQLExpr>;
             (lf, residual_exprs) =
                 self.rewrite_subquery_conjuncts(lf, expr, filter_mode, &schema)?;
+
+            // Any `[NOT] EXISTS` reachable in a residual conjunct (an OR
+            // chain, CASE, or a subquery shape the fast path above couldn't
+            // reach) is decorrelated to a boolean flag column here so the
+            // expression visitor can resolve it below.
+            let exists_schema = self.get_frame_schema(&mut lf)?;
+            lf = self.decorrelate_exists_subqueries(lf, &exists_schema, &residual_exprs)?;
 
             let Some(parsed_residual) = residual_exprs
                 .iter()

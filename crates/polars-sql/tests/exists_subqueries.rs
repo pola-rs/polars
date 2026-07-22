@@ -1,4 +1,3 @@
-#![cfg(feature = "semi_anti_join")]
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::*;
@@ -70,6 +69,7 @@ fn test_exists_neq_correlation() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "semi_anti_join")]
 fn test_equality_correlated_exists_still_uses_semi_join() -> PolarsResult<()> {
     let sql = "SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.g = t1.b)";
     let plan = ctx().execute(sql)?.explain(true)?;
@@ -82,6 +82,7 @@ fn test_equality_correlated_exists_still_uses_semi_join() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "semi_anti_join")]
 fn test_equality_correlated_not_exists_still_uses_anti_join() -> PolarsResult<()> {
     let sql = "SELECT a FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t2 WHERE t2.g = t1.b)";
     let plan = ctx().execute(sql)?.explain(true)?;
@@ -151,6 +152,95 @@ fn test_not_exists_inequality_null_edge_case() -> PolarsResult<()> {
         .collect()?
         .sort(["a"], Default::default())?;
     let expected = df! { "a" => [1i64, 2] }?;
+    assert!(df.equals(&expected), "got {df:?}");
+    Ok(())
+}
+
+// --- EXISTS in general expression position (OR / CASE / SELECT list) -------
+//
+// None of these shapes are a whole WHERE filter or a top-level AND-conjunct
+// of it, so `rewrite_subquery_conjuncts` can't intercept them; they exercise
+// `decorrelate_exists_subqueries` and the `SQLExpr::Exists` arm of the
+// expression visitor instead. Deliberately unguarded by the
+// `semi_anti_join` feature: this lowering doesn't build semi/anti joins.
+
+#[test]
+fn test_exists_or_predicate() -> PolarsResult<()> {
+    // `a = 99` never matches, so the result is exactly the EXISTS-true rows.
+    let df = run("SELECT a FROM t1 WHERE a = 99 \
+         OR EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b)")?;
+    let expected = df! { "a" => [2i64, 3] }?;
+    assert!(df.equals(&expected), "got {df:?}");
+    Ok(())
+}
+
+#[test]
+fn test_not_exists_or_predicate() -> PolarsResult<()> {
+    // `a = 99` never matches, so the result is exactly the NOT-EXISTS-true rows.
+    let df = run("SELECT a FROM t1 WHERE a = 99 \
+         OR NOT EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b)")?;
+    let expected = df! { "a" => [1i64] }?;
+    assert!(df.equals(&expected), "got {df:?}");
+    Ok(())
+}
+
+#[test]
+fn test_equality_correlated_exists_in_or_position() -> PolarsResult<()> {
+    // An equality correlation, but not a top-level AND-conjunct, so this must
+    // go through the general decorrelation path rather than the semi-join
+    // fast path.
+    let df = run("SELECT a FROM t1 WHERE a = 99 \
+         OR EXISTS (SELECT 1 FROM t2 WHERE t2.g = t1.b)")?;
+    let expected = df! { "a" => [1i64, 2] }?;
+    assert!(df.equals(&expected), "got {df:?}");
+    Ok(())
+}
+
+#[test]
+fn test_exists_in_case_expression() -> PolarsResult<()> {
+    let df = ctx()
+        .execute(
+            "SELECT a, CASE WHEN EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b) \
+             THEN 1 ELSE 0 END AS flag FROM t1",
+        )?
+        .collect()?
+        .sort(["a"], Default::default())?;
+    let expected = df! { "a" => [1i64, 2, 3], "flag" => [0i32, 1, 1] }?;
+    assert!(df.equals(&expected), "got {df:?}");
+    Ok(())
+}
+
+#[test]
+fn test_exists_in_select_list() -> PolarsResult<()> {
+    let df = ctx()
+        .execute("SELECT a, EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b) AS e FROM t1")?
+        .collect()?
+        .sort(["a"], Default::default())?;
+    let expected = df! { "a" => [1i64, 2, 3], "e" => [false, true, true] }?;
+    assert!(df.equals(&expected), "got {df:?}");
+    Ok(())
+}
+
+#[test]
+fn test_not_exists_in_select_list() -> PolarsResult<()> {
+    let df = ctx()
+        .execute("SELECT a, NOT EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b) AS e FROM t1")?
+        .collect()?
+        .sort(["a"], Default::default())?;
+    let expected = df! { "a" => [1i64, 2, 3], "e" => [true, false, false] }?;
+    assert!(df.equals(&expected), "got {df:?}");
+    Ok(())
+}
+
+#[test]
+fn test_uncorrelated_exists_in_expression_position() -> PolarsResult<()> {
+    // Uncorrelated EXISTS is a constant boolean, broadcast onto every row.
+    let df = run("SELECT a FROM t1 WHERE a = 1 OR EXISTS (SELECT 1 FROM t2)")?;
+    let expected = df! { "a" => [1i64, 2, 3] }?;
+    assert!(df.equals(&expected), "got {df:?}");
+
+    let df = run("SELECT a FROM t1 WHERE a = 1 OR EXISTS (SELECT 1 FROM t2 WHERE g > 1000)")?;
+    let expected = df! { "a" => [1i64] }?;
     assert!(df.equals(&expected), "got {df:?}");
     Ok(())
 }
