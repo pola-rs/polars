@@ -478,6 +478,8 @@
 //!
 //! ## Unpivot
 //!
+//! Requires the `pivot` feature.
+//!
 //! ```
 //! use polars::prelude::*;
 //! use polars::df;
