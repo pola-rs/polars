@@ -656,7 +656,8 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             return Ok(RewriteRecursion::Stop);
         }
 
-        let id = &self.identifier_array[self.visited_idx + self.id_array_offset].1;
+        let (post_visit_count, id) =
+            &self.identifier_array[self.visited_idx + self.id_array_offset];
 
         // Id placeholder not overwritten, so we can skip this sub-expression.
         if !id.is_valid() {
@@ -693,6 +694,18 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
                 self.replaced_identifiers.insert(id.clone(), (), arena);
                 RewriteRecursion::MutateAndStop
             };
+
+            self.visited_idx += 1;
+            if *post_visit_count >= self.max_post_visit_idx {
+                self.max_post_visit_idx = *post_visit_count;
+                while self.visited_idx < self.identifier_array.len() - self.id_array_offset
+                    && *post_visit_count
+                        > self.identifier_array[self.visited_idx + self.id_array_offset].0
+                {
+                    self.visited_idx += 1;
+                }
+            }
+
             // rewrite this sub-expression, don't visit its children
             Ok(recursion)
         } else {
@@ -709,25 +722,13 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         arena: &mut Self::Arena,
     ) -> PolarsResult<Self::Node> {
         let (post_visit_count, id) =
-            &self.identifier_array[self.visited_idx + self.id_array_offset];
-        self.visited_idx += 1;
+            &self.identifier_array[self.visited_idx - 1 + self.id_array_offset];
 
         // TODO!: check if we ever hit this branch
         if *post_visit_count < self.max_post_visit_idx {
             return Ok(node);
         }
 
-        self.max_post_visit_idx = *post_visit_count;
-        // DFS, so every post_visit that is smaller than `post_visit_count`
-        // is a subexpression of this node and we can skip that
-        //
-        // `self.visited_idx` will influence recursion strategy in `pre_visit`
-        // see call-stack comment above
-        while self.visited_idx < self.identifier_array.len() - self.id_array_offset
-            && *post_visit_count > self.identifier_array[self.visited_idx + self.id_array_offset].0
-        {
-            self.visited_idx += 1;
-        }
         // If this is not true, the traversal order in the visitor was different from the rewriter.
         debug_assert_eq!(
             node.hashable_and_cmp(arena),
