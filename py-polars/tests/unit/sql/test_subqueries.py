@@ -368,12 +368,24 @@ def _subquery_ctx() -> pl.SQLContext[pl.LazyFrame]:
             "ANTI JOIN",
             [(1, 10), (2, 10)],
         ),
-        # NOT IN must drop a NULL key (its membership test is NULL, not true;
-        # the bare anti-join would keep it), while a NULL in the haystack must
-        # not poison the other rows (polars' is_in semantics, not strict SQL).
+        # NOT IN should follow SQL three-valued logic (ref: issue #28433).
         (
             "SELECT c_custkey FROM customer"
             " WHERE c_custkey NOT IN (SELECT o_custkey FROM orders)",
+            "ANTI JOIN",
+            [],
+        ),
+        # NULL-free value set: unmatched keys are kept, but NULL outer key is dropped.
+        (
+            "SELECT c_custkey FROM customer"
+            " WHERE c_custkey NOT IN (SELECT o_custkey FROM orders WHERE o_custkey IS NOT NULL)",
+            "ANTI JOIN",
+            [1, 4],
+        ),
+        # Correlated NOT IN applies 3VL per correlation group.
+        (
+            "SELECT c_custkey FROM customer c"
+            " WHERE c_custkey NOT IN (SELECT o_custkey FROM orders o WHERE o.a = c.a)",
             "ANTI JOIN",
             [1, 4],
         ),

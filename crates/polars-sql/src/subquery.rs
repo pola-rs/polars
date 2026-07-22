@@ -8,6 +8,8 @@ use polars_lazy::prelude::*;
 use polars_plan::utils::{expr_to_leaf_column_names_iter, has_expr};
 #[cfg(feature = "semi_anti_join")]
 use polars_utils::aliases::PlHashSet;
+#[cfg(feature = "semi_anti_join")]
+use polars_utils::unique_column_name;
 use sqlparser::ast::{BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, Query};
 #[cfg(feature = "semi_anti_join")]
 use sqlparser::ast::{Distinct, GroupByExpr, Select, SelectItem, SetExpr, TableWithJoins};
@@ -216,19 +218,30 @@ impl SQLContext {
             },
             None => SubqueryConjuncts::default(),
         };
+
+        // Correlation keys for the "NOT IN" 3VL correction
+        let corr_outer = left_on.clone();
+        let corr_inner = right_on.clone();
         left_on.insert(0, left_key.clone());
-        right_on.insert(0, right_key);
-        let joined =
-            ctx.finish_decorrelated_join(lf, inner_lf, left_on, right_on, local_filters, anti);
-        // `lhs NOT IN (...)` is NULL (and so excludes the row) when `lhs` is
-        // NULL, but an anti-join keeps null keys since they match nothing; drop
-        // them. In `RemoveTrue` mode a NULL membership test keeps the row, so the
-        // anti join is already exact.
-        Ok(Some(if anti && filter_mode == FilterMode::KeepTrue {
-            joined.filter(left_key.is_not_null())
-        } else {
-            joined
-        }))
+        right_on.insert(0, right_key.clone());
+
+        // Inline, so filtered inner frame can be reused for the correction
+        let inner_lf = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
+        inner_lf.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
+        let joined = build_semi_anti_join(lf, inner_lf.clone(), left_on, right_on, anti);
+
+        // Only `KeepTrue` "NOT IN" needs 3VL correction.
+        if !(anti && filter_mode == FilterMode::KeepTrue) {
+            return Ok(Some(joined));
+        }
+        Ok(Some(refine_not_in_anti_join(
+            joined,
+            inner_lf,
+            &left_key,
+            &right_key,
+            &corr_outer,
+            &corr_inner,
+        )))
     }
 
     // Apply the local filters to the inner relation, hand this (isolated, now
@@ -247,15 +260,7 @@ impl SQLContext {
     ) -> LazyFrame {
         let inner_lf = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
         inner_lf.set_cached_arena(self.lp_arena, self.expr_arena);
-
-        let join_type = if anti { JoinType::Anti } else { JoinType::Semi };
-        lf.clone()
-            .join_builder()
-            .with(inner_lf)
-            .left_on(left_on)
-            .right_on(right_on)
-            .how(join_type)
-            .finish()
+        build_semi_anti_join(lf, inner_lf, left_on, right_on, anti)
     }
 
     // Resolve the subquery's FROM (a single relation, possibly with joins) into
@@ -359,6 +364,78 @@ impl SQLContext {
     ) -> PolarsResult<Option<LazyFrame>> {
         Ok(None)
     }
+}
+
+// Semi/anti join the outer frame against the (filtered, arena-cached) inner.
+#[cfg(feature = "semi_anti_join")]
+fn build_semi_anti_join(
+    lf: &LazyFrame,
+    inner_lf: LazyFrame,
+    left_on: Vec<Expr>,
+    right_on: Vec<Expr>,
+    anti: bool,
+) -> LazyFrame {
+    let join_type = if anti { JoinType::Anti } else { JoinType::Semi };
+    lf.clone()
+        .join_builder()
+        .with(inner_lf)
+        .left_on(left_on)
+        .right_on(right_on)
+        .how(join_type)
+        .finish()
+}
+
+// Account for 3VL interaction with NULL values
+#[cfg(feature = "semi_anti_join")]
+fn refine_not_in_anti_join(
+    joined: LazyFrame,
+    inner_lf: LazyFrame,
+    left_key: &Expr,
+    right_key: &Expr,
+    corr_outer: &[Expr],
+    corr_inner: &[Expr],
+) -> LazyFrame {
+    let flag_name = unique_column_name();
+    let has_null = right_key.clone().is_null().any(true);
+
+    let with_flag = if corr_inner.is_empty() {
+        // Uncorrelated: one flag cross-joined onto every row; empty set -> NULL
+        // flag, keeping it distinct from a NULL-free set.
+        let flag = when(len().eq(lit(0u32)))
+            .then(lit(NULL).cast(DataType::Boolean))
+            .otherwise(has_null);
+        let stats = inner_lf.select([flag.alias(flag_name.clone())]);
+        joined
+            .join_builder()
+            .with(stats)
+            .how(JoinType::Cross)
+            .finish()
+    } else {
+        // Correlated: one flag per group; the left join leaves it NULL for
+        // groups with no inner rows (an empty set).
+        let flags = inner_lf
+            .group_by(corr_inner)
+            .agg([has_null.alias(flag_name.clone())]);
+        joined
+            .join_builder()
+            .with(flags)
+            .left_on(corr_outer)
+            .right_on(corr_inner)
+            .how(JoinType::Left)
+            .finish()
+    };
+
+    let flag = col(flag_name.clone());
+    let keep = when(flag.clone().is_null())
+        .then(lit(true)) // empty set
+        .when(flag) // set has a NULL
+        .then(lit(false))
+        .otherwise(left_key.clone().is_not_null());
+
+    with_flag.filter(keep).drop(Selector::ByName {
+        names: [flag_name].into(),
+        strict: true,
+    })
 }
 
 /// An iterator over all the minterms in an SQL boolean expression: the terms
