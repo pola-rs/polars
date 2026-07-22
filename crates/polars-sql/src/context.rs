@@ -2416,26 +2416,8 @@ impl SQLContext {
         for (e, group_key) in projections.iter().zip(&projection_group_key) {
             let matches_group_key = group_key.is_some();
             // `Len` represents COUNT(*) so we treat as an aggregation here.
-            let is_non_group_key_expr = !matches_group_key
-                && has_expr(e, |e| {
-                    match e {
-                        Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
-                        #[cfg(feature = "dynamic_group_by")]
-                        Expr::Rolling { .. } => true,
-                        Expr::AnonymousFunction { options, .. } => options.returns_scalar(),
-                        Expr::Function { function: func, .. }
-                            if !matches!(func, FunctionExpr::StructExpr(_)) =>
-                        {
-                            // If it's a function call containing a column NOT in the group by keys,
-                            // we treat it as an aggregation.
-                            has_expr(e, |e| match e {
-                                Expr::Column(name) => !group_by_keys_schema.contains(name),
-                                _ => false,
-                            })
-                        },
-                        _ => false,
-                    }
-                });
+            let is_non_group_key_expr =
+                !matches_group_key && expr_reduces_group(e, &group_by_keys_schema);
 
             // Note: if simple aliased expression we defer aliasing until after the group_by.
             // Use `e_inner` to track the potentially unwrapped expression for field lookup.
@@ -2496,52 +2478,22 @@ impl SQLContext {
             }
         }
 
-        // Process HAVING clause: identify aggregate expressions, reusing those already
-        // in projections, or compute as temporary columns and then post-filter/discard
-        let having_filter = if let Some(having_expr) = having {
-            let mut agg_to_name: Vec<(Expr, PlSmallStr)> = aggregation_projection
-                .iter()
-                .filter_map(|p| match p {
-                    Expr::Alias(inner, name) if matches!(**inner, Expr::Agg(_) | Expr::Len) => {
-                        Some((inner.as_ref().clone(), name.clone()))
-                    },
-                    e @ (Expr::Agg(_) | Expr::Len) => Some((
-                        e.clone(),
-                        e.to_field(&schema_before)
-                            .map(|f| f.name)
-                            .unwrap_or_default(),
-                    )),
-                    _ => None,
-                })
-                .collect();
+        // Note: HAVING is evaluated in the group context by `group_by().having(...)`,
+        // so any reference to a SELECT alias is resolved to the aggregate it names
+        let having = having.map(|having_expr| {
+            having_expr.map_expr(|e| match &e {
+                Expr::Column(name) => resolve_select_alias(name, projections, &schema_before)
+                    .map_or(e, |resolved| strip_outer_alias(&resolved)),
+                _ => e,
+            })
+        });
 
-            let mut n_having_aggs = 0;
-            let updated_having = having_expr.map_expr(|e| {
-                if !matches!(&e, Expr::Agg(_) | Expr::Len) {
-                    return e;
-                }
-                let name = agg_to_name
-                    .iter()
-                    .find_map(|(expr, n)| (*expr == e).then(|| n.clone()))
-                    .unwrap_or_else(|| {
-                        let n = format_pl_smallstr!("__POLARS_HAVING_{n_having_aggs}");
-                        aggregation_projection.push(e.clone().alias(n.clone()));
-                        agg_to_name.push((e.clone(), n.clone()));
-                        n_having_aggs += 1;
-                        n
-                    });
-                col(name)
-            });
-            Some(updated_having)
-        } else {
-            None
-        };
-
-        // Apply HAVING filter after aggregation
-        let mut aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
-        if let Some(filter_expr) = having_filter {
-            aggregated = aggregated.filter(filter_expr);
+        let group_by = lf.group_by(group_by_keys);
+        let aggregated = match having {
+            Some(having) => group_by.having(having),
+            None => group_by,
         }
+        .agg(&aggregation_projection);
 
         let projection_schema =
             expressions_to_schema(projections, &schema_before, |duplicate_name: &str| {
@@ -2549,7 +2501,7 @@ impl SQLContext {
             })?;
 
         // A final projection to get the proper order and any deferred transforms/aliases
-        // (will also drop any temporary columns created for the HAVING post-filter).
+        // (will also drop any temporary columns created for the HAVING post-filter)
         let final_projection = projection_schema
             .iter_names()
             .zip(projections.iter().zip(&projection_group_key))
@@ -3109,6 +3061,25 @@ fn process_join_on(
             SQLInterface: "unsupported join constraint expression: {:?}", sql_expr
         ),
     }
+}
+
+/// Whether `expr` reduces a group to a scalar; shared by SELECT-projection
+/// classification and HAVING, so both agree on what counts as aggregation.
+fn expr_reduces_group(expr: &Expr, group_by_keys_schema: &Schema) -> bool {
+    has_expr(expr, |e| match e {
+        Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
+        #[cfg(feature = "dynamic_group_by")]
+        Expr::Rolling { .. } => true,
+        Expr::AnonymousFunction { options, .. } => options.returns_scalar(),
+        Expr::Function { function: func, .. } if !matches!(func, FunctionExpr::StructExpr(_)) => {
+            // A function over a non-group-key column acts as an aggregation.
+            has_expr(
+                e,
+                |e| matches!(e, Expr::Column(name) if !group_by_keys_schema.contains(name)),
+            )
+        },
+        _ => false,
+    })
 }
 
 /// Build a unified schema from both tables; needed for multi/chained joins where suffixed
