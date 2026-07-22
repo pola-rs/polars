@@ -2034,8 +2034,7 @@ checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
 [[package]]
 name = "hwlocality"
 version = "1.0.0-alpha.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c2e65a48d3b300843ac84a2fe8e166bb5a5b00f30054593bcee8157e4b465fd"
+source = "git+https://github.com/orlp/hwlocality?rev=13fd57daef83ef4f989e829cbad52390f5e5ab1b#13fd57daef83ef4f989e829cbad52390f5e5ab1b"
 dependencies = [
  "arrayvec",
  "bitflags",
@@ -2051,8 +2050,7 @@ dependencies = [
 [[package]]
 name = "hwlocality-sys"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "507b4c70a812b6ed5907db7d59726118f4e17708fbc09e32a872ac8e3b5bafaf"
+source = "git+https://github.com/orlp/hwlocality?rev=13fd57daef83ef4f989e829cbad52390f5e5ab1b#13fd57daef83ef4f989e829cbad52390f5e5ab1b"
 dependencies = [
  "autotools",
  "cmake",
