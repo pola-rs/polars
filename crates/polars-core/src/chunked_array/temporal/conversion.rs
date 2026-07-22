@@ -89,6 +89,13 @@ pub fn get_strftime_format(fmt: &str, dtype: &DataType) -> PolarsResult<String> 
         // (e.g. it formats as "2024 M07 14, Sun 17:31:59" instead of
         // "Sun Jul 14 17:31:59 2024"), so expand it ourselves to the
         // directives it stood for under chrono/POSIX.
-        Ok(format_string.replace("%c", "%a %b %e %H:%M:%S %Y"))
+        let format_string = format_string.replace("%c", "%a %b %e %H:%M:%S %Y");
+        // A bare (unqualified) `%f` under jiff emits a variable-width
+        // fraction with no fixed padding, whereas chrono's `%f` was always
+        // a fixed 9-digit, zero-padded nanosecond count. Pin it to `%9f` to
+        // keep that fixed-width output (this doesn't affect `%.f`, `%3f`,
+        // `%6f`, or `%9f`, which already have explicit width/precision and
+        // don't contain the bare "%f" substring).
+        Ok(format_string.replace("%f", "%9f"))
     }
 }

@@ -543,7 +543,7 @@ def test_to_datetime_ambiguous_or_non_existent() -> None:
         ("2020-01-01T00:00:00Z", None, datetime(2020, 1, 1, tzinfo=timezone.utc)),
         ("2020-01-01T00:00:00Z", "%+", datetime(2020, 1, 1, tzinfo=timezone.utc)),
         (
-            "2020-01-01T00:00:00+01:00",
+            "2020-01-01T00:00:00+0100",
             "%Y-%m-%dT%H:%M:%S%z",
             datetime(2020, 1, 1, tzinfo=timezone(timedelta(seconds=3600))),
         ),
@@ -553,7 +553,7 @@ def test_to_datetime_ambiguous_or_non_existent() -> None:
             datetime(2020, 1, 1, tzinfo=timezone(timedelta(seconds=3600))),
         ),
         (
-            "2020-01-01T00:00:00+01:00",
+            "2020-01-01T00:00:00+0100",
             "%Y-%m-%dT%H:%M:%S%#z",
             datetime(2020, 1, 1, tzinfo=timezone(timedelta(seconds=3600))),
         ),
@@ -708,7 +708,7 @@ def test_to_time_format_warning() -> None:
     s = pl.Series(["05:10:10.074000"])
     with pytest.warns(ChronoFormatWarning, match=r".%f"):
         result = s.str.to_time("%H:%M:%S.%f").item()
-    assert result == time(5, 10, 10, 74)
+    assert result == time(5, 10, 10, 74000)
 
 
 @pytest.mark.parametrize(

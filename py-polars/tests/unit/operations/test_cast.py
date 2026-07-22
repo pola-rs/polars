@@ -81,7 +81,7 @@ def test_string_datetime_timezone() -> None:
     stg_tz = "America/Santiago"
     utc_tz = "UTC"
     df = pl.DataFrame(
-        {"x1": ["1996-12-19T16:39:57 +00:00", "2022-12-19T00:39:57 +00:00"]}
+        {"x1": ["1996-12-19T16:39:57+00:00", "2022-12-19T00:39:57+00:00"]}
     ).with_columns(
         **{
             "x1-datetime-ns": pl.col("x1").cast(

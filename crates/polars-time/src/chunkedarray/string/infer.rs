@@ -10,6 +10,10 @@ use crate::chunkedarray::date::naive_date_to_date;
 use crate::prelude::string::strptime::StrpTimeState;
 
 polars_utils::regex_cache::cached_regex! {
+    // A `%f`/`%.f` fractional-seconds directive with an explicit, fixed
+    // digit-count precision, e.g. `%3f`, `%.6f`, `%9f`.
+    static EXPLICIT_FRACTIONAL_PRECISION_RE = r"%\.?([1-9])f";
+
     static DATETIME_DMY_RE = r#"(?x)
         ^
         ['"]?                        # optional quotes
@@ -314,12 +318,48 @@ fn transform_date(val: &str, fmt: &str) -> Option<i32> {
 }
 
 pub(crate) fn parse_datetime(val: &str, fmt: &str) -> Option<NaiveDateTime> {
-    NaiveDateTime::strptime(fmt, val).ok().or_else(|| {
-        // Fall back to a date-only parse (e.g. the format has no time component).
-        NaiveDate::strptime(fmt, val)
-            .ok()
-            .map(|nd| nd.at(0, 0, 0, 0))
-    })
+    let dt = NaiveDateTime::strptime(fmt, val)
+        .ok()
+        .or_else(|| {
+            // Fall back to a date-only parse (e.g. the format has no time component).
+            NaiveDate::strptime(fmt, val)
+                .ok()
+                .map(|nd| nd.at(0, 0, 0, 0))
+        })
+        .or_else(|| {
+            // jiff refuses `%Z` (a time zone abbreviation, e.g. "ACST")
+            // outright when parsing - it's formatting-only, since an
+            // abbreviation alone is ambiguous. Chrono allowed it as a
+            // "match and discard" escape hatch: whatever it matched was
+            // just thrown away, so replicate that by stripping the
+            // directive and consuming a trailing run of letters in its
+            // place.
+            let fmt_prefix = fmt.strip_suffix("%Z")?;
+            let (tm, len) = BrokenDownTime::parse_prefix(fmt_prefix, val).ok()?;
+            let remainder = &val[len..];
+            if remainder.is_empty() || !remainder.bytes().all(|b| b.is_ascii_alphabetic()) {
+                return None;
+            }
+            tm.to_datetime().ok()
+        })?;
+
+    // jiff treats the digit count in `%3f`/`%.6f`/etc. as formatting-only -
+    // during parsing it's a no-op, consuming up to nanosecond precision
+    // regardless of what's requested. Restore the old, stricter behavior of
+    // failing when the data actually carries more precision than the
+    // format explicitly promised (e.g. `%.3f` against a value with
+    // nanosecond-level digits), rather than silently truncating it.
+    if let Some(declared) = EXPLICIT_FRACTIONAL_PRECISION_RE
+        .captures(fmt)
+        .and_then(|c| c.get(1)?.as_str().parse::<u32>().ok())
+    {
+        let subsec = dt.subsec_nanosecond() as u32;
+        if declared < 9 && subsec % 10u32.pow(9 - declared) != 0 {
+            return None;
+        }
+    }
+
+    Some(dt)
 }
 
 pub(crate) fn parse_datetime_and_remainder<'a>(
