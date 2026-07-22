@@ -53,7 +53,7 @@ def scan_iceberg(
 
         More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
     catalog
-        PyIceberg catalog to load the table from if the provided `target`
+        PyIceberg catalog to load the table from if the provided `source`
         was a table name.
     reader_override
         Overrides the reader used to read the data.
