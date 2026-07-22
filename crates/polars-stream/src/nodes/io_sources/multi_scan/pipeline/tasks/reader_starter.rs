@@ -599,7 +599,10 @@ async fn start_reader_impl(
                                 .unwrap_or_else(|| Scalar::null(dtype.clone())),
                         ));
 
-                        Arc::make_mut(&mut predicate.column_predicates).is_sumwise_complete = false;
+                        let residual_predicate = predicate.predicate.clone();
+                        let column_predicates = Arc::make_mut(&mut predicate.column_predicates);
+                        column_predicates.predicates.clear();
+                        column_predicates.residual_predicate = Some(residual_predicate);
                     }
                 },
                 MissingColumnsPolicy::Raise => return Err(missing_column_err(missing_col_name)),

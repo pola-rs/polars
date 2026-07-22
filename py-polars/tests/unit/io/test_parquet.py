@@ -1891,6 +1891,29 @@ def test_general_prefiltering(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df.filter(expr))
 
 
+def test_prefiltering_with_residual_predicate() -> None:
+    df = pl.DataFrame(
+        {
+            "integer": [0, 1, 2, 3, 4, 5],
+            "float": [0.5, 1.5, 2.5, 3.5, None, 5.5],
+            "value": list(range(6)),
+        }
+    )
+    predicate = (pl.col("integer") > 1) & (pl.col("float") < 5.0)
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=3)
+
+    f.seek(0)
+    result = (
+        pl.scan_parquet(f, parallel="prefiltered")
+        .filter(predicate)
+        .select("value")
+        .collect(engine="streaming")
+    )
+
+    assert_frame_equal(result, df.filter(predicate).select("value"))
+
+
 @given(
     df=dataframes(
         min_size=0,

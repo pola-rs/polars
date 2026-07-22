@@ -493,7 +493,12 @@ impl RowGroupDecoder {
         }
 
         let (live_df_filtered, mut mask) = if use_column_predicates {
-            assert!(scan_predicate.column_predicates.is_sumwise_complete);
+            assert!(
+                scan_predicate
+                    .column_predicates
+                    .residual_predicate
+                    .is_none()
+            );
             if let [mask] = masks.as_slice() {
                 (
                     unsafe { DataFrame::new_unchecked_infer_height(live_columns) },
@@ -529,7 +534,17 @@ impl RowGroupDecoder {
                 DataFrame::new_unchecked(row_group_data.row_group_metadata.num_rows(), live_columns)
             };
 
-            let mask = scan_predicate.predicate.evaluate_io(&live_df)?;
+            // We can be in this branch either because we have a residual
+            // predicate to handle, or reader-level limitations disabled
+            // column predicates (for example, we have Float16 types). Thus
+            // we first check if we have a residual and if not, pick up the
+            // full predicate.
+            let mask = scan_predicate
+                .column_predicates
+                .residual_predicate
+                .as_ref()
+                .unwrap_or(&scan_predicate.predicate)
+                .evaluate_io(&live_df)?;
             let mask = mask.bool().unwrap();
 
             unsafe {

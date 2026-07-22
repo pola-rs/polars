@@ -363,7 +363,7 @@ impl ParquetReadImpl {
         }
 
         let allow_column_predicates = predicate.as_ref().is_some_and(|p| {
-            p.column_predicates.is_sumwise_complete
+            p.column_predicates.residual_predicate.is_none()
                 && !projected_arrow_fields.iter().any(|f| {
                     matches!(f.arrow_field().dtype(), ArrowDataType::FixedSizeBinary(_))
                         && p.column_predicates.predicates.contains_key(f.output_name())

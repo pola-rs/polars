@@ -403,7 +403,8 @@ pub trait SkipBatchPredicate: Send + Sync {
 pub struct ColumnPredicates {
     pub predicates:
         PlHashMap<PlSmallStr, (Arc<dyn PhysicalIoExpr>, Option<SpecializedColumnPredicate>)>,
-    pub is_sumwise_complete: bool,
+    /// The part of the scan predicate not represented by `predicates`.
+    pub residual_predicate: Option<Arc<dyn PhysicalIoExpr>>,
 }
 
 // I want to be explicit here.
@@ -412,7 +413,7 @@ impl Default for ColumnPredicates {
     fn default() -> Self {
         Self {
             predicates: PlHashMap::default(),
-            is_sumwise_complete: false,
+            residual_predicate: None,
         }
     }
 }
@@ -465,7 +466,7 @@ pub struct ScanIOPredicate {
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
 
-    /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
+    /// Per-column predicates and a residual predicate for columnar formats.
     pub column_predicates: Arc<ColumnPredicates>,
 
     /// Predicate parts only referring to hive columns.
@@ -509,12 +510,21 @@ impl ScanIOPredicate {
         for (c, _) in constant_columns.iter() {
             column_predicates.predicates.remove(c);
         }
-        self.column_predicates = Arc::new(column_predicates);
-
         self.predicate = Arc::new(PhysicalExprWithConstCols {
-            constants: constant_columns,
+            constants: constant_columns.clone(),
             child: self.predicate.clone(),
         });
+
+        column_predicates.residual_predicate =
+            column_predicates
+                .residual_predicate
+                .map(|residual_predicate| {
+                    Arc::new(PhysicalExprWithConstCols {
+                        constants: constant_columns,
+                        child: residual_predicate,
+                    }) as Arc<dyn PhysicalIoExpr>
+                });
+        self.column_predicates = Arc::new(column_predicates);
     }
 }
 
