@@ -114,7 +114,7 @@ def test_write_json_duration() -> None:
 
     # we don't guarantee a format, just round-circling
     value = df.write_json()
-    expected = '[{"a":"PT91762.939S"},{"a":"PT91762.89S"},{"a":"PT6020.836S"}]'
+    expected = '[{"a":"PT25H29M22.939S"},{"a":"PT25H29M22.89S"},{"a":"PT1H40M20.836S"}]'
     assert value == expected
 
 

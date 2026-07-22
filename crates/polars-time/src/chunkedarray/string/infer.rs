@@ -411,10 +411,18 @@ pub fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
         NaiveDateTime::strptime(fmt, val).is_ok() || NaiveDate::strptime(fmt, val).is_ok()
     }) {
         Some(Pattern::DatetimeYMD)
-    } else if patterns::DATETIME_Y_M_D_Z
-        .iter()
-        .any(|fmt| NaiveDateTime::strptime(fmt, val).is_ok())
-    {
+    } else if patterns::DATETIME_Y_M_D_Z.iter().any(|fmt| {
+        // "%+" isn't a directive jiff's strtime engine understands - it's
+        // handled separately (see `parse_tz_aware_timestamp`) via jiff's
+        // native ISO 8601 timestamp parser, which is what we must probe with
+        // here too, or values only expressible via "%+" (e.g. a literal "Z"
+        // offset with no colon/offset digits) would never be inferred.
+        if *fmt == "%+" {
+            val.parse::<Timestamp>().is_ok()
+        } else {
+            NaiveDateTime::strptime(fmt, val).is_ok()
+        }
+    }) {
         Some(Pattern::DatetimeYMDZ)
     } else {
         None
