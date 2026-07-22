@@ -409,7 +409,7 @@ pub fn apply_scan_predicate_to_scan_ir(
         *predicate_file_skip_applied = Some(predicate_file_skip);
 
         if skip_files_mask.num_skipped_files() > 0 {
-            filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter())
+            filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter(), false)
         }
     }
 
@@ -423,7 +423,7 @@ pub fn apply_scan_predicate_to_scan_ir(
 ///
 /// # Panics
 /// Panics if `scan_ir` is not `IR::Scan`.
-pub fn filter_scan_ir<I>(scan_ir: &mut IR, selected_path_indices: I)
+pub fn filter_scan_ir<I>(scan_ir: &mut IR, selected_path_indices: I, allow_pre_slice: bool)
 where
     I: Iterator<Item = usize> + Clone,
 {
@@ -469,9 +469,8 @@ where
         projection: _,
         column_mapping: _,
         default_values,
-        // Ensure these are None.
-        row_index: None,
-        pre_slice: None,
+        row_index,
+        pre_slice,
         cast_columns_policy: _,
         missing_columns_policy: _,
         extra_columns_policy: _,
@@ -479,10 +478,14 @@ where
         deletion_files,
         table_statistics,
         row_count,
-    } = unified_scan_args.as_mut()
-    else {
-        panic!("{unified_scan_args:?}")
-    };
+    } = unified_scan_args.as_mut();
+
+    // Ensure these are None.
+    let _ = row_index.as_ref().expect("{unified_scan_args:?}");
+    // In cloud this is allowed.
+    if !allow_pre_slice {
+        let _ = pre_slice.as_ref().expect("{unified_scan_args:?}");
+    }
 
     // Reconcile pre-decoded state with the filter: clear what's stale,
     // gather what survives.
