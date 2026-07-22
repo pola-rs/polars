@@ -430,6 +430,10 @@ impl IRFunctionExpr {
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma")]
+            EwmSum { .. } => mapper.map_numeric_to_float_dtype(true),
+            #[cfg(feature = "ewma_by")]
+            EwmSumBy { .. } => mapper.map_numeric_to_float_dtype(true),
+            #[cfg(feature = "ewma")]
             EwmStd { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma")]
             EwmVar { .. } => mapper.var_dtype(),

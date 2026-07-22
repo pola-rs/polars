@@ -1159,13 +1159,13 @@ fn to_graph_rec<'a>(
             let right_key_schema =
                 compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?;
 
-            // We want to make sure here that the key types match otherwise we get out garbage out
+            // We want to make sure here that the key types match, otherwise we get garbage out
             // since the hashes will be calculated differently.
             polars_ensure!(
                 left_on.len() == right_on.len() &&
                 left_on.iter().zip(right_on.iter()).all(|(l, r)| {
-                    let l_dtype = left_key_schema.get(l.output_name()).unwrap();
-                    let r_dtype = right_key_schema.get(r.output_name()).unwrap();
+                    let l_dtype = l.dtype(&left_input_schema, ctx.expr_arena).unwrap();
+                    let r_dtype = r.dtype(&right_input_schema, ctx.expr_arena).unwrap();
                     l_dtype == r_dtype
                 }),
                 SchemaMismatch: "join received different key types on left and right side"
@@ -1194,7 +1194,7 @@ fn to_graph_rec<'a>(
                 .try_collect_vec()?;
 
             let unique_key_schema =
-                compute_output_schema(&right_input_schema, &unique_left_on, ctx.expr_arena)?;
+                compute_output_schema(&left_input_schema, &unique_left_on, ctx.expr_arena)?;
 
             match node.kind {
                 #[cfg(feature = "semi_anti_join")]
@@ -1623,10 +1623,12 @@ fn to_graph_rec<'a>(
 
         #[cfg(feature = "ewma")]
         ewm_variant @ EwmMean { input, options }
+        | ewm_variant @ EwmSum { input, options }
         | ewm_variant @ EwmVar { input, options }
         | ewm_variant @ EwmStd { input, options } => {
             use nodes::ewm::EwmNode;
             use polars_compute::ewm::mean::EwmMeanState;
+            use polars_compute::ewm::sum::EwmSumState;
             use polars_compute::ewm::{EwmCovState, EwmStateUpdate, EwmStdState, EwmVarState};
             use polars_core::with_match_physical_float_type;
 
@@ -1640,6 +1642,17 @@ fn to_graph_rec<'a>(
                         let state: EwmMeanState<$T> = EwmMeanState::new(
                             AsPrimitive::<$T>::as_(options.alpha),
                             options.adjust,
+                            options.min_periods,
+                            options.ignore_nulls,
+                        );
+
+                        Box::new(state)
+                    })
+                },
+                EwmSum { .. } => {
+                    with_match_physical_float_type!(dtype, |$T| {
+                        let state: EwmSumState<$T> = EwmSumState::new(
+                            AsPrimitive::<$T>::as_(options.alpha),
                             options.min_periods,
                             options.ignore_nulls,
                         );
@@ -1666,6 +1679,7 @@ fn to_graph_rec<'a>(
 
             let name = match ewm_variant {
                 EwmMean { .. } => "ewm-mean",
+                EwmSum { .. } => "ewm-sum",
                 EwmVar { .. } => "ewm-var",
                 EwmStd { .. } => "ewm-std",
                 _ => unreachable!(),

@@ -883,6 +883,7 @@ class PyLazyFrame:
         decimal_comma: bool,
         glob: bool,
         schema: Any | None,
+        new_columns: Sequence[str] | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
         include_file_paths: str | None,
@@ -1419,7 +1420,9 @@ class PyExpr:
     def ewm_mean(
         self, alpha: float, adjust: bool, min_periods: int, ignore_nulls: bool
     ) -> PyExpr: ...
+    def ewm_sum(self, alpha: float, min_periods: int, ignore_nulls: bool) -> PyExpr: ...
     def ewm_mean_by(self, times: PyExpr, half_life: str) -> PyExpr: ...
+    def ewm_sum_by(self, times: PyExpr, half_life: str) -> PyExpr: ...
     def ewm_std(
         self,
         alpha: float,
