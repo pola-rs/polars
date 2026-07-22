@@ -21,3 +21,9 @@ def test_hash_expr_hint() -> None:
         TypeError, match=r"""unhashable type: 'Expr'\n\nConsider hashing \'col.*meta"""
     ):
         {a}
+
+
+def test_meta_eq_tot_cmp_28469() -> None:
+    a = pl.lit(float("nan"))
+    b = pl.lit(float("nan"))
+    assert a.meta.eq(b)
