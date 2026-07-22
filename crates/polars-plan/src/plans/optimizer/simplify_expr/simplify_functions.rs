@@ -225,10 +225,8 @@ pub(super) fn optimize_functions(
                         IRFunctionExpr::Boolean(
                             f @ IRBooleanFunction::IsNull
                             | f @ IRBooleanFunction::IsNan
-                            | f @ IRBooleanFunction::IsFinite
                             | f @ IRBooleanFunction::IsNotNull
                             | f @ IRBooleanFunction::IsNotNan
-                            | f @ IRBooleanFunction::IsInfinite,
                         ),
                     options,
                 } => Some(AExpr::Function {
@@ -236,10 +234,8 @@ pub(super) fn optimize_functions(
                     function: IRFunctionExpr::Boolean(match f {
                         IRBooleanFunction::IsNull => IRBooleanFunction::IsNotNull,
                         IRBooleanFunction::IsNan => IRBooleanFunction::IsNotNan,
-                        IRBooleanFunction::IsFinite => IRBooleanFunction::IsInfinite,
                         IRBooleanFunction::IsNotNull => IRBooleanFunction::IsNull,
                         IRBooleanFunction::IsNotNan => IRBooleanFunction::IsNan,
-                        IRBooleanFunction::IsInfinite => IRBooleanFunction::IsFinite,
                         _ => unreachable!(),
                     }),
                     options: *options,
