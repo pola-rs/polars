@@ -1,11 +1,11 @@
 use std::hash::BuildHasher;
 
-use indexmap::map::raw_entry_v1::RawEntryMut;
 use indexmap::map::RawEntryApiV1;
+use indexmap::map::raw_entry_v1::RawEntryMut;
+use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_core::config::verbose;
 use polars_core::prelude::PlIndexMap;
 use polars_core::schema::Schema;
-use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_error::PolarsResult;
 use polars_utils::aliases::PlFixedStateQuality;
 use polars_utils::arena::{Arena, Node};
@@ -20,9 +20,9 @@ use crate::plans::visitor::{
     IRNode, IRNodeArena, RewriteRecursion, RewritingVisitor, TreeWalker as _, VisitRecursion,
     Visitor,
 };
-use crate::plans::{AExpr, ExprIR, IRBuilder, IRFunctionExpr, LiteralValue, OutputName, IR};
-use crate::prelude::visitor::AexprNode;
+use crate::plans::{AExpr, ExprIR, IR, IRBuilder, IRFunctionExpr, LiteralValue, OutputName};
 use crate::prelude::ProjectionOptions;
+use crate::prelude::visitor::AexprNode;
 
 type Accepted = Option<(VisitRecursion, bool)>;
 // Don't allow this node in a cse.
