@@ -678,7 +678,6 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             return Ok(RewriteRecursion::NoMutateAndContinue);
         };
         if *count > 1 {
-            self.replaced_identifiers.insert(id.clone(), (), arena);
             let recursion = if self.is_element_wise_select_only
                 && !matches!(
                     aexpr_projection_height_rec(
@@ -691,6 +690,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
                 ) {
                 RewriteRecursion::Stop
             } else {
+                self.replaced_identifiers.insert(id.clone(), (), arena);
                 RewriteRecursion::MutateAndStop
             };
             // rewrite this sub-expression, don't visit its children
