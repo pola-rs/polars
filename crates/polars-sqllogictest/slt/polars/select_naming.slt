@@ -1,0 +1,93 @@
+statement ok
+CREATE TABLE t1 (a INTEGER, b INTEGER, c INTEGER)
+
+statement ok
+INSERT INTO t1 VALUES
+  (1, 10, 100),
+  (2, 20, 200),
+  (3, 5, 8)
+
+# Unaliased expressions take their left operand/argument as output name, so
+# these all produce a naming collision that must not crash the query. The
+# first (leftmost) projection to claim a name keeps it undecorated; later
+# unaliased projections that collide get a `name:n` suffix.
+
+# ORDER BY "a" here sorts by the first column (a-b claims the name "a"),
+# not by the original "a" column, since the unaliased bare `a` lost the name.
+query II
+SELECT a-b, a FROM t1 ORDER BY a
+----
+-18	2
+-9	1
+-2	3
+
+query II
+SELECT a, abs(a) FROM t1 ORDER BY a
+----
+1	1
+2	2
+3	3
+
+query II
+SELECT a-b, a-c FROM t1 ORDER BY a
+----
+-18	-198
+-9	-99
+-2	-5
+
+# ORDER BY ordinal: column 2 is the disambiguated `a`-bare-column projection,
+# so this sorts by the original "a" values (1, 2, 3).
+query II
+SELECT a-b, a FROM t1 ORDER BY 2
+----
+-9	1
+-18	2
+-2	3
+
+query II
+SELECT a-b, a FROM t1 WHERE a > 1 ORDER BY a
+----
+-18	2
+-2	3
+
+query II
+SELECT a-b, count(*) FROM t1 GROUP BY a-b ORDER BY 1
+----
+-18	1
+-9	1
+-2	1
+
+query II
+SELECT a, abs(a) FROM t1 GROUP BY a ORDER BY a
+----
+1	1
+2	2
+3	3
+
+query II
+SELECT DISTINCT a-b, a FROM t1 ORDER BY a
+----
+-18	2
+-9	1
+-2	3
+
+# aliased + unaliased mix: an explicit alias never collides with a derived
+# name, so "a" here keeps referring to the original column.
+query II
+SELECT a-b AS x, a FROM t1 ORDER BY a
+----
+-9	1
+-18	2
+-2	3
+
+# ... regardless of which side of the collision is explicitly aliased
+query II
+SELECT a-b, a AS a FROM t1 ORDER BY a
+----
+-9	1
+-18	2
+-2	3
+
+# an explicit duplicate alias is a genuine ambiguity and stays an error
+statement error
+SELECT 1 AS x, 2 AS x FROM t1

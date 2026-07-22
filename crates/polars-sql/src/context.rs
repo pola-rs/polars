@@ -64,7 +64,8 @@ impl SelectModifiers {
 /// For SELECT projection items; helps simplify any required disambiguation.
 enum ProjectionItem {
     QualifiedExprs(PlSmallStr, Vec<Expr>),
-    Exprs(Vec<Expr>),
+    /// The `bool` marks whether every expr here came from an explicit `AS` alias.
+    Exprs(Vec<Expr>, bool),
 }
 
 /// Extract the output column name from an expression (if it has one).
@@ -79,7 +80,7 @@ fn expr_output_name(expr: &Expr) -> Option<&PlSmallStr> {
 fn disambiguate_projection_cols(
     items: Vec<ProjectionItem>,
     schema: &Schema,
-) -> PolarsResult<Vec<Expr>> {
+) -> PolarsResult<Vec<(Expr, bool)>> {
     // Establish qualified wildcard names (with counts), and other expression names
     let mut qualified_wildcard_names: PlHashMap<PlSmallStr, usize> = PlHashMap::new();
     let mut other_names: PlHashSet<PlSmallStr> = PlHashSet::new();
@@ -92,7 +93,7 @@ fn disambiguate_projection_cols(
                     }
                 }
             },
-            ProjectionItem::Exprs(exprs) => {
+            ProjectionItem::Exprs(exprs, _) => {
                 for expr in exprs {
                     if let Some(name) = expr_output_name(expr) {
                         other_names.insert(name.clone());
@@ -110,7 +111,7 @@ fn disambiguate_projection_cols(
         .collect();
 
     // Output, applying suffixes where needed
-    let mut result: Vec<Expr> = Vec::new();
+    let mut result: Vec<(Expr, bool)> = Vec::new();
     for item in items {
         match item {
             ProjectionItem::QualifiedExprs(tbl_name, exprs) if !needs_suffix.is_empty() => {
@@ -119,7 +120,7 @@ fn disambiguate_projection_cols(
                         if needs_suffix.contains(name) {
                             let suffixed = format_pl_smallstr!("{}:{}", name, tbl_name);
                             if schema.contains(suffixed.as_str()) {
-                                result.push(col(suffixed));
+                                result.push((col(suffixed), false));
                                 continue;
                             }
                             if other_names.contains(name) {
@@ -130,12 +131,67 @@ fn disambiguate_projection_cols(
                             }
                         }
                     }
-                    result.push(expr);
+                    result.push((expr, false));
                 }
             },
-            ProjectionItem::QualifiedExprs(_, exprs) | ProjectionItem::Exprs(exprs) => {
-                result.extend(exprs);
+            ProjectionItem::QualifiedExprs(_, exprs) => {
+                result.extend(exprs.into_iter().map(|e| (e, false)));
             },
+            ProjectionItem::Exprs(exprs, is_explicit_alias) => {
+                result.extend(exprs.into_iter().map(|e| (e, is_explicit_alias)));
+            },
+        }
+    }
+    Ok(result)
+}
+
+/// Assign unique output names to SELECT-list projections that would otherwise collide.
+///
+/// Unaliased expressions derive their output name from their left operand/argument
+/// (e.g. `a-b` -> "a", `abs(a)` -> "a"), so it's easy for two projections to want the
+/// same name even though SQL allows repeated/derived output names in a SELECT list.
+/// The first projection to claim a name keeps it; later unaliased projections that
+/// collide (with an earlier projection, or with any explicit `AS` alias anywhere in
+/// the list) get a `name:n` suffix. Explicit `AS` aliases are never renamed, so
+/// `SELECT 1 AS x, 2 AS x` keeps colliding (and erroring) as before. Likewise, an
+/// unaliased expression that is a verbatim repeat of the one already holding its
+/// name (e.g. `SELECT a, a` or a bare column re-selected alongside `SELECT *`) is
+/// left to collide too, since that's an actual duplicate column selection rather
+/// than an incidental name clash between different expressions.
+fn disambiguate_output_names(exprs: Vec<(Expr, bool)>, schema: &Schema) -> PolarsResult<Vec<Expr>> {
+    let protected: PlHashSet<PlSmallStr> = exprs
+        .iter()
+        .filter(|(_, is_explicit_alias)| *is_explicit_alias)
+        .map(|(e, _)| Ok(e.to_field(schema)?.name))
+        .collect::<PolarsResult<_>>()?;
+
+    let mut used: PlHashSet<PlSmallStr> = PlHashSet::new();
+    let mut claimed: PlHashMap<PlSmallStr, Expr> = PlHashMap::new();
+    let mut result = Vec::with_capacity(exprs.len());
+    for (expr, is_explicit_alias) in exprs {
+        let name = expr.to_field(schema)?.name;
+        let verbatim_repeat = claimed.get(&name).is_some_and(|claimant| claimant == &expr);
+        if is_explicit_alias
+            || verbatim_repeat
+            || (!used.contains(&name) && !protected.contains(&name))
+        {
+            if !is_explicit_alias {
+                claimed.entry(name.clone()).or_insert_with(|| expr.clone());
+            }
+            used.insert(name);
+            result.push(expr);
+        } else {
+            let mut n = 1usize;
+            let unique_name = loop {
+                let candidate = format_pl_smallstr!("{}:{}", name, n);
+                if !used.contains(&candidate) && !protected.contains(&candidate) {
+                    break candidate;
+                }
+                n += 1;
+            };
+            used.insert(unique_name.clone());
+            claimed.insert(unique_name.clone(), expr.clone());
+            result.push(expr.alias(unique_name));
         }
     }
     Ok(result)
@@ -1447,11 +1503,16 @@ impl SQLContext {
             PlHashSet::new()
         };
 
-        let mut projections =
+        let mut projections_with_flags =
             self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
         let subquery_names;
-        (lf, subquery_names) = self.process_subqueries(lf, projections.iter_mut().collect())?;
+        (lf, subquery_names) = self.process_subqueries(
+            lf,
+            projections_with_flags.iter_mut().map(|(e, _)| e).collect(),
+        )?;
         schema = self.get_frame_schema(&mut lf)?;
+        let (mut projections, explicit_aliases): (Vec<Expr>, Vec<bool>) =
+            projections_with_flags.into_iter().unzip();
 
         // Apply `UNNEST` expressions
         let mut explode_names = Vec::new();
@@ -1585,6 +1646,13 @@ impl SQLContext {
                 polars_bail!(SQLSyntax: "HAVING clause not valid outside of GROUP BY; found:\n{:?}", select_stmt.having);
             };
 
+            // Disambiguate SELECT-list output-name collisions now that any subqueries
+            // embedded in the projections have been resolved to real columns.
+            projections = disambiguate_output_names(
+                projections.into_iter().zip(explicit_aliases).collect(),
+                &schema,
+            )?;
+
             // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_cols = Vec::with_capacity(projections.len());
             let mut retained_names = Vec::with_capacity(projections.len());
@@ -1689,11 +1757,13 @@ impl SQLContext {
                 .as_ref()
                 .map(|expr| parse_sql_expr(expr, self, Some(&schema)))
                 .transpose()?;
-            lf = self.process_group_by(lf, &group_by_keys, &projections, having)?;
+            let disambiguated_projections;
+            (lf, disambiguated_projections) =
+                self.process_group_by(lf, &group_by_keys, projections, &explicit_aliases, having)?;
             lf = self.process_order_by(lf, &query.order_by, None)?;
 
             // Drop any extra columns (eg: added to maintain ORDER BY access to original cols)
-            let output_cols: Vec<_> = projections
+            let output_cols: Vec<_> = disambiguated_projections
                 .iter()
                 .map(|p| p.to_field(&schema))
                 .collect::<PolarsResult<Vec<_>>>()?
@@ -1741,12 +1811,15 @@ impl SQLContext {
         Ok(lf)
     }
 
+    /// Returns each projection alongside whether it came from an explicit `AS` alias
+    /// (used later to disambiguate SELECT-list output-name collisions once any
+    /// subqueries embedded in the projections have been resolved).
     fn column_projections(
         &mut self,
         select_stmt: &Select,
         schema: &SchemaRef,
         select_modifiers: &mut SelectModifiers,
-    ) -> PolarsResult<Vec<Expr>> {
+    ) -> PolarsResult<Vec<(Expr, bool)>> {
         if select_stmt.projection.is_empty()
             && select_stmt.flavor == SelectFlavor::FromFirstNoSelect
         {
@@ -1754,7 +1827,7 @@ impl SQLContext {
             return Ok(schema
                 .iter_names()
                 .filter(|name| !is_correlated_result_col(name))
-                .map(|name| col(name.clone()))
+                .map(|name| (col(name.clone()), false))
                 .collect());
         }
         let mut items: Vec<ProjectionItem> = Vec::with_capacity(select_stmt.projection.len());
@@ -1763,17 +1836,17 @@ impl SQLContext {
         for select_item in &select_stmt.projection {
             match select_item {
                 SelectItem::UnnamedExpr(expr) => {
-                    items.push(ProjectionItem::Exprs(vec![parse_sql_expr(
-                        expr,
-                        self,
-                        Some(schema),
-                    )?]));
+                    items.push(ProjectionItem::Exprs(
+                        vec![parse_sql_expr(expr, self, Some(schema))?],
+                        false,
+                    ));
                 },
                 SelectItem::ExprWithAlias { expr, alias } => {
                     let expr = parse_sql_expr(expr, self, Some(schema))?;
-                    items.push(ProjectionItem::Exprs(vec![
-                        expr.alias(PlSmallStr::from_str(alias.value.as_str())),
-                    ]));
+                    items.push(ProjectionItem::Exprs(
+                        vec![expr.alias(PlSmallStr::from_str(alias.value.as_str()))],
+                        true,
+                    ));
                 },
                 SelectItem::ExprWithAliases { .. } => {
                     polars_bail!(SQLSyntax: "multiple aliases per expression are not supported: {:?}", select_item)
@@ -1812,30 +1885,37 @@ impl SQLContext {
                             select_modifiers,
                             Some(schema),
                         )?,
+                        false,
                     ));
                 },
             }
         }
 
         // Disambiguate qualified wildcards (if any) and flatten expressions
-        let exprs = if has_qualified_wildcard {
+        let exprs: Vec<(Expr, bool)> = if has_qualified_wildcard {
             disambiguate_projection_cols(items, schema)?
         } else {
             items
                 .into_iter()
                 .flat_map(|item| match item {
-                    ProjectionItem::Exprs(exprs) | ProjectionItem::QualifiedExprs(_, exprs) => {
-                        exprs
+                    ProjectionItem::Exprs(exprs, is_explicit_alias) => exprs
+                        .into_iter()
+                        .map(|e| (e, is_explicit_alias))
+                        .collect::<Vec<_>>(),
+                    ProjectionItem::QualifiedExprs(_, exprs) => {
+                        exprs.into_iter().map(|e| (e, false)).collect()
                     },
                 })
                 .collect()
         };
-        let flattened_exprs = exprs
+        Ok(exprs
             .into_iter()
-            .flat_map(|expr| expand_exprs(expr, schema))
-            .collect();
-
-        Ok(flattened_exprs)
+            .flat_map(|(expr, is_explicit_alias)| {
+                expand_exprs(expr, schema)
+                    .into_iter()
+                    .map(move |e| (e, is_explicit_alias))
+            })
+            .collect())
     }
 
     fn process_where(
@@ -2437,14 +2517,25 @@ impl SQLContext {
         &mut self,
         mut lf: LazyFrame,
         group_by_keys: &[Expr],
-        projections: &[Expr],
+        projections: Vec<Expr>,
+        explicit_aliases: &[bool],
         having: Option<Expr>,
-    ) -> PolarsResult<LazyFrame> {
+    ) -> PolarsResult<(LazyFrame, Vec<Expr>)> {
         let schema_before = self.get_frame_schema(&mut lf)?;
         let group_by_keys_schema =
             expressions_to_schema(group_by_keys, &schema_before, |duplicate_name: &str| {
                 format!("group_by keys contained duplicate output name '{duplicate_name}'")
             })?;
+
+        // Disambiguate SELECT-list output-name collisions now that the GROUP BY
+        // keys themselves have been validated against the pre-aggregation schema.
+        let projections = disambiguate_output_names(
+            projections
+                .into_iter()
+                .zip(explicit_aliases.iter().copied())
+                .collect(),
+            &schema_before,
+        )?;
 
         // Note: remove the `group_by` keys as Polars adds those implicitly.
         let mut aliased_aggregations: PlHashMap<PlSmallStr, PlSmallStr> = PlHashMap::new();
@@ -2571,7 +2662,7 @@ impl SQLContext {
         .agg(&aggregation_projection);
 
         let projection_schema =
-            expressions_to_schema(projections, &schema_before, |duplicate_name: &str| {
+            expressions_to_schema(&projections, &schema_before, |duplicate_name: &str| {
                 format!("group_by aggregations contained duplicate output name '{duplicate_name}'")
             })?;
 
@@ -2629,7 +2720,7 @@ impl SQLContext {
                 }
             }
         }
-        Ok(aggregated.select(&output_projection))
+        Ok((aggregated.select(&output_projection), projections.clone()))
     }
 
     fn process_limit_offset(
