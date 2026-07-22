@@ -117,6 +117,22 @@ fn input_values(len: usize) -> PrimitiveArray<i32> {
     PrimitiveArray::from_iter((0..len).map(|index| (index % 11 != 0).then_some(index as i32)))
 }
 
+fn primitive_page_lengths(data: &[u8]) -> PolarsResult<Vec<usize>> {
+    let mut reader = Cursor::new(data);
+    let metadata = read_metadata(&mut reader)?;
+    let column = &metadata.row_groups[0].parquet_columns()[0];
+    let byte_range = column.byte_range();
+    let column_data =
+        Buffer::from_vec(data[byte_range.start as usize..byte_range.end as usize].to_vec());
+    let max_page_size = column_data.len() * 2 + 1024;
+    let pages = PageReader::new(Cursor::new(column_data), column, vec![], max_page_size);
+    let mut decompressor = BasicDecompressor::new(pages, vec![]);
+    decompressor.read_dict_page()?;
+    decompressor
+        .map(|page| -> PolarsResult<_> { Ok(page?.num_values()) })
+        .collect()
+}
+
 #[test]
 fn selected_predicate_refines_mask_in_column_coordinates() -> PolarsResult<()> {
     let len = 1_024;
@@ -185,7 +201,7 @@ fn selected_predicate_respects_matching_nulls() -> PolarsResult<()> {
 }
 
 #[test]
-fn selected_predicate_can_return_only_the_mask() -> PolarsResult<()> {
+fn selected_predicate_mask_only() -> PolarsResult<()> {
     let len = 1_024;
     let input_selection = Bitmap::from_iter((0..len).map(|index| index % 7 == 0));
     let predicate = PredicateFilter {
@@ -212,7 +228,7 @@ fn selected_predicate_can_return_only_the_mask() -> PolarsResult<()> {
 }
 
 #[test]
-fn selected_predicate_handles_an_empty_selection() -> PolarsResult<()> {
+fn selected_predicate_handles_empty_selection() -> PolarsResult<()> {
     let len = 1_024;
     let predicate = PredicateFilter {
         predicate: Arc::new(GreaterThan {
@@ -262,6 +278,45 @@ fn selected_predicate_dense_selection_matches_unselected_decode() -> PolarsResul
 
     assert_eq!(mask, expected_mask);
     assert_eq!(values, expected_values);
+    Ok(())
+}
+
+#[test]
+fn selected_predicate_handles_adjacent_empty_and_full_pages() -> PolarsResult<()> {
+    let len = 4_096;
+    let data = write_primitive(input_values(len))?;
+    let page_lengths = primitive_page_lengths(&data)?;
+    assert!(page_lengths.len() >= 2);
+
+    for selected_page in [0, 1] {
+        let selected_start = page_lengths[..selected_page].iter().sum::<usize>();
+        let selected_end = selected_start + page_lengths[selected_page];
+        let input_selection = Bitmap::from_iter(
+            (0..len).map(|index| (selected_start..selected_end).contains(&index)),
+        );
+        let evaluated_rows = Arc::new(AtomicUsize::new(0));
+        let predicate = PredicateFilter {
+            predicate: Arc::new(GreaterThan {
+                threshold: -1,
+                null_matches: true,
+                evaluated_rows: Some(evaluated_rows.clone()),
+            }),
+            include_values: true,
+        };
+
+        let (values, mask) =
+            decode_primitive(data.clone(), predicate, Some(input_selection.clone()))?;
+        let expected_values = (selected_start..selected_end)
+            .map(|index| (index % 11 != 0).then_some(index as i32))
+            .collect::<Vec<_>>();
+
+        assert_eq!(mask, input_selection);
+        assert_eq!(values, expected_values);
+        assert_eq!(
+            evaluated_rows.load(Ordering::Relaxed),
+            page_lengths[selected_page],
+        );
+    }
     Ok(())
 }
 

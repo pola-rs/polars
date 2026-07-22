@@ -424,8 +424,11 @@ pub(super) trait Decoder: Sized {
             Some(Filter::Mask(input_selection.clone())),
             &mut chunks,
         )?;
-        let intermediate_array = if !chunks.is_empty() {
-            chunks.pop().unwrap()
+        // Each call decodes one page. Chunked decoders may emit one array;
+        // other decoders append to `intermediate_array`.
+        debug_assert!(chunks.len() <= 1);
+        let intermediate_array = if let Some(chunk) = chunks.pop() {
+            chunk
         } else {
             self.finalize(dtype.underlying_physical_type(), dict, intermediate_array)?
         }
@@ -453,7 +456,7 @@ pub(super) trait Decoder: Sized {
                 && selected_predicate_iter
                     .next()
                     .expect("input selection cardinality must match decoded values");
-            // SAFETY: Capacity for the full input selection was reserved above.
+            // SAFETY: Capacity for full input selection was reserved above.
             unsafe { pred_true_mask.push_unchecked(is_predicate_true) };
         }
         debug_assert!(selected_predicate_iter.next().is_none());
