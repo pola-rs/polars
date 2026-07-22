@@ -9,6 +9,7 @@ from polars._dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars._utils.logging import eprint
 from polars.datatypes import Null, Time
 from polars.datatypes.convert import unpack_dtypes
+from polars.io._utils import null_count_dtype
 from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
 
 if TYPE_CHECKING:
@@ -106,23 +107,6 @@ def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
         raise TypeError(msg)
 
 
-def _null_count_dtype(dtype: PolarsDataType) -> PolarsDataType:
-    """Statistics-frame dtype for a column's ``null_count``.
-
-    Scalar (and non-struct nested) columns carry a single row-level null count (the
-    index type). Struct columns carry a *per-field* null count mirroring the column
-    shape (each leaf replaced by the index type), so the skip-batch predicate can prune
-    on an individual struct field via ``col("<c>_nc").struct.field(..)``.
-    """
-    import polars as pl
-
-    if isinstance(dtype, pl.Struct):
-        return pl.Struct(
-            {field.name: _null_count_dtype(field.dtype) for field in dtype.fields}
-        )
-    return pl.get_index_type()
-
-
 def _extract_table_statistics_from_delta_add_actions(
     add_actions_df: DataFrame,
     *,
@@ -167,7 +151,7 @@ def _extract_table_statistics_from_delta_add_actions(
         dtype = schema[col_name]
         # The skip-batch predicate expects `<col>_nc` in the index type (a per-field
         # struct of index counts for struct columns), so normalise the counts here.
-        nc_dtype = _null_count_dtype(dtype)
+        nc_dtype = null_count_dtype(dtype)
         col_nc = null_count_cols.get(col_name)
         col_min = min_cols.get(col_name)
         col_max = max_cols.get(col_name)

@@ -1130,6 +1130,41 @@ def test_scan_iceberg_extra_struct_fields(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_filter_on_struct_field_28476(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "order_id", StringType()),
+            NestedField(
+                2,
+                "order_details",
+                StructType(NestedField(3, "qid", StringType())),
+            ),
+        ),
+    )
+    df = pl.DataFrame(
+        {
+            "order_id": ["a", "b", "c"],
+            "order_details": [{"qid": "X1"}, {"qid": "X2"}, {"qid": "X3"}],
+        },
+        schema={
+            "order_id": pl.String,
+            "order_details": pl.Struct({"qid": pl.String}),
+        },
+    )
+    df.write_iceberg(tbl, mode="append")
+
+    q = pl.scan_iceberg(tbl).filter(pl.col("order_details").struct.field("qid") == "X2")
+    expected = df.slice(1, 1)
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+        expected,
+    )
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_column_deletion(tmp_path: Path) -> None:
     catalog = SqlCatalog(
         "default",
