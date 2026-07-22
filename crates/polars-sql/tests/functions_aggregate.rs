@@ -185,3 +185,101 @@ fn test_corr_group_by() {
 
     assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
 }
+
+#[test]
+fn test_count_dtype_and_negation() {
+    let df = df! { "a" => [1, 2, 3] }.unwrap().lazy();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df.clone());
+    let actual = ctx
+        .execute("SELECT COUNT(*) AS c FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+    assert_eq!(actual.column("c").unwrap().dtype(), &DataType::Int64);
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let actual = ctx
+        .execute("SELECT -COUNT(*) AS c FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+    let expected = df! { "c" => [-3i64] }.unwrap();
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+}
+
+#[test]
+fn test_sum_literal() {
+    let df = df! { "a" => [1, 2, 3] }.unwrap().lazy();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let actual = ctx
+        .execute("SELECT SUM(5) AS s, SUM(-3) AS t FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+    let expected = df! { "s" => [15i64], "t" => [-9i64] }.unwrap();
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+}
+
+#[test]
+fn test_sum_literal_empty_table() {
+    let df = df! { "a" => Vec::<i32>::new() }.unwrap().lazy();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let actual = ctx
+        .execute("SELECT SUM(5) AS s FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+    let expected = df! { "s" => [Option::<i64>::None] }.unwrap();
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+}
+
+#[test]
+fn test_sum_min_max_empty_and_null_group() {
+    let df = df! {
+        "g" => ["a", "a", "b", "b"],
+        "v" => [Some(10), Some(20), None::<i32>, None],
+    }
+    .unwrap()
+    .lazy();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df.clone());
+    let actual = ctx
+        .execute(
+            "SELECT g, SUM(v) AS s, MIN(v) AS mn, MAX(v) AS mx \
+             FROM df GROUP BY g ORDER BY g",
+        )
+        .unwrap()
+        .collect()
+        .unwrap();
+    let expected = df! {
+        "g" => ["a", "b"],
+        "s" => [Some(30), None],
+        "mn" => [Some(10), None],
+        "mx" => [Some(20), None],
+    }
+    .unwrap();
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let actual = ctx
+        .execute("SELECT SUM(v) AS s, MIN(v) AS mn, MAX(v) AS mx FROM df WHERE v > 1000")
+        .unwrap()
+        .collect()
+        .unwrap();
+    let expected = df! {
+        "s" => [Option::<i32>::None],
+        "mn" => [Option::<i32>::None],
+        "mx" => [Option::<i32>::None],
+    }
+    .unwrap();
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+}

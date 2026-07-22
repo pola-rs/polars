@@ -93,20 +93,14 @@ sqlite/in2.slt:243
 sqlite/in2.slt:247
 
 # sqlite/random/aggregates_slt_good_0.slt (19 entries)
-sqlite/random/aggregates_slt_good_0.slt:141
-sqlite/random/aggregates_slt_good_0.slt:170
 sqlite/random/aggregates_slt_good_0.slt:206
 sqlite/random/aggregates_slt_good_0.slt:250
-sqlite/random/aggregates_slt_good_0.slt:357
 sqlite/random/aggregates_slt_good_0.slt:433
-sqlite/random/aggregates_slt_good_0.slt:486
 sqlite/random/aggregates_slt_good_0.slt:512
 sqlite/random/aggregates_slt_good_0.slt:555
 sqlite/random/aggregates_slt_good_0.slt:600
 sqlite/random/aggregates_slt_good_0.slt:621
-sqlite/random/aggregates_slt_good_0.slt:632
 sqlite/random/aggregates_slt_good_0.slt:654
-sqlite/random/aggregates_slt_good_0.slt:679
 sqlite/random/aggregates_slt_good_0.slt:744
 sqlite/random/aggregates_slt_good_0.slt:764
 sqlite/random/aggregates_slt_good_0.slt:786
@@ -117,15 +111,10 @@ sqlite/random/aggregates_slt_good_0.slt:998
 sqlite/random/aggregates_slt_good_50.slt:78
 sqlite/random/aggregates_slt_good_50.slt:141
 sqlite/random/aggregates_slt_good_50.slt:302
-sqlite/random/aggregates_slt_good_50.slt:314
 sqlite/random/aggregates_slt_good_50.slt:348
 sqlite/random/aggregates_slt_good_50.slt:428
-sqlite/random/aggregates_slt_good_50.slt:528
-sqlite/random/aggregates_slt_good_50.slt:589
-sqlite/random/aggregates_slt_good_50.slt:672
 sqlite/random/aggregates_slt_good_50.slt:805
 sqlite/random/aggregates_slt_good_50.slt:810
-sqlite/random/aggregates_slt_good_50.slt:821
 sqlite/random/aggregates_slt_good_50.slt:834
 sqlite/random/aggregates_slt_good_50.slt:845
 sqlite/random/aggregates_slt_good_50.slt:953
@@ -4872,7 +4861,6 @@ sqlite/slt_lang_aggfunc.slt:367
 sqlite/slt_lang_aggfunc.slt:381
 sqlite/slt_lang_aggfunc.slt:386
 sqlite/slt_lang_aggfunc.slt:391
-sqlite/slt_lang_aggfunc.slt:400
 sqlite/slt_lang_aggfunc.slt:405
 sqlite/slt_lang_aggfunc.slt:410
 sqlite/slt_lang_aggfunc.slt:415

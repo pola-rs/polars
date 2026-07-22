@@ -1650,7 +1650,7 @@ impl SQLFunctionVisitor<'_> {
             Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),
             StdDev => self.visit_unary(|e| e.std(1)),
             StringAgg => self.visit_string_agg(),
-            Sum => self.visit_unary_with_opt_cumulative(sql_sum, Expr::cum_sum),
+            Sum => self.visit_sum(),
             Total => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
             Variance => self.visit_unary(|e| e.var(1)),
 
@@ -2292,10 +2292,12 @@ impl SQLFunctionVisitor<'_> {
                     },
                     [FunctionArgExpr::Expr(_)] => {
                         // COUNT(column) with ORDER BY -> use cum_count
-                        return self.visit_unary_with_opt_cumulative(
-                            |e| e.count(),
-                            |e, reverse| e.cum_count(reverse),
-                        );
+                        return self
+                            .visit_unary_with_opt_cumulative(
+                                |e| e.count(),
+                                |e, reverse| e.cum_count(reverse),
+                            )
+                            .map(|e| e.cast(DataType::Int64));
                     },
                     _ => {},
                 }
@@ -2325,7 +2327,38 @@ impl SQLFunctionVisitor<'_> {
             },
             _ => self.not_supported_error()?,
         };
-        self.apply_window_spec(count_expr, &self.func.over)
+        self.apply_window_spec(count_expr.cast(DataType::Int64), &self.func.over)
+    }
+
+    fn visit_sum(&mut self) -> PolarsResult<Expr> {
+        match self.func.over.as_ref() {
+            Some(window_type) => {
+                let spec = self.resolve_window_spec(window_type)?;
+                self.apply_cumulative_window(Expr::sum, Expr::cum_sum, &spec)
+            },
+            None => {
+                let args = extract_args(self.func)?;
+                let arg = match args.as_slice() {
+                    [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
+                    [FunctionArgExpr::Wildcard] => {
+                        self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
+                    },
+                    _ => return self.not_supported_error(),
+                };
+                let (total, non_empty) = match &arg {
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(_))) => {
+                        ((arg * len()).cast(DataType::Int64), len().gt(lit(0)))
+                    },
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_))) => {
+                        (arg * len(), len().gt(lit(0)))
+                    },
+                    _ => (arg.clone().sum(), arg.count().gt(lit(0))),
+                };
+                Ok(when(non_empty)
+                    .then(total)
+                    .otherwise(Expr::Literal(LiteralValue::untyped_null())))
+            },
+        }
     }
 
     fn apply_order_by(&mut self, expr: Expr, order_by: &[OrderByExpr]) -> PolarsResult<Expr> {
@@ -2445,12 +2478,6 @@ impl SQLFunctionVisitor<'_> {
 }
 
 /// SQL requires `SUM` to return `NULL` when there are no non-null values to aggregate.
-fn sql_sum(expr: Expr) -> Expr {
-    when(expr.clone().null_count().lt(expr.clone().len()))
-        .then(expr.sum())
-        .otherwise(lit(LiteralValue::untyped_null()))
-}
-
 /// SQL semantics require `NULL` when there are no complete (eg: both non-null)
 /// pairs to correlate, whereas Polars' native `pearson_corr` returns `NaN`.
 fn sql_corr(a: Expr, b: Expr) -> Expr {
