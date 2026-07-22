@@ -3240,6 +3240,37 @@ def test_join_filter_pushdown_cross_join() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
+def test_join_filter_pushdown_categorical_28426() -> None:
+    categories = pl.Categories("test_join_filter_pushdown_categorical_28426")
+    dtype = pl.Categorical(categories)
+
+    left = pl.LazyFrame(
+        {
+            "left_id": [1, 2],
+            "left_category": pl.Series(["cc", "aa"], dtype=dtype),
+        }
+    )
+    right = pl.LazyFrame(
+        {
+            "right_id": [101, 102],
+            "right_category": pl.Series(["bb", "cc"], dtype=dtype),
+        }
+    )
+
+    q = (
+        left.join(right, how="cross")
+        .filter(pl.col("left_category") < pl.col("right_category"))
+        .select("left_id", "right_id")
+        .sort("left_id", "right_id")
+    )
+
+    expected = pl.DataFrame({"left_id": [2, 2], "right_id": [101, 102]})
+
+    assert "IEJOIN JOIN" not in q.explain()
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expected)
+
+
 def test_join_filter_pushdown_iejoin() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
@@ -4303,3 +4334,69 @@ def test_full_join_coalesce_empty_suffix_non_key_collision_27368() -> None:
 
     with pytest.raises(DuplicateError):
         df1.join(df2, how="full", on="a", coalesce=True, suffix="")
+
+
+_EXPECTED_OUTPUT_28264 = pl.DataFrame(
+    {"a": [1, 9], "x": [10, 90], "b": [1, 9], "y": [100, 900]}
+)
+
+
+@pytest.mark.parametrize(
+    ("how", "expected"),
+    [
+        ("inner", _EXPECTED_OUTPUT_28264),
+        ("left", _EXPECTED_OUTPUT_28264),
+        ("right", _EXPECTED_OUTPUT_28264),
+        ("full", _EXPECTED_OUTPUT_28264),
+        ("semi", pl.DataFrame({"a": [1, 9], "x": [10, 90]})),
+        (
+            "anti",
+            pl.DataFrame({"a": [], "x": []}, schema={"a": pl.Int64, "x": pl.Int64}),
+        ),
+    ],
+)
+def test_join_computed_key_no_temp_column_leak_28264(
+    how: JoinStrategy, expected: pl.DataFrame
+) -> None:
+    left = pl.LazyFrame({"a": [1, 9], "x": [10, 90]})
+    right = pl.LazyFrame({"b": [1, 9], "y": [100, 900]})
+    group = [1]
+
+    result = left.join(
+        right,
+        left_on=pl.col("a").is_in(group),
+        right_on=pl.col("b").is_in(group),
+        how=how,
+    ).collect()
+
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_full_join_coalesce_computed_payload_filter_28264() -> None:
+    left = pl.LazyFrame({"a": [1, 2], "x": [10, 20]})
+    right = pl.LazyFrame({"a": [2, 3], "y": [30, 40]})
+
+    result = left.join(right, on="a", how="full", coalesce=True).collect()
+
+    expected = pl.DataFrame({"a": [1, 2, 3], "x": [10, 20, None], "y": [None, 30, 40]})
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_join_slice_maintain_order_28419_28448() -> None:
+    lf1 = pl.LazyFrame({"a": [1, 0], "s": ["k", "k"]})
+    lf2 = pl.LazyFrame({"a": [0, 1]})
+    q = (
+        lf1.join(lf2, on="a", maintain_order="left_right")
+        .filter(pl.col("s") == "k")
+        .slice(1, 1)
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 0, "s": "k"}))
+
+    lf1 = pl.LazyFrame({"a": [1, 0, 2, 0, 1], "v": [10, 20, 30, 40, 50]})
+    lf2 = pl.LazyFrame({"a": [0, 1, 2], "jx": [9, 8, 7]})
+    q = lf1.join(lf2, on="a", maintain_order="right_left").slice(1, 2)
+
+    assert_frame_equal(
+        q.collect(), pl.DataFrame({"a": [0, 1], "v": [40, 10], "jx": [9, 8]})
+    )

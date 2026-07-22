@@ -19,8 +19,9 @@ pub(super) fn infer_file_schema_impl(
     content_lines: &[Buffer<u8>],
     infer_all_as_str: bool,
     parse_options: &CsvParseOptions,
+    column_names_overwrite: Option<&[PlSmallStr]>,
     schema_overwrite: Option<&Schema>,
-) -> Schema {
+) -> PolarsResult<Schema> {
     let mut headers = header_line
         .as_ref()
         .map(|line| infer_headers(line, parse_options))
@@ -43,7 +44,27 @@ pub(super) fn infer_file_schema_impl(
         );
     }
 
-    build_schema(&headers, &column_types, schema_overwrite)
+    if let Some(column_names_overwrite) = column_names_overwrite {
+        // 2.0: Replace with checks against missing/extra columns policy.
+        polars_ensure!(
+            column_names_overwrite.len() <= headers.len(),
+            ShapeMismatch:
+            "The length of the new names list should be equal to or less than the original column length",
+        );
+        for (i, name) in column_names_overwrite.iter().cloned().enumerate() {
+            if i < headers.len() {
+                headers[i] = name
+            } else {
+                headers.push(name)
+            }
+
+            if i >= column_types.len() {
+                column_types.push(PlIndexSet::from_iter(Some(DataType::Null)))
+            }
+        }
+    }
+
+    Ok(build_schema(&headers, &column_types, schema_overwrite))
 }
 
 fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec<PlSmallStr> {

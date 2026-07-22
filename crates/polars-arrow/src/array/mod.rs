@@ -700,6 +700,7 @@ pub mod indexable;
 pub mod iterator;
 
 mod binview;
+pub use binview::{BINVIEW_ARROW_BUFFER_LEN_LIMIT, BINVIEW_MAX_ROW_BYTE_LEN};
 mod values;
 
 pub use binary::{

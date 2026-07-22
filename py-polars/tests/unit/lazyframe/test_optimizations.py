@@ -699,6 +699,13 @@ def test_slice_pushdown_with_cache_arena_take_panic_26905() -> None:
     )
 
 
+def test_slice_pushdown_past_empty_union_28408() -> None:
+    lf = pl.LazyFrame({"x": [1]})
+    q = pl.concat([lf, lf]).filter(pl.col("x") == 0).slice(1, 1)
+
+    assert_frame_equal(q.collect(), pl.DataFrame(schema={"x": pl.Int64}))
+
+
 def test_slice_pushdown_shared_join_input_28127() -> None:
     lf = pl.LazyFrame({"a": ["x"]}).filter(pl.lit(True)).select("a").slice(0, 1)
     q = lf.join(lf, on="a", how="inner")
@@ -1092,6 +1099,20 @@ def test_forbid_flatten_sliced_union_27455() -> None:
     q = pl.concat([q1.head(1), q2.head(1)])
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 100]}))
+
+    frame_1 = pl.LazyFrame({"x": [1]})
+    frame_2 = pl.LazyFrame({"x": [2]})
+    frame_3 = pl.LazyFrame({"x": [3]})
+    frame_4 = pl.LazyFrame({"x": [4]})
+
+    q = pl.concat(
+        [
+            pl.concat([frame_1, frame_2]),
+            pl.concat([frame_3, frame_4]).slice(0, 1),
+        ]
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": [1, 2, 3]}))
 
 
 def test_lazyframe_gather_select_len() -> None:

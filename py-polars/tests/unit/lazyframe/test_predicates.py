@@ -446,6 +446,37 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     )
 
 
+def test_predicate_pushdown_with_overwritten_window_key_28428() -> None:
+    lf = pl.LazyFrame(
+        {
+            "group": ["a", "a", "b", "b"],
+            "value": [10, 1, 100, -20],
+            "row_id": [0, 1, 2, 3],
+        }
+    )
+
+    q = (
+        lf.with_columns(
+            pl.col("value").sum().over("group").alias("group_sum"),
+            pl.lit("x").alias("group"),
+        )
+        .filter(pl.col("group") == "x")
+        .select("row_id", "group", "value", "group_sum")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "row_id": [0, 1, 2, 3],
+            "group": ["x", "x", "x", "x"],
+            "value": [10, 1, 100, -20],
+            "group_sum": [11, 11, 80, 80],
+        }
+    )
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expected)
+
+
 def test_predicate_reduction() -> None:
     # ensure we get clean reduction without casts
     lf = pl.LazyFrame({"a": [1], "b": [2]})
