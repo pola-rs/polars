@@ -354,7 +354,7 @@ pub(crate) fn parse_datetime(val: &str, fmt: &str) -> Option<NaiveDateTime> {
         .and_then(|c| c.get(1)?.as_str().parse::<u32>().ok())
     {
         let subsec = dt.subsec_nanosecond() as u32;
-        if declared < 9 && subsec % 10u32.pow(9 - declared) != 0 {
+        if declared < 9 && !subsec.is_multiple_of(10u32.pow(9 - declared)) {
             return None;
         }
     }
