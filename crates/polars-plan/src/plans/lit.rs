@@ -61,7 +61,7 @@ impl PartialEq for DynListLiteralValue {
     }
 }
 
-impl Eq for DynLiteralValue {}
+impl Eq for DynListLiteralValue {}
 
 impl Hash for DynLiteralValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
