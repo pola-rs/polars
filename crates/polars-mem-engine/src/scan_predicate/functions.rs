@@ -481,11 +481,12 @@ where
     } = unified_scan_args.as_mut();
 
     // Ensure these are None.
-    let _ = row_index.as_ref().expect("{unified_scan_args:?}");
+    assert!(row_index.is_none(), "{unified_scan_args:?}");
     // In cloud this is allowed.
-    if !allow_pre_slice {
-        let _ = pre_slice.as_ref().expect("{unified_scan_args:?}");
-    }
+    assert!(
+        pre_slice.is_none() | allow_pre_slice,
+        "{unified_scan_args:?}"
+    );
 
     // Reconcile pre-decoded state with the filter: clear what's stale,
     // gather what survives.
