@@ -1667,3 +1667,10 @@ def test_cspe_with_pushable_filters_scan_19479(tmp_path: Path) -> None:
 
     result = pl.concat([expr1, expr2])
     assert "CACHE[id:" not in result.explain()
+
+
+def test_cse_single_scalar_does_not_broadcast_28407() -> None:
+    e = pl.lit(5).abs()
+    q = pl.LazyFrame({"a": [1, 2, 3]}).select((e + e).alias("o"))
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"o": 10}, schema={"o": pl.Int32}))

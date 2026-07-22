@@ -12,10 +12,12 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::_boost_hash_combine;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::vec::CapacityByFactor;
 
 use crate::constants::CSE_REPLACED;
 use crate::plans::aexpr::is_inherently_nondeterministic_top_level;
+use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::visitor::{
     IRNode, IRNodeArena, RewriteRecursion, RewritingVisitor, TreeWalker as _, VisitRecursion,
     Visitor,
@@ -573,6 +575,9 @@ struct CommonSubExprRewriter<'a> {
     rewritten: bool,
     is_group_by: bool,
     is_element_wise_select_only: bool,
+
+    nodes_scratch: ScratchVec<Node>,
+    heights_scratch: ScratchVec<ExprProjectionHeight>,
 }
 
 impl<'a> CommonSubExprRewriter<'a> {
@@ -594,6 +599,8 @@ impl<'a> CommonSubExprRewriter<'a> {
             rewritten: false,
             is_group_by,
             is_element_wise_select_only,
+            nodes_scratch: ScratchVec::default(),
+            heights_scratch: ScratchVec::default(),
         }
     }
 }
@@ -672,8 +679,22 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         };
         if *count > 1 {
             self.replaced_identifiers.insert(id.clone(), (), arena);
+            let recursion = if self.is_element_wise_select_only
+                && !matches!(
+                    aexpr_projection_height_rec(
+                        ae_node.node(),
+                        arena,
+                        &mut self.nodes_scratch,
+                        &mut self.heights_scratch,
+                    ),
+                    ExprProjectionHeight::Column
+                ) {
+                RewriteRecursion::Stop
+            } else {
+                RewriteRecursion::MutateAndStop
+            };
             // rewrite this sub-expression, don't visit its children
-            Ok(RewriteRecursion::MutateAndStop)
+            Ok(recursion)
         } else {
             // This is a unique expression
             // visit its children to see if they are cse
