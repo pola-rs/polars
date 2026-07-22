@@ -150,7 +150,79 @@ pub trait AsRefDataType {
 
 impl Hash for DataType {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        std::mem::discriminant(self).hash(state)
+        std::mem::discriminant(self).hash(state);
+        // Every field that `PartialEq` compares must also be hashed here.
+        //
+        // For most `Hash` consumers (e.g. `HashMap`) hashing only the
+        // discriminant would merely cause collisions, resolved by a follow-up
+        // `==` check. But common-subplan elimination hashes plans with blake3
+        // and treats hash equality *as* plan equality, with no `==` fallback
+        // (see `polars-plan`'s `aexpr::hash`). Any parameter that `==`
+        // distinguishes but `Hash` omits therefore lets CSPE merge distinct
+        // subplans and silently reuse one branch's result for another -- e.g.
+        // `Enum(["a"])` vs `Enum(["b"])`, or `Datetime`s with different time
+        // zones. See #28450.
+        //
+        // The match is intentionally exhaustive (no `_` arm) so that adding a
+        // new parameterized dtype is a compile error until its parameters are
+        // hashed here.
+        match self {
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(precision, scale) => {
+                precision.hash(state);
+                scale.hash(state);
+            },
+            DataType::Datetime(time_unit, time_zone) => {
+                time_unit.hash(state);
+                time_zone.hash(state);
+            },
+            DataType::Duration(time_unit) => time_unit.hash(state),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, width) => {
+                inner.hash(state);
+                width.hash(state);
+            },
+            DataType::List(inner) => inner.hash(state),
+            #[cfg(feature = "object")]
+            DataType::Object(name) => name.hash(state),
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(categories, _) => categories.hash().hash(state),
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Enum(frozen_categories, _) => frozen_categories.hash().hash(state),
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => fields.hash(state),
+            #[cfg(feature = "dtype-extension")]
+            DataType::Extension(instance, storage) => {
+                instance.hash(state);
+                storage.hash(state);
+            },
+            // `PartialEq` treats all `UnknownKind::Int(_)` as equal regardless of
+            // the held value, so only hash the discriminant to stay consistent.
+            DataType::Unknown(kind) => std::mem::discriminant(kind).hash(state),
+            // Parameter-less dtypes: the discriminant hashed above is enough.
+            // Listed explicitly (rather than `_`) to force a compile error when
+            // a new dtype variant is introduced.
+            DataType::Boolean
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            | DataType::UInt128
+            | DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::Int128
+            | DataType::Float16
+            | DataType::Float32
+            | DataType::Float64
+            | DataType::String
+            | DataType::Binary
+            | DataType::BinaryOffset
+            | DataType::Date
+            | DataType::Time
+            | DataType::Null => {},
+        }
     }
 }
 
@@ -1641,5 +1713,85 @@ mod tests {
         expected.insert(DataType::Float64);
 
         assert_eq!(result, expected)
+    }
+
+    fn hash_of(dtype: &DataType) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        dtype.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    // Parameterized dtypes that only differ in their parameters must not hash to
+    // the same value, otherwise strong-hash-based dedup (e.g. common-subplan
+    // elimination) treats them as equal. See #28450.
+    #[test]
+    fn test_parameterized_dtype_hash_distinguishes_params_28450() {
+        let pairs = [
+            (
+                DataType::Datetime(TimeUnit::Microseconds, None),
+                DataType::Datetime(TimeUnit::Nanoseconds, None),
+            ),
+            (
+                DataType::Datetime(TimeUnit::Microseconds, Some(TimeZone::UTC)),
+                DataType::Datetime(
+                    TimeUnit::Microseconds,
+                    Some(
+                        TimeZone::opt_try_new(Some("Europe/Amsterdam"))
+                            .unwrap()
+                            .unwrap(),
+                    ),
+                ),
+            ),
+            (
+                DataType::List(Box::new(DataType::Int32)),
+                DataType::List(Box::new(DataType::Int64)),
+            ),
+        ];
+
+        for (a, b) in pairs {
+            assert_ne!(a, b);
+            assert_ne!(
+                hash_of(&a),
+                hash_of(&b),
+                "hashes collided for {a:?} vs {b:?}"
+            );
+            // Equal dtypes must still hash equally.
+            assert_eq!(hash_of(&a), hash_of(&a.clone()));
+        }
+    }
+
+    #[cfg(feature = "dtype-decimal")]
+    #[test]
+    fn test_decimal_dtype_hash_distinguishes_params_28450() {
+        let a = DataType::Decimal(10, 2);
+        let b = DataType::Decimal(20, 4);
+        assert_ne!(a, b);
+        assert_ne!(hash_of(&a), hash_of(&b));
+    }
+
+    #[cfg(feature = "dtype-duration")]
+    #[test]
+    fn test_duration_dtype_hash_distinguishes_params_28450() {
+        let a = DataType::Duration(TimeUnit::Microseconds);
+        let b = DataType::Duration(TimeUnit::Nanoseconds);
+        assert_ne!(a, b);
+        assert_ne!(hash_of(&a), hash_of(&b));
+    }
+
+    #[cfg(feature = "dtype-categorical")]
+    #[test]
+    fn test_enum_dtype_hash_distinguishes_categories_28450() {
+        let make = |cats: &[&str]| {
+            let frozen = FrozenCategories::new(cats.iter().copied()).unwrap();
+            let mapping = frozen.mapping().clone();
+            DataType::Enum(frozen, mapping)
+        };
+        let a = make(&["a"]);
+        let b = make(&["b"]);
+        assert_ne!(a, b);
+        assert_ne!(hash_of(&a), hash_of(&b));
+        assert_eq!(hash_of(&a), hash_of(&make(&["a"])));
     }
 }

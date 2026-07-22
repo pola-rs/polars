@@ -1667,3 +1667,87 @@ def test_cspe_with_pushable_filters_scan_19479(tmp_path: Path) -> None:
 
     result = pl.concat([expr1, expr2])
     assert "CACHE[id:" not in result.explain()
+
+
+@pytest.mark.parametrize(
+    ("dtype_a", "dtype_b"),
+    [
+        # Enum categories: only "a"/"b" respectively survives the cast.
+        (pl.Enum(["a"]), pl.Enum(["b"])),
+        # Decimal precision: 123456 overflows precision 3 (-> null) but fits 12.
+        (pl.Decimal(3, 0), pl.Decimal(12, 0)),
+    ],
+)
+def test_cspe_parameterized_filter_branches_28450(
+    dtype_a: pl.DataType, dtype_b: pl.DataType
+) -> None:
+    # CSPE must not treat two branches as identical when they only differ in the
+    # parameters of an otherwise equal dtype family. Previously the dtype hash
+    # only considered the dtype's discriminant, so e.g. `Enum(["a"])` and
+    # `Enum(["b"])` hashed the same and CSPE reused one branch's filtered result
+    # for the other.
+    base = pl.DataFrame({"value": [1, 123456]}).lazy()
+    if dtype_a == pl.Enum(["a"]):
+        base = pl.DataFrame({"value": ["a", "b"]}).lazy()
+
+    def branch(dtype: pl.DataType, name: str) -> pl.LazyFrame:
+        return base.filter(
+            pl.col("value").cast(dtype, strict=False).is_not_null()
+        ).select(pl.lit(name).alias("branch"), "value")
+
+    q = pl.concat([branch(dtype_a, "group_a"), branch(dtype_b, "group_b")]).sort(
+        ["branch", "value"]
+    )
+
+    # Sanity: the two branches genuinely differ, so a spurious merge is visible.
+    no_cspe = q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False))
+    assert_frame_equal(q.collect(), no_cspe)
+
+
+@pytest.mark.parametrize(
+    ("dtype_a", "dtype_b"),
+    [
+        (pl.Datetime("us", "UTC"), pl.Datetime("us", "Asia/Kolkata")),
+        (pl.Datetime("us"), pl.Datetime("ns")),
+    ],
+)
+def test_cspe_parameterized_temporal_branches_28450(
+    dtype_a: pl.DataType, dtype_b: pl.DataType
+) -> None:
+    # Same bug, exercised through a shared subplan whose *value* depends on the
+    # dtype parameter (time zone / time unit): casting an integer to a
+    # parameterized `Datetime` and formatting it produces different strings, so a
+    # spurious CSPE merge reuses one branch's timestamps for the other.
+    base = pl.DataFrame({"value": [0, 3_600_000_000]}).lazy()
+
+    def branch(dtype: pl.DataType, name: str) -> pl.LazyFrame:
+        shared = base.select(pl.col("value").cast(dtype).dt.to_string().alias("ts"))
+        return shared.select(pl.lit(name).alias("branch"), "ts")
+
+    q = pl.concat([branch(dtype_a, "group_a"), branch(dtype_b, "group_b")]).sort(
+        ["branch", "ts"]
+    )
+
+    no_cspe = q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False))
+    assert_frame_equal(q.collect(), no_cspe)
+
+
+def test_cspe_identical_parameterized_branches_still_shared_28450() -> None:
+    # The complement of the fix: branches that share the *same* parameterized
+    # dtype must still be de-duplicated, so we did not fix correctness by simply
+    # disabling the optimization.
+    base = pl.DataFrame({"value": ["a", "b"]}).lazy()
+
+    def branch(name: str) -> pl.LazyFrame:
+        return base.filter(
+            pl.col("value").cast(pl.Enum(["a", "b"]), strict=False).is_not_null()
+        ).select(pl.lit(name).alias("branch"), "value")
+
+    q = pl.concat([branch("group_a"), branch("group_b")])
+
+    # The identical filter subplan is still shared across both branches.
+    assert q.explain().count("CACHE[id:") == 2
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
