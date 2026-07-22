@@ -11940,7 +11940,7 @@ Consider using {self}.implode() instead"""
         ┌─────┬──────────┐
         │ a   ┆ replaced │
         │ --- ┆ ---      │
-        │ i64 ┆ i64      │
+        │ i64 ┆ i32      │
         ╞═════╪══════════╡
         │ 1   ┆ 100      │
         │ 2   ┆ 200      │
@@ -11956,7 +11956,7 @@ Consider using {self}.implode() instead"""
         ┌─────┬──────────┐
         │ a   ┆ replaced │
         │ --- ┆ ---      │
-        │ i64 ┆ i64      │
+        │ i64 ┆ i32      │
         ╞═════╪══════════╡
         │ 1   ┆ 100      │
         │ 2   ┆ 200      │
@@ -11979,7 +11979,7 @@ Consider using {self}.implode() instead"""
         ┌─────┬──────────┐
         │ a   ┆ replaced │
         │ --- ┆ ---      │
-        │ i64 ┆ i64      │
+        │ i64 ┆ i32      │
         ╞═════╪══════════╡
         │ 1   ┆ -1       │
         │ 2   ┆ 200      │
@@ -11997,7 +11997,7 @@ Consider using {self}.implode() instead"""
         ┌─────┬──────────┐
         │ a   ┆ replaced │
         │ --- ┆ ---      │
-        │ str ┆ i64      │
+        │ str ┆ i32      │
         ╞═════╪══════════╡
         │ x   ┆ 1        │
         │ y   ┆ 2        │

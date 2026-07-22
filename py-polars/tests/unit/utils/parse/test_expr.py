@@ -56,7 +56,7 @@ def test_parse_into_expression_whenthen(input: Any) -> None:
 @pytest.mark.parametrize("input", [[1, 2, 3], (1, 2)])
 def test_parse_into_expression_list(input: Any) -> None:
     result = wrap_expr(parse_into_expression(input))
-    expected = pl.lit(pl.Series("literal", [input]))
+    expected = pl.lit(input)
     assert_expr_equal(result, expected)
 
 

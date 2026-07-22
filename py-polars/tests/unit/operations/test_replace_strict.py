@@ -27,7 +27,7 @@ def test_replace_strict_mapping_null_not_specified() -> None:
 
     result = s.replace_strict({1: 10, 2: 20})
 
-    expected = pl.Series("a", [10, 20, 20, None, None])
+    expected = pl.Series("a", [10, 20, 20, None, None], dtype=pl.Int32)
     assert_series_equal(result, expected)
 
 
@@ -36,7 +36,7 @@ def test_replace_strict_mapping_null_specified() -> None:
 
     result = s.replace_strict({1: 10, 2: 20, None: 0})
 
-    expected = pl.Series("a", [10, 20, 20, 0, 0])
+    expected = pl.Series("a", [10, 20, 20, 0, 0], dtype=pl.Int32)
     assert_series_equal(result, expected)
 
 
@@ -45,7 +45,7 @@ def test_replace_strict_mapping_null_replace_by_null() -> None:
 
     result = s.replace_strict({1: 10, 2: None, None: 0})
 
-    expected = pl.Series("a", [10, None, None, 0])
+    expected = pl.Series("a", [10, None, None, 0], dtype=pl.Int32)
     assert_series_equal(result, expected)
 
 
@@ -54,7 +54,7 @@ def test_replace_strict_mapping_null_with_default() -> None:
 
     result = s.replace_strict({1: 10}, default=0)
 
-    expected = pl.Series("a", [10, 0, 0, 0, 0])
+    expected = pl.Series("a", [10, 0, 0, 0, 0], dtype=pl.Int32)
     assert_series_equal(result, expected)
 
 
@@ -238,7 +238,7 @@ def test_replace_strict_mix() -> None:
     expected = pl.DataFrame(
         [
             pl.Series("float_to_boolean", [True, None], dtype=pl.Boolean),
-            pl.Series("boolean_to_int", [1, 0], dtype=pl.Int64),
+            pl.Series("boolean_to_int", [1, 0], dtype=pl.Int32),
             pl.Series("boolean_to_str", ["1", "0"], dtype=pl.String),
         ]
     )
@@ -253,14 +253,14 @@ def int_mapping() -> dict[int, int]:
 def test_replace_strict_int_to_int2(int_mapping: dict[int, int]) -> None:
     s = pl.Series([1, 22, None, 44, -5])
     result = s.replace_strict(int_mapping, default=None)
-    expected = pl.Series([11, None, None, None, None], dtype=pl.Int64)
+    expected = pl.Series([11, None, None, None, None], dtype=pl.Int32)
     assert_series_equal(result, expected)
 
 
 def test_replace_strict_int_to_int3(int_mapping: dict[int, int]) -> None:
     s = pl.Series([1, 22, None, 44, -5], dtype=pl.Int16)
     result = s.replace_strict(int_mapping, default=9)
-    expected = pl.Series([11, 9, 9, 9, 9], dtype=pl.Int64)
+    expected = pl.Series([11, 9, 9, 9, 9], dtype=pl.Int32)
     assert_series_equal(result, expected)
 
 
@@ -282,7 +282,7 @@ def test_replace_strict_bool_to_int() -> None:
     s = pl.Series([True, False, False, None])
     mapping = {True: 1, False: 0}
     result = s.replace_strict(mapping)
-    expected = pl.Series([1, 0, 0, None])
+    expected = pl.Series([1, 0, 0, None], dtype=pl.Int32)
     assert_series_equal(result, expected)
 
 
@@ -338,7 +338,7 @@ def test_replace_strict_str_to_int() -> None:
     s = pl.Series(["a", "b"])
     mapping = {"a": 1, "b": 2}
     result = s.replace_strict(mapping)
-    expected = pl.Series([1, 2])
+    expected = pl.Series([1, 2], dtype=pl.Int32)
     assert_series_equal(result, expected)
 
 
@@ -417,7 +417,7 @@ def test_replace_strict_nested_mapping_22554() -> None:
                 3: [37],
             }
         ),
-        pl.Series([[42], [13], [37]]),
+        pl.Series([[42], [13], [37]], dtype=pl.List(pl.Int32)),
     )
 
 
