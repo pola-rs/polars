@@ -102,7 +102,9 @@ impl SQLContext {
     // Lower `[NOT] EXISTS (SELECT ... FROM rel WHERE rel.k = outer.k ...)` to a
     // semi / anti join by decorrelating the equi-correlation predicate(s) into
     // join keys. DISTINCT is ignored: existence is invariant under
-    // deduplication.
+    // deduplication. When the WHERE mixes in (or only has) a non-equality
+    // correlation predicate, falls back to `try_rewrite_exists_as_count_filter`,
+    // which handles arbitrary comparisons.
     #[cfg(feature = "semi_anti_join")]
     fn try_rewrite_exists_as_join(
         &mut self,
@@ -125,27 +127,129 @@ impl SQLContext {
         else {
             return Ok(None);
         };
-        let Some(SubqueryConjuncts {
+        if let Some(SubqueryConjuncts {
             left_on,
             right_on,
             local_filters,
-        }) = ctx.split_subquery_conjuncts(selection, &inner_names, &inner_schema, outer_schema)?
-        else {
-            return Ok(None);
-        };
-        // An uncorrelated EXISTS (no correlation key found) has no join key to
-        // build from, so leave it to the existing path.
-        if left_on.is_empty() {
-            return Ok(None);
+        }) =
+            ctx.split_subquery_conjuncts(selection, &inner_names, &inner_schema, outer_schema)?
+        {
+            // An uncorrelated EXISTS (no correlation key found) has no join key
+            // to build from, so leave it to the existing path.
+            return Ok(if left_on.is_empty() {
+                None
+            } else {
+                Some(ctx.finish_decorrelated_join(
+                    lf,
+                    inner_lf,
+                    left_on,
+                    right_on,
+                    local_filters,
+                    negated,
+                ))
+            });
         }
-        Ok(Some(ctx.finish_decorrelated_join(
+        ctx.try_rewrite_exists_as_count_filter(
             lf,
             inner_lf,
-            left_on,
-            right_on,
-            local_filters,
+            selection,
+            &inner_names,
+            &inner_schema,
+            outer_schema,
             negated,
-        )))
+        )
+    }
+
+    // Lower `[NOT] EXISTS (SELECT ... FROM rel WHERE <comparison-correlated>)`
+    // where the correlation predicate(s) aren't all plain equalities (so
+    // `split_subquery_conjuncts` bailed) to `count(*) > 0` (`== 0` for NOT
+    // EXISTS), reusing the row-index + `join_where` + group_by + left-join-back
+    // machinery `try_decorrelate_scalar_subquery` uses for correlated scalar
+    // aggregates. Unlike that function, the result is folded straight into a
+    // filter rather than left as a joined-on column, since an EXISTS predicate
+    // is consumed directly by the WHERE clause.
+    #[cfg(feature = "semi_anti_join")]
+    #[expect(clippy::too_many_arguments)]
+    fn try_rewrite_exists_as_count_filter(
+        mut self,
+        lf: &LazyFrame,
+        inner_lf: LazyFrame,
+        selection: &SQLExpr,
+        inner_names: &PlHashSet<String>,
+        inner_schema: &Schema,
+        outer_schema: &Schema,
+        negated: bool,
+    ) -> PolarsResult<Option<LazyFrame>> {
+        let mut corr_preds = Vec::new();
+        let mut local_filters = Vec::new();
+        for conj in MintermIter::new(selection) {
+            if let Some(pred) =
+                scalar_correlation_predicate(conj, inner_names, inner_schema, outer_schema)
+            {
+                corr_preds.push(pred);
+            } else if let Some(filter) =
+                self.try_parse_inner_only_expr(conj, inner_schema, outer_schema)?
+            {
+                local_filters.push(filter);
+            } else {
+                return Ok(None);
+            }
+        }
+        // No correlation: leave it to the existing (equi-only) path, which
+        // handles the fully-uncorrelated case identically.
+        if corr_preds.is_empty() {
+            return Ok(None);
+        }
+
+        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
+        let idx_name = format_pl_smallstr!("{prefix}idx");
+        let count_name = format_pl_smallstr!("{prefix}cnt");
+
+        // Apply inner-only filters, then rename inner columns to collision-free
+        // names so they can't clash with outer columns of the same name (as in
+        // a self-correlated `t1 AS x` subquery over outer `t1`).
+        let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
+        let rename_from: Vec<PlSmallStr> = inner_schema.iter_names().cloned().collect();
+        let rename_to: Vec<PlSmallStr> = rename_from
+            .iter()
+            .map(|name| prefixed_inner(&prefix, name))
+            .collect();
+        let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
+        inner_renamed.set_cached_arena(self.lp_arena, self.expr_arena);
+
+        let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
+
+        let outer_indexed = lf.clone().with_row_index(idx_name.clone(), None);
+        let matched = outer_indexed
+            .clone()
+            .join_builder()
+            .with(inner_renamed)
+            .how(JoinType::Inner)
+            .join_where(join_preds);
+        let grouped = matched
+            .group_by([col(idx_name.clone())])
+            .agg([len().alias(count_name.clone())]);
+
+        let joined = outer_indexed
+            .join_builder()
+            .with(grouped)
+            .left_on([col(idx_name.clone())])
+            .right_on([col(idx_name.clone())])
+            .how(JoinType::Left)
+            .coalesce(JoinCoalesce::CoalesceColumns)
+            .maintain_order(MaintainOrderJoin::Left)
+            .finish()
+            .with_columns([col(count_name.clone()).fill_null(lit(0))]);
+
+        let matches = if negated {
+            col(count_name.clone()).eq(lit(0))
+        } else {
+            col(count_name.clone()).gt(lit(0))
+        };
+        Ok(Some(joined.filter(matches).drop(Selector::ByName {
+            names: Arc::from([idx_name, count_name]),
+            strict: true,
+        })))
     }
 
     // Lower `lhs [NOT] IN (SELECT col FROM rel ...)` to a semi / anti join: the

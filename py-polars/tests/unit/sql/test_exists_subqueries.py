@@ -1,0 +1,145 @@
+import pytest
+
+import polars as pl
+from tests.unit.sql import assert_sql_matches
+
+
+def _frames() -> dict[str, pl.DataFrame]:
+    return {
+        "t1": pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}),
+        "t2": pl.DataFrame({"g": [10, 10, 20], "w": [1, 2, 3]}),
+    }
+
+
+def test_equality_correlated_exists_still_works() -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a FROM t1 WHERE EXISTS "
+            "(SELECT 1 FROM t2 WHERE t2.g = t1.b) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": [1, 2]},
+    )
+
+
+def test_equality_correlated_not_exists_still_works() -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a FROM t1 WHERE NOT EXISTS "
+            "(SELECT 1 FROM t2 WHERE t2.g = t1.b) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": [3]},
+    )
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        ("<", [2, 3]),
+        ("<=", [1, 2, 3]),
+        (">", [1, 2]),
+        (">=", [1, 2, 3]),
+        ("<>", [1, 2, 3]),
+    ],
+)
+def test_exists_inequality_correlation(op: str, expected: list[int]) -> None:
+    # Correlation through a self-referencing alias (`t1 AS x` vs outer `t1`).
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            f"SELECT a FROM t1 WHERE EXISTS "
+            f"(SELECT 1 FROM t1 AS x WHERE x.b {op} t1.b) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": expected},
+    )
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        ("<", [1]),
+        ("<=", []),
+        (">", [3]),
+        (">=", []),
+        ("<>", []),
+    ],
+)
+def test_not_exists_inequality_correlation(op: str, expected: list[int]) -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            f"SELECT a FROM t1 WHERE NOT EXISTS "
+            f"(SELECT 1 FROM t1 AS x WHERE x.b {op} t1.b) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": expected},
+    )
+
+
+def test_exists_empty_inner_result() -> None:
+    # No `x.b` value is ever both less than and greater than the same
+    # `t1.b`, so EXISTS is false for every outer row.
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a FROM t1 WHERE EXISTS "
+            "(SELECT 1 FROM t1 AS x WHERE x.b < t1.b AND x.b > t1.b) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": []},
+    )
+
+
+def test_not_exists_all_rows_match() -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a FROM t1 WHERE NOT EXISTS "
+            "(SELECT 1 FROM t1 AS x WHERE x.b < t1.b AND x.b > t1.b) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": [1, 2, 3]},
+    )
+
+
+def test_exists_inequality_combined_with_other_where_conjunct() -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a FROM t1 WHERE a > 1 AND EXISTS "
+            "(SELECT 1 FROM t1 AS x WHERE x.b < t1.b) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": [2, 3]},
+    )
+
+
+def test_exists_inequality_with_inner_local_filter() -> None:
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a FROM t1 WHERE EXISTS "
+            "(SELECT 1 FROM t2 WHERE t2.g < t1.b AND t2.w > 1) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": [2, 3]},
+    )
+
+
+def test_not_exists_inequality_null_edge_case() -> None:
+    # A NULL correlation column makes every comparison NULL (never true), so
+    # the subquery matches zero rows and NOT EXISTS is true.
+    frames = {"t3": pl.DataFrame({"a": [1, 2, 3], "b": [10, None, 30]})}
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            "SELECT a FROM t3 WHERE NOT EXISTS "
+            "(SELECT 1 FROM t3 AS x WHERE x.b < t3.b) ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": [1, 2]},
+    )

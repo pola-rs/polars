@@ -1,0 +1,142 @@
+# Correlated EXISTS / NOT EXISTS. Equality correlation still lowers to a
+# semi/anti join; comparison correlation (<, <=, >, >=, <>) is decorrelated
+# via the same row-index + join_where + group_by(count) + left-join-back
+# machinery as correlated scalar-aggregate subqueries, folded into a
+# `count > 0` (`count = 0` for NOT EXISTS) filter.
+
+statement ok
+CREATE TABLE t1 (a INT, b INT);
+
+statement ok
+INSERT INTO t1 VALUES (1, 10), (2, 20), (3, 30);
+
+statement ok
+CREATE TABLE t2 (g INT, w INT);
+
+statement ok
+INSERT INTO t2 VALUES (10, 1), (10, 2), (20, 3);
+
+# equality correlation still works (existing semi/anti join fast path)
+
+query I rowsort
+SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.g = t1.b)
+----
+1
+2
+
+query I rowsort
+SELECT a FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t2 WHERE t2.g = t1.b)
+----
+3
+
+# `<` correlation
+
+query I rowsort
+SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b)
+----
+2
+3
+
+query I rowsort
+SELECT a FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b)
+----
+1
+
+# `<=` correlation
+
+query I rowsort
+SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t1 AS x WHERE x.b <= t1.b)
+----
+1
+2
+3
+
+# `>` correlation
+
+query I rowsort
+SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t1 AS x WHERE x.b > t1.b)
+----
+1
+2
+
+query I rowsort
+SELECT a FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t1 AS x WHERE x.b > t1.b)
+----
+3
+
+# `>=` correlation
+
+query I rowsort
+SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t1 AS x WHERE x.b >= t1.b)
+----
+1
+2
+3
+
+# `<>` correlation
+
+query I rowsort
+SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t1 AS x WHERE x.b <> t1.b)
+----
+1
+2
+3
+
+query I rowsort
+SELECT a FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t1 AS x WHERE x.b <> t1.b)
+----
+
+# empty inner result: no `x.b` is ever both less than and greater than the
+# same `t1.b`, so EXISTS is false for every outer row
+
+query I rowsort
+SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b AND x.b > t1.b)
+----
+
+query I rowsort
+SELECT a FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b AND x.b > t1.b)
+----
+1
+2
+3
+
+# combined with an ordinary WHERE conjunct
+
+query I rowsort
+SELECT a FROM t1 WHERE a > 1 AND EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b)
+----
+2
+3
+
+# inner-only local filter applied before the correlation
+
+query I rowsort
+SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.g < t1.b AND t2.w > 1)
+----
+2
+3
+
+query I rowsort
+SELECT a FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t2 WHERE t2.g < t1.b AND t2.w > 1)
+----
+1
+
+# NOT EXISTS null-edge case: a NULL correlation column makes every comparison
+# NULL (never true), so the subquery matches zero rows and NOT EXISTS is true
+
+statement ok
+CREATE TABLE t3 (a INT, b INT);
+
+statement ok
+INSERT INTO t3 VALUES (1, 10), (2, NULL), (3, 30);
+
+query I rowsort
+SELECT a FROM t3 WHERE NOT EXISTS (SELECT 1 FROM t3 AS x WHERE x.b < t3.b)
+----
+1
+2
+
+query I rowsort
+SELECT a FROM t3 WHERE EXISTS (SELECT 1 FROM t3 AS x WHERE x.b < t3.b)
+----
+3
