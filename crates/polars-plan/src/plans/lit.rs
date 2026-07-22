@@ -81,9 +81,7 @@ impl Hash for DynListLiteralValue {
         match self {
             Self::Str(i) => i.hash(state),
             Self::Int(i) => i.hash(state),
-            Self::Float(i) => i
-                .iter()
-                .for_each(|i| i.tot_hash(state)),
+            Self::Float(i) => i.iter().for_each(|i| i.tot_hash(state)),
             Self::List(i) => i.hash(state),
         }
     }
