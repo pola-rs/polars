@@ -36,6 +36,8 @@ Aggregate
      - Concatenates the input string values into a single string, separated by a delimiter.
    * - :ref:`SUM <sum>`
      - Returns the sum of all the elements in the grouping.
+   * - :ref:`TOTAL <total>`
+     - Returns the sum of all the elements in the grouping, returning zero (rather than null) if there are no non-null values.
    * - :ref:`VARIANCE <variance>`
      - Returns the variance of all the elements in the grouping.
 
@@ -470,6 +472,38 @@ Returns the sum of all the elements in the grouping.
     # ╞═════════╪═════════╡
     # │ 6       ┆ 21      │
     # └─────────┴─────────┘
+
+.. _total:
+
+TOTAL
+-----
+Returns the sum of all the elements in the grouping. Unlike :ref:`SUM <sum>` (which
+returns null for an all-null input, per the SQL standard), ``TOTAL`` returns zero.
+The result preserves the summed column's dtype.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+        {"foo": [1, 2, 3], "bar": [None, None, None]},
+        schema={"foo": pl.Int64, "bar": pl.Int64},
+    )
+    df.sql("""
+      SELECT
+        SUM(bar) AS bar_sum,
+        TOTAL(foo) AS foo_total,
+        TOTAL(bar) AS bar_total
+      FROM self
+    """)
+    # shape: (1, 3)
+    # ┌─────────┬───────────┬───────────┐
+    # │ bar_sum ┆ foo_total ┆ bar_total │
+    # │ ---     ┆ ---       ┆ ---       │
+    # │ i64     ┆ i64       ┆ i64       │
+    # ╞═════════╪═══════════╪═══════════╡
+    # │ null    ┆ 6         ┆ 0         │
+    # └─────────┴───────────┴───────────┘
 
 .. _variance:
 

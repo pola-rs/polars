@@ -117,6 +117,46 @@ def test_in_not_in(in_clause: str) -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        # Value set contains NULL
+        ("a IN (1, NULL)", [1]),
+        ("a NOT IN (1, NULL)", []),
+        ("a IN (2, NULL)", [2]),
+        ("a NOT IN (2, NULL)", []),
+        # NULL-free value set
+        ("a IN (1, 2)", [1, 2]),
+        ("a NOT IN (1)", [2, 3]),
+    ],
+)
+def test_in_not_in_null_3vl(predicate: str, expected: list[int]) -> None:
+    # See https://github.com/pola-rs/polars/issues/28433
+    df = pl.DataFrame({"a": [1, 2, None, 3]}, schema={"a": pl.Int64})
+    res = df.sql(f'SELECT a FROM self WHERE {predicate} ORDER BY "a"')
+    assert res["a"].to_list() == expected
+
+
+def test_not_in_null_subquery_3vl() -> None:
+    t = pl.DataFrame({"a": [1, 2, None, 3]}, schema={"a": pl.Int64})
+    u = pl.DataFrame({"b": [1, None, 4]}, schema={"b": pl.Int64})
+    u_no_null = pl.DataFrame({"b": [1, 4]}, schema={"b": pl.Int64})
+
+    def keys(query: str) -> list[int | None]:
+        return ctx.execute(query, eager=True)["a"].to_list()
+
+    with pl.SQLContext(t=t, u=u, u_no_null=u_no_null) as ctx:
+        assert keys("SELECT a FROM t WHERE a NOT IN (SELECT b FROM u)") == []
+        assert keys("SELECT a FROM t WHERE a IN (SELECT b FROM u) ORDER BY a") == [1]
+        assert keys(
+            "SELECT a FROM t WHERE a NOT IN (SELECT b FROM u_no_null) ORDER BY a"
+        ) == [2, 3]
+        assert keys(
+            "SELECT a FROM t WHERE a NOT IN (SELECT b FROM u WHERE b > 100)"
+            " ORDER BY a NULLS FIRST"
+        ) == [None, 1, 2, 3]
+
+
 def test_is_between(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
