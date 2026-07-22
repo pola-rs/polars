@@ -732,3 +732,50 @@ def test_streaming_merge_join_send_port_done_27547() -> None:
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
     assert_frame_equal(actual, expected)
+
+
+def _assert_streaming_matches_in_memory(q: pl.LazyFrame) -> pl.DataFrame:
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+    assert_frame_equal(actual, expected, check_row_order=False)
+    return actual
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "full", "semi", "anti"])
+def test_streaming_equi_join_computed_key_no_temp_leak_28264(how: JoinStrategy) -> None:
+    # Non-elementwise keys materialize as temps; they must not become payload.
+    left = pl.LazyFrame({"a": [1, 9], "x": [10, 90]})
+    right = pl.LazyFrame({"b": [1, 9], "y": [100, 900]})
+    q = left.join(
+        right,
+        left_on=pl.col("a").is_in([1]),
+        right_on=pl.col("b").is_in([1]),
+        how=how,
+    )
+    _assert_streaming_matches_in_memory(q)
+
+
+@pytest.mark.parametrize(
+    ("l_val", "select"),
+    [
+        (1, ["l_loc", "r_loc"]),
+        (1, ["l_loc", "r_loc", "l_val", "r_val"]),
+        (3, ["l_loc", "r_loc", "l_val", "r_val"]),
+    ],
+    ids=["keys_only", "full_payload", "zero_rows"],
+)
+def test_streaming_cross_join_is_in_eq_rewrite_28264(
+    l_val: int, select: list[str]
+) -> None:
+    left = pl.LazyFrame({"l_loc": ["L1"], "l_val": [l_val]})
+    right = pl.LazyFrame({"r_loc": ["L2"], "r_val": [2]})
+    group = ["L1", "L2"]
+    bool_eq = pl.col("l_loc").is_in(group) == pl.col("r_loc").is_in(group)
+    q = (
+        left.join(right, how="cross")
+        .filter(pl.col("l_val") <= pl.col("r_val"))
+        .filter(bool_eq)
+        .select(select)
+    )
+    assert "INNER JOIN" in q.explain(optimized=True)
+    _assert_streaming_matches_in_memory(q)
