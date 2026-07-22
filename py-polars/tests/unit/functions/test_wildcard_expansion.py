@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_series_equal
 
@@ -72,3 +74,13 @@ def test_sum_horizontal_expansion() -> None:
     out = df.select(z=pl.sum_horizontal(pl.all())).to_series()
 
     assert_series_equal(out, pl.Series("z", [3], dtype=pl.Int64))
+
+
+def test_alias_on_multiple_expanded_columns_error() -> None:
+    df = pl.DataFrame({"a": [1], "b": [1]})
+
+    with pytest.raises(
+        pl.exceptions.DuplicateError,
+        match="cannot assign the same alias to multiple aggregated columns",
+    ):
+        df.select(pl.sum("a", "b").alias("c"))
