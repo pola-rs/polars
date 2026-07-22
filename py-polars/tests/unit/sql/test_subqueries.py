@@ -248,18 +248,15 @@ def test_scalar_subquery_null_result() -> None:
     )
 
 
-def test_scalar_subquery_multi_row_takes_first_row() -> None:
-    # PostgreSQL/SQLite/DuckDB all raise a runtime error when a scalar subquery
-    # returns more than one row; Polars does not enforce this (would require
-    # engine-level support to check safely) and instead takes the first row of
-    # the subquery result, so this case is intentionally not run against an
-    # oracle backend.
+def test_scalar_subquery_multi_row_errors() -> None:
+    # PostgreSQL semantics: a scalar subquery returning more than one row is a
+    # runtime error.
     df = pl.DataFrame({"value": [1000, 2000, 3000]})
-    res = pl.sql(
-        "SELECT value FROM df WHERE value = (SELECT value FROM df ORDER BY value)",
-        eager=True,
-    )
-    assert res.to_dict(as_series=False) == {"value": [1000]}
+    with pytest.raises(pl.exceptions.ComputeError, match="aggregation 'item'"):
+        pl.sql(
+            "SELECT value FROM df WHERE value = (SELECT value FROM df ORDER BY value)",
+            eager=True,
+        )
 
 
 def test_derived_table_without_alias() -> None:

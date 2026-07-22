@@ -394,7 +394,7 @@ impl SQLExprVisitor<'_> {
         let new_name = unique_column_name();
         let reduce_expr = match restriction {
             SubqueryRestriction::SingleColumn => first().as_expr().implode(true),
-            SubqueryRestriction::SingleValue => first().as_expr().first(),
+            SubqueryRestriction::SingleValue => first().as_expr().item(true),
         };
         Ok(Expr::SubPlan(
             SpecialEq::new(Arc::new(lf.logical_plan)),

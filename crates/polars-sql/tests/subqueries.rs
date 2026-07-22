@@ -103,15 +103,11 @@ fn test_scalar_subquery_zero_rows_is_null() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_scalar_subquery_multi_row_takes_first() -> PolarsResult<()> {
+fn test_scalar_subquery_multi_row_errors() {
     // PostgreSQL semantics: a scalar subquery returning more than one row is a
-    // runtime error. Polars does not currently enforce that (would need engine
-    // support to check safely under the streaming executor); it silently takes
-    // the first row instead, matching the existing WHERE-clause `SubPlan` rewrite.
-    let df = run("SELECT x FROM df WHERE x = (SELECT x FROM df ORDER BY x)")?;
-    let expected = df! { "x" => [1] }?;
-    assert!(df.equals(&expected));
-    Ok(())
+    // runtime error.
+    let err = run("SELECT x FROM df WHERE x = (SELECT x FROM df ORDER BY x)").unwrap_err();
+    assert!(err.to_string().contains("aggregation 'item'"), "{err}");
 }
 
 #[test]

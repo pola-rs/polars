@@ -124,11 +124,8 @@ SELECT x FROM t WHERE (SELECT x FROM t WHERE x > 100) IS NULL
 4
 5
 
-# a scalar subquery returning more than one row is a runtime error in
-# PostgreSQL; Polars does not enforce this and silently takes the first row
-# instead (see crates/polars-sql commit history for the subquery work)
+# a scalar subquery returning more than one row is a runtime error
+# (PostgreSQL semantics)
 
-query I rowsort
+statement error
 SELECT x FROM t WHERE x = (SELECT x FROM t ORDER BY x)
-----
-1
