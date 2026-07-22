@@ -188,4 +188,4 @@ jobs:
           key: ${{ github.ref_name }}
 
       - name: Run SQL conformance harness
-        run: cargo run -p polars-sqllogictest --release
+        run: cargo run -p polars-sqllogictest

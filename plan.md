@@ -35,7 +35,7 @@ crates/polars-sqllogictest/
 
 - Queries route through `SQLContext::execute(sql)?.collect()`; setup statements route to the shim. `rowsort`/hashing handled by the sqllogictest Runner.
 - **Ratchet CI policy**: failure not in baseline → red; baseline entry now passing → red ("remove it"); print `passed / expected-fail / total` pass-rate every run. `skipif polars` reserved for *intentional* dialect divergences (e.g. integer division), baseline file for *not-yet-implemented*.
-- CI: add a step/job to `.github/workflows/test-rust.yml` running `cargo run -p polars-sqllogictest --release`. No network needed (vendored corpus). Optional nightly job fetches the full external corpus (pinned URL + sha256) and runs report-only.
+- CI: add a step/job to `.github/workflows/test-rust.yml` running `cargo run -p polars-sqllogictest`. No network needed (vendored corpus). Optional nightly job fetches the full external corpus (pinned URL + sha256) and runs report-only.
 
 ## Phase 2 — corpus import & baseline (M) — DONE
 
@@ -120,7 +120,7 @@ Only hard ordering: 1 → 2 → 3. Within Phase 3 the work splits cleanly by fil
 
 ## Verification
 
-- Phase 1 done when: `cargo run -p polars-sqllogictest --release` runs the own-authored `slt/polars/` corpus green in CI, and deliberately breaking a query turns CI red.
+- Phase 1 done when: `cargo run -p polars-sqllogictest` runs the own-authored `slt/polars/` corpus green in CI, and deliberately breaking a query turns CI red.
 - Phase 2 done when: vendored sqlite subset runs with a committed baseline and a printed pass-rate.
 - Each Phase 3 item done when: its `.slt` tests pass, corresponding `expected_failures.txt` entries are removed (pass-rate strictly increases), new Rust tests in `crates/polars-sql/tests/` and Python tests in `py-polars/tests/unit/sql/` (using `assert_sql_matches` against DuckDB/SQLite where semantics allow) pass, and `cargo test -p polars-sql --all-features` + `pytest py-polars/tests/unit/sql` stay green.
 - Semantic spot-checks against PostgreSQL for divergence-prone areas (window peer semantics, division, NULL ordering) via the comparison harness or documented manual checks.
