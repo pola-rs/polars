@@ -77,22 +77,6 @@ impl InternalCloudWriter {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    async fn get_or_init_started_state(&mut self) -> PolarsResult<&mut StartedState> {
-        loop {
-            match &self.state {
-                WriterState::Started(_) => {
-                    let WriterState::Started(state) = &mut self.state else {
-                        unreachable!()
-                    };
-                    return Ok(state);
-                },
-                WriterState::NotStarted | WriterState::FirstPut(_) => self.start().await?,
-                WriterState::Finished => panic!(),
-            }
-        }
-    }
-
     /// Takes `self.state`, replacing with it `Finished`. Returns `None` if `self.state` is not
     /// `Started`.
     fn take_started_state(&mut self) -> Option<StartedState> {
@@ -165,15 +149,13 @@ impl InternalCloudWriter {
                 let io_metrics = self.io_metrics.clone();
                 let num_bytes = payload.content_length() as u64;
 
-                let put_fut = self.store.exec_with_rebuild_retry_on_err(|s| {
+                let upload_fut = self.store.exec_with_rebuild_retry_on_err(|s| {
                     let payload = payload.clone();
                     async move {
                         s.put_opts(path_ref, payload, object_store::PutOptions::default())
                             .await
                     }
                 });
-
-                let upload_fut = async move { put_fut.await.map_err(PolarsError::from) };
 
                 io_metrics.record_bytes_tx(num_bytes, upload_fut).await?;
                 Ok(())
@@ -209,15 +191,24 @@ mod tests {
     use super::*;
     use crate::cloud::object_store_setup::build_object_store;
 
+    fn make_test_url(file_path: &std::path::Path) -> String {
+        let path_str = file_path.to_str().unwrap().replace('\\', "/");
+        if path_str.starts_with('/') {
+            format!("file://{}", path_str)
+        } else {
+            format!("file:///{}", path_str)
+        }
+    }
+
     #[tokio::test]
     async fn test_single_put_buffering() -> PolarsResult<()> {
         let temp_dir = tempfile::tempdir().unwrap();
         let file_path = temp_dir.path().join("test_single_put.txt");
-        let url_str = format!("file://{}", file_path.to_str().unwrap());
+        let url_str = make_test_url(&file_path);
 
         let (_, polars_store) = build_object_store(url_str.as_str().into(), None, false).await?;
 
-        let path = Path::from(file_path.to_str().unwrap());
+        let path = Path::from(file_path.to_str().unwrap().replace('\\', "/"));
 
         let mut writer = InternalCloudWriter {
             store: polars_store,
@@ -244,11 +235,11 @@ mod tests {
     async fn test_transition_to_multipart() -> PolarsResult<()> {
         let temp_dir = tempfile::tempdir().unwrap();
         let file_path = temp_dir.path().join("test_multipart.txt");
-        let url_str = format!("file://{}", file_path.to_str().unwrap());
+        let url_str = make_test_url(&file_path);
 
         let (_, polars_store) = build_object_store(url_str.as_str().into(), None, false).await?;
 
-        let path = Path::from(file_path.to_str().unwrap());
+        let path = Path::from(file_path.to_str().unwrap().replace('\\', "/"));
 
         let mut writer = InternalCloudWriter {
             store: polars_store,
@@ -277,11 +268,11 @@ mod tests {
     async fn test_empty_finish() -> PolarsResult<()> {
         let temp_dir = tempfile::tempdir().unwrap();
         let file_path = temp_dir.path().join("test_empty.txt");
-        let url_str = format!("file://{}", file_path.to_str().unwrap());
+        let url_str = make_test_url(&file_path);
 
         let (_, polars_store) = build_object_store(url_str.as_str().into(), None, false).await?;
 
-        let path = Path::from(file_path.to_str().unwrap());
+        let path = Path::from(file_path.to_str().unwrap().replace('\\', "/"));
 
         let mut writer = InternalCloudWriter {
             store: polars_store,
