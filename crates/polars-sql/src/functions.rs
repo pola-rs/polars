@@ -1607,14 +1607,14 @@ impl SQLFunctionVisitor<'_> {
             // ----
             // Aggregate functions
             // ----
-            Avg => self.visit_unary(Expr::mean),
+            Avg => self.visit_avg(),
             Corr => self.visit_binary(sql_corr),
             Count => self.visit_count(),
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
             CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
             First => self.visit_unary(Expr::first),
             Last => self.visit_unary(Expr::last),
-            Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
+            Max => self.visit_min_max(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
             QuantileCont | QuantileDisc => {
                 let (fname, method) = if matches!(function_name, QuantileCont) {
@@ -1647,7 +1647,7 @@ impl SQLFunctionVisitor<'_> {
                     _ => polars_bail!(SQLSyntax: "{} expects 2 arguments (found {})", fname, args.len()),
                 }
             },
-            Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),
+            Min => self.visit_min_max(Expr::min, Expr::cum_min),
             StdDev => self.visit_unary(|e| e.std(1)),
             StringAgg => self.visit_string_agg(),
             Sum => self.visit_sum(),
@@ -2249,6 +2249,47 @@ impl SQLFunctionVisitor<'_> {
         }
     }
 
+    fn visit_avg(&mut self) -> PolarsResult<Expr> {
+        let (args, is_distinct) = extract_args_distinct(self.func)?;
+        let mut arg = match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
+            [FunctionArgExpr::Wildcard] => {
+                self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
+            },
+            _ => return self.not_supported_error(),
+        };
+        if is_distinct {
+            arg = arg.unique();
+        }
+        self.apply_window_spec(arg.mean(), &self.func.over)
+    }
+
+    /// Like `visit_unary_with_opt_cumulative`, but also accepts a DISTINCT modifier, which is a
+    /// no-op for MIN/MAX.
+    fn visit_min_max(
+        &mut self,
+        f: impl Fn(Expr) -> Expr,
+        cumulative_fn: impl Fn(Expr, bool) -> Expr,
+    ) -> PolarsResult<Expr> {
+        match self.func.over.as_ref() {
+            Some(window_type) => {
+                let spec = self.resolve_window_spec(window_type)?;
+                self.apply_cumulative_window(f, cumulative_fn, &spec)
+            },
+            None => {
+                let (args, _) = extract_args_distinct(self.func)?;
+                let e = match args.as_slice() {
+                    [FunctionArgExpr::Expr(sql_expr)] => f(self.parse_sql_arg(sql_expr)?),
+                    [FunctionArgExpr::Wildcard] => {
+                        f(self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?)
+                    },
+                    _ => return self.not_supported_error(),
+                };
+                self.apply_window_spec(e, &self.func.over)
+            },
+        }
+    }
+
     fn visit_count(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct) = extract_args_distinct(self.func)?;
 
@@ -2337,14 +2378,19 @@ impl SQLFunctionVisitor<'_> {
                 self.apply_cumulative_window(Expr::sum, Expr::cum_sum, &spec)
             },
             None => {
-                let args = extract_args(self.func)?;
-                let arg = match args.as_slice() {
+                let (args, is_distinct) = extract_args_distinct(self.func)?;
+                let mut arg = match args.as_slice() {
                     [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
                     [FunctionArgExpr::Wildcard] => {
                         self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
                     },
                     _ => return self.not_supported_error(),
                 };
+                if is_distinct {
+                    // Also bypasses the literal fast-path below, as it no longer matches
+                    // `Expr::Literal` once wrapped.
+                    arg = arg.unique();
+                }
                 let (total, non_empty) = match &arg {
                     Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(_))) => {
                         ((arg * len()).cast(DataType::Int64), len().gt(lit(0)))

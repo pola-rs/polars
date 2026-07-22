@@ -144,3 +144,70 @@ def test_negated_count_and_sum_interaction() -> None:
         compare_with="sqlite",
         expected={"r": [None]},
     )
+
+
+def test_min_max_distinct_is_noop() -> None:
+    df = pl.DataFrame({"v": [3, 1, 1, None, 3]})
+
+    assert_sql_matches(
+        df,
+        query="SELECT MIN(DISTINCT v) AS mn, MAX(DISTINCT v) AS mx FROM self",
+        compare_with="sqlite",
+        expected={"mn": [1], "mx": [3]},
+    )
+
+
+def test_sum_avg_distinct_dedup() -> None:
+    df = pl.DataFrame({"v": [1, 1, 2, 2, 3, None]})
+
+    assert_sql_matches(
+        df,
+        query="SELECT SUM(DISTINCT v) AS s, AVG(DISTINCT v) AS a FROM self",
+        compare_with="sqlite",
+        expected={"s": [6], "a": [2.0]},
+    )
+
+
+def test_sum_avg_distinct_dedup_group_by() -> None:
+    df = pl.DataFrame(
+        {
+            "g": ["a", "a", "a", "a", "a", "b", "b"],
+            "v": [1, 1, 2, 2, 3, None, None],
+        }
+    )
+
+    assert_sql_matches(
+        df,
+        query="""
+            SELECT g, SUM(DISTINCT v) AS s, AVG(DISTINCT v) AS a
+            FROM self
+            GROUP BY g
+            ORDER BY g
+        """,
+        compare_with="sqlite",
+        expected={"g": ["a", "b"], "s": [6, None], "a": [2.0, None]},
+    )
+
+
+def test_sum_distinct_literal() -> None:
+    # a broadcast literal has a single distinct value, so `SUM(DISTINCT <lit>)`
+    # must not behave like plain `SUM(<lit>)` (which scales with the row count).
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    assert_sql_matches(
+        df,
+        query="SELECT SUM(DISTINCT 5) AS s FROM self",
+        compare_with="sqlite",
+        expected={"s": [5]},
+    )
+
+
+def test_sum_avg_distinct_empty_table() -> None:
+    df = pl.DataFrame({"v": []}, schema={"v": pl.Int64})
+
+    assert_sql_matches(
+        df,
+        query="SELECT SUM(DISTINCT v) AS s, AVG(DISTINCT v) AS a FROM self",
+        compare_with="sqlite",
+        expected={"s": [None], "a": [None]},
+    )

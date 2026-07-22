@@ -241,6 +241,81 @@ fn test_sum_literal_empty_table() {
 }
 
 #[test]
+fn test_min_max_distinct_is_noop() {
+    let df = df! { "a" => [Some(3), Some(1), Some(1), None::<i32>, Some(3)] }
+        .unwrap()
+        .lazy();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df.clone());
+    let actual = ctx
+        .execute("SELECT MIN(DISTINCT a) AS mn, MAX(DISTINCT a) AS mx FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let expected = ctx
+        .execute("SELECT MIN(a) AS mn, MAX(a) AS mx FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+}
+
+#[test]
+fn test_sum_avg_distinct_dedup() {
+    let df = df! { "a" => [Some(1), Some(1), Some(2), Some(2), Some(3), None::<i32>] }
+        .unwrap()
+        .lazy();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let actual = ctx
+        .execute("SELECT SUM(DISTINCT a) AS s, AVG(DISTINCT a) AS m FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+    // distinct non-null values: {1, 2, 3} -> sum 6, avg 2.0
+    let expected = df! { "s" => [6i32], "m" => [2.0f64] }.unwrap();
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+}
+
+#[test]
+fn test_sum_distinct_literal() {
+    // a broadcast literal has a single distinct value, so this must NOT hit the
+    // `(literal * len())` fast-path that plain `SUM(<literal>)` takes.
+    let df = df! { "a" => [1, 2, 3] }.unwrap().lazy();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let actual = ctx
+        .execute("SELECT SUM(DISTINCT 5) AS s FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+    let expected = df! { "s" => [5i64] }.unwrap();
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+}
+
+#[test]
+fn test_sum_avg_distinct_empty_group() {
+    let df = df! { "a" => Vec::<i32>::new() }.unwrap().lazy();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let actual = ctx
+        .execute("SELECT SUM(DISTINCT a) AS s, AVG(DISTINCT a) AS m FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+    let expected = df! { "s" => [Option::<i32>::None], "m" => [Option::<f64>::None] }.unwrap();
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+}
+
+#[test]
 fn test_sum_min_max_empty_and_null_group() {
     let df = df! {
         "g" => ["a", "a", "b", "b"],

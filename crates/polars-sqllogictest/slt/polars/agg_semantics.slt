@@ -84,3 +84,52 @@ query I
 SELECT -COUNT(*) + SUM(v) FROM t WHERE g = 'b'
 ----
 NULL
+
+# DISTINCT inside aggregate functions: MIN/MAX ignore it (no-op), SUM/AVG dedup first.
+
+statement ok
+CREATE TABLE td (g TEXT, v INTEGER)
+
+statement ok
+INSERT INTO td VALUES
+  ('a', 1),
+  ('a', 1),
+  ('a', 2),
+  ('a', 2),
+  ('a', 3),
+  ('b', NULL),
+  ('b', NULL)
+
+query II
+SELECT MIN(DISTINCT v) AS mn, MIN(v) AS mn_plain FROM td
+----
+1	1
+
+query II
+SELECT MAX(DISTINCT v) AS mx, MAX(v) AS mx_plain FROM td
+----
+3	3
+
+query IR
+SELECT SUM(DISTINCT v) AS s, AVG(DISTINCT v) AS a FROM td
+----
+6	2.000
+
+query TIR
+SELECT g, SUM(DISTINCT v) AS s, AVG(DISTINCT v) AS a FROM td GROUP BY g ORDER BY g
+----
+a	6	2.000
+b	NULL	NULL
+
+query I
+SELECT SUM(DISTINCT 5) FROM t
+----
+5
+
+statement ok
+CREATE TABLE empty_td (v INTEGER)
+
+query IR
+SELECT SUM(DISTINCT v) AS s, AVG(DISTINCT v) AS a FROM empty_td
+----
+NULL	NULL
