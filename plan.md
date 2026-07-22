@@ -129,3 +129,19 @@ Only hard ordering: 1 → 2 → 3. Within Phase 3 the work splits cleanly by fil
 
 
 
+
+---
+
+## Session status (resume point, 2026-07-22)
+
+**Branch `sql2` @ `4230c025a5`, pushed. Conformance: 92.0% (8512 passed / 733 expected-fail / 9249 run; skipif'd records leave the total).**
+
+Trajectory: 48.2% baseline → 51.7% (uncorrelated scalar subqueries) → 51.9% (aggregate bugs: `-COUNT(*)` wrap, `SUM(literal)`, SUM empty-group NULL) → 54.6% (correlated scalar-agg decorrelation, join_where) → 54.7% (`item()` >1-row guard) → 75.3% (SELECT-list `name:n` collision fix) → 84.1% (EXCEPT/INTERSECT/ALL + chains) → 92.0% (873 int-division records → `skipif polars`, documented in UPSTREAM).
+
+**Paused agent (resume first)**: inequality-correlated EXISTS decorrelation — worktree `.claude/worktrees/agent-aeb0ea185779966b9`, implementation compiles; remaining: tests, ratchet, commit. Base predates the set-ops/skipif merges → rebase onto current sql2 on resume. Targets ~416 of select3's remaining entries + most of in1's 69.
+
+**Remaining baseline (733)**: select3 416 (EXISTS cluster) · select1 95 + select2 83 (untriaged mix) · in1 69 · slt_lang_aggfunc 45 (25 DISTINCT-in-aggregates → 3c; ~6 unfixable type-affinity) · random/aggregates 21 · in2 3 · createview 1.
+
+**Queue after EXISTS**: triage select1/2 remainders → 3c function batches (Haiku-eligible; the Haiku corpus-hygiene trial passed review) → low-corpus-weight items (3b window frames, 3d GROUPING SETS, 3f recursive CTEs).
+
+**Operational**: one agent at a time; push sql2 after each merged landing; every agent brief must mandate a step-0 base check (`git reset --hard sql2` — worktrees spawn from wrong bases); harness runs in debug (~73s), not --release; `cargo test -p polars-sql --all-features` hits a pre-existing polars-stream compile break (use plain invocation); integration merges in a dedicated sql2 worktree, never the user's main checkout.
