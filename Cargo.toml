@@ -169,7 +169,6 @@ question_mark = "allow" # https://github.com/rust-lang/rust-clippy/issues/17384
 # custom DNS resolver - ref https://github.com/apache/arrow-rs-object-store/pull/728
 object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", rev = "f50a6e5c564b2b5933eca15cd20ff9b5614374a1" }
 color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "bb62ccf1e9eb1f6b7af5f16acff1fd7151a876dd" }
-hwlocality-sys = { git = "https://github.com/orlp/hwlocality", rev = "13fd57daef83ef4f989e829cbad52390f5e5ab1b" }
 
 # https://github.com/tikv/jemallocator/pull/168
 tikv-jemalloc-sys = { git = "https://github.com/pola-rs/jemallocator", rev = "0d683dfb157097e2075d5e0eaf25f71f514a7552" }
