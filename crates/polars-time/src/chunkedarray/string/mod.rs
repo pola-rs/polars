@@ -202,6 +202,16 @@ pub trait StringMethods: AsString {
                 sniff_fmt_datetime(val)?
             },
         };
+        // jiff doesn't understand "%+" as a directive at all (unlike
+        // chrono, which had it as a native ISO 8601 / RFC 3339 specifier),
+        // so expand it to what it stands for - this then flows through the
+        // normal `%:z` matching and Zulu-suffix fallback below instead of
+        // failing to match anything.
+        let fmt = if fmt == "%+" {
+            "%Y-%m-%dT%H:%M:%S%.f%:z"
+        } else {
+            fmt
+        };
 
         let func = match tu {
             TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
