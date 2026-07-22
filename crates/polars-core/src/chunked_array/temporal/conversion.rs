@@ -85,6 +85,10 @@ pub fn get_strftime_format(fmt: &str, dtype: &DataType) -> PolarsResult<String> 
                 },
             }
         };
-        Ok(format_string)
+        // jiff's default `%c` locale is not the POSIX "C" locale chrono used
+        // (e.g. it formats as "2024 M07 14, Sun 17:31:59" instead of
+        // "Sun Jul 14 17:31:59 2024"), so expand it ourselves to the
+        // directives it stood for under chrono/POSIX.
+        Ok(format_string.replace("%c", "%a %b %e %H:%M:%S %Y"))
     }
 }
