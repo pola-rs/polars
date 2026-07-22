@@ -474,6 +474,7 @@ impl IRFunctionExpr {
         match self {
             #[cfg(feature = "dtype-struct")]
             IRFunctionExpr::AsStruct
+            | IRFunctionExpr::ValueCounts { .. }
             | IRFunctionExpr::CumReduceHorizontal { .. }
             | IRFunctionExpr::CumFoldHorizontal { .. } => true,
             _ => false,
