@@ -74,6 +74,28 @@ impl PyExpr {
         self.inner.clone().str().to_time(options).into()
     }
 
+    #[pyo3(signature = (format, time_unit, strict, exact, cache))]
+    fn str_to_duration(
+        &self,
+        format: Option<String>,
+        time_unit: Wrap<TimeUnit>,
+        strict: bool,
+        exact: bool,
+        cache: bool,
+    ) -> Self {
+        let options = StrptimeOptions {
+            format: format.map(Into::into),
+            strict,
+            exact,
+            cache,
+        };
+        self.inner
+            .clone()
+            .str()
+            .to_duration(time_unit.0, options)
+            .into()
+    }
+
     fn str_strip_chars(&self, matches: Self) -> Self {
         self.inner.clone().str().strip_chars(matches.inner).into()
     }

@@ -280,9 +280,10 @@ pub(super) fn convert_functions(
                         matches!(dtype,
                             DataType::Date |
                             DataType::Datetime(_, _) |
-                            DataType::Time
+                            DataType::Time |
+                            DataType::Duration(_)
                         ),
-                        InvalidOperation: "`strptime` expects a `date`, `datetime` or `time` got {dtype}"
+                        InvalidOperation: "`strptime` expects a `date`, `datetime`, `time` or `duration` got {dtype}"
                     );
                     IS::Strptime(dtype, strptime_options)
                 },
