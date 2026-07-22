@@ -137,6 +137,64 @@ def test_in_not_in_null_3vl(predicate: str, expected: list[int]) -> None:
     assert res["a"].to_list() == expected
 
 
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        # column-derived elements (no literals at all)
+        ("a IN (b - 1, b)", [1]),
+        ("a NOT IN (b - 1, b)", [2]),
+        # arithmetic-only elements
+        ("a IN (1 + 1, 3 * 3)", [2]),
+        # mixed literal + column elements
+        ("a IN (b - 2, 100)", [2]),
+        ("a NOT IN (b - 2, 100)", [1]),
+    ],
+)
+def test_in_not_in_non_literal_elements(predicate: str, expected: list[int]) -> None:
+    # elements referencing columns/arithmetic expressions bypass the literal
+    # fast path and fall back to an OR-chain of equality comparisons
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [2, 4, None]}, schema={"a": pl.Int64, "b": pl.Int64}
+    )
+    res = df.sql(f'SELECT a FROM self WHERE {predicate} ORDER BY "a"')
+    assert res["a"].to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        # set (non-literal) contains an unmatched NULL element -> unknown, not FALSE
+        ("a IN (b, 999)", []),
+        ("a NOT IN (b, 999)", [1, 2]),
+        # an actual match still wins even though the set also has a NULL element
+        ("a IN (b, 2)", [2]),
+        ("a NOT IN (b, 2)", [1]),
+    ],
+)
+def test_in_not_in_null_3vl_non_literal_elements(
+    predicate: str, expected: list[int]
+) -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [2, 4, None]}, schema={"a": pl.Int64, "b": pl.Int64}
+    )
+    res = df.sql(f'SELECT a FROM self WHERE {predicate} ORDER BY "a"')
+    assert res["a"].to_list() == expected
+
+
+def test_in_all_literal_fast_path_unaffected() -> None:
+    # regression: an all-literal IN list must still lower to a single `is_in`
+    # against an imploded Series (load-bearing for predicate pushdown), not
+    # the OR-chain fallback used for non-literal elements.
+    df = pl.DataFrame({"a": [1, 2, 3, 4]}).lazy()
+    with pl.SQLContext(df=df, eager=False) as ctx:
+        lf = ctx.execute("SELECT a FROM df WHERE a IN (1, 2, 4)")
+        plan = lf.explain(optimized=False)
+        assert "is_in" in plan, plan
+
+        res = lf.collect()
+    assert res["a"].to_list() == [1, 2, 4]
+
+
 def test_not_in_null_subquery_3vl() -> None:
     t = pl.DataFrame({"a": [1, 2, None, 3]}, schema={"a": pl.Int64})
     u = pl.DataFrame({"b": [1, None, 4]}, schema={"b": pl.Int64})

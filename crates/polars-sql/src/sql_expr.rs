@@ -236,22 +236,30 @@ impl SQLExprVisitor<'_> {
                 negated,
             } => {
                 let expr = self.visit_expr(expr)?;
-                let elems = self.visit_array_expr(list, false, Some(&expr))?;
-                let Expr::Literal(LiteralValue::Series(elems_series)) = &elems else {
-                    unreachable!(
-                        "visit_array_expr(.., result_as_element=false, ..) always returns a Series literal"
-                    )
-                };
-                let set_has_null = elems_series.null_count() > 0;
-                let imploded = lit(elems_series.implode()?.into_series());
-                let membership = expr.is_in(imploded, false);
-                let is_in = if set_has_null {
-                    // Non-match against sets containing NULL is unknown, not FALSE
-                    membership.or(sql_unknown())
+                // Try the all-literal fast path first (produces an imploded-Series `is_in`,
+                // which is load-bearing for predicate pushdown); if any element is not a
+                // literal (eg: a column reference or arithmetic expression), fall back to
+                // an OR-chain of equality comparisons.
+                if self.array_expr_to_series(list).is_ok() {
+                    let elems = self.visit_array_expr(list, false, Some(&expr))?;
+                    let Expr::Literal(LiteralValue::Series(elems_series)) = &elems else {
+                        unreachable!(
+                            "visit_array_expr(.., result_as_element=false, ..) always returns a Series literal"
+                        )
+                    };
+                    let set_has_null = elems_series.null_count() > 0;
+                    let imploded = lit(elems_series.implode()?.into_series());
+                    let membership = expr.is_in(imploded, false);
+                    let is_in = if set_has_null {
+                        // Non-match against sets containing NULL is unknown, not FALSE
+                        membership.or(sql_unknown())
+                    } else {
+                        membership
+                    };
+                    Ok(if *negated { is_in.not() } else { is_in })
                 } else {
-                    membership
-                };
-                Ok(if *negated { is_in.not() } else { is_in })
+                    self.visit_in_list_fallback(expr, list, *negated)
+                }
             },
             SQLExpr::InSubquery {
                 expr,
@@ -885,6 +893,34 @@ impl SQLExprVisitor<'_> {
             SQLBinaryOperator::NotEq => Ok(left.is_in(right, false).not()),
             _ => polars_bail!(SQLInterface: "invalid comparison operator"),
         }
+    }
+
+    /// Fallback for `[NOT] IN (e1, e2, ...)` when the element list contains
+    /// one or more non-literal expressions (eg: column references or arithmetic).
+    ///
+    /// Builds `expr = e1 OR expr = e2 OR ...` (negated with a trailing `NOT`, if
+    /// applicable). Polars' `eq` is NULL-propagating and `or`/`not` follow Kleene
+    /// logic, so this naturally reproduces the same three-valued-logic semantics
+    /// as the all-literal fast path (eg: `1 IN (2, NULL)` is unknown, not FALSE).
+    fn visit_in_list_fallback(
+        &mut self,
+        expr: Expr,
+        list: &[SQLExpr],
+        negated: bool,
+    ) -> PolarsResult<Expr> {
+        polars_ensure!(!list.is_empty(), SQLSyntax: "IN list must not be empty");
+        let mut elements = list.iter();
+        let first = self.visit_expr(elements.next().unwrap())?;
+        let mut membership = expr.clone().eq(first);
+        for e in elements {
+            let e = self.visit_expr(e)?;
+            membership = membership.or(expr.clone().eq(e));
+        }
+        Ok(if negated {
+            membership.not()
+        } else {
+            membership
+        })
     }
 
     /// Visit a SQL `ARRAY` list (including `IN` values).
