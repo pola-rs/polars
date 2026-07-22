@@ -575,9 +575,6 @@ struct CommonSubExprRewriter<'a> {
     rewritten: bool,
     is_group_by: bool,
     is_element_wise_select_only: bool,
-
-    nodes_scratch: ScratchVec<Node>,
-    heights_scratch: ScratchVec<ExprProjectionHeight>,
 }
 
 impl<'a> CommonSubExprRewriter<'a> {
@@ -599,8 +596,6 @@ impl<'a> CommonSubExprRewriter<'a> {
             rewritten: false,
             is_group_by,
             is_element_wise_select_only,
-            nodes_scratch: ScratchVec::default(),
-            heights_scratch: ScratchVec::default(),
         }
     }
 }
@@ -656,8 +651,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             return Ok(RewriteRecursion::Stop);
         }
 
-        let (post_visit_count, id) =
-            &self.identifier_array[self.visited_idx + self.id_array_offset];
+        let id = &self.identifier_array[self.visited_idx + self.id_array_offset].1;
 
         // Id placeholder not overwritten, so we can skip this sub-expression.
         if !id.is_valid() {
@@ -679,35 +673,9 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             return Ok(RewriteRecursion::NoMutateAndContinue);
         };
         if *count > 1 {
-            let recursion = if self.is_element_wise_select_only
-                && !matches!(
-                    aexpr_projection_height_rec(
-                        ae_node.node(),
-                        arena,
-                        &mut self.nodes_scratch,
-                        &mut self.heights_scratch,
-                    ),
-                    ExprProjectionHeight::Column
-                ) {
-                RewriteRecursion::Stop
-            } else {
-                self.replaced_identifiers.insert(id.clone(), (), arena);
-                RewriteRecursion::MutateAndStop
-            };
-
-            self.visited_idx += 1;
-            if *post_visit_count >= self.max_post_visit_idx {
-                self.max_post_visit_idx = *post_visit_count;
-                while self.visited_idx < self.identifier_array.len() - self.id_array_offset
-                    && *post_visit_count
-                        > self.identifier_array[self.visited_idx + self.id_array_offset].0
-                {
-                    self.visited_idx += 1;
-                }
-            }
-
+            self.replaced_identifiers.insert(id.clone(), (), arena);
             // rewrite this sub-expression, don't visit its children
-            Ok(recursion)
+            Ok(RewriteRecursion::MutateAndStop)
         } else {
             // This is a unique expression
             // visit its children to see if they are cse
@@ -722,13 +690,25 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         arena: &mut Self::Arena,
     ) -> PolarsResult<Self::Node> {
         let (post_visit_count, id) =
-            &self.identifier_array[self.visited_idx - 1 + self.id_array_offset];
+            &self.identifier_array[self.visited_idx + self.id_array_offset];
+        self.visited_idx += 1;
 
         // TODO!: check if we ever hit this branch
         if *post_visit_count < self.max_post_visit_idx {
             return Ok(node);
         }
 
+        self.max_post_visit_idx = *post_visit_count;
+        // DFS, so every post_visit that is smaller than `post_visit_count`
+        // is a subexpression of this node and we can skip that
+        //
+        // `self.visited_idx` will influence recursion strategy in `pre_visit`
+        // see call-stack comment above
+        while self.visited_idx < self.identifier_array.len() - self.id_array_offset
+            && *post_visit_count > self.identifier_array[self.visited_idx + self.id_array_offset].0
+        {
+            self.visited_idx += 1;
+        }
         // If this is not true, the traversal order in the visitor was different from the rewriter.
         debug_assert_eq!(
             node.hashable_and_cmp(arena),
@@ -757,6 +737,9 @@ pub(crate) struct CommonSubExprOptimizer {
     // Only supports element-wise CSEE
     // on SELECT/HSTACK
     element_wise_select_only: bool,
+
+    nodes_scratch: ScratchVec<Node>,
+    heights_scratch: ScratchVec<ExprProjectionHeight>,
 }
 
 impl CommonSubExprOptimizer {
@@ -769,6 +752,8 @@ impl CommonSubExprOptimizer {
             replaced_identifiers: Default::default(),
             name_validation: Default::default(),
             element_wise_select_only,
+            nodes_scratch: ScratchVec::default(),
+            heights_scratch: ScratchVec::default(),
         }
     }
 
@@ -956,6 +941,21 @@ impl CommonSubExprOptimizer {
             // Add the tmp columns
             for id in self.replaced_identifiers.inner.keys() {
                 let (node, _count) = self.se_count.get(id, expr_arena).unwrap();
+
+                if self.element_wise_select_only
+                    && !matches!(
+                        aexpr_projection_height_rec(
+                            *node,
+                            expr_arena,
+                            &mut self.nodes_scratch,
+                            &mut self.heights_scratch
+                        ),
+                        ExprProjectionHeight::Column
+                    )
+                {
+                    return Ok(None);
+                }
+
                 let name = id.materialize();
                 let out_e = ExprIR::new(*node, OutputName::Alias(name));
                 new_expr.push(out_e)

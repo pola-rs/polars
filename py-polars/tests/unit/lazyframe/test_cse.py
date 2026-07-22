@@ -922,9 +922,11 @@ def test_cse_as_struct_19253() -> None:
 
 @pytest.mark.may_fail_auto_streaming
 def test_cse_as_struct_value_counts_20927() -> None:
-    assert pl.DataFrame({"x": [i for i in range(1, 6) for _ in range(i)]}).select(
+    q = pl.LazyFrame({"x": [i for i in range(1, 6) for _ in range(i)]}).select(
         pl.struct("x").value_counts().struct.unnest()
-    ).sort("count").to_dict(as_series=False) == {
+    )
+    print(q.explain())
+    assert q.collect().sort("count").to_dict(as_series=False) == {
         "x": [{"x": 1}, {"x": 2}, {"x": 3}, {"x": 4}, {"x": 5}],
         "count": [1, 2, 3, 4, 5],
     }
