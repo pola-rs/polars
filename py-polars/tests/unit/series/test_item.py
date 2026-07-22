@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import sys
 
 import pytest
 
@@ -41,8 +40,7 @@ def test_df_item_out_of_bounds(index: int, s: pl.Series) -> None:
         s.item(index)
 
 
-@pytest.mark.skipif(sys.version_info < (3, 14, 0), reason="Version specific error")
 def test_series_item_out_of_range_date() -> None:
     s = pl.Series([datetime.date(9999, 12, 31)]).dt.offset_by("1d")
-    with pytest.raises(ValueError, match="year must be in"):
+    with pytest.raises(ValueError, match="date out-of-range"):
         s.item()

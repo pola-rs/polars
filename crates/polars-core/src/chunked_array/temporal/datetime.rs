@@ -1,5 +1,3 @@
-use std::fmt::Write;
-
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
