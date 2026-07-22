@@ -1136,7 +1136,7 @@ def scan_csv(
     n_rows: int | None = None,
     encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     skip_rows_after_header: int = 0,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -1246,6 +1246,9 @@ def scan_csv(
         Reduce memory pressure at the expense of performance.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
+
+        .. deprecated:: 1.42.0
+            Collect into a DataFrame first, then call rechunk on the result.
     skip_rows_after_header
         Skip this number of rows when the header is parsed.
     row_index_name
@@ -1387,6 +1390,16 @@ def scan_csv(
     │ 4   ┆ read │
     └─────┴──────┘
     """
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on scan_csv() will be removed. "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            version="1.42.0",
+        )
+    else:
+        rechunk = False
+
     if schema_overrides is not None and not isinstance(
         schema_overrides, (dict, Sequence)
     ):

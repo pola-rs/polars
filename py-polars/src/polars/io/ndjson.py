@@ -208,7 +208,7 @@ def scan_ndjson(
     batch_size: int | None = 1024,
     n_rows: int | None = None,
     low_memory: bool = False,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     ignore_errors: bool = False,
@@ -256,6 +256,9 @@ def scan_ndjson(
         Reduce memory pressure at the expense of performance.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
+
+        .. deprecated:: 1.42.0
+            Collect into a DataFrame first, then call rechunk on the result.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -300,6 +303,16 @@ def scan_ndjson(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on scan_parquet() will be removed. "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            version="1.42.0",
+        )
+    else:
+        rechunk = False
+
     sources: list[str] | list[Path] | list[IO[str]] | list[IO[bytes]] = []
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
