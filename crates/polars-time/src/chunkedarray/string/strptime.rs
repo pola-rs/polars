@@ -102,7 +102,11 @@ pub(super) fn compile_fmt(fmt: &str) -> PolarsResult<String> {
         .replace("%R", "%H:%M")
         .replace("%T", "%H:%M:%S")
         .replace("%X", "%H:%M:%S")
-        .replace("%F", "%Y-%m-%d"))
+        .replace("%F", "%Y-%m-%d")
+        // jiff's strtime parser rejects `%c` outright (it's locale-dependent
+        // and only supported when formatting), so expand it to the C-locale
+        // date/time directives it stands for.
+        .replace("%c", "%a %b %e %H:%M:%S %Y"))
 }
 
 #[derive(Default, Clone)]
