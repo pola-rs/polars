@@ -134,14 +134,14 @@ Only hard ordering: 1 → 2 → 3. Within Phase 3 the work splits cleanly by fil
 
 ## Session status (resume point, 2026-07-22)
 
-**Branch `sql2` @ `ea10ad4acc`, pushed. Conformance: 95.8% (8884 passed / 388 expected-fail / 9272 run; skipif'd records leave the total).**
+**Branch `sql2` @ `082431f0b1`, rebased onto main (b72bea9d00) and force-pushed. Conformance: 96.5% (8948 passed / 324 expected-fail / 9272 run; skipif'd records leave the total).**
 
-Trajectory: 48.2% baseline → 51.7% (uncorrelated scalar subqueries) → 51.9% (aggregate bugs: `-COUNT(*)` wrap, `SUM(literal)`, SUM empty-group NULL) → 54.6% (correlated scalar-agg decorrelation, join_where) → 54.7% (`item()` >1-row guard) → 75.3% (SELECT-list `name:n` collision fix) → 84.1% (EXCEPT/INTERSECT/ALL + chains) → 92.0% (873 int-division records → `skipif polars`, documented in UPSTREAM) → 95.8% (inequality-correlated EXISTS decorrelation via count-filter, 345 entries).
+Trajectory: 48.2% baseline → 51.7% (uncorrelated scalar subqueries) → 51.9% (aggregate bugs: `-COUNT(*)` wrap, `SUM(literal)`, SUM empty-group NULL) → 54.6% (correlated scalar-agg decorrelation, join_where) → 54.7% (`item()` >1-row guard) → 75.3% (SELECT-list `name:n` collision fix) → 84.1% (EXCEPT/INTERSECT/ALL + chains) → 92.0% (873 int-division records → `skipif polars`, documented in UPSTREAM) → 95.8% (inequality-correlated EXISTS decorrelation via count-filter, 345 entries) → 96.5% (rebase onto main: NOT IN 3VL + SUM/CORR NULL fixes flipped 64 entries; rebase itself needed an eager-implode fix for `IN (...)` haystacks — lazy `Expr::implode()` was a pushdown barrier that left cross joins unconverted and hung select4).
 
 **DONE (ea10ad4acc)**: inequality-correlated EXISTS decorrelation — equality correlation keeps the semi/anti-join fast path; comparison correlation lowers via row-index + `join_where` + group_by count + left-join-back, folded into a `count > 0` / `count = 0` filter. Removed 345 baseline entries (select3 246, select1 53, select2 46).
 
-**Remaining baseline (388)**: select3 170 · in1 69 (NULL-in-list three-valued logic, out of EXISTS scope) · slt_lang_aggfunc 45 (25 DISTINCT-in-aggregates → 3c; ~6 unfixable type-affinity) · select1 42 · select2 37 · random/aggregates 21 · in2 3 · createview 1.
+**Remaining baseline (324)**: select3 130 · in1 57 (NOT IN subquery 3VL remnants) · slt_lang_aggfunc 43 (25 DISTINCT-in-aggregates → 3c; ~6 unfixable type-affinity) · select1 38 · select2 34 · random/aggregates 21 · createview 1.
 
-**Queue**: triage select3/select1/select2 remainders → in1 NULL-in-list semantics → 3c function batches (Haiku-eligible; the Haiku corpus-hygiene trial passed review) → low-corpus-weight items (3b window frames, 3d GROUPING SETS, 3f recursive CTEs).
+**Queue**: triage select3/select1/select2 remainders (agent running) → in1 NOT-IN-subquery 3VL → 3c function batches (Haiku-eligible; the Haiku corpus-hygiene trial passed review) → low-corpus-weight items (3b window frames, 3d GROUPING SETS, 3f recursive CTEs).
 
 **Operational**: one agent at a time; push sql2 after each merged landing; every agent brief must mandate a step-0 base check (`git reset --hard sql2` — worktrees spawn from wrong bases); harness runs in debug (~73s), not --release; `cargo test -p polars-sql --all-features` hits a pre-existing polars-stream compile break (use plain invocation); integration merges in a dedicated sql2 worktree, never the user's main checkout.
