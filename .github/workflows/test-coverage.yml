@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install build tools
-        run: brew install automake
+        run: brew install automake libtool
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
@@ -128,7 +128,7 @@ jobs:
           uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
 
       - name: Install build tools
-        run: brew install automake
+        run: brew install automake libtool
 
       - name: Set up Rust
         run: rustup component add llvm-tools-preview
