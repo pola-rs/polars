@@ -23,8 +23,6 @@ def test_reverse_series() -> None:
 
 
 def test_reverse_all_null_list_keeps_inner_dtype_28409() -> None:
-    # An all-null List column must keep its declared inner dtype after reverse,
-    # and the executed schema must match the schema the planner reports.
     lf = pl.LazyFrame({"L": [None]}, schema={"L": pl.List(pl.Int64)}).reverse()
 
     planned = lf.collect_schema()["L"]
@@ -34,14 +32,11 @@ def test_reverse_all_null_list_keeps_inner_dtype_28409() -> None:
 
 
 def test_reverse_diagonal_concat_null_fill_28409() -> None:
-    # diagonal concat null-fills the missing "L" column of the right branch;
-    # when the left branch is empty the whole "L" column is null. Reversing it
-    # must not degrade List(Int64) into List(Null), and both engines must agree
-    # with the planned schema.
+    # repro from #28409: empty left branch → all-null List after diagonal concat
     a = pl.LazyFrame({"L": [[1, 2]], "b": [1]})
     b = pl.LazyFrame({"z": [7]})
     q = pl.concat(
-        [a.sort("b").filter(pl.col("b") < -9), b],  # left branch is empty
+        [a.sort("b").filter(pl.col("b") < -9), b],
         how="diagonal",
     ).reverse()
 
