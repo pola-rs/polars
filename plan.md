@@ -50,8 +50,9 @@ Items are **[transpiler]** (polars-sql only) unless marked **[engine]** (cross-c
 Empirical priority order (by Phase 2 failure count): 3a subqueries → 3h join-column collisions → 3e chained set ops → everything else.
 
 ### 3a. Subqueries (M staged; general case XL)
-- Scalar-subquery comparisons [S/M]: remove the bail at `sql_expr.rs:567-577`; route subquery operands through the existing `Expr::SubPlan` path; extend `process_subqueries` to SELECT-list/HAVING; add PostgreSQL ">1 row is an error" guard on the `first()` rewrite (context.rs:2037) or document deferral.
-- Subquery with its own WITH [S]: lift bail at sql_expr.rs:363-364; use the CTE-aware execute path inside `execute_isolated`.
+- Scalar-subquery comparisons — **DONE**: bail removed, subquery operands route through `Expr::SubPlan` (`SubqueryRestriction::SingleValue`), `process_subqueries` covers SELECT-list/HAVING.
+- PostgreSQL ">1 row is an error" guard [S] — **not deferred after all**: replace the `first()` reduction in the scalar-subquery path with `Expr::item(allow_empty: true)` (`AggExpr::Item`, polars-plan/src/dsl/mod.rs:192), which errors on multiple values and yields NULL for zero rows — exactly PostgreSQL scalar-subquery semantics. Swap both the `SingleValue` reduce in `visit_subquery` and the placeholder rewrite in `process_subqueries`; update the multi-row test that currently pins first()-behavior to expect an error.
+- Subquery with its own WITH — **DONE** (visit_subquery uses the CTE-aware execute path).
 - Correlated scalar subqueries, Stage 1 [M]: extend the equi-correlation decorrelation in `subquery.rs` (today IN/EXISTS only) to scalar subqueries → `group_by(outer keys).agg` + left join. Stage 2 (general decorrelation / dependent join in polars-plan IR) is **[engine, XL]** — its own tracked project, not blocking v1.
 
 ### 3b. Window functions (L; one engine item)
