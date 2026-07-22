@@ -1,0 +1,134 @@
+# Uncorrelated scalar subqueries.
+
+statement ok
+CREATE TABLE t (x INT, y INT);
+
+statement ok
+INSERT INTO t VALUES (1, 10), (2, 20), (3, 30), (4, 40), (5, 50);
+
+# comparison operators, subquery on the right
+
+query I rowsort
+SELECT x FROM t WHERE x = (SELECT MAX(x) FROM t)
+----
+5
+
+query I rowsort
+SELECT x FROM t WHERE x != (SELECT MAX(x) FROM t)
+----
+1
+2
+3
+4
+
+query I rowsort
+SELECT x FROM t WHERE x < (SELECT MAX(x) FROM t)
+----
+1
+2
+3
+4
+
+query I rowsort
+SELECT x FROM t WHERE x <= (SELECT MAX(x) FROM t)
+----
+1
+2
+3
+4
+5
+
+query I rowsort
+SELECT x FROM t WHERE x > (SELECT MAX(x) FROM t WHERE x < 3)
+----
+3
+4
+5
+
+query I rowsort
+SELECT x FROM t WHERE x >= (SELECT MAX(x) FROM t WHERE x < 3)
+----
+2
+3
+4
+5
+
+# comparison operators, subquery on the left
+
+query I rowsort
+SELECT x FROM t WHERE (SELECT MAX(x) FROM t) > x
+----
+1
+2
+3
+4
+
+# arithmetic operand
+
+query II rowsort
+SELECT x, x + (SELECT MAX(x) FROM t) AS z FROM t
+----
+1 6
+2 7
+3 8
+4 9
+5 10
+
+# SELECT-list, aliased and unaliased
+
+query II rowsort
+SELECT x, (SELECT MAX(x) FROM t) AS mx FROM t
+----
+1 5
+2 5
+3 5
+4 5
+5 5
+
+query I rowsort
+SELECT (SELECT MAX(x) FROM t) FROM t
+----
+5
+5
+5
+5
+5
+
+# HAVING
+
+query II rowsort
+SELECT x, SUM(y) AS s FROM t GROUP BY x HAVING SUM(y) > (SELECT AVG(y) FROM t)
+----
+4 40
+5 50
+
+# subquery with its own WITH clause
+
+query I rowsort
+SELECT x FROM t WHERE x = (WITH cte AS (SELECT MAX(x) AS m FROM t) SELECT m FROM cte)
+----
+5
+
+# NULL results: an empty subquery result compares as NULL, matching nothing
+
+query I rowsort
+SELECT x FROM t WHERE x = (SELECT x FROM t WHERE x > 100)
+----
+
+query I rowsort
+SELECT x FROM t WHERE (SELECT x FROM t WHERE x > 100) IS NULL
+----
+1
+2
+3
+4
+5
+
+# a scalar subquery returning more than one row is a runtime error in
+# PostgreSQL; Polars does not enforce this and silently takes the first row
+# instead (see crates/polars-sql commit history for the subquery work)
+
+query I rowsort
+SELECT x FROM t WHERE x = (SELECT x FROM t ORDER BY x)
+----
+1

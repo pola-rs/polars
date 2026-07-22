@@ -1407,6 +1407,9 @@ impl SQLContext {
 
         let mut projections =
             self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
+        let subquery_names;
+        (lf, subquery_names) = self.process_subqueries(lf, projections.iter_mut().collect())?;
+        schema = self.get_frame_schema(&mut lf)?;
 
         // Apply `UNNEST` expressions
         let mut explode_names = Vec::new();
@@ -1557,7 +1560,11 @@ impl SQLContext {
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
-                    projection_heights |= ExprSqlProjectionHeightBehavior::identify_from_expr(p);
+                    projection_heights |= if is_resolved_scalar_subquery(p, &subquery_names) {
+                        ExprSqlProjectionHeightBehavior::InheritsContext
+                    } else {
+                        ExprSqlProjectionHeightBehavior::identify_from_expr(p)
+                    };
 
                     retained_cols.push(if have_order_by {
                         col(name.as_str())
@@ -1837,7 +1844,7 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            lf = self.process_subqueries(lf, vec![&mut filter_expression])?;
+            (lf, _) = self.process_subqueries(lf, vec![&mut filter_expression])?;
             lf = match filter_mode {
                 FilterMode::KeepTrue => lf.filter(filter_expression),
                 FilterMode::RemoveTrue => lf.remove(filter_expression),
@@ -2005,18 +2012,21 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            lf = self.process_subqueries(lf, vec![&mut filter_expression])?;
+            (lf, _) = self.process_subqueries(lf, vec![&mut filter_expression])?;
             lf = lf.filter(filter_expression);
         }
         Ok(lf)
     }
 
+    /// Resolve `Expr::SubPlan` nodes in `exprs` into columns of `lf`, returning the updated
+    /// frame together with the set of placeholder column names the subqueries were bound to.
     fn process_subqueries(
         &mut self,
         lf: LazyFrame,
         exprs: Vec<&mut Expr>,
-    ) -> PolarsResult<LazyFrame> {
+    ) -> PolarsResult<(LazyFrame, PlHashSet<PlSmallStr>)> {
         let mut subplans = vec![];
+        let mut subplan_names = PlHashSet::new();
 
         for e in exprs {
             *e = e.clone().try_map_expr(|e| {
@@ -2034,6 +2044,7 @@ impl SQLContext {
                     let lf = lf.select([select_expr.clone()]);
 
                     subplans.push(lf);
+                    subplan_names.insert(names[0].0.clone());
                     Ok(Expr::Column(names[0].0.clone()).first())
                 } else {
                     Ok(e)
@@ -2042,16 +2053,19 @@ impl SQLContext {
         }
 
         if subplans.is_empty() {
-            Ok(lf)
+            Ok((lf, subplan_names))
         } else {
             subplans.insert(0, lf);
-            concat_lf_horizontal(
-                subplans,
-                HConcatOptions {
-                    broadcast_unit_length: true,
-                    ..Default::default()
-                },
-            )
+            Ok((
+                concat_lf_horizontal(
+                    subplans,
+                    HConcatOptions {
+                        broadcast_unit_length: true,
+                        ..Default::default()
+                    },
+                )?,
+                subplan_names,
+            ))
         }
     }
 
@@ -2488,6 +2502,17 @@ impl SQLContext {
             })
         });
 
+        // Scalar subqueries in HAVING are hconcat-broadcast onto the input frame
+        // and rewritten to `col(..).first()`, which evaluates to the scalar in
+        // the group context `having()` runs in.
+        let (lf, having) = match having {
+            Some(mut having_expr) => {
+                let (lf, _) = self.process_subqueries(lf, vec![&mut having_expr])?;
+                (lf, Some(having_expr))
+            },
+            None => (lf, None),
+        };
+
         let group_by = lf.group_by(group_by_keys);
         let aggregated = match having {
             Some(having) => group_by.having(having),
@@ -2855,6 +2880,17 @@ fn strip_outer_alias(expr: &Expr) -> Expr {
         inner.as_ref().clone()
     } else {
         expr.clone()
+    }
+}
+
+/// True if `expr` (aside from an optional outer alias) is exactly the column
+/// reference `process_subqueries` rewrites a resolved scalar subquery to.
+fn is_resolved_scalar_subquery(expr: &Expr, subquery_names: &PlHashSet<PlSmallStr>) -> bool {
+    match strip_outer_alias(expr) {
+        Expr::Agg(AggExpr::First(inner)) => {
+            matches!(inner.as_ref(), Expr::Column(name) if subquery_names.contains(name))
+        },
+        _ => false,
     }
 }
 

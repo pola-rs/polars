@@ -53,10 +53,13 @@ fn sql_unknown() -> Expr {
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
 /// Categorises the type of (allowed) subquery constraint
 pub enum SubqueryRestriction {
-    /// Subquery must return a single column
+    /// Subquery must return a single column, used as a list of candidate
+    /// values (eg: the RHS of `[NOT] IN`).
     SingleColumn,
+    /// Subquery must return a single column, reduced to a scalar value
+    /// (eg: a comparison/arithmetic operand, or a SELECT-list/HAVING expr).
+    SingleValue,
     // SingleRow,
-    // SingleValue,
     // Any
 }
 
@@ -319,7 +322,9 @@ impl SQLExprVisitor<'_> {
                     .contains(self.visit_expr(pattern)?, true);
                 Ok(if *negated { matches.not() } else { matches })
             },
-            SQLExpr::Subquery(_) => polars_bail!(SQLInterface: "unexpected subquery"),
+            SQLExpr::Subquery(subquery) => {
+                self.visit_subquery(subquery, SubqueryRestriction::SingleValue)
+            },
             SQLExpr::Substring {
                 expr,
                 substring_from,
@@ -375,27 +380,21 @@ impl SQLExprVisitor<'_> {
         subquery: &Subquery,
         restriction: SubqueryRestriction,
     ) -> PolarsResult<Expr> {
-        if subquery.with.is_some() {
-            polars_bail!(SQLSyntax: "SQL subquery cannot be a CTE 'WITH' clause");
-        }
         // note: we have to execute subqueries in an isolated scope to prevent
         // propagating any context/arena mutation into the rest of the query
         let lf = self
             .ctx
-            .execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
+            .execute_isolated(|ctx| ctx.execute_query(subquery))?;
 
-        if restriction == SubqueryRestriction::SingleColumn {
-            let new_name = unique_column_name();
-            return Ok(Expr::SubPlan(
-                SpecialEq::new(Arc::new(lf.logical_plan)),
-                // TODO: pass the implode depending on expr.
-                vec![(
-                    new_name.clone(),
-                    first().as_expr().implode(true).alias(new_name.clone()),
-                )],
-            ));
+        let new_name = unique_column_name();
+        let reduce_expr = match restriction {
+            SubqueryRestriction::SingleColumn => first().as_expr().implode(true),
+            SubqueryRestriction::SingleValue => first().as_expr().first(),
         };
-        polars_bail!(SQLInterface: "subquery type not supported");
+        Ok(Expr::SubPlan(
+            SpecialEq::new(Arc::new(lf.logical_plan)),
+            vec![(new_name.clone(), reduce_expr.alias(new_name))],
+        ))
     }
 
     /// Visit a single SQL identifier.
@@ -579,18 +578,6 @@ impl SQLExprVisitor<'_> {
         op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
-        // check for (unsupported) scalar subquery comparisons
-        if matches!(left, SQLExpr::Subquery(_)) || matches!(right, SQLExpr::Subquery(_)) {
-            let (suggestion, str_op) = match op {
-                SQLBinaryOperator::NotEq => ("; use 'NOT IN' instead", "!=".to_string()),
-                SQLBinaryOperator::Eq => ("; use 'IN' instead", format!("{op}")),
-                _ => ("", format!("{op}")),
-            };
-            polars_bail!(
-                SQLSyntax: "subquery comparisons with '{str_op}' are not supported{suggestion}"
-            );
-        }
-
         // need special handling for interval offsets and comparisons
         let (lhs, mut rhs) = match (left, op, right) {
             (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
