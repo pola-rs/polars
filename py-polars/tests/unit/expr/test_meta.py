@@ -21,3 +21,21 @@ def test_hash_expr_hint() -> None:
         TypeError, match=r"""unhashable type: 'Expr'\n\nConsider hashing \'col.*meta"""
     ):
         {a}
+
+
+def test_meta_properties() -> None:
+    e = pl.col("foo").sum()
+    assert e.meta.is_scalar()
+    assert e.meta.is_known_length()
+    assert not e.meta.is_literal()
+    assert not e.meta.is_row_separable()
+
+    e = pl.col("foo") * pl.col("bar")
+    assert e.meta.is_length_preserving()
+    assert e.meta.is_row_separable()
+    assert e.meta.is_known_length()
+    e = (pl.col("foo") * pl.col("bar")).list.explode(empty_as_null=False)
+    assert not e.meta.is_known_length()
+    assert not e.meta.is_length_preserving()
+    assert e.meta.is_row_separable()
+    assert not e.meta.is_scalar()
