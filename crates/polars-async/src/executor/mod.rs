@@ -180,7 +180,6 @@ struct ThreadLocalTaskList {
 unsafe impl Sync for ThreadLocalTaskList {}
 
 struct Executor {
-    park_group: ParkGroup,
     thread_numa_regions: Vec<NumaRegionId>,
     thread_task_lists: Vec<CachePadded<ThreadLocalTaskList>>,
     global_high_prio_task_queue: Injector<ReadyTask>,
@@ -188,12 +187,22 @@ struct Executor {
     thread_name_idx: AtomicUsize,
 
     // These three are tracked per NUMA region.
+    park_groups: Vec<ParkGroup>,
     thread_id_send: Vec<Sender<Arc<AtomicUsize>>>,
     thread_id_recv: Vec<Receiver<Arc<AtomicUsize>>>,
     num_runners_without_identity: Vec<AtomicUsize>,
 }
 
 impl Executor {
+    fn unpark_one_worker_random_numa_region(&self) {
+        let mut rng = rand::rng();
+        for index in random_permutation(self.park_groups.len() as u32, &mut rng) {
+            if self.park_groups[index as usize].unpark_one() {
+                break;
+            }
+        }
+    }
+
     fn schedule_task(&self, task: ReadyTask) {
         let thread = TLS_THREAD_ID.get();
         let meta = task.metadata();
@@ -206,15 +215,18 @@ impl Executor {
         }
 
         if use_global_queue {
-            // Scheduled from an unknown thread, add to global queue.
+            // Scheduled from an unknown thread, add to global queue and wake
+            // a worker in a random NUMA region.
             if meta.priority == TaskPriority::High {
                 self.global_high_prio_task_queue.push(task);
             } else {
                 self.global_low_prio_task_queue.push(task);
             }
-            self.park_group.unpark_one();
+
+            self.unpark_one_worker_random_numa_region();
         } else {
             let ttl = opt_ttl.unwrap();
+            let numa = self.thread_numa_regions[thread];
             // SAFETY: this slot may only be accessed from the local thread, which we are.
             let slot = unsafe { &mut *ttl.local_slot.get() };
 
@@ -227,7 +239,9 @@ impl Executor {
                 };
 
                 ttl.high_prio_tasks.push(task);
-                self.park_group.unpark_one();
+                if !self.park_groups[numa.0].unpark_one() {
+                    self.unpark_one_worker_random_numa_region();
+                }
             } else {
                 // Optimization: while this is a low priority task we have no
                 // high priority tasks on this thread so we'll execute this one.
@@ -235,7 +249,9 @@ impl Executor {
                     *slot = Some(task);
                 } else {
                     self.global_low_prio_task_queue.push(task);
-                    self.park_group.unpark_one();
+                    if !self.park_groups[numa.0].unpark_one() {
+                        self.unpark_one_worker_random_numa_region();
+                    }
                 }
             }
         }
@@ -306,7 +322,7 @@ impl Executor {
         pin_thread_to_numa_region(numa_region);
 
         let mut rng = SmallRng::from_rng(&mut rand::rng());
-        let mut worker = self.park_group.new_worker();
+        let mut worker = self.park_groups[numa_region.0].new_worker();
 
         loop {
             // If we're a runner without an assigned thread id, get one.
@@ -350,7 +366,12 @@ impl Executor {
             })();
 
             if let Some(task) = task {
-                worker.recruit_next();
+                // Try to recruit another worker, and if there's no idle workers
+                // left in this NUMA region, one from another.
+                if worker.recruit_next() == Some(false) {
+                    self.unpark_one_worker_random_numa_region();
+                }
+
                 if let Some(metrics) = task.metadata().metrics.clone() {
                     let start = Instant::now();
                     task.run();
@@ -434,8 +455,9 @@ impl Executor {
             let (thread_id_send, thread_id_recv) = (0..num_numa_regions())
                 .map(|_| crossbeam_channel::unbounded())
                 .unzip();
+            let park_groups = (0..num_numa_regions()).map(|_| ParkGroup::new()).collect();
             Self {
-                park_group: ParkGroup::new(),
+                park_groups,
                 thread_numa_regions,
                 thread_task_lists,
                 global_high_prio_task_queue: Injector::new(),
