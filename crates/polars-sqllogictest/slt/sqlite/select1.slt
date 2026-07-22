@@ -100,6 +100,7 @@ SELECT CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END
 ----
 30 values hashing to 3c13dee48d9356ae19af2515e05e6b54
 
+skipif polars
 query II nosort
 SELECT a+b*2+c*3+d*4+e*5,
        (a+b+c+d+e)/5
@@ -108,6 +109,7 @@ SELECT a+b*2+c*3+d*4+e*5,
 ----
 60 values hashing to 808146289313018fce25f1a280bd8c30
 
+skipif polars
 query IIIII nosort
 SELECT a+b*2+c*3+d*4+e*5,
        CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
@@ -138,6 +140,7 @@ SELECT c,
 ----
 145 values hashing to 1e4da6adbf79506920a0b1e379d830d8
 
+skipif polars
 query IIIIII nosort
 SELECT a+b*2+c*3+d*4,
        (a+b+c+d+e)/5,
@@ -257,6 +260,7 @@ SELECT CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
 ----
 180 values hashing to 705c6f14a9e50f5542ad5d2fd225e6f1
 
+skipif polars
 query IIIIIII nosort
 SELECT a+b*2,
        a,
@@ -365,6 +369,7 @@ SELECT d-e,
 ----
 42 values hashing to 1b3471ef4d294cdab97aa6e5eb44bdc6
 
+skipif polars
 query IIIIIII nosort
 SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
         WHEN a<b+3 THEN 333 ELSE 444 END,
@@ -490,6 +495,7 @@ SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
 ----
 140 values hashing to dd6eae29e54f220617fca7f22df83acb
 
+skipif polars
 query IIIIII nosort
 SELECT d,
        a+b*2+c*3+d*4+e*5,
@@ -502,6 +508,7 @@ SELECT d,
 ----
 180 values hashing to 4cf6744bf5d3826cd98ad853eeb5beba
 
+skipif polars
 query IIIIIII nosort
 SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
         WHEN d THEN 333  WHEN e THEN 444 ELSE 555 END,
@@ -542,6 +549,7 @@ SELECT a-b,
 ----
 24 values hashing to afd55bf27f337fa6f2554d2ae3726e96
 
+skipif polars
 query IIIIII nosort
 SELECT (a+b+c+d+e)/5,
        a+b*2,
@@ -555,6 +563,7 @@ SELECT (a+b+c+d+e)/5,
 ----
 84 values hashing to 5e2c89b85bc66b196ff3083128f5a494
 
+skipif polars
 query IIIII nosort
 SELECT b,
        (a+b+c+d+e)/5,
@@ -601,6 +610,7 @@ SELECT a,
 ----
 120 values hashing to c328c1a96813bf1072935593f41667ab
 
+skipif polars
 query III nosort
 SELECT (a+b+c+d+e)/5,
        e,
@@ -661,6 +671,7 @@ SELECT a,
 131 1 133
 182 1 183
 
+skipif polars
 query IIIII nosort
 SELECT a+b*2+c*3,
        a+b*2+c*3+d*4+e*5,
@@ -685,6 +696,7 @@ SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
 ----
 145 values hashing to 8024d1eebf4b583f802c8e24ef08700f
 
+skipif polars
 query IIIIII nosort
 SELECT c,
        CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
@@ -778,6 +790,7 @@ SELECT a-b,
 ----
 81 values hashing to 21c30dc6df3b8c769f84c72451f968b5
 
+skipif polars
 query IIIIIII nosort
 SELECT d,
        a+b*2,
@@ -874,6 +887,7 @@ SELECT abs(a),
 ----
 50 values hashing to 0d42d0a09548edf4a343fe9e95c98b2c
 
+skipif polars
 query IIIIII nosort
 SELECT (a+b+c+d+e)/5,
        (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
@@ -888,6 +902,7 @@ SELECT (a+b+c+d+e)/5,
 ----
 18 values hashing to 51c5d8e007a143cf3bf858945f677039
 
+skipif polars
 query IIIIIII nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
        d,
@@ -972,6 +987,7 @@ SELECT b-c
 ----
 30 values hashing to 970be304ddec1d2bede8d8e2f14368c6
 
+skipif polars
 query IIIIII nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
        abs(b-c),
@@ -1001,6 +1017,7 @@ SELECT d,
 ----
 180 values hashing to 2be73e9f2d4c951c36a76c1e3dba5c9d
 
+skipif polars
 query IIIIII nosort
 SELECT b-c,
        (a+b+c+d+e)/5,
@@ -1017,6 +1034,7 @@ SELECT b-c,
 ----
 12 values hashing to 4aec8d073aa39894da494a2e5c69e108
 
+skipif polars
 query IIII nosort
 SELECT abs(a),
        a+b*2+c*3+d*4+e*5,
@@ -1161,6 +1179,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
 ----
 38 values hashing to 6b17e3a64ebbafbdf4ec543abf34d414
 
+skipif polars
 query III nosort
 SELECT (a+b+c+d+e)/5,
        abs(a),
@@ -1248,6 +1267,7 @@ SELECT b-c,
 ----
 203 values hashing to 449a18d19874d7ee976c4c9fc953e3f4
 
+skipif polars
 query III nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
        (a+b+c+d+e)/5,
@@ -1301,6 +1321,7 @@ SELECT abs(a),
 ----
 70 values hashing to e83d593c583f1a0cfb445b1c4ab673b7
 
+skipif polars
 query IIIII nosort
 SELECT (a+b+c+d+e)/5,
        a-b,
@@ -1347,6 +1368,7 @@ SELECT c-d,
 ----
 14 values hashing to f5cc6a1ae440bad52d8adeea6cd6cc2e
 
+skipif polars
 query IIIII nosort
 SELECT c-d,
        d-e,
@@ -1465,6 +1487,7 @@ SELECT (a+b+c+d+e)/5
 ----
 30 values hashing to 8d2279ba80763220505cecac39786e90
 
+skipif polars
 query IIIIII nosort
 SELECT a+b*2,
        (a+b+c+d+e)/5,
@@ -1504,6 +1527,7 @@ SELECT a+b*2+c*3,
 ----
 120 values hashing to 227ac1db8da88813615a7e008801fba7
 
+skipif polars
 query III nosort
 SELECT (a+b+c+d+e)/5,
        a+b*2,
@@ -1542,6 +1566,7 @@ SELECT c,
 ----
 150 values hashing to 2064f4d12bd17daef2792157a3fa01ac
 
+skipif polars
 query IIIIIII nosort
 SELECT c-d,
        (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
@@ -1559,6 +1584,7 @@ SELECT c-d,
 ----
 -3 13 1 167 1 1000 333
 
+skipif polars
 query IIIII nosort
 SELECT (a+b+c+d+e)/5,
        c-d,
@@ -1713,6 +1739,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
 ----
 150 values hashing to b77fe449c8203b5d18b816d00d4a9229
 
+skipif polars
 query IIIII nosort
 SELECT b-c,
        c,
@@ -1763,6 +1790,7 @@ SELECT a+b*2+c*3,
 ----
 10 values hashing to f7cc18e47d7f1cfbd32b65f410f3661f
 
+skipif polars
 query IIII nosort
 SELECT d-e,
        (a+b+c+d+e)/5,
@@ -1874,6 +1902,7 @@ SELECT a+b*2+c*3+d*4+e*5,
 ----
 57 values hashing to e46ef205fe944f0d32288b2138a40f06
 
+skipif polars
 query IIIII nosort
 SELECT abs(a),
        (a+b+c+d+e)/5,
@@ -1942,6 +1971,7 @@ SELECT d
 ----
 29 values hashing to 549bae2f0c4b97245bbc42bc5ab31a00
 
+skipif polars
 query IIIIII nosort
 SELECT (a+b+c+d+e)/5,
        abs(b-c),
@@ -1976,6 +2006,7 @@ SELECT abs(b-c),
 ----
 32 values hashing to 3ff228db977b596ebd4901df4462b000
 
+skipif polars
 query IIIIII nosort
 SELECT a+b*2+c*3+d*4,
        (a+b+c+d+e)/5,
@@ -2080,6 +2111,7 @@ SELECT a+b*2+c*3,
 ----
 34 values hashing to b663d3edefc8630f2d6777c28f5c29ab
 
+skipif polars
 query III nosort
 SELECT (a+b+c+d+e)/5,
        d,
@@ -2178,6 +2210,7 @@ SELECT abs(a),
 182 333
 201 333
 
+skipif polars
 query IIIII nosort
 SELECT (a+b+c+d+e)/5,
        a+b*2,
@@ -2240,6 +2273,7 @@ SELECT b,
 ----
 36 values hashing to 655fcbfb8bb7e6d53f5f1c6bbbacbaac
 
+skipif polars
 query II nosort
 SELECT (a+b+c+d+e)/5,
        a+b*2+c*3
@@ -2264,6 +2298,7 @@ SELECT a+b*2+c*3,
 ----
 108 values hashing to 709932df0abe61ded2f95a3b2b8e9c34
 
+skipif polars
 query IIIIIII nosort
 SELECT (a+b+c+d+e)/5,
        abs(a),
@@ -2278,6 +2313,7 @@ SELECT (a+b+c+d+e)/5,
 ----
 210 values hashing to d312440b05a05bd531e9e6b7ad183255
 
+skipif polars
 query IIIII nosort
 SELECT a,
        abs(a),
@@ -2322,6 +2358,7 @@ SELECT c,
 ----
 14 values hashing to d8e81dbe9389b8a7fb955726d1018688
 
+skipif polars
 query IIIIIII nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
        e,
@@ -2513,6 +2550,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
 ----
 189 values hashing to 225b9220120f5debc0a77757e6a544a7
 
+skipif polars
 query IIIIII nosort
 SELECT d,
        (a+b+c+d+e)/5,
@@ -2686,6 +2724,7 @@ SELECT b,
 ----
 24 values hashing to c056e4645726c5e6382dbf4704692804
 
+skipif polars
 query IIIIIII nosort
 SELECT d,
        a,
@@ -2726,6 +2765,7 @@ SELECT b,
 ----
 203 values hashing to 7e5bd83081d1dfafd0fe247ffd00be89
 
+skipif polars
 query IIIIIII nosort
 SELECT c-d,
        a+b*2+c*3+d*4,
@@ -2917,6 +2957,7 @@ SELECT abs(b-c)
 1
 2
 
+skipif polars
 query IIIIIII nosort
 SELECT c,
        c-d,
@@ -3012,6 +3053,7 @@ SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
 ----
 30 values hashing to 7f66566999f88b34321d64aafb17b34d
 
+skipif polars
 query IIII nosort
 SELECT a,
        abs(a),
@@ -3061,6 +3103,7 @@ SELECT CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
 ----
 87 values hashing to 9f14eddd318ce87987f67ec027255159
 
+skipif polars
 query III nosort
 SELECT (a+b+c+d+e)/5,
        a,
@@ -3097,6 +3140,7 @@ SELECT c,
 ----
 140 values hashing to fc266d3bd870c2607aaf5ba9f695a329
 
+skipif polars
 query IIIIII nosort
 SELECT (a+b+c+d+e)/5,
        CASE a+1 WHEN b THEN 111 WHEN c THEN 222
@@ -3164,6 +3208,7 @@ SELECT a,
 ----
 156 values hashing to 7133d2c62ac44540d9e489748fb517d0
 
+skipif polars
 query I nosort
 SELECT (a+b+c+d+e)/5
   FROM t1
@@ -3209,6 +3254,7 @@ SELECT c
 ----
 22 values hashing to 998be35e038bf206f9c89e0d7e73dd6d
 
+skipif polars
 query IIIII nosort
 SELECT a+b*2,
        a,
@@ -3220,6 +3266,7 @@ SELECT a+b*2,
 ----
 150 values hashing to 669ba5af7838e6691a8c9d82c2fe58d8
 
+skipif polars
 query IIIII nosort
 SELECT a-b,
        a+b*2+c*3,
@@ -3320,6 +3367,7 @@ SELECT b,
 ----
 88 values hashing to 2820aafd42976a6213cb2b0499401103
 
+skipif polars
 query IIIIIII nosort
 SELECT a+b*2+c*3,
        c,
@@ -3372,6 +3420,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
 ----
 196 values hashing to 3f2cca604f78daaa5c238d7f0fa01745
 
+skipif polars
 query IIIII nosort
 SELECT (a+b+c+d+e)/5,
        a+b*2+c*3,
@@ -3385,6 +3434,7 @@ SELECT (a+b+c+d+e)/5,
 ----
 125 values hashing to 71783a534966e0cd68c32a87f62c08ec
 
+skipif polars
 query IIII nosort
 SELECT b-c,
        c,
@@ -3493,6 +3543,7 @@ SELECT d
 ----
 30 values hashing to 0c542471646c50440dc6eda5bb1b61a8
 
+skipif polars
 query III nosort
 SELECT abs(b-c),
        a-b,
@@ -3517,6 +3568,7 @@ SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
 ----
 9 values hashing to f43d74c9e89e35866c98a91869e403da
 
+skipif polars
 query IIIII nosort
 SELECT c-d,
        (a+b+c+d+e)/5,
@@ -3579,6 +3631,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
 ----
 126 values hashing to a3c1afa7c92832ab10d89a3cdd218e17
 
+skipif polars
 query IIIIIII nosort
 SELECT (a+b+c+d+e)/5,
        a+b*2+c*3+d*4+e*5,
@@ -3596,6 +3649,7 @@ SELECT (a+b+c+d+e)/5,
 ----
 192 2878 1 191 444 1918 -3
 
+skipif polars
 query IIIIIII nosort
 SELECT b,
        c,
@@ -3690,6 +3744,7 @@ SELECT abs(a),
 ----
 60 values hashing to 3b45a32bacb258a454a82f10a8146228
 
+skipif polars
 query IIIIIII nosort
 SELECT b-c,
        CASE a+1 WHEN b THEN 111 WHEN c THEN 222
@@ -3773,6 +3828,7 @@ SELECT b-c,
 ----
 116 values hashing to e51d5af527372bac218e0b5c21153013
 
+skipif polars
 query III nosort
 SELECT a+b*2+c*3+d*4,
        (a+b+c+d+e)/5,
@@ -3782,6 +3838,7 @@ SELECT a+b*2+c*3+d*4,
 ----
 90 values hashing to 532651aa8e5c293b169f68dbcbc547ff
 
+skipif polars
 query IIIII nosort
 SELECT c-d,
        (a+b+c+d+e)/5,
@@ -3872,6 +3929,7 @@ SELECT c-d
 ----
 28 values hashing to ae8b5e96b30d88fb1ab70fe4095e3a96
 
+skipif polars
 query IIIIIII nosort
 SELECT a-b,
        d,
@@ -3899,6 +3957,7 @@ SELECT a+b*2+c*3+d*4,
 ----
 180 values hashing to 7e45631d2b6d6694abd0f917d9c07c4a
 
+skipif polars
 query IIIIII nosort
 SELECT abs(b-c),
        (a+b+c+d+e)/5,
@@ -3939,6 +3998,7 @@ SELECT a+b*2+c*3+d*4+e*5
 ----
 15 values hashing to 21fef18aeb42508fd385db124bd2a8cc
 
+skipif polars
 query IIIIIII nosort
 SELECT e,
        (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
@@ -3956,6 +4016,7 @@ SELECT e,
 ----
 210 values hashing to 166de7592ef32109aae1d9670d3e23bf
 
+skipif polars
 query IIIII nosort
 SELECT (a+b+c+d+e)/5,
        b,
@@ -3989,6 +4050,7 @@ SELECT a,
 ----
 180 values hashing to 864ee28e245ce38778cd4be32d567b92
 
+skipif polars
 query IIII nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
        c,
@@ -4010,6 +4072,7 @@ SELECT abs(a)
 220
 245
 
+skipif polars
 query IIIII nosort
 SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
         WHEN a<b+3 THEN 333 ELSE 444 END,
@@ -4062,6 +4125,7 @@ SELECT b,
 ----
 150 values hashing to 6c74a3313ad194acb0f970e759de70e8
 
+skipif polars
 query IIII nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
        CASE a+1 WHEN b THEN 111 WHEN c THEN 222
@@ -4090,6 +4154,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
 ----
 102 values hashing to 1a7c46130532fbc982bba080af7ee291
 
+skipif polars
 query IIIII nosort
 SELECT a+b*2+c*3+d*4,
        (a+b+c+d+e)/5,
@@ -4302,6 +4367,7 @@ SELECT e,
 ----
 168 values hashing to 14f600ab97eac8730eb4e16e5d99c249
 
+skipif polars
 query IIIII nosort
 SELECT (a+b+c+d+e)/5,
        e,
@@ -4342,6 +4408,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d)
 ----
 30 values hashing to ec9f02c46c399db521c47dd9cb6a40dd
 
+skipif polars
 query IIIIIII nosort
 SELECT a-b,
        c-d,
@@ -4435,6 +4502,7 @@ SELECT a+b*2,
 ----
 144 values hashing to 9266b31632a5347c36e4390e5c199fb9
 
+skipif polars
 query IIIIIII nosort
 SELECT d,
        d-e,
@@ -4462,6 +4530,7 @@ SELECT c,
 ----
 116 values hashing to 033ab3b385a760384a80f7c2f8116b27
 
+skipif polars
 query III nosort
 SELECT a+b*2+c*3+d*4,
        (a+b+c+d+e)/5,
@@ -4590,6 +4659,7 @@ SELECT d-e,
 ----
 33 values hashing to 83af9d93602ea54fa991d265574a4c3a
 
+skipif polars
 query IIIIIII nosort
 SELECT d,
        (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
@@ -4628,6 +4698,7 @@ SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
 ----
 108 values hashing to 4213133a1f82afa8019caa346d9e5849
 
+skipif polars
 query II nosort
 SELECT (a+b+c+d+e)/5,
        (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d)
@@ -4679,6 +4750,7 @@ SELECT a+b*2,
 ----
 120 values hashing to a6627a0078cbf942e660977a942b5987
 
+skipif polars
 query IIIIII nosort
 SELECT (a+b+c+d+e)/5,
        a,
@@ -4904,6 +4976,7 @@ SELECT c-d,
 ----
 100 values hashing to 028c01fd1a3fde99ed6dcf60c1113942
 
+skipif polars
 query IIIIII nosort
 SELECT abs(b-c),
        c,
@@ -4925,6 +4998,7 @@ SELECT b-c
 ----
 29 values hashing to 789bee9c1319bb51fce441fc48c889eb
 
+skipif polars
 query IIIIIII nosort
 SELECT CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
        a+b*2,
@@ -4949,6 +5023,7 @@ SELECT a,
 ----
 81 values hashing to 93d7b3b407d166dc7e232faf70b8c121
 
+skipif polars
 query IIIIIII nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
        c-d,
@@ -4987,6 +5062,7 @@ SELECT a+b*2+c*3+d*4+e*5,
 1826 333
 1529 555
 
+skipif polars
 query IIIIIII nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
        a+b*2+c*3+d*4+e*5,
@@ -5011,6 +5087,7 @@ SELECT a+b*2,
 ----
 120 values hashing to aba88e7aab9b448d205e6978445e0e60
 
+skipif polars
 query IIIII nosort
 SELECT e,
        CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
@@ -5081,6 +5158,7 @@ SELECT a+b*2+c*3+d*4,
 ----
 10 values hashing to b1ede94648229b93b2cbc4b745c90874
 
+skipif polars
 query III nosort
 SELECT e,
        a+b*2+c*3+d*4,
@@ -5090,6 +5168,7 @@ SELECT e,
 ----
 90 values hashing to a693972973d8fc824fbad0bfa2fd3a4a
 
+skipif polars
 query IIIIIII nosort
 SELECT (a+b+c+d+e)/5,
        d,
@@ -5151,6 +5230,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
 ----
 125 values hashing to 9fcf17184ac87f3ca33f5aa74b552242
 
+skipif polars
 query IIII nosort
 SELECT (a+b+c+d+e)/5,
        CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
@@ -5192,6 +5272,7 @@ SELECT abs(a),
 ----
 111 113 111 4
 
+skipif polars
 query IIIIII nosort
 SELECT a+b*2+c*3,
        c-d,
@@ -5236,6 +5317,7 @@ SELECT (a+b+c+d+e)/5,
 167 165 167
 182 180 181
 
+skipif polars
 query IIII nosort
 SELECT abs(a),
        a+b*2+c*3,
@@ -5305,6 +5387,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
 ----
 120 values hashing to 9d8ae71d1d4851666a75fec8bc675773
 
+skipif polars
 query IIIIII nosort
 SELECT c-d,
        a+b*2+c*3+d*4+e*5,
@@ -5355,6 +5438,7 @@ SELECT b,
 ----
 90 values hashing to 4ef8091171bdcd75f14227ae962a986b
 
+skipif polars
 query IIIII nosort
 SELECT c-d,
        a-b,
@@ -5492,6 +5576,7 @@ SELECT a+b*2+c*3+d*4
 ----
 30 values hashing to a97f06c7abca35ed0602e7a54b6ca0ac
 
+skipif polars
 query IIIIIII nosort
 SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
         WHEN a<b+3 THEN 333 ELSE 444 END,
@@ -5535,6 +5620,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
 ----
 196 values hashing to ab60be6b2b2d576e28c474ce597e7441
 
+skipif polars
 query IIII nosort
 SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
         WHEN a<b+3 THEN 333 ELSE 444 END,
@@ -5565,6 +5651,7 @@ SELECT b,
 ----
 21 values hashing to 677c2b291c4593e92612ecd64d0703bc
 
+skipif polars
 query IIIIII nosort
 SELECT (a+b+c+d+e)/5,
        (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
@@ -5617,6 +5704,7 @@ SELECT a,
 ----
 90 values hashing to b368ccf9ec5229d5659d6054528d110f
 
+skipif polars
 query IIIII nosort
 SELECT b,
        CASE a+1 WHEN b THEN 111 WHEN c THEN 222
@@ -5632,6 +5720,7 @@ SELECT b,
 ----
 150 values hashing to 76e5018cbc30cd20144c127779caf4e4
 
+skipif polars
 query IIIIIII nosort
 SELECT a-b,
        (a+b+c+d+e)/5,
@@ -6138,6 +6227,7 @@ SELECT a-b,
 ----
 150 values hashing to 85a750970f2a3cfd014b8df3cb52a6f6
 
+skipif polars
 query III nosort
 SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
         WHEN a<b+3 THEN 333 ELSE 444 END,
@@ -6174,6 +6264,7 @@ SELECT (a+b+c+d+e)/5,
 ----
 54 values hashing to 851593a9a226d556e165b5765819e242
 
+skipif polars
 query IIIII nosort
 SELECT CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
        (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
@@ -6187,6 +6278,7 @@ SELECT CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
 ----
 55 values hashing to 9b60d91226b0f2f8659270ea5306163d
 
+skipif polars
 query III nosort
 SELECT (a+b+c+d+e)/5,
        e,
@@ -6242,6 +6334,7 @@ SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
  ORDER BY 1,3,2
 ----
 
+skipif polars
 query IIIIII nosort
 SELECT abs(a),
        CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
@@ -6504,6 +6597,7 @@ SELECT c,
 ----
 150 values hashing to 3565717d74e8461a76a1e7e96613a5ee
 
+skipif polars
 query III nosort
 SELECT (a+b+c+d+e)/5,
        (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
@@ -6524,6 +6618,7 @@ SELECT e,
 ----
 50 values hashing to 7d469028ffef98c82d5862c6bbf65688
 
+skipif polars
 query IIIIII nosort
 SELECT c,
        CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
@@ -6602,6 +6697,7 @@ SELECT c,
 ----
 56 values hashing to 954fd515b57c6e2aca8a512c3caebd11
 
+skipif polars
 query II nosort
 SELECT a+b*2+c*3+d*4,
        (a+b+c+d+e)/5
@@ -6638,6 +6734,7 @@ SELECT c-d,
 ----
 150 values hashing to 3a8d86075da3f005fd88521f81f2f974
 
+skipif polars
 query IIIIII nosort
 SELECT abs(b-c),
        a,
@@ -6720,6 +6817,7 @@ SELECT abs(b-c)
 ----
 30 values hashing to ebf2696a89b67ae7c2bb5d796d902b72
 
+skipif polars
 query IIIIIII nosort
 SELECT a+b*2+c*3,
        c-d,
@@ -6734,6 +6832,7 @@ SELECT a+b*2+c*3,
 ----
 210 values hashing to 9c29cdd6374772e5c26eae66ae64c8f1
 
+skipif polars
 query IIIIII nosort
 SELECT d,
        CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
@@ -6747,6 +6846,7 @@ SELECT d,
 ----
 180 values hashing to 4d08f00ee53c5830f926a4a0dcee2b20
 
+skipif polars
 query IIIIII nosort
 SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
         WHEN a<b+3 THEN 333 ELSE 444 END,
@@ -6895,6 +6995,7 @@ SELECT abs(b-c),
 ----
 10 values hashing to d1f0237fc8125db019f7ae5fc6432c34
 
+skipif polars
 query III nosort
 SELECT b,
        (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
@@ -7185,6 +7286,7 @@ SELECT b-c
 ----
 30 values hashing to 970be304ddec1d2bede8d8e2f14368c6
 
+skipif polars
 query IIIIII nosort
 SELECT abs(b-c),
        (a+b+c+d+e)/5,
@@ -7579,6 +7681,7 @@ SELECT (a+b+c+d+e)/5
 ----
 10 values hashing to aa2c9e190b3da5017e764235b4370941
 
+skipif polars
 query IIIII nosort
 SELECT c,
        (a+b+c+d+e)/5,
@@ -7618,6 +7721,7 @@ SELECT d,
 ----
 90 values hashing to 430c4c38368b95466b685c4e550fd8f9
 
+skipif polars
 query IIIIII nosort
 SELECT a+b*2+c*3+d*4,
        d-e,
@@ -7631,6 +7735,7 @@ SELECT a+b*2+c*3+d*4,
 ----
 180 values hashing to 0f795dad72b6ea42fe6e007088398156
 
+skipif polars
 query IIII nosort
 SELECT a+b*2+c*3+d*4,
        a+b*2,
@@ -7655,6 +7760,7 @@ SELECT b-c,
 ----
 21 values hashing to a9adff4c78600e1bb516fe971d672dee
 
+skipif polars
 query IIIIIII nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
        abs(a),
@@ -7684,6 +7790,7 @@ SELECT abs(a),
 ----
 95 values hashing to 19afe88a8ec0b6ac1a596dcfbe7a73ef
 
+skipif polars
 query IIIII nosort
 SELECT (a+b+c+d+e)/5,
        b,
@@ -7749,6 +7856,7 @@ SELECT c-d,
 ----
 90 values hashing to f6d4cc8f5712412b43f67a3e8970ea9f
 
+skipif polars
 query III nosort
 SELECT a,
        (a+b+c+d+e)/5,
@@ -7775,6 +7883,7 @@ SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
 ----
 20 values hashing to c7b97476a8b2de6d251ac49288730b61
 
+skipif polars
 query III nosort
 SELECT (a+b+c+d+e)/5,
        a+b*2,
@@ -7824,6 +7933,7 @@ SELECT d-e,
 ----
 65 values hashing to 2fd8bd04880dbafe31b9a7c85fce3d0e
 
+skipif polars
 query IIIII nosort
 SELECT d-e,
        CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
@@ -7981,6 +8091,7 @@ SELECT abs(b-c),
 ----
 210 values hashing to 2086c3df1975d9993bfa394053028c8f
 
+skipif polars
 query IIIIIII nosort
 SELECT (a+b+c+d+e)/5,
        a+b*2+c*3+d*4,
@@ -8032,6 +8143,7 @@ SELECT a+b*2+c*3,
 ----
 175 values hashing to 1086608e130bcb51302b4bfea65791e1
 
+skipif polars
 query III nosort
 SELECT b-c,
        (a+b+c+d+e)/5,
@@ -8122,6 +8234,7 @@ SELECT a+b*2+c*3+d*4+e*5
 ----
 19 values hashing to 48eb7e59034740832c393d911a912d77
 
+skipif polars
 query IIII nosort
 SELECT (a+b+c+d+e)/5,
        a+b*2+c*3+d*4,
@@ -8192,6 +8305,7 @@ SELECT a+b*2+c*3,
 ----
 87 values hashing to 680b619be1265b7bc4eb9d45e3fcb324
 
+skipif polars
 query IIIII nosort
 SELECT a+b*2+c*3,
        a+b*2+c*3+d*4+e*5,
@@ -8426,6 +8540,7 @@ SELECT d,
 ----
 180 values hashing to 25be50217edd1dde9c08a20bbaa92559
 
+skipif polars
 query IIIIII nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
        a+b*2+c*3+d*4+e*5,
@@ -8452,6 +8567,7 @@ SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
 ----
 35 values hashing to 3af25b67f93d88c1a5f7c4641a52f3f5
 
+skipif polars
 query IIIII nosort
 SELECT b,
        a,
@@ -8465,6 +8581,7 @@ SELECT b,
 ----
 120 values hashing to 9fc494d65a15058f4386b7654088f517
 
+skipif polars
 query IIIII nosort
 SELECT b,
        d-e,
@@ -8554,6 +8671,7 @@ SELECT a+b*2+c*3+d*4+e*5
 ----
 30 values hashing to 9a0d83a47e9ea85f0da38e0f9ca27f2e
 
+skipif polars
 query II nosort
 SELECT a,
        (a+b+c+d+e)/5
@@ -8622,6 +8740,7 @@ SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
 ----
 48 values hashing to d0ea668a25e020372a556318afe192ab
 
+skipif polars
 query IIIII nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
        a,
@@ -8656,6 +8775,7 @@ SELECT a+b*2,
 ----
 120 values hashing to 9489097f8d6868c4869ed10c8d568245
 
+skipif polars
 query IIIIIII nosort
 SELECT a+b*2+c*3+d*4+e*5,
        a+b*2+c*3+d*4,
@@ -8749,6 +8869,7 @@ SELECT a+b*2+c*3,
 ----
 180 values hashing to eba90a7042d20ae635380f2920638d69
 
+skipif polars
 query IIIIII nosort
 SELECT a-b,
        d,
@@ -8807,6 +8928,7 @@ SELECT d,
 ----
 144 values hashing to 02ea802456562964743e691697e71348
 
+skipif polars
 query III nosort
 SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
         WHEN d THEN 333  WHEN e THEN 444 ELSE 555 END,
@@ -8947,6 +9069,7 @@ SELECT a+b*2+c*3,
 ----
 57 values hashing to ef45e87dcde7a60906a6839e404a6b19
 
+skipif polars
 query IIIII nosort
 SELECT d,
        a+b*2+c*3,
@@ -8975,6 +9098,7 @@ SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
 ----
 210 values hashing to 170ee3d655d116f8524c3fcfc94ff7eb
 
+skipif polars
 query IIII nosort
 SELECT c-d,
        e,
@@ -9103,6 +9227,7 @@ SELECT d,
 ----
 76 values hashing to 10d6eaf3cbdaaff42d6460c350423046
 
+skipif polars
 query III nosort
 SELECT abs(a),
        a+b*2+c*3,
@@ -9161,6 +9286,7 @@ SELECT b
 ----
 24 values hashing to 94f786f5e40682c2bbc4979d44bfbe20
 
+skipif polars
 query III nosort
 SELECT (a+b+c+d+e)/5,
        b-c,
@@ -9420,6 +9546,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
 ----
 162 values hashing to ec8ccfd9d87f0f620283a1dae7d24434
 
+skipif polars
 query IIIIIII nosort
 SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
         WHEN d THEN 333  WHEN e THEN 444 ELSE 555 END,
@@ -9490,6 +9617,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
 ----
 154 values hashing to ead80733a2080af9498e2ac38198e68e
 
+skipif polars
 query IIIII nosort
 SELECT d,
        (a+b+c+d+e)/5,
@@ -9517,6 +9645,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
 ----
 40 values hashing to ce114edef775ad5ff5fdc63fd86c4a61
 
+skipif polars
 query III nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
        (a+b+c+d+e)/5,
@@ -9569,6 +9698,7 @@ SELECT a+b*2,
 ----
 81 values hashing to 87ef93a2fb3074f84f96ba99640b4492
 
+skipif polars
 query IIIIIII nosort
 SELECT c,
        (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
@@ -9611,6 +9741,7 @@ SELECT a+b*2
 ----
 29 values hashing to 4f865c5fb99fc326faf2828fc7d2509e
 
+skipif polars
 query IIII nosort
 SELECT (a+b+c+d+e)/5,
        a+b*2+c*3+d*4,
@@ -9623,6 +9754,7 @@ SELECT (a+b+c+d+e)/5,
 ----
 12 values hashing to c334c687262c72da162e191703935928
 
+skipif polars
 query IIIIII nosort
 SELECT b,
        c,
@@ -9662,6 +9794,7 @@ SELECT a+b*2+c*3+d*4,
 1226 4
 1272 5
 
+skipif polars
 query IIIIIII nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
        (a+b+c+d+e)/5,
@@ -9821,6 +9954,7 @@ SELECT CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
 ----
 144 values hashing to a794024d0a6d2be248d44841cdc86d7e
 
+skipif polars
 query IIIIIII nosort
 SELECT a+b*2+c*3+d*4+e*5,
        CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
@@ -9869,6 +10003,7 @@ SELECT a+b*2+c*3,
 ----
 20 values hashing to 2d46a1ed7e70a6d2dcfc116ba3311d17
 
+skipif polars
 query IIIIIII nosort
 SELECT d-e,
        CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
@@ -9883,6 +10018,7 @@ SELECT d-e,
 ----
 98 values hashing to 1a15f531b014dbe47026fef24f6aecb2
 
+skipif polars
 query IIIIII nosort
 SELECT CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
        b-c,
@@ -10010,6 +10146,7 @@ SELECT abs(b-c),
 ----
 180 values hashing to 9d090400bed173943daf9f4bed32cdab
 
+skipif polars
 query II nosort
 SELECT abs(a),
        (a+b+c+d+e)/5
@@ -10126,6 +10263,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.c>t1.c AND x.d<t1.d),
 ----
 112 values hashing to 3a34b6923ab936224547f54261b88bd9
 
+skipif polars
 query IIIIII nosort
 SELECT a,
        CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
@@ -10236,6 +10374,7 @@ SELECT a+b*2+c*3+d*4+e*5,
 ----
 90 values hashing to 4f5f0d9293917c38b9f4b02cd5186710
 
+skipif polars
 query IIII nosort
 SELECT a+b*2,
        (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
@@ -10296,6 +10435,7 @@ SELECT a+b*2+c*3,
 ----
 48 values hashing to 07d61cbdc1b1a770028513bc1000183b
 
+skipif polars
 query IIIIIII nosort
 SELECT (a+b+c+d+e)/5,
        a+b*2+c*3,
@@ -10436,6 +10576,7 @@ SELECT d-e,
 ----
 84 values hashing to 01735d043bb36ecd392f6788eca95cf8
 
+skipif polars
 query IIIIII nosort
 SELECT (a+b+c+d+e)/5,
        c-d,
@@ -10482,6 +10623,7 @@ SELECT CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
 ----
 28 values hashing to 7bb527bc1d2528e5b09d04fcd8e6a1fb
 
+skipif polars
 query IIIIIII nosort
 SELECT (a+b+c+d+e)/5,
        abs(b-c),
@@ -10559,6 +10701,7 @@ SELECT c-d,
 ----
 66 values hashing to e2757dcba60a847a3e85e457f395d8bb
 
+skipif polars
 query IIIII nosort
 SELECT b-c,
        CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
@@ -10583,6 +10726,7 @@ SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
 ----
 10 values hashing to a6bef4e5aecb8450ab3ccc03b43c85ee
 
+skipif polars
 query IIIIIII nosort
 SELECT e,
        CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
@@ -10622,6 +10766,7 @@ SELECT a+b*2,
 ----
 60 values hashing to 38d959c66fd021952542450eb9e1d47c
 
+skipif polars
 query IIIII nosort
 SELECT (a+b+c+d+e)/5,
        a,
@@ -10653,6 +10798,7 @@ SELECT a+b*2+c*3+d*4,
 ----
 14 values hashing to 36b2a781a944b283d58e7a573cab851b
 
+skipif polars
 query IIIIII nosort
 SELECT (a+b+c+d+e)/5,
        a+b*2,
@@ -10690,6 +10836,7 @@ SELECT a,
 ----
 112 values hashing to 1e8b8e47469f6adc40399d99b37817d3
 
+skipif polars
 query II nosort
 SELECT a+b*2,
        (a+b+c+d+e)/5
@@ -10732,6 +10879,7 @@ SELECT (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
 ----
 60 values hashing to 95d01ba1e4d6c81aed6a9218884a3a6a
 
+skipif polars
 query IIIII nosort
 SELECT c,
        (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
@@ -10757,6 +10905,7 @@ SELECT a-b,
  ORDER BY 1,2,3
 ----
 
+skipif polars
 query IIIIIII nosort
 SELECT e,
        (a+b+c+d+e)/5,
@@ -10832,6 +10981,7 @@ SELECT a-b,
 ----
 52 values hashing to 645a7d1f1ea6951d2ea4ad569bb7fb6d
 
+skipif polars
 query IIIIIII nosort
 SELECT a,
        b,
@@ -11061,6 +11211,7 @@ SELECT CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
 ----
 12 values hashing to 775f4f09449defb997247686b8993684
 
+skipif polars
 query II nosort
 SELECT a+b*2+c*3,
        (a+b+c+d+e)/5
@@ -11087,6 +11238,7 @@ SELECT a,
  ORDER BY 4,2,5,1,3,6
 ----
 
+skipif polars
 query IIIIII nosort
 SELECT a-b,
        (a+b+c+d+e)/5,
@@ -11114,6 +11266,7 @@ SELECT a+b*2,
 ----
 120 values hashing to 09e9f16109a33c112566d23c35fe3d34
 
+skipif polars
 query IIII nosort
 SELECT (SELECT count(*) FROM t1 AS x WHERE x.b<t1.b),
        a+b*2+c*3+d*4+e*5,
@@ -11184,6 +11337,7 @@ SELECT d,
 ----
 30 values hashing to 06a7d44acf151628b3050a8ebc708745
 
+skipif polars
 query IIIIII nosort
 SELECT a,
        c-d,
@@ -11267,6 +11421,7 @@ SELECT a+b*2+c*3,
 ----
 20 values hashing to df599e2a0626cb1e74ef62133e945cfd
 
+skipif polars
 query IIIIII nosort
 SELECT (a+b+c+d+e)/5,
        e,
@@ -11326,6 +11481,7 @@ SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
 ----
 90 values hashing to 57f2ebca5511fd3dcdb1aaaa1085afb9
 
+skipif polars
 query IIIIIII nosort
 SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
         WHEN d THEN 333  WHEN e THEN 444 ELSE 555 END,
@@ -11340,6 +11496,7 @@ SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
 ----
 210 values hashing to fa048abe30ca7228144722825635bdc3
 
+skipif polars
 query IIIIIII nosort
 SELECT (a+b+c+d+e)/5,
        c-d,
@@ -11417,6 +11574,7 @@ SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
 ----
 16 values hashing to 812c454e8d6a9bac1766cce23665de1c
 
+skipif polars
 query IIII nosort
 SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
         WHEN d THEN 333  WHEN e THEN 444 ELSE 555 END,
@@ -11431,6 +11589,7 @@ SELECT CASE a+1 WHEN b THEN 111 WHEN c THEN 222
 ----
 108 values hashing to 51ad3b8a1b881292bb3b372941aa523b
 
+skipif polars
 query IIIIII nosort
 SELECT b,
        CASE a+1 WHEN b THEN 111 WHEN c THEN 222
@@ -11476,6 +11635,7 @@ SELECT abs(a)
 ----
 27 values hashing to 96f1b2d40968aae8aa5efb71c05401fd
 
+skipif polars
 query IIIIII nosort
 SELECT a+b*2+c*3+d*4+e*5,
        c,
@@ -11498,6 +11658,7 @@ SELECT a+b*2+c*3+d*4
 ----
 24 values hashing to 72a0bad4364ab5cec9197874c8214b90
 
+skipif polars
 query IIIIIII nosort
 SELECT (a+b+c+d+e)/5,
        d,
@@ -11511,6 +11672,7 @@ SELECT (a+b+c+d+e)/5,
 ----
 210 values hashing to 7ffed25a409fdd72f938a3e0fee5ef7b
 
+skipif polars
 query IIIIIII nosort
 SELECT d,
        CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
@@ -11601,6 +11763,7 @@ SELECT a+b*2+c*3+d*4+e*5,
 ----
 90 values hashing to 99b07f07bebaeafdec57423602e76a03
 
+skipif polars
 query IIIIII nosort
 SELECT (a+b+c+d+e)/5,
        c-d,
@@ -11661,6 +11824,7 @@ SELECT a-b
 ----
 16 values hashing to 069bf04f1be08ea67a9cba4d0956654b
 
+skipif polars
 query III nosort
 SELECT a,
        (a+b+c+d+e)/5,
@@ -11790,6 +11954,7 @@ SELECT abs(b-c)
 ----
 22 values hashing to a2ba0b24ef26c9654b970fe085456049
 
+skipif polars
 query IIIIII nosort
 SELECT a+b*2+c*3,
        a+b*2+c*3+d*4+e*5,
@@ -11911,6 +12076,7 @@ SELECT CASE WHEN c>(SELECT avg(c) FROM t1) THEN a*2 ELSE b*10 END,
 ----
 58 values hashing to c78692ff94d85fe79f2b10611c86bec7
 
+skipif polars
 query IIIIII nosort
 SELECT CASE WHEN a<b-3 THEN 111 WHEN a<=b THEN 222
         WHEN a<b+3 THEN 333 ELSE 444 END,
@@ -11983,6 +12149,7 @@ SELECT c,
 ----
 72 values hashing to 78ce08b9b47effca273ed6c5e973307f
 
+skipif polars
 query IIIIIII nosort
 SELECT (a+b+c+d+e)/5,
        b,
@@ -12055,6 +12222,7 @@ SELECT b,
 ----
 132 values hashing to 96d9a79e7b27fe306bc987a453cfcebe
 
+skipif polars
 query III nosort
 SELECT a,
        a+b*2+c*3,

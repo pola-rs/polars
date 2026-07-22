@@ -131,14 +131,13 @@ renamed from `.test` to `.slt` (stem preserved) so the runner discovers them.
 
 ## skipif polars divergences
 
-`skipif polars` was added to 160 individual records (documented per
+`skipif polars` was added to 1008 individual records (documented per
 cluster below), all discovered during Phase 2 triage of the initial
 baseline run. In every case the record's own SQL is unaffected; the
 comment is placed as its own `skipif polars` line immediately above the
 `query` line, matching the file's existing `skipif <engine>` style.
 
-- **135 records** (select1.slt, select2.slt, select3.slt,
-  random/aggregates_slt_good_{0,50}.slt, random/select_slt_good_{0,50}.slt):
+- **873 records** (select1.slt: 168, select2.slt: 151, select3.slt: 554):
   integer division. Polars SQL's `/` operator always performs true
   (floating-point) division regardless of operand types - a deliberate,
   pre-existing product decision (commit 18e3422118, "feat: Use true
