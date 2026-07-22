@@ -50,8 +50,14 @@ impl ChunkReverse for ListChunked {
         if self.is_empty() {
             return self.clone();
         };
-        let ca: Self = self.series_iter().rev().collect_trusted();
-        ca.with_name(self.name().clone())
+        // take_unchecked preserves the declared List inner dtype (via ca.dtype()),
+        // unlike series_iter().rev().collect_trusted() which rebuilds from values
+        // and degrades all-null List(T) to List(Null). See #28409.
+        let idx = IdxCa::from_vec(
+            PlSmallStr::EMPTY,
+            (0..self.len() as IdxSize).rev().collect(),
+        );
+        unsafe { self.take_unchecked(&idx) }
     }
 }
 

@@ -22,6 +22,37 @@ def test_reverse_series() -> None:
     assert s.reverse().to_list() == ["x", "y", None, "b", "a"]
 
 
+def test_reverse_all_null_list_keeps_inner_dtype_28409() -> None:
+    # An all-null List column must keep its declared inner dtype after reverse,
+    # and the executed schema must match the schema the planner reports.
+    lf = pl.LazyFrame(
+        {"L": [None]}, schema={"L": pl.List(pl.Int64)}
+    ).reverse()
+
+    planned = lf.collect_schema()["L"]
+    assert planned == pl.List(pl.Int64)
+    assert lf.collect().schema["L"] == planned
+    assert lf.collect(engine="streaming").schema["L"] == planned
+
+
+def test_reverse_diagonal_concat_null_fill_28409() -> None:
+    # diagonal concat null-fills the missing "L" column of the right branch;
+    # when the left branch is empty the whole "L" column is null. Reversing it
+    # must not degrade List(Int64) into List(Null), and both engines must agree
+    # with the planned schema.
+    a = pl.LazyFrame({"L": [[1, 2]], "b": [1]})
+    b = pl.LazyFrame({"z": [7]})
+    q = pl.concat(
+        [a.sort("b").filter(pl.col("b") < -9), b],  # left branch is empty
+        how="diagonal",
+    ).reverse()
+
+    planned = q.collect_schema()["L"]
+    assert planned == pl.List(pl.Int64)
+    assert q.collect().schema["L"] == planned
+    assert q.collect(engine="streaming").schema["L"] == planned
+
+
 def test_reverse_binary() -> None:
     # single chunk
     s = pl.Series("values", ["a", "b", "c", "d"]).cast(pl.Binary)
