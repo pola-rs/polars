@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from datetime import datetime
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -98,6 +99,42 @@ def test_eq_list() -> None:
 
     result = s == 1
     expected = pl.Series([True, True])
+    assert_series_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        np.int16,
+        np.int32,
+        np.int64,
+        np.float32,
+        np.float64,
+        str,
+        bytes,
+        "<U4",
+        "S4",
+        "datetime64[ns]",
+        "timedelta64[ns]",
+    ],
+)
+def test_eq_np(dtype: str | type) -> None:
+    s = pl.Series(np.array([1, 1234, 1], dtype=dtype))
+
+    result = s == np.array([1, 2, 1], dtype=dtype)
+    expected = pl.Series([True, False, True])
+    assert_series_equal(result, expected)
+
+    result = s == np.array([1, 1234, 1], dtype=dtype)
+    expected = pl.Series([True, True, True])
+    assert_series_equal(result, expected)
+
+    result = s == np.array([1234, 1, 5], dtype=dtype)
+    expected = pl.Series([False, False, False])
+    assert_series_equal(result, expected)
+
+    result = s == np.array(1, dtype=dtype)
+    expected = pl.Series([True, False, True])
     assert_series_equal(result, expected)
 
 
