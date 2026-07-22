@@ -166,133 +166,6 @@ impl Debug for AExprArena<'_> {
     }
 }
 
-impl AExpr {
-    fn is_equal_node(&self, other: &Self) -> bool {
-        use AExpr::*;
-        match (self, other) {
-            (Column(l), Column(r)) => l == r,
-            (Literal(l), Literal(r)) => l == r,
-            #[cfg(feature = "dynamic_group_by")]
-            (
-                Rolling {
-                    function: _,
-                    index_column: _,
-                    period: l_period,
-                    offset: l_offset,
-                    closed_window: l_closed_window,
-                },
-                Rolling {
-                    function: _,
-                    index_column: _,
-                    period: r_period,
-                    offset: r_offset,
-                    closed_window: r_closed_window,
-                },
-            ) => l_period == r_period && l_offset == r_offset && l_closed_window == r_closed_window,
-            (Over { mapping: l, .. }, Over { mapping: r, .. }) => l == r,
-            (
-                Cast {
-                    options: strict_l,
-                    dtype: dtl,
-                    ..
-                },
-                Cast {
-                    options: strict_r,
-                    dtype: dtr,
-                    ..
-                },
-            ) => strict_l == strict_r && dtl == dtr,
-            (Sort { options: l, .. }, Sort { options: r, .. }) => l == r,
-            (Gather { .. }, Gather { .. })
-            | (Filter { .. }, Filter { .. })
-            | (Ternary { .. }, Ternary { .. })
-            | (Len, Len)
-            | (Slice { .. }, Slice { .. }) => true,
-            (
-                Explode {
-                    expr: _,
-                    options: l_options,
-                },
-                Explode {
-                    expr: _,
-                    options: r_options,
-                },
-            ) => l_options == r_options,
-            (
-                SortBy {
-                    sort_options: l_sort_options,
-                    ..
-                },
-                SortBy {
-                    sort_options: r_sort_options,
-                    ..
-                },
-            ) => l_sort_options == r_sort_options,
-            (Agg(l), Agg(r)) => l.equal_nodes(r),
-            (
-                Function {
-                    input: il,
-                    function: fl,
-                    options: ol,
-                },
-                Function {
-                    input: ir,
-                    function: fr,
-                    options: or,
-                },
-            ) => {
-                fl == fr && ol == or && {
-                    let mut all_same_name = true;
-                    for (l, r) in il.iter().zip(ir) {
-                        all_same_name &= l.output_name() == r.output_name()
-                    }
-
-                    all_same_name
-                }
-            },
-            (
-                AnonymousFunction {
-                    function: l1,
-                    options: l2,
-                    fmt_str: l3,
-                    input: _,
-                },
-                AnonymousFunction {
-                    function: r1,
-                    options: r2,
-                    fmt_str: r3,
-                    input: _,
-                },
-            ) => {
-                l2 == r2 && l3 == r3 && {
-                    use LazySerde as L;
-                    match (l1, r1) {
-                        // We only check the pointers, so this works for python
-                        // functions that are on the same address.
-                        (L::Deserialized(l0), L::Deserialized(r0)) => l0 == r0,
-                        (L::Bytes(l0), L::Bytes(r0)) => l0 == r0,
-                        (
-                            L::Named {
-                                name: l_name,
-                                payload: l_payload,
-                                value: l_value,
-                            },
-                            L::Named {
-                                name: r_name,
-                                payload: r_payload,
-                                value: r_value,
-                            },
-                        ) => l_name == r_name && l_payload == r_payload && l_value == r_value,
-                        _ => false,
-                    }
-                }
-            },
-            (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
-            _ => false,
-        }
-    }
-}
-
 impl<'a> AExprArena<'a> {
     pub fn new(node: Node, arena: &'a Arena<AExpr>) -> Self {
         Self { node, arena }
@@ -300,40 +173,11 @@ impl<'a> AExprArena<'a> {
     pub fn to_aexpr(&self) -> &'a AExpr {
         self.arena.get(self.node)
     }
-
-    // Check single node on equality
-    pub fn is_equal_single(&self, other: &Self) -> bool {
-        let self_ae = self.to_aexpr();
-        let other_ae = other.to_aexpr();
-        self_ae.is_equal_node(other_ae)
-    }
 }
 
 impl PartialEq for AExprArena<'_> {
     fn eq(&self, other: &Self) -> bool {
-        let mut scratch1 = unitvec![];
-        let mut scratch2 = unitvec![];
-
-        scratch1.push(self.node);
-        scratch2.push(other.node);
-
-        loop {
-            match (scratch1.pop(), scratch2.pop()) {
-                (Some(l), Some(r)) => {
-                    let l = Self::new(l, self.arena);
-                    let r = Self::new(r, other.arena);
-
-                    if !l.is_equal_single(&r) {
-                        return false;
-                    }
-
-                    l.to_aexpr().inputs_rev(&mut scratch1);
-                    r.to_aexpr().inputs_rev(&mut scratch2);
-                },
-                (None, None) => return true,
-                _ => return false,
-            }
-        }
+        self.to_aexpr().is_expr_equal_to(&other.to_aexpr(), self.arena)
     }
 }
 
