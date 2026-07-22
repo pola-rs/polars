@@ -60,6 +60,19 @@ polars_utils::regex_cache::cached_regex! {
         "#;
 }
 
+/// Strips a trailing `%z`-family directive from `fmt`, if present.
+///
+/// jiff's `%z`/`%:z`/`%::z`/`%:::z`/`%#z` directives are strictly numeric
+/// (`[+-]HH:MM[:SS]`-style) and, unlike chrono's, never accept a literal
+/// `Z`. This is used to retry parsing a "Zulu time" value (one ending in a
+/// literal `Z` instead of a numeric offset) by matching everything but the
+/// offset, then checking for a literal `Z` where the offset would be.
+#[cfg(feature = "dtype-datetime")]
+fn strip_trailing_tz_directive(fmt: &str) -> Option<&str> {
+    const TZ_DIRECTIVES: [&str; 5] = ["%:::z", "%::z", "%:z", "%#z", "%z"];
+    TZ_DIRECTIVES.iter().find_map(|d| fmt.strip_suffix(d))
+}
+
 #[cfg(feature = "dtype-datetime")]
 fn sniff_fmt_datetime(val: &str) -> PolarsResult<&'static str> {
     datetime_pattern(val, |val, fmt| NaiveDateTime::strptime(fmt, val))
@@ -202,14 +215,21 @@ pub trait StringMethods: AsString {
                 let timestamp = if tz_aware {
                     jiff::fmt::strtime::BrokenDownTime::parse_prefix(fmt, s)
                         .ok()
-                        .and_then(|(tm, _r)| match tm.to_timestamp() {
-                            Ok(ts) => Some(ts),
-                            // No offset/zone specifier matched (e.g. a
-                            // literal "Z" suffix) - treat as UTC.
-                            Err(_) => tm
-                                .to_datetime()
-                                .ok()
-                                .and_then(|dt| jiff::tz::TimeZone::UTC.to_timestamp(dt).ok()),
+                        .and_then(|(tm, _r)| tm.to_timestamp().ok())
+                        .or_else(|| {
+                            // jiff's `%z`-family directives never accept a
+                            // literal "Z" (unlike chrono's). If the format
+                            // ends in one of them, retry matching everything
+                            // but the offset, and treat a literal "Z"
+                            // immediately following as an explicit +00:00
+                            // offset.
+                            let fmt_prefix = strip_trailing_tz_directive(fmt)?;
+                            let (tm, len) =
+                                jiff::fmt::strtime::BrokenDownTime::parse_prefix(fmt_prefix, s)
+                                    .ok()?;
+                            s[len..].strip_prefix('Z')?;
+                            let dt = tm.to_datetime().ok()?;
+                            jiff::tz::TimeZone::UTC.to_timestamp(dt).ok()
                         })
                         .map(|ts| func(jiff::tz::TimeZone::UTC.to_datetime(ts)))
                 } else {
@@ -319,17 +339,23 @@ pub trait StringMethods: AsString {
                     |s: &str| {
                         let ts = if fmt == "%+" {
                             s.parse::<Timestamp>().ok()?
+                        } else if let Ok(tm) = jiff::fmt::strtime::BrokenDownTime::parse(&fmt, s) {
+                            tm.to_timestamp().ok()?
                         } else {
-                            let tm = jiff::fmt::strtime::BrokenDownTime::parse(&fmt, s).ok()?;
-                            match tm.to_timestamp() {
-                                Ok(ts) => ts,
-                                // No offset/zone specifier matched (e.g. a
-                                // literal "Z" suffix) - treat as UTC.
-                                Err(_) => {
-                                    let dt = tm.to_datetime().ok()?;
-                                    jiff::tz::TimeZone::UTC.to_timestamp(dt).ok()?
-                                },
+                            // jiff's `%z`-family directives never accept a
+                            // literal "Z" (unlike chrono's). If the format
+                            // ends in one of them, retry matching everything
+                            // but the offset, and treat a literal "Z" left
+                            // over as an explicit +00:00 offset.
+                            let fmt_prefix = strip_trailing_tz_directive(&fmt)?;
+                            let (tm, len) =
+                                jiff::fmt::strtime::BrokenDownTime::parse_prefix(fmt_prefix, s)
+                                    .ok()?;
+                            if &s[len..] != "Z" {
+                                return None;
                             }
+                            let dt = tm.to_datetime().ok()?;
+                            jiff::tz::TimeZone::UTC.to_timestamp(dt).ok()?
                         };
                         Some(func(jiff::tz::TimeZone::UTC.to_datetime(ts)))
                     },
