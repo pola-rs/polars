@@ -19,7 +19,6 @@ struct NumaRegion {
     cpu_idxs: Range<usize>,
 }
 
-
 static TOPOLOGY: LazyLock<Option<Topology>> = LazyLock::new(|| {
     if !polars_config::config().numa_aware() {
         return None;
