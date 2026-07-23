@@ -63,8 +63,8 @@ To learn more, read the [user guide](https://docs.pola.rs/).
 
 ## Polars in action
 
-Queries are composed from expressions. This lazy query gets optimized out of the box and runs in parallel across all
-available cores:
+Queries are composed from expressions. This lazy query gets optimized out of the box and runs in
+parallel across all available cores:
 
 ```python
 import polars as pl
@@ -84,8 +84,8 @@ df = (
 
 ## Performance
 
-Polars is very fast. In fact, it is one of the best performing Dataframe solutions available. See the
-[PDS-H benchmarks](https://www.pola.rs/benchmarks.html) results.
+Polars is very fast. In fact, it is one of the best performing Dataframe solutions available. See
+the [PDS-H benchmarks](https://www.pola.rs/benchmarks.html) results.
 
 ### Handles larger-than-RAM data
 
@@ -110,7 +110,8 @@ on optional dependencies
 <details>
 <summary><b>Compile Polars from source</b></summary>
 
-If you want a bleeding edge release you should compile Polars from source. Advanced users can also compile for maximum performance for their architecture.
+If you want a bleeding edge release you should compile Polars from source. Advanced users can also
+compile for maximum performance for their architecture.
 
 This can be done by going through the following steps in sequence:
 
@@ -135,16 +136,17 @@ named `polars`, so you can `pip install polars` and `import polars`.
 
 </details>
 
-Check the [Installation guide](https://docs.pola.rs/user-guide/installation/)
-for more advanced installations. For example when you expect more than 2^32 (~4.2 billion) rows, run
-on an old CPU (e.g. dating from before 2011), or on an `x86-64` build of Python on Apple Silicon
-under Rosetta.
+Check the [Installation guide](https://docs.pola.rs/user-guide/installation/) for more advanced
+installations. For example when you expect more than 2^32 (~4.2 billion) rows, run on an old CPU
+(e.g. dating from before 2011), or on an `x86-64` build of Python on Apple Silicon under Rosetta.
 
 ## Contributing
 
-Want to contribute? Read our [contributing guide](https://docs.pola.rs/development/contributing/) and check the issue tracker for accepted issues.
+Want to contribute? Read our [contributing guide](https://docs.pola.rs/development/contributing/)
+and check the issue tracker for accepted issues.
 
-Contributors new to the codebase can look for the `good first issue` label to get familiar with the project.
+Contributors new to the codebase can look for the `good first issue` label to get familiar with the
+project.
 
 You can [join the Polars Discord server](https://discord.gg/4UfP5cfBE7) for any help along the way.
 
