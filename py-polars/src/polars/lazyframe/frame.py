@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import warnings
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -9,7 +10,6 @@ from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
 from io import BytesIO, StringIO
 from operator import and_
-from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -114,6 +114,7 @@ if TYPE_CHECKING:
     from builtins import slice as slice_
     from collections.abc import Awaitable, Callable, Iterator
     from io import IOBase
+    from pathlib import Path
     from typing import IO, Concatenate, Literal, ParamSpec
 
     import deltalake
@@ -192,11 +193,11 @@ def _select_engine(engine: EngineType) -> EngineType:
 
 
 def _to_sink_target(
-    path: str | Path | IO[bytes] | IO[str] | PartitionBy,
-) -> str | Path | IO[bytes] | IO[str] | PartitionBy:
+    path: str | Path | os.PathLike[str] | IO[bytes] | IO[str] | PartitionBy,
+) -> str | Path | os.PathLike[str] | IO[bytes] | IO[str] | PartitionBy:
     from polars.io.partition import PartitionBy
 
-    if isinstance(path, (str, Path)):
+    if isinstance(path, (str, os.PathLike)):
         return normalize_filepath(path)
     elif isinstance(path, io.IOBase):
         return path
@@ -495,7 +496,7 @@ class LazyFrame:
     @classmethod
     def deserialize(
         cls,
-        source: str | bytes | Path | IOBase,
+        source: str | bytes | Path | os.PathLike[str] | IOBase,
         *,
         format: SerializationFormat = "binary",
     ) -> LazyFrame:
@@ -546,7 +547,7 @@ class LazyFrame:
         """
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
-        elif isinstance(source, (str, Path)):
+        elif isinstance(source, (str, os.PathLike)):
             source = normalize_filepath(source)
         elif isinstance(source, bytes):
             source = io.BytesIO(source)
@@ -849,12 +850,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     @overload
     def serialize(
-        self, file: IOBase | str | Path, *, format: SerializationFormat = ...
+        self,
+        file: IOBase | str | Path | os.PathLike[str],
+        *,
+        format: SerializationFormat = ...,
     ) -> None: ...
 
     def serialize(
         self,
-        file: IOBase | str | Path | None = None,
+        file: IOBase | str | Path | os.PathLike[str] | None = None,
         *,
         format: SerializationFormat = "binary",
     ) -> bytes | str | None:
@@ -1447,7 +1451,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         optimized: bool = ...,
         show: bool = ...,
-        output_path: str | Path | None = ...,
+        output_path: str | Path | os.PathLike[str] | None = ...,
         raw_output: Literal[True],
         figsize: tuple[float, float] = ...,
         engine: EngineType = ...,
@@ -1461,7 +1465,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         optimized: bool = ...,
         show: bool = ...,
-        output_path: str | Path | None = ...,
+        output_path: str | Path | os.PathLike[str] | None = ...,
         raw_output: Literal[False] = ...,
         figsize: tuple[float, float] = ...,
         engine: EngineType = ...,
@@ -1475,7 +1479,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         optimized: bool = ...,
         show: bool = ...,
-        output_path: str | Path | None = ...,
+        output_path: str | Path | os.PathLike[str] | None = ...,
         raw_output: bool = ...,
         figsize: tuple[float, float] = ...,
         engine: EngineType = ...,
@@ -1490,7 +1494,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         optimized: bool = True,
         show: bool = True,
-        output_path: str | Path | None = None,
+        output_path: str | Path | os.PathLike[str] | None = None,
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
         type_coercion: bool = True,  # noqa: ARG002
@@ -2796,7 +2800,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | PartitionBy,
+        path: str | Path | os.PathLike[str] | IO[bytes] | PartitionBy,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2822,7 +2826,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | PartitionBy,
+        path: str | Path | os.PathLike[str] | IO[bytes] | PartitionBy,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -2847,7 +2851,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_parquet(
         self,
-        path: str | Path | IO[bytes] | PartitionBy,
+        path: str | Path | os.PathLike[str] | IO[bytes] | PartitionBy,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -3123,7 +3127,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_delta(
         self,
-        target: str | Path | deltalake.DeltaTable,
+        target: str | Path | os.PathLike[str] | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
         storage_options: StorageOptionsDict | None = ...,
@@ -3135,7 +3139,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_delta(
         self,
-        target: str | Path | deltalake.DeltaTable,
+        target: str | Path | os.PathLike[str] | deltalake.DeltaTable,
         *,
         mode: Literal["merge"],
         storage_options: StorageOptionsDict | None = ...,
@@ -3147,7 +3151,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @unstable()
     def sink_delta(
         self,
-        target: str | Path | deltalake.DeltaTable,
+        target: str | Path | os.PathLike[str] | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         storage_options: StorageOptionsDict | None = None,
@@ -3364,8 +3368,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         _check_for_unsupported_types(self.collect_schema().dtypes())
 
-        if isinstance(target, (str, Path)):
-            target = _resolve_delta_lake_uri(str(target), strict=False)
+        if isinstance(target, (str, os.PathLike)):
+            target = _resolve_delta_lake_uri(target, strict=False)
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
@@ -3491,7 +3495,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | PartitionBy,
+        path: str | Path | os.PathLike[str] | IO[bytes] | PartitionBy,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -3513,7 +3517,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | PartitionBy,
+        path: str | Path | os.PathLike[str] | IO[bytes] | PartitionBy,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -3534,7 +3538,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_ipc(
         self,
-        path: str | Path | IO[bytes] | PartitionBy,
+        path: str | Path | os.PathLike[str] | IO[bytes] | PartitionBy,
         *,
         compression: IpcCompression | None = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -3748,7 +3752,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
+        path: str | Path | os.PathLike[str] | IO[bytes] | IO[str] | PartitionBy,
         *,
         include_bom: bool = False,
         compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
@@ -3783,7 +3787,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
+        path: str | Path | os.PathLike[str] | IO[bytes] | IO[str] | PartitionBy,
         *,
         include_bom: bool = False,
         compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
@@ -3817,7 +3821,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_csv(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
+        path: str | Path | os.PathLike[str] | IO[bytes] | IO[str] | PartitionBy,
         *,
         include_bom: bool = False,
         compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
@@ -4111,7 +4115,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
+        path: str | Path | os.PathLike[str] | IO[bytes] | IO[str] | PartitionBy,
         *,
         compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
         compression_level: int | None = None,
@@ -4132,7 +4136,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @overload
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
+        path: str | Path | os.PathLike[str] | IO[bytes] | IO[str] | PartitionBy,
         *,
         compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
         compression_level: int | None = None,
@@ -4152,7 +4156,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_ndjson(
         self,
-        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
+        path: str | Path | os.PathLike[str] | IO[bytes] | IO[str] | PartitionBy,
         *,
         compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
         compression_level: int | None = None,

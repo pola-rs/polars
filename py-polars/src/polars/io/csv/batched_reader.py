@@ -6,6 +6,7 @@ import polars as pl
 from polars.datatypes import N_INFER_DEFAULT
 
 if TYPE_CHECKING:
+    import os
     from collections.abc import Sequence
     from pathlib import Path
 
@@ -18,7 +19,7 @@ class BatchedCsvReader:
 
     def __init__(
         self,
-        source: str | Path,
+        source: str | Path | os.PathLike[str],
         *,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,

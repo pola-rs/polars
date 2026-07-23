@@ -4,7 +4,6 @@ import contextlib
 import os
 from collections.abc import Sequence
 from io import BytesIO, StringIO
-from pathlib import Path
 from typing import IO, TYPE_CHECKING, Literal
 
 import polars._reexport as pl
@@ -41,6 +40,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
+    from pathlib import Path
 
     from polars import DataFrame, LazyFrame
     from polars._typing import (
@@ -63,7 +63,7 @@ if TYPE_CHECKING:
     mapper=lambda x: not x,
 )
 def read_csv(
-    source: str | Path | IO[str] | IO[bytes] | bytes,
+    source: str | Path | os.PathLike[str] | IO[str] | IO[bytes] | bytes,
     *,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
@@ -503,10 +503,10 @@ def read_csv(
 
     if streaming or (
         # Check that it is not a BytesIO object
-        isinstance(v := source, (str, Path))
+        isinstance(v := source, (str, os.PathLike))
         and (
             # HuggingFace only for now ⊂( ◜◒◝ )⊃
-            str(v).startswith("hf://")
+            os.fspath(v).startswith("hf://")
             # Also dispatch on FORCE_ASYNC, so that this codepath gets run
             # through by our test suite during CI.
             or (os.getenv("POLARS_FORCE_ASYNC") == "1" and encoding_supported_in_lazy)
@@ -517,7 +517,7 @@ def read_csv(
         )
     ):
         source_normalized: str | list[str] | IO[str] | IO[bytes] | bytes | bytearray
-        if isinstance(source, (str, Path)):
+        if isinstance(source, (str, os.PathLike)):
             source_normalized = normalize_filepath(source, check_not_directory=False)
         elif is_path_or_str_sequence(source, allow_str=False):
             source_normalized = [
@@ -614,7 +614,7 @@ def read_csv(
 
 
 def _read_csv_impl(
-    source: str | Path | IO[bytes] | bytes,
+    source: str | Path | os.PathLike[str] | IO[bytes] | bytes,
     *,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
@@ -651,7 +651,7 @@ def _read_csv_impl(
         issue_deprecation_warning(msg)
 
     path: str | None
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         path = normalize_filepath(source, check_not_directory=False)
     else:
         path = None
@@ -770,7 +770,7 @@ def _read_csv_impl(
     mapper=lambda x: not x,
 )
 def read_csv_batched(
-    source: str | Path,
+    source: str | Path | os.PathLike[str],
     *,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
@@ -1108,11 +1108,13 @@ def scan_csv(
     source: (
         str
         | Path
+        | os.PathLike[str]
         | IO[str]
         | IO[bytes]
         | bytes
         | list[str]
         | list[Path]
+        | list[os.PathLike[str]]
         | list[IO[str]]
         | list[IO[bytes]]
         | list[bytes]
@@ -1402,7 +1404,7 @@ def scan_csv(
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
 
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         source = normalize_filepath(source, check_not_directory=False)
     elif is_path_or_str_sequence(source, allow_str=False):
         source = [
@@ -1477,6 +1479,7 @@ def _scan_csv_impl(
     | bytes
     | list[str]
     | list[Path]
+    | list[os.PathLike[str]]
     | list[IO[str]]
     | list[IO[bytes]]
     | list[bytes],

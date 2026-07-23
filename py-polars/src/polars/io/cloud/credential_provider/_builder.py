@@ -428,7 +428,7 @@ def _init_credential_provider_builder(
             storage_account = (
                 # Prefer the one embedded in the path
                 CredentialProviderAzure._extract_adls_uri_storage_account(
-                    str(first_scan_path)
+                    os.fspath(first_scan_path)
                 )
                 or storage_account
             )
@@ -444,7 +444,7 @@ def _init_credential_provider_builder(
                 )
             )
 
-        elif _is_aws_cloud(scheme=scheme, first_scan_path=str(first_scan_path)):
+        elif _is_aws_cloud(scheme=scheme, first_scan_path=os.fspath(first_scan_path)):
             region = None
             profile = None
             default_region = None

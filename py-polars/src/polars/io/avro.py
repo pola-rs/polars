@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
+import os
 from typing import IO, TYPE_CHECKING
 
 from polars._utils.various import normalize_filepath
@@ -12,11 +12,13 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars import DataFrame
 
 
 def read_avro(
-    source: str | Path | IO[bytes] | bytes,
+    source: str | Path | os.PathLike[str] | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -41,7 +43,7 @@ def read_avro(
     -------
     DataFrame
     """
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         source = normalize_filepath(source)
     projection, column_names = parse_columns_arg(columns)
 

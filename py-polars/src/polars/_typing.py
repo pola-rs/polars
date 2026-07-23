@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import (
@@ -446,10 +447,12 @@ PlanStage: TypeAlias = Literal["ir", "physical"]
 FileSource: TypeAlias = (
     str
     | Path
+    | os.PathLike[str]
     | IO[bytes]
     | bytes
     | list[str]
     | list[Path]
+    | list[os.PathLike[str]]
     | list[IO[bytes]]
     | list[bytes]
 )
