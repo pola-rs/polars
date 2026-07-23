@@ -12,7 +12,7 @@ use std::ops::Div;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_plan::plans::DynLiteralValue;
-use polars_plan::prelude::typed_lit;
+use polars_plan::prelude::{has_expr, typed_lit};
 use polars_time::Duration;
 use polars_time::chunkedarray::StringMethods;
 use polars_utils::unique_column_name;
@@ -240,7 +240,13 @@ impl SQLExprVisitor<'_> {
                 // which is load-bearing for predicate pushdown); if any element is not a
                 // literal (eg: a column reference or arithmetic expression), fall back to
                 // an OR-chain of equality comparisons.
-                if self.array_expr_to_series(list).is_ok() {
+                //
+                // Also fall back when `expr` is (or contains) an aggregation: Polars' `is_in`
+                // doesn't reliably reduce to a scalar-per-group when its LHS is an aggregate
+                // (eg: `COUNT(*) IN (1, 3)` in a HAVING/GROUP BY context), instead producing a
+                // spurious `list[bool]`; the `eq`/`or` chain doesn't have that problem.
+                let expr_is_aggregate = has_expr(&expr, |e| matches!(e, Expr::Agg(_) | Expr::Len));
+                if !expr_is_aggregate && self.array_expr_to_series(list).is_ok() {
                     let elems = self.visit_array_expr(list, false, Some(&expr))?;
                     let Expr::Literal(LiteralValue::Series(elems_series)) = &elems else {
                         unreachable!(
@@ -425,7 +431,7 @@ impl SQLExprVisitor<'_> {
         let Some(flag) = self.ctx.exists_subquery_expr(subquery) else {
             polars_bail!(
                 SQLInterface:
-                "EXISTS subquery is not supported in this position: {:?}", subquery
+                "EXISTS subquery is not currently supported in this position: {:?}", subquery
             );
         };
         Ok(if negated { flag.not() } else { flag })
