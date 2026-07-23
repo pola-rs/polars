@@ -80,10 +80,6 @@ fn parse_month_full_or_abbrev(val: &[u8], offset: usize) -> Option<(u32, usize)>
 /// E.g. chrono supports single letter date identifiers like %F, whereas polars only consumes
 /// year, day, month distinctively with %Y, %d, %m.
 pub(super) fn compile_fmt(fmt: &str) -> PolarsResult<String> {
-    // (hopefully) temporary hacks. Ideally, chrono would return a ParseKindError indicating
-    // if `fmt` is too long for NaiveDate. If that's implemented, then this check could
-    // be removed, and that error could be matched against in `transform_datetime_*s`
-    // See https://github.com/chronotope/chrono/issues/1075.
     if HOUR_PATTERN.is_match(fmt) ^ MINUTE_PATTERN.is_match(fmt) {
         polars_bail!(ComputeError: "Invalid format string: \
             Please either specify both hour and minute, or neither.");
@@ -124,7 +120,7 @@ impl StrpTimeState {
 
         const ESCAPE: u8 = b'%';
 
-        // Minimal day/month is always 1, otherwise chrono may panic.
+        // Minimal day/month is always 1, since 0 isn't a valid `Date`.
         let mut year: i32 = 1;
         let mut month: u32 = 1;
         let mut day: u32 = 1;
