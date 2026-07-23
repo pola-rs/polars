@@ -468,6 +468,18 @@ impl IRFunctionExpr {
             _ => None,
         }
     }
+
+    // For these functions, the output dtype depends on the input names
+    pub(crate) fn output_depends_on_input_names(&self) -> bool {
+        match self {
+            #[cfg(feature = "dtype-struct")]
+            IRFunctionExpr::AsStruct
+            | IRFunctionExpr::ValueCounts { .. }
+            | IRFunctionExpr::CumReduceHorizontal { .. }
+            | IRFunctionExpr::CumFoldHorizontal { .. } => true,
+            _ => false,
+        }
+    }
 }
 
 pub struct FieldsMapper<'a> {
