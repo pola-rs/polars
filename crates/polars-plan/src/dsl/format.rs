@@ -202,10 +202,20 @@ impl fmt::Debug for Expr {
                 predicate,
                 truthy,
                 falsy,
-            } => write!(
-                f,
-                ".when({predicate:?}).then({truthy:?}).otherwise({falsy:?})",
-            ),
+                short_circuit,
+            } => {
+                if *short_circuit {
+                    write!(
+                        f,
+                        ".when({predicate:?}).short_circuit().then({truthy:?}).otherwise({falsy:?})",
+                    )
+                } else {
+                    write!(
+                        f,
+                        ".when({predicate:?}).then({truthy:?}).otherwise({falsy:?})"
+                    )
+                }
+            },
             Function { input, function } => {
                 #[cfg(feature = "dtype-struct")]
                 if matches!(function, FunctionExpr::AsStruct) {

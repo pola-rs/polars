@@ -295,6 +295,7 @@ impl AExprBuilder {
                 predicate: self.into_aexpr_builder().node(),
                 truthy: truthy.into_aexpr_builder().node(),
                 falsy: falsy.into_aexpr_builder().node(),
+                short_circuit: false,
             },
             arena,
         )

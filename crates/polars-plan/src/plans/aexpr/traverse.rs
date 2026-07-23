@@ -42,6 +42,7 @@ impl AExpr {
                 truthy,
                 falsy,
                 predicate,
+                ..
             } => {
                 container.extend([*predicate, *truthy, *falsy]);
             },
@@ -130,6 +131,7 @@ impl AExpr {
                 truthy,
                 falsy,
                 predicate,
+                ..
             } => {
                 container.extend([*predicate, *falsy, *truthy]);
             },
@@ -246,6 +248,7 @@ impl AExpr {
                 truthy,
                 falsy,
                 predicate,
+                ..
             } => {
                 container.extend([*predicate, *falsy, *truthy]);
             },
@@ -333,6 +336,7 @@ impl AExpr {
                 truthy,
                 falsy,
                 predicate,
+                ..
             } => {
                 *truthy = inputs[0];
                 *falsy = inputs[1];
@@ -443,6 +447,7 @@ impl AExpr {
                 truthy,
                 falsy,
                 predicate,
+                ..
             } => {
                 *truthy = inputs[0];
                 *falsy = inputs[1];

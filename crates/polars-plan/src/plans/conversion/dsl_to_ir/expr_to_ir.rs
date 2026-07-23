@@ -346,6 +346,7 @@ pub(super) fn to_aexpr_impl(
             predicate,
             truthy,
             falsy,
+            short_circuit,
         } => {
             let (p, _) = to_aexpr_mat_lit_arc!(predicate)?;
             let (t, output_name) = recurse_arc!(truthy)?;
@@ -355,6 +356,7 @@ pub(super) fn to_aexpr_impl(
                     predicate: p,
                     truthy: t,
                     falsy: f,
+                    short_circuit,
                 },
                 output_name,
             )

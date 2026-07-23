@@ -563,6 +563,7 @@ fn expand_expression_rec(
             predicate,
             truthy,
             falsy,
+            short_circuit,
         } => {
             _ = expand_expression_by_combination(
                 &[
@@ -578,6 +579,7 @@ fn expand_expression_rec(
                     predicate: Arc::new(e[0].clone()),
                     truthy: Arc::new(e[1].clone()),
                     falsy: Arc::new(e[2].clone()),
+                    short_circuit: *short_circuit,
                 },
             )?
         },

@@ -192,6 +192,7 @@ impl OptimizationRule for TypeCoercionRule {
                 truthy: truthy_node,
                 falsy: falsy_node,
                 predicate,
+                short_circuit,
             } => {
                 let (truthy, type_true) =
                     unpack!(get_aexpr_and_type(expr_arena, truthy_node, schema));
@@ -232,6 +233,7 @@ impl OptimizationRule for TypeCoercionRule {
                     truthy: new_node_truthy,
                     falsy: new_node_falsy,
                     predicate,
+                    short_circuit,
                 })
             },
             AExpr::BinaryExpr {

@@ -206,6 +206,7 @@ pub fn is_input_independent_rec(
             predicate,
             truthy,
             falsy,
+            ..
         } => {
             is_input_independent_rec(*predicate, arena, cache)
                 && is_input_independent_rec(*truthy, arena, cache)
@@ -1852,6 +1853,7 @@ fn lower_exprs_with_ctx(
                 predicate,
                 truthy,
                 falsy,
+                short_circuit,
             } => {
                 let (trans_input, trans_exprs) =
                     lower_exprs_with_ctx(input, &[predicate, truthy, falsy], ctx)?;
@@ -1859,6 +1861,7 @@ fn lower_exprs_with_ctx(
                     predicate: trans_exprs[0],
                     truthy: trans_exprs[1],
                     falsy: trans_exprs[2],
+                    short_circuit,
                 };
                 input_streams.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(tern_expr));

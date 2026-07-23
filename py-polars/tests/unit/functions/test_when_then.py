@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import itertools
 import random
-from datetime import datetime
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -54,6 +55,179 @@ def test_when_then_chained() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_when_then_remains_eager_by_default() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    first_calls = 0
+    second_calls = 0
+    fallback_calls = 0
+
+    def first(v: int) -> int:
+        nonlocal first_calls
+        first_calls += 1
+        return v * 10
+
+    def second(v: int) -> int:
+        nonlocal second_calls
+        second_calls += 1
+        return v * 100
+
+    def fallback(v: int) -> int:
+        nonlocal fallback_calls
+        fallback_calls += 1
+        return v * 1000
+
+    result = df.select(
+        pl.when(pl.col("a") < 3)
+        .then(pl.col("a").map_elements(first, return_dtype=pl.Int64))
+        .when(pl.col("a") < 5)
+        .then(pl.col("a").map_elements(second, return_dtype=pl.Int64))
+        .otherwise(pl.col("a").map_elements(fallback, return_dtype=pl.Int64))
+        .alias("out")
+    )
+
+    assert_frame_equal(result, pl.DataFrame({"out": [10, 20, 300, 400, 5000]}))
+    assert (first_calls, second_calls, fallback_calls) == (5, 5, 5)
+
+
+def test_when_then_short_circuit_evaluates_only_selected_rows() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    first_calls = 0
+    second_calls = 0
+    fallback_calls = 0
+
+    def first(v: int) -> int:
+        nonlocal first_calls
+        first_calls += 1
+        return v * 10
+
+    def second(v: int) -> int:
+        nonlocal second_calls
+        second_calls += 1
+        return v * 100
+
+    def fallback(v: int) -> int:
+        nonlocal fallback_calls
+        fallback_calls += 1
+        return v * 1000
+
+    result = df.select(
+        pl.when(pl.col("a") < 3)
+        .short_circuit()
+        .then(pl.col("a").map_elements(first, return_dtype=pl.Int64))
+        .when(pl.col("a") < 5)
+        .then(pl.col("a").map_elements(second, return_dtype=pl.Int64))
+        .otherwise(pl.col("a").map_elements(fallback, return_dtype=pl.Int64))
+        .alias("out")
+    )
+
+    assert_frame_equal(result, pl.DataFrame({"out": [10, 20, 300, 400, 5000]}))
+    assert (first_calls, second_calls, fallback_calls) == (2, 2, 1)
+
+
+@pytest.mark.may_fail_auto_streaming  # Python UDF
+@pytest.mark.may_fail_cloud  # Python UDF
+def test_when_then_short_circuit_skips_unreachable_branch_errors() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    msg = "should not run"
+
+    def explode(_: int) -> int:
+        raise RuntimeError(msg)
+
+    short_circuit = df.select(
+        pl.when(pl.col("a").is_not_null())
+        .short_circuit()
+        .then(pl.lit(1))
+        .otherwise(pl.col("a").map_elements(explode, return_dtype=pl.Int64))
+        .alias("out")
+    )
+    assert_frame_equal(short_circuit, pl.DataFrame({"out": [1, 1, 1]}))
+
+    with pytest.raises(RuntimeError, match=msg):
+        df.select(
+            pl.when(pl.col("a").is_not_null())
+            .then(pl.lit(1))
+            .otherwise(pl.col("a").map_elements(explode, return_dtype=pl.Int64))
+        )
+
+
+def test_when_then_short_circuit_preserves_output_name() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+
+    for predicate in [pl.lit(False), pl.col("a") < 0]:
+        result = df.select(
+            pl.when(predicate).short_circuit().then(pl.col("a")).otherwise(pl.col("b"))
+        )
+        assert_series_equal(result.to_series(), df["b"].rename("a"))
+
+
+def test_when_then_short_circuit_preserves_scalar_shape() -> None:
+    eager = pl.when(pl.lit(False)).then(pl.lit(1)).otherwise(pl.lit(2))
+    short_circuit = (
+        pl.when(pl.lit(False)).short_circuit().then(pl.lit(1)).otherwise(pl.lit(2))
+    )
+
+    for df in [pl.DataFrame({"a": [1, 2, 3]}), pl.DataFrame(schema={"a": pl.Int64})]:
+        assert_frame_equal(df.select(short_circuit), df.select(eager))
+
+
+def test_when_then_short_circuit_rejects_unsupported_expressions() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    with pytest.raises(InvalidOperationError, match="only supports row-separable"):
+        df.select(
+            pl.when(pl.col("a") > 1)
+            .short_circuit()
+            .then(pl.col("a").sum())
+            .otherwise(pl.lit(0))
+        )
+
+
+def test_when_then_short_circuit_preserves_special_dtypes() -> None:
+    enum = pl.Enum(["a", "b", "c"])
+    df = pl.DataFrame(
+        {
+            "categorical_then": pl.Series(["a", "b", "c"], dtype=pl.Categorical),
+            "categorical_else": pl.Series(["c", "a", "b"], dtype=pl.Categorical),
+            "enum_then": pl.Series(["a", "b", "c"], dtype=enum),
+            "enum_else": pl.Series(["c", "a", "b"], dtype=enum),
+            "decimal_then": pl.Series(
+                [Decimal("1.00"), Decimal("2.00"), Decimal("3.00")],
+                dtype=pl.Decimal(10, 2),
+            ),
+            "decimal_else": pl.Series(
+                [Decimal("4.00"), Decimal("5.00"), Decimal("6.00")],
+                dtype=pl.Decimal(10, 2),
+            ),
+            "datetime_then": pl.Series(
+                [
+                    datetime(2020, 1, 1, tzinfo=timezone.utc),
+                    datetime(2020, 1, 2, tzinfo=timezone.utc),
+                    datetime(2020, 1, 3, tzinfo=timezone.utc),
+                ]
+            ),
+            "datetime_else": pl.Series(
+                [
+                    datetime(2021, 1, 1, tzinfo=timezone.utc),
+                    datetime(2021, 1, 2, tzinfo=timezone.utc),
+                    datetime(2021, 1, 3, tzinfo=timezone.utc),
+                ]
+            ),
+        }
+    )
+
+    for mask in [[True, False, True], [True] * 3, [False] * 3]:
+        test_df = df.with_columns(pl.Series("mask", mask))
+        for prefix in ["categorical", "enum", "decimal", "datetime"]:
+            eager = pl.when("mask").then(f"{prefix}_then").otherwise(f"{prefix}_else")
+            short_circuit = (
+                pl.when("mask")
+                .short_circuit()
+                .then(f"{prefix}_then")
+                .otherwise(f"{prefix}_else")
+            )
+            assert_frame_equal(test_df.select(short_circuit), test_df.select(eager))
 
 
 def test_when_then_invalid_chains() -> None:

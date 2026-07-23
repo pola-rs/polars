@@ -619,11 +619,19 @@ impl Display for ExprIRDisplay<'_> {
                 predicate,
                 truthy,
                 falsy,
+                short_circuit,
             } => {
                 let predicate = self.with_root(predicate);
                 let truthy = self.with_root(truthy);
                 let falsy = self.with_root(falsy);
-                write!(f, "when({predicate}).then({truthy}).otherwise({falsy})",)
+                if *short_circuit {
+                    write!(
+                        f,
+                        "when({predicate}).short_circuit().then({truthy}).otherwise({falsy})",
+                    )
+                } else {
+                    write!(f, "when({predicate}).then({truthy}).otherwise({falsy})")
+                }
             },
             Function {
                 input, function, ..

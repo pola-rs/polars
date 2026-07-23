@@ -456,6 +456,8 @@ pub struct Ternary {
     truthy: usize,
     #[pyo3(get)]
     falsy: usize,
+    #[pyo3(get)]
+    short_circuit: bool,
 }
 
 #[pyclass(frozen)]
@@ -900,10 +902,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
             predicate,
             truthy,
             falsy,
+            short_circuit,
         } => Ternary {
             predicate: predicate.0,
             truthy: truthy.0,
             falsy: falsy.0,
+            short_circuit: *short_circuit,
         }
         .into_py_any(py),
         AExpr::AnonymousFunction { .. } => Err(PyNotImplementedError::new_err("anonymousfunction")),

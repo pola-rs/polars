@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use super::*;
 
 #[test]
@@ -37,6 +40,118 @@ fn ternary_expand_sizes() -> PolarsResult<()> {
         .collect()?;
     let vals = out.column("c")?.str()?.no_null_iter().collect::<Vec<_>>();
     assert_eq!(vals, &["a1", "b2", "otherwise"]);
+    Ok(())
+}
+
+#[test]
+fn ternary_short_circuit_is_opt_in() -> PolarsResult<()> {
+    fn counted_branch(counter: Arc<AtomicUsize>, multiplier: i32) -> Expr {
+        col("a").map(
+            move |s| {
+                counter.fetch_add(s.len(), Ordering::Relaxed);
+                Ok(s.i32()?.apply_values(|v| v * multiplier).into_column())
+            },
+            |_, f| Ok(f.clone()),
+        )
+    }
+
+    let df = df!["a" => [1i32, 2, 3, 4, 5]]?;
+
+    let eager_first = Arc::new(AtomicUsize::new(0));
+    let eager_second = Arc::new(AtomicUsize::new(0));
+    let eager_fallback = Arc::new(AtomicUsize::new(0));
+
+    let eager = df
+        .clone()
+        .lazy()
+        .select([when(col("a").lt(lit(3)))
+            .then(counted_branch(eager_first.clone(), 10))
+            .when(col("a").lt(lit(5)))
+            .then(counted_branch(eager_second.clone(), 100))
+            .otherwise(counted_branch(eager_fallback.clone(), 1000))
+            .alias("out")])
+        .collect()?;
+
+    assert_eq!(
+        eager
+            .column("out")?
+            .i32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        vec![10, 20, 300, 400, 5000]
+    );
+    assert_eq!(eager_first.load(Ordering::Relaxed), 5);
+    assert_eq!(eager_second.load(Ordering::Relaxed), 5);
+    assert_eq!(eager_fallback.load(Ordering::Relaxed), 5);
+
+    let short_first = Arc::new(AtomicUsize::new(0));
+    let short_second = Arc::new(AtomicUsize::new(0));
+    let short_fallback = Arc::new(AtomicUsize::new(0));
+
+    let short = df
+        .lazy()
+        .select([when(col("a").lt(lit(3)))
+            .short_circuit()
+            .then(counted_branch(short_first.clone(), 10))
+            .when(col("a").lt(lit(5)))
+            .then(counted_branch(short_second.clone(), 100))
+            .otherwise(counted_branch(short_fallback.clone(), 1000))
+            .alias("out")])
+        .collect()?;
+
+    assert_eq!(
+        short
+            .column("out")?
+            .i32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        vec![10, 20, 300, 400, 5000]
+    );
+    assert_eq!(short_first.load(Ordering::Relaxed), 2);
+    assert_eq!(short_second.load(Ordering::Relaxed), 2);
+    assert_eq!(short_fallback.load(Ordering::Relaxed), 1);
+
+    Ok(())
+}
+
+#[test]
+fn ternary_short_circuit_skips_unreachable_errors() -> PolarsResult<()> {
+    fn exploding_branch() -> Expr {
+        col("a").map(
+            |_| polars_bail!(ComputeError: "should not run"),
+            |_, f| Ok(f.clone()),
+        )
+    }
+
+    let df = df!["a" => [1i32, 2, 3]]?;
+
+    let short = df
+        .clone()
+        .lazy()
+        .select([when(col("a").is_not_null())
+            .short_circuit()
+            .then(lit(1i32))
+            .otherwise(exploding_branch())
+            .alias("out")])
+        .collect()?;
+    assert_eq!(
+        short
+            .column("out")?
+            .i32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        vec![1, 1, 1]
+    );
+
+    let eager = df
+        .lazy()
+        .select([when(col("a").is_not_null())
+            .then(lit(1i32))
+            .otherwise(exploding_branch())
+            .alias("out")])
+        .collect();
+    assert!(eager.is_err());
+
     Ok(())
 }
 

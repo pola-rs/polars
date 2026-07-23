@@ -63,6 +63,7 @@ macro_rules! push_expr {
                 truthy,
                 falsy,
                 predicate,
+                ..
             } => {
                 $push($c, predicate);
                 $push($c, falsy);

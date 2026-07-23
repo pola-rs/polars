@@ -82,9 +82,14 @@ impl AExpr {
             // Discriminant check done above.
             E::Element |
             E::Filter { input: _, by: _ } |
-            E::Ternary { predicate: _, truthy: _, falsy: _ } |
             E::Slice { input: _, offset: _, length: _ } |
             E::Len => true,
+            E::Ternary {
+                predicate: _,
+                truthy: _,
+                falsy: _,
+                short_circuit: l_short_circuit,
+            } => matches!(other, E::Ternary { predicate: _, truthy: _, falsy: _, short_circuit: r_short_circuit } if l_short_circuit == r_short_circuit),
             #[cfg(feature = "dtype-struct")]
             E::StructEval { expr: _, evaluation: _} => true
         };

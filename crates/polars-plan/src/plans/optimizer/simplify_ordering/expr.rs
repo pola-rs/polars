@@ -270,6 +270,7 @@ impl ExprOrderSimplifier<'_> {
                         predicate,
                         truthy,
                         falsy,
+                        ..
                     } => ([*truthy, *falsy], Some(*predicate)),
                     _ => unreachable!(),
                 };

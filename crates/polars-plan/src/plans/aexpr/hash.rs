@@ -87,7 +87,8 @@ impl Hash for AExpr {
                 predicate: _,
                 truthy: _,
                 falsy: _,
-            } => {},
+                short_circuit,
+            } => short_circuit.hash(state),
             AExpr::AnonymousAgg {
                 input: _,
                 fmt_str,

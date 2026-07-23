@@ -220,6 +220,8 @@ pub enum AExpr {
         predicate: Node,
         truthy: Node,
         falsy: Node,
+        #[cfg_attr(feature = "ir_serde", serde(default))]
+        short_circuit: bool,
     },
     AnonymousAgg {
         input: Vec<ExprIR>,

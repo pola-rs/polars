@@ -453,9 +453,26 @@ fn create_physical_expr_inner(
             predicate,
             truthy,
             falsy,
+            short_circuit,
         } => {
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let mut lit_count = 0u8;
+
+            let short_circuit_is_safe = |node| {
+                is_row_separable_rec(node, expr_arena)
+                    && (is_length_preserving_ae(node, expr_arena) || is_scalar_ae(node, expr_arena))
+            };
+
+            if short_circuit {
+                polars_ensure!(
+                    short_circuit_is_safe(predicate)
+                        && short_circuit_is_safe(truthy)
+                        && short_circuit_is_safe(falsy),
+                    InvalidOperation:
+                        "short-circuit when-then-otherwise only supports row-separable scalar or length-preserving expressions"
+                );
+            }
+
             state.reset();
             let predicate = create_physical_expr_inner(predicate, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
@@ -472,6 +489,7 @@ fn create_physical_expr_inner(
                 node_to_expr(expression, expr_arena),
                 state.allow_threading && lit_count < 2,
                 is_scalar,
+                short_circuit,
             )))
         },
         AExpr::AnonymousAgg {

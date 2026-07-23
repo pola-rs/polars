@@ -105,6 +105,8 @@ pub enum Expr {
         predicate: Arc<Expr>,
         truthy: Arc<Expr>,
         falsy: Arc<Expr>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        short_circuit: bool,
     },
     Function {
         /// function arguments
@@ -305,10 +307,12 @@ impl Hash for Expr {
                 predicate,
                 truthy,
                 falsy,
+                short_circuit,
             } => {
                 predicate.hash(state);
                 truthy.hash(state);
                 falsy.hash(state);
+                short_circuit.hash(state);
             },
             Expr::Function { input, function } => {
                 input.hash(state);

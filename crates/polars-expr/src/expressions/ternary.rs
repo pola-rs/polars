@@ -1,3 +1,5 @@
+use std::ops::Not;
+
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_plan::prelude::*;
@@ -14,6 +16,7 @@ pub struct TernaryExpr {
     // Can be expensive on small data to run literals in parallel.
     run_par: bool,
     returns_scalar: bool,
+    short_circuit: bool,
 }
 
 impl TernaryExpr {
@@ -24,6 +27,7 @@ impl TernaryExpr {
         expr: Expr,
         run_par: bool,
         returns_scalar: bool,
+        short_circuit: bool,
     ) -> Self {
         Self {
             predicate,
@@ -32,8 +36,77 @@ impl TernaryExpr {
             expr,
             run_par,
             returns_scalar,
+            short_circuit,
         }
     }
+
+    fn finish_short_circuit_fast_path(
+        &self,
+        column: Column,
+        df: &DataFrame,
+    ) -> PolarsResult<Column> {
+        let name = self.to_field(df.schema())?.name().clone();
+        let length = if self.returns_scalar { 1 } else { df.height() };
+        Ok(broadcast_scalar_output(column, length).with_name(name))
+    }
+}
+
+fn broadcast_scalar_output(column: Column, length: usize) -> Column {
+    if column.len() == 1 && length != 1 {
+        column.new_from_index(0, length)
+    } else {
+        column
+    }
+}
+
+fn prepare_branch(column: Column, expected_len: usize, branch_name: &str) -> PolarsResult<Column> {
+    match column.len() {
+        1 => Ok(broadcast_scalar_output(column, expected_len)),
+        len if len == expected_len => Ok(column),
+        len => polars_bail!(
+            ShapeMismatch:
+            "short-circuit ternary branch produced length {len}, expected either 1 or {expected_len} for the {branch_name} branch"
+        ),
+    }
+}
+
+fn finish_short_circuit(
+    mask: &BooleanChunked,
+    truthy: Column,
+    falsy: Column,
+    output_field: Field,
+) -> PolarsResult<Column> {
+    polars_ensure!(
+        mask.len() <= IdxSize::MAX as usize,
+        ComputeError: "short-circuit ternary output exceeds the index size"
+    );
+
+    let true_count = mask.num_trues();
+    let mut values = prepare_branch(truthy, true_count, "truthy")?;
+    let falsy = prepare_branch(falsy, mask.len() - true_count, "falsy")?;
+    values.append(&falsy)?;
+
+    let mut truthy_idx = 0 as IdxSize;
+    let mut falsy_idx = true_count as IdxSize;
+    let indices = mask
+        .iter()
+        .map(|mask_value| {
+            if mask_value == Some(true) {
+                let idx = truthy_idx;
+                truthy_idx += 1;
+                idx
+            } else {
+                let idx = falsy_idx;
+                falsy_idx += 1;
+                idx
+            }
+        })
+        .collect();
+    let indices = IdxCa::from_vec(PlSmallStr::EMPTY, indices);
+
+    Ok(values
+        .take(&indices)?
+        .with_name(output_field.name().clone()))
 }
 
 fn finish_as_iters<'a>(
@@ -93,17 +166,66 @@ impl PhysicalExpr for TernaryExpr {
         let mask_series = self.predicate.evaluate(df, &state)?;
         let mask = mask_series.bool()?.clone();
 
-        let op_truthy = || self.truthy.evaluate(df, &state);
-        let op_falsy = || self.falsy.evaluate(df, &state);
-        let (truthy, falsy) = if self.run_par {
-            RAYON.install(|| rayon::join(op_truthy, op_falsy))
-        } else {
-            (op_truthy(), op_falsy())
-        };
-        let truthy = truthy?;
-        let falsy = falsy?;
+        if !self.short_circuit {
+            let op_truthy = || self.truthy.evaluate(df, &state);
+            let op_falsy = || self.falsy.evaluate(df, &state);
+            let (truthy, falsy) = if self.run_par {
+                RAYON.install(|| rayon::join(op_truthy, op_falsy))
+            } else {
+                (op_truthy(), op_falsy())
+            };
+            let truthy = truthy?;
+            let falsy = falsy?;
 
-        truthy.zip_with(&mask, &falsy)
+            return truthy.zip_with(&mask, &falsy);
+        }
+
+        let mask = mask.fill_null_with_values(false)?;
+
+        if mask.len() == 1 {
+            let branch = if mask.get(0) == Some(true) {
+                self.truthy.evaluate(df, &state)
+            } else {
+                self.falsy.evaluate(df, &state)
+            }?;
+            return self.finish_short_circuit_fast_path(branch, df);
+        }
+
+        if df.height() == 0 {
+            let output_field = self.to_field(df.schema())?;
+            return Ok(Column::full_null(
+                output_field.name().clone(),
+                0,
+                output_field.dtype(),
+            ));
+        }
+
+        let true_count = mask.num_trues();
+
+        if true_count == df.height() {
+            let truthy = self.truthy.evaluate(df, &state)?;
+            return self.finish_short_circuit_fast_path(truthy, df);
+        }
+
+        if true_count == 0 {
+            let falsy = self.falsy.evaluate(df, &state)?;
+            return self.finish_short_circuit_fast_path(falsy, df);
+        }
+
+        let falsy_mask = (&mask).not();
+        let truthy_df = df.filter(&mask)?;
+        let falsy_df = df.filter(&falsy_mask)?;
+
+        let mut truthy_state = state.split();
+        truthy_state.remove_cache_window_flag();
+        let mut falsy_state = state.split();
+        falsy_state.remove_cache_window_flag();
+
+        let truthy = self.truthy.evaluate(&truthy_df, &truthy_state)?;
+        let falsy = self.falsy.evaluate(&falsy_df, &falsy_state)?;
+        let output_field = self.to_field(df.schema())?;
+
+        finish_short_circuit(&mask, truthy, falsy, output_field)
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
@@ -118,6 +240,12 @@ impl PhysicalExpr for TernaryExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
+        polars_ensure!(
+            !self.short_circuit,
+            InvalidOperation:
+                "short-circuit when-then-otherwise is not yet supported in grouped execution"
+        );
+
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);
         let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
         let op_falsy = || self.falsy.evaluate_on_groups(df, groups, state);

@@ -33,6 +33,14 @@ class When:
     def __init__(self, when: Any) -> None:
         self._when = when
 
+    def short_circuit(self) -> When:
+        """Enable experimental selective evaluation of conditional branches.
+
+        This is limited to non-grouped, row-separable scalar or
+        length-preserving expressions.
+        """
+        return When(self._when.short_circuit())
+
     def then(self, statement: IntoExpr) -> Then:
         """
         Attach a statement to the corresponding condition.

@@ -317,6 +317,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 predicate,
                 truthy,
                 falsy,
+                ..
             } => {
                 return Ok(arity::simplify_ternary(
                     *predicate, *truthy, *falsy, expr_arena,

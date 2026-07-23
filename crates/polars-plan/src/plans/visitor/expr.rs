@@ -77,7 +77,7 @@ impl TreeWalker for Expr {
                 Var(x, ddf) => Var(am(x, f)?, ddf),
 
             }),
-            Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
+            Ternary { predicate, truthy, falsy, short_circuit } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)?, short_circuit },
             Function { input, function } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function },
             Explode { input, options } => Explode { input: am(input, f)?, options },
             Filter { input, by } => Filter { input: am(input, &mut f)?, by: am(by, f)? },

@@ -357,8 +357,10 @@ fn try_lower_elementwise_scalar_agg_expr(
             predicate,
             truthy,
             falsy,
+            short_circuit,
         } => {
-            let (predicate, truthy, falsy) = (*predicate, *truthy, *falsy);
+            let (predicate, truthy, falsy, short_circuit) =
+                (*predicate, *truthy, *falsy, *short_circuit);
             let predicate = lower_rec!(predicate)?;
             let truthy = lower_rec!(truthy)?;
             let falsy = lower_rec!(falsy)?;
@@ -366,6 +368,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 predicate,
                 truthy,
                 falsy,
+                short_circuit,
             }))
         },
 

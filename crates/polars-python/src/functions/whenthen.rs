@@ -37,6 +37,12 @@ pub struct PyChainedThen {
 
 #[pymethods]
 impl PyWhen {
+    fn short_circuit(&self) -> PyWhen {
+        PyWhen {
+            inner: self.inner.clone().short_circuit(),
+        }
+    }
+
     fn then(&self, statement: PyExpr) -> PyThen {
         PyThen {
             inner: self.inner.clone().then(statement.inner),

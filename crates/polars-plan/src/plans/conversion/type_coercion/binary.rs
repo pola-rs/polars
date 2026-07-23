@@ -785,6 +785,7 @@ pub(super) fn coerce_comparison_literal(
                 DataType::Boolean,
                 AnyValue::Null,
             )))),
+            short_circuit: false,
         },
         output_constraint: Some(if nonnull_rows_value {
             BoolValueAlways::TrueOrNull

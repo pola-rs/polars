@@ -46,9 +46,12 @@ def when(
 
     Warnings
     --------
-    Polars computes all expressions passed to `when-then-otherwise` in parallel and
-    filters afterwards. This means each expression must be valid on its own, regardless
-    of the conditions in the `when-then-otherwise` chain.
+    By default, Polars computes all expressions passed to `when-then-otherwise` in
+    parallel and filters afterwards. This means each expression must be valid on its
+    own, regardless of the conditions in the `when-then-otherwise` chain.
+
+    Call :meth:`When.short_circuit` to evaluate each branch only for the rows that
+    still need a value.
 
     Notes
     -----
@@ -77,7 +80,8 @@ def when(
     │ 4   ┆ 0   ┆ 1   │
     └─────┴─────┴─────┘
 
-    Note that `when-then` always executes all expressions.
+    Note that `when-then` executes all expressions unless
+    :meth:`When.short_circuit` is used.
 
     The results are folded left to right, picking the `then` value from the first `when`
     condition that is True.

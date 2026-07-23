@@ -11,6 +11,7 @@ use super::*;
 #[derive(Clone)]
 pub struct When {
     condition: Expr,
+    short_circuit: bool,
 }
 
 /// Utility struct for the `when-then-otherwise` expression.
@@ -21,6 +22,8 @@ pub struct When {
 pub struct Then {
     condition: Expr,
     statement: Expr,
+    #[cfg_attr(feature = "serde", serde(default))]
+    short_circuit: bool,
 }
 
 /// Utility struct for the `when-then-otherwise` expression.
@@ -32,6 +35,7 @@ pub struct Then {
 pub struct ChainedWhen {
     conditions: Vec<Expr>,
     statements: Vec<Expr>,
+    short_circuit: bool,
 }
 
 /// Utility struct for the `when-then-otherwise` expression.
@@ -42,14 +46,25 @@ pub struct ChainedWhen {
 pub struct ChainedThen {
     conditions: Vec<Expr>,
     statements: Vec<Expr>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    short_circuit: bool,
 }
 
 impl When {
+    /// Enable experimental selective evaluation of conditional branches.
+    ///
+    /// This is limited to non-grouped, row-separable scalar or length-preserving expressions.
+    pub fn short_circuit(mut self) -> Self {
+        self.short_circuit = true;
+        self
+    }
+
     /// Add a condition to the `when-then-otherwise` expression.
     pub fn then<E: Into<Expr>>(self, expr: E) -> Then {
         Then {
             condition: self.condition,
             statement: expr.into(),
+            short_circuit: self.short_circuit,
         }
     }
 }
@@ -60,12 +75,18 @@ impl Then {
         ChainedWhen {
             conditions: vec![self.condition, condition.into()],
             statements: vec![self.statement],
+            short_circuit: self.short_circuit,
         }
     }
 
     /// Define a default for the `when-then-otherwise` expression.
     pub fn otherwise<E: Into<Expr>>(self, statement: E) -> Expr {
-        ternary_expr(self.condition, self.statement, statement.into())
+        ternary_expr_with_option(
+            self.condition,
+            self.statement,
+            statement.into(),
+            self.short_circuit,
+        )
     }
 }
 
@@ -75,6 +96,7 @@ impl ChainedWhen {
         ChainedThen {
             conditions: self.conditions,
             statements: self.statements,
+            short_circuit: self.short_circuit,
         }
     }
 }
@@ -87,6 +109,7 @@ impl ChainedThen {
         ChainedWhen {
             conditions: self.conditions,
             statements: self.statements,
+            short_circuit: self.short_circuit,
         }
     }
 
@@ -122,12 +145,13 @@ impl ChainedThen {
         let mut otherwise = expr.into();
 
         for e in conditions_iter {
-            otherwise = ternary_expr(
+            otherwise = ternary_expr_with_option(
                 e,
                 statements_iter
                     .next()
                     .expect("expr expected, did you call when().then().otherwise?"),
                 otherwise,
+                self.short_circuit,
             );
         }
 
@@ -137,16 +161,31 @@ impl ChainedThen {
 
 /// Start a `when-then-otherwise` expression.
 pub fn when<E: Into<Expr>>(condition: E) -> When {
+    when_with_options(condition, false)
+}
+
+fn when_with_options<E: Into<Expr>>(condition: E, short_circuit: bool) -> When {
     When {
         condition: condition.into(),
+        short_circuit,
     }
 }
 
 pub fn ternary_expr(predicate: Expr, truthy: Expr, falsy: Expr) -> Expr {
+    ternary_expr_with_option(predicate, truthy, falsy, false)
+}
+
+pub fn ternary_expr_with_option(
+    predicate: Expr,
+    truthy: Expr,
+    falsy: Expr,
+    short_circuit: bool,
+) -> Expr {
     Expr::Ternary {
         predicate: Arc::new(predicate),
         truthy: Arc::new(truthy),
         falsy: Arc::new(falsy),
+        short_circuit,
     }
 }
 

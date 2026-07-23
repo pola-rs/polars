@@ -187,6 +187,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             predicate,
             truthy,
             falsy,
+            short_circuit,
         } => {
             let p = node_to_expr(predicate, expr_arena);
             let t = node_to_expr(truthy, expr_arena);
@@ -196,6 +197,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 predicate: Arc::new(p),
                 truthy: Arc::new(t),
                 falsy: Arc::new(f),
+                short_circuit,
             }
         },
         AExpr::AnonymousAgg {
