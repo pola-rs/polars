@@ -15,6 +15,8 @@ use polars_utils::python_function::PythonObject;
 use polars_utils::slice_enum::Slice;
 use polars_utils::{format_pl_smallstr, unitvec};
 
+#[cfg(feature = "parquet")]
+use crate::dsl::MetadataPerSource::Unresolved;
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
@@ -382,8 +384,7 @@ fn expand_python_dataset(
                 FileScanDsl::Parquet { options } => FileScanIR::Parquet {
                     options,
                     // Metadata is resolved later in `parquet_file_info`.
-                    first_metadata: None,
-                    metadata_per_source: None,
+                    metadata_per_source: Unresolved,
                     bytes_per_source: None,
                 },
 

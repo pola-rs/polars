@@ -453,10 +453,9 @@ impl Config {
         ResolveMode::from_discriminant(self.resolve_metadata_level.load(Ordering::Relaxed))
     }
 
-    /// Caps the footer sample size of a `Sampled` metadata resolve: for `n`
-    /// sources the sample is `min(max(sqrt(n), 16), limit, n)`. `None` (the
-    /// default) uses the concurrency budget, floored at 16, as the limit; an
-    /// explicit value is authoritative.
+    /// Caps how many footers a `Sampled` metadata resolve reads. `None` (the
+    /// default) leaves the cap to the resolver; an explicit value is
+    /// authoritative, even a low one.
     #[inline(always)]
     pub fn resolve_sample_limit(&self) -> Option<u64> {
         match self.resolve_sample_limit.load(Ordering::Relaxed) {

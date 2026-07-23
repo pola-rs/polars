@@ -239,11 +239,8 @@ pub async fn expand_paths(
 
 /// Byte size per expanded path, as returned by [`expand_paths_hive`].
 ///
-/// One slot per path, in the same order as the expanded paths. `Some` only
-/// when every path has a known size (the cloud LIST / fs stat provides them
-/// for free). A scan that mixes a glob with an explicit file, or any source
-/// we can't size cheaply, yields `None` and the consumer falls back to
-/// count-based behaviour.
+/// One slot per path, in expanded-path order; `Some` only when every path
+/// has a known size.
 pub type BytesPerSource = Option<Arc<[u64]>>;
 
 struct HiveIdxTracker<'a> {
@@ -340,7 +337,7 @@ async fn expand_path_cloud(
                 let out = s
                     .list(Some(prefix_ref))
                     .try_filter_map(|x| async move {
-                        // Retain the LIST-reported byte size (free) with the path.
+                        // Retain the LIST-reported byte size with the path.
                         let out = (x.size > 0).then(|| {
                             (
                                 PlRefPath::new({
@@ -417,9 +414,8 @@ pub async fn expand_paths_hive(
         is_hidden_file: &is_hidden_file,
     };
 
-    // Byte size per expanded path, collected where it is free (cloud LIST,
-    // fs stat). Order-independent, so the path sorting below need not touch
-    // it; the aligned size vector is built by lookup after expansion.
+    // Order-independent, so the path sorting below need not carry sizes; the
+    // aligned vector is built by lookup after expansion.
     let mut sizes_by_path: PlHashMap<PlRefPath, u64> = PlHashMap::default();
 
     let mut hive_idx_tracker = HiveIdxTracker {
@@ -624,8 +620,7 @@ pub async fn expand_paths_hive(
         }
     }
 
-    // Build the per-source size vector aligned with the final (sorted) path
-    // order. All-or-nothing: `Some` only if every path has a known size.
+    // All-or-nothing: `Some` only if every path has a known size.
     let bytes_per_source: BytesPerSource = out_paths
         .paths
         .iter()

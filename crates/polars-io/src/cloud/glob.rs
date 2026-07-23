@@ -239,8 +239,7 @@ pub async fn glob(
             store
                 .list(path)
                 .try_filter_map(|x| async move {
-                    // Keep the LIST-reported byte size alongside the path; it
-                    // is free here and feeds size-weighted scan distribution.
+                    // Keep the LIST-reported byte size alongside the path.
                     let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
                         .then_some((x.location, x.size));
                     Ok(out)
