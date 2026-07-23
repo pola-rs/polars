@@ -82,7 +82,7 @@ def test_no_collision_output_names_are_unchanged(df_naming: pl.DataFrame) -> Non
     assert_sql_matches(
         df_naming,
         query="SELECT a, b, a + b AS c2 FROM self ORDER BY a",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2, 3], "b": [10, 20, 5], "c2": [11, 22, 8]},
     )
 
