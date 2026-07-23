@@ -103,9 +103,13 @@ impl PhysicalExpr for TernaryExpr {
             mask.rechunk_mut();
         }
 
+        // Nulls count as false.
+        let true_count = mask.num_trues();
+        let false_count = mask.len() - true_count;
+
         let op_truthy = || {
             let mut mask_df = df.clone();
-            if !self.truthy_mask_columns.is_empty() {
+            if !self.truthy_mask_columns.is_empty() && false_count != 0 {
                 let mask = mask.downcast_as_array().values();
                 for c in &self.truthy_mask_columns {
                     mask_df.with_column(df.column(c).unwrap().mask(mask))?;
@@ -115,7 +119,7 @@ impl PhysicalExpr for TernaryExpr {
         };
         let op_falsy = || {
             let mut mask_df = df.clone();
-            if !self.falsy_mask_columns.is_empty() {
+            if !self.falsy_mask_columns.is_empty() && true_count != 0 {
                 let mask = !mask.downcast_as_array().values();
                 for c in &self.falsy_mask_columns {
                     mask_df.with_column(df.column(c).unwrap().mask(&mask))?;
@@ -123,10 +127,6 @@ impl PhysicalExpr for TernaryExpr {
             }
             self.falsy.evaluate(&mask_df, &state)
         };
-
-        // Nulls count as false.
-        let true_count = mask.num_trues();
-        let false_count = mask.len() - true_count;
 
         let (truthy, falsy);
         if true_count == 0 {
