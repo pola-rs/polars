@@ -20,6 +20,25 @@ use polars_utils::{IdxSize, UnitVec};
 use super::row_group_data_fetch::RowGroupData;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
+/// Classification of projected fields. Each entry must individually be
+/// sorted in increasing order.
+/// Invariants:
+/// live_predicate = eager_predicate ∪ additional_predicate
+/// eager_predicate ∩ additional_predicate = ∅
+/// live_predicate ∪ payload = {0, ..., projected_arrow_fields.len() - 1}
+#[derive(Default)]
+pub(super) struct ProjectedFieldClassification {
+    /// All fields needed to evaluate the complete predicate.
+    pub(super) live_predicate: Arc<[usize]>,
+    /// Predicate fields that can be decoded with a column predicate.
+    pub(super) eager_predicate: Arc<[usize]>,
+    /// Additional fields, not in eager_predicate, that are needed to
+    /// evaluate the full predicate.
+    pub(super) additional_predicate: Arc<[usize]>,
+    /// Projected fields that are not needed to evaluate the predicate.
+    pub(super) payload: Arc<[usize]>,
+}
+
 /// Turns row group data into DataFrames.
 pub(super) struct RowGroupDecoder {
     pub(super) num_pipelines: usize,
@@ -28,10 +47,7 @@ pub(super) struct RowGroupDecoder {
     pub(super) row_index: Option<RowIndex>,
     pub(super) predicate: Option<ScanIOPredicate>,
     pub(super) use_prefiltered: Option<PrefilterMaskSetting>,
-    /// Indices into `projected_arrow_fields. This must be sorted.
-    pub(super) predicate_field_indices: Arc<[usize]>,
-    /// Indices into `projected_arrow_fields. This must be sorted.
-    pub(super) non_predicate_field_indices: Arc<[usize]>,
+    pub(super) projected_field_classification: ProjectedFieldClassification,
     pub(super) target_values_per_thread: usize,
 }
 
@@ -48,7 +64,10 @@ impl RowGroupDecoder {
 
         if self.use_prefiltered.is_some()
             && row_group_data.slice.is_none()
-            && !self.predicate_field_indices.is_empty()
+            && !self
+                .projected_field_classification
+                .live_predicate
+                .is_empty()
         {
             self.row_group_data_to_df_prefiltered(row_group_data).await
         } else {
@@ -159,8 +178,9 @@ impl RowGroupDecoder {
 
         // Ensure we provide the same output column order as the pre-filtered decode.
         let get_projected_field_at_output_index = {
-            let predicate_field_indices = self.predicate_field_indices.clone();
-            let non_predicate_field_indices = self.non_predicate_field_indices.clone();
+            let predicate_field_indices =
+                self.projected_field_classification.live_predicate.clone();
+            let payload_field_indices = self.projected_field_classification.payload.clone();
 
             move |i: usize| {
                 if predicate_field_indices.is_empty() {
@@ -168,7 +188,7 @@ impl RowGroupDecoder {
                 } else if i < predicate_field_indices.len() {
                     predicate_field_indices[i]
                 } else {
-                    non_predicate_field_indices[i - predicate_field_indices.len()]
+                    payload_field_indices[i - predicate_field_indices.len()]
                 }
             }
         };
@@ -396,18 +416,30 @@ impl RowGroupDecoder {
         row_group_data: RowGroupData,
     ) -> PolarsResult<DataFrame> {
         debug_assert!(row_group_data.slice.is_none()); // Invariant of the optimizer.
-        assert!(self.predicate_field_indices.len() <= self.projected_arrow_fields.len());
+        debug_assert_eq!(
+            self.projected_field_classification.live_predicate.len(),
+            self.projected_field_classification.eager_predicate.len()
+                + self
+                    .projected_field_classification
+                    .additional_predicate
+                    .len(),
+        );
+        assert!(
+            self.projected_field_classification.live_predicate.len()
+                <= self.projected_arrow_fields.len()
+        );
 
         let row_group_data = Arc::new(row_group_data);
         let projection_height = row_group_data.row_group_metadata.num_rows();
 
         let mut live_columns = Vec::with_capacity(
             self.row_index.is_some() as usize
-                + self.predicate_field_indices.len()
-                + self.non_predicate_field_indices.len(),
+                + self.projected_field_classification.live_predicate.len()
+                + self.projected_field_classification.payload.len(),
         );
         let mut masks = Vec::with_capacity(
-            self.row_index.is_some() as usize + self.predicate_field_indices.len(),
+            self.row_index.is_some() as usize
+                + self.projected_field_classification.live_predicate.len(),
         );
 
         if let Some(s) = self.materialize_row_index(
@@ -432,18 +464,20 @@ impl RowGroupDecoder {
                 });
 
         let cols_per_thread = (self
-            .predicate_field_indices
+            .projected_field_classification
+            .live_predicate
             .len()
             .div_ceil(self.num_pipelines))
         .max(1);
         let task_handles = {
-            let predicate_field_indices = self.predicate_field_indices.clone();
+            let predicate_field_indices =
+                self.projected_field_classification.live_predicate.clone();
             let projected_arrow_fields = self.projected_arrow_fields.clone();
             let row_group_data = row_group_data.clone();
 
             parallelize_first_to_local(
                 TaskPriority::Low,
-                (0..self.predicate_field_indices.len())
+                (0..self.projected_field_classification.live_predicate.len())
                     .step_by(cols_per_thread)
                     .map(move |offset| {
                         let row_group_data = row_group_data.clone();
@@ -549,7 +583,8 @@ impl RowGroupDecoder {
 
             unsafe {
                 live_df.columns_mut().truncate(
-                    self.row_index.is_some() as usize + self.predicate_field_indices.len(),
+                    self.row_index.is_some() as usize
+                        + self.projected_field_classification.live_predicate.len(),
                 )
             }
 
@@ -568,7 +603,7 @@ impl RowGroupDecoder {
             )
         };
 
-        if self.non_predicate_field_indices.is_empty() {
+        if self.projected_field_classification.payload.is_empty() {
             // User or test may have explicitly requested prefiltering
             return Ok(live_df_filtered);
         }
@@ -585,36 +620,34 @@ impl RowGroupDecoder {
         let expected_num_rows = mask_bitmap.set_bits();
 
         let cols_per_thread = (self
-            .predicate_field_indices
+            .projected_field_classification
+            .live_predicate
             .len()
             .div_ceil(self.num_pipelines))
         .max(1);
 
         let task_handles = {
-            let non_predicate_field_indices = self.non_predicate_field_indices.clone();
-            let non_predicate_len = non_predicate_field_indices.len();
+            let payload_field_indices = self.projected_field_classification.payload.clone();
+            let payload_len = payload_field_indices.len();
             let projected_arrow_fields = self.projected_arrow_fields.clone();
             let row_group_data = row_group_data.clone();
 
             parallelize_first_to_local(
                 TaskPriority::Low,
-                (0..non_predicate_len)
+                (0..payload_len)
                     .step_by(cols_per_thread)
                     .map(move |offset| {
                         let row_group_data = row_group_data.clone();
-                        let non_predicate_field_indices = non_predicate_field_indices.clone();
+                        let payload_field_indices = payload_field_indices.clone();
                         let projected_arrow_fields = projected_arrow_fields.clone();
                         let mask = mask.clone();
                         let mask_bitmap = mask_bitmap.clone();
 
                         async move {
-                            (offset
-                                ..offset
-                                    .saturating_add(cols_per_thread)
-                                    .min(non_predicate_len))
+                            (offset..offset.saturating_add(cols_per_thread).min(payload_len))
                                 .map(|i| {
                                     let projection =
-                                        &projected_arrow_fields[non_predicate_field_indices[i]];
+                                        &projected_arrow_fields[payload_field_indices[i]];
 
                                     let col = decode_column_prefiltered(
                                         projection.arrow_field(),
@@ -636,7 +669,7 @@ impl RowGroupDecoder {
 
         let live_columns = live_df_filtered.into_columns();
 
-        let mut dead_cols = Vec::with_capacity(self.non_predicate_field_indices.len());
+        let mut dead_cols = Vec::with_capacity(self.projected_field_classification.payload.len());
         for fut in task_handles {
             dead_cols.extend(fut.await?);
         }
