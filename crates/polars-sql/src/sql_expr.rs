@@ -1261,11 +1261,14 @@ impl SQLExprVisitor<'_> {
             unreachable!("SingleColumn subquery must lower to a SubPlan");
         };
         let value_set = col(cols[0].0.clone()).first();
+        let needle_is_null = expr.clone().is_null();
         let membership = expr.is_in(subquery_result, false);
         let set_has_null = value_set.clone().list().contains(lit(NULL), true);
         let set_is_empty = value_set.list().len().eq(lit(0u32));
         let is_in = when(set_is_empty)
             .then(lit(false))
+            .when(needle_is_null)
+            .then(sql_unknown())
             .otherwise(membership.or(set_has_null.and(sql_unknown())));
 
         Ok(if negated { is_in.not() } else { is_in })

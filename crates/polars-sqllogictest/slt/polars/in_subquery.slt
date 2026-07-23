@@ -1,0 +1,82 @@
+# `[NOT] IN (subquery)` three-valued-logic semantics.
+
+statement ok
+CREATE TABLE nums (v INT);
+
+statement ok
+CREATE TABLE nums_with_null (v INT);
+
+statement ok
+INSERT INTO nums_with_null VALUES (2), (3), (4), (NULL);
+
+# empty right-hand set: IN is FALSE / NOT IN is TRUE, regardless of the
+# left-hand operand, even when it is NULL
+
+query I rowsort
+SELECT 1 IN (SELECT v FROM nums)
+----
+0
+
+query I rowsort
+SELECT 1 NOT IN (SELECT v FROM nums)
+----
+1
+
+query I rowsort
+SELECT NULL IN (SELECT v FROM nums)
+----
+0
+
+query I rowsort
+SELECT NULL NOT IN (SELECT v FROM nums)
+----
+1
+
+# NULL on the left is unknown against a non-empty set, whether or not the
+# set itself contains a NULL
+
+query I rowsort
+SELECT NULL IN (SELECT v FROM nums_with_null)
+----
+NULL
+
+query I rowsort
+SELECT NULL NOT IN (SELECT v FROM nums_with_null)
+----
+NULL
+
+# value absent, set has no NULLs -> FALSE / TRUE
+
+query I rowsort
+SELECT 1 IN (SELECT v FROM nums_with_null WHERE v IS NOT NULL)
+----
+0
+
+query I rowsort
+SELECT 1 NOT IN (SELECT v FROM nums_with_null WHERE v IS NOT NULL)
+----
+1
+
+# value absent, set has a NULL -> unknown (the NULL might have matched)
+
+query I rowsort
+SELECT 1 IN (SELECT v FROM nums_with_null)
+----
+NULL
+
+query I rowsort
+SELECT 1 NOT IN (SELECT v FROM nums_with_null)
+----
+NULL
+
+# an actual match wins over a NULL elsewhere in the set
+
+query I rowsort
+SELECT 2 IN (SELECT v FROM nums_with_null)
+----
+1
+
+query I rowsort
+SELECT 2 NOT IN (SELECT v FROM nums_with_null)
+----
+0
