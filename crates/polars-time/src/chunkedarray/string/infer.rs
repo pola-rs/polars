@@ -317,13 +317,32 @@ fn transform_date(val: &str, fmt: &str) -> Option<i32> {
     NaiveDate::strptime(fmt, val).ok().map(naive_date_to_date)
 }
 
+/// Builds a [`NaiveTime`] from whatever hour/minute/second/subsecond fields
+/// `tm` has, independently defaulting any that are absent to zero.
+///
+/// This is deliberately more lenient than jiff's own [`BrokenDownTime::to_time`],
+/// which requires that no smaller time unit (minute/second/subsecond) be
+/// present without its immediately bigger unit also present (e.g. it errors
+/// on a bare `%M`, since a minute with no hour is otherwise ambiguous about
+/// what the hour should default to). Polars just defaults any missing unit
+/// to zero on its own, consistent with the fast custom parser in
+/// `strptime.rs`, which has no such restriction at all.
+fn broken_down_time_to_time(tm: &BrokenDownTime) -> Option<NaiveTime> {
+    NaiveTime::new(
+        tm.hour().unwrap_or(0),
+        tm.minute().unwrap_or(0),
+        tm.second().unwrap_or(0),
+        tm.subsec_nanosecond().unwrap_or(0),
+    )
+    .ok()
+}
+
 pub(crate) fn parse_datetime(val: &str, fmt: &str) -> Option<NaiveDateTime> {
-    let dt = NaiveDateTime::strptime(fmt, val).ok().or_else(|| {
-        // Fall back to a date-only parse (e.g. the format has no time component).
-        NaiveDate::strptime(fmt, val)
-            .ok()
-            .map(|nd| nd.at(0, 0, 0, 0))
-    })?;
+    let tm = BrokenDownTime::parse(fmt, val).ok()?;
+    let dt = tm
+        .to_date()
+        .ok()?
+        .to_datetime(broken_down_time_to_time(&tm)?);
 
     // jiff treats the digit count in `%3f`/`%.6f`/etc. as formatting-only -
     // during parsing it's a no-op, consuming up to nanosecond precision
@@ -348,15 +367,10 @@ pub(crate) fn parse_datetime_and_remainder<'a>(
     val: &'a str,
     fmt: &str,
 ) -> Option<(NaiveDateTime, &'a str)> {
-    BrokenDownTime::parse_prefix(fmt, val)
-        .ok()
-        .and_then(|(tm, len)| tm.to_datetime().ok().map(|dt| (dt, &val[len..])))
-        .or_else(|| {
-            // Fall back to a date-only parse (e.g. the format has no time component).
-            BrokenDownTime::parse_prefix(fmt, val)
-                .ok()
-                .and_then(|(tm, len)| tm.to_date().ok().map(|nd| (nd.at(0, 0, 0, 0), &val[len..])))
-        })
+    let (tm, len) = BrokenDownTime::parse_prefix(fmt, val).ok()?;
+    let date = tm.to_date().ok()?;
+    let time = broken_down_time_to_time(&tm)?;
+    Some((date.to_datetime(time), &val[len..]))
 }
 
 #[cfg(feature = "dtype-datetime")]
