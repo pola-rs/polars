@@ -134,7 +134,7 @@ Only hard ordering: 1 → 2 → 3. Within Phase 3 the work splits cleanly by fil
 
 ## Session status (resume point, 2026-07-23)
 
-**Branch `sql2` @ `1e165caf66`, rebased onto main (b72bea9d00), pushed. Conformance: 99.2% (9251 passed / 75 expected-fail / 9326 run; skipif'd records leave the total).**
+**Branch `sql2` @ `910dad61b4`, rebased onto main (b72bea9d00), pushed. Conformance: 99.6% (9297 passed / 40 expected-fail / 9337 run; skipif'd records leave the total).**
 
 Trajectory: 48.2% baseline → 51.7% (uncorrelated scalar subqueries) → 51.9% (aggregate bugs: `-COUNT(*)` wrap, `SUM(literal)`, SUM empty-group NULL) → 54.6% (correlated scalar-agg decorrelation, join_where) → 54.7% (`item()` >1-row guard) → 75.3% (SELECT-list `name:n` collision fix) → 84.1% (EXCEPT/INTERSECT/ALL + chains) → 92.0% (873 int-division records → `skipif polars`, documented in UPSTREAM) → 95.8% (inequality-correlated EXISTS decorrelation via count-filter, 345 entries) → 96.5% (rebase onto main: NOT IN 3VL + SUM/CORR NULL fixes flipped 64 entries; rebase itself needed an eager-implode fix for `IN (...)` haystacks — lazy `Expr::implode()` was a pushdown barrier that left cross joins unconverted and hung select4) → 98.7% (EXISTS in general expression position: boolean flag-column decorrelation, all 202 cluster entries) → 98.9% (DISTINCT in MIN/MAX/SUM/AVG, 16 entries) → 98.9% (non-literal IN-list elements via OR-chain fallback, 8 entries) → 99.1% (IN-subquery 3VL: from-less SELECT was a 0-row frame that hconcat-broadcast subquery results down to nothing; + NULL-needle branch; + harness now renders booleans as 0/1 per the slt Integer type mapping, un-skipping 16 literal-IN records).
 
@@ -148,9 +148,11 @@ Trajectory: 48.2% baseline → 51.7% (uncorrelated scalar subqueries) → 51.9% 
 
 **DONE (1e165caf66)**: small strays — constant-predicate JOIN ON constraints (column-free ON exprs evaluated to true/false, lowered via always/never-matching literal keys, all join types); DELETE-on-view errors in the harness shim; 3 int-division leftovers → skipif (cluster now 876, UPSTREAM doc refreshed incl. removing the resolved boolean-representation cluster note).
 
-**Remaining baseline (75)**: in1 39 (35 blocked on `INSERT ... SELECT` in the setup shim, 2 cross-type is_in coercion [engine], 2 hex literals) · slt_lang_aggfunc 31 (type-affinity/overflow/string-agg, several unfixable) · random/aggregates 5 (4 duplicate-output-name [engine, deferred] + 1 literal-agg over empty frame [engine, deferred]).
+**DONE (910dad61b4)**: `INSERT ... SELECT` in the harness setup shim — non-VALUES sources execute through the SQLContext, positional column mapping with cast to target schema; all 35 blocked in1 entries flipped, no new polars-sql bugs surfaced.
 
-**Queue (on resume)**: `INSERT ... SELECT` support in the harness setup shim (would unlock the 35 in1 cascade entries) → slt_lang_aggfunc triage (fix the fixable, skipif the type-affinity divergences) → low-corpus-weight items (3b window frames, 3d GROUPING SETS, 3f recursive CTEs). Engine track (separate branch off main): frame-independence-aware `ExprPushdownGroup` so constant subtrees (e.g. `lit(s).implode()`) stop classifying as pushdown barriers.
+**Remaining baseline (40)**: slt_lang_aggfunc 31 (type-affinity/overflow/string-agg, several unfixable) · random/aggregates 5 (4 duplicate-output-name [engine, deferred] + 1 literal-agg over empty frame [engine, deferred]) · in1 4 (2 cross-type is_in coercion [engine], 2 hex literals).
+
+**Queue (on resume)**: slt_lang_aggfunc triage (fix the fixable, skipif the type-affinity divergences) → low-corpus-weight items (3b window frames, 3d GROUPING SETS, 3f recursive CTEs). Engine track (separate branch off main): frame-independence-aware `ExprPushdownGroup` so constant subtrees (e.g. `lit(s).implode()`) stop classifying as pushdown barriers.
 
 **Known follow-ups**: py-polars `tests/unit/sql/` has 7 pre-existing failures on this branch (HAVING-clause list-cast bug; EXISTS-subquery error-message mismatch) — likely fallout from the rebase HAVING resolution and the EXISTS landing; triage before opening PRs. Engine track (branch off main): frame-independence-aware ExprPushdownGroup per the SplitPredicates plan.
 
