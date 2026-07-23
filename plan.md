@@ -134,7 +134,9 @@ Only hard ordering: 1 → 2 → 3. Within Phase 3 the work splits cleanly by fil
 
 ## Session status (resume point, 2026-07-23)
 
-**Branch `sql2` @ `efc7248f58`, rebased onto main (b72bea9d00), pushed. Conformance: 99.9% (9306 passed / 9 expected-fail / 9315 run; skipif'd records leave the total).**
+**Branch `sql2` @ `1bf5370657`, rebased onto main (b72bea9d00), pushed. Conformance: 99.9% (9306 passed / 9 expected-fail / 9315 run; skipif'd records leave the total).**
+
+**PR branch `sql-conformance-fixes` @ `2410043084` pushed (no PR opened)**: minimal cut off main — polars-sql src + Rust tests + python tests only (no harness/corpus/CI/lockfile). py-polars extension built, `pytest tests/unit/sql` fully green (739 passed); the run surfaced 4 real bugs, fixed there and cherry-picked back to sql2 (e6fa154ce5 hygiene + 1bf5370657): windowed SUM null-guard, aggregate-LHS IN-list OR-chain routing (fixes HAVING COUNT(*) IN (...)), group_concat-only DISTINCT+separator rejection (STRING_AGG/LISTAGG allow it), EXISTS error wording.
 
 Trajectory: 48.2% baseline → 51.7% (uncorrelated scalar subqueries) → 51.9% (aggregate bugs: `-COUNT(*)` wrap, `SUM(literal)`, SUM empty-group NULL) → 54.6% (correlated scalar-agg decorrelation, join_where) → 54.7% (`item()` >1-row guard) → 75.3% (SELECT-list `name:n` collision fix) → 84.1% (EXCEPT/INTERSECT/ALL + chains) → 92.0% (873 int-division records → `skipif polars`, documented in UPSTREAM) → 95.8% (inequality-correlated EXISTS decorrelation via count-filter, 345 entries) → 96.5% (rebase onto main: NOT IN 3VL + SUM/CORR NULL fixes flipped 64 entries; rebase itself needed an eager-implode fix for `IN (...)` haystacks — lazy `Expr::implode()` was a pushdown barrier that left cross joins unconverted and hung select4) → 98.7% (EXISTS in general expression position: boolean flag-column decorrelation, all 202 cluster entries) → 98.9% (DISTINCT in MIN/MAX/SUM/AVG, 16 entries) → 98.9% (non-literal IN-list elements via OR-chain fallback, 8 entries) → 99.1% (IN-subquery 3VL: from-less SELECT was a 0-row frame that hconcat-broadcast subquery results down to nothing; + NULL-needle branch; + harness now renders booleans as 0/1 per the slt Integer type mapping, un-skipping 16 literal-IN records).
 
@@ -156,6 +158,6 @@ Trajectory: 48.2% baseline → 51.7% (uncorrelated scalar subqueries) → 51.9% 
 
 **Queue (on resume)**: low-corpus-weight items (3b window frames, 3d GROUPING SETS, 3f recursive CTEs) → deferred engine items (need polars-plan/core work, coordinate with owners). Engine track (separate branch off main): frame-independence-aware `ExprPushdownGroup` so constant subtrees (e.g. `lit(s).implode()`) stop classifying as pushdown barriers.
 
-**Known follow-ups**: py-polars `tests/unit/sql/` has 7 pre-existing failures on this branch (HAVING-clause list-cast bug; EXISTS-subquery error-message mismatch) — likely fallout from the rebase HAVING resolution and the EXISTS landing; triage before opening PRs. Engine track (branch off main): frame-independence-aware ExprPushdownGroup per the SplitPredicates plan.
+**Known follow-ups**: ~~py-polars test failures~~ RESOLVED — all were real bugs, fixed on both branches (see PR-branch note above). Engine track (branch off main): frame-independence-aware ExprPushdownGroup per the SplitPredicates plan.
 
 **Operational**: one agent at a time; push sql2 after each merged landing; every agent brief must mandate a step-0 base check (`git reset --hard sql2` — worktrees spawn from wrong bases); harness runs in debug (~73s), not --release; `cargo test -p polars-sql --all-features` hits a pre-existing polars-stream compile break (use plain invocation); integration merges in a dedicated sql2 worktree, never the user's main checkout.
