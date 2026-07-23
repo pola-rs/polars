@@ -49,7 +49,7 @@ fn format_value(av: &AnyValue, floating: bool) -> String {
                 s.to_string()
             }
         },
-        AnyValue::Boolean(b) => b.to_string(),
+        AnyValue::Boolean(b) => if *b { "1" } else { "0" }.to_string(),
         other => other.to_string(),
     }
 }

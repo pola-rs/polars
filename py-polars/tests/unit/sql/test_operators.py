@@ -220,25 +220,25 @@ def test_not_in_null_subquery_3vl() -> None:
     [
         # empty right-hand set: IN is FALSE / NOT IN is TRUE, regardless of
         # the left-hand operand, even when it is NULL
-        ("1", [], 0, 1),
-        ("NULL", [], 0, 1),
+        ("1", [], False, True),
+        ("NULL", [], False, True),
         # NULL on the left is unknown against a non-empty set, whether or
         # not the set itself contains a NULL
         ("NULL", [2, 3, 4], None, None),
         ("NULL", [2, 3, None], None, None),
         # value absent, set has no NULLs -> FALSE / TRUE
-        ("1", [2, 3, 4], 0, 1),
+        ("1", [2, 3, 4], False, True),
         # value absent, set has a NULL -> unknown (the NULL might have matched)
         ("1", [2, 3, None], None, None),
         # an actual match wins over a NULL elsewhere in the set
-        ("2", [2, 3, None], 1, 0),
+        ("2", [2, 3, None], True, False),
     ],
 )
 def test_in_not_in_subquery_select_list_3vl(
     needle: str,
     set_values: list[int | None],
-    expected_in: int | None,
-    expected_not_in: int | None,
+    expected_in: bool | None,
+    expected_not_in: bool | None,
 ) -> None:
     # `[NOT] IN (subquery)` projected directly in the SELECT list (as opposed
     # to used as a WHERE-clause filter): exercises the empty-subquery-result

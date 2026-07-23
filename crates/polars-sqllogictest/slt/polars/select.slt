@@ -11,10 +11,10 @@ INSERT INTO items VALUES
 query ITRB
 SELECT * FROM items ORDER BY id
 ----
-1	apple	1.500	true
-2	banana	0.750	true
-3	cherry	3.250	false
-4	date	NULL	true
+1	apple	1.500	1
+2	banana	0.750	1
+3	cherry	3.250	0
+4	date	NULL	1
 
 query IT
 SELECT id, name FROM items ORDER BY id
@@ -47,8 +47,8 @@ SELECT COUNT(*) FROM items
 query T
 SELECT DISTINCT in_stock FROM items ORDER BY in_stock
 ----
-false
-true
+0
+1
 
 query IT
 SELECT id, name FROM items WHERE id IN (1, 3) ORDER BY id

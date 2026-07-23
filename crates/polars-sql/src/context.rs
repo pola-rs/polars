@@ -1894,17 +1894,17 @@ impl SQLContext {
         for select_item in &select_stmt.projection {
             match select_item {
                 SelectItem::UnnamedExpr(expr) => {
-                    let parsed = parse_sql_expr(expr, self, Some(schema))?;
                     items.push(ProjectionItem::Exprs(
-                        vec![as_sql_bool_result(parsed, expr)],
+                        vec![parse_sql_expr(expr, self, Some(schema))?],
                         false,
                     ));
                 },
                 SelectItem::ExprWithAlias { expr, alias } => {
-                    let parsed = parse_sql_expr(expr, self, Some(schema))?;
-                    let expr = as_sql_bool_result(parsed, expr)
-                        .alias(PlSmallStr::from_str(alias.value.as_str()));
-                    items.push(ProjectionItem::Exprs(vec![expr], true));
+                    let expr = parse_sql_expr(expr, self, Some(schema))?;
+                    items.push(ProjectionItem::Exprs(
+                        vec![expr.alias(PlSmallStr::from_str(alias.value.as_str()))],
+                        true,
+                    ));
                 },
                 SelectItem::ExprWithAliases { .. } => {
                     polars_bail!(SQLSyntax: "multiple aliases per expression are not supported: {:?}", select_item)
@@ -3059,19 +3059,6 @@ pub(crate) const CORRELATED_COL_PREFIX: &str = "__POLARS_CORR_";
 
 pub(crate) fn is_correlated_result_col(name: &str) -> bool {
     name.starts_with(CORRELATED_COL_PREFIX)
-}
-
-/// Cast a top-level `[NOT] IN (subquery)` projection to an integer 0/1/NULL.
-fn as_sql_bool_result(parsed: Expr, raw: &SQLExpr) -> Expr {
-    let mut raw = raw;
-    while let SQLExpr::Nested(inner) = raw {
-        raw = inner;
-    }
-    if matches!(raw, SQLExpr::InSubquery { .. }) {
-        parsed.cast(DataType::Int32)
-    } else {
-        parsed
-    }
 }
 
 /// Extract the table name (or alias) from a TableFactor.

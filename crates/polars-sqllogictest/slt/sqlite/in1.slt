@@ -27,13 +27,11 @@ SELECT 1 IN ()
 ----
 0
 
-skipif polars
 query I nosort
 SELECT 1 IN (2)
 ----
 0
 
-skipif polars
 query I nosort
 SELECT 1 IN (2,3,4,5,6,7,8,9)
 ----
@@ -45,13 +43,11 @@ SELECT 1 NOT IN ()
 ----
 1
 
-skipif polars
 query I nosort
 SELECT 1 NOT IN (2)
 ----
 1
 
-skipif polars
 query I nosort
 SELECT 1 NOT IN (2,3,4,5,6,7,8,9)
 ----
@@ -342,25 +338,21 @@ SELECT x'303132' NOT IN (SELECT * FROM t1)
 #
 # Row 1:
 
-skipif polars
 query I nosort
 SELECT 1 IN (2,3,4)
 ----
 0
 
-skipif polars
 query I nosort
 SELECT 1 NOT IN (2,3,4)
 ----
 1
 
-skipif polars
 query I nosort
 SELECT 'a' IN ('b','c','d')
 ----
 0
 
-skipif polars
 query I nosort
 SELECT 'a' NOT IN ('b','c','d')
 ----
@@ -562,49 +554,41 @@ SELECT 'a' NOT IN (SELECT * FROM t8)
 # Row 2 is tested by cases 1-32 above.
 # Row 3:
 
-skipif polars
 query I nosort
 SELECT 2 IN (2,3,4,null)
 ----
 1
 
-skipif polars
 query I nosort
 SELECT 3 NOT IN (2,3,4,null)
 ----
 0
 
-skipif polars
 query I nosort
 SELECT 4 IN (2,3,4)
 ----
 1
 
-skipif polars
 query I nosort
 SELECT 2 NOT IN (2,3,4)
 ----
 0
 
-skipif polars
 query I nosort
 SELECT 'b' IN ('b','c','d')
 ----
 1
 
-skipif polars
 query I nosort
 SELECT 'c' NOT IN ('b','c','d')
 ----
 0
 
-skipif polars
 query I nosort
 SELECT 'd' IN ('b','c',null,'d')
 ----
 1
 
-skipif polars
 query I nosort
 SELECT 'b' NOT IN (null,'b','c','d')
 ----
