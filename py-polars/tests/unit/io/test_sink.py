@@ -645,7 +645,7 @@ def test_sink_upload_chunk_size_config(
     pl.LazyFrame({"x": 1}).sink_ipc(format_file_uri(tmp_path / "data.ipc"))
     capture = capfd.readouterr().err
 
-    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith("None")
+    assert capture[19 + capture.index("upload_chunk_size: ") :].lstrip().startswith("None")
 
     capfd.readouterr()
     with pytest.raises(OSError):
@@ -658,7 +658,7 @@ def test_sink_upload_chunk_size_config(
         )
     capture = capfd.readouterr().err
 
-    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+    assert capture[19 + capture.index("upload_chunk_size: ") :].lstrip().startswith(
         "Some(33554432)"
     )
 
@@ -668,7 +668,7 @@ def test_sink_upload_chunk_size_config(
     pl.LazyFrame({"x": 1}).sink_ipc(format_file_uri(tmp_path / "data.ipc"))
     capture = capfd.readouterr().err
 
-    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+    assert capture[19 + capture.index("upload_chunk_size: ") :].lstrip().startswith(
         "Some(13579)"
     )
 
@@ -690,7 +690,7 @@ def test_sink_upload_chunk_size_config_partitioned(
     )
     capture = capfd.readouterr().err
 
-    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith("None")
+    assert capture[19 + capture.index("upload_chunk_size: ") :].lstrip().startswith("None")
 
     capfd.readouterr()
     with pytest.raises(OSError):
@@ -706,7 +706,7 @@ def test_sink_upload_chunk_size_config_partitioned(
         )
     capture = capfd.readouterr().err
 
-    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+    assert capture[19 + capture.index("upload_chunk_size: ") :].lstrip().startswith(
         "Some(6291456)"
     )
 
@@ -721,6 +721,6 @@ def test_sink_upload_chunk_size_config_partitioned(
     )
     capture = capfd.readouterr().err
 
-    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+    assert capture[19 + capture.index("upload_chunk_size: ") :].lstrip().startswith(
         "Some(13579)"
     )
