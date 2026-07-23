@@ -942,6 +942,7 @@ impl CommonSubExprOptimizer {
             for id in self.replaced_identifiers.inner.keys() {
                 let (node, _count) = self.se_count.get(id, expr_arena).unwrap();
 
+                // Avoid accidentally broadcasting <scalar literal>.<elementwise_ops..>
                 if self.element_wise_select_only
                     && !matches!(
                         aexpr_projection_height_rec(
