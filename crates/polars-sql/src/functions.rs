@@ -2193,7 +2193,17 @@ impl SQLFunctionVisitor<'_> {
                 FunctionArgExpr::Expr(sql_expr),
                 FunctionArgExpr::Expr(sep_sql_expr),
             ] => {
-                if is_distinct {
+                // `GROUP_CONCAT` (SQLite) disallows DISTINCT together with a separator
+                // argument ("DISTINCT aggregates must have exactly one argument"); the
+                // standard `STRING_AGG`/`LISTAGG` forms (Postgres, DuckDB, ...) allow it.
+                let is_group_concat = self
+                    .func
+                    .name
+                    .0
+                    .first()
+                    .and_then(|part| part.as_ident())
+                    .is_some_and(|ident| ident.value.eq_ignore_ascii_case("group_concat"));
+                if is_distinct && is_group_concat {
                     polars_bail!(SQLSyntax: "DISTINCT is only supported with a single argument in '{}'", self.func.name)
                 }
                 (
@@ -2380,7 +2390,29 @@ impl SQLFunctionVisitor<'_> {
         match self.func.over.as_ref() {
             Some(window_type) => {
                 let spec = self.resolve_window_spec(window_type)?;
-                self.apply_cumulative_window(Expr::sum, Expr::cum_sum, &spec)
+                if spec.order_by.is_empty() {
+                    // Non-cumulative windowed SUM: broadcast the null-guarded
+                    // aggregate. Unlike `min`/`max`/`mean`, Polars' native
+                    // `Expr::sum` returns 0 (not null) for an empty/all-null
+                    // input, so it needs the same NULL-guard as the
+                    // non-windowed path below to match SQL semantics.
+                    let args = extract_args(self.func)?;
+                    let arg = match args.as_slice() {
+                        [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
+                        [FunctionArgExpr::Wildcard] => {
+                            self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
+                        },
+                        _ => return self.not_supported_error(),
+                    };
+                    let total = arg.clone().sum();
+                    let non_empty = arg.count().gt(lit(0));
+                    let guarded = when(non_empty)
+                        .then(total)
+                        .otherwise(Expr::Literal(LiteralValue::untyped_null()));
+                    self.apply_window_spec(guarded, &self.func.over)
+                } else {
+                    self.apply_cumulative_window(Expr::sum, Expr::cum_sum, &spec)
+                }
             },
             None => {
                 let (args, is_distinct) = extract_args_distinct(self.func)?;
