@@ -259,6 +259,13 @@ def test_scalar_subquery_multi_row_errors() -> None:
         )
 
 
+def test_unaliased_scalar_subquery_in_select_list() -> None:
+    df = pl.DataFrame({"value": [1000, 2000, 3000]})
+    res = pl.sql("SELECT (SELECT MAX(value) FROM df) FROM df", eager=True)
+    assert res.height == 3
+    assert res.to_series().to_list() == [3000, 3000, 3000]
+
+
 def test_derived_table_without_alias() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
 
