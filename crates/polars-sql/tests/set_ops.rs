@@ -1,3 +1,5 @@
+#![cfg(feature = "semi_anti_join")]
+
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::*;
