@@ -165,12 +165,12 @@ def test_scalar_subquery_comparison_operators(op: str) -> None:
     assert_sql_matches(
         frames={"df": df},
         query=f"SELECT value FROM df WHERE value {op} (SELECT MAX(value) FROM df WHERE value < 4000)",
-        compare_with="sqlite",
+        compare_with="duckdb",
     )
     assert_sql_matches(
         frames={"df": df},
         query=f"SELECT value FROM df WHERE (SELECT MAX(value) FROM df WHERE value < 4000) {op} value",
-        compare_with="sqlite",
+        compare_with="duckdb",
     )
 
 
@@ -180,7 +180,7 @@ def test_scalar_subquery_arithmetic_operand() -> None:
     assert_sql_matches(
         frames={"df": df},
         query="SELECT value, value + (SELECT MAX(value) FROM df) AS z FROM df",
-        compare_with="sqlite",
+        compare_with="duckdb",
     )
 
 
@@ -190,7 +190,7 @@ def test_scalar_subquery_in_select_list() -> None:
     assert_sql_matches(
         frames={"df": df},
         query="SELECT value, (SELECT MAX(value) FROM df) AS mx FROM df",
-        compare_with="sqlite",
+        compare_with="duckdb",
     )
 
 
@@ -209,7 +209,7 @@ def test_scalar_subquery_in_having() -> None:
             HAVING SUM(value) > (SELECT AVG(value) FROM df)
             ORDER BY grp
         """,
-        compare_with="sqlite",
+        compare_with="duckdb",
     )
 
 
@@ -225,7 +225,7 @@ def test_scalar_subquery_with_own_cte() -> None:
                 SELECT m FROM cte
             )
         """,
-        compare_with="sqlite",
+        compare_with="duckdb",
     )
 
 
@@ -236,7 +236,7 @@ def test_scalar_subquery_null_result() -> None:
     assert_sql_matches(
         frames={"df": df},
         query="SELECT value FROM df WHERE value = (SELECT value FROM df WHERE value > 10000)",
-        compare_with="sqlite",
+        compare_with="duckdb",
     )
     assert_sql_matches(
         frames={"df": df},
@@ -244,7 +244,7 @@ def test_scalar_subquery_null_result() -> None:
             SELECT value FROM df
             WHERE (SELECT value FROM df WHERE value > 10000) IS NULL
         """,
-        compare_with="sqlite",
+        compare_with="duckdb",
     )
 
 

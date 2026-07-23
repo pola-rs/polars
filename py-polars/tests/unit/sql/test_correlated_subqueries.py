@@ -19,7 +19,7 @@ def test_correlated_count_inequality() -> None:
             "SELECT a, (SELECT COUNT(*) FROM t1 AS x WHERE x.b < t1.b) AS cnt "
             "FROM t1 ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2, 3], "cnt": [0, 1, 2]},
     )
 
@@ -32,7 +32,7 @@ def test_correlated_sum_empty_match_is_null() -> None:
             "SELECT a, (SELECT SUM(x.b) FROM t1 AS x WHERE x.b < t1.b) AS s "
             "FROM t1 ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2, 3], "s": [None, 10, 30]},
     )
 
@@ -52,7 +52,7 @@ def test_correlated_min_max_avg(agg: str, expected: list[float | None]) -> None:
             f"SELECT a, (SELECT {agg} FROM t1 AS x WHERE x.b < t1.b) AS v "
             "FROM t1 ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2, 3], "v": expected},
     )
 
@@ -64,7 +64,7 @@ def test_correlated_equality_across_tables() -> None:
             "SELECT a, (SELECT COUNT(*) FROM t2 WHERE t2.g = t1.b) AS c "
             "FROM t1 ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2, 3], "c": [2, 1, 0]},
     )
 
@@ -78,7 +78,7 @@ def test_correlated_count_equality_self() -> None:
             "SELECT a, (SELECT COUNT(*) FROM t1 AS x "
             "WHERE x.b = t1.b AND x.a <> t1.a) AS c FROM t1 ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2, 3], "c": [0, 0, 0]},
     )
 
@@ -90,7 +90,7 @@ def test_correlated_with_inner_only_filter() -> None:
             "SELECT a, (SELECT COUNT(*) FROM t2 WHERE t2.g = t1.b AND t2.w > 1) AS c "
             "FROM t1 ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2, 3], "c": [1, 1, 0]},
     )
 
@@ -103,7 +103,7 @@ def test_correlated_subquery_in_where() -> None:
             "WHERE (SELECT COUNT(*) FROM t1 AS x WHERE x.b < t1.b) > 0 "
             "ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [2, 3]},
     )
 
@@ -117,7 +117,7 @@ def test_multiple_correlated_subqueries() -> None:
             "(SELECT SUM(x.b) FROM t1 AS x WHERE x.b < t1.b) AS s "
             "FROM t1 ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2, 3], "c": [0, 1, 2], "s": [None, 10, 30]},
     )
 
@@ -127,6 +127,6 @@ def test_uncorrelated_scalar_subquery_still_works() -> None:
     assert_sql_matches(
         frames=_frames(),
         query="SELECT a, (SELECT MAX(b) FROM t1) AS mx FROM t1 ORDER BY a",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2, 3], "mx": [30, 30, 30]},
     )

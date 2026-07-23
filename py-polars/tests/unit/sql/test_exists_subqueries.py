@@ -18,7 +18,7 @@ def test_equality_correlated_exists_still_works() -> None:
             "SELECT a FROM t1 WHERE EXISTS "
             "(SELECT 1 FROM t2 WHERE t2.g = t1.b) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2]},
     )
     # an equality correlation must still be lowered to a semi join, not routed
@@ -37,7 +37,7 @@ def test_equality_correlated_not_exists_still_works() -> None:
             "SELECT a FROM t1 WHERE NOT EXISTS "
             "(SELECT 1 FROM t2 WHERE t2.g = t1.b) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [3]},
     )
     # an equality correlation must still be lowered to an anti join, not
@@ -67,7 +67,7 @@ def test_exists_inequality_correlation(op: str, expected: list[int]) -> None:
             f"SELECT a FROM t1 WHERE EXISTS "
             f"(SELECT 1 FROM t1 AS x WHERE x.b {op} t1.b) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": expected},
     )
 
@@ -89,7 +89,7 @@ def test_not_exists_inequality_correlation(op: str, expected: list[int]) -> None
             f"SELECT a FROM t1 WHERE NOT EXISTS "
             f"(SELECT 1 FROM t1 AS x WHERE x.b {op} t1.b) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": expected},
     )
 
@@ -103,7 +103,7 @@ def test_exists_empty_inner_result() -> None:
             "SELECT a FROM t1 WHERE EXISTS "
             "(SELECT 1 FROM t1 AS x WHERE x.b < t1.b AND x.b > t1.b) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": []},
     )
 
@@ -115,7 +115,7 @@ def test_not_exists_all_rows_match() -> None:
             "SELECT a FROM t1 WHERE NOT EXISTS "
             "(SELECT 1 FROM t1 AS x WHERE x.b < t1.b AND x.b > t1.b) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2, 3]},
     )
 
@@ -127,7 +127,7 @@ def test_exists_inequality_combined_with_other_where_conjunct() -> None:
             "SELECT a FROM t1 WHERE a > 1 AND EXISTS "
             "(SELECT 1 FROM t1 AS x WHERE x.b < t1.b) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [2, 3]},
     )
 
@@ -139,7 +139,7 @@ def test_exists_inequality_with_inner_local_filter() -> None:
             "SELECT a FROM t1 WHERE EXISTS "
             "(SELECT 1 FROM t2 WHERE t2.g < t1.b AND t2.w > 1) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [2, 3]},
     )
 
@@ -154,7 +154,7 @@ def test_not_exists_inequality_null_edge_case() -> None:
             "SELECT a FROM t3 WHERE NOT EXISTS "
             "(SELECT 1 FROM t3 AS x WHERE x.b < t3.b) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2]},
     )
 
@@ -173,7 +173,7 @@ def test_exists_or_predicate() -> None:
             "SELECT a FROM t1 WHERE a = 99 "
             "OR EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [2, 3]},
     )
 
@@ -185,7 +185,7 @@ def test_not_exists_or_predicate() -> None:
             "SELECT a FROM t1 WHERE a = 99 "
             "OR NOT EXISTS (SELECT 1 FROM t1 AS x WHERE x.b < t1.b) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1]},
     )
 
@@ -200,7 +200,7 @@ def test_equality_correlated_exists_in_or_position() -> None:
             "SELECT a FROM t1 WHERE a = 99 "
             "OR EXISTS (SELECT 1 FROM t2 WHERE t2.g = t1.b) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2]},
     )
 
@@ -213,7 +213,7 @@ def test_exists_in_case_expression() -> None:
             "(SELECT 1 FROM t1 AS x WHERE x.b < t1.b) THEN 1 ELSE 0 END AS flag "
             "FROM t1 ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2, 3], "flag": [0, 1, 1]},
     )
 
@@ -247,7 +247,7 @@ def test_uncorrelated_exists_in_expression_position() -> None:
     assert_sql_matches(
         frames=_frames(),
         query="SELECT a FROM t1 WHERE a = 1 OR EXISTS (SELECT 1 FROM t2) ORDER BY a",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1, 2, 3]},
     )
     assert_sql_matches(
@@ -256,6 +256,6 @@ def test_uncorrelated_exists_in_expression_position() -> None:
             "SELECT a FROM t1 WHERE a = 1 "
             "OR EXISTS (SELECT 1 FROM t2 WHERE g > 1000) ORDER BY a"
         ),
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"a": [1]},
     )
