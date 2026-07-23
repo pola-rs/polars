@@ -2,7 +2,7 @@
 
 use jiff::civil::{Date, DateTime, Time};
 use jiff::tz::TimeZone;
-use jiff::{SignedDuration, Timestamp, Zoned};
+use jiff::{SignedDuration, Timestamp};
 use polars_error::{PolarsResult, polars_err};
 
 use crate::datatypes::TimeUnit;
@@ -287,10 +287,70 @@ pub(crate) fn timestamp_to_naive_datetime(timestamp: i64, time_unit: TimeUnit) -
     TimeZone::UTC.to_datetime(timestamp_to_timestamp(timestamp, time_unit))
 }
 
-/// Converts a timestamp in `time_unit` and `timezone` into a [`Zoned`] datetime.
-#[inline]
-pub fn timestamp_to_datetime(timestamp: i64, time_unit: TimeUnit, timezone: &TimeZone) -> Zoned {
-    timestamp_to_timestamp(timestamp, time_unit).to_zoned(timezone.clone())
+/// Resolves the UTC offset `timezone` has for the instant represented by
+/// `naive_utc` (a [`DateTime`] whose wall-clock reading *is* the UTC reading
+/// of some instant).
+///
+/// Prefers the exact route through [`Timestamp`], falling back to an
+/// approximation - accurate outside of DST transitions, and off by at most
+/// one DST delta within them - when `naive_utc` itself is outside
+/// `Timestamp`'s representable range (see [`epoch_nanos_to_datetime_opt`] for
+/// why that's a real possibility for an otherwise-legitimate [`DateTime`]).
+fn resolve_offset(naive_utc: DateTime, timezone: &TimeZone) -> jiff::tz::Offset {
+    match TimeZone::UTC.to_timestamp(naive_utc) {
+        Ok(ts) => timezone.to_offset_info(ts).offset(),
+        Err(_) => match timezone.to_ambiguous_zoned(naive_utc).offset() {
+            jiff::tz::AmbiguousOffset::Unambiguous { offset } => offset,
+            jiff::tz::AmbiguousOffset::Fold { before, .. } => before,
+            jiff::tz::AmbiguousOffset::Gap { before, .. } => before,
+        },
+    }
+}
+
+/// Converts a timestamp in `time_unit` and `timezone` into a formattable
+/// [`jiff::fmt::strtime::BrokenDownTime`] (the local civil date/time plus the
+/// resolved UTC offset and IANA name) - ready for `.to_string(fmt)`/
+/// `.format(fmt, ..)`.
+///
+/// For a value representable as a [`Timestamp`], this is exact and supports
+/// every `strftime` directive (including `%Z`, the tz abbreviation, which
+/// needs a resolvable instant) - identical to going through [`Zoned`]. Only
+/// for a value outside `Timestamp`'s representable range (which is narrower
+/// than [`DateTime`]'s, since it's kept small enough to accommodate an
+/// arbitrary UTC offset applied to it) does this fall back to an
+/// approximation computed via civil arithmetic, so a legitimate value near
+/// the -9999/9999 year boundary can still be formatted instead of panicking
+/// or being rejected outright. That fallback can't populate `%Z` (there's no
+/// public way to attach a resolved [`TimeZone`] to a manually-built
+/// [`jiff::fmt::strtime::BrokenDownTime`] without a resolvable instant), so a
+/// format string using it will fail for such a value - callers should treat
+/// that failure the same as any other out-of-range formatting failure.
+/// Returns `None` only for a value so far out-of-range that even a
+/// timezone-less [`DateTime`] can't represent it.
+pub fn timestamp_to_broken_down_time_opt(
+    timestamp: i64,
+    time_unit: TimeUnit,
+    timezone: &TimeZone,
+) -> Option<jiff::fmt::strtime::BrokenDownTime> {
+    if let Some(ts) = timestamp_to_timestamp_opt(timestamp, time_unit) {
+        let zoned = ts.to_zoned(timezone.clone());
+        return Some(jiff::fmt::strtime::BrokenDownTime::from(&zoned));
+    }
+    let nanos_per_unit: i128 = match time_unit {
+        TimeUnit::Second => 1_000_000_000,
+        TimeUnit::Millisecond => 1_000_000,
+        TimeUnit::Microsecond => 1_000,
+        TimeUnit::Nanosecond => 1,
+    };
+    let naive_utc = epoch_nanos_to_datetime_opt(i128::from(timestamp) * nanos_per_unit)?;
+    let offset = resolve_offset(naive_utc, timezone);
+    let local = naive_utc
+        .checked_add(jiff::Span::new().seconds(i64::from(offset.seconds())))
+        .ok()?;
+    let mut tm = jiff::fmt::strtime::BrokenDownTime::from(local);
+    tm.set_offset(Some(offset));
+    tm.set_iana_time_zone(timezone.iana_name().map(str::to_string));
+    Some(tm)
 }
 
 /// Calculates the scale factor between two TimeUnits. The function returns the

@@ -372,6 +372,28 @@ def test_datetime_consistency() -> None:
     ]
 
 
+def test_write_csv_json_repr_tz_aware_datetime_beyond_timestamp_range() -> None:
+    # The physical tick stored for a tz-aware `Datetime` is the elapsed time
+    # since the epoch in UTC, independent of whatever time zone is attached
+    # for display - so a perfectly ordinary local reading (well within
+    # `datetime.MAXYEAR`) can correspond to a UTC instant beyond jiff's
+    # `Timestamp::MAX` (~9999-12-30T22:00:00Z, deliberately kept narrower
+    # than `DateTime`'s own -9999/9999 range so it can always accommodate an
+    # arbitrary UTC offset). Formatting such a value must degrade gracefully
+    # instead of panicking, regardless of output format.
+    value = datetime(9999, 12, 31, 13, 0, 0, tzinfo=ZoneInfo("Europe/Amsterdam"))
+    s = pl.Series("dt", [value], dtype=pl.Datetime("us", "Europe/Amsterdam"))
+
+    repr(s)
+    repr(s.to_frame())
+
+    csv = s.to_frame().write_csv()
+    assert "9999-12-31T13:00:00" in csv
+
+    json_str = s.to_frame().write_json()
+    assert "9999-12-31T13:00:00" in json_str
+
+
 def test_timezone() -> None:
     ts = pa.timestamp("s")
     data = pa.array([1000, 2000], type=ts)

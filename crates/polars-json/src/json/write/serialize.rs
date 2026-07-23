@@ -12,7 +12,7 @@ use arrow::temporal_conversions::parse_offset_tz;
 use arrow::temporal_conversions::{
     date32_to_date, duration_ms_to_duration, duration_ns_to_duration, duration_us_to_duration,
     parse_offset, time64ns_to_time, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
-    timestamp_to_datetime, timestamp_us_to_datetime,
+    timestamp_to_broken_down_time_opt, timestamp_us_to_datetime,
 };
 use arrow::types::NativeType;
 use jiff::SignedDuration as Duration;
@@ -472,9 +472,15 @@ fn timestamp_tz_serializer<'a>(
         Ok(parsed_tz) => {
             let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
                 if let Some(x) = x {
-                    let dt_str = timestamp_to_datetime(*x, time_unit, &parsed_tz)
-                        .strftime("%Y-%m-%dT%H:%M:%S%.9f%:z")
-                        .to_string();
+                    // Formatting must never panic, even for a physically
+                    // out-of-range value - degrade gracefully instead.
+                    let dt_str = match timestamp_to_broken_down_time_opt(*x, time_unit, &parsed_tz)
+                    {
+                        Some(tm) => tm
+                            .to_string("%Y-%m-%dT%H:%M:%S%.9f%:z")
+                            .unwrap_or_else(|_| "<out-of-range datetime>".to_string()),
+                        None => "<out-of-range datetime>".to_string(),
+                    };
                     write!(buf, "\"{dt_str}\"").unwrap();
                 } else {
                     buf.extend_from_slice(b"null")
@@ -488,9 +494,13 @@ fn timestamp_tz_serializer<'a>(
             Ok(parsed_tz) => {
                 let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
                     if let Some(x) = x {
-                        let dt_str = timestamp_to_datetime(*x, time_unit, &parsed_tz)
-                            .strftime("%Y-%m-%dT%H:%M:%S%.9f%:z")
-                            .to_string();
+                        let dt_str =
+                            match timestamp_to_broken_down_time_opt(*x, time_unit, &parsed_tz) {
+                                Some(tm) => tm
+                                    .to_string("%Y-%m-%dT%H:%M:%S%.9f%:z")
+                                    .unwrap_or_else(|_| "<out-of-range datetime>".to_string()),
+                                None => "<out-of-range datetime>".to_string(),
+                            };
                         write!(buf, "\"{dt_str}\"").unwrap();
                     } else {
                         buf.extend_from_slice(b"null")
