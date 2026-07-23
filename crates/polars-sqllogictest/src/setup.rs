@@ -143,7 +143,7 @@ fn empty_frame(columns: &[ColumnDef]) -> Result<DataFrame, EngineError> {
 
 fn run_insert(
     tables: &mut PlHashMap<String, DataFrame>,
-    ctx: &SQLContext,
+    ctx: &mut SQLContext,
     insert: &Insert,
 ) -> Result<u64, EngineError> {
     let name = match &insert.table {
@@ -169,47 +169,83 @@ fn run_insert(
         insert.columns.iter().map(object_name_to_string).collect()
     };
 
-    let rows = match insert.source.as_deref().map(|q| q.body.as_ref()) {
-        Some(SetExpr::Values(values)) => &values.rows,
+    let query = insert
+        .source
+        .as_deref()
+        .ok_or_else(|| EngineError::new("INSERT requires a source"))?;
+
+    let new_rows = match query.body.as_ref() {
+        SetExpr::Values(values) => {
+            let rows = &values.rows;
+            let mut columns: PlHashMap<String, Vec<AnyValue<'static>>> = PlHashMap::new();
+            for target in &target_names {
+                columns.insert(target.clone(), Vec::with_capacity(rows.len()));
+            }
+
+            for row in rows {
+                let exprs = &row.content;
+                if exprs.len() != target_names.len() {
+                    return Err(EngineError::new(format!(
+                        "INSERT row has {} values but {} columns were targeted",
+                        exprs.len(),
+                        target_names.len()
+                    )));
+                }
+                for (target, expr) in target_names.iter().zip(exprs) {
+                    let value = expr_to_any_value(expr)?;
+                    columns.get_mut(target).unwrap().push(value);
+                }
+            }
+
+            let n_rows = rows.len();
+            let mut series = Vec::with_capacity(all_names.len());
+            for (field_name, dtype) in schema.iter() {
+                let name_str = field_name.to_string();
+                let values = match columns.get(&name_str) {
+                    Some(values) => values.clone(),
+                    None => vec![AnyValue::Null; n_rows],
+                };
+                let s =
+                    Series::from_any_values_and_dtype(field_name.clone(), &values, dtype, false)
+                        .map_err(EngineError::from)?;
+                series.push(s.into_column());
+            }
+            DataFrame::new_infer_height(series).map_err(EngineError::from)?
+        },
         _ => {
-            return Err(EngineError::new("INSERT source must be a VALUES clause"));
+            let source = ctx
+                .execute(&query.to_string())
+                .and_then(|lf| lf.collect())
+                .map_err(EngineError::from)?;
+            if source.width() != target_names.len() {
+                return Err(EngineError::new(format!(
+                    "INSERT source has {} columns but {} columns were targeted",
+                    source.width(),
+                    target_names.len()
+                )));
+            }
+
+            let height = source.height();
+            let mut series = Vec::with_capacity(all_names.len());
+            for (field_name, dtype) in schema.iter() {
+                let name_str = field_name.to_string();
+                let pos = target_names.iter().position(|t| t == &name_str);
+                let s = match pos {
+                    Some(i) => source
+                        .select_at_idx(i)
+                        .unwrap()
+                        .cast(dtype)
+                        .map_err(EngineError::from)?
+                        .with_name(field_name.clone()),
+                    None => Column::full_null(field_name.clone(), height, dtype),
+                };
+                series.push(s);
+            }
+            DataFrame::new_infer_height(series).map_err(EngineError::from)?
         },
     };
 
-    let mut columns: PlHashMap<String, Vec<AnyValue<'static>>> = PlHashMap::new();
-    for target in &target_names {
-        columns.insert(target.clone(), Vec::with_capacity(rows.len()));
-    }
-
-    for row in rows {
-        let exprs = &row.content;
-        if exprs.len() != target_names.len() {
-            return Err(EngineError::new(format!(
-                "INSERT row has {} values but {} columns were targeted",
-                exprs.len(),
-                target_names.len()
-            )));
-        }
-        for (target, expr) in target_names.iter().zip(exprs) {
-            let value = expr_to_any_value(expr)?;
-            columns.get_mut(target).unwrap().push(value);
-        }
-    }
-
-    let n_rows = rows.len();
-    let mut series = Vec::with_capacity(all_names.len());
-    for (field_name, dtype) in schema.iter() {
-        let name_str = field_name.to_string();
-        let values = match columns.get(&name_str) {
-            Some(values) => values.clone(),
-            None => vec![AnyValue::Null; n_rows],
-        };
-        let s = Series::from_any_values_and_dtype(field_name.clone(), &values, dtype, false)
-            .map_err(EngineError::from)?;
-        series.push(s.into_column());
-    }
-
-    let new_rows = DataFrame::new_infer_height(series).map_err(EngineError::from)?;
+    let n_rows = new_rows.height();
     let stacked = base.vstack(&new_rows).map_err(EngineError::from)?;
     ctx.register(&name, stacked.clone().lazy());
     tables.insert(name, stacked);

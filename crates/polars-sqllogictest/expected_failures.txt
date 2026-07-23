@@ -14,7 +14,7 @@
 # Grouped by file; see the Phase 2 triage in the vendoring commit message for the
 # ranked breakdown of failure modes these entries represent.
 
-# sqlite/in1.slt (39 entries)
+# sqlite/in1.slt (4 entries)
 
 # sqlite/in2.slt (3 entries)
 
@@ -34,41 +34,6 @@ sqlite/in1.slt:281
 sqlite/in1.slt:292
 sqlite/in1.slt:315
 sqlite/in1.slt:326
-sqlite/in1.slt:379
-sqlite/in1.slt:382
-sqlite/in1.slt:391
-sqlite/in1.slt:397
-sqlite/in1.slt:420
-sqlite/in1.slt:434
-sqlite/in1.slt:440
-sqlite/in1.slt:625
-sqlite/in1.slt:636
-sqlite/in1.slt:647
-sqlite/in1.slt:658
-sqlite/in1.slt:669
-sqlite/in1.slt:680
-sqlite/in1.slt:691
-sqlite/in1.slt:702
-sqlite/in1.slt:735
-sqlite/in1.slt:746
-sqlite/in1.slt:757
-sqlite/in1.slt:768
-sqlite/in1.slt:779
-sqlite/in1.slt:790
-sqlite/in1.slt:845
-sqlite/in1.slt:856
-sqlite/in1.slt:889
-sqlite/in1.slt:900
-sqlite/in1.slt:1009
-sqlite/in1.slt:1022
-sqlite/in1.slt:1033
-sqlite/in1.slt:1044
-sqlite/in1.slt:1055
-sqlite/in1.slt:1066
-sqlite/in1.slt:1121
-sqlite/in1.slt:1132
-sqlite/in1.slt:1143
-sqlite/in1.slt:1154
 sqlite/random/aggregates_slt_good_0.slt:206
 sqlite/random/aggregates_slt_good_0.slt:433
 sqlite/random/aggregates_slt_good_0.slt:655
