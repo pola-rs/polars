@@ -231,9 +231,11 @@ def test_group_concat_distinct_with_separator_errors() -> None:
         df.sql("SELECT GROUP_CONCAT(DISTINCT a, ':') AS s FROM self")
 
     # DISTINCT with a single argument (no separator) must still work.
+    # (ORDER BY pins the concatenation order, which DISTINCT alone does not
+    # guarantee -- needed for a deterministic comparison against DuckDB.)
     assert_sql_matches(
         df,
-        query="SELECT GROUP_CONCAT(DISTINCT a) AS s FROM self",
+        query="SELECT GROUP_CONCAT(DISTINCT a ORDER BY a) AS s FROM self",
         compare_with="duckdb",
         expected={"s": ["1,2"]},
     )
