@@ -6,9 +6,6 @@ use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time};
 use crate::chunkedarray::{PolarsResult, polars_bail};
 
 polars_utils::regex_cache::cached_regex! {
-    static HOUR_PATTERN = r"%[_-]?[HkIl]";
-    static MINUTE_PATTERN = r"%[_-]?M";
-    static SECOND_PATTERN = r"%[_-]?S";
     static TWELVE_HOUR_PATTERN = r"%[_-]?[Il]";
     static MERIDIEM_PATTERN = r"%[_-]?[pP]";
 }
@@ -80,14 +77,6 @@ fn parse_month_full_or_abbrev(val: &[u8], offset: usize) -> Option<(u32, usize)>
 /// E.g. chrono supports single letter date identifiers like %F, whereas polars only consumes
 /// year, day, month distinctively with %Y, %d, %m.
 pub(super) fn compile_fmt(fmt: &str) -> PolarsResult<String> {
-    if HOUR_PATTERN.is_match(fmt) ^ MINUTE_PATTERN.is_match(fmt) {
-        polars_bail!(ComputeError: "Invalid format string: \
-            Please either specify both hour and minute, or neither.");
-    }
-    if SECOND_PATTERN.is_match(fmt) && !HOUR_PATTERN.is_match(fmt) {
-        polars_bail!(ComputeError: "Invalid format string: \
-            Found seconds directive, but no hours directive.");
-    }
     if TWELVE_HOUR_PATTERN.is_match(fmt) ^ MERIDIEM_PATTERN.is_match(fmt) {
         polars_bail!(ComputeError: "Invalid format string: \
             Please either specify both 12-hour directive and meridiem directive, or neither.");
