@@ -212,7 +212,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:non-equi]
 
     // --8<-- [start:df_trades]
-    use jiff::civil::{Date as NaiveDate, Time as NaiveTime};
+    use jiff::civil::Date as NaiveDate;
 
     let df_trades = df!(
         "time" => [

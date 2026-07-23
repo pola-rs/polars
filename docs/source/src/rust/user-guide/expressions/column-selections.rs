@@ -3,7 +3,7 @@ use polars::prelude::*;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:selectors_df]
 
-    use jiff::civil::{Date as NaiveDate, Time as NaiveTime};
+    use jiff::civil::Date as NaiveDate;
     use polars::time::*;
 
     let df = df!(
