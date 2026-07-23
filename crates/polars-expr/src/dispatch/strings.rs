@@ -495,10 +495,10 @@ polars_utils::regex_cache::cached_regex! {
 }
 
 /// jiff's `%z`-family directives each require an exact colon style
-/// (`%z`/`%#z` reject a colon, `%:z`/`%::z`/`%:::z` require one), unlike
-/// chrono's more lenient `%z`. When a value that failed to parse looks like
-/// it has an offset in the *other* style than what `fmt` asked for, surface
-/// a targeted hint instead of leaving the user to guess.
+/// (`%z`/`%#z` reject a colon, `%:z`/`%::z`/`%:::z` require one). When a
+/// value that failed to parse looks like it has an offset in the *other*
+/// style than what `fmt` asked for, surface a targeted hint instead of
+/// leaving the user to guess.
 #[cfg(all(feature = "regex", feature = "dtype-datetime", feature = "timezones"))]
 fn colon_style_mismatch_hint(fmt: &str, failing_value: &str) -> Option<String> {
     let fmt_wants_no_colon = fmt.contains("%z") || fmt.contains("%#z");

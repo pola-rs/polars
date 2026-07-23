@@ -318,30 +318,12 @@ fn transform_date(val: &str, fmt: &str) -> Option<i32> {
 }
 
 pub(crate) fn parse_datetime(val: &str, fmt: &str) -> Option<NaiveDateTime> {
-    let dt = NaiveDateTime::strptime(fmt, val)
-        .ok()
-        .or_else(|| {
-            // Fall back to a date-only parse (e.g. the format has no time component).
-            NaiveDate::strptime(fmt, val)
-                .ok()
-                .map(|nd| nd.at(0, 0, 0, 0))
-        })
-        .or_else(|| {
-            // jiff refuses `%Z` (a time zone abbreviation, e.g. "ACST")
-            // outright when parsing - it's formatting-only, since an
-            // abbreviation alone is ambiguous. Chrono allowed it as a
-            // "match and discard" escape hatch: whatever it matched was
-            // just thrown away, so replicate that by stripping the
-            // directive and consuming a trailing run of letters in its
-            // place.
-            let fmt_prefix = fmt.strip_suffix("%Z")?;
-            let (tm, len) = BrokenDownTime::parse_prefix(fmt_prefix, val).ok()?;
-            let remainder = &val[len..];
-            if remainder.is_empty() || !remainder.bytes().all(|b| b.is_ascii_alphabetic()) {
-                return None;
-            }
-            tm.to_datetime().ok()
-        })?;
+    let dt = NaiveDateTime::strptime(fmt, val).ok().or_else(|| {
+        // Fall back to a date-only parse (e.g. the format has no time component).
+        NaiveDate::strptime(fmt, val)
+            .ok()
+            .map(|nd| nd.at(0, 0, 0, 0))
+    })?;
 
     // jiff treats the digit count in `%3f`/`%.6f`/etc. as formatting-only -
     // during parsing it's a no-op, consuming up to nanosecond precision
