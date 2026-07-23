@@ -467,9 +467,9 @@ fn create_physical_expr_inner(
             lit_count += state.local.has_lit as u8;
 
             let mask_truthy = is_elementwise_rec(truthy, expr_arena)
-                && !matches!(expr_arena.get(truthy), AExpr::Column(_));
+                && !matches!(expr_arena.get(truthy), AExpr::Column(_) | AExpr::Literal(_));
             let mask_falsy = is_elementwise_rec(falsy, expr_arena)
-                && !matches!(expr_arena.get(falsy), AExpr::Column(_));
+                && !matches!(expr_arena.get(falsy), AExpr::Column(_) | AExpr::Literal(_));
             let truthy_mask_columns = if mask_truthy {
                 aexpr_to_leaf_names(truthy, expr_arena)
             } else {
