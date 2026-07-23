@@ -12,13 +12,13 @@ def test_negated_count() -> None:
     assert_sql_matches(
         df,
         query="SELECT -COUNT(*) AS c FROM self",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"c": [-3]},
     )
     assert_sql_matches(
         df,
         query="SELECT -COUNT(*) * -1 AS c FROM self",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"c": [3]},
     )
 
@@ -36,7 +36,7 @@ def test_negated_count_group_by() -> None:
     assert_sql_matches(
         df,
         query="SELECT g, -COUNT(*) AS c FROM self GROUP BY g ORDER BY g",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"g": ["a", "b"], "c": [-2, -1]},
     )
 
@@ -47,7 +47,7 @@ def test_sum_literal() -> None:
     assert_sql_matches(
         df,
         query="SELECT SUM(5) AS s, SUM(-3) AS t FROM self",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"s": [15], "t": [-9]},
     )
 
@@ -58,7 +58,7 @@ def test_sum_literal_group_by() -> None:
     assert_sql_matches(
         df,
         query="SELECT g, SUM(3) AS s FROM self GROUP BY g ORDER BY g",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"g": ["a", "b"], "s": [6, 3]},
     )
 
@@ -69,7 +69,7 @@ def test_sum_literal_empty_table() -> None:
     assert_sql_matches(
         df,
         query="SELECT SUM(5) AS s FROM self",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"s": [None]},
     )
 
@@ -80,7 +80,7 @@ def test_sum_min_max_empty_group_global() -> None:
     assert_sql_matches(
         df,
         query="SELECT SUM(a) AS s, MIN(a) AS mn, MAX(a) AS mx FROM self WHERE a > 100",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"s": [None], "mn": [None], "mx": [None]},
     )
 
@@ -91,7 +91,7 @@ def test_sum_min_max_all_null_group_global() -> None:
     assert_sql_matches(
         df,
         query="SELECT SUM(a) AS s, MIN(a) AS mn, MAX(a) AS mx FROM self",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"s": [None], "mn": [None], "mx": [None]},
     )
 
@@ -112,7 +112,7 @@ def test_sum_min_max_empty_and_null_group_by() -> None:
             GROUP BY g
             ORDER BY g
         """,
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={
             "g": ["a", "b"],
             "s": [30, None],
@@ -139,7 +139,7 @@ def test_sum_where_empties_group() -> None:
             GROUP BY g
             ORDER BY g
         """,
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"g": ["a"], "s": [30]},
     )
 
@@ -150,7 +150,7 @@ def test_negated_count_and_sum_interaction() -> None:
     assert_sql_matches(
         df,
         query="SELECT -COUNT(*) + SUM(v) AS r FROM self WHERE g = 'b'",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"r": [None]},
     )
 
@@ -161,7 +161,7 @@ def test_min_max_distinct_is_noop() -> None:
     assert_sql_matches(
         df,
         query="SELECT MIN(DISTINCT v) AS mn, MAX(DISTINCT v) AS mx FROM self",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"mn": [1], "mx": [3]},
     )
 
@@ -172,7 +172,7 @@ def test_sum_avg_distinct_dedup() -> None:
     assert_sql_matches(
         df,
         query="SELECT SUM(DISTINCT v) AS s, AVG(DISTINCT v) AS a FROM self",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"s": [6], "a": [2.0]},
     )
 
@@ -193,7 +193,7 @@ def test_sum_avg_distinct_dedup_group_by() -> None:
             GROUP BY g
             ORDER BY g
         """,
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"g": ["a", "b"], "s": [6, None], "a": [2.0, None]},
     )
 
@@ -206,7 +206,7 @@ def test_sum_distinct_literal() -> None:
     assert_sql_matches(
         df,
         query="SELECT SUM(DISTINCT 5) AS s FROM self",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"s": [5]},
     )
 
@@ -217,7 +217,7 @@ def test_sum_avg_distinct_empty_table() -> None:
     assert_sql_matches(
         df,
         query="SELECT SUM(DISTINCT v) AS s, AVG(DISTINCT v) AS a FROM self",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"s": [None], "a": [None]},
     )
 
@@ -234,7 +234,7 @@ def test_group_concat_distinct_with_separator_errors() -> None:
     assert_sql_matches(
         df,
         query="SELECT GROUP_CONCAT(DISTINCT a) AS s FROM self",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"s": ["1,2"]},
     )
 
@@ -242,6 +242,6 @@ def test_group_concat_distinct_with_separator_errors() -> None:
     assert_sql_matches(
         df,
         query="SELECT GROUP_CONCAT(a, ':') AS s FROM self",
-        compare_with="sqlite",
+        compare_with="duckdb",
         expected={"s": ["1:1:2"]},
     )
