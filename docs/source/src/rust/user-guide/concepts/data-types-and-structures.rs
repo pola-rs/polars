@@ -16,7 +16,7 @@ fn main() {
     // --8<-- [end:series-dtype]
 
     // --8<-- [start:df]
-    use jiff::civil::{Date as NaiveDate, Time as NaiveTime};
+    use jiff::civil::Date as NaiveDate;
 
     let df: DataFrame = df!(
         "name" => ["Alice Archer", "Ben Brown", "Chloe Cooper", "Daniel Donovan"],

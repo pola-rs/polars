@@ -1,5 +1,5 @@
 // --8<-- [start:setup]
-use jiff::civil::{Date as NaiveDate, Time as NaiveTime};
+use jiff::civil::Date as NaiveDate;
 use polars::io::prelude::*;
 use polars::prelude::*;
 // --8<-- [end:setup]
