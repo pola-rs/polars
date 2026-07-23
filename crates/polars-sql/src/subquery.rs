@@ -754,7 +754,6 @@ impl SQLContext {
     }
 
     #[cfg(not(feature = "semi_anti_join"))]
-    #[expect(clippy::too_many_arguments)]
     fn try_rewrite_in_subquery_as_join(
         &mut self,
         _lf: &LazyFrame,

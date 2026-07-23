@@ -86,10 +86,7 @@ fn test_in_subquery_value_absent_set_has_null() -> PolarsResult<()> {
 #[test]
 fn test_in_subquery_value_present_despite_set_null() -> PolarsResult<()> {
     // An actual match wins over a NULL elsewhere in the set.
-    assert_eq!(
-        eval("2", Some(vec![Some(2), Some(3), None]))?,
-        Some(true)
-    );
+    assert_eq!(eval("2", Some(vec![Some(2), Some(3), None]))?, Some(true));
     assert_eq!(
         eval_not("2", Some(vec![Some(2), Some(3), None]))?,
         Some(false)

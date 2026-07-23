@@ -15,7 +15,7 @@ fn ctx() -> SQLContext {
     }
     .unwrap()
     .lazy();
-    let mut ctx = SQLContext::new();
+    let ctx = SQLContext::new();
     ctx.register("t1", t1);
     ctx.register("t2", t2);
     ctx
