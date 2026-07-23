@@ -842,6 +842,7 @@ SELECT - COUNT( * ) DIV COUNT( * ) FROM tab0 AS cor0
 -1
 
 skipif mysql
+skipif polars
 query I rowsort label-98
 SELECT - COUNT ( * ) / COUNT ( * ) FROM tab0 AS cor0
 ----

@@ -597,6 +597,7 @@ SELECT DISTINCT col0 DIV - col2, col0 FROM tab2 AS cor0
 -2 46
 
 skipif mysql
+skipif polars
 query II rowsort label-65
 SELECT DISTINCT col0 / - col2, col0 FROM tab2 AS cor0
 ----
@@ -995,6 +996,7 @@ SELECT DISTINCT + + MIN( DISTINCT - col2 ) - - 39 + - 70 DIV + - MIN( ALL + col0
 -56
 
 skipif mysql
+skipif polars
 query I rowsort label-107
 SELECT DISTINCT + + MIN ( DISTINCT - col2 ) - - 39 + - 70 / + - MIN ( ALL + col0 ) FROM tab1 AS cor0
 ----

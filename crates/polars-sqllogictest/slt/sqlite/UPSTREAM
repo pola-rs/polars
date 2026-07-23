@@ -131,14 +131,15 @@ renamed from `.test` to `.slt` (stem preserved) so the runner discovers them.
 
 ## skipif polars divergences
 
-`skipif polars` was added to 1008 individual records (documented per
-cluster below), all discovered during Phase 2 triage of the initial
+`skipif polars` was added to 994 individual records (documented per
+cluster below), most discovered during Phase 2 triage of the initial
 baseline run. In every case the record's own SQL is unaffected; the
 comment is placed as its own `skipif polars` line immediately above the
 `query` line, matching the file's existing `skipif <engine>` style.
 
-- **873 records** (select1.slt: 168, select2.slt: 151, select3.slt: 554):
-  integer division. Polars SQL's `/` operator always performs true
+- **876 records** (select1.slt: 168, select2.slt: 151, select3.slt: 554,
+  random/aggregates_slt_good_0.slt: 2, random/aggregates_slt_good_50.slt:
+  1): integer division. Polars SQL's `/` operator always performs true
   (floating-point) division regardless of operand types - a deliberate,
   pre-existing product decision (commit 18e3422118, "feat: Use true
   division for the `/` operator in Polars SQL (#27391)"), predating this
@@ -146,11 +147,10 @@ comment is placed as its own `skipif polars` line immediately above the
   division) instead truncates `int / int` toward zero. This is an
   intentional, already-decided divergence, not a gap - e.g.
   `SELECT (a+b+c+d+e)/5 FROM t1` where all columns are INTEGER.
-- **17 records** (in1.slt): boolean representation. SQLite has no
-  distinct boolean type, so `1 IN (2)` evaluates to the SQLite convention
-  of integer `0`/`1`. Polars SQL correctly evaluates this to a native
-  Postgres-aligned boolean (`false`/`true`), which is what the harness
-  formats. Intentional Postgres-alignment divergence.
+- Boolean representation (in1.slt) is no longer a divergence: the harness
+  now formats `DataType::Boolean` results as `0`/`1` per the slt Integer
+  type mapping (commit d492e8c8d7), matching SQLite's convention, so the
+  17 `skipif polars` records previously noted here were removed.
 - **8 records** (in2.slt): empty `IN ()` / `NOT IN ()` lists. Standard SQL
   (and PostgreSQL) require the parenthesized list to have at least one
   element and reject `x IN ()` as a syntax error; SQLite permits it as an
@@ -163,15 +163,14 @@ A few small clusters found in "query result mismatch" during triage are
 real correctness gaps (not dialect divergences - SQLite and PostgreSQL
 agree on the expected behavior), so they were left in
 `expected_failures.txt` rather than marked `skipif polars`:
-- IN/NOT IN with NULL in the list and no match should return NULL
-  (three-valued logic), not false/true (in1.slt, in2.slt; ~7 records).
-- Unary negation of `COUNT(*)`/`COUNT(expr)` produces an unsigned-integer
-  wraparound (e.g. `-COUNT(*)` on a 3-row table renders as `4294967293`
-  instead of `-3`), which then cascades through further arithmetic
-  (random/aggregates_slt_good_{0,50}.slt; ~8 records).
-- `SUM(<literal>)` (a constant, not a column expression) returns the
-  literal itself instead of the literal multiplied by the row count
-  (random/aggregates_slt_good_{0,50}.slt; 3 records).
+- Resolved: IN/NOT IN with NULL in the list and no match returning
+  false/true instead of NULL (three-valued logic) has been fixed
+  (commits 03f9e36cdb, b72bea9d00).
+- Resolved: unary negation of `COUNT(*)`/`COUNT(expr)` producing an
+  unsigned-integer wraparound instead of a signed negative has been
+  fixed.
+- Resolved: `SUM(<literal>)` returning the literal itself instead of the
+  literal multiplied by the row count has been fixed.
 - `SUM`/`MIN` over an all-NULL or empty (fully-filtered) group returns `0`
   or a placeholder instead of `NULL` (random/aggregates_slt_good_50.slt;
   3 records).

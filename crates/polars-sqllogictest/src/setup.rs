@@ -2,8 +2,8 @@ use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::SQLContext;
 use sqlparser::ast::{
-    ColumnDef, DataType as SqlDataType, Expr, Insert, ObjectType, SetExpr, Statement, TableObject,
-    UnaryOperator, Value,
+    ColumnDef, DataType as SqlDataType, Delete, Expr, FromTable, Insert, ObjectType, SetExpr,
+    Statement, TableFactor, TableObject, UnaryOperator, Value,
 };
 
 use crate::engine::EngineError;
@@ -83,6 +83,19 @@ pub fn run_setup_statement(
         _ => Err(EngineError::new(format!(
             "unsupported setup statement: {stmt}"
         ))),
+    }
+}
+
+pub fn delete_target_table(stmt: &Statement) -> Option<String> {
+    let Statement::Delete(Delete { from, .. }) = stmt else {
+        return None;
+    };
+    let from_tables = match from {
+        FromTable::WithFromKeyword(f) | FromTable::WithoutKeyword(f) => f,
+    };
+    match &from_tables.first()?.relation {
+        TableFactor::Table { name, .. } => Some(object_name_to_string(name)),
+        _ => None,
     }
 }
 

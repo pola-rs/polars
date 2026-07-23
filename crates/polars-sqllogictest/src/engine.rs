@@ -65,6 +65,13 @@ impl DB for PolarsEngine {
                 }
                 return Ok(DBOutput::StatementComplete(affected));
             }
+            for statement in &statements {
+                if let Some(name) = setup::delete_target_table(statement) {
+                    if self.views.contains(&name) {
+                        return Err(EngineError::new(format!("cannot DELETE from view: {name}")));
+                    }
+                }
+            }
         }
 
         let df = self

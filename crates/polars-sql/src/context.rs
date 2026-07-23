@@ -28,7 +28,7 @@ use crate::sql_expr::{
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
-    expr_has_window_functions, expr_refers_to_table,
+    expr_has_window_functions, expr_references_any_column, expr_refers_to_table,
 };
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
@@ -2055,6 +2055,27 @@ impl SQLContext {
         constraint: &JoinConstraint,
         join_type: JoinType,
     ) -> PolarsResult<LazyFrame> {
+        if let JoinConstraint::On(expr) = constraint {
+            if !expr_references_any_column(expr) {
+                let satisfied = evaluate_constant_join_predicate(self, expr)?;
+                let (left_key, right_key) = if satisfied {
+                    (lit(1i32), lit(1i32))
+                } else {
+                    (lit(1i32), lit(2i32))
+                };
+                return Ok(tbl_left
+                    .frame
+                    .clone()
+                    .join_builder()
+                    .with(tbl_right.frame.clone())
+                    .left_on([left_key])
+                    .right_on([right_key])
+                    .how(join_type)
+                    .suffix(format!(":{}", tbl_right.name))
+                    .coalesce(JoinCoalesce::KeepColumns)
+                    .finish());
+            }
+        }
         let (left_on, right_on, predicates) =
             process_join_constraint(constraint, tbl_left, tbl_right, self)?;
         let coalesce_type = match constraint {
@@ -3399,6 +3420,23 @@ fn suffix_if_right_table(
     } else {
         expr
     }
+}
+
+/// Evaluate a column-free (constant) join ON-expression to a definite true/false
+/// verdict; SQL treats an unknown (NULL) condition the same as false for matching.
+fn evaluate_constant_join_predicate(ctx: &mut SQLContext, expr: &SQLExpr) -> PolarsResult<bool> {
+    let predicate = parse_sql_expr(expr, ctx, None)?;
+    let df = DataFrame::empty()
+        .lazy()
+        .select([predicate
+            .cast(DataType::Boolean)
+            .alias("_constant_join_predicate")])
+        .collect()?;
+    Ok(df
+        .column("_constant_join_predicate")?
+        .bool()?
+        .get(0)
+        .unwrap_or(false))
 }
 
 fn process_join_constraint(
