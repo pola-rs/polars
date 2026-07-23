@@ -19,6 +19,7 @@ pub struct TernaryExpr {
 }
 
 impl TernaryExpr {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         predicate: Arc<dyn PhysicalExpr>,
         truthy: Arc<dyn PhysicalExpr>,
