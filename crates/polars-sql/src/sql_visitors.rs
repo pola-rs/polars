@@ -263,3 +263,31 @@ impl SQLVisitor for WindowFunctionFinder {
 pub(crate) fn expr_has_window_functions(expr: &SQLExpr) -> bool {
     expr.visit(&mut WindowFunctionFinder).is_break()
 }
+
+// ---------------------------------------------------------------------------
+// ColumnRefFinder
+// ---------------------------------------------------------------------------
+
+/// Visitor that checks if a SQL expression contains any column reference at all.
+struct ColumnRefFinder;
+
+impl SQLVisitor for ColumnRefFinder {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+        if matches!(
+            expr,
+            SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_)
+        ) {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    }
+}
+
+/// Check if a SQL expression references any column (as opposed to being a
+/// constant expression composed only of literals/operators/functions).
+pub(crate) fn expr_references_any_column(expr: &SQLExpr) -> bool {
+    expr.visit(&mut ColumnRefFinder).is_break()
+}
