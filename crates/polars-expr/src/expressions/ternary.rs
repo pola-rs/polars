@@ -95,6 +95,19 @@ impl PhysicalExpr for TernaryExpr {
 
         let op_truthy = || self.truthy.evaluate(df, &state);
         let op_falsy = || self.falsy.evaluate(df, &state);
+        
+        // Nulls count as false.
+        let true_count = mask.num_trues();
+        let false_count = mask.len() - true_count;
+        
+        if true_count == 0 {
+            return op_falsy();
+        }
+        
+        if false_count == 0 {
+            return op_truthy();
+        }
+
         let (truthy, falsy) = if self.run_par {
             RAYON.install(|| rayon::join(op_truthy, op_falsy))
         } else {
