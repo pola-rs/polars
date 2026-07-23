@@ -1,14 +1,26 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars.io._utils import looks_like_url, parse_columns_arg, parse_row_index_args
-from polars.io.cloud._utils import _get_path_scheme
+from polars._utils.various import is_path_or_str_sequence, normalize_filepath
+from polars.io._utils import (
+    get_sources,
+    looks_like_url,
+    parse_columns_arg,
+    parse_row_index_args,
+)
+from polars.io.cloud._utils import _first_scan_path, _get_path_scheme
+from polars.io.cloud.credential_provider._builder import (
+    _init_credential_provider_builder,
+)
+from tests.unit.utils.pathlike import HostilePathLike
 
 if TYPE_CHECKING:
+    import os
     from collections.abc import Sequence
 
 
@@ -78,3 +90,52 @@ def test_get_path_scheme() -> None:
     assert _get_path_scheme("scheme://") == "scheme"
     assert _get_path_scheme("://") == ""
     assert _get_path_scheme("://...") == ""
+
+
+def test_get_path_scheme_os_pathlike_17828() -> None:
+    # Must use `os.fspath`, not `str`, on the path-like.
+    assert _get_path_scheme(HostilePathLike("scheme://bucket/key")) == "scheme"
+    assert _get_path_scheme(HostilePathLike("/local/path")) is None
+
+
+def test_normalize_filepath_os_pathlike_17828() -> None:
+    # The path-like is resolved via `os.fspath`, yielding a plain string.
+    result = normalize_filepath(HostilePathLike("/some/path"))
+    assert result == "/some/path"
+    assert isinstance(result, str)
+
+
+def test_is_path_or_str_sequence_os_pathlike_17828() -> None:
+    assert is_path_or_str_sequence([HostilePathLike("a"), Path("b"), "c"])
+    assert is_path_or_str_sequence([HostilePathLike("a")])
+    # A single path-like is not a sequence.
+    assert not is_path_or_str_sequence(HostilePathLike("a"))
+    # A non-path element disqualifies the sequence.
+    assert not is_path_or_str_sequence([HostilePathLike("a"), 123])
+
+
+def test_get_sources_os_pathlike_17828() -> None:
+    # A single path-like is normalized to a one-element list of strings.
+    assert get_sources(HostilePathLike("/a/b")) == ["/a/b"]
+    # A sequence of path-likes is normalized element-wise.
+    sources: list[os.PathLike[str]] = [HostilePathLike("/a/b"), Path("/c/d")]
+    assert get_sources(sources) == ["/a/b", "/c/d"]
+
+
+def test_first_scan_path_os_pathlike_17828() -> None:
+    single = HostilePathLike("/a/b")
+    assert _first_scan_path(single) is single
+
+    seq = [HostilePathLike("/a/b"), HostilePathLike("/c/d")]
+    assert _first_scan_path(seq) is seq[0]
+
+
+@pytest.mark.parametrize(
+    "uri", ["s3://bucket/data.parquet", "az://container/data.parquet"]
+)
+def test_init_credential_provider_builder_os_pathlike_17828(uri: str) -> None:
+    # The AWS/Azure branches resolve the path with `os.fspath`, not `str`.
+    builder = _init_credential_provider_builder(
+        "auto", HostilePathLike(uri), None, "scan_parquet"
+    )
+    assert builder is not None

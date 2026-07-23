@@ -10,6 +10,7 @@ from polars._utils.wrap import wrap_expr
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
+    import os
     import sys
     from io import IOBase
     from pathlib import Path
@@ -307,12 +308,15 @@ class ExprMetaNameSpace:
 
     @overload
     def serialize(
-        self, file: IOBase | str | Path, *, format: SerializationFormat = ...
+        self,
+        file: IOBase | str | Path | os.PathLike[str],
+        *,
+        format: SerializationFormat = ...,
     ) -> None: ...
 
     def serialize(
         self,
-        file: IOBase | str | Path | None = None,
+        file: IOBase | str | Path | os.PathLike[str] | None = None,
         *,
         format: SerializationFormat = "binary",
     ) -> bytes | str | None:

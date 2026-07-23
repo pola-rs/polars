@@ -9,6 +9,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.utils.pathlike import HostilePathLike
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -68,6 +69,143 @@ def test_write_missing_directory(write_method_name: str) -> None:
     write_method = getattr(df, write_method_name)
     with pytest.raises(FileNotFoundError):
         write_method(non_existing_path)
+
+
+@pytest.mark.parametrize(
+    ("write_method", "read_function", "scan_function", "read_supports_list"),
+    [
+        # `read_supports_list` reflects existing behavior: the eager CSV/IPC
+        # readers do not accept a list of paths (only their `scan_*` variants
+        # do), while `read_parquet`/`read_ndjson` dispatch lists to a scan.
+        ("write_parquet", pl.read_parquet, pl.scan_parquet, True),
+        ("write_csv", pl.read_csv, pl.scan_csv, False),
+        ("write_ipc", pl.read_ipc, pl.scan_ipc, False),
+        ("write_ndjson", pl.read_ndjson, pl.scan_ndjson, True),
+        ("write_avro", pl.read_avro, None, False),
+        ("write_json", pl.read_json, None, False),
+    ],
+)
+def test_read_scan_os_pathlike_17828(
+    tmp_path: Path,
+    write_method: str,
+    read_function: Callable[[Any], pl.DataFrame],
+    scan_function: Callable[[Any], pl.LazyFrame] | None,
+    read_supports_list: bool,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    path = tmp_path / "data"
+    getattr(df, write_method)(path)
+
+    source = HostilePathLike(path)
+
+    # A single `os.PathLike` must be treated as a path, not iterated over.
+    assert_frame_equal(read_function(source), df)
+    if scan_function is not None:
+        assert_frame_equal(scan_function(source).collect(), df)
+
+    # A list of `os.PathLike` must also be accepted where lists are supported.
+    if read_supports_list:
+        assert_frame_equal(read_function([source]), df)
+    if scan_function is not None:
+        assert_frame_equal(scan_function([source]).collect(), df)
+
+
+@pytest.mark.parametrize(
+    ("write_method", "read_function"),
+    [
+        ("write_parquet", pl.read_parquet),
+        ("write_csv", pl.read_csv),
+        ("write_ipc", pl.read_ipc),
+        ("write_ipc_stream", pl.read_ipc_stream),
+        ("write_ndjson", pl.read_ndjson),
+        ("write_json", pl.read_json),
+        ("write_avro", pl.read_avro),
+    ],
+)
+def test_write_os_pathlike_17828(
+    tmp_path: Path,
+    write_method: str,
+    read_function: Callable[[Any], pl.DataFrame],
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    path = tmp_path / "data"
+
+    # Writing must accept an `os.PathLike` target (not fall through to the
+    # file-object branch).
+    getattr(df, write_method)(HostilePathLike(path))
+
+    assert_frame_equal(read_function(path), df)
+
+
+def test_read_parquet_pyarrow_os_pathlike_17828(tmp_path: Path) -> None:
+    pytest.importorskip("pyarrow")
+    tmp_path.mkdir(exist_ok=True)
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    path = tmp_path / "data.parquet"
+    df.write_parquet(path)
+
+    # The PyArrow reader takes a separate code path from the native reader.
+    assert_frame_equal(pl.read_parquet(HostilePathLike(path), use_pyarrow=True), df)
+
+
+def test_read_schema_metadata_os_pathlike_17828(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+
+    parquet_path = tmp_path / "data.parquet"
+    ipc_path = tmp_path / "data.ipc"
+    ipc_stream_path = tmp_path / "data.ipcstream"
+    df.write_parquet(parquet_path)
+    df.write_ipc(ipc_path)
+    df.write_ipc_stream(ipc_stream_path)
+
+    assert set(pl.read_parquet_schema(HostilePathLike(parquet_path))) == {"a", "b"}
+    assert set(pl.read_ipc_schema(HostilePathLike(ipc_path))) == {"a", "b"}
+    assert isinstance(pl.read_parquet_metadata(HostilePathLike(parquet_path)), dict)
+
+    # `read_ipc_stream` also accepts `os.PathLike`.
+    assert_frame_equal(pl.read_ipc_stream(HostilePathLike(ipc_stream_path)), df)
+
+
+def test_read_csv_batched_os_pathlike_17828(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    csv_path = tmp_path / "data.csv"
+    df.write_csv(csv_path)
+
+    with pytest.deprecated_call():
+        batched = pl.read_csv_batched(HostilePathLike(csv_path))
+    batches = batched.next_batches(1)
+    assert batches is not None
+    assert_frame_equal(batches[0], df)
+
+
+@pytest.mark.parametrize(
+    ("write_method", "read_function"),
+    [
+        ("write_csv", pl.read_csv),
+        ("write_ipc", pl.read_ipc),
+    ],
+)
+def test_read_os_pathlike_force_async_17828(
+    plmonkeypatch: PlMonkeyPatch,
+    tmp_path: Path,
+    write_method: str,
+    read_function: Callable[[Any], pl.DataFrame],
+) -> None:
+    # The async dispatch checks `os.fspath(source).startswith("hf://")`; a
+    # path-like with a non-path `__str__` would break that check if `str()`
+    # were used instead of `os.fspath()`.
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    tmp_path.mkdir(exist_ok=True)
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    path = tmp_path / "data"
+    getattr(df, write_method)(path)
+
+    assert_frame_equal(read_function(HostilePathLike(path)), df)
 
 
 def test_read_missing_file_path_truncated() -> None:

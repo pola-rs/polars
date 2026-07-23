@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Final, Generic, TypeVar
+import os
+from typing import TYPE_CHECKING, Any, Final, Generic, TypeVar
 
 from polars._utils.various import is_path_or_str_sequence
 from polars.io.partition import PartitionBy
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Custom polars config keys
 POLARS_STORAGE_CONFIG_KEYS: Final[frozenset[str]] = frozenset(
@@ -48,8 +51,8 @@ class NoPickleOption(Generic[T]):
 
 def _first_scan_path(
     source: Any,
-) -> str | Path | None:
-    if isinstance(source, (str, Path)):
+) -> str | Path | os.PathLike[str] | None:
+    if isinstance(source, (str, os.PathLike)):
         return source
     elif is_path_or_str_sequence(source) and source:
         return source[0]
@@ -59,8 +62,8 @@ def _first_scan_path(
     return None
 
 
-def _get_path_scheme(path: str | Path) -> str | None:
-    path_str = str(path)
+def _get_path_scheme(path: str | os.PathLike[str]) -> str | None:
+    path_str = os.fspath(path)
     i = path_str.find("://")
 
     return path_str[:i] if i >= 0 else None

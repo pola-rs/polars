@@ -67,7 +67,7 @@ def _sources(source: FileSource | memoryview[int]) -> tuple[Any, bool]:
 
     for src in source:  # type: ignore[union-attr]
         if isinstance(src, (str, os.PathLike)) and not Path(src).exists():
-            src = os.path.expanduser(str(src))  # noqa: PTH111
+            src = os.path.expanduser(os.fspath(src))  # noqa: PTH111
             if looks_like_url(src):
                 sources.append(src)
                 continue
@@ -78,7 +78,7 @@ def _sources(source: FileSource | memoryview[int]) -> tuple[Any, bool]:
             read_multiple_workbooks = True
         else:
             if isinstance(src, os.PathLike):
-                src = str(src)
+                src = os.fspath(src)
             sources.append(src)
 
     return sources, read_multiple_workbooks

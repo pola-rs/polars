@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import glob
+import os
 import re
 from collections.abc import Sequence
 from contextlib import contextmanager
@@ -101,7 +102,7 @@ def parse_row_index_args(
 
 @overload
 def prepare_file_arg(
-    file: str | Path | list[str] | IO[bytes] | bytes,
+    file: str | Path | os.PathLike[str] | list[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
     use_pyarrow: bool = ...,
@@ -112,7 +113,7 @@ def prepare_file_arg(
 
 @overload
 def prepare_file_arg(
-    file: str | Path | IO[str] | IO[bytes] | bytes,
+    file: str | Path | os.PathLike[str] | IO[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
     use_pyarrow: bool = ...,
@@ -123,7 +124,7 @@ def prepare_file_arg(
 
 @overload
 def prepare_file_arg(
-    file: str | Path | list[str] | IO[str] | IO[bytes] | bytes,
+    file: str | Path | os.PathLike[str] | list[str] | IO[str] | IO[bytes] | bytes,
     encoding: str | None = ...,
     *,
     use_pyarrow: bool = ...,
@@ -133,7 +134,7 @@ def prepare_file_arg(
 
 
 def prepare_file_arg(
-    file: str | Path | list[str] | IO[str] | IO[bytes] | bytes,
+    file: str | Path | os.PathLike[str] | list[str] | IO[str] | IO[bytes] | bytes,
     encoding: str | None = None,
     *,
     use_pyarrow: bool = False,
@@ -189,6 +190,11 @@ def prepare_file_arg(
     # PyArrow allows directories, so we only check that something is not
     # a dir if we are not using PyArrow
     check_not_dir = not use_pyarrow
+
+    # Normalize `os.PathLike` objects (e.g. `pathlib.Path`) to a `Path` so that
+    # the branch below handles them uniformly.
+    if isinstance(file, os.PathLike):
+        file = Path(file)
 
     if isinstance(file, bytes):
         if not has_utf8_utf8_lossy_encoding:
@@ -341,16 +347,25 @@ def is_local_file(file: str) -> bool:
 def get_sources(
     source: str
     | Path
+    | os.PathLike[str]
     | IO[bytes]
     | IO[str]
     | bytes
     | list[str]
     | list[Path]
+    | list[os.PathLike[str]]
     | list[IO[bytes]]
     | list[IO[str]]
     | list[bytes],
-) -> list[str] | list[Path] | list[IO[str]] | list[IO[bytes]] | list[bytes]:
-    if isinstance(source, (str, Path)):
+) -> (
+    list[str]
+    | list[Path]
+    | list[os.PathLike[str]]
+    | list[IO[str]]
+    | list[IO[bytes]]
+    | list[bytes]
+):
+    if isinstance(source, (str, os.PathLike)):
         source = normalize_filepath(source, check_not_directory=False)
     elif is_path_or_str_sequence(source):
         source = [

@@ -18,6 +18,7 @@ from polars.exceptions import (
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
+from tests.unit.utils.pathlike import HostilePathLike
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -1499,3 +1500,16 @@ def test_spreadsheet_no_resource_warning(
         warnings.simplefilter("error", ResourceWarning)
         read_spreadsheet(spreadsheet_path, **params)
         read_spreadsheet(spreadsheet_path, sheet_id=0, **params)
+
+
+@pytest.mark.write_disk
+def test_read_write_excel_os_pathlike_17828(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    path = tmp_path / "data.xlsx"
+
+    # Both `write_excel` and `read_excel` must accept an `os.PathLike` and
+    # resolve it with `os.fspath`, not `str`.
+    df.write_excel(HostilePathLike(path))
+    out = pl.read_excel(HostilePathLike(path))
+    assert_frame_equal(out, df, check_dtypes=False)

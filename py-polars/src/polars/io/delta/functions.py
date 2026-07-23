@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-from typing import TYPE_CHECKING, Any
+import os
+from typing import TYPE_CHECKING, Any, cast
 
 from polars._utils.wrap import wrap_ldf
 from polars.io.cloud._utils import NoPickleOption
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
 
 
 def read_delta(
-    source: str | Path | DeltaTable,
+    source: str | Path | os.PathLike[str] | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
@@ -160,7 +161,7 @@ def read_delta(
 
 
 def scan_delta(
-    source: str | Path | DeltaTable,
+    source: str | Path | os.PathLike[str] | DeltaTable,
     *,
     version: int | str | datetime | None = None,
     storage_options: StorageOptionsDict | None = None,
@@ -320,9 +321,12 @@ def scan_delta(
             **(storage_options or {}),
         }
 
+    # When `table is None`, `source` is a path rather than a `DeltaTable`.
+    source_path = cast("str | os.PathLike[str]", source)
+
     dataset = DeltaDataset(
         table_=NoPickleOption(table),
-        table_uri_=str(source) if table is None else None,
+        table_uri_=os.fspath(source_path) if table is None else None,
         version=version,
         storage_options=storage_options,
         credential_provider_builder=credential_provider_builder,
