@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import polars as pl
-from polars.exceptions import ChronoFormatWarning, ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -706,10 +706,9 @@ def test_to_time_subseconds(data: str, format: str, expected: time) -> None:
         assert res == expected
 
 
-def test_to_time_format_warning() -> None:
+def test_to_time_format_dot_percent_f() -> None:
     s = pl.Series(["05:10:10.074000"])
-    with pytest.warns(ChronoFormatWarning, match=r".%f"):
-        result = s.str.to_time("%H:%M:%S.%f").item()
+    result = s.str.to_time("%H:%M:%S.%f").item()
     assert result == time(5, 10, 10, 74000)
 
 
