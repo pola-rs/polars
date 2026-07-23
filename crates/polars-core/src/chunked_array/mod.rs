@@ -284,7 +284,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         else if self.null_count() == self.len() {
             Some(0)
         } else if self.is_sorted_any() {
-            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+            let out = if self
+                .chunks
+                .iter()
+                .find(|arr| !arr.is_empty())
+                .unwrap()
+                .is_null(0)
+            {
                 // nulls are all at the start
                 0
             } else {
@@ -313,7 +319,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         else if self.null_count() == 0 {
             Some(0)
         } else if self.is_sorted_any() {
-            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+            let out = if self
+                .chunks
+                .iter()
+                .find(|arr| !arr.is_empty())
+                .unwrap()
+                .is_null(0)
+            {
                 // nulls are all at the start
                 self.null_count()
             } else {
@@ -342,7 +354,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         else if self.null_count() == 0 {
             Some(self.len() - 1)
         } else if self.is_sorted_any() {
-            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+            let out = if self
+                .chunks
+                .iter()
+                .find(|arr| !arr.is_empty())
+                .unwrap()
+                .is_null(0)
+            {
                 // nulls are all at the start
                 self.len() - 1
             } else {
