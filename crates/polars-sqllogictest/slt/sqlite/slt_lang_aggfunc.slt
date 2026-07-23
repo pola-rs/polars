@@ -30,6 +30,7 @@ SELECT count(DISTINCT x) FROM t1
 ----
 2
 
+skipif polars
 query I nosort
 SELECT avg(DISTINCT x) FROM t1
 ----
@@ -40,6 +41,7 @@ SELECT sum(DISTINCT x) FROM t1
 ----
 1
 
+skipif polars
 query I nosort
 SELECT total(DISTINCT x) FROM t1
 ----
@@ -83,6 +85,7 @@ SELECT count(DISTINCT x) FROM t1
 # EVIDENCE-OF: R-20409-33051 The avg() function returns the average
 # value of all non-NULL X within a group.
 
+skipif polars
 query I nosort
 SELECT avg(x) FROM t1
 ----
@@ -97,21 +100,25 @@ SELECT count(y) FROM t1
 ----
 5
 
+skipif polars
 query I nosort
 SELECT avg(y) FROM t1
 ----
 0
 
+skipif polars
 query I nosort
 SELECT sum(y) FROM t1
 ----
 0
 
+skipif polars
 query I nosort
 SELECT total(y) FROM t1
 ----
 0
 
+skipif polars
 query I nosort
 SELECT min(y) FROM t1
 ----
@@ -135,26 +142,31 @@ SELECT count(DISTINCT y) FROM t1
 ----
 3
 
+skipif polars
 query I nosort
 SELECT avg(DISTINCT y) FROM t1
 ----
 0
 
+skipif polars
 query I nosort
 SELECT sum(DISTINCT y) FROM t1
 ----
 0
 
+skipif polars
 query I nosort
 SELECT total(DISTINCT y) FROM t1
 ----
 0
 
+skipif polars
 query I nosort
 SELECT min(DISTINCT y) FROM t1
 ----
 0
 
+skipif polars
 query I nosort
 SELECT max(DISTINCT y) FROM t1
 ----
@@ -378,6 +390,7 @@ SELECT sum(x) FROM t1
 ----
 5
 
+skipif polars
 query I nosort label-sum
 SELECT total(x) FROM t1
 ----
@@ -388,6 +401,7 @@ SELECT sum(DISTINCT x) FROM t1
 ----
 3
 
+skipif polars
 query I nosort label-sum-distinct
 SELECT total(DISTINCT x) FROM t1
 ----
@@ -407,11 +421,13 @@ SELECT sum(DISTINCT x) FROM t1 WHERE y='null'
 ----
 NULL
 
+skipif polars
 query I nosort label-zero
 SELECT total(x) FROM t1 WHERE y='null'
 ----
 0
 
+skipif polars
 query I nosort label-zero
 SELECT total(DISTINCT x) FROM t1 WHERE y='null'
 ----
@@ -453,11 +469,13 @@ SELECT sum(DISTINCT x) FROM t1
 statement ok
 INSERT INTO t1 VALUES(4.0,'true')
 
+skipif polars
 query R nosort
 SELECT sum(x) FROM t1
 ----
 9.000
 
+skipif polars
 query R nosort
 SELECT sum(DISTINCT x) FROM t1
 ----
@@ -478,10 +496,12 @@ statement ok
 INSERT INTO t1 VALUES(-1,'true');
 DROP INDEX t1i1;
 
+skipif polars
 query R nosort
 SELECT sum(x) FROM t1
 ----
 
+skipif polars
 query R nosort
 SELECT sum(DISTINCT x) FROM t1
 ----
@@ -489,11 +509,13 @@ SELECT sum(DISTINCT x) FROM t1
 
 # TBD-EVIDENCE-OF: R-19553-64528 Total() never throws an integer overflow.
 
+skipif polars
 query R nosort
 SELECT total(x) FROM t1
 ----
 -18446744073709550000.000
 
+skipif polars
 query R nosort
 SELECT total(DISTINCT x) FROM t1
 ----

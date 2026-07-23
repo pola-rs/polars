@@ -1651,7 +1651,7 @@ impl SQLFunctionVisitor<'_> {
             StdDev => self.visit_unary(|e| e.std(1)),
             StringAgg => self.visit_string_agg(),
             Sum => self.visit_sum(),
-            Total => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
+            Total => self.visit_total(),
             Variance => self.visit_unary(|e| e.var(1)),
 
             // ----
@@ -2192,10 +2192,15 @@ impl SQLFunctionVisitor<'_> {
             [
                 FunctionArgExpr::Expr(sql_expr),
                 FunctionArgExpr::Expr(sep_sql_expr),
-            ] => (
-                sql_expr,
-                parse_sql_expr(sep_sql_expr, self.ctx, self.active_schema)?,
-            ),
+            ] => {
+                if is_distinct {
+                    polars_bail!(SQLSyntax: "DISTINCT is only supported with a single argument in '{}'", self.func.name)
+                }
+                (
+                    sql_expr,
+                    parse_sql_expr(sep_sql_expr, self.ctx, self.active_schema)?,
+                )
+            },
             _ => polars_bail!(
                 SQLSyntax: "STRING_AGG expects 1-2 arguments (found {})",
                 args.len()
@@ -2403,6 +2408,30 @@ impl SQLFunctionVisitor<'_> {
                 Ok(when(non_empty)
                     .then(total)
                     .otherwise(Expr::Literal(LiteralValue::untyped_null())))
+            },
+        }
+    }
+
+    fn visit_total(&mut self) -> PolarsResult<Expr> {
+        match self.func.over.as_ref() {
+            Some(window_type) => {
+                let spec = self.resolve_window_spec(window_type)?;
+                self.apply_cumulative_window(Expr::sum, Expr::cum_sum, &spec)
+                    .map(|e| e.cast(DataType::Float64))
+            },
+            None => {
+                let (args, is_distinct) = extract_args_distinct(self.func)?;
+                let mut arg = match args.as_slice() {
+                    [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
+                    [FunctionArgExpr::Wildcard] => {
+                        self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?
+                    },
+                    _ => return self.not_supported_error(),
+                };
+                if is_distinct {
+                    arg = arg.unique();
+                }
+                Ok(arg.sum().cast(DataType::Float64))
             },
         }
     }

@@ -73,6 +73,19 @@ renamed from `.test` to `.slt` (stem preserved) so the runner discovers them.
   strips comment text only; the condition keyword and label are untouched
   (`onlyif mysql # some comment` -> `onlyif mysql`).
 - `select5.slt` is not vendored - see "Dropped files" below.
+- `slt_lang_aggfunc.slt`: the runner strips SQLite's `NOT INDEXED` /
+  `INDEXED BY <name>` table hints from statement/query text before parsing
+  (`crates/polars-sqllogictest/src/engine.rs`). These are query-planner
+  no-ops (this file's own `CREATE INDEX`/`DROP INDEX` are already treated
+  as no-ops by the shim); sqlparser's `GenericDialect` doesn't recognize
+  the syntax at all, so every `FROM t1 NOT INDEXED` record would otherwise
+  fail to parse regardless of engine correctness. This is a harness-level
+  textual normalization (word-boundary-safe, case-insensitive), not a
+  change to any record's SQL or expected result.
+- `slt_lang_aggfunc.slt`: the INSERT shim
+  (`crates/polars-sqllogictest/src/setup.rs`) now evaluates the `<<`
+  (left-shift) binary operator so that `INSERT INTO t1 VALUES(1<<63,...)`
+  succeeds instead of erroring with "unsupported INSERT expression".
 
 ## Dropped files (not vendored) and reasons
 
@@ -131,11 +144,12 @@ renamed from `.test` to `.slt` (stem preserved) so the runner discovers them.
 
 ## skipif polars divergences
 
-`skipif polars` was added to 994 individual records (documented per
-cluster below), most discovered during Phase 2 triage of the initial
-baseline run. In every case the record's own SQL is unaffected; the
-comment is placed as its own `skipif polars` line immediately above the
-`query` line, matching the file's existing `skipif <engine>` style.
+`skipif polars` was added to individual records (documented per cluster
+below where the cluster was introduced during Phase 2/3 triage; some
+older per-file counts predate this doc and are not individually broken
+out). In every case the record's own SQL is unaffected; the comment is
+placed as its own `skipif polars` line immediately above the `query`
+line, matching the file's existing `skipif <engine>` style.
 
 - **876 records** (select1.slt: 168, select2.slt: 151, select3.slt: 554,
   random/aggregates_slt_good_0.slt: 2, random/aggregates_slt_good_50.slt:
@@ -156,6 +170,41 @@ comment is placed as its own `skipif polars` line immediately above the
   element and reject `x IN ()` as a syntax error; SQLite permits it as an
   extension (always `false`/`true` per the evidence file's own commentary,
   R-64309-54027). Aligning with PostgreSQL, we reject this syntax too.
+- **11 records** (slt_lang_aggfunc.slt): SQLite dynamic type-affinity edge
+  cases that Polars' static per-column typing (like PostgreSQL's) cannot
+  replicate. 9 records aggregate `t1.y`, a TEXT-affinity column holding
+  non-numeric string literals (`'true'`/`'false'`/`'NULL'`); SQLite's
+  NUMERIC/INTEGER-affinity coercion treats these as `0` inside
+  `avg`/`sum`/`total`/`min`/`max`, whereas Polars correctly errors (or
+  returns a string-typed result) since `y` is a `String` column. The other
+  2 records aggregate `t1.x` (nominally `INTEGER`-affinity) after
+  `INSERT INTO t1 VALUES(4.0,'true')`: real SQLite retains that literal's
+  REAL storage class rather than coercing it to an integer, so a
+  subsequent `sum(x)`/`sum(DISTINCT x)` promotes to floating point
+  (`9.000`/`7.000`); Polars' schema forces the whole `x` column to a
+  single `Int64` dtype at insert time, so the literal is stored as
+  integer `4` and the sum stays `Int64` (`9`/`7`).
+- **7 records** (slt_lang_aggfunc.slt): `avg(x)`/`total(x)`/
+  `total(DISTINCT x)` records declared with sqllogictest column type `I`
+  (Integer) whose expected value is nonetheless a truncated real number
+  (e.g. `avg(x)` = 1.25 truncated to `1`; `total(x)` = 5.0 truncated to
+  `5`). Per the sqllogictest format spec, a query declared type `I`
+  formats its result by truncating to a 64-bit integer regardless of the
+  engine's actual return type - a corpus/format convention, not a SQLite
+  behavior we could match without deliberately truncating `avg`/`total`'s
+  correctly-computed floating point result (which would contradict
+  PostgreSQL semantics and the file's own later, correctly `R`-declared
+  checks of the identical `total(x)`/`total(DISTINCT x)` computation over
+  the same table state, e.g. lines 424/429 expecting `5.000`/`3.000`).
+- **4 records** (slt_lang_aggfunc.slt): SQLite-specific 64-bit integer
+  overflow behavior after `INSERT INTO t1 VALUES(1<<63,'true')` (twice)
+  and `VALUES(-1,'true')`. SQLite's `sum()` raises an "integer overflow"
+  exception when every non-NULL input is an integer and accumulation
+  overflows 64 bits, and its `total()` "never throws an integer overflow"
+  but instead reports the wraparound as a REAL approximation. Polars'
+  `sum`/`total` neither raise nor replicate SQLite's specific
+  wraparound-to-float rendering; this is accepted as a deliberate
+  non-goal rather than something to special-case.
 
 ## Not-yet-triaged as skipif (left in the baseline as missing features/bugs)
 
@@ -174,12 +223,6 @@ agree on the expected behavior), so they were left in
 - `SUM`/`MIN` over an all-NULL or empty (fully-filtered) group returns `0`
   or a placeholder instead of `NULL` (random/aggregates_slt_good_50.slt;
   3 records).
-- A handful (~6 records, slt_lang_aggfunc.slt) of SQLite dynamic
-  type-affinity edge cases (aggregating a TEXT-affinity column that holds
-  numeric-looking string literals) that Polars' static per-column typing
-  (like PostgreSQL's) cannot replicate; not considered fixable in this
-  product, left baselined rather than skipif-tagged given the small,
-  idiosyncratic count.
 
 These, along with the missing-feature clusters (subqueries, chained set
 operations, self-join column collisions, etc.), are ranked in the Phase 2

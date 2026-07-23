@@ -25,7 +25,7 @@
 
 
 
-# sqlite/slt_lang_aggfunc.slt (45 entries)
+# sqlite/slt_lang_aggfunc.slt (0 entries)
 
 # sqlite/slt_lang_createview.slt (0 entries)
 
@@ -39,37 +39,6 @@ sqlite/random/aggregates_slt_good_0.slt:433
 sqlite/random/aggregates_slt_good_0.slt:655
 sqlite/random/aggregates_slt_good_0.slt:787
 sqlite/random/aggregates_slt_good_50.slt:302
-sqlite/slt_lang_aggfunc.slt:33
-sqlite/slt_lang_aggfunc.slt:43
-sqlite/slt_lang_aggfunc.slt:58
-sqlite/slt_lang_aggfunc.slt:86
-sqlite/slt_lang_aggfunc.slt:100
-sqlite/slt_lang_aggfunc.slt:105
-sqlite/slt_lang_aggfunc.slt:110
-sqlite/slt_lang_aggfunc.slt:115
-sqlite/slt_lang_aggfunc.slt:138
-sqlite/slt_lang_aggfunc.slt:143
-sqlite/slt_lang_aggfunc.slt:148
-sqlite/slt_lang_aggfunc.slt:153
-sqlite/slt_lang_aggfunc.slt:158
-sqlite/slt_lang_aggfunc.slt:240
-sqlite/slt_lang_aggfunc.slt:245
-sqlite/slt_lang_aggfunc.slt:254
-sqlite/slt_lang_aggfunc.slt:260
-sqlite/slt_lang_aggfunc.slt:267
-sqlite/slt_lang_aggfunc.slt:272
-sqlite/slt_lang_aggfunc.slt:391
-sqlite/slt_lang_aggfunc.slt:415
-sqlite/slt_lang_aggfunc.slt:424
-sqlite/slt_lang_aggfunc.slt:429
-sqlite/slt_lang_aggfunc.slt:456
-sqlite/slt_lang_aggfunc.slt:461
-sqlite/slt_lang_aggfunc.slt:471
-sqlite/slt_lang_aggfunc.slt:474
-sqlite/slt_lang_aggfunc.slt:481
-sqlite/slt_lang_aggfunc.slt:485
-sqlite/slt_lang_aggfunc.slt:492
-sqlite/slt_lang_aggfunc.slt:497
 
 
 

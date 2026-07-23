@@ -2,8 +2,8 @@ use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::SQLContext;
 use sqlparser::ast::{
-    ColumnDef, DataType as SqlDataType, Delete, Expr, FromTable, Insert, ObjectType, SetExpr,
-    Statement, TableFactor, TableObject, UnaryOperator, Value,
+    BinaryOperator, ColumnDef, DataType as SqlDataType, Delete, Expr, FromTable, Insert,
+    ObjectType, SetExpr, Statement, TableFactor, TableObject, UnaryOperator, Value,
 };
 
 use crate::engine::EngineError;
@@ -262,6 +262,18 @@ fn expr_to_any_value(expr: &Expr) -> Result<AnyValue<'static>, EngineError> {
             Expr::Value(value) => value_to_any_value(&value.value, true),
             other => Err(EngineError::new(format!(
                 "unsupported INSERT expression: {other}"
+            ))),
+        },
+        Expr::BinaryOp {
+            left,
+            op: BinaryOperator::PGBitwiseShiftLeft,
+            right,
+        } => match (expr_to_any_value(left)?, expr_to_any_value(right)?) {
+            (AnyValue::Int64(l), AnyValue::Int64(r)) if (0..64).contains(&r) => {
+                Ok(AnyValue::Int64(l.wrapping_shl(r as u32)))
+            },
+            _ => Err(EngineError::new(format!(
+                "unsupported INSERT expression: {expr}"
             ))),
         },
         other => Err(EngineError::new(format!(

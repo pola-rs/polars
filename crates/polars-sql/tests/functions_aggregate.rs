@@ -316,6 +316,72 @@ fn test_sum_avg_distinct_empty_group() {
 }
 
 #[test]
+fn test_total_distinct_and_dtype() {
+    let df = df! { "a" => [Some(1), Some(1), Some(2), Some(2), Some(3), None::<i32>] }
+        .unwrap()
+        .lazy();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df.clone());
+    let actual = ctx
+        .execute("SELECT SUM(DISTINCT a) AS s, TOTAL(DISTINCT a) AS t FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+    // distinct non-null values: {1, 2, 3} -> sum 6, total 6.0
+    let expected = df! { "s" => [6i32], "t" => [6.0f64] }.unwrap();
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+
+    // TOTAL always returns a Float64, even over an all-null input.
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let actual = ctx
+        .execute("SELECT TOTAL(a) AS t, TOTAL(DISTINCT a) AS td FROM df WHERE a IS NULL")
+        .unwrap()
+        .collect()
+        .unwrap();
+    let expected = df! { "t" => [0.0f64], "td" => [0.0f64] }.unwrap();
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+    assert_eq!(actual.column("t").unwrap().dtype(), &DataType::Float64);
+}
+
+#[test]
+fn test_group_concat_distinct_with_separator_errors() {
+    let df = df! { "a" => [1, 1, 2] }.unwrap().lazy();
+
+    // DISTINCT + explicit separator: not supported (matches SQLite's
+    // "DISTINCT aggregates must have exactly one argument").
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df.clone());
+    assert!(
+        ctx.execute("SELECT GROUP_CONCAT(DISTINCT a, ':') AS s FROM df")
+            .is_err()
+    );
+
+    // DISTINCT with a single argument (no separator) must still work.
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df.clone());
+    let actual = ctx
+        .execute("SELECT GROUP_CONCAT(DISTINCT a) AS s FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+    let expected = df! { "s" => ["1,2"] }.unwrap();
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+
+    // Non-DISTINCT with an explicit separator must still work.
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let actual = ctx
+        .execute("SELECT GROUP_CONCAT(a, ':') AS s FROM df")
+        .unwrap()
+        .collect()
+        .unwrap();
+    let expected = df! { "s" => ["1:1:2"] }.unwrap();
+    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+}
+
+#[test]
 fn test_sum_min_max_empty_and_null_group() {
     let df = df! {
         "g" => ["a", "a", "b", "b"],

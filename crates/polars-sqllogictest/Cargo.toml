@@ -14,6 +14,7 @@ polars-core = { workspace = true, features = ["fmt"] }
 polars-lazy = { workspace = true }
 polars-sql = { workspace = true, features = ["semi_anti_join"] }
 
+regex = { workspace = true }
 sqllogictest = "0.29"
 sqlparser = { workspace = true }
 

@@ -1,12 +1,25 @@
 use std::fmt;
+use std::sync::LazyLock;
 
 use polars_core::prelude::{DataFrame, PlHashMap, PlHashSet};
 use polars_sql::SQLContext;
+use regex::Regex;
 use sqllogictest::{DB, DBOutput, DefaultColumnType};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
 use crate::{output, setup};
+
+/// SQLite's `NOT INDEXED` / `INDEXED BY <name>` table hints are a no-op
+/// (they only advise the query planner on index usage); sqlparser's
+/// `GenericDialect` doesn't recognize them, so strip them before parsing.
+static INDEX_HINT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\bNOT\s+INDEXED\b|\bINDEXED\s+BY\s+\w+\b").unwrap()
+});
+
+fn strip_index_hints(sql: &str) -> std::borrow::Cow<'_, str> {
+    INDEX_HINT_RE.replace_all(sql, "")
+}
 
 #[derive(Debug)]
 pub struct EngineError(String);
@@ -52,6 +65,8 @@ impl DB for PolarsEngine {
     type ColumnType = DefaultColumnType;
 
     fn run(&mut self, sql: &str) -> Result<DBOutput<DefaultColumnType>, EngineError> {
+        let sql = strip_index_hints(sql);
+        let sql: &str = &sql;
         if let Ok(statements) = Parser::parse_sql(&GenericDialect, sql) {
             if !statements.is_empty() && statements.iter().all(setup::is_setup_statement) {
                 let mut affected = 0u64;
