@@ -2,6 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::compute::utils::combine_validities_and;
 use polars_compute::rolling::QuantileMethod;
 
 use crate::chunked_array::cast::CastOptions;
@@ -342,6 +343,24 @@ pub trait SeriesTrait:
 
     /// Sets the validity mask of this Series to the given bitmap.
     fn with_validity(&self, validity: Option<Bitmap>) -> Series;
+
+    /// Applies the given mask to this Series, returning a new Series. If a
+    /// validity bit is true nothing changes, if it is false the corresponding
+    /// element becomes null.
+    fn mask(&self, validity: &Bitmap) -> Series {
+        if validity.len() == 1 {
+            if validity.get_bit(0) {
+                Series(self.clone_inner())
+            } else {
+                Series::full_null(self._field().name().clone(), self.len(), self._dtype())
+            }
+        } else {
+            self.with_validity(combine_validities_and(
+                self.rechunk_validity().as_ref(),
+                Some(validity),
+            ))
+        }
+    }
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {

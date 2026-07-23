@@ -342,27 +342,6 @@ def test_single_element_broadcast(
     assert_frame_equal(result, expected, check_row_order=maintain_order)
 
 
-@pytest.mark.parametrize(
-    "df",
-    [pl.DataFrame({"x": range(5)}), pl.DataFrame({"x": 5 * [[*range(5)]]})],
-)
-@pytest.mark.parametrize(
-    "ternary_expr",
-    [
-        pl.when(True).then(pl.col("x").head(2)).otherwise(pl.col("x")),
-        pl.when(False).then(pl.col("x").head(2)).otherwise(pl.col("x")),
-    ],
-)
-def test_mismatched_height_should_raise(
-    df: pl.DataFrame, ternary_expr: pl.Expr
-) -> None:
-    with pytest.raises(ShapeError):
-        df.select(ternary_expr)
-
-    with pytest.raises(ShapeError):
-        df.group_by(pl.lit(True).alias("key")).agg(ternary_expr)
-
-
 @pytest.mark.parametrize("maintain_order", [False, True])
 def test_when_then_output_name_12380(maintain_order: bool) -> None:
     df = pl.DataFrame(

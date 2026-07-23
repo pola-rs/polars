@@ -14,6 +14,8 @@ pub struct TernaryExpr {
     // Can be expensive on small data to run literals in parallel.
     run_par: bool,
     returns_scalar: bool,
+    truthy_mask_columns: Vec<PlSmallStr>,
+    falsy_mask_columns: Vec<PlSmallStr>,
 }
 
 impl TernaryExpr {
@@ -24,6 +26,8 @@ impl TernaryExpr {
         expr: Expr,
         run_par: bool,
         returns_scalar: bool,
+        truthy_mask_columns: Vec<PlSmallStr>,
+        falsy_mask_columns: Vec<PlSmallStr>,
     ) -> Self {
         Self {
             predicate,
@@ -32,6 +36,8 @@ impl TernaryExpr {
             expr,
             run_par,
             returns_scalar,
+            truthy_mask_columns,
+            falsy_mask_columns,
         }
     }
 }
@@ -91,30 +97,70 @@ impl PhysicalExpr for TernaryExpr {
         // Don't cache window functions as they run in parallel.
         state.remove_cache_window_flag();
         let mask_series = self.predicate.evaluate(df, &state)?;
-        let mask = mask_series.bool()?.clone();
+        let mut mask = mask_series.bool()?.clone();
 
-        let op_truthy = || self.truthy.evaluate(df, &state);
-        let op_falsy = || self.falsy.evaluate(df, &state);
-        
+        if !self.truthy_mask_columns.is_empty() || !self.falsy_mask_columns.is_empty() {
+            mask.rechunk_mut();
+        }
+
+        let op_truthy = || {
+            let mut mask_df = df.clone();
+            if !self.truthy_mask_columns.is_empty() {
+                let mask = mask.downcast_as_array().values();
+                for c in &self.truthy_mask_columns {
+                    mask_df.with_column(df.column(c).unwrap().mask(mask))?;
+                }
+            }
+            self.truthy.evaluate(&mask_df, &state)
+        };
+        let op_falsy = || {
+            let mut mask_df = df.clone();
+            if !self.falsy_mask_columns.is_empty() {
+                let mask = !mask.downcast_as_array().values();
+                for c in &self.falsy_mask_columns {
+                    mask_df.with_column(df.column(c).unwrap().mask(&mask))?;
+                }
+            }
+            self.falsy.evaluate(&mask_df, &state)
+        };
+
         // Nulls count as false.
         let true_count = mask.num_trues();
         let false_count = mask.len() - true_count;
-        
-        if true_count == 0 {
-            return op_falsy();
-        }
-        
-        if false_count == 0 {
-            return op_truthy();
-        }
 
-        let (truthy, falsy) = if self.run_par {
-            RAYON.install(|| rayon::join(op_truthy, op_falsy))
+        let (truthy, falsy);
+        if true_count == 0 {
+            falsy = op_falsy()?;
+            match (mask.len(), falsy.len()) {
+                (l, 1) if l != 1 => return Ok(falsy.new_from_index(0, l)),
+                (1, r) if r != 1 => return Ok(falsy),
+                (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
+                (l, r) => {
+                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height and falsy height in when/then/otherwise");
+                    return Ok(falsy);
+                }
+            }
+            truthy = op_truthy()?;
+        } else if false_count == 0 {
+            truthy = op_truthy()?;
+            match (mask.len(), truthy.len()) {
+                (l, 1) if l != 1 => return Ok(truthy.new_from_index(0, l)),
+                (1, r) if r != 1 => return Ok(truthy),
+                (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
+                (l, r) => {
+                    polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height and truthy height in when/then/otherwise");
+                    return Ok(truthy);
+                }
+            }
+            falsy = op_falsy()?; // Forced to evaluate truthy to resolve broadcast height.
+        } else if self.run_par {
+            let (t, f) = RAYON.install(|| rayon::join(op_truthy, op_falsy));
+            truthy = t?;
+            falsy = f?;
         } else {
-            (op_truthy(), op_falsy())
+            truthy = op_truthy()?;
+            falsy = op_falsy()?;
         };
-        let truthy = truthy?;
-        let falsy = falsy?;
 
         truthy.zip_with(&mask, &falsy)
     }
