@@ -606,10 +606,6 @@ def test_strptime_subseconds_datetime(data: str, format: str, expected: time) ->
 @pytest.mark.parametrize(
     ("string", "fmt"),
     [
-        pytest.param("2023-05-04|7", "%Y-%m-%d|%H", id="hour but no minute"),
-        pytest.param("2023-05-04|7", "%Y-%m-%d|%k", id="padded hour but no minute"),
-        pytest.param("2023-05-04|10", "%Y-%m-%d|%M", id="minute but no hour"),
-        pytest.param("2023-05-04|10", "%Y-%m-%d|%S", id="second but no hour"),
         pytest.param(
             "2000-Jan-01 01 00 01", "%Y-%b-%d %I %M %S", id="12-hour clock but no AM/PM"
         ),
@@ -621,11 +617,52 @@ def test_strptime_subseconds_datetime(data: str, format: str, expected: time) ->
     ],
 )
 def test_strptime_incomplete_formats(string: str, fmt: str) -> None:
+    # A 12-hour-clock directive without an AM/PM directive (or vice versa) is
+    # rejected, since which is missing gives no way to tell which of the two
+    # 12-hour halves is meant.
     with pytest.raises(
         ComputeError,
         match="Invalid format string",
     ):
         pl.Series([string]).str.to_datetime(fmt)
+
+
+@pytest.mark.parametrize(
+    ("string", "fmt", "expected"),
+    [
+        pytest.param(
+            "2023-05-04|7",
+            "%Y-%m-%d|%H",
+            datetime(2023, 5, 4, 7),
+            id="hour but no minute",
+        ),
+        pytest.param(
+            "2023-05-04|7",
+            "%Y-%m-%d|%k",
+            datetime(2023, 5, 4, 7),
+            id="padded hour but no minute",
+        ),
+        pytest.param(
+            "2023-05-04|10",
+            "%Y-%m-%d|%M",
+            datetime(2023, 5, 4, 0, 10),
+            id="minute but no hour",
+        ),
+        pytest.param(
+            "2023-05-04|10",
+            "%Y-%m-%d|%S",
+            datetime(2023, 5, 4, 0, 0, 10),
+            id="second but no hour",
+        ),
+    ],
+)
+def test_strptime_missing_bigger_time_unit_defaults_to_zero(
+    string: str, fmt: str, expected: datetime
+) -> None:
+    # Unlike a missing AM/PM directive, a missing hour/minute directive is
+    # unambiguous - the omitted, bigger unit just defaults to zero.
+    result = pl.Series([string]).str.to_datetime(fmt).item()
+    assert result == expected
 
 
 @pytest.mark.parametrize(

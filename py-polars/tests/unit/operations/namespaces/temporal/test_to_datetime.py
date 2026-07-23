@@ -120,14 +120,7 @@ def test_to_datetime(datetimes: datetime, fmt: str) -> None:
         )
     except ComputeError as exc:
         assert "Invalid format string" in str(exc)  # noqa: PT017
-        assert (
-            (("%H" in fmt) ^ ("%M" in fmt))
-            or (("%I" in fmt) ^ ("%M" in fmt))
-            or ("%S" in fmt and "%H" not in fmt)
-            or ("%S" in fmt and "%I" not in fmt)
-            or (("%I" in fmt) ^ ("%p" in fmt))
-            or (("%H" in fmt) ^ ("%p" in fmt))
-        )
+        assert ("%I" in fmt) ^ ("%p" in fmt)
     else:
         assert result == expected
 
