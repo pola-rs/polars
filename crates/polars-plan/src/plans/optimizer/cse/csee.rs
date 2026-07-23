@@ -289,7 +289,6 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) 
         #[cfg(feature = "dtype-struct")]
         AExpr::StructEval { .. } => true,
         AExpr::Eval { .. } => true,
-        #[cfg(feature = "dtype-struct")]
         AExpr::Ternary { .. } => is_groupby,
         ae => {
             if element_wise_select_only {
