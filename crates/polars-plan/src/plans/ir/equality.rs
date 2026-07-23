@@ -150,7 +150,7 @@ impl IR {
                 else {
                     return false;
                 };
-                Arc::as_ptr(l_df) == Arc::as_ptr(r_df) && l_output_schema == r_output_schema
+                Arc::ptr_eq(l_df, r_df) && l_output_schema == r_output_schema
             },
             IR::SimpleProjection {
                 columns: l_columns,
@@ -298,16 +298,16 @@ impl IR {
             },
             IR::MapFunction {
                 input: _,
-                function: _,
+                function: l_function,
             } => {
                 let IR::MapFunction {
                     input: _,
-                    function: _,
+                    function: r_function,
                 } = other
                 else {
                     return false;
                 };
-                todo!("implement PartialEq for FunctionIR")
+                l_function == r_function
             },
             IR::Union {
                 inputs: _,

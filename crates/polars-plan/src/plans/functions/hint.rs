@@ -20,7 +20,7 @@ pub struct Sorted {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Hash, strum_macros::IntoStaticStr)]
+#[derive(Clone, Hash, PartialEq, strum_macros::IntoStaticStr)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum HintIR {
     Sorted(Arc<[Sorted]>),
