@@ -52,6 +52,12 @@ pub struct ParkGroupWorker {
     version: u32,
 }
 
+impl Drop for ParkGroupWorker {
+    fn drop(&mut self) {
+        self.inner.num_workers.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 impl ParkGroup {
     pub fn new() -> Self {
         Self::default()

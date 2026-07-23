@@ -95,33 +95,6 @@ impl Hash for IRAggExpr {
     }
 }
 
-impl IRAggExpr {
-    pub(super) fn equal_nodes(&self, other: &IRAggExpr) -> bool {
-        use IRAggExpr::*;
-        match (self, other) {
-            (
-                Min {
-                    propagate_nans: l, ..
-                },
-                Min {
-                    propagate_nans: r, ..
-                },
-            ) => l == r,
-            (
-                Max {
-                    propagate_nans: l, ..
-                },
-                Max {
-                    propagate_nans: r, ..
-                },
-            ) => l == r,
-            (Std(_, l), Std(_, r)) => l == r,
-            (Var(_, l), Var(_, r)) => l == r,
-            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
-        }
-    }
-}
-
 impl From<IRAggExpr> for GroupByMethod {
     fn from(value: IRAggExpr) -> Self {
         use IRAggExpr::*;

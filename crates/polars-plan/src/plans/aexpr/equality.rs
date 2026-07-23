@@ -2,6 +2,7 @@ use polars_core::prelude::SortOptions;
 use polars_utils::arena::{Arena, Node};
 
 use super::{AExpr, IRAggExpr};
+use crate::plans::ExprIR;
 
 impl AExpr {
     pub fn is_expr_equal_to(&self, other: &Self, arena: &Arena<AExpr>) -> bool {
@@ -21,7 +22,7 @@ impl AExpr {
         r_stack.clear();
 
         // Top-Level node.
-        if !self.is_expr_equal_top_level(other) {
+        if !self.is_expr_equal_shallow(other) {
             return false;
         }
         self.children_rev(l_stack);
@@ -38,7 +39,7 @@ impl AExpr {
             let l_expr = arena.get(l_node);
             let r_expr = arena.get(r_node);
 
-            if !l_expr.is_expr_equal_top_level(r_expr) {
+            if !l_expr.is_expr_equal_shallow(r_expr) {
                 return false;
             }
             l_expr.children_rev(l_stack);
@@ -48,10 +49,29 @@ impl AExpr {
         true
     }
 
-    pub fn is_expr_equal_top_level(&self, other: &Self) -> bool {
+    /// Compares expression enums at the top level, without recursing into inner/child expressions.
+    /// Compares input arity (so that we can do parallel tree traversal in higher-level functions).
+    /// Compares input names in cases where it matters (e.g. struct constructors and some functions).
+    pub fn is_expr_equal_shallow(&self, other: &Self) -> bool {
         if std::mem::discriminant(self) != std::mem::discriminant(other) {
             // Fast path: different kind of expression.
             return false;
+        }
+
+        fn cmp_arg_counts_names(
+            l_input: &[ExprIR],
+            r_input: &[ExprIR],
+            compare_names: bool,
+        ) -> bool {
+            if l_input.len() != r_input.len() {
+                return false;
+            }
+            !compare_names || {
+                l_input
+                    .iter()
+                    .zip(r_input)
+                    .all(|(l, r)| l.output_name_inner() == r.output_name_inner())
+            }
         }
 
         use AExpr as E;
@@ -68,13 +88,13 @@ impl AExpr {
             E::BinaryExpr { left: _, op: l_op, right: _ } => matches!(other, E::BinaryExpr { left: _, op: r_op, right: _ } if l_op == r_op),
             E::Cast { expr: _, dtype: l_dtype, options: l_options } => matches!(other, E::Cast { expr: _, dtype: r_dtype, options: r_options } if l_dtype == r_dtype && l_options == r_options),
             E::Sort { expr: _, options: l_options } => matches!(other, E::Sort { expr: _, options: r_options } if l_options == r_options),
-            E::Gather { expr: _, idx: l_idx, returns_scalar: l_returns_scalar, null_on_oob: l_null_on_oob } => matches!(other, E::Gather { expr: _, idx: r_idx, returns_scalar: r_returns_scalar, null_on_oob: r_null_on_oob } if l_idx == r_idx && l_returns_scalar == r_returns_scalar && l_null_on_oob == r_null_on_oob),
+            E::Gather { expr: _, idx: _, returns_scalar: l_returns_scalar, null_on_oob: l_null_on_oob } => matches!(other, E::Gather { expr: _, idx: _, returns_scalar: r_returns_scalar, null_on_oob: r_null_on_oob } if l_returns_scalar == r_returns_scalar && l_null_on_oob == r_null_on_oob),
             E::SortBy { expr: _, by: l_by, sort_options: l_sort_options } => matches!(other, E::SortBy { expr: _, by: r_by, sort_options: r_sort_options } if l_by.len() == r_by.len() && l_sort_options == r_sort_options),
-            E::Agg(l_agg) => matches!(other, E::Agg(r_agg) if l_agg.is_agg_equal_top_level(r_agg)),
-            E::AnonymousAgg { input: input_l, fmt_str: fmt_str_l, function: function_l } => matches!(other, E::AnonymousAgg { input: input_r, fmt_str: fmt_str_r, function: function_r} if input_l == input_r && function_l == function_r && fmt_str_l == fmt_str_r),
-            E::AnonymousFunction { input: l_input, function: l_function, options: l_options, fmt_str: l_fmt_str } => matches!(other, E::AnonymousFunction { input: r_input, function: r_function, options: r_options, fmt_str: r_fmt_str } if l_input.len() == r_input.len() && l_function == r_function && l_options == r_options && l_fmt_str == r_fmt_str),
+            E::Agg(l_agg) => matches!(other, E::Agg(r_agg) if l_agg.is_agg_equal_shallow(r_agg)),
+            E::AnonymousAgg { input: l_input, fmt_str: l_fmt_str, function: l_function } => matches!(other, E::AnonymousAgg { input: r_input, fmt_str: r_fmt_str, function: r_function } if cmp_arg_counts_names(l_input, r_input, true) && l_function == r_function && l_fmt_str == r_fmt_str),
+            E::AnonymousFunction { input: l_input, function: l_function, options: l_options, fmt_str: l_fmt_str } => matches!(other, E::AnonymousFunction { input: r_input, function: r_function, options: r_options, fmt_str: r_fmt_str } if cmp_arg_counts_names(l_input, r_input, true) && l_function == r_function && l_options == r_options && l_fmt_str == r_fmt_str),
             E::Eval { expr: _, evaluation: _, variant: l_variant } => matches!(other, E::Eval { expr: _, evaluation: _, variant: r_variant } if l_variant == r_variant),
-            E::Function { input: l_input, function: l_function, options: l_options } => matches!(other, E::Function { input: r_input, function: r_function, options: r_options } if l_input.len() == r_input.len() && l_function == r_function && l_options == r_options),
+            E::Function { input: l_input, function: l_function, options: l_options } => matches!(other, E::Function { input: r_input, function: r_function, options: r_options } if cmp_arg_counts_names(l_input, r_input, l_function.output_depends_on_input_names()) && l_function == r_function && l_options == r_options),
             #[cfg(feature = "dynamic_group_by")]
             E::Rolling { function: _, index_column: _, period: l_period, offset: l_offset, closed_window: l_closed_window } => matches!(other, E::Rolling { function: _, index_column: _, period: r_period, offset: r_offset, closed_window: r_closed_window } if l_period == r_period && l_offset == r_offset && l_closed_window == r_closed_window),
             E::Over { function: _, partition_by: l_partition_by, order_by: l_order_by, mapping: l_mapping } => matches!(other, E::Over { function: _, partition_by: r_partition_by, order_by: r_order_by, mapping: r_mapping } if l_partition_by.len() == r_partition_by.len() && l_order_by.as_ref().map(|(_, v): &(Node, SortOptions)| v) == r_order_by.as_ref().map(|(_, v): &(Node, SortOptions)| v) && l_mapping == r_mapping),
@@ -86,7 +106,7 @@ impl AExpr {
             E::Slice { input: _, offset: _, length: _ } |
             E::Len => true,
             #[cfg(feature = "dtype-struct")]
-            E::StructEval { expr: _, evaluation: _} => true
+            E::StructEval { expr: _, evaluation: l_evaluation } => matches!(other, E::StructEval { expr: _, evaluation: r_evaluation } if cmp_arg_counts_names(l_evaluation, r_evaluation, true))
         };
 
         is_equal
@@ -94,7 +114,7 @@ impl AExpr {
 }
 
 impl IRAggExpr {
-    pub fn is_agg_equal_top_level(&self, other: &Self) -> bool {
+    pub fn is_agg_equal_shallow(&self, other: &Self) -> bool {
         if std::mem::discriminant(self) != std::mem::discriminant(other) {
             // Fast path: different kind of expression.
             return false;
