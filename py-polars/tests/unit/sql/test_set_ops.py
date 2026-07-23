@@ -116,6 +116,16 @@ def test_except_intersect_all_nulls() -> None:
     assert sorted(res_i["n"].to_list(), key=lambda v: (v is None, v)) == [1, None]
 
 
+def test_except_distinct_nulls_compare_equal() -> None:
+    # NULLs must compare equal for (non-ALL/DISTINCT) set-op purposes too: the
+    # NULL row in df1 is matched away by the NULL row in df2.
+    df1 = pl.DataFrame({"x": [1, 2, None]}, schema={"x": pl.Int64})
+    df2 = pl.DataFrame({"x": [2, None]}, schema={"x": pl.Int64})
+
+    res = pl.sql("SELECT x FROM df1 EXCEPT SELECT x FROM df2", eager=True)
+    assert res["x"].to_list() == [1]
+
+
 def test_mixed_chain_set_ops() -> None:
     a = pl.DataFrame({"v": [1, 2]})
     b = pl.DataFrame({"v": [2, 3]})
@@ -137,6 +147,49 @@ def test_mixed_chain_set_ops() -> None:
         )
         # b INTERSECT d = {3}; a UNION {3} = {1, 2, 3}
         assert res["v"].to_list() == [1, 2, 3]
+
+
+def test_four_term_mixed_chain_set_ops() -> None:
+    # (a UNION ALL b) EXCEPT (c INTERSECT d): c INTERSECT d = {1, 3};
+    # a UNION ALL b = [1, 2, 2, 3]; removing {1, 3} then DISTINCT -> {2}
+    a = pl.DataFrame({"v": [1, 2]})
+    b = pl.DataFrame({"v": [2, 3]})
+    c = pl.DataFrame({"v": [1, 3]})
+    d = pl.DataFrame({"v": [1, 2, 3, 4]})
+
+    with pl.SQLContext(a=a, b=b, c=c, d=d, eager=True) as ctx:
+        res = ctx.execute(
+            "SELECT v FROM a UNION ALL SELECT v FROM b "
+            "EXCEPT SELECT v FROM c INTERSECT SELECT v FROM d ORDER BY v"
+        )
+        assert res["v"].to_list() == [2]
+
+
+def test_except_positional_column_matching_differing_names() -> None:
+    # set-op columns are matched positionally, using the first operand's
+    # names for the output -- names need not match between operands
+    df1 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]})
+    df2 = pl.DataFrame({"x": [2, 3, 4], "y": [20, 30, 40]})
+
+    res = pl.sql(
+        "SELECT a, b FROM df1 EXCEPT SELECT x, y FROM df2 ORDER BY a", eager=True
+    )
+    assert res.columns == ["a", "b"]
+    assert res.rows() == [(1, 10)]
+
+
+def test_union_chain_order_by_and_limit_on_whole_chain() -> None:
+    # ORDER BY/LIMIT applies to the whole 3-way (plain, deduping) UNION chain
+    a = pl.DataFrame({"v": [3, 1]})
+    b = pl.DataFrame({"v": [5, 2]})
+    c = pl.DataFrame({"v": [4, 6]})
+
+    res = pl.sql(
+        "SELECT v FROM a UNION SELECT v FROM b UNION SELECT v FROM c "
+        "ORDER BY v LIMIT 3",
+        eager=True,
+    )
+    assert res["v"].to_list() == [1, 2, 3]
 
 
 def test_update_statement_error() -> None:

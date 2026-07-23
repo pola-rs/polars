@@ -69,6 +69,20 @@ def test_correlated_equality_across_tables() -> None:
     )
 
 
+def test_correlated_count_equality_self() -> None:
+    # Self-correlated equality: count rows of the same table sharing `b`,
+    # excluding the row itself via an inequality on `a`.
+    assert_sql_matches(
+        frames=_frames(),
+        query=(
+            "SELECT a, (SELECT COUNT(*) FROM t1 AS x "
+            "WHERE x.b = t1.b AND x.a <> t1.a) AS c FROM t1 ORDER BY a"
+        ),
+        compare_with="sqlite",
+        expected={"a": [1, 2, 3], "c": [0, 0, 0]},
+    )
+
+
 def test_correlated_with_inner_only_filter() -> None:
     assert_sql_matches(
         frames=_frames(),
