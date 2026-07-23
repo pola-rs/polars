@@ -21,6 +21,13 @@ def test_equality_correlated_exists_still_works() -> None:
         compare_with="sqlite",
         expected={"a": [1, 2]},
     )
+    # an equality correlation must still be lowered to a semi join, not routed
+    # through the general (decorrelated flag column) EXISTS path
+    with pl.SQLContext(frames=_frames()) as ctx:
+        plan = ctx.execute(
+            "SELECT a FROM t1 WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.g = t1.b)"
+        ).explain()
+        assert "SEMI JOIN" in plan, plan
 
 
 def test_equality_correlated_not_exists_still_works() -> None:
@@ -33,6 +40,13 @@ def test_equality_correlated_not_exists_still_works() -> None:
         compare_with="sqlite",
         expected={"a": [3]},
     )
+    # an equality correlation must still be lowered to an anti join, not
+    # routed through the general (decorrelated flag column) EXISTS path
+    with pl.SQLContext(frames=_frames()) as ctx:
+        plan = ctx.execute(
+            "SELECT a FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t2 WHERE t2.g = t1.b)"
+        ).explain()
+        assert "ANTI JOIN" in plan, plan
 
 
 @pytest.mark.parametrize(

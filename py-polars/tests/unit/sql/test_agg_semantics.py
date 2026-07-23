@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import polars as pl
 from tests.unit.sql import assert_sql_matches
 
@@ -19,6 +21,13 @@ def test_negated_count() -> None:
         compare_with="sqlite",
         expected={"c": [3]},
     )
+
+
+def test_count_dtype() -> None:
+    # `COUNT(*)` must return Int64, regardless of the input frame's own dtypes
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    res = df.sql("SELECT COUNT(*) AS c FROM self")
+    assert res.schema["c"] == pl.Int64
 
 
 def test_negated_count_group_by() -> None:
@@ -210,4 +219,29 @@ def test_sum_avg_distinct_empty_table() -> None:
         query="SELECT SUM(DISTINCT v) AS s, AVG(DISTINCT v) AS a FROM self",
         compare_with="sqlite",
         expected={"s": [None], "a": [None]},
+    )
+
+
+def test_group_concat_distinct_with_separator_errors() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2]})
+
+    # DISTINCT + explicit separator: not supported (matches SQLite's
+    # "DISTINCT aggregates must have exactly one argument").
+    with pytest.raises(pl.exceptions.SQLSyntaxError, match="DISTINCT"):
+        df.sql("SELECT GROUP_CONCAT(DISTINCT a, ':') AS s FROM self")
+
+    # DISTINCT with a single argument (no separator) must still work.
+    assert_sql_matches(
+        df,
+        query="SELECT GROUP_CONCAT(DISTINCT a) AS s FROM self",
+        compare_with="sqlite",
+        expected={"s": ["1,2"]},
+    )
+
+    # Non-DISTINCT with an explicit separator must still work.
+    assert_sql_matches(
+        df,
+        query="SELECT GROUP_CONCAT(a, ':') AS s FROM self",
+        compare_with="sqlite",
+        expected={"s": ["1:1:2"]},
     )
