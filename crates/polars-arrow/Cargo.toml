@@ -16,11 +16,11 @@ description = "Minimal implementation of the Arrow specification forked from arr
 bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["must_cast"] }
 bytes = { workspace = true }
-jiff = { workspace = true }
 dyn-clone = { version = "1" }
 either = { workspace = true }
 half = { workspace = true, optional = false, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
+jiff = { workspace = true }
 num-traits = { workspace = true }
 polars-buffer = { workspace = true }
 polars-error = { workspace = true }

@@ -10,8 +10,8 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
 arrow = { workspace = true }
-jiff = { workspace = true }
 futures = { workspace = true, optional = true }
+jiff = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
