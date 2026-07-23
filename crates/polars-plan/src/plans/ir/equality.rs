@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_utils::arena::{Arena, Node};
 
 use super::IR;
-use crate::plans::{AExpr, ExprIR};
+use crate::plans::{AExpr, ArrowPredicate, ExprIR, PythonOptions, PythonPredicate};
 
 impl IR {
     fn expr_eq<'a, 's>(
@@ -78,8 +78,71 @@ impl IR {
 
         let is_equal = match self {
             #[cfg(feature = "python")]
-            IR::PythonScan { .. } => {
-                todo!("try to compare at least if is_pure=true")
+            IR::PythonScan { options: l_options } => {
+                let IR::PythonScan { options: r_options } = other else {
+                    return false;
+                };
+                let PythonOptions {
+                    scan_fn: l_scan_fn,
+                    schema: l_schema,
+                    output_schema: l_output_schema,
+                    with_columns: l_with_columns,
+                    python_source: l_python_source,
+                    n_rows: l_n_rows,
+                    predicate: l_predicate,
+                    validate_schema: l_validate_schema,
+                    is_pure: l_is_pure,
+                } = l_options;
+                let PythonOptions {
+                    scan_fn: r_scan_fn,
+                    schema: r_schema,
+                    output_schema: r_output_schema,
+                    with_columns: r_with_columns,
+                    python_source: r_python_source,
+                    n_rows: r_n_rows,
+                    predicate: r_predicate,
+                    validate_schema: r_validate_schema,
+                    is_pure: r_is_pure,
+                } = r_options;
+
+                let scan_fn_eq = (l_scan_fn.is_some() == r_scan_fn.is_some())
+                    && l_scan_fn
+                        .as_ref()
+                        .map(|l| l.0.as_ptr() == r_scan_fn.as_ref().unwrap().0.as_ptr())
+                        .unwrap_or(true);
+
+                use PythonPredicate as PP;
+                let predicate_eq = (std::mem::discriminant(l_predicate)
+                    == std::mem::discriminant(r_predicate))
+                    && match l_predicate {
+                        PP::PyArrow(ArrowPredicate {
+                            predicate: l_predicate,
+                            pyarrow_predicate: _,
+                            has_residual: _,
+                        }) => {
+                            let PP::PyArrow(r_inner) = r_predicate else {
+                                return false;
+                            };
+                            expr_eq!(l_predicate, &r_inner.predicate)
+                        },
+                        PP::Polars(l_expr) => {
+                            let PP::Polars(r_expr) = r_predicate else {
+                                return false;
+                            };
+                            expr_eq!(l_expr, r_expr)
+                        },
+                        PP::None => true,
+                    };
+
+                (*l_is_pure && *r_is_pure)
+                    && scan_fn_eq
+                    && l_schema == r_schema
+                    && l_output_schema == r_output_schema
+                    && l_with_columns == r_with_columns
+                    && l_python_source == r_python_source
+                    && l_n_rows == r_n_rows
+                    && predicate_eq
+                    && l_validate_schema == r_validate_schema
             },
             IR::Slice {
                 offset: l_offset,
