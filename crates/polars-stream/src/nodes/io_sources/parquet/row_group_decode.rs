@@ -568,17 +568,9 @@ impl RowGroupDecoder {
                 DataFrame::new_unchecked(row_group_data.row_group_metadata.num_rows(), live_columns)
             };
 
-            // We can be in this branch either because we have a residual
-            // predicate to handle, or reader-level limitations disabled
-            // column predicates (for example, we have Float16 types). Thus
-            // we first check if we have a residual and if not, pick up the
-            // full predicate.
-            let mask = scan_predicate
-                .column_predicates
-                .residual_predicate
-                .as_ref()
-                .unwrap_or(&scan_predicate.predicate)
-                .evaluate_io(&live_df)?;
+            // No column predicates were applied in this branch. Evaluate the complete predicate,
+            // even if part of it was classified as a residual predicate.
+            let mask = scan_predicate.predicate.evaluate_io(&live_df)?;
             let mask = mask.bool().unwrap();
 
             unsafe {

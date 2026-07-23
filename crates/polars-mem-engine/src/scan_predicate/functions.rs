@@ -169,10 +169,17 @@ pub fn create_scan_predicate(
             }
             eprintln!("}}");
         }
-        let residual_predicate = column_predicates.residual_predicate.map(|node| {
-            debug_assert_eq!(node, predicate.node());
-            phys_predicate.clone()
-        });
+        let residual_predicate = column_predicates
+            .residual_predicate
+            .map(|node| {
+                create_physical_expr(
+                    &ExprIR::new(node, OutputName::Alias(PlSmallStr::EMPTY)),
+                    expr_arena,
+                    schema,
+                    state,
+                )
+            })
+            .transpose()?;
         PhysicalColumnPredicates {
             predicates: column_predicates
                 .predicates
