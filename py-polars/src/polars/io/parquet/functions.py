@@ -174,8 +174,7 @@ def read_parquet(
         Use PyArrow instead of the Rust-native Parquet reader. The PyArrow reader is
         more stable.
     pyarrow_options
-        Keyword arguments for `pyarrow.parquet.read_table
-        <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
+        Keyword arguments for :func:`pyarrow.parquet.read_table`.
     memory_map
         Memory map underlying file. This will likely increase performance.
         Only used when `use_pyarrow=True`.

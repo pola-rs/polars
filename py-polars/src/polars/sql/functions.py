@@ -33,8 +33,9 @@ def sql(query: str, *, eager: bool = False) -> DataFrame | LazyFrame:
 
     Notes
     -----
-    * The Polars SQL engine can operate against Polars DataFrame, LazyFrame, and Series
-      objects, as well as Pandas DataFrame and Series, PyArrow Table and RecordBatch.
+    * The Polars SQL engine can operate against Polars `DataFrame`, `LazyFrame`, and
+      `Series` objects, as well as :class:`pandas.DataFrame` and :class:`pandas.Series`,
+      :class:`pyarrow.Table` and :class:`pyarrow.RecordBatch`.
     * Additional control over registration and execution behaviour is available
       with the :class:`SQLContext` object.
 
