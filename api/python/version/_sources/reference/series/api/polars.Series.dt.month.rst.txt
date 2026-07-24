@@ -1,0 +1,6 @@
+﻿polars.Series.dt.month
+======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.dt.month

@@ -1,0 +1,29 @@
+﻿polars.io.partition.FileProviderArgs
+====================================
+
+.. currentmodule:: polars.io.partition
+
+.. autoclass:: FileProviderArgs
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~FileProviderArgs.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~FileProviderArgs.index_in_partition
+      ~FileProviderArgs.partition_keys
+   
+   

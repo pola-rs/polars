@@ -1,0 +1,6 @@
+﻿polars.Series.cat.len_chars
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.cat.len_chars

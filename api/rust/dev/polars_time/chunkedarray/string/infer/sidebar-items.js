@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["infer_pattern_date_single","infer_pattern_datetime_single","infer_pattern_single","infer_pattern_time_single","sniff_time_fmt"],"struct":["DatetimeInfer"],"trait":["StrpTimeParser","TryFromWithUnit"]};

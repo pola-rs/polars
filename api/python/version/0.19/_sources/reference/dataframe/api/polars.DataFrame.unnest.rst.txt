@@ -1,0 +1,6 @@
+﻿polars.DataFrame.unnest
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.unnest

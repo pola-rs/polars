@@ -1,0 +1,6 @@
+﻿polars.testing.parametric.series
+================================
+
+.. currentmodule:: polars.testing.parametric
+
+.. autofunction:: series

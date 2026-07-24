@@ -1,0 +1,6 @@
+﻿polars.Series.round
+===================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.round

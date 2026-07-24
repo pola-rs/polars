@@ -1,0 +1,6 @@
+﻿polars.Series.to\_numpy
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.to_numpy

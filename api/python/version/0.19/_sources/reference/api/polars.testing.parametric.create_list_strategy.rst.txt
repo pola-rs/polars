@@ -1,0 +1,6 @@
+﻿polars.testing.parametric.create\_list\_strategy
+================================================
+
+.. currentmodule:: polars.testing.parametric
+
+.. autofunction:: create_list_strategy

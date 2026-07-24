@@ -1,0 +1,6 @@
+﻿polars.exceptions.ShapeError
+============================
+
+.. currentmodule:: polars.exceptions
+
+.. autoexception:: ShapeError

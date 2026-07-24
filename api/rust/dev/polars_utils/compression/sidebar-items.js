@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["BrotliLevel","GzipLevel","ZstdLevel"],"trait":["CompressionLevel"]};

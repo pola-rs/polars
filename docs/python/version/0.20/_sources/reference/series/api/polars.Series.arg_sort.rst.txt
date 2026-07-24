@@ -1,0 +1,6 @@
+﻿polars.Series.arg\_sort
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.arg_sort

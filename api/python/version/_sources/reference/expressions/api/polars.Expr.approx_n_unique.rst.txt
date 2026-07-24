@@ -1,0 +1,6 @@
+﻿polars.Expr.approx\_n\_unique
+=============================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.approx_n_unique

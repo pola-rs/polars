@@ -1,0 +1,6 @@
+﻿polars.dataframe.group\_by.GroupBy.len
+======================================
+
+.. currentmodule:: polars.dataframe.group_by
+
+.. automethod:: GroupBy.len

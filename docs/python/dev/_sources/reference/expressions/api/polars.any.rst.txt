@@ -1,0 +1,6 @@
+﻿polars.any
+==========
+
+.. currentmodule:: polars
+
+.. autofunction:: any

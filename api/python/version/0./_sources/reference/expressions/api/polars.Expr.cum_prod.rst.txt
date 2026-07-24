@@ -1,0 +1,6 @@
+﻿polars.Expr.cum\_prod
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.cum_prod

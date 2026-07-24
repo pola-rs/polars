@@ -1,0 +1,6 @@
+﻿polars.Expr.name.map_fields
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.name.map_fields

@@ -1,0 +1,22 @@
+﻿polars.ScanCastOptions
+======================
+
+.. currentmodule:: polars
+
+.. autoclass:: ScanCastOptions
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~ScanCastOptions.__init__
+   
+   
+
+   
+   
+   

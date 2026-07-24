@@ -1,0 +1,6 @@
+﻿polars.max\_horizontal
+======================
+
+.. currentmodule:: polars
+
+.. autofunction:: max_horizontal
