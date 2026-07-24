@@ -50,10 +50,7 @@ fmt = ["polars-core/fmt"]
 serde = ["dep:serde", "polars-utils/serde", "polars-compute/serde"]
 dsl-schema = ["dep:schemars", "polars-utils/dsl-schema", "polars-compute/dsl-schema"]
 temporal = ["polars-core/temporal"]
-timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "arrow/timezones", "polars-ops/timezones"]
-# kept for backward-compat feature naming; jiff (which provides tz support)
-# is now an unconditional dependency, so this is a no-op marker feature
-chrono-tz = []
+timezones = ["dtype-datetime", "polars-core/timezones", "arrow/timezones", "polars-ops/timezones"]
 
 test = ["dtype-date", "dtype-datetime", "polars-core/fmt"]
 allow_unused = []

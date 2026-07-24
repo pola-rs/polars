@@ -25,9 +25,8 @@ streaming-iterator = { workspace = true }
 zmij = { workspace = true }
 
 [features]
-chrono-tz = ["arrow/chrono-tz"]
 dtype-decimal = ["arrow/dtype-decimal", "polars-compute/dtype-decimal"]
-timezones = ["arrow/chrono-tz"]
+timezones = ["arrow/timezones"]
 
 [lints]
 workspace = true

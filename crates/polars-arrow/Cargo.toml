@@ -85,11 +85,8 @@ full = [
   "compute",
   "serde",
   # parses timezones used in timestamp conversions
-  "chrono-tz",
+  "timezones",
 ]
-# kept for backward-compat feature naming; jiff (which provides tz support)
-# is now an unconditional dependency, so these are no-op marker features
-chrono-tz = []
 io_ipc = ["arrow-format", "polars-error/arrow-format"]
 io_ipc_compression = ["lz4", "zstd", "io_ipc"]
 io_flight = ["io_ipc", "arrow-format/flight-data", "async-stream", "futures", "tokio"]
@@ -125,9 +122,7 @@ dsl-schema = ["dep:schemars", "polars-schema/dsl-schema", "polars-utils/dsl-sche
 simd = []
 
 # polars-arrow
-timezones = [
-  "chrono-tz",
-]
+timezones = []
 dtype-array = []
 dtype-decimal = ["atoi_simd", "itoa"]
 bigidx = ["polars-utils/bigidx"]

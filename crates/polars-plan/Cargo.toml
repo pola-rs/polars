@@ -83,7 +83,7 @@ json = ["polars-io/json", "polars-json"]
 scan_lines = []
 csv = ["polars-io/csv"]
 temporal = [
-  "chrono",
+  "dep:jiff",
   "polars-core/temporal",
   "polars-core/dtype-date",
   "polars-core/dtype-datetime",
@@ -118,10 +118,7 @@ list_count = ["polars-ops/list_count"]
 array_count = ["polars-ops/array_count", "dtype-array"]
 trigonometry = []
 sign = []
-timezones = ["chrono-tz", "polars-time/timezones", "polars-core/timezones", "regex"]
-# kept for backward-compat feature naming; both now enable the jiff dependency
-chrono = ["dep:jiff"]
-chrono-tz = ["dep:jiff"]
+timezones = ["dep:jiff", "polars-time/timezones", "polars-core/timezones", "regex"]
 binary_encoding = ["polars-ops/binary_encoding"]
 string_encoding = ["polars-ops/string_encoding"]
 true_div = []

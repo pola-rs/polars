@@ -43,7 +43,7 @@ version_check = { workspace = true }
 [features]
 cast = [
   "gather",
-  "arrow/chrono-tz",
+  "arrow/timezones",
   "dep:atoi_simd",
   "dep:jiff",
   "dep:fast-float2",

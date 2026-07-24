@@ -241,7 +241,7 @@ where
 }
 
 /// Parses a `timezone` string into a [`TimeZone`], accepting either a fixed
-/// offset (e.g. `"+01:00"`, `"UTC"`) or, when the `chrono-tz` feature is
+/// offset (e.g. `"+01:00"`, `"UTC"`) or, when the `timezones` feature is
 /// active, an IANA timezone name (e.g. `"Europe/Amsterdam"`).
 fn parse_timezone(timezone_str: &str) -> PolarsResult<TimeZone> {
     match parse_offset(timezone_str) {
@@ -250,15 +250,15 @@ fn parse_timezone(timezone_str: &str) -> PolarsResult<TimeZone> {
     }
 }
 
-#[cfg(feature = "chrono-tz")]
+#[cfg(feature = "timezones")]
 fn parse_offset_tz_checked(timezone_str: &str) -> PolarsResult<TimeZone> {
     parse_offset_tz(timezone_str)
 }
 
-#[cfg(not(feature = "chrono-tz"))]
+#[cfg(not(feature = "timezones"))]
 fn parse_offset_tz_checked(timezone_str: &str) -> PolarsResult<TimeZone> {
     panic!(
-        "timezone \"{}\" cannot be parsed (feature chrono-tz is not active)",
+        "timezone \"{}\" cannot be parsed (feature timezones is not active)",
         timezone_str
     )
 }
