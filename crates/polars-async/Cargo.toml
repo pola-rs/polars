@@ -13,6 +13,7 @@ atomic-waker = { workspace = true }
 crossbeam-channel = { workspace = true }
 crossbeam-deque = { workspace = true }
 crossbeam-utils = { workspace = true }
+hwlocality-sys = { workspace = true }
 parking_lot = { workspace = true }
 pin-project-lite = { workspace = true }
 rand = { workspace = true }
