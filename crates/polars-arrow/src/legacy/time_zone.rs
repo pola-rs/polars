@@ -3,4 +3,4 @@
 #[derive(Copy, Clone)]
 pub enum Tz {}
 #[cfg(feature = "timezones")]
-pub use chrono_tz::Tz;
+pub use jiff::tz::TimeZone as Tz;

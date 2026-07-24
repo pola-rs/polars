@@ -1,18 +1,12 @@
-use chrono::NaiveDate;
+use jiff::civil::Date as NaiveDate;
 use polars::prelude::*;
 #[allow(unused_imports)]
 use polars::time::date_range;
 
 #[test]
 fn test_time_units_9413() {
-    let start = NaiveDate::from_ymd_opt(2022, 1, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let stop = NaiveDate::from_ymd_opt(2022, 1, 5)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+    let start = NaiveDate::new(2022, 1, 1).unwrap().at(0, 0, 0, 0);
+    let stop = NaiveDate::new(2022, 1, 5).unwrap().at(0, 0, 0, 0);
     let actual = date_range(
         "date".into(),
         start,

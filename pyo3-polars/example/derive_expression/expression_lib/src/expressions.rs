@@ -176,7 +176,7 @@ fn is_leap_year(input: &[Series]) -> PolarsResult<Series> {
 
     let out: BooleanChunked = ca
         .as_date_iter()
-        .map(|opt_dt| opt_dt.map(|dt| dt.leap_year()))
+        .map(|opt_dt| opt_dt.map(|dt| dt.in_leap_year()))
         .collect_ca(ca.name().clone());
 
     Ok(out.into_series())

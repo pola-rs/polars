@@ -13,11 +13,10 @@ async-channel = { workspace = true }
 async-trait = { workspace = true }
 bitflags = { workspace = true }
 bytes = { workspace = true }
-chrono = { workspace = true }
-chrono-tz = { workspace = true }
 crossbeam-channel = { workspace = true }
 crossbeam-queue = { workspace = true }
 futures = { workspace = true }
+jiff = { workspace = true }
 memchr = { workspace = true }
 num-traits = { workspace = true }
 parking_lot = { workspace = true }

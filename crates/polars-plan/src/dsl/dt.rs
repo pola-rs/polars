@@ -21,7 +21,7 @@ impl DateLikeNameSpace {
     }
 
     /// Convert from Date/Time/Datetime into String with the given format.
-    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    /// See [jiff strftime/strptime](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html).
     pub fn to_string(self, format: &str) -> Expr {
         let format = format.to_string();
         self.0
@@ -31,7 +31,7 @@ impl DateLikeNameSpace {
     }
 
     /// Convert from Date/Time/Datetime into String with the given format.
-    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    /// See [jiff strftime/strptime](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html).
     ///
     /// Alias for `to_string`.
     pub fn strftime(self, format: &str) -> Expr {

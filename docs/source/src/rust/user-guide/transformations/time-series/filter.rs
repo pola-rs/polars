@@ -1,5 +1,5 @@
 // --8<-- [start:setup]
-use chrono::prelude::*;
+use jiff::civil::Date as NaiveDate;
 use polars::io::prelude::*;
 use polars::prelude::*;
 // --8<-- [end:setup]
@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let filtered_df = df
         .clone()
         .lazy()
-        .filter(col("Date").eq(lit(NaiveDate::from_ymd_opt(1995, 10, 16).unwrap())))
+        .filter(col("Date").eq(lit(NaiveDate::new(1995, 10, 16).unwrap())))
         .collect()?;
     println!("{}", &filtered_df);
     // --8<-- [end:filter]
@@ -29,8 +29,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .filter(
             col("Date")
-                .gt(lit(NaiveDate::from_ymd_opt(1995, 7, 1).unwrap()))
-                .and(col("Date").lt(lit(NaiveDate::from_ymd_opt(1995, 11, 1).unwrap()))),
+                .gt(lit(NaiveDate::new(1995, 7, 1).unwrap()))
+                .and(col("Date").lt(lit(NaiveDate::new(1995, 11, 1).unwrap()))),
         )
         .collect()?;
     println!("{}", &filtered_range_df);

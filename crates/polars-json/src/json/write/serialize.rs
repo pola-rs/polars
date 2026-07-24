@@ -12,10 +12,11 @@ use arrow::temporal_conversions::parse_offset_tz;
 use arrow::temporal_conversions::{
     date32_to_date, duration_ms_to_duration, duration_ns_to_duration, duration_us_to_duration,
     parse_offset, time64ns_to_time, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
-    timestamp_to_datetime, timestamp_us_to_datetime,
+    timestamp_to_broken_down_time_opt, timestamp_us_to_datetime,
 };
 use arrow::types::NativeType;
-use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
+use jiff::SignedDuration as Duration;
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
 use num_traits::{Float, ToPrimitive};
 use polars_utils::float16::pf16;
 use streaming_iterator::StreamingIterator;
@@ -430,12 +431,34 @@ where
     let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             let ndt = convert(*x);
-            write!(buf, "\"{ndt}\"").unwrap();
+            // jiff's `DateTime` Display uses an ISO 8601 "T" separator, and
+            // trims all trailing-zero fractional digits by design; match
+            // chrono's `NaiveDateTime` Display instead (space-separated,
+            // fixed 3/6/9 fractional digits).
+            match chrono_compat_subsec_precision(ndt.subsec_nanosecond()) {
+                None => write!(buf, "\"{} {}\"", ndt.date(), ndt.time()).unwrap(),
+                Some(prec) => {
+                    write!(buf, "\"{} {:.prec$}\"", ndt.date(), ndt.time(), prec = prec).unwrap()
+                },
+            }
         } else {
             buf.extend_from_slice(b"null")
         }
     };
     materialize_serializer(f, array.iter(), offset, take)
+}
+
+/// See the equivalent helper in `polars-core`'s `fmt.rs` for the rationale.
+fn chrono_compat_subsec_precision(subsec_nanosecond: i32) -> Option<usize> {
+    if subsec_nanosecond == 0 {
+        None
+    } else if subsec_nanosecond % 1_000_000 == 0 {
+        Some(3)
+    } else if subsec_nanosecond % 1_000 == 0 {
+        Some(6)
+    } else {
+        Some(9)
+    }
 }
 
 fn timestamp_tz_serializer<'a>(
@@ -449,7 +472,15 @@ fn timestamp_tz_serializer<'a>(
         Ok(parsed_tz) => {
             let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
                 if let Some(x) = x {
-                    let dt_str = timestamp_to_datetime(*x, time_unit, &parsed_tz).to_rfc3339();
+                    // Formatting must never panic, even for a physically
+                    // out-of-range value - degrade gracefully instead.
+                    let dt_str = match timestamp_to_broken_down_time_opt(*x, time_unit, &parsed_tz)
+                    {
+                        Some(tm) => tm
+                            .to_string("%Y-%m-%dT%H:%M:%S%.9f%:z")
+                            .unwrap_or_else(|_| "<out-of-range datetime>".to_string()),
+                        None => "<out-of-range datetime>".to_string(),
+                    };
                     write!(buf, "\"{dt_str}\"").unwrap();
                 } else {
                     buf.extend_from_slice(b"null")
@@ -463,7 +494,13 @@ fn timestamp_tz_serializer<'a>(
             Ok(parsed_tz) => {
                 let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
                     if let Some(x) = x {
-                        let dt_str = timestamp_to_datetime(*x, time_unit, &parsed_tz).to_rfc3339();
+                        let dt_str =
+                            match timestamp_to_broken_down_time_opt(*x, time_unit, &parsed_tz) {
+                                Some(tm) => tm
+                                    .to_string("%Y-%m-%dT%H:%M:%S%.9f%:z")
+                                    .unwrap_or_else(|_| "<out-of-range datetime>".to_string()),
+                                None => "<out-of-range datetime>".to_string(),
+                            };
                         write!(buf, "\"{dt_str}\"").unwrap();
                     } else {
                         buf.extend_from_slice(b"null")

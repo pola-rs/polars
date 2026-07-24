@@ -291,22 +291,20 @@ fn anyvalue_to_py<'py>(py: Python<'py>, av: AnyValue<'_>) -> Option<Bound<'py, P
         AnyValue::String(s) => s.into_pyobject(py).ok().map(|b| b.into_any()),
         #[cfg(feature = "dtype-date")]
         AnyValue::Date(days) => {
-            use chrono::Datelike;
-            let date = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)?
-                .checked_add_signed(chrono::Duration::days(days as i64))?;
-            PyDate::new(py, date.year(), date.month() as u8, date.day() as u8)
+            let date = arrow::temporal_conversions::date32_to_date_opt(days)?;
+            PyDate::new(py, date.year() as i32, date.month() as u8, date.day() as u8)
                 .ok()
                 .map(|b| b.into_any())
         },
         #[cfg(feature = "dtype-datetime")]
         AnyValue::Datetime(value, time_unit, time_zone) => {
-            use chrono::{Datelike, Timelike};
             let micros: i64 = match time_unit {
                 TimeUnit::Nanoseconds => (value % 1000 == 0).then_some(value / 1000)?,
                 TimeUnit::Microseconds => value,
                 TimeUnit::Milliseconds => value * 1000,
             };
-            let dt = chrono::DateTime::<chrono::Utc>::from_timestamp_micros(micros)?.naive_utc();
+            let ts = jiff::Timestamp::from_microsecond(micros).ok()?;
+            let dt = jiff::tz::TimeZone::UTC.to_datetime(ts);
             let tzinfo: Option<Bound<'py, PyTzInfo>> = if let Some(tz) = time_zone {
                 let zi = py.import("zoneinfo").ok()?;
                 let obj = zi.getattr("ZoneInfo").ok()?.call1((tz.to_string(),)).ok()?;
@@ -316,13 +314,13 @@ fn anyvalue_to_py<'py>(py: Python<'py>, av: AnyValue<'_>) -> Option<Bound<'py, P
             };
             PyDateTime::new(
                 py,
-                dt.year(),
+                dt.year() as i32,
                 dt.month() as u8,
                 dt.day() as u8,
                 dt.hour() as u8,
                 dt.minute() as u8,
                 dt.second() as u8,
-                dt.nanosecond() / 1000,
+                (dt.subsec_nanosecond() / 1000) as u32,
                 tzinfo.as_ref(),
             )
             .ok()

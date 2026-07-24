@@ -1,4 +1,4 @@
-use chrono::Duration as ChronoDuration;
+use jiff::SignedDuration;
 
 use crate::fmt::{fmt_duration_string, iso_duration_string};
 use crate::prelude::DataType::Duration;
@@ -99,31 +99,31 @@ impl DurationChunked {
         }
     }
 
-    /// Construct a new [`DurationChunked`] from an iterator over [`ChronoDuration`].
-    pub fn from_duration<I: IntoIterator<Item = ChronoDuration>>(
+    /// Construct a new [`DurationChunked`] from an iterator over [`SignedDuration`].
+    pub fn from_duration<I: IntoIterator<Item = SignedDuration>>(
         name: PlSmallStr,
         v: I,
         tu: TimeUnit,
     ) -> Self {
         let func = match tu {
-            TimeUnit::Nanoseconds => |v: ChronoDuration| v.num_nanoseconds().unwrap(),
-            TimeUnit::Microseconds => |v: ChronoDuration| v.num_microseconds().unwrap(),
-            TimeUnit::Milliseconds => |v: ChronoDuration| v.num_milliseconds(),
+            TimeUnit::Nanoseconds => |v: SignedDuration| i64::try_from(v.as_nanos()).unwrap(),
+            TimeUnit::Microseconds => |v: SignedDuration| i64::try_from(v.as_micros()).unwrap(),
+            TimeUnit::Milliseconds => |v: SignedDuration| i64::try_from(v.as_millis()).unwrap(),
         };
         let vals = v.into_iter().map(func).collect::<Vec<_>>();
         Int64Chunked::from_vec(name, vals).into_duration(tu)
     }
 
-    /// Construct a new [`DurationChunked`] from an iterator over optional [`ChronoDuration`].
-    pub fn from_duration_options<I: IntoIterator<Item = Option<ChronoDuration>>>(
+    /// Construct a new [`DurationChunked`] from an iterator over optional [`SignedDuration`].
+    pub fn from_duration_options<I: IntoIterator<Item = Option<SignedDuration>>>(
         name: PlSmallStr,
         v: I,
         tu: TimeUnit,
     ) -> Self {
         let func = match tu {
-            TimeUnit::Nanoseconds => |v: ChronoDuration| v.num_nanoseconds().unwrap(),
-            TimeUnit::Microseconds => |v: ChronoDuration| v.num_microseconds().unwrap(),
-            TimeUnit::Milliseconds => |v: ChronoDuration| v.num_milliseconds(),
+            TimeUnit::Nanoseconds => |v: SignedDuration| i64::try_from(v.as_nanos()).unwrap(),
+            TimeUnit::Microseconds => |v: SignedDuration| i64::try_from(v.as_micros()).unwrap(),
+            TimeUnit::Milliseconds => |v: SignedDuration| i64::try_from(v.as_millis()).unwrap(),
         };
         let vals = v.into_iter().map(|opt| opt.map(func));
         Int64Chunked::from_iter_options(name, vals).into_duration(tu)

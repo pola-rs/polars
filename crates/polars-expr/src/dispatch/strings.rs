@@ -2,7 +2,9 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
-use polars_core::utils::{CustomIterTools, handle_casting_failures};
+use polars_core::utils::{
+    CustomIterTools, handle_casting_failures, handle_casting_failures_with_hint,
+};
 #[cfg(feature = "regex")]
 use polars_ops::chunked_array::strings::split_regex_helper;
 use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
@@ -484,6 +486,39 @@ fn to_date(s: &Column, options: &StrptimeOptions) -> PolarsResult<Column> {
     Ok(out.into_column())
 }
 
+#[cfg(all(feature = "regex", feature = "dtype-datetime", feature = "timezones"))]
+polars_utils::regex_cache::cached_regex! {
+    // A trailing numeric UTC offset with no colon, e.g. "+0100", "+010000".
+    static NO_COLON_OFFSET_RE = r#"[+-]\d{4}(\d{2})?['"]?$"#;
+    // A trailing numeric UTC offset with colons, e.g. "+01:00", "+01:00:00".
+    static COLON_OFFSET_RE = r#"[+-]\d{2}:\d{2}(:\d{2})?['"]?$"#;
+}
+
+/// jiff's `%z`-family directives each require an exact colon style
+/// (`%z`/`%#z` reject a colon, `%:z`/`%::z`/`%:::z` require one). When a
+/// value that failed to parse looks like it has an offset in the *other*
+/// style than what `fmt` asked for, surface a targeted hint instead of
+/// leaving the user to guess.
+#[cfg(all(feature = "regex", feature = "dtype-datetime", feature = "timezones"))]
+fn colon_style_mismatch_hint(fmt: &str, failing_value: &str) -> Option<String> {
+    let fmt_wants_no_colon = fmt.contains("%z") || fmt.contains("%#z");
+    let fmt_wants_colon = fmt.contains("%:z") || fmt.contains("%::z") || fmt.contains("%:::z");
+
+    if fmt_wants_no_colon && !fmt_wants_colon && COLON_OFFSET_RE.is_match(failing_value) {
+        Some(format!(
+            "hint: '{failing_value}' has a colon-separated UTC offset (e.g. '+01:00'), but \
+            the format uses `%z`/`%#z`, which require no colon (e.g. '+0100'). Try `%:z` instead."
+        ))
+    } else if fmt_wants_colon && NO_COLON_OFFSET_RE.is_match(failing_value) {
+        Some(format!(
+            "hint: '{failing_value}' has a UTC offset with no colon (e.g. '+0100'), but the \
+            format uses a colon-separated directive. Try `%z` or `%#z` instead."
+        ))
+    } else {
+        None
+    }
+}
+
 #[cfg(feature = "dtype-datetime")]
 fn to_datetime(
     s: &[Column],
@@ -534,7 +569,25 @@ fn to_datetime(
     };
 
     if options.strict && datetime_strings.null_count() != out.null_count() {
-        handle_casting_failures(s[0].as_materialized_series(), out.as_materialized_series())?;
+        #[cfg(all(feature = "regex", feature = "timezones"))]
+        let extra_hint = options.format.as_deref().and_then(|fmt| {
+            datetime_strings
+                .iter()
+                .zip(out.as_materialized_series().iter())
+                .find_map(|(val, out_val)| {
+                    (val.is_some() && out_val.is_null())
+                        .then(|| colon_style_mismatch_hint(fmt, val?))
+                        .flatten()
+                })
+        });
+        #[cfg(not(all(feature = "regex", feature = "timezones")))]
+        let extra_hint: Option<String> = None;
+
+        handle_casting_failures_with_hint(
+            s[0].as_materialized_series(),
+            out.as_materialized_series(),
+            extra_hint.as_deref(),
+        )?;
     }
     Ok(out.into_column())
 }

@@ -22,12 +22,11 @@ argminmax = { workspace = true }
 arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
 bytemuck = { workspace = true }
-chrono = { workspace = true, optional = true }
-chrono-tz = { workspace = true, optional = true }
 either = { workspace = true }
 hashbrown = { workspace = true }
 hex = { workspace = true, optional = true }
 indexmap = { workspace = true }
+jiff = { workspace = true, optional = true }
 libm = { workspace = true }
 memchr = { workspace = true }
 num-traits = { workspace = true }
@@ -85,11 +84,11 @@ unique_counts = []
 is_between = []
 is_close = []
 approx_unique = []
-business = ["dtype-date", "chrono"]
+business = ["dtype-date", "dep:jiff"]
 fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
 rle = ["dtype-struct"]
-timezones = ["chrono", "chrono-tz", "polars-core/temporal", "polars-core/timezones", "polars-core/dtype-datetime"]
+timezones = ["dep:jiff", "polars-core/temporal", "polars-core/timezones", "polars-core/dtype-datetime"]
 random = ["rand", "rand_distr"]
 rank = ["rand"]
 find_many = ["aho-corasick"]

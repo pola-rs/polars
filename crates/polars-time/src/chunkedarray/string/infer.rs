@@ -1,6 +1,7 @@
 use arrow::array::PrimitiveArray;
-use chrono::format::ParseErrorKind;
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
+use jiff::Timestamp;
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
+use jiff::fmt::strtime::BrokenDownTime;
 use polars_core::prelude::*;
 
 use super::patterns::{self, Pattern};
@@ -9,6 +10,10 @@ use crate::chunkedarray::date::naive_date_to_date;
 use crate::prelude::string::strptime::StrpTimeState;
 
 polars_utils::regex_cache::cached_regex! {
+    // A `%f`/`%.f` fractional-seconds directive with an explicit, fixed
+    // digit-count precision, e.g. `%3f`, `%.6f`, `%9f`.
+    static EXPLICIT_FRACTIONAL_PRECISION_RE = r"%\.?([1-9])f";
+
     static DATETIME_DMY_RE = r#"(?x)
         ^
         ['"]?                        # optional quotes
@@ -309,33 +314,63 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
 
 #[cfg(feature = "dtype-date")]
 fn transform_date(val: &str, fmt: &str) -> Option<i32> {
-    NaiveDate::parse_from_str(val, fmt)
-        .ok()
-        .map(naive_date_to_date)
+    NaiveDate::strptime(fmt, val).ok().map(naive_date_to_date)
+}
+
+/// Builds a [`NaiveTime`] from whatever hour/minute/second/subsecond fields
+/// `tm` has, independently defaulting any that are absent to zero.
+///
+/// This is deliberately more lenient than jiff's own [`BrokenDownTime::to_time`],
+/// which requires that no smaller time unit (minute/second/subsecond) be
+/// present without its immediately bigger unit also present (e.g. it errors
+/// on a bare `%M`, since a minute with no hour is otherwise ambiguous about
+/// what the hour should default to). Polars just defaults any missing unit
+/// to zero on its own, consistent with the fast custom parser in
+/// `strptime.rs`, which has no such restriction at all.
+fn broken_down_time_to_time(tm: &BrokenDownTime) -> Option<NaiveTime> {
+    NaiveTime::new(
+        tm.hour().unwrap_or(0),
+        tm.minute().unwrap_or(0),
+        tm.second().unwrap_or(0),
+        tm.subsec_nanosecond().unwrap_or(0),
+    )
+    .ok()
 }
 
 pub(crate) fn parse_datetime(val: &str, fmt: &str) -> Option<NaiveDateTime> {
-    NaiveDateTime::parse_from_str(val, fmt)
-        .or_else(|parse_error| match parse_error.kind() {
-            ParseErrorKind::NotEnough => {
-                NaiveDate::parse_from_str(val, fmt).map(|nd| nd.and_hms_opt(0, 0, 0).unwrap())
-            },
-            _ => Err(parse_error),
-        })
-        .ok()
+    let tm = BrokenDownTime::parse(fmt, val).ok()?;
+    let dt = tm
+        .to_date()
+        .ok()?
+        .to_datetime(broken_down_time_to_time(&tm)?);
+
+    // jiff treats the digit count in `%3f`/`%.6f`/etc. as formatting-only -
+    // during parsing it's a no-op, consuming up to nanosecond precision
+    // regardless of what's requested. Restore the old, stricter behavior of
+    // failing when the data actually carries more precision than the
+    // format explicitly promised (e.g. `%.3f` against a value with
+    // nanosecond-level digits), rather than silently truncating it.
+    if let Some(declared) = EXPLICIT_FRACTIONAL_PRECISION_RE
+        .captures(fmt)
+        .and_then(|c| c.get(1)?.as_str().parse::<u32>().ok())
+    {
+        let subsec = dt.subsec_nanosecond() as u32;
+        if declared < 9 && !subsec.is_multiple_of(10u32.pow(9 - declared)) {
+            return None;
+        }
+    }
+
+    Some(dt)
 }
 
 pub(crate) fn parse_datetime_and_remainder<'a>(
     val: &'a str,
     fmt: &str,
 ) -> Option<(NaiveDateTime, &'a str)> {
-    NaiveDateTime::parse_and_remainder(val, fmt)
-        .or_else(|parse_error| match parse_error.kind() {
-            ParseErrorKind::NotEnough => NaiveDate::parse_and_remainder(val, fmt)
-                .map(|(nd, r)| (nd.and_hms_opt(0, 0, 0).unwrap(), r)),
-            _ => Err(parse_error),
-        })
-        .ok()
+    let (tm, len) = BrokenDownTime::parse_prefix(fmt, val).ok()?;
+    let date = tm.to_date().ok()?;
+    let time = broken_down_time_to_time(&tm)?;
+    Some((date.to_datetime(time), &val[len..]))
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -353,19 +388,47 @@ pub(crate) fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
     parse_datetime(val, fmt).map(datetime_to_timestamp_ms)
 }
 
+/// Parses a tz-aware datetime string, honoring whatever offset (or "Z") is
+/// embedded in the string. Unlike the naive parsers, every pattern in this
+/// module's tz-aware pattern list is expected to carry offset/zone info; if
+/// none can be extracted, the value is treated as UTC.
+fn parse_tz_aware_timestamp(val: &str, fmt: &str) -> Option<Timestamp> {
+    if fmt == "%+" {
+        // "%+" mirrors chrono's combined ISO 8601 / RFC 3339 format specifier,
+        // which jiff's strtime engine does not implement as a directive; jiff's
+        // native ISO 8601 timestamp parser handles the same cases directly,
+        // including a literal "Z" suffix.
+        return val.parse::<Timestamp>().ok();
+    }
+    let tm = jiff::fmt::strtime::BrokenDownTime::parse(fmt, val).ok()?;
+    if let Ok(ts) = tm.to_timestamp() {
+        return Some(ts);
+    }
+    // No offset/zone specifier matched (e.g. a literal "Z" suffix, which
+    // jiff's `%z` directive does not accept) - treat as UTC.
+    let dt = tm.to_datetime().ok()?;
+    jiff::tz::TimeZone::UTC.to_timestamp(dt).ok()
+}
+
 fn transform_tzaware_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
-    let dt = DateTime::parse_from_str(val, fmt);
-    dt.ok().map(|dt| datetime_to_timestamp_ns(dt.naive_utc()))
+    let ts = parse_tz_aware_timestamp(val, fmt)?;
+    Some(datetime_to_timestamp_ns(
+        jiff::tz::TimeZone::UTC.to_datetime(ts),
+    ))
 }
 
 fn transform_tzaware_datetime_us(val: &str, fmt: &str) -> Option<i64> {
-    let dt = DateTime::parse_from_str(val, fmt);
-    dt.ok().map(|dt| datetime_to_timestamp_us(dt.naive_utc()))
+    let ts = parse_tz_aware_timestamp(val, fmt)?;
+    Some(datetime_to_timestamp_us(
+        jiff::tz::TimeZone::UTC.to_datetime(ts),
+    ))
 }
 
 fn transform_tzaware_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
-    let dt = DateTime::parse_from_str(val, fmt);
-    dt.ok().map(|dt| datetime_to_timestamp_ms(dt.naive_utc()))
+    let ts = parse_tz_aware_timestamp(val, fmt)?;
+    Some(datetime_to_timestamp_ms(
+        jiff::tz::TimeZone::UTC.to_datetime(ts),
+    ))
 }
 
 pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
@@ -377,19 +440,25 @@ pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
 
 pub fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
     if patterns::DATETIME_D_M_Y.iter().any(|fmt| {
-        NaiveDateTime::parse_from_str(val, fmt).is_ok()
-            || NaiveDate::parse_from_str(val, fmt).is_ok()
+        NaiveDateTime::strptime(fmt, val).is_ok() || NaiveDate::strptime(fmt, val).is_ok()
     }) {
         Some(Pattern::DatetimeDMY)
     } else if patterns::DATETIME_Y_M_D.iter().any(|fmt| {
-        NaiveDateTime::parse_from_str(val, fmt).is_ok()
-            || NaiveDate::parse_from_str(val, fmt).is_ok()
+        NaiveDateTime::strptime(fmt, val).is_ok() || NaiveDate::strptime(fmt, val).is_ok()
     }) {
         Some(Pattern::DatetimeYMD)
-    } else if patterns::DATETIME_Y_M_D_Z
-        .iter()
-        .any(|fmt| NaiveDateTime::parse_from_str(val, fmt).is_ok())
-    {
+    } else if patterns::DATETIME_Y_M_D_Z.iter().any(|fmt| {
+        // "%+" isn't a directive jiff's strtime engine understands - it's
+        // handled separately (see `parse_tz_aware_timestamp`) via jiff's
+        // native ISO 8601 timestamp parser, which is what we must probe with
+        // here too, or values only expressible via "%+" (e.g. a literal "Z"
+        // offset with no colon/offset digits) would never be inferred.
+        if *fmt == "%+" {
+            val.parse::<Timestamp>().is_ok()
+        } else {
+            NaiveDateTime::strptime(fmt, val).is_ok()
+        }
+    }) {
         Some(Pattern::DatetimeYMDZ)
     } else {
         None
@@ -399,12 +468,12 @@ pub fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
 pub fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
     if patterns::DATE_D_M_Y
         .iter()
-        .any(|fmt| NaiveDate::parse_from_str(val, fmt).is_ok())
+        .any(|fmt| NaiveDate::strptime(fmt, val).is_ok())
     {
         Some(Pattern::DateDMY)
     } else if patterns::DATE_Y_M_D
         .iter()
-        .any(|fmt| NaiveDate::parse_from_str(val, fmt).is_ok())
+        .any(|fmt| NaiveDate::strptime(fmt, val).is_ok())
     {
         Some(Pattern::DateYMD)
     } else {
@@ -421,7 +490,7 @@ pub fn sniff_time_fmt(val: &str) -> Option<&'static str> {
     patterns::TIME_H_M_S
         .iter()
         .copied()
-        .find(|fmt| NaiveTime::parse_from_str(val, fmt).is_ok())
+        .find(|fmt| NaiveTime::strptime(fmt, val).is_ok())
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -468,7 +537,21 @@ pub fn to_datetime(
             let pattern = subset
                 .iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_datetime_single))
-                .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
+                .ok_or_else(|| {
+                    let sample = ca.get(idx);
+                    if sample.is_some_and(|val| super::TRAILING_OFFSET_RE.is_match(val)) {
+                        polars_err!(
+                            ComputeError:
+                            "could not find an appropriate format to parse datetimes, please define a format\n\n\
+                            hint: this value appears to contain a UTC offset (e.g. '+01:00', '+0100', or 'Z'). \
+                            Polars' format directives (%z, %:z, %::z, %:::z) each require an exact colon style, \
+                            so an explicit format matching your data's offset style may be required, e.g. `%:z` \
+                            for a colon-separated offset like '+01:00'.",
+                        )
+                    } else {
+                        polars_err!(parse_fmt_idk = "date")
+                    }
+                })?;
             let mut infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(tu))?;
             #[cfg(feature = "timezones")]
             if matches!(pattern, Pattern::DatetimeYMDZ) {

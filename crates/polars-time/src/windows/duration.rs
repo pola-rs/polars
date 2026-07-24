@@ -1,24 +1,22 @@
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
-use std::ops::{Add, Mul, Neg};
+use std::ops::{Mul, Neg};
 
 use arrow::legacy::time_zone::Tz;
 use arrow::temporal_conversions::{
     MICROSECONDS, MILLISECONDS, NANOSECONDS, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_us_to_datetime,
 };
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
 #[cfg(feature = "timezones")]
-use chrono::TimeZone as ChronoTimeZone;
-#[cfg(feature = "timezones")]
-use chrono::offset::LocalResult;
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike};
-#[cfg(feature = "timezones")]
-use chrono_tz::OffsetComponents;
+use jiff::tz::{AmbiguousOffset, Dst};
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{
-    Ambiguous, NonExistent, PolarsResult, TimeZone, datetime_to_timestamp_ms,
-    datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
+    PolarsResult, TimeZone, datetime_to_timestamp_ms, datetime_to_timestamp_ns,
+    datetime_to_timestamp_us, polars_bail,
 };
+#[cfg(feature = "timezones")]
+use polars_error::PolarsError;
 use polars_error::polars_ensure;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -27,8 +25,6 @@ use super::calendar::{
     NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK, NTE_NS_DAY,
     NTE_NS_WEEK,
 };
-#[cfg(feature = "timezones")]
-use crate::utils::try_localize_datetime;
 #[cfg(feature = "timezones")]
 use crate::utils::unlocalize_datetime;
 use crate::windows::calendar::{DAYS_PER_MONTH, is_leap_year};
@@ -557,9 +553,9 @@ impl Duration {
 
         // Retrieve the current date and increment the values
         // based on the number of months
-        let mut year = ts.year();
+        let mut year = ts.year() as i32;
         let mut month = ts.month() as i32;
-        let mut day = ts.day();
+        let mut day = ts.day() as u32;
         year += (months / 12) as i32;
         month += (months % 12) as i32;
 
@@ -587,8 +583,8 @@ impl Duration {
         let hour = ts.hour();
         let minute = ts.minute();
         let sec = ts.second();
-        let nsec = ts.nanosecond();
-        new_datetime(year, month as u32, day, hour, minute, sec, nsec).expect(
+        let nsec = ts.subsec_nanosecond();
+        new_datetime(year, month as u32, day, hour as u32, minute as u32, sec as u32, nsec as u32).expect(
             "Expected valid datetime, please open an issue at https://github.com/pola-rs/polars/issues"
         )
     }
@@ -610,40 +606,74 @@ impl Duration {
         result_dt_local: NaiveDateTime,
         tz: &Tz,
     ) -> PolarsResult<NaiveDateTime> {
-        let result_localized = tz.from_local_datetime(&result_dt_local);
-        match result_localized {
-            LocalResult::Single(result) => Ok(result.naive_utc()),
-            LocalResult::Ambiguous(result_earliest, result_latest) => {
-                let original_localized = tz.from_utc_datetime(&original_dt_utc);
-                let original_dst_offset = original_localized.offset().dst_offset();
-                if result_earliest.offset().dst_offset() == original_dst_offset {
-                    return Ok(result_earliest.naive_utc());
-                }
-                if result_latest.offset().dst_offset() == original_dst_offset {
-                    return Ok(result_latest.naive_utc());
-                }
-                polars_bail!(ComputeError: "Could not localize datetime '{}' to time zone '{}'", result_dt_local, tz);
+        let tz_name = || tz.iana_name().unwrap_or("<unknown>");
+        // chrono's `NaiveDateTime` `Display` was space-separated, not jiff's
+        // default ISO 8601 "T" separator; match it for error messages.
+        let fmt_ndt = |dt: NaiveDateTime| dt.strftime("%Y-%m-%d %H:%M:%S%.f");
+        let out_of_range = || {
+            PolarsError::ComputeError(
+                format!("datetime '{}' is out-of-range", fmt_ndt(result_dt_local)).into(),
+            )
+        };
+
+        match tz.to_ambiguous_timestamp(result_dt_local).offset() {
+            AmbiguousOffset::Unambiguous { offset } => {
+                let ts = offset
+                    .to_timestamp(result_dt_local)
+                    .map_err(|_| out_of_range())?;
+                Ok(Tz::UTC.to_datetime(ts))
             },
-            LocalResult::None => {
-                let original_localized = tz.from_utc_datetime(&original_dt_utc);
-                let original_dst_offset = original_localized.offset().dst_offset();
-                let shifted: NaiveDateTime;
-                if original_dst_offset.num_minutes() != 0 {
-                    shifted = result_dt_local.add(original_dst_offset);
-                } else if let Some(next_hour) = tz
-                    .from_local_datetime(&result_dt_local.add(TimeDelta::hours(1)))
-                    .earliest()
-                {
-                    // Try shifting forwards to get the DST offset of the would-be-result.
-                    let result_dst_offset = next_hour.offset().dst_offset();
-                    shifted = result_dt_local.add(-result_dst_offset);
-                } else {
-                    polars_bail!(ComputeError: "Could not localize datetime '{}' to time zone '{}'", result_dt_local, tz);
+            AmbiguousOffset::Fold { before, after } => {
+                let original_ts = Tz::UTC
+                    .to_timestamp(original_dt_utc)
+                    .map_err(|_| out_of_range())?;
+                let original_dst = tz.to_offset_info(original_ts).dst();
+
+                let earliest_ts = before
+                    .to_timestamp(result_dt_local)
+                    .map_err(|_| out_of_range())?;
+                if tz.to_offset_info(earliest_ts).dst() == original_dst {
+                    return Ok(Tz::UTC.to_datetime(earliest_ts));
                 }
-                Ok(
-                    try_localize_datetime(shifted, tz, Ambiguous::Raise, NonExistent::Raise)?
-                        .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
-                )
+                let latest_ts = after
+                    .to_timestamp(result_dt_local)
+                    .map_err(|_| out_of_range())?;
+                if tz.to_offset_info(latest_ts).dst() == original_dst {
+                    return Ok(Tz::UTC.to_datetime(latest_ts));
+                }
+                polars_bail!(ComputeError: "Could not localize datetime '{}' to time zone '{}'", fmt_ndt(result_dt_local), tz_name());
+            },
+            AmbiguousOffset::Gap { before, after } => {
+                let original_ts = Tz::UTC
+                    .to_timestamp(original_dt_utc)
+                    .map_err(|_| out_of_range())?;
+                let original_dst = tz.to_offset_info(original_ts).dst();
+
+                // Shift by the size of the gap (in the appropriate direction) to land on
+                // a wall-clock time that isn't itself skipped, then re-resolve strictly.
+                let delta_secs = i64::from(after.seconds() - before.seconds());
+                let span = jiff::Span::new().seconds(delta_secs.abs());
+                let shifted = if matches!(original_dst, Dst::Yes) {
+                    result_dt_local.checked_add(span)
+                } else {
+                    result_dt_local.checked_sub(span)
+                }
+                .map_err(|_| out_of_range())?;
+
+                let ts = tz
+                    .to_ambiguous_timestamp(shifted)
+                    .unambiguous()
+                    .map_err(|_| {
+                        PolarsError::ComputeError(
+                            format!(
+                                "Could not localize datetime '{}' to time zone '{}'",
+                                fmt_ndt(result_dt_local),
+                                tz_name()
+                            )
+                            .into(),
+                        )
+                    })?;
+                Ok(Tz::UTC.to_datetime(ts))
             },
         }
     }
@@ -663,7 +693,7 @@ impl Duration {
         match tz {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
-            Some(tz) if tz != &chrono_tz::UTC => {
+            Some(tz) if tz != &Tz::UTC => {
                 let original_dt_utc = _timestamp_to_datetime(t);
                 let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
                 let t = _datetime_to_timestamp(original_dt_local);
@@ -704,7 +734,7 @@ impl Duration {
         let t = match tz {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
-            Some(tz) if tz != &chrono_tz::UTC => {
+            Some(tz) if tz != &Tz::UTC => {
                 _original_dt_utc = Some(_timestamp_to_datetime(t));
                 _original_dt_local = Some(unlocalize_datetime(_original_dt_utc.unwrap(), tz));
                 _datetime_to_timestamp(_original_dt_local.unwrap())
@@ -728,7 +758,7 @@ impl Duration {
         match tz {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
-            Some(tz) if tz != &chrono_tz::UTC => {
+            Some(tz) if tz != &Tz::UTC => {
                 let result_dt_local = _timestamp_to_datetime(result_t_local);
                 let result_dt_utc =
                     self.localize_result_rfc_5545(_original_dt_utc.unwrap(), result_dt_local, tz)?;
@@ -754,7 +784,7 @@ impl Duration {
         let t = match tz {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
-            Some(tz) if tz != &chrono_tz::UTC => {
+            Some(tz) if tz != &Tz::UTC => {
                 original_dt_utc = timestamp_to_datetime(t);
                 original_dt_local = unlocalize_datetime(original_dt_utc, tz);
                 datetime_to_timestamp(original_dt_local)
@@ -811,7 +841,7 @@ impl Duration {
         match tz {
             #[cfg(feature = "timezones")]
             // for UTC, use fastpath below (same as naive)
-            Some(tz) if tz != &chrono_tz::UTC => {
+            Some(tz) if tz != &Tz::UTC => {
                 let result_dt_local = timestamp_to_datetime(t - remainder_days * daily_duration);
                 let result_dt_utc =
                     self.localize_result_rfc_5545(original_dt_utc, result_dt_local, tz)?;
@@ -945,7 +975,7 @@ impl Duration {
             t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
-                Some(tz) if tz != &chrono_tz::UTC => {
+                Some(tz) if tz != &Tz::UTC => {
                     let original_dt_utc = timestamp_to_datetime(t);
                     let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
                     let result_dt_local = Self::add_month(original_dt_local, d.months, d.negative);
@@ -968,7 +998,7 @@ impl Duration {
             t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
-                Some(tz) if tz != &chrono_tz::UTC => {
+                Some(tz) if tz != &Tz::UTC => {
                     let original_dt_utc = timestamp_to_datetime(t);
                     let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
                     let mut result_timestamp_local = datetime_to_timestamp(original_dt_local);
@@ -995,7 +1025,7 @@ impl Duration {
             t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
-                Some(tz) if tz != &chrono_tz::UTC => {
+                Some(tz) if tz != &Tz::UTC => {
                     let original_dt_utc = timestamp_to_datetime(t);
                     let original_dt_local = unlocalize_datetime(original_dt_utc, tz);
                     t = datetime_to_timestamp(original_dt_local);
@@ -1083,9 +1113,9 @@ fn new_datetime(
     sec: u32,
     nano: u32,
 ) -> Option<NaiveDateTime> {
-    let date = NaiveDate::from_ymd_opt(year, month, days)?;
-    let time = NaiveTime::from_hms_nano_opt(hour, min, sec, nano)?;
-    Some(NaiveDateTime::new(date, time))
+    let date = NaiveDate::new(year as i16, month as i8, days as i8).ok()?;
+    let time = NaiveTime::new(hour as i8, min as i8, sec as i8, nano as i32).ok()?;
+    Some(date.to_datetime(time))
 }
 
 pub fn ensure_is_constant_duration(
