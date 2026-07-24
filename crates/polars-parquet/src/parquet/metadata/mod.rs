@@ -12,6 +12,7 @@ mod sort;
 pub use column_chunk_metadata::ColumnChunkMetadata;
 pub use column_descriptor::{ColumnDescriptor, Descriptor};
 pub use column_order::ColumnOrder;
+pub(crate) use column_order::ColumnOrderTag;
 pub(crate) use compact::{
     ByteRange, CompactColumnChunk, CompactColumnMetaData, CompactFileMetaData, CompactRowGroup,
     CompactStatistics,
