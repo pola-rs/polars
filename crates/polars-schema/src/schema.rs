@@ -204,12 +204,12 @@ impl<Field, Metadata> Schema<Field, Metadata> {
         self.fields.get_index(index).ok_or_else(|| polars_err!(ComputeError: "index {index} out of bounds with 'schema' of len: {}", self.len()))
     }
 
-    /// Get mutable references to the name and dtype of the field at `index`.
+    /// Get mutable references to the dtype of the field at `index`.
     ///
     /// If `index` is inbounds, returns `Some((&mut name, &mut dtype))`, else `None`. See
     /// [`get_at_index`][Self::get_at_index] for an immutable version.
-    pub fn get_at_index_mut(&mut self, index: usize) -> Option<(&mut PlSmallStr, &mut Field)> {
-        self.fields.get_index_mut2(index)
+    pub fn get_at_index_mut(&mut self, index: usize) -> Option<(&PlSmallStr, &mut Field)> {
+        self.fields.get_index_mut2(index).map(|(a, b)| (&*a, b))
     }
 
     /// Swap-remove a field by name and, if the field existed, return its dtype.
@@ -565,11 +565,11 @@ where
 
     /// Returns a new [`Schema`] with a subset of all fields whose `predicate`
     /// evaluates to true.
-    pub fn retain_mut<F>(&mut self, f: F)
+    pub fn retain_mut<F>(&mut self, mut f: F)
     where
-        F: FnMut(&mut PlSmallStr, &mut Field) -> bool,
+        F: FnMut(&PlSmallStr, &mut Field) -> bool,
     {
-        self.fields.retain2(f);
+        self.fields.retain2(|k, v| f(k, v));
     }
 }
 

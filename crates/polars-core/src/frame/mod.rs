@@ -1373,33 +1373,33 @@ impl DataFrame {
         &mut self,
         renames: impl Iterator<Item = (&'a str, PlSmallStr)>,
     ) -> PolarsResult<&mut Self> {
-        let mut schema_arc = self.schema().clone();
-        let schema = Arc::make_mut(&mut schema_arc);
+        let schema = self.schema().clone();
+        let mut new_columns = self.columns().to_vec();
 
         for (from, to) in renames {
             if from == to.as_str() {
                 continue;
             }
 
-            polars_ensure!(
-                !schema.contains(&to),
-                Duplicate: "column rename attempted with already existing name \"{to}\""
-            );
+            let idx = schema
+                .index_of(from)
+                .ok_or_else(|| polars_err!(col_not_found = from))?;
 
-            match schema.get_full(from) {
-                None => polars_bail!(col_not_found = from),
-                Some((idx, _, _)) => {
-                    let (n, _) = schema.get_at_index_mut(idx).unwrap();
-                    *n = to.clone();
-                    unsafe { self.columns_mut() }
-                        .get_mut(idx)
-                        .unwrap()
-                        .rename(to);
-                },
-            }
+            new_columns[idx].rename(to);
         }
 
-        unsafe { self.set_schema(schema_arc) };
+        // Check for duplicates.
+        let schema = Schema::from_iter_check_duplicates(
+            new_columns
+                .iter()
+                .map(|c| c.name().clone())
+                .zip_eq(schema.iter_values().cloned()),
+        )?;
+
+        unsafe {
+            *self.columns_mut() = new_columns;
+            self.set_schema(Arc::new(schema))
+        };
 
         Ok(self)
     }
