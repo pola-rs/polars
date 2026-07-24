@@ -154,7 +154,7 @@ impl PyLazyFrame {
     #[cfg(feature = "csv")]
     #[pyo3(signature = (source, sources, separator, has_header, ignore_errors, skip_rows, skip_lines, n_rows, cache, overwrite_dtype, overwrite_dtype_slice,
         low_memory, comment_prefix, quote_char, null_values, empty_string_is_null,
-        infer_schema_length, new_columns, with_schema_modify, rechunk, skip_rows_after_header,
+        infer_schema_length, infer_schema_files, new_columns, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
         cloud_options, credential_provider, include_file_paths, missing_columns
     )
@@ -177,6 +177,7 @@ impl PyLazyFrame {
         null_values: Option<Wrap<NullValues>>,
         empty_string_is_null: bool,
         infer_schema_length: Option<usize>,
+        infer_schema_files: NonZeroUsize,
         new_columns: Option<Wrap<Buffer<PlSmallStr>>>,
         with_schema_modify: Option<Py<PyAny>>,
         rechunk: bool,
@@ -246,6 +247,7 @@ impl PyLazyFrame {
 
         let mut r = r
             .with_infer_schema_length(infer_schema_length)
+            .with_infer_schema_files(infer_schema_files)
             .with_separator(separator)
             .with_has_header(has_header)
             .with_ignore_errors(ignore_errors)
