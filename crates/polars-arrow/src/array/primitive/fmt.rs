@@ -88,7 +88,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                             }
                         })
                     },
-                    #[cfg(feature = "chrono-tz")]
+                    #[cfg(feature = "timezones")]
                     Err(_) => {
                         let timezone = temporal_conversions::parse_offset_tz(tz.as_str());
                         match timezone {
@@ -123,7 +123,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                             },
                         }
                     },
-                    #[cfg(not(feature = "chrono-tz"))]
+                    #[cfg(not(feature = "timezones"))]
                     _ => {
                         let tz = tz.clone();
                         Box::new(move |f, index| write!(f, "{} ({})", array.value(index), tz))

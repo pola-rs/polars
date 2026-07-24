@@ -55,7 +55,7 @@ fn utf8view_to_timestamp_impl(
 /// * parsed values without timezone are null.
 /// * Null elements remain null; non-parsable elements are null.
 ///
-/// The feature `"chrono-tz"` enables IANA and zoneinfo formats for `timezone`.
+/// The feature `"timezones"` enables IANA and zoneinfo formats for `timezone`.
 ///
 /// # Error
 ///

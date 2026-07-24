@@ -65,10 +65,7 @@ home = "0.5.4"
 tempfile = "3"
 
 [features]
-catalog = ["cloud", "serde", "reqwest", "futures", "strum", "strum_macros", "chrono"]
-# kept for backward-compat feature naming; both now enable the jiff dependency
-chrono = ["dep:jiff"]
-chrono-tz = ["dep:jiff"]
+catalog = ["cloud", "serde", "reqwest", "futures", "strum", "strum_macros", "dep:jiff"]
 default = ["decompress"]
 # support for arrows json parsing
 json = [
@@ -111,13 +108,11 @@ dtype-datetime = [
   "polars-core/dtype-datetime",
   "polars-core/temporal",
   "polars-time/dtype-datetime",
-  "chrono",
+  "dep:jiff",
 ]
 timezones = [
-  "chrono-tz",
   "dtype-datetime",
   "arrow/timezones",
-  "polars-json?/chrono-tz",
   "polars-json?/timezones",
 ]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
@@ -145,7 +140,7 @@ cloud = [
   "reqwest",
   "http",
   "fastrand",
-  "chrono",
+  "dep:jiff",
 ]
 file_cache = ["async", "dep:blake3", "dep:fs4", "dep:parking_lot", "serde_json", "cloud"]
 aws = ["object_store/aws", "cloud", "reqwest"]

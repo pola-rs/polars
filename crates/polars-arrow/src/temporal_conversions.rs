@@ -379,7 +379,7 @@ pub fn timeunit_scale(a: TimeUnit, b: TimeUnit) -> f64 {
 
 /// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp with timezone.
 ///
-/// `tz` must be built from [`parse_offset`] or `chrono-tz`.
+/// `tz` must be built from [`parse_offset`] or [`parse_offset_tz`].
 /// Returns in scale `tz` of `TimeUnit`.
 #[inline]
 pub fn utf8_to_timestamp_scalar(
@@ -443,8 +443,8 @@ pub fn parse_offset(offset: &str) -> PolarsResult<TimeZone> {
 }
 
 /// Parses `value` to a [`TimeZone`] with the Arrow's definition of timestamp with a timezone.
-#[cfg(feature = "chrono-tz")]
-#[cfg_attr(docsrs, doc(cfg(feature = "chrono-tz")))]
+#[cfg(feature = "timezones")]
+#[cfg_attr(docsrs, doc(cfg(feature = "timezones")))]
 pub fn parse_offset_tz(timezone: &str) -> PolarsResult<TimeZone> {
     TimeZone::get(timezone)
         .map_err(|_| polars_err!(InvalidOperation: "timezone \"{timezone}\" cannot be parsed"))
