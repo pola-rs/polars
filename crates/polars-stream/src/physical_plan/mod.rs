@@ -27,7 +27,9 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
+use polars_plan::plans::{
+    AExpr, ArenaExprIter as _, DataFrameUdf, DynamicPred, FunctionArgMap, IR,
+};
 
 mod fmt;
 mod io;
@@ -841,6 +843,88 @@ fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey
     });
 }
 
+/// Disable morsel splitting at sources that feed into pipelines that run slower
+/// if morsel splitting is done.
+/// E.g. `.lazy().select('a', 'b').collect()`.
+fn disable_morsel_splits(
+    roots: &[PhysNodeKey],
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    refcount: &mut SecondaryMap<PhysNodeKey, usize>,
+    expr_arena: &Arena<AExpr>,
+) {
+    for key in roots.iter().copied() {
+        *refcount.entry(key).unwrap().or_insert(0) += 1
+    }
+
+    visit_node_inputs_mut(roots.to_vec(), phys_sm, |i| {
+        *refcount.entry(i.node).unwrap().or_insert(0) += 1;
+    });
+
+    let mut stack = roots.to_vec();
+
+    while let Some(key) = stack.pop() {
+        let rc = refcount.get_mut(key).unwrap();
+        *rc -= 1;
+
+        if *rc != 0 {
+            continue;
+        }
+
+        match &mut phys_sm.get_mut(key).unwrap().kind {
+            PhysNodeKind::Select {
+                input, selectors, ..
+            } if selectors.iter().all(|e| {
+                expr_arena.iter(e.node()).all(|(_, ae)| {
+                    matches!(
+                        ae,
+                        AExpr::Len
+                            | AExpr::Column(_)
+                            | AExpr::Eval { .. }
+                            | AExpr::StructEval { .. }
+                            | AExpr::StructField(_)
+                    )
+                })
+            }) =>
+            {
+                stack.push(input.node)
+            },
+
+            PhysNodeKind::SimpleProjection { input, .. }
+            | PhysNodeKind::InMemorySink { input }
+            | PhysNodeKind::CallbackSink { input, .. }
+            | PhysNodeKind::Multiplexer { input }
+            | PhysNodeKind::FileSink { input, .. }
+            | PhysNodeKind::InMemoryMap { input, .. } => stack.push(input.node),
+
+            PhysNodeKind::InMemoryJoin {
+                input_left,
+                input_right,
+                ..
+            } => {
+                stack.push(input_left.node);
+                stack.push(input_right.node);
+            },
+
+            PhysNodeKind::UnorderedUnion { inputs }
+            | PhysNodeKind::OrderedUnion { inputs }
+            | PhysNodeKind::Zip { inputs, .. } => stack.extend(inputs.iter().map(|ps| ps.node)),
+
+            PhysNodeKind::SinkMultiple { sinks } => stack.extend_from_slice(sinks),
+
+            PhysNodeKind::InMemorySource {
+                disable_morsel_split,
+                ..
+            }
+            | PhysNodeKind::MultiScan {
+                disable_morsel_split,
+                ..
+            } => *disable_morsel_split = true,
+
+            _ => {},
+        }
+    }
+}
+
 pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
@@ -860,9 +944,14 @@ pub fn build_physical_plan(
         &mut expr_cache,
         &mut cache_nodes,
         ctx,
-        None,
     )?;
     insert_multiplexers(vec![phys_root.node], phys_sm);
     split_multiplexers(vec![phys_root.node], phys_sm);
+    disable_morsel_splits(
+        &[phys_root.node],
+        phys_sm,
+        &mut SecondaryMap::default(),
+        expr_arena,
+    );
     Ok(phys_root.node)
 }
