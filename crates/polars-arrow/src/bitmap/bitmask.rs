@@ -286,6 +286,33 @@ impl<'a> BitMask<'a> {
         }
     }
 
+    #[inline]
+    pub fn get_u64(&self, idx: usize) -> u64 {
+        if idx >= self.len {
+            return 0;
+        }
+
+        let start_byte_idx = (self.offset + idx) / 8;
+        let byte_shift = (self.offset + idx) % 8;
+        // SAFETY: we know that at least the first byte is in-bounds.
+        let mut mask =
+            load_padded_le_u64(unsafe { self.bytes.get_unchecked(start_byte_idx..) }) >> byte_shift;
+        let available_bits = (self.len - idx).min(64);
+
+        if available_bits > 64 - byte_shift {
+            // SAFETY: there are valid bits beyond the first loaded word, so at least one byte is
+            // available here.
+            let upper =
+                load_padded_le_u64(unsafe { self.bytes.get_unchecked(start_byte_idx + 8..) });
+            mask |= upper << (64 - byte_shift);
+        }
+
+        if available_bits < 64 {
+            mask &= (1 << available_bits) - 1;
+        }
+        mask
+    }
+
     /// Computes the index of the nth set bit after start.
     ///
     /// Both are zero-indexed, so `nth_set_bit_idx(0, 0)` finds the index of the
