@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import compileall
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -124,3 +125,46 @@ def test_unknown_extension_type_behavior_invalid_does_not_panic_27004() -> None:
     assert result.returncode == 0, result.stderr
     assert "POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR" in result.stderr
     assert "PanicException" not in result.stderr
+
+
+def test_import_does_not_capture_max_threads_28512(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    env.pop("POLARS_MAX_THREADS", None)
+    default_threads = int(
+        subprocess.check_output(
+            [
+                sys.executable,
+                "-c",
+                "import polars as pl; print(pl.thread_pool_size())",
+            ],
+            env=env,
+            text=True,
+        )
+    )
+    configured_threads = 1 if default_threads != 1 else 2
+
+    dead_pid = subprocess.check_output(
+        [sys.executable, "-c", "import os; print(os.getpid())"],
+        text=True,
+    ).strip()
+    stale_spill_dir = tmp_path / dead_pid
+    stale_spill_dir.mkdir()
+
+    code = f"""
+import os
+import time
+from pathlib import Path
+
+import polars as pl
+
+stale_spill_dir = Path({str(stale_spill_dir)!r})
+deadline = time.monotonic() + 5
+while stale_spill_dir.exists() and time.monotonic() < deadline:
+    time.sleep(0.01)
+assert not stale_spill_dir.exists()
+
+os.environ["POLARS_MAX_THREADS"] = {str(configured_threads)!r}
+assert pl.thread_pool_size() == {configured_threads}
+"""
+    env["POLARS_OOC_SPILL_DIR"] = str(tmp_path)
+    subprocess.run([sys.executable, "-c", code], check=True, env=env)

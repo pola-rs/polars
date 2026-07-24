@@ -498,11 +498,7 @@ impl Config {
     }
 
     pub fn ooc_spill_dir(&self) -> std::path::PathBuf {
-        if let Ok(dir) = std::env::var("POLARS_OOC_SPILL_DIR") {
-            std::path::PathBuf::from(dir)
-        } else {
-            spill_path::default_ooc_spill_dir()
-        }
+        ooc_spill_dir()
     }
 
     #[inline(always)]
@@ -522,6 +518,14 @@ impl Config {
             DNS_LOG_THRESHOLD_DISABLED => None,
             ms => Some(Duration::from_millis(ms)),
         }
+    }
+}
+
+pub fn ooc_spill_dir() -> std::path::PathBuf {
+    if let Ok(dir) = std::env::var("POLARS_OOC_SPILL_DIR") {
+        std::path::PathBuf::from(dir)
+    } else {
+        spill_path::default_ooc_spill_dir()
     }
 }
 

@@ -14,7 +14,7 @@ use crate::BYTES_SPILLED_TO_DISK;
 ///     spill-<ctx>-<uuid>.ipc   <- individual spill file (unique per spill)
 /// ```
 static SPILL_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
-    let spill_dir = polars_config::config().ooc_spill_dir();
+    let spill_dir = polars_config::ooc_spill_dir();
     let process_dir = spill_dir.join(std::process::id().to_string());
     create_dir_owner_only(&process_dir).unwrap_or_else(|e| {
         panic!("failed to create spill directory: {e} (path = {process_dir:?})")
@@ -121,7 +121,7 @@ enum CleanRequest {
 /// Each subdirectory is named by its owning PID. Skips our own PID and
 /// any directory whose PID is still alive.
 fn cleanup_stale_dirs() {
-    let spill_dir = polars_config::config().ooc_spill_dir();
+    let spill_dir = polars_config::ooc_spill_dir();
     let Ok(entries) = std::fs::read_dir(&spill_dir) else {
         return;
     };
