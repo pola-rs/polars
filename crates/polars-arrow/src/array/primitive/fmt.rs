@@ -62,9 +62,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
             // through `dyn_primitive!`'s infallible `Display`-based
             // expansion, since `timestamp_to_broken_down_time_opt` can fail
             // for a value so far out-of-range that even a timezone-less
-            // `DateTime` can't represent it. Beyond that, this is just
-            // jiff's own default rendering (ISO 8601, "T"-separated) -
-            // there's no need to reproduce chrono's `Display` styling here.
+            // `DateTime` can't represent it.
             if let Some(tz) = tz {
                 let timezone = temporal_conversions::parse_offset(tz.as_str());
                 match timezone {
