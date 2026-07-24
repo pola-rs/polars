@@ -23,6 +23,7 @@ from polars.io.delta._dataset import DeltaDataset
 from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_frame_not_equal
+from tests.unit.utils.pathlike import HostilePathLike
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
@@ -1456,3 +1457,26 @@ def test_scan_delta_predicate_pushdown_struct_is_not_null(
     # must not be pruned.
     assert_frame_equal(out, df, check_row_order=False)
     assert "skipping 1 / 2 files" not in err
+
+
+@pytest.mark.write_disk
+def test_delta_os_pathlike_17828(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+
+    # Write, read, and scan a Delta table entirely via a hostile `os.PathLike`.
+    write_path = tmp_path / "table"
+    df.write_delta(HostilePathLike(write_path))
+    assert_frame_equal(
+        pl.read_delta(HostilePathLike(write_path)), df, check_row_order=False
+    )
+    assert_frame_equal(
+        pl.scan_delta(HostilePathLike(write_path)).collect(), df, check_row_order=False
+    )
+
+    # `sink_delta` must accept an `os.PathLike` target too.
+    sink_path = tmp_path / "sink"
+    df.lazy().sink_delta(HostilePathLike(sink_path))
+    assert_frame_equal(
+        pl.read_delta(HostilePathLike(sink_path)), df, check_row_order=False
+    )

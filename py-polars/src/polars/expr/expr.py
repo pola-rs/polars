@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import math
 import operator
+import os
 import sys
 import warnings
 from collections.abc import Collection, Mapping, Sequence
@@ -10,7 +11,6 @@ from datetime import timedelta
 from decimal import Decimal
 from functools import reduce
 from io import BytesIO, StringIO
-from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -76,6 +76,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyExpr
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars._plr import PySeries
 
@@ -531,7 +533,7 @@ class Expr:
     @classmethod
     def deserialize(
         cls,
-        source: str_ | Path | IOBase | bytes,
+        source: str_ | Path | os.PathLike[str_] | IOBase | bytes,
         *,
         format: SerializationFormat = "binary",
     ) -> Expr:
@@ -575,7 +577,7 @@ class Expr:
         """
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
-        elif isinstance(source, (str, Path)):
+        elif isinstance(source, (str, os.PathLike)):
             source = normalize_filepath(source)
         elif isinstance(source, bytes):
             source = BytesIO(source)

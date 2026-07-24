@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
+import os
 from typing import IO, TYPE_CHECKING, Literal
 
 from polars._utils.deprecation import (
@@ -20,6 +20,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyLazyFrame
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars import DataFrame, LazyFrame
     from polars._typing import SchemaDefinition, StorageOptionsDict
     from polars.io.cloud import CredentialProviderFunction
@@ -28,11 +30,13 @@ if TYPE_CHECKING:
 def read_ndjson(
     source: str
     | Path
+    | os.PathLike[str]
     | IO[str]
     | IO[bytes]
     | bytes
     | list[str]
     | list[Path]
+    | list[os.PathLike[str]]
     | list[IO[str]]
     | list[IO[bytes]],
     *,
@@ -193,11 +197,13 @@ def scan_ndjson(
     source: (
         str
         | Path
+        | os.PathLike[str]
         | IO[str]
         | IO[bytes]
         | bytes
         | list[str]
         | list[Path]
+        | list[os.PathLike[str]]
         | list[IO[str]]
         | list[IO[bytes]]
     ),
@@ -300,8 +306,14 @@ def scan_ndjson(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
-    sources: list[str] | list[Path] | list[IO[str]] | list[IO[bytes]] = []
-    if isinstance(source, (str, Path)):
+    sources: (
+        list[str]
+        | list[Path]
+        | list[os.PathLike[str]]
+        | list[IO[str]]
+        | list[IO[bytes]]
+    ) = []
+    if isinstance(source, (str, os.PathLike)):
         source = normalize_filepath(source, check_not_directory=False)
     elif isinstance(source, list):
         if is_path_or_str_sequence(source):

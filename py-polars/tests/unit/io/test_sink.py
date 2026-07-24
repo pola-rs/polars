@@ -16,6 +16,7 @@ import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import format_file_uri
+from tests.unit.utils.pathlike import HostilePathLike
 
 if TYPE_CHECKING:
     from polars._typing import EngineType
@@ -29,6 +30,19 @@ SINKS = [
     (pl.scan_csv, pl.LazyFrame.sink_csv),
     (pl.scan_ndjson, pl.LazyFrame.sink_ndjson),
 ]
+
+
+@pytest.mark.parametrize(("scan", "sink"), SINKS)
+@pytest.mark.write_disk
+def test_sink_os_pathlike_17828(tmp_path: Path, scan: Any, sink: Any) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    path = tmp_path / "data"
+
+    # `sink_*` must accept an `os.PathLike` target (via `_to_sink_target`).
+    sink(df.lazy(), HostilePathLike(path))
+
+    assert_frame_equal(scan(HostilePathLike(path)).collect(), df)
 
 
 @pytest.mark.parametrize(("scan", "sink"), SINKS)

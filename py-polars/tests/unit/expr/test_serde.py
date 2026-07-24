@@ -1,9 +1,16 @@
+from __future__ import annotations
+
 import io
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
+from tests.unit.utils.pathlike import HostilePathLike
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.mark.parametrize(
@@ -42,6 +49,18 @@ def test_expr_serde_roundtrip_json(expr: pl.Expr) -> None:
 def test_expr_deserialize_file_not_found() -> None:
     with pytest.raises(FileNotFoundError):
         pl.Expr.deserialize("abcdef")
+
+
+@pytest.mark.write_disk
+def test_expr_serde_to_from_os_pathlike_17828(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    expr = pl.col("foo").sum().over("bar")
+    file_path = tmp_path / "expr.bin"
+    expr.meta.serialize(HostilePathLike(file_path))
+    round_tripped = pl.Expr.deserialize(HostilePathLike(file_path))
+
+    assert round_tripped.meta == expr
 
 
 def test_expr_deserialize_invalid_json() -> None:

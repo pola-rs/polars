@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from io import BytesIO, StringIO
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from polars._utils.various import normalize_filepath
@@ -14,13 +14,14 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from io import IOBase
+    from pathlib import Path
 
     from polars import DataFrame
     from polars._typing import SchemaDefinition
 
 
 def read_json(
-    source: str | Path | IOBase | bytes,
+    source: str | Path | os.PathLike[str] | IOBase | bytes,
     *,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,
@@ -89,7 +90,7 @@ def read_json(
     """
     if isinstance(source, StringIO):
         source = BytesIO(source.getvalue().encode())
-    elif isinstance(source, (str, Path)):
+    elif isinstance(source, (str, os.PathLike)):
         source = normalize_filepath(source)
 
     pydf = PyDataFrame.read_json(
