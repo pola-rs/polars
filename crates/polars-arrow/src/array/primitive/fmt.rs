@@ -1,6 +1,8 @@
 #![allow(clippy::redundant_closure_call)]
 use std::fmt::{Debug, Formatter, Result, Write};
 
+use jiff::tz::TimeZone;
+
 use super::PrimitiveArray;
 use crate::array::Array;
 use crate::array::fmt::write_vec;
@@ -16,6 +18,37 @@ macro_rules! dyn_primitive {
             .unwrap();
         Box::new(move |f, index| write!(f, "{}", $expr(array.value(index))))
     }};
+}
+
+/// Like `dyn_primitive!`, but for a tz-aware timestamp with an already-resolved
+/// `timezone`. Formatting must never panic, even for a physically out-of-range
+/// value, so unlike `dyn_primitive!` this degrades gracefully (via
+/// `timestamp_to_broken_down_time_opt` returning `None`) instead of going
+/// through an infallible `Display`-based expansion.
+fn dyn_timestamp_tz<'a, F: Write>(
+    array: &'a dyn Array,
+    time_unit: TimeUnit,
+    timezone: TimeZone,
+) -> Box<dyn Fn(&mut F, usize) -> Result + 'a> {
+    let array = array
+        .as_any()
+        .downcast_ref::<PrimitiveArray<i64>>()
+        .unwrap();
+    Box::new(move |f, index| {
+        match temporal_conversions::timestamp_to_broken_down_time_opt(
+            array.value(index),
+            time_unit,
+            &timezone,
+        ) {
+            Some(tm) => write!(
+                f,
+                "{}",
+                tm.to_string("%Y-%m-%dT%H:%M:%S%.f%:z")
+                    .unwrap_or_else(|_| "<out-of-range datetime>".to_string())
+            ),
+            None => write!(f, "<out-of-range datetime>"),
+        }
+    })
 }
 
 pub fn get_write_value<'a, T: NativeType, F: Write>(
@@ -57,64 +90,15 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
         },
         Time64(_) => unreachable!(), // remaining are not valid
         Timestamp(time_unit, tz) => {
-            // Formatting must never panic, even for a physically
-            // out-of-range value - degrade gracefully instead of going
-            // through `dyn_primitive!`'s infallible `Display`-based
-            // expansion, since `timestamp_to_broken_down_time_opt` can fail
-            // for a value so far out-of-range that even a timezone-less
-            // `DateTime` can't represent it.
             if let Some(tz) = tz {
                 let timezone = temporal_conversions::parse_offset(tz.as_str());
                 match timezone {
-                    Ok(timezone) => {
-                        let array = (array as &dyn Array)
-                            .as_any()
-                            .downcast_ref::<PrimitiveArray<i64>>()
-                            .unwrap();
-                        let time_unit = *time_unit;
-                        Box::new(move |f, index| {
-                            match temporal_conversions::timestamp_to_broken_down_time_opt(
-                                array.value(index),
-                                time_unit,
-                                &timezone,
-                            ) {
-                                Some(tm) => write!(
-                                    f,
-                                    "{}",
-                                    tm.to_string("%Y-%m-%dT%H:%M:%S%.f%:z")
-                                        .unwrap_or_else(|_| "<out-of-range datetime>".to_string())
-                                ),
-                                None => write!(f, "<out-of-range datetime>"),
-                            }
-                        })
-                    },
+                    Ok(timezone) => dyn_timestamp_tz(array, *time_unit, timezone),
                     #[cfg(feature = "timezones")]
                     Err(_) => {
                         let timezone = temporal_conversions::parse_offset_tz(tz.as_str());
                         match timezone {
-                            Ok(timezone) => {
-                                let array = (array as &dyn Array)
-                                    .as_any()
-                                    .downcast_ref::<PrimitiveArray<i64>>()
-                                    .unwrap();
-                                let time_unit = *time_unit;
-                                Box::new(move |f, index| {
-                                    match temporal_conversions::timestamp_to_broken_down_time_opt(
-                                        array.value(index),
-                                        time_unit,
-                                        &timezone,
-                                    ) {
-                                        Some(tm) => write!(
-                                            f,
-                                            "{}",
-                                            tm.to_string("%Y-%m-%dT%H:%M:%S%.f%:z").unwrap_or_else(
-                                                |_| "<out-of-range datetime>".to_string()
-                                            )
-                                        ),
-                                        None => write!(f, "<out-of-range datetime>"),
-                                    }
-                                })
-                            },
+                            Ok(timezone) => dyn_timestamp_tz(array, *time_unit, timezone),
                             Err(_) => {
                                 let tz = tz.clone();
                                 Box::new(move |f, index| {
