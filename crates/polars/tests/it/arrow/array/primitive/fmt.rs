@@ -79,7 +79,7 @@ fn debug_timestamp_s() {
         .to(ArrowDataType::Timestamp(TimeUnit::Second, None));
     assert_eq!(
         format!("{array:?}"),
-        "Timestamp(Second, None)[1970-01-01 00:00:01, None, 1970-01-01 00:00:02]"
+        "Timestamp(Second, None)[1970-01-01T00:00:01, None, 1970-01-01T00:00:02]"
     );
 }
 
@@ -89,7 +89,7 @@ fn debug_timestamp_ms() {
         .to(ArrowDataType::Timestamp(TimeUnit::Millisecond, None));
     assert_eq!(
         format!("{array:?}"),
-        "Timestamp(Millisecond, None)[1970-01-01 00:00:00.001, None, 1970-01-01 00:00:00.002]"
+        "Timestamp(Millisecond, None)[1970-01-01T00:00:00.001, None, 1970-01-01T00:00:00.002]"
     );
 }
 
@@ -99,7 +99,7 @@ fn debug_timestamp_us() {
         .to(ArrowDataType::Timestamp(TimeUnit::Microsecond, None));
     assert_eq!(
         format!("{array:?}"),
-        "Timestamp(Microsecond, None)[1970-01-01 00:00:00.000001, None, 1970-01-01 00:00:00.000002]"
+        "Timestamp(Microsecond, None)[1970-01-01T00:00:00.000001, None, 1970-01-01T00:00:00.000002]"
     );
 }
 
@@ -109,7 +109,7 @@ fn debug_timestamp_ns() {
         .to(ArrowDataType::Timestamp(TimeUnit::Nanosecond, None));
     assert_eq!(
         format!("{array:?}"),
-        "Timestamp(Nanosecond, None)[1970-01-01 00:00:00.000000001, None, 1970-01-01 00:00:00.000000002]"
+        "Timestamp(Nanosecond, None)[1970-01-01T00:00:00.000000001, None, 1970-01-01T00:00:00.000000002]"
     );
 }
 
@@ -121,7 +121,7 @@ fn debug_timestamp_tz_ns() {
     ));
     assert_eq!(
         format!("{array:?}"),
-        "Timestamp(Nanosecond, Some(\"+02:00\"))[1970-01-01 02:00:00.000000001 +02:00, None, 1970-01-01 02:00:00.000000002 +02:00]"
+        "Timestamp(Nanosecond, Some(\"+02:00\"))[1970-01-01T02:00:00.000000001+02:00, None, 1970-01-01T02:00:00.000000002+02:00]"
     );
 }
 
@@ -146,7 +146,7 @@ fn debug_timestamp_tz1_ns() {
     ));
     assert_eq!(
         format!("{array:?}"),
-        "Timestamp(Nanosecond, Some(\"Europe/Lisbon\"))[1970-01-01 01:00:00.000000001 CET, None, 1970-01-01 01:00:00.000000002 CET]"
+        "Timestamp(Nanosecond, Some(\"Europe/Lisbon\"))[1970-01-01T01:00:00.000000001+01:00, None, 1970-01-01T01:00:00.000000002+01:00]"
     );
 }
 
