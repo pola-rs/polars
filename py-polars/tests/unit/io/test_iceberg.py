@@ -2890,3 +2890,16 @@ def test_scan_iceberg_v3_field_initial_default(tmp_path: Path) -> None:
         pl.scan_iceberg(table).collect(),
         expect,
     )
+
+
+def test_scan_iceberg_self_join_28465(tmp_path: Path) -> None:
+    table, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "x", LongType()))
+    )
+
+    pl.DataFrame({"x": 1}).write_iceberg(table, mode="append")
+
+    lf = pl.scan_iceberg(table)
+    q = lf.join(lf, on="x")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 1}))
