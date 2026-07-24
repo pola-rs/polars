@@ -2,7 +2,7 @@ use std::ptr::copy_nonoverlapping;
 
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
-use arrow::datatypes::{ArrowDataType, Field, TimeUnit};
+use arrow::datatypes::{ArrowDataType, Field};
 use arrow::offset::Offset;
 use arrow::types::NativeType;
 use bytemuck::cast_slice_mut;
@@ -14,8 +14,6 @@ use super::binary_to::Parse;
 use super::temporal::utf8_to_naive_date_scalar;
 #[cfg(feature = "dtype-decimal")]
 use crate::decimal::str_to_dec128;
-
-pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 
 /// Cast [`BinaryViewArray`] to [`DictionaryArray`], also known as packing.
 /// # Errors
@@ -114,22 +112,6 @@ pub fn binview_to_decimal(
             .map(|val| val.and_then(|val| str_to_dec128(val, precision, scale, false))),
     )
     .to(ArrowDataType::Decimal(precision, scale))
-}
-
-pub(super) fn utf8view_to_naive_timestamp_dyn(
-    from: &dyn Array,
-    time_unit: TimeUnit,
-) -> PolarsResult<Box<dyn Array>> {
-    let from = from.as_any().downcast_ref().unwrap();
-    Ok(Box::new(utf8view_to_naive_timestamp(from, time_unit)))
-}
-
-/// [`super::temporal::utf8view_to_timestamp`] applied for RFC3339 formatting
-pub fn utf8view_to_naive_timestamp(
-    from: &Utf8ViewArray,
-    time_unit: TimeUnit,
-) -> PrimitiveArray<i64> {
-    super::temporal::utf8view_to_naive_timestamp(from, RFC3339, time_unit)
 }
 
 pub(super) fn utf8view_to_date32(from: &Utf8ViewArray) -> PrimitiveArray<i32> {

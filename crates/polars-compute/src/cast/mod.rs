@@ -24,8 +24,7 @@ use arrow::datatypes::*;
 use arrow::match_integer_type;
 use arrow::offset::{Offset, Offsets};
 use binview_to::{
-    binview_to_dictionary, utf8view_to_date32_dyn, utf8view_to_dictionary,
-    utf8view_to_naive_timestamp_dyn, view_to_binary,
+    binview_to_dictionary, utf8view_to_date32_dyn, utf8view_to_dictionary, view_to_binary,
 };
 pub use binview_to::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use dictionary_to::*;
@@ -557,14 +556,9 @@ pub fn cast(
                 Float16 => utf8view_to_primitive_dyn::<pf16>(arr, to_type, options),
                 Float32 => utf8view_to_primitive_dyn::<f32>(arr, to_type, options),
                 Float64 => utf8view_to_primitive_dyn::<f64>(arr, to_type, options),
-                Timestamp(time_unit, None) => {
-                    polars_warn!(
-                        Deprecation,
-                        "Casting from String to DateTime is deprecated and will be removed in Polars 2.0.\n\
-                        Use `str.to_datetime()` instead."
-                    );
-                    utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
-                },
+                Timestamp(_, None) => polars_bail!(InvalidOperation:
+                    "casting from String to Datetime is not supported; use `str.to_datetime()` instead",
+                ),
                 Timestamp(time_unit, Some(time_zone)) => {
                     polars_warn!(
                         Deprecation,

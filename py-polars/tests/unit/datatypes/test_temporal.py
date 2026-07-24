@@ -2554,12 +2554,17 @@ def test_timezone_ignore_error(
         pl.DataFrame(tbl)
 
 
-def test_string_to_temporal_cast_deprecated() -> None:
-    with pytest.warns(
-        DeprecationWarning, match="Casting from String to DateTime is deprecated"
+def test_string_to_naive_datetime_cast_removed() -> None:
+    # casting a String to a naive Datetime was deprecated in favor of
+    # `str.to_datetime()`, and is no longer supported at all.
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"casting from String to Datetime is not supported; use `str\.to_datetime\(\)` instead",
     ):
         pl.Series(["2022-08-30T10:30:45"]).cast(pl.Datetime("us"))
 
+
+def test_string_to_temporal_cast_deprecated() -> None:
     with pytest.warns(
         DeprecationWarning, match="Casting from String to DateTime is deprecated"
     ):
