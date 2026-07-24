@@ -255,3 +255,24 @@ def test_from_dict_cast_logical_type(dtype: pl.DataType, data: Any) -> None:
     )
 
     assert_frame_equal(df_from_dicts, df)
+
+
+def test_from_dict_upcast_scalars_25232() -> None:
+    dicts: list[dict[str, int | float | list[float]]] = [
+        {
+            "a": 0,
+            "b": 0.64134,
+        },
+        {
+            "b": [0.522672, 0.706087],
+        },
+    ]
+    override_schema = {
+        "b": pl.List(pl.Float64),
+    }
+
+    result = pl.from_dicts(dicts, schema_overrides=override_schema)
+    expected = pl.DataFrame(
+        {"a": [0, None], "b": pl.Series([[0.64134], [0.522672, 0.706087]])}
+    )
+    assert_frame_equal(result, expected)
