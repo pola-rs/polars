@@ -11,7 +11,8 @@ use polars_io::file_cache::FileCacheEntry;
 use polars_io::metrics::IOMetrics;
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
 use polars_io::{
-    decode_file_uri_paths, expand_paths, expand_paths_hive, expanded_from_single_directory,
+    BytesPerSource, decode_file_uri_paths, expand_paths, expand_paths_hive,
+    expanded_from_single_directory,
 };
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
@@ -208,7 +209,7 @@ impl ScanSources {
     pub async fn expand_paths_with_hive_update(
         &self,
         scan_args: &mut UnifiedScanArgs,
-    ) -> PolarsResult<Self> {
+    ) -> PolarsResult<(Self, BytesPerSource)> {
         match self {
             Self::Paths(paths) => {
                 // Decode up front so expansion, single-directory detection, and hive parsing
@@ -216,7 +217,7 @@ impl ScanSources {
                 let paths = decode_file_uri_paths(paths, scan_args.glob);
                 let paths = paths.as_ref();
 
-                let (expanded_paths, hive_start_idx) = expand_paths_hive(
+                let (expanded_paths, hive_start_idx, bytes_per_source) = expand_paths_hive(
                     paths,
                     scan_args.glob,
                     scan_args.hidden_file_prefix.as_deref().unwrap_or_default(),
@@ -232,9 +233,9 @@ impl ScanSources {
                 }
                 scan_args.hive_options.hive_start_idx = hive_start_idx;
 
-                Ok(Self::Paths(expanded_paths))
+                Ok((Self::Paths(expanded_paths), bytes_per_source))
             },
-            v => Ok(v.clone()),
+            v => Ok((v.clone(), None)),
         }
     }
 

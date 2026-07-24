@@ -4366,8 +4366,8 @@ def test_multi_file_resolve_metadata_level(
 ) -> None:
     # Skewed layout: file 0 = 2 rows, files 1-2 = 3 each (true total 8).
     # `none` extrapolates 2 * 3 = 6; `row_counts`/`full` sum exactly. (`sampled`
-    # is budget-dependent, so it is tested in a subprocess below where the budget
-    # is pinned, not here where this process's budget is uncontrolled.)
+    # is covered by the dedicated test below, with its sample wave pinned via
+    # `POLARS_RESOLVE_SAMPLE_LIMIT`.)
     for i, n in enumerate([2, 3, 3]):
         pl.DataFrame({"x": range(n)}).write_parquet(tmp_path / f"part_{i}.parquet")
 
@@ -4380,42 +4380,92 @@ def test_multi_file_resolve_metadata_level(
 
 
 @pytest.mark.write_disk
-def test_resolve_metadata_sampled_extrapolates(tmp_path: Path) -> None:
-    # `sampled` only extrapolates when the file count exceeds the concurrency
-    # budget; at or below it the whole set is read and the count is exact. The
-    # budget is a process-wide OnceLock (not refreshed by `reload_env_vars`), so
-    # cap it to 2 in a fresh subprocess. Layout [2, 3, 3]: budget 2 samples
-    # file 0 + file 1 and extrapolates (2 + 3) * 3 // 2 = 7.
-    for i, n in enumerate([2, 3, 3]):
+def test_resolve_metadata_sampled_byte_weighted(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # `sampled` weights its row extrapolation by per-file byte size (retained
+    # from path expansion) when every source has a known size, and falls back
+    # to the per-file mean otherwise. Pin the sample wave to 2 footers so the
+    # 3-file layout stays a *partial* sample regardless of this machine's
+    # concurrency budget. Layout [2, 2, 1000]: the wave reads file 0 + file 1
+    # (a two-footer wave is always file 0 plus index 1; the strided spread
+    # only kicks in from three footers up); file 2 (large) is not read.
+    rows = [2, 2, 1000]
+    for i, n in enumerate(rows):
         pl.DataFrame({"x": range(n)}).write_parquet(tmp_path / f"part_{i}.parquet")
 
     if sys.platform.startswith("win"):
         return
 
-    glob = str(tmp_path / "part_*.parquet")
-    out = subprocess.check_output(
-        [
-            sys.executable,
-            "-c",
-            f"""\
-import os
-import sys
+    sizes = [(tmp_path / f"part_{i}.parquet").stat().st_size for i in range(3)]
+    sampled_rows = rows[0] + rows[1]
+    # Mirror the engine's overhead-calibrated estimate: from the sampled
+    # footers (files 0 and 1), data bytes = sum of column-chunk compressed
+    # sizes; the mean per-file overhead then sizes the unread file's data
+    # bytes from its listed size.
+    metas = [pq.ParquetFile(tmp_path / f"part_{i}.parquet").metadata for i in range(2)]
+    data = [
+        min(
+            sum(
+                md.row_group(rg).column(c).total_compressed_size
+                for rg in range(md.num_row_groups)
+                for c in range(md.num_columns)
+            ),
+            sizes[i],
+        )
+        for i, md in enumerate(metas)
+    ]
+    sampled_data = data[0] + data[1]
+    mean_overhead = ((sizes[0] - data[0]) + (sizes[1] - data[1])) // 2
+    unresolved_data = max(sizes[2] - mean_overhead, 0)
+    byte_weighted = sampled_rows + unresolved_data * sampled_rows // sampled_data
+    count_based = sampled_rows * 3 // 2
+    # Must differ, else the scenarios below cannot distinguish byte weighting
+    # from the count-based fallback.
+    assert byte_weighted != count_based
 
-os.environ["POLARS_CONCURRENCY_BUDGET"] = "2"
-os.environ["POLARS_RESOLVE_METADATA_LEVEL"] = "sampled"
+    plmonkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", "sampled")
+    plmonkeypatch.setenv("POLARS_RESOLVE_SAMPLE_LIMIT", "2")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
-import polars as pl
+    def check(lf: pl.LazyFrame, expected_est: int, expected_kind: str) -> None:
+        capfd.readouterr()
+        # Resolution runs on the first plan build and prints its verbose trace.
+        plan = lf.explain(optimized=True)
+        assert f"ESTIMATED ROWS: {expected_est}" in plan, plan
+        assert (
+            f"parquet sampled resolve: read 2 / 3 footers, "
+            f"estimated rows: {expected_est} ({expected_kind})"
+        ) in capfd.readouterr().err
+        assert lf.collect().height == sum(rows)
 
-lf = pl.scan_parquet({glob!r})
-assert lf.collect().height == 8
-assert "ESTIMATED ROWS: 7" in lf.explain(optimized=True)
-print("OK", end="", file=sys.stderr)
-""",
-        ],
-        stderr=subprocess.STDOUT,
-        timeout=30,
-    )
-    assert out == b"OK"
+    # Globbed scan, local sync expansion: sizes retained -> byte-weighted.
+    check(pl.scan_parquet(tmp_path / "part_*.parquet"), byte_weighted, "byte-weighted")
+
+    # Globbed scan through the object-store expansion path (the same route
+    # cloud scans take): sizes come from the listing -> byte-weighted.
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    check(pl.scan_parquet(tmp_path / "part_*.parquet"), byte_weighted, "byte-weighted")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
+
+    # Explicit file list: no listing happens, so no sizes are known -> the
+    # estimate falls back to the per-file mean over the sampled row counts.
+    paths = [tmp_path / f"part_{i}.parquet" for i in range(3)]
+    check(pl.scan_parquet(paths), count_based, "count-based")
+
+    # Wave covers the whole set (2 files, wave 2): `sampled` classifies as
+    # read-all and routes through the `Full` arm. The count is the exact sum
+    # of both footers, and the partial-sample trace must NOT appear -- its
+    # absence is the proof of the routing, since a wave that covers every
+    # file lands on the exact total through either arm.
+    capfd.readouterr()
+    lf = pl.scan_parquet([tmp_path / "part_0.parquet", tmp_path / "part_2.parquet"])
+    plan = lf.explain(optimized=True)
+    assert f"ESTIMATED ROWS: {rows[0] + rows[2]}" in plan, plan
+    assert "parquet sampled resolve" not in capfd.readouterr().err
+    assert lf.collect().height == rows[0] + rows[2]
 
 
 def test_parquet_prefilter_fixed_size_binary_27781() -> None:
