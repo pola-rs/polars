@@ -257,7 +257,7 @@ def prepare_file_arg(
                     )
                 # decode first
                 with Path(file).open(
-                    encoding=encoding_str, errors=encoding_errors
+                    encoding=encoding_str, errors=encoding_errors, newline=""
                 ) as f:
                     return _check_empty(
                         BytesIO(f.read().encode("utf8")),
@@ -287,7 +287,9 @@ def prepare_file_arg(
     if isinstance(file, str):
         file = normalize_filepath(file, check_not_directory=check_not_dir)
         if not has_utf8_utf8_lossy_encoding:
-            with Path(file).open(encoding=encoding_str, errors=encoding_errors) as f:
+            with Path(file).open(
+                encoding=encoding_str, errors=encoding_errors, newline=""
+            ) as f:
                 return _check_empty(
                     BytesIO(f.read().encode("utf8")),
                     context=f"{file!r}",
