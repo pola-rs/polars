@@ -34,7 +34,7 @@ pub struct ScanPredicate {
     /// `false` even when the batch could theoretically be skipped.
     pub skip_batch_predicate: Option<Arc<dyn PhysicalExpr>>,
 
-    /// Partial predicates for each column for filter when loading columnar formats.
+    /// Per-column predicates and a residual predicate for columnar formats.
     pub column_predicates: PhysicalColumnPredicates,
 
     /// Predicate only referring to hive columns.
@@ -52,7 +52,7 @@ impl fmt::Debug for ScanPredicate {
 pub struct PhysicalColumnPredicates {
     pub predicates:
         PlHashMap<PlSmallStr, (Arc<dyn PhysicalExpr>, Option<SpecializedColumnPredicate>)>,
-    pub is_sumwise_complete: bool,
+    pub residual_predicate: Option<Arc<dyn PhysicalExpr>>,
 }
 
 /// Helper to implement [`SkipBatchPredicate`].
@@ -122,7 +122,7 @@ impl ScanPredicate {
                 Default::default()
             });
 
-        let predicate_constants = constant_columns
+        let predicate_constants: Vec<_> = constant_columns
             .filter_map(|(name, scalar): (PlSmallStr, Scalar)| {
                 if !live_columns.swap_remove(&name) {
                     return None;
@@ -149,7 +149,7 @@ impl ScanPredicate {
             .collect();
 
         let predicate = Arc::new(PhysicalExprWithConstCols {
-            constants: predicate_constants,
+            constants: predicate_constants.clone(),
             child: self.predicate.clone(),
         });
         let skip_batch_predicate = self.skip_batch_predicate.as_ref().map(|skp| {
@@ -159,12 +159,22 @@ impl ScanPredicate {
             }) as _
         });
 
+        let mut column_predicates = self.column_predicates.clone();
+        column_predicates.residual_predicate =
+            column_predicates
+                .residual_predicate
+                .map(|residual_predicate| {
+                    Arc::new(PhysicalExprWithConstCols {
+                        constants: predicate_constants,
+                        child: residual_predicate,
+                    }) as Arc<dyn PhysicalExpr>
+                });
+
         Self {
             predicate,
             live_columns: Arc::new(live_columns),
             skip_batch_predicate,
-            column_predicates: self.column_predicates.clone(), // Q? Maybe this should cull
-            // predicates.
+            column_predicates,
             hive_predicate: None,
             hive_predicate_is_full_predicate: false,
         }
@@ -200,7 +210,11 @@ impl ScanPredicate {
                     .iter()
                     .map(|(n, (p, s))| (n.clone(), (phys_expr_to_io_expr(p.clone()), s.clone())))
                     .collect(),
-                is_sumwise_complete: self.column_predicates.is_sumwise_complete,
+                residual_predicate: self
+                    .column_predicates
+                    .residual_predicate
+                    .clone()
+                    .map(phys_expr_to_io_expr),
             }),
             hive_predicate: self.hive_predicate.clone().map(phys_expr_to_io_expr),
             hive_predicate_is_full_predicate: self.hive_predicate_is_full_predicate,

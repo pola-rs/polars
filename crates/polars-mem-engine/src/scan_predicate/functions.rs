@@ -161,12 +161,25 @@ pub fn create_scan_predicate(
                 );
             }
             eprintln!("  ],");
-            eprintln!(
-                "  is_sumwise_complete: {}",
-                column_predicates.is_sumwise_complete
-            );
+            if let Some(residual_predicate) = column_predicates.residual_predicate {
+                eprintln!(
+                    "  residual: {},",
+                    ExprIRDisplay::display_node(residual_predicate, expr_arena)
+                );
+            }
             eprintln!("}}");
         }
+        let residual_predicate = column_predicates
+            .residual_predicate
+            .map(|node| {
+                create_physical_expr(
+                    &ExprIR::new(node, OutputName::Alias(PlSmallStr::EMPTY)),
+                    expr_arena,
+                    schema,
+                    state,
+                )
+            })
+            .transpose()?;
         PhysicalColumnPredicates {
             predicates: column_predicates
                 .predicates
@@ -186,12 +199,12 @@ pub fn create_scan_predicate(
                     ))
                 })
                 .collect::<PolarsResult<PlHashMap<_, _>>>()?,
-            is_sumwise_complete: column_predicates.is_sumwise_complete,
+            residual_predicate,
         }
     } else {
         PhysicalColumnPredicates {
             predicates: PlHashMap::default(),
-            is_sumwise_complete: false,
+            residual_predicate: Some(phys_predicate.clone()),
         }
     };
 

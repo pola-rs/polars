@@ -1,4 +1,5 @@
-//! This module creates predicates splits predicates into partial per-column predicates.
+//! This module splits incoming predicates into per-column predicates and a
+//! residual predicate that must be evaluated after decode/filtering.
 
 use polars_core::datatypes::DataType;
 use polars_core::prelude::AnyValue;
@@ -20,8 +21,8 @@ use crate::plans::{
 pub struct ColumnPredicates {
     pub predicates: PlIndexMap<PlSmallStr, (Node, Option<SpecializedColumnPredicate>)>,
 
-    /// Are all column predicates AND-ed together the original predicate.
-    pub is_sumwise_complete: bool,
+    /// The part of the original predicate not represented by `predicates`.
+    pub residual_predicate: Option<Node>,
 }
 
 pub fn aexpr_to_column_predicates(
@@ -31,7 +32,7 @@ pub fn aexpr_to_column_predicates(
 ) -> ColumnPredicates {
     let mut predicates =
         PlIndexMap::<PlSmallStr, (Node, Option<SpecializedColumnPredicate>)>::default();
-    let mut is_sumwise_complete = true;
+    let mut residual_predicates = Vec::new();
 
     let minterms = MintermIter::new(root, expr_arena).collect::<Vec<_>>();
 
@@ -41,13 +42,13 @@ pub fn aexpr_to_column_predicates(
         leaf_names.extend(aexpr_to_leaf_names_iter(minterm, expr_arena).cloned());
 
         if leaf_names.len() != 1 {
-            is_sumwise_complete = false;
+            residual_predicates.push(minterm);
             continue;
         }
 
         let column = leaf_names.pop().unwrap();
         let Some(dtype) = schema.get(&column) else {
-            is_sumwise_complete = false;
+            residual_predicates.push(minterm);
             continue;
         };
 
@@ -56,30 +57,30 @@ pub fn aexpr_to_column_predicates(
         match dtype {
             #[cfg(feature = "dtype-categorical")]
             D::Enum(_, _) | D::Categorical(_, _) => {
-                is_sumwise_complete = false;
+                residual_predicates.push(minterm);
                 continue;
             },
             #[cfg(feature = "dtype-decimal")]
             D::Decimal(_, _) => {
-                is_sumwise_complete = false;
+                residual_predicates.push(minterm);
                 continue;
             },
             #[cfg(feature = "object")]
             D::Object(_) => {
-                is_sumwise_complete = false;
+                residual_predicates.push(minterm);
                 continue;
             },
             #[cfg(feature = "dtype-f16")]
             D::Float16 => {
-                is_sumwise_complete = false;
+                residual_predicates.push(minterm);
                 continue;
             },
             D::Float32 | D::Float64 => {
-                is_sumwise_complete = false;
+                residual_predicates.push(minterm);
                 continue;
             },
             _ if dtype.is_nested() => {
-                is_sumwise_complete = false;
+                residual_predicates.push(minterm);
                 continue;
             },
             _ => {},
@@ -292,9 +293,17 @@ pub fn aexpr_to_column_predicates(
             });
     }
 
+    let residual_predicate = residual_predicates.into_iter().reduce(|left, right| {
+        expr_arena.add(AExpr::BinaryExpr {
+            left,
+            op: Operator::LogicalAnd,
+            right,
+        })
+    });
+
     ColumnPredicates {
         predicates,
-        is_sumwise_complete,
+        residual_predicate,
     }
 }
 
@@ -373,6 +382,7 @@ mod tests {
         let mut ctx = ExprToIRContext::new(&mut arena, &schema);
         let expr_ir = to_expr_ir(expr, &mut ctx)?;
         let column_predicates = aexpr_to_column_predicates(expr_ir.node(), &mut arena, &schema);
+        assert!(column_predicates.residual_predicate.is_none());
         assert_eq!(column_predicates.predicates.len(), 1);
         let Some((col_name2, (_, predicate))) =
             column_predicates.predicates.clone().into_iter().next()
@@ -384,6 +394,45 @@ mod tests {
         };
         assert_eq!(col_name, col_name2);
         Ok(predicate)
+    }
+
+    #[test]
+    fn splits_eager_and_residual_predicates() -> PolarsResult<()> {
+        let mut arena = Arena::new();
+        let schema = Schema::from_iter_check_duplicates([
+            ("integer".into(), DataType::Int64),
+            ("float_a".into(), DataType::Float64),
+            ("float_b".into(), DataType::Float64),
+        ])?;
+        let mut ctx = ExprToIRContext::new(&mut arena, &schema);
+        let expr = col("integer")
+            .gt(typed_lit(1i64))
+            .and(col("float_a").lt(typed_lit(3.0f64)))
+            .and(col("float_b").gt(typed_lit(0.0f64)));
+        let expr_ir = to_expr_ir(expr, &mut ctx)?;
+
+        let column_predicates = aexpr_to_column_predicates(expr_ir.node(), &mut arena, &schema);
+
+        assert_eq!(
+            column_predicates
+                .predicates
+                .keys()
+                .map(PlSmallStr::as_str)
+                .collect::<Vec<_>>(),
+            ["integer"],
+        );
+
+        let residual_predicate = column_predicates.residual_predicate.unwrap();
+        assert_ne!(residual_predicate, expr_ir.node());
+        assert_eq!(
+            MintermIter::new(residual_predicate, &arena)
+                .flat_map(|node| aexpr_to_leaf_names_iter(node, &arena))
+                .map(PlSmallStr::as_str)
+                .collect::<Vec<_>>(),
+            ["float_a", "float_b"],
+        );
+
+        Ok(())
     }
 
     #[test]

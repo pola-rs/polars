@@ -10,7 +10,7 @@ use polars_io::prelude::ParallelStrategy;
 use polars_utils::IdxSize;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
-use super::row_group_decode::RowGroupDecoder;
+use super::row_group_decode::{ProjectedFieldClassification, RowGroupDecoder};
 use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
@@ -326,44 +326,53 @@ impl ParquetReadImpl {
         use_prefiltered |=
             predicate.is_some() && matches!(self.options.parallel, ParallelStrategy::Auto);
 
-        let predicate_field_indices: Arc<[usize]> =
-            if use_prefiltered && let Some(predicate) = predicate.as_ref() {
-                projected_arrow_fields
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, projected_field)| {
-                        predicate
-                            .live_columns
-                            .contains(projected_field.output_name())
-                            .then_some(i)
-                    })
-                    .collect()
-            } else {
-                Default::default()
-            };
+        let mut eager_predicate = Vec::new();
+        let mut additional_predicate = Vec::new();
+        let mut live_predicate = Vec::new();
+
+        if use_prefiltered && let Some(predicate) = predicate.as_ref() {
+            for (i, projected_field) in projected_arrow_fields.iter().enumerate() {
+                let name = projected_field.output_name();
+                if !predicate.live_columns.contains(name) {
+                    continue;
+                }
+
+                live_predicate.push(i);
+                if predicate.column_predicates.predicates.contains_key(name) {
+                    eager_predicate.push(i);
+                } else {
+                    additional_predicate.push(i);
+                }
+            }
+        }
 
         let use_prefiltered = use_prefiltered.then(PrefilterMaskSetting::init_from_env);
 
-        let non_predicate_field_indices: Arc<[usize]> = if use_prefiltered.is_some() {
-            filtered_range(
-                predicate_field_indices.as_ref(),
-                projected_arrow_fields.len(),
-            )
-            .collect()
+        let payload: Arc<[usize]> = if use_prefiltered.is_some() {
+            filtered_range(live_predicate.as_slice(), projected_arrow_fields.len()).collect()
         } else {
             Default::default()
         };
 
         if use_prefiltered.is_some() && self.verbose {
             eprintln!(
-                "[ParquetFileReader]: Pre-filtered decode enabled ({} live, {} non-live)",
-                predicate_field_indices.len(),
-                non_predicate_field_indices.len()
+                "[ParquetFileReader]: Pre-filtered decode enabled ({} live, {} eager, {} additional, {} payload)",
+                live_predicate.len(),
+                eager_predicate.len(),
+                additional_predicate.len(),
+                payload.len()
             )
         }
 
+        let prefiltered_field_indices = ProjectedFieldClassification {
+            live_predicate: live_predicate.into(),
+            eager_predicate: eager_predicate.into(),
+            additional_predicate: additional_predicate.into(),
+            payload,
+        };
+
         let allow_column_predicates = predicate.as_ref().is_some_and(|p| {
-            p.column_predicates.is_sumwise_complete
+            p.column_predicates.residual_predicate.is_none()
                 && !projected_arrow_fields.iter().any(|f| {
                     matches!(f.arrow_field().dtype(), ArrowDataType::FixedSizeBinary(_))
                         && p.column_predicates.predicates.contains_key(f.output_name())
@@ -381,8 +390,7 @@ impl ParquetReadImpl {
             predicate,
             allow_column_predicates,
             use_prefiltered,
-            predicate_field_indices,
-            non_predicate_field_indices,
+            projected_field_classification: prefiltered_field_indices,
             target_values_per_thread,
         }
     }
