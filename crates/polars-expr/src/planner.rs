@@ -457,21 +457,38 @@ fn create_physical_expr_inner(
             let is_scalar = is_scalar_ae(expression, expr_arena);
             let mut lit_count = 0u8;
             state.reset();
-            let predicate = create_physical_expr_inner(predicate, expr_arena, schema, state)?;
+            let predicate_phys = create_physical_expr_inner(predicate, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
             state.reset();
-            let truthy = create_physical_expr_inner(truthy, expr_arena, schema, state)?;
+            let truthy_phys = create_physical_expr_inner(truthy, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
             state.reset();
-            let falsy = create_physical_expr_inner(falsy, expr_arena, schema, state)?;
+            let falsy_phys = create_physical_expr_inner(falsy, expr_arena, schema, state)?;
             lit_count += state.local.has_lit as u8;
+
+            let mask_truthy = is_elementwise_rec(truthy, expr_arena)
+                && !matches!(expr_arena.get(truthy), AExpr::Column(_) | AExpr::Literal(_));
+            let mask_falsy = is_elementwise_rec(falsy, expr_arena)
+                && !matches!(expr_arena.get(falsy), AExpr::Column(_) | AExpr::Literal(_));
+            let truthy_mask_columns = if mask_truthy {
+                aexpr_to_leaf_names(truthy, expr_arena)
+            } else {
+                Vec::new()
+            };
+            let falsy_mask_columns = if mask_falsy {
+                aexpr_to_leaf_names(falsy, expr_arena)
+            } else {
+                Vec::new()
+            };
             Ok(Arc::new(TernaryExpr::new(
-                predicate,
-                truthy,
-                falsy,
+                predicate_phys,
+                truthy_phys,
+                falsy_phys,
                 node_to_expr(expression, expr_arena),
                 state.allow_threading && lit_count < 2,
                 is_scalar,
+                truthy_mask_columns,
+                falsy_mask_columns,
             )))
         },
         AExpr::AnonymousAgg {

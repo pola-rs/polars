@@ -1279,6 +1279,28 @@ impl Column {
         self.as_materialized_series().shift(periods).into()
     }
 
+    pub fn with_validity(&self, validity: Option<Bitmap>) -> Column {
+        match self {
+            Column::Series(s) => Column::from(s.with_validity(validity)),
+            Column::Scalar(s) => match validity {
+                Some(v) => Column::from(s.as_materialized_series().with_validity(Some(v))),
+                None => Column::Scalar(s.clone()),
+            },
+        }
+    }
+
+    pub fn mask(&self, validity: &Bitmap) -> Column {
+        if validity.len() == 1 {
+            if validity.get_bit(0) {
+                self.clone()
+            } else {
+                Self::full_null(self.name().clone(), self.len(), self.dtype())
+            }
+        } else {
+            Column::from(self.as_materialized_series().mask(validity))
+        }
+    }
+
     #[cfg(feature = "zip_with")]
     pub fn zip_with(&self, mask: &BooleanChunked, other: &Self) -> PolarsResult<Self> {
         // @scalar-opt
