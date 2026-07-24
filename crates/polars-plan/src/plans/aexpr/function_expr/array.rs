@@ -10,6 +10,7 @@ pub enum IRArrayFunction {
     Min,
     Max,
     Sum,
+    Dot,
     ToList,
     Std(u8),
     Var(u8),
@@ -66,6 +67,47 @@ impl IRArrayFunction {
                 .ensure_is_array()?
                 .map_to_list_and_array_inner_dtype(),
             Sum => mapper.ensure_is_array()?.nested_sum_type(),
+            Dot => {
+                let args = mapper.args();
+                polars_ensure!(
+                    args.len() == 2,
+                    InvalidOperation: "arr.dot expects two arguments, got {}", args.len()
+                );
+
+                let (lhs_inner, lhs_width) = match args[0].dtype() {
+                    DataType::Array(inner, width) => (inner.as_ref(), *width),
+                    dtype => polars_bail!(
+                        InvalidOperation:
+                        "arr.dot expects Array inputs, got {dtype}"
+                    ),
+                };
+                let (rhs_inner, rhs_width) = match args[1].dtype() {
+                    DataType::Array(inner, width) => (inner.as_ref(), *width),
+                    dtype => polars_bail!(
+                        InvalidOperation:
+                        "arr.dot expects Array inputs, got {dtype}"
+                    ),
+                };
+
+                polars_ensure!(
+                    lhs_width == rhs_width,
+                    ShapeMismatch:
+                    "arr.dot requires equal array widths, got {lhs_width} and {rhs_width}"
+                );
+                polars_ensure!(
+                    lhs_inner == rhs_inner,
+                    SchemaMismatch:
+                    "arr.dot requires matching inner dtypes, got {lhs_inner} and {rhs_inner}"
+                );
+                polars_ensure!(
+                    matches!(lhs_inner, DataType::Float32 | DataType::Float64),
+                    InvalidOperation:
+                    "arr.dot supports Float32 and Float64 arrays, got {}",
+                    args[0].dtype()
+                );
+
+                mapper.with_dtype(lhs_inner.clone())
+            },
             ToList => mapper
                 .ensure_is_array()?
                 .try_map_dtype(map_array_dtype_to_list_dtype),
@@ -121,6 +163,7 @@ impl IRArrayFunction {
             | A::Min
             | A::Max
             | A::Sum
+            | A::Dot
             | A::ToList
             | A::Std(_)
             | A::Var(_)
@@ -178,6 +221,7 @@ impl Display for IRArrayFunction {
             Min => "min",
             Max => "max",
             Sum => "sum",
+            Dot => "dot",
             ToList => "to_list",
             Std(_) => "std",
             Var(_) => "var",

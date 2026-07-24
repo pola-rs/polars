@@ -250,6 +250,7 @@ fn is_inherently_nondeterministic_array_fn(f: &IRArrayFunction) -> bool {
         | A::Min
         | A::Max
         | A::Sum
+        | A::Dot
         | A::ToList
         | A::Std(_)
         | A::Var(_)

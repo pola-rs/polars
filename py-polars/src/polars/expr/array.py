@@ -263,6 +263,61 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_sum())
 
+    def dot(self, other: IntoExpr) -> Expr:
+        """
+        Compute row-wise dot product with another Array expression.
+
+        Both inputs must contain equal-width arrays with matching ``Float32`` or
+        ``Float64`` inner dtypes.
+        Input with one row is broadcast against other input.
+        Products containing an inner null are ignored. An outer null row produces
+        a null.
+
+        Parameters
+        ----------
+        other
+            Array expression to compute dot product with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1.0, 2.0], [3.0, 4.0]],
+        ...         "b": [[5.0, 6.0], [7.0, 8.0]],
+        ...     },
+        ...     schema={
+        ...         "a": pl.Array(pl.Float64, 2),
+        ...         "b": pl.Array(pl.Float64, 2),
+        ...     },
+        ... )
+        >>> df.select(pl.col("a").arr.dot("b"))
+        shape: (2, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 17.0 │
+        │ 53.0 │
+        └──────┘
+
+        A one-row Array expression can be used as a broadcast query.
+
+        >>> query = pl.lit([2.0, 3.0], dtype=pl.Array(pl.Float64, 2))
+        >>> df.select(pl.col("a").arr.dot(query))
+        shape: (2, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 8.0  │
+        │ 18.0 │
+        └──────┘
+        """
+        other_pyexpr = parse_into_expression(other)
+        return wrap_expr(self._pyexpr.arr_dot(other_pyexpr))
+
     def std(self, ddof: int = 1) -> Expr:
         """
         Compute the std of the values of the sub-arrays.

@@ -76,6 +76,29 @@ class ArrayNameSpace:
         ]
         """
 
+    def dot(self, other: Series) -> Series:
+        """
+        Compute row-wise dot product with another Array Series.
+
+        Both inputs must contain equal-width arrays with matching ``Float32`` or
+        ``Float64`` inner dtypes.
+        Series with one row is broadcast against other Series.
+        Products containing an inner null are ignored. An outer null row produces
+        a null.
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [[1.0, 2.0], [3.0, 4.0]], dtype=pl.Array(pl.Float64, 2))
+        >>> b = pl.Series("b", [[5.0, 6.0], [7.0, 8.0]], dtype=pl.Array(pl.Float64, 2))
+        >>> a.arr.dot(b)
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            17.0
+            53.0
+        ]
+        """
+
     def mean(self) -> Series:
         """
         Compute the mean of the values of the sub-arrays.

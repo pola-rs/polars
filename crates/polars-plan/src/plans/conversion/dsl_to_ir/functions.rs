@@ -35,6 +35,7 @@ pub(super) fn convert_functions(
                 A::Min => IA::Min,
                 A::Max => IA::Max,
                 A::Sum => IA::Sum,
+                A::Dot => IA::Dot,
                 A::ToList => IA::ToList,
                 A::Std(v) => IA::Std(v),
                 A::Var(v) => IA::Var(v),

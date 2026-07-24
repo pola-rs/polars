@@ -80,6 +80,145 @@ def test_arr_sum(
     assert s.arr.sum().to_list() == expected_sum
 
 
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_arr_dot(dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            "b": [[7.0, 8.0, 9.0], [1.0, 2.0, 3.0]],
+        },
+        schema={
+            "a": pl.Array(dtype, 3),
+            "b": pl.Array(dtype, 3),
+        },
+    )
+
+    result = df.select(pl.col("a").arr.dot("b")).to_series()
+    expected = pl.Series("a", [50.0, 32.0], dtype=dtype)
+    assert_series_equal(result, expected)
+
+
+def test_arr_dot_broadcast_and_chunks() -> None:
+    lhs = pl.concat(
+        [
+            pl.Series("a", [[1.0, 2.0]], dtype=pl.Array(pl.Float32, 2)),
+            pl.Series("a", [[3.0, 4.0]], dtype=pl.Array(pl.Float32, 2)),
+        ],
+        rechunk=False,
+    )
+    rhs = pl.Series("b", [[10.0, 20.0]], dtype=pl.Array(pl.Float32, 2))
+
+    assert lhs.n_chunks() == 2
+    expected = pl.Series("a", [50.0, 110.0], dtype=pl.Float32)
+    assert_series_equal(lhs.arr.dot(rhs), expected)
+    assert_series_equal(rhs.arr.dot(lhs).rename("a"), expected)
+
+    null_query = pl.Series("b", [None], dtype=pl.Array(pl.Float32, 2))
+    assert_series_equal(
+        lhs.arr.dot(null_query),
+        pl.Series("a", [None, None], dtype=pl.Float32),
+    )
+
+    empty = pl.Series("a", [], dtype=pl.Array(pl.Float32, 2))
+    assert_series_equal(empty.arr.dot(rhs), pl.Series("a", [], dtype=pl.Float32))
+
+
+def test_arr_dot_nulls() -> None:
+    lhs = pl.Series(
+        "a",
+        [[1.0, None, 3.0], None, [None, 2.0, None]],
+        dtype=pl.Array(pl.Float64, 3),
+    )
+    rhs = pl.Series(
+        "b",
+        [[4.0, 5.0, None], [1.0, 1.0, 1.0], [3.0, None, 4.0]],
+        dtype=pl.Array(pl.Float64, 3),
+    )
+
+    result = lhs.arr.dot(rhs)
+    expected = pl.Series("a", [4.0, None, 0.0], dtype=pl.Float64)
+    assert_series_equal(result, expected)
+
+    zero_width = pl.Series("a", [[], None], dtype=pl.Array(pl.Float64, 0))
+    assert_series_equal(
+        zero_width.arr.dot(zero_width),
+        pl.Series("a", [0.0, None], dtype=pl.Float64),
+    )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "rel_tol", "abs_tol"),
+    [
+        (pl.Float32, 1e-5, 1e-5),
+        (pl.Float64, 1e-12, 1e-12),
+    ],
+)
+def test_arr_dot_wide_inner_nulls(
+    dtype: pl.DataType,
+    rel_tol: float,
+    abs_tol: float,
+) -> None:
+    width = 768
+    lhs_values = [
+        None
+        if index % 37 == 0
+        else (
+            (-1.0 if index % 2 else 1.0)
+            * 10.0 ** ((index % 21) - 10)
+            * (1.0 + (index % 23) / 29.0)
+        )
+        for index in range(width)
+    ]
+    rhs_values = [
+        None
+        if index % 41 == 0
+        else (index % 17 + 1) / 19.0 / 10.0 ** ((index % 21) - 10)
+        for index in range(width)
+    ]
+    lhs = pl.Series("a", [lhs_values], dtype=pl.Array(dtype, width))
+    rhs = pl.Series("b", [rhs_values], dtype=pl.Array(dtype, width))
+
+    result = lhs.arr.dot(rhs)
+    composed = (lhs * rhs).arr.sum()
+    assert_series_equal(
+        result,
+        composed,
+        check_exact=False,
+        rel_tol=rel_tol,
+        abs_tol=abs_tol,
+    )
+
+
+def test_arr_dot_errors() -> None:
+    ints = pl.Series("a", [[1, 2]], dtype=pl.Array(pl.Int64, 2))
+    with pytest.raises(InvalidOperationError, match="supports Float32 and Float64"):
+        ints.arr.dot(ints)
+    empty_ints = pl.Series("a", [], dtype=pl.Array(pl.Int64, 2))
+    with pytest.raises(InvalidOperationError, match="supports Float32 and Float64"):
+        empty_ints.arr.dot(empty_ints)
+
+    lhs = pl.Series("a", [[1.0, 2.0]], dtype=pl.Array(pl.Float64, 2))
+    float32 = pl.Series("b", [[1.0, 2.0]], dtype=pl.Array(pl.Float32, 2))
+    with pytest.raises(pl.exceptions.SchemaError, match="matching inner dtypes"):
+        lhs.arr.dot(float32)
+
+    different_width = pl.Series("b", [[1.0, 2.0, 3.0]], dtype=pl.Array(pl.Float64, 3))
+    with pytest.raises(pl.exceptions.ShapeError, match="equal array widths"):
+        lhs.arr.dot(different_width)
+
+    different_rows = pl.Series(
+        "b",
+        [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]],
+        dtype=pl.Array(pl.Float64, 2),
+    )
+    two_rows = pl.concat([lhs, lhs])
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"(equal row counts)|(zip node received non-equal length inputs)",
+    ):
+        two_rows.arr.dot(different_rows)
+
+
 @pytest.mark.may_fail_cloud
 def test_array_lengths_zwa() -> None:
     assert pl.Series("a", [[], []], pl.Array(pl.Null, 0)).arr.len().to_list() == [0, 0]
