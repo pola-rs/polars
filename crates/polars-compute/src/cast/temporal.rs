@@ -52,7 +52,7 @@ fn utf8view_to_timestamp_impl(
 /// # Implementation
 ///
 /// * parsed values with timezone other than `timezone` are converted to `timezone`.
-/// * parsed values without timezone are null. Use [`utf8_to_naive_timestamp`] to parse naive timezones.
+/// * parsed values without timezone are null.
 /// * Null elements remain null; non-parsable elements are null.
 ///
 /// The feature `"chrono-tz"` enables IANA and zoneinfo formats for `timezone`.
@@ -77,22 +77,6 @@ pub(crate) fn utf8view_to_timestamp(
     }
 }
 
-/// Parses a [`Utf8Array`] to naive timestamp, i.e.
-/// [`PrimitiveArray<i64>`] with type `Timestamp(Nanosecond, None)`.
-/// Timezones are ignored.
-/// Null elements remain null; non-parsable elements are set to null.
-pub(crate) fn utf8view_to_naive_timestamp(
-    array: &Utf8ViewArray,
-    fmt: &str,
-    time_unit: TimeUnit,
-) -> PrimitiveArray<i64> {
-    let iter = array
-        .iter()
-        .map(|x| x.and_then(|x| utf8_to_naive_timestamp_scalar(x, fmt, &time_unit)));
-
-    PrimitiveArray::from_trusted_len_iter(iter).to(ArrowDataType::Timestamp(time_unit, None))
-}
-
 /// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp without timezone.
 /// Returns in scale `tz` of `TimeUnit`.
 #[inline]
@@ -103,15 +87,7 @@ pub fn utf8_to_naive_timestamp_scalar(value: &str, fmt: &str, tu: &TimeUnit) -> 
     let dt = if fmt == "%+" {
         value.parse::<NaiveDateTime>().ok()?
     } else {
-        NaiveDateTime::strptime(fmt, value).ok().or_else(|| {
-            // This is only ever called with the fixed RFC3339 format (a
-            // trailing `%:z`) for the "naive" cast path - jiff requires an
-            // exact structural match, so a value with no offset at all
-            // (genuinely naive input) needs the offset directive dropped
-            // and the parse retried, matching this cast's contract of
-            // accepting offset-less input.
-            NaiveDateTime::strptime(fmt.strip_suffix("%:z")?, value).ok()
-        })?
+        NaiveDateTime::strptime(fmt, value).ok()?
     };
     let ts = TimeZone::UTC.to_timestamp(dt).ok()?;
     Some(match tu {
