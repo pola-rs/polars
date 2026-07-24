@@ -56,6 +56,10 @@ pub trait ArrayNameSpace: AsArray {
         }
     }
 
+    fn array_dot(&self, other: &ArrayChunked) -> PolarsResult<Series> {
+        dot::array_dot(self.as_array(), other)
+    }
+
     fn array_mean(&self) -> PolarsResult<Series> {
         let ca = self.as_array();
         dispersion::mean_with_nulls(ca)
