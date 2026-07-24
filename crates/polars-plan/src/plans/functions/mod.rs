@@ -1,5 +1,6 @@
 mod count;
 mod dsl;
+mod equality;
 mod hint;
 #[cfg(feature = "python")]
 mod python_udf;
@@ -91,7 +92,14 @@ impl Hash for FunctionIR {
                 let ptr_addr = function.0.as_ptr() as usize;
                 ptr_addr.hash(state);
             },
-            FunctionIR::Opaque { fmt_str, .. } => fmt_str.hash(state),
+            FunctionIR::Opaque {
+                function, fmt_str, ..
+            } => {
+                // There is no meaningful structural hash for a `dyn DataFrameUdf`; use the `Arc`
+                // allocation address as its identity, matching `PartialEq` (`Arc::ptr_eq`).
+                (Arc::as_ptr(function) as *const () as usize).hash(state);
+                fmt_str.hash(state);
+            },
             FunctionIR::FastCount {
                 sources,
                 scan_type,

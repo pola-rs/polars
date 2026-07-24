@@ -7,7 +7,6 @@ use super::*;
 #[cfg(feature = "python")]
 use crate::plans::PythonOptions;
 use crate::plans::{AExpr, IR, UnoptimizedOperation};
-use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::{ExprIR, PlanCallback};
 
 impl IRNode {
@@ -261,13 +260,9 @@ impl Hash for IRHashWrap<'_> {
             },
             IR::ExtContext {
                 input: _,
-                contexts,
+                contexts: _,
                 schema: _,
-            } => {
-                for node in contexts {
-                    traverse_and_hash_aexpr(*node, self.expr_arena, state);
-                }
-            },
+            } => {},
             IR::Sink { input: _, payload } => {
                 payload.traverse_and_hash(self.expr_arena, state);
             },
