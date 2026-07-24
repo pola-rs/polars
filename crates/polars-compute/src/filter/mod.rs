@@ -13,7 +13,7 @@ use arrow::array::{
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::utils::SlicesIterator;
 use arrow::with_match_primitive_type_full;
-pub use boolean::filter_boolean_kernel;
+pub use boolean::{expand_boolean_kernel, filter_boolean_kernel};
 
 pub fn filter(array: &dyn Array, mask: &BooleanArray) -> Box<dyn Array> {
     assert_eq!(array.len(), mask.len());

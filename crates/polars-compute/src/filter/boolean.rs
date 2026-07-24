@@ -1,4 +1,5 @@
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::bitmask::BitMask;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_utils::clmul::prefix_xorsum;
 
 const U56_MAX: u64 = (1 << 56) - 1;
@@ -51,6 +52,40 @@ fn pext64_polyfill(mut v: u64, mut m: u64, m_popcnt: u32) -> u64 {
     v
 }
 
+fn pdep64_polyfill(mut v: u64, mut m: u64, m_popcnt: u32) -> u64 {
+    // Empirically determined crossover for fast path.
+    if m_popcnt <= 8 {
+        let mut out = 0;
+        while m != 0 {
+            let lowest_mask_bit = m & m.wrapping_neg();
+            out |= lowest_mask_bit & (v & 1).wrapping_neg();
+            v >>= 1;
+            m &= m - 1;
+        }
+        return out;
+    }
+    // As for pext, see https://github.com/zwegner/zp7. This is Hacker's
+    // Delight 7-5, parallel suffix method for expand.
+    v &= u64::MAX >> (64 - m_popcnt);
+    let mut invm = !m;
+    let mut prefix_count_bits = [0; 6];
+    for (i, prefix_count_bit) in prefix_count_bits.iter_mut().enumerate() {
+        *prefix_count_bit = if i < 5 {
+            prefix_xorsum(invm)
+        } else {
+            invm.wrapping_neg() << 1
+        };
+        invm &= *prefix_count_bit;
+    }
+
+    for i in (0..6).rev() {
+        let shift = 1 << i;
+        let bit = prefix_count_bits[i] >> shift;
+        v = (v & !bit) + ((v & bit) << shift);
+    }
+    v
+}
+
 pub fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
     assert_eq!(values.len(), mask.len());
     let mask_bits_set = mask.set_bits();
@@ -98,6 +133,81 @@ pub fn filter_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
     }
 
     Bitmap::from_u8_vec(out_vec, mask_bits_set)
+}
+
+fn expand_boolean_kernel_impl<F: Fn(u64, u64, u32) -> u64>(
+    values: &Bitmap,
+    mask: &Bitmap,
+    pdep: F,
+) -> Bitmap {
+    let values = BitMask::from_bitmap(values);
+    let mut values_offset = 0;
+    let mut builder = BitmapBuilder::with_capacity(mask.len());
+
+    let mut mask_chunks = mask.chunks::<u64>();
+    for mask_word in &mut mask_chunks {
+        let mask_popcnt = mask_word.count_ones();
+        let values_word = values.get_u64(values_offset);
+        values_offset += mask_popcnt as usize;
+
+        // SAFETY: the builder has capacity for `mask.len()` bits and every full mask chunk adds
+        // exactly 64 bits.
+        unsafe {
+            builder.push_word_with_len_unchecked(pdep(values_word, mask_word, mask_popcnt), 64)
+        };
+    }
+
+    let remainder_len = mask_chunks.remainder_len();
+    if remainder_len > 0 {
+        let mask_word = mask_chunks.remainder();
+        let mask_popcnt = mask_word.count_ones();
+        let values_word = values.get_u64(values_offset);
+        values_offset += mask_popcnt as usize;
+
+        // SAFETY: `remainder_len` is the exact unused capacity and is at most 63 bits.
+        unsafe {
+            builder.push_word_with_len_unchecked(
+                pdep(values_word, mask_word, mask_popcnt),
+                remainder_len,
+            )
+        };
+    }
+
+    debug_assert_eq!(values_offset, values.len());
+    builder.freeze()
+}
+
+/// Expands the bits in `values` into the set positions of `mask`.
+///
+/// The returned bitmap has the length of `mask`; positions where `mask` is unset are also unset in
+/// the result. The number of bits in `values` must equal the number of set bits in `mask`.
+pub fn expand_boolean_kernel(values: &Bitmap, mask: &Bitmap) -> Bitmap {
+    let mask_bits_set = mask.set_bits();
+    assert_eq!(values.len(), mask_bits_set);
+
+    if mask_bits_set == 0 {
+        return Bitmap::new_zeroed(mask.len());
+    } else if mask_bits_set == mask.len() {
+        return values.clone();
+    }
+
+    if let Some(num_value_bits) = values.lazy_set_bits() {
+        if num_value_bits == 0 {
+            return Bitmap::new_zeroed(mask.len());
+        } else if num_value_bits == values.len() {
+            return mask.clone();
+        }
+    }
+
+    if polars_utils::cpuid::has_fast_bmi2() {
+        #[cfg(target_arch = "x86_64")]
+        return expand_boolean_kernel_impl(values, mask, |v, m, _| unsafe {
+            // SAFETY: has_fast_bmi2 ensures this is a legal instruction.
+            core::arch::x86_64::_pdep_u64(v, m)
+        });
+    }
+
+    expand_boolean_kernel_impl(values, mask, pdep64_polyfill)
 }
 
 /// # Safety
@@ -263,6 +373,28 @@ mod test {
         out
     }
 
+    fn naive_pdep64(word: u64, mask: u64) -> u64 {
+        let mut out = 0;
+        let mut word_idx = 0;
+
+        for i in 0..64 {
+            if (mask >> i) & 1 == 1 {
+                out |= ((word >> word_idx) & 1) << i;
+                word_idx += 1;
+            }
+        }
+
+        out
+    }
+
+    fn naive_expand(values: &Bitmap, mask: &Bitmap) -> Bitmap {
+        assert_eq!(values.len(), mask.set_bits());
+        let mut values = values.iter();
+        mask.iter()
+            .map(|selected| selected && values.next().unwrap())
+            .collect()
+    }
+
     #[test]
     fn test_pext64() {
         // Verify polyfill against naive implementation.
@@ -289,6 +421,68 @@ mod test {
                 naive_pext64(x, mask),
                 pext64_polyfill(x, mask, mask.count_ones())
             );
+        }
+    }
+
+    #[test]
+    fn test_pdep64() {
+        let mut rng = StdRng::seed_from_u64(0xdeadbeef);
+        for _ in 0..100 {
+            let x = rng.random();
+            let y: u64 = rng.random();
+            assert_eq!(naive_pdep64(x, y), pdep64_polyfill(x, y, y.count_ones()));
+
+            assert_eq!(naive_pdep64(0, y), pdep64_polyfill(0, y, y.count_ones()));
+            assert_eq!(
+                naive_pdep64(u64::MAX, y),
+                pdep64_polyfill(u64::MAX, y, y.count_ones())
+            );
+            assert_eq!(naive_pdep64(x, 0), pdep64_polyfill(x, 0, 0));
+            assert_eq!(naive_pdep64(x, u64::MAX), pdep64_polyfill(x, u64::MAX, 64));
+        }
+    }
+
+    #[test]
+    fn test_expand_boolean_kernel() {
+        let mask: Bitmap = [false, true, true, false, true, false]
+            .into_iter()
+            .collect();
+        let values: Bitmap = [true, false, true].into_iter().collect();
+        let expected: Bitmap = [false, true, false, false, true, false]
+            .into_iter()
+            .collect();
+        assert_eq!(expand_boolean_kernel(&values, &mask), expected);
+
+        let mut rng = StdRng::seed_from_u64(0xc0ffee);
+        for len in [0, 1, 7, 8, 55, 56, 57, 63, 64, 65, 127, 128, 129, 257] {
+            for mask_offset in 0..8 {
+                let mask_storage: Bitmap =
+                    (0..len + mask_offset + 8).map(|_| rng.random()).collect();
+                let mask = mask_storage.sliced(mask_offset, len);
+                let num_values = mask.set_bits();
+
+                for values_offset in 0..8 {
+                    let values_storage: Bitmap = (0..num_values + values_offset + 8)
+                        .map(|_| rng.random())
+                        .collect();
+                    let values = values_storage.sliced(values_offset, num_values);
+                    let expected = naive_expand(&values, &mask);
+
+                    assert_eq!(expand_boolean_kernel(&values, &mask), expected);
+                    assert_eq!(
+                        expand_boolean_kernel_impl(&values, &mask, pdep64_polyfill),
+                        expected,
+                    );
+                    assert_eq!(filter_boolean_kernel(&expected, &mask), values);
+                }
+
+                let original_storage: Bitmap =
+                    (0..len + mask_offset + 8).map(|_| rng.random()).collect();
+                let original = original_storage.sliced(mask_offset, len);
+                let compressed = filter_boolean_kernel(&original, &mask);
+                let expanded = expand_boolean_kernel(&compressed, &mask);
+                assert_eq!(expanded, &original & &mask);
+            }
         }
     }
 }
