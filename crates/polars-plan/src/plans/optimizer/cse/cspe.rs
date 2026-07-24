@@ -4,7 +4,6 @@ use std::ops::ControlFlow;
 
 use hashbrown::HashTable;
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
-use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
@@ -163,13 +162,13 @@ impl Hasher for Blake3Hasher {
 }
 
 struct HashExpressionCmp {
-    expr_hash_cache: PlHashMap<Node, [u8; 32]>,
+    expr_hash_cache: PlIndexMap<Node, [u8; 32]>,
 }
 
 impl HashExpressionCmp {
     fn new() -> Self {
         Self {
-            expr_hash_cache: PlHashMap::new(),
+            expr_hash_cache: PlIndexMap::new(),
         }
     }
 

@@ -50,7 +50,7 @@ impl IR {
             };
         }
 
-        let is_equal = match self {
+        match self {
             #[cfg(feature = "python")]
             IR::PythonScan { options: l_options } => {
                 let IR::PythonScan { options: r_options } = other else {
@@ -435,8 +435,6 @@ impl IR {
                 todo!("Implement PartialEq for UnoptimizedOperation and ArgMap");
             },
             IR::Invalid => unreachable!("cannot compare `IR::Invalid`"),
-        };
-
-        is_equal
+        }
     }
 }
