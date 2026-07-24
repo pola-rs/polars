@@ -5,6 +5,7 @@ use arrow::offset::Offsets;
 use arrow::pushable::Pushable;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_error::constants::LENGTH_LIMIT_MSG;
 
 type LargeListArray = ListArray<i64>;
 
@@ -279,6 +280,9 @@ pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
         _ => polars_bail!(opq = repeat_by, s.dtype()),
     };
     out.and_then(|ca| {
+        // `ca.len()` is the number of output rows (one list per input row), not the total
+        // number of repeated elements, which is what can actually overflow `IdxSize`.
+        polars_ensure!(ca.inner_length() < IdxSize::MAX as usize, ComputeError: "{LENGTH_LIMIT_MSG}");
         let logical_type = s.dtype();
         ca.apply_to_inner(&|s| unsafe { s.from_physical_unchecked(logical_type) })
     })
