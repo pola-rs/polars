@@ -173,10 +173,6 @@ impl HashExpressionCmp {
         }
     }
 
-    /// Blake3 digest of the expression, mirroring `ExprIR::traverse_and_hash`: the (cached)
-    /// digest of the `AExpr` subtree, with the explicit alias mixed in. Keeping the alias in
-    /// the digest keeps this comparator consistent with `shallow_hasher`/`IRHashWrap`, which
-    /// also hash the alias.
     fn expr_hash(&mut self, expr: &ExprIR, expr_arena: &Arena<AExpr>) -> [u8; 32] {
         let tree_hash = *self.expr_hash_cache.entry(expr.node()).or_insert_with(|| {
             let mut hasher = Blake3Hasher::new();
@@ -184,10 +180,11 @@ impl HashExpressionCmp {
             hasher.finalize()
         });
 
+        // Multiple ExprIRs can reference the same Node, but have different names.
+        // The alias is included in the IRHashWrap hasher, so we need to include it here as well.
         match expr.get_alias() {
             None => tree_hash,
             Some(alias) => {
-                // `tree_hash` is fixed-width, so there's no boundary ambiguity with the alias.
                 let mut hasher = Blake3Hasher::new();
                 hasher.write(&tree_hash);
                 hasher.write(alias.as_bytes());
