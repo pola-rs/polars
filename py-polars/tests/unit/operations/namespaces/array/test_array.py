@@ -212,7 +212,10 @@ def test_arr_dot_errors() -> None:
         dtype=pl.Array(pl.Float64, 2),
     )
     two_rows = pl.concat([lhs, lhs])
-    with pytest.raises(pl.exceptions.ShapeError, match="equal row counts"):
+    with pytest.raises(
+        pl.exceptions.ShapeError,
+        match=r"(equal row counts)|(zip node received non-equal length inputs)",
+    ):
         two_rows.arr.dot(different_rows)
 
 
