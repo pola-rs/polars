@@ -73,13 +73,11 @@ def test_except_intersect_by_name() -> None:
 @pytest.mark.parametrize(
     ("op", "op_subtype"),
     [
-        ("EXCEPT", "ALL"),
         ("EXCEPT", "ALL BY NAME"),
-        ("INTERSECT", "ALL"),
         ("INTERSECT", "ALL BY NAME"),
     ],
 )
-def test_except_intersect_all_unsupported(op: str, op_subtype: str) -> None:
+def test_except_intersect_all_by_name_unsupported(op: str, op_subtype: str) -> None:
     df1 = pl.DataFrame({"n": [1, 1, 1, 2, 2, 2, 3]})
     df2 = pl.DataFrame({"n": [1, 1, 2, 2]})
 
@@ -88,6 +86,110 @@ def test_except_intersect_all_unsupported(op: str, op_subtype: str) -> None:
         match=f"'{op} {op_subtype}' is not supported",
     ):
         pl.sql(f"SELECT * FROM df1 {op} {op_subtype} SELECT * FROM df2", eager=True)
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        ("EXCEPT ALL", [1, 2, 3]),
+        ("INTERSECT ALL", [1, 1, 2, 2]),
+    ],
+)
+def test_except_intersect_all_bag_semantics(op: str, expected: list[int]) -> None:
+    # df1 has three 1s and three 2s, one 3; df2 has two 1s and two 2s
+    df1 = pl.DataFrame({"n": [1, 1, 1, 2, 2, 2, 3]})
+    df2 = pl.DataFrame({"n": [1, 1, 2, 2]})
+
+    res = pl.sql(f"SELECT n FROM df1 {op} SELECT n FROM df2 ORDER BY n", eager=True)
+    assert res["n"].to_list() == expected
+
+
+def test_except_intersect_all_nulls() -> None:
+    # NULLs compare equal for set-op purposes; bag counts still apply
+    df1 = pl.DataFrame({"n": [1, None, None]})
+    df2 = pl.DataFrame({"n": [1, None]})
+
+    res_e = pl.sql("SELECT n FROM df1 EXCEPT ALL SELECT n FROM df2", eager=True)
+    assert res_e["n"].to_list() == [None]
+
+    res_i = pl.sql("SELECT n FROM df1 INTERSECT ALL SELECT n FROM df2", eager=True)
+    assert sorted(res_i["n"].to_list(), key=lambda v: (v is None, v)) == [1, None]
+
+
+def test_except_distinct_nulls_compare_equal() -> None:
+    # NULLs must compare equal for (non-ALL/DISTINCT) set-op purposes too: the
+    # NULL row in df1 is matched away by the NULL row in df2.
+    df1 = pl.DataFrame({"x": [1, 2, None]}, schema={"x": pl.Int64})
+    df2 = pl.DataFrame({"x": [2, None]}, schema={"x": pl.Int64})
+
+    res = pl.sql("SELECT x FROM df1 EXCEPT SELECT x FROM df2", eager=True)
+    assert res["x"].to_list() == [1]
+
+
+def test_mixed_chain_set_ops() -> None:
+    a = pl.DataFrame({"v": [1, 2]})
+    b = pl.DataFrame({"v": [2, 3]})
+    c = pl.DataFrame({"v": [2]})
+
+    with pl.SQLContext(a=a, b=b, c=c, eager=True) as ctx:
+        # (a UNION b) EXCEPT c
+        res = ctx.execute(
+            "SELECT v FROM a UNION SELECT v FROM b EXCEPT SELECT v FROM c ORDER BY v"
+        )
+        assert res["v"].to_list() == [1, 3]
+
+        # INTERSECT has higher precedence than UNION/EXCEPT:
+        # `a UNION b INTERSECT c` parses as `a UNION (b INTERSECT c)`
+        d = pl.DataFrame({"v": [1, 3]})
+        ctx.register("d", d)
+        res = ctx.execute(
+            "SELECT v FROM a UNION SELECT v FROM b INTERSECT SELECT v FROM d ORDER BY v"
+        )
+        # b INTERSECT d = {3}; a UNION {3} = {1, 2, 3}
+        assert res["v"].to_list() == [1, 2, 3]
+
+
+def test_four_term_mixed_chain_set_ops() -> None:
+    # (a UNION ALL b) EXCEPT (c INTERSECT d): c INTERSECT d = {1, 3};
+    # a UNION ALL b = [1, 2, 2, 3]; removing {1, 3} then DISTINCT -> {2}
+    a = pl.DataFrame({"v": [1, 2]})
+    b = pl.DataFrame({"v": [2, 3]})
+    c = pl.DataFrame({"v": [1, 3]})
+    d = pl.DataFrame({"v": [1, 2, 3, 4]})
+
+    with pl.SQLContext(a=a, b=b, c=c, d=d, eager=True) as ctx:
+        res = ctx.execute(
+            "SELECT v FROM a UNION ALL SELECT v FROM b "
+            "EXCEPT SELECT v FROM c INTERSECT SELECT v FROM d ORDER BY v"
+        )
+        assert res["v"].to_list() == [2]
+
+
+def test_except_positional_column_matching_differing_names() -> None:
+    # set-op columns are matched positionally, using the first operand's
+    # names for the output -- names need not match between operands
+    df1 = pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]})
+    df2 = pl.DataFrame({"x": [2, 3, 4], "y": [20, 30, 40]})
+
+    res = pl.sql(
+        "SELECT a, b FROM df1 EXCEPT SELECT x, y FROM df2 ORDER BY a", eager=True
+    )
+    assert res.columns == ["a", "b"]
+    assert res.rows() == [(1, 10)]
+
+
+def test_union_chain_order_by_and_limit_on_whole_chain() -> None:
+    # ORDER BY/LIMIT applies to the whole 3-way (plain, deduping) UNION chain
+    a = pl.DataFrame({"v": [3, 1]})
+    b = pl.DataFrame({"v": [5, 2]})
+    c = pl.DataFrame({"v": [4, 6]})
+
+    res = pl.sql(
+        "SELECT v FROM a UNION SELECT v FROM b UNION SELECT v FROM c "
+        "ORDER BY v LIMIT 3",
+        eager=True,
+    )
+    assert res["v"].to_list() == [1, 2, 3]
 
 
 def test_update_statement_error() -> None:
@@ -143,20 +245,20 @@ def test_except_intersect_union_errors(op: str) -> None:
     df1 = pl.DataFrame({"x": [1, 9, 1, 1], "y": [2, 3, 4, 4], "z": [5, 5, 5, 5]})
     df2 = pl.DataFrame({"x": [1, 9, 1], "y": [2, None, 4], "z": [7, 6, 5]})
 
-    if op != "UNION":
-        with pytest.raises(
-            SQLInterfaceError,
-            match=f"'{op} ALL' is not supported",
-        ):
-            pl.sql(
-                f"SELECT * FROM df1 {op} ALL SELECT * FROM df2", eager=False
-            ).collect()
-
     with pytest.raises(
         SQLInterfaceError,
         match=f"{op} requires equal number of columns in each table",
     ):
         pl.sql(f"SELECT x FROM df1 {op} SELECT x, y FROM df2", eager=False).collect()
+
+    if op != "UNION":
+        with pytest.raises(
+            SQLInterfaceError,
+            match=f"{op} requires equal number of columns in each table",
+        ):
+            pl.sql(
+                f"SELECT x FROM df1 {op} ALL SELECT x, y FROM df2", eager=False
+            ).collect()
 
 
 @pytest.mark.parametrize(

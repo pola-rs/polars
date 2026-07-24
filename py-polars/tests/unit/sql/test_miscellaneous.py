@@ -613,7 +613,7 @@ def test_count_partition_22665(query: str, result: list[Any]) -> None:
         }
     )
     out = df.sql(query).select("b")
-    expected = pl.DataFrame({"b": result}).cast({"b": pl.get_index_type()})
+    expected = pl.DataFrame({"b": result}).cast({"b": pl.Int64})
     assert_frame_equal(out, expected)
 
 
