@@ -223,15 +223,18 @@ def _in_notebook() -> bool:
     try:
         from IPython import get_ipython
 
-        if (
-            ipy := get_ipython()
-        ) is not None and "IPKernelApp" not in ipy.config:  # pragma: no cover
+        ipy = get_ipython()
+        if ipy is None:
+            # IPython is importable, but no shell/kernel is actually running
+            # (e.g. a plain script executed where IPython merely happens to
+            # be installed as a dependency of something else).
             return False
+        else:
+            return "IPKernelApp" in ipy.config  # pragma: no cover
     except ImportError:
         return False
     except AttributeError:
         return False
-    return True
 
 
 def _in_marimo_notebook() -> bool:
