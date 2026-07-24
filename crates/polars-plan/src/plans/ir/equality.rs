@@ -1,34 +1,20 @@
 use std::sync::Arc;
 
-use polars_utils::arena::{Arena, Node};
+use polars_utils::arena::Arena;
 
 use super::IR;
 use crate::plans::{AExpr, ArrowPredicate, ExprIR, PythonOptions, PythonPredicate};
 
-impl IR {
-    fn expr_eq<'a, 's>(
-        lhs: &'a ExprIR,
-        rhs: &'a ExprIR,
-        expr_arena: &'a Arena<AExpr>,
-        expr_eq_stack_l: &'s mut Vec<Node>,
-        expr_eq_stack_r: &'s mut Vec<Node>,
-    ) -> bool {
-        let lhs = lhs.node();
-        let rhs = rhs.node();
-        expr_arena.get(lhs).is_expr_equal_to_amortized(
-            expr_arena.get(rhs),
-            expr_arena,
-            expr_eq_stack_l,
-            expr_eq_stack_r,
-        )
-    }
+pub trait ExpressionComparator {
+    fn equals(&mut self, lhs: &ExprIR, rhs: &ExprIR, expr_arena: &Arena<AExpr>) -> bool;
+}
 
-    fn expr_iter_eq<'a, 's, T>(
+impl IR {
+    fn expr_iter_eq<'a, T>(
         lhs: T,
         rhs: T,
-        expr_arena: &'a Arena<AExpr>,
-        expr_eq_stack_l: &'s mut Vec<Node>,
-        expr_eq_stack_r: &'s mut Vec<Node>,
+        expr_arena: &Arena<AExpr>,
+        cmp: &mut impl ExpressionComparator,
     ) -> bool
     where
         T: IntoIterator<Item = &'a ExprIR>,
@@ -36,43 +22,29 @@ impl IR {
     {
         let lhs = lhs.into_iter();
         let rhs = rhs.into_iter();
-        lhs.len() == rhs.len()
-            && lhs
-                .zip(rhs)
-                .all(|(l, r)| Self::expr_eq(l, r, expr_arena, expr_eq_stack_l, expr_eq_stack_r))
+        lhs.len() == rhs.len() && lhs.zip(rhs).all(|(l, r)| cmp.equals(l, r, expr_arena))
     }
 
-    /// Compares two IR nodes at the top level, but still recurses into ExprIRs to check their
-    /// structural equality
-    pub fn is_ir_equal_shallow(&self, other: &Self, expr_arena: &Arena<AExpr>) -> bool {
+    /// Compares two IR nodes at the top level, applying a custom comparator to compare child expressions
+    pub fn is_ir_equal_shallow(
+        &self,
+        other: &Self,
+        expr_arena: &Arena<AExpr>,
+        expression_cmp: &mut impl ExpressionComparator,
+    ) -> bool {
         if std::mem::discriminant(self) != std::mem::discriminant(other) {
             return false;
         }
 
-        let mut expr_eq_stack_l = vec![];
-        let mut expr_eq_stack_r = vec![];
-
         macro_rules! expr_eq {
             ($lhs:expr, $rhs:expr) => {
-                Self::expr_eq(
-                    $lhs,
-                    $rhs,
-                    expr_arena,
-                    &mut expr_eq_stack_l,
-                    &mut expr_eq_stack_r,
-                )
+                expression_cmp.equals($lhs, $rhs, expr_arena)
             };
         }
 
         macro_rules! expr_iter_eq {
             ($lhs:expr, $rhs:expr) => {
-                Self::expr_iter_eq(
-                    $lhs,
-                    $rhs,
-                    expr_arena,
-                    &mut expr_eq_stack_l,
-                    &mut expr_eq_stack_r,
-                )
+                Self::expr_iter_eq($lhs, $rhs, expr_arena, expression_cmp)
             };
         }
 

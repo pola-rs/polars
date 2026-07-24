@@ -4,13 +4,15 @@ use std::ops::ControlFlow;
 
 use hashbrown::HashTable;
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
+use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
+use crate::plans::aexpr::traverse_and_hash_aexpr;
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::visitor::hash::IRHashWrap;
-use crate::plans::{AExpr, IR};
+use crate::plans::{AExpr, ExprIR, ExpressionComparator, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::tree_traversal::{PersistInputEdgeIdxs, TreeTraversalImpl};
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
@@ -53,6 +55,7 @@ pub fn common_subplan_elimination(
             deduplication_map: &mut deduplication_map,
             id_map: &mut id_map,
             expr_arena,
+            expr_cmp: HashExpressionCmp::new(),
         },
     }
     .traverse_rec(root, 0, false)
@@ -114,6 +117,7 @@ struct IDGeneratorVisitor<'map, 'arena> {
     deduplication_map: &'map mut HashTable<DeduplicationEntry>,
     id_map: &'map mut PlIndexMap<DeduplicationId, IDState>,
     expr_arena: &'arena Arena<AExpr>,
+    expr_cmp: HashExpressionCmp,
 }
 
 fn shallow_hasher<'a>(
@@ -132,16 +136,84 @@ fn shallow_hasher<'a>(
     hasher.finish()
 }
 
+struct Blake3Hasher {
+    hasher: blake3::Hasher,
+}
+
+impl Blake3Hasher {
+    fn new() -> Self {
+        Self {
+            hasher: blake3::Hasher::new(),
+        }
+    }
+
+    fn finalize(self) -> [u8; 32] {
+        self.hasher.finalize().into()
+    }
+}
+
+impl Hasher for Blake3Hasher {
+    fn finish(&self) -> u64 {
+        0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.hasher.update(bytes);
+    }
+}
+
+struct HashExpressionCmp {
+    expr_hash_cache: PlHashMap<Node, [u8; 32]>,
+}
+
+impl HashExpressionCmp {
+    fn new() -> Self {
+        Self {
+            expr_hash_cache: PlHashMap::new(),
+        }
+    }
+
+    /// Blake3 digest of the expression, mirroring `ExprIR::traverse_and_hash`: the (cached)
+    /// digest of the `AExpr` subtree, with the explicit alias mixed in. Keeping the alias in
+    /// the digest keeps this comparator consistent with `shallow_hasher`/`IRHashWrap`, which
+    /// also hash the alias.
+    fn expr_hash(&mut self, expr: &ExprIR, expr_arena: &Arena<AExpr>) -> [u8; 32] {
+        let tree_hash = *self.expr_hash_cache.entry(expr.node()).or_insert_with(|| {
+            let mut hasher = Blake3Hasher::new();
+            traverse_and_hash_aexpr(expr.node(), expr_arena, &mut hasher);
+            hasher.finalize()
+        });
+
+        match expr.get_alias() {
+            None => tree_hash,
+            Some(alias) => {
+                // `tree_hash` is fixed-width, so there's no boundary ambiguity with the alias.
+                let mut hasher = Blake3Hasher::new();
+                hasher.write(&tree_hash);
+                hasher.write(alias.as_bytes());
+                hasher.finalize()
+            },
+        }
+    }
+}
+
+impl ExpressionComparator for HashExpressionCmp {
+    fn equals(&mut self, lhs: &ExprIR, rhs: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
+        self.expr_hash(lhs, expr_arena) == self.expr_hash(rhs, expr_arena)
+    }
+}
+
 fn shallow_eq<'a>(
     lhs: Node,
     rhs: Node,
     lp_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
+    expr_cmp: &mut HashExpressionCmp,
 ) -> bool {
     let lhs = lp_arena.get(lhs);
     let rhs = lp_arena.get(rhs);
 
-    lhs.is_ir_equal_shallow(rhs, expr_arena)
+    lhs.is_ir_equal_shallow(rhs, expr_arena, expr_cmp)
 }
 
 fn get_deduplication_id<'a>(
@@ -150,6 +222,7 @@ fn get_deduplication_id<'a>(
     child_ids: Vec<DeduplicationId>,
     lp_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
+    expr_cmp: &mut HashExpressionCmp,
 ) -> DeduplicationId {
     let shallow_hash = shallow_hasher(node, &child_ids, lp_arena, expr_arena);
 
@@ -158,7 +231,7 @@ fn get_deduplication_id<'a>(
         .entry(
             shallow_hash,
             |other| {
-                shallow_eq(node, other.representative, lp_arena, expr_arena)
+                shallow_eq(node, other.representative, lp_arena, expr_arena, expr_cmp)
                     && child_ids == other.child_ids
             },
             |other| shallow_hasher(other.representative, &child_ids, lp_arena, expr_arena),
@@ -211,7 +284,8 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
             key,
             child_ids,
             storage.arena,
-            &self.expr_arena,
+            self.expr_arena,
+            &mut self.expr_cmp,
         );
 
         use indexmap::map::Entry;
