@@ -526,7 +526,7 @@ impl RowGroupDecoder {
             }
         }
 
-        let (live_df_filtered, mut mask) = if use_column_predicates {
+        let (live_df_filtered, mask) = if use_column_predicates {
             assert!(
                 scan_predicate
                     .column_predicates
@@ -595,11 +595,22 @@ impl RowGroupDecoder {
             )
         };
 
+        self.finish_prefiltered_decode(row_group_data, live_df_filtered, mask)
+            .await
+    }
+
+    async fn finish_prefiltered_decode(
+        &self,
+        row_group_data: Arc<RowGroupData>,
+        live_df_filtered: DataFrame,
+        mut mask: BooleanChunked,
+    ) -> PolarsResult<DataFrame> {
         if self.projected_field_classification.payload.is_empty() {
             // User or test may have explicitly requested prefiltering
             return Ok(live_df_filtered);
         }
 
+        let projection_height = row_group_data.row_group_metadata.num_rows();
         mask.rechunk_mut();
         let mask_bitmap = mask.downcast_as_array();
         let mask_bitmap = match mask_bitmap.validity() {
@@ -611,65 +622,82 @@ impl RowGroupDecoder {
 
         let expected_num_rows = mask_bitmap.set_bits();
 
+        let payload_columns = self
+            .decode_columns_prefiltered(
+                row_group_data,
+                self.projected_field_classification.payload.clone(),
+                &mask,
+                &mask_bitmap,
+                expected_num_rows,
+            )
+            .await?;
+
+        let live_columns = live_df_filtered.into_columns();
+
+        let mut merged = live_columns;
+        merged.extend(payload_columns);
+        let df = unsafe { DataFrame::new_unchecked(expected_num_rows, merged) };
+        Ok(df)
+    }
+
+    async fn decode_columns_prefiltered(
+        &self,
+        row_group_data: Arc<RowGroupData>,
+        field_indices: Arc<[usize]>,
+        mask: &BooleanChunked,
+        mask_bitmap: &Bitmap,
+        expected_num_rows: usize,
+    ) -> PolarsResult<Vec<Column>> {
+        let num_fields = field_indices.len();
         let cols_per_thread = (self
             .projected_field_classification
             .live_predicate
             .len()
             .div_ceil(self.num_pipelines))
         .max(1);
-
         let task_handles = {
-            let payload_field_indices = self.projected_field_classification.payload.clone();
-            let payload_len = payload_field_indices.len();
             let projected_arrow_fields = self.projected_arrow_fields.clone();
             let row_group_data = row_group_data.clone();
+            let mask = mask.clone();
+            let mask_bitmap = mask_bitmap.clone();
 
             parallelize_first_to_local(
                 TaskPriority::Low,
-                (0..payload_len)
-                    .step_by(cols_per_thread)
-                    .map(move |offset| {
-                        let row_group_data = row_group_data.clone();
-                        let payload_field_indices = payload_field_indices.clone();
-                        let projected_arrow_fields = projected_arrow_fields.clone();
-                        let mask = mask.clone();
-                        let mask_bitmap = mask_bitmap.clone();
+                (0..num_fields).step_by(cols_per_thread).map(move |offset| {
+                    let row_group_data = row_group_data.clone();
+                    let field_indices = field_indices.clone();
+                    let projected_arrow_fields = projected_arrow_fields.clone();
+                    let mask = mask.clone();
+                    let mask_bitmap = mask_bitmap.clone();
 
-                        async move {
-                            (offset..offset.saturating_add(cols_per_thread).min(payload_len))
-                                .map(|i| {
-                                    let projection =
-                                        &projected_arrow_fields[payload_field_indices[i]];
+                    async move {
+                        (offset..offset.saturating_add(cols_per_thread).min(num_fields))
+                            .map(|i| {
+                                let projection = &projected_arrow_fields[field_indices[i]];
 
-                                    let col = decode_column_prefiltered(
-                                        projection.arrow_field(),
-                                        row_group_data.as_ref(),
-                                        &mask,
-                                        &mask_bitmap,
-                                        expected_num_rows,
-                                    )?;
+                                let col = decode_column_prefiltered(
+                                    projection.arrow_field(),
+                                    row_group_data.as_ref(),
+                                    &mask,
+                                    &mask_bitmap,
+                                    expected_num_rows,
+                                )?;
 
-                                    projection.apply_transform(col)
-                                })
-                                .collect::<PolarsResult<UnitVec<_>>>()
-                        }
-                    }),
+                                projection.apply_transform(col)
+                            })
+                            .collect::<PolarsResult<UnitVec<_>>>()
+                    }
+                }),
             )
         };
 
         drop(row_group_data);
 
-        let live_columns = live_df_filtered.into_columns();
-
-        let mut dead_cols = Vec::with_capacity(self.projected_field_classification.payload.len());
+        let mut columns = Vec::with_capacity(num_fields);
         for fut in task_handles {
-            dead_cols.extend(fut.await?);
+            columns.extend(fut.await?);
         }
-
-        let mut merged = live_columns;
-        merged.extend(dead_cols);
-        let df = unsafe { DataFrame::new_unchecked(expected_num_rows, merged) };
-        Ok(df)
+        Ok(columns)
     }
 }
 
