@@ -26,7 +26,12 @@ pub struct WindowExpr {
     /// the root column that the Function will be applied on.
     /// This will be used to create a smaller DataFrame to prevent taking unneeded columns by index
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) order_by: Option<(Arc<dyn PhysicalExpr>, SortOptions)>,
+    /// Columns to order each window partition by.
+    ///
+    /// More than one column is produced when the user passes multiple `order_by` columns. These
+    /// must be sorted with per-column null placement (like `sort_by`); see
+    /// <https://github.com/pola-rs/polars/issues/27819>.
+    pub(crate) order_by: Option<(Vec<Arc<dyn PhysicalExpr>>, SortOptions)>,
     pub(crate) apply_columns: Vec<PlSmallStr>,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
     pub(crate) mapping: WindowMapping,
@@ -434,10 +439,20 @@ impl PhysicalExpr for WindowExpr {
             let mut groups = gb.into_groups();
 
             if let Some((order_by, options)) = &self.order_by {
-                let order_by = order_by.evaluate(df, state)?;
-                polars_ensure!(order_by.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", order_by.len(), df.height());
-                groups = update_groups_sort_by(&groups, order_by.as_materialized_series(), options)?
-                    .into_sliceable()
+                let order_by = order_by
+                    .iter()
+                    .map(|e| {
+                        let s = e.evaluate(df, state)?;
+                        polars_ensure!(s.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", s.len(), df.height());
+                        Ok(s.as_materialized_series().clone())
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                groups = if order_by.len() == 1 {
+                    update_groups_sort_by(&groups, &order_by[0], options)?
+                } else {
+                    update_groups_sort_by_multiple(&groups, &order_by, options)?
+                }
+                .into_sliceable();
             }
 
             let out: PolarsResult<GroupPositions> = Ok(groups);
@@ -451,14 +466,16 @@ impl PhysicalExpr for WindowExpr {
             for s in &group_by_columns {
                 cache_key.push_str(s.name());
             }
-            if let Some((e, options)) = &self.order_by {
-                let e = match e.as_expression() {
-                    Some(e) => e,
-                    None => {
-                        polars_bail!(InvalidOperation: "cannot order by this expression in window function")
-                    },
-                };
-                window_function_format_order_by(&mut cache_key, e, options)
+            if let Some((order_by, options)) = &self.order_by {
+                for e in order_by {
+                    let e = match e.as_expression() {
+                        Some(e) => e,
+                        None => {
+                            polars_bail!(InvalidOperation: "cannot order by this expression in window function")
+                        },
+                    };
+                    window_function_format_order_by(&mut cache_key, e, options)
+                }
             }
 
             let groups = match state.window_cache.get_groups(&cache_key) {
@@ -687,19 +704,56 @@ impl PhysicalExpr for WindowExpr {
             .collect::<PolarsResult<Vec<_>>>()?;
         let order_by = match &self.order_by {
             None => None,
-            Some((e, options)) => {
-                let mut e = e.evaluate(df, state)?;
-                if e.len() == 1 {
-                    e = e.new_from_index(0, length_preserving_height);
+            Some((order_by, options)) => {
+                let mut columns = order_by
+                    .iter()
+                    .map(|e| {
+                        let mut s = e.evaluate(df, state)?.as_materialized_series().clone();
+                        if s.len() == 1 {
+                            s = s.new_from_index(0, length_preserving_height);
+                        }
+                        // Sanity check: Length Preserving.
+                        assert_eq!(s.len(), length_preserving_height);
+                        Ok(s)
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+
+                // For multiple `order_by` columns we need per-column null placement (like
+                // `sort_by`). Collapse the columns into a single ordinal rank that already encodes
+                // the multi-key order, so the per-group reordering below stays single-column.
+                // See https://github.com/pola-rs/polars/issues/27819.
+                let mut options = *options;
+                if columns.len() > 1 {
+                    let descending = vec![options.descending; columns.len()];
+                    let nulls_last = vec![options.nulls_last; columns.len()];
+                    let sort_options = SortMultipleOptions {
+                        descending,
+                        nulls_last,
+                        multithreaded: true,
+                        maintain_order: options.maintain_order,
+                        limit: None,
+                    };
+                    let by = columns
+                        .iter()
+                        .map(|s| Column::from(s.clone()))
+                        .collect::<Vec<_>>();
+                    let sorted_idx = by[0]
+                        .as_materialized_series()
+                        .arg_sort_multiple(&by[1..], &sort_options)?;
+                    // Invert the permutation into an ordinal rank: rank[row] = sorted position.
+                    let rank = sorted_idx.arg_sort(Default::default());
+                    columns = vec![rank.into_series()];
+                    // The rank fully encodes ordering; sort it ascending with nulls (none) first.
+                    options = SortOptions::default();
                 }
-                // Sanity check: Length Preserving.
-                assert_eq!(e.len(), length_preserving_height);
+                let e = columns.into_iter().next().unwrap();
+
                 let arr: Option<PrimitiveArray<IdxSize>> = if needs_remap_to_rows {
                     feature_gated!("rank", {
                         // Performance: precompute the rank here, so we can avoid dispatching per group
                         // later.
                         use polars_ops::series::SeriesRank;
-                        let arr = e.as_materialized_series().rank(
+                        let arr = e.rank(
                             RankOptions {
                                 method: RankMethod::Ordinal,
                                 descending: false,
@@ -714,7 +768,7 @@ impl PhysicalExpr for WindowExpr {
                     None
                 };
 
-                Some((e.clone(), arr, *options))
+                Some((Column::from(e), arr, options))
             },
         };
 
