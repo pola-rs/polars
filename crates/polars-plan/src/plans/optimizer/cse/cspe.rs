@@ -231,7 +231,7 @@ fn get_deduplication_id<'a>(
                 shallow_eq(node, other.representative, lp_arena, expr_arena, expr_cmp)
                     && child_ids == other.child_ids
             },
-            |other| shallow_hasher(other.representative, &child_ids, lp_arena, expr_arena),
+            |other| shallow_hasher(other.representative, &other.child_ids, lp_arena, expr_arena),
         )
         .or_insert(DeduplicationEntry {
             representative: node,
