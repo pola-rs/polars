@@ -70,8 +70,8 @@ def test_cum_count() -> None:
         pl.col("A").cum_count().alias("foo")
     )
 
-    assert out["foo"][0].to_list() == [1, 2, 3, 4]
-    assert out["foo"][1].to_list() == [1, 2]
+    assert out["foo"][0] == [1, 2, 3, 4]
+    assert out["foo"][1] == [1, 2]
 
 
 def test_series_cum_count() -> None:
