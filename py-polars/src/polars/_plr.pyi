@@ -1176,7 +1176,12 @@ class PyLazyFrame:
     def unnest(self, columns: PySelector, separator: str | None) -> PyLazyFrame: ...
     def count(self) -> PyLazyFrame: ...
     def merge_sorted(
-        self, other: PyLazyFrame, key: pylist[str], maintain_order: bool
+        self,
+        other: PyLazyFrame,
+        key: pylist[str],
+        maintain_order: bool,
+        descending: bool,
+        nulls_last: bool,
     ) -> PyLazyFrame: ...
     def hint_sorted(
         self,

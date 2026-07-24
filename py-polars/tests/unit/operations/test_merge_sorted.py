@@ -107,8 +107,8 @@ def test_merge_sorted_unbalanced(size: int, ra: list[int]) -> None:
             pl.Series("b", [x * 7 for x in range(len(ra))], pl.Int32),
         ]
     )
-
-    lf = lhs.lazy().merge_sorted(rhs.lazy(), "a")
+    nulls_last = ra[0] is not None
+    lf = lhs.lazy().merge_sorted(rhs.lazy(), "a", nulls_last=nulls_last)
     df = lf.collect(engine="streaming")
 
     nulls_last = ra[0] is not None
@@ -445,6 +445,66 @@ def test_merge_sorted_with_list_27563() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_merge_sorted_descending() -> None:
+    left = pl.LazyFrame({"a": [9, 5, 3], "b": [1, 2, 3]})
+    right = pl.LazyFrame({"a": [8, 6, 1], "b": [4, 5, 6]})
+
+    result = left.merge_sorted(right, key="a", descending=True).collect()
+
+    expected = pl.DataFrame({"a": [9, 8, 6, 5, 3, 1], "b": [1, 4, 5, 2, 3, 6]})
+    assert_frame_equal(result, expected)
+
+
+def test_merge_sorted_nulls_last() -> None:
+    left = pl.LazyFrame({"a": [1, 3, 5, None], "b": [1, 2, 3, 4]})
+    right = pl.LazyFrame({"a": [2, 4, None], "b": [5, 6, 7]})
+
+    result = left.merge_sorted(right, key="a", nulls_last=True).collect()
+
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4, 5, None, None], "b": [1, 5, 2, 6, 3, 4, 7]}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_merge_sorted_nulls_first() -> None:
+    left = pl.LazyFrame({"a": [None, 1, 3, 5], "b": [1, 2, 3, 4]})
+    right = pl.LazyFrame({"a": [None, 2, 4], "b": [5, 6, 7]})
+
+    result = left.merge_sorted(
+        right, key="a", nulls_last=False, maintain_order=True
+    ).collect()
+
+    expected = pl.DataFrame(
+        {"a": [None, None, 1, 2, 3, 4, 5], "b": [1, 5, 2, 6, 3, 7, 4]}
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_merge_sorted_descending_nulls_first() -> None:
+    left = pl.LazyFrame({"a": [None, 9, 5], "b": [3, 1, 2]})
+    right = pl.LazyFrame({"a": [None, 8, 6], "b": [6, 4, 5]})
+
+    result = left.merge_sorted(
+        right, key="a", descending=True, nulls_last=False, maintain_order=True
+    ).collect()
+
+    expected = pl.DataFrame({"a": [None, None, 9, 8, 6, 5], "b": [3, 6, 1, 4, 5, 2]})
+    assert_frame_equal(result, expected)
+
+
+def test_merge_sorted_descending_nulls_last() -> None:
+    left = pl.LazyFrame({"a": [9, 5, None], "b": [1, 2, 3]})
+    right = pl.LazyFrame({"a": [8, 6, None], "b": [4, 5, 6]})
+
+    result = left.merge_sorted(
+        right, key="a", descending=True, nulls_last=True
+    ).collect()
+
+    expected = pl.DataFrame({"a": [9, 8, 6, 5, None, None], "b": [1, 4, 5, 2, 3, 6]})
+    assert_frame_equal(result, expected)
+
+
 def test_merge_sorted_multiple_keys() -> None:
     left = pl.LazyFrame(
         {
@@ -529,6 +589,46 @@ def test_merge_sorted_multiple_keys_maintain_order() -> None:
         pl.concat([left, right]).sort(["key_1", "key_2"], maintain_order=True).collect()
     )
 
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_merge_sorted_multiple_keys_options(descending: bool, nulls_last: bool) -> None:
+    # The row-encoded (multi-key) path must apply descending / nulls_last exactly
+    # once: baked into the encoding, not re-applied by the merge itself.
+    left = pl.LazyFrame(
+        {
+            "key_1": [1, 1, 3, None],
+            "key_2": [1, 4, 2, 5],
+            "val": [10, 11, 12, 13],
+        }
+    )
+    right = pl.LazyFrame(
+        {
+            "key_1": [1, 2, 3, None],
+            "key_2": [2, 1, 1, 6],
+            "val": [20, 21, 22, 23],
+        }
+    )
+
+    keys = ["key_1", "key_2"]
+    left = left.sort(keys, descending=descending, nulls_last=nulls_last)
+    right = right.sort(keys, descending=descending, nulls_last=nulls_last)
+
+    out = left.merge_sorted(
+        right,
+        key=keys,
+        descending=descending,
+        nulls_last=nulls_last,
+        maintain_order=True,
+    ).collect()
+
+    expected = (
+        pl.concat([left, right])
+        .sort(keys, descending=descending, nulls_last=nulls_last, maintain_order=True)
+        .collect()
+    )
     assert_frame_equal(out, expected)
 
 

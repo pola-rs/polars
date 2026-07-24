@@ -336,6 +336,8 @@ impl<'a> IRDotDisplay<'a> {
                 input_right,
                 key,
                 maintain_order,
+                descending: _,
+                nulls_last: _,
             } => {
                 recurse!(*input_left);
                 recurse!(*input_right);

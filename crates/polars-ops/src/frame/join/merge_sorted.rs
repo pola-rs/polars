@@ -6,12 +6,35 @@ use polars_core::prelude::*;
 use polars_core::with_match_categorical_physical_type;
 use polars_core::with_match_physical_numeric_polars_type;
 
+pub fn _make_comparator<T>(
+    descending: bool,
+    nulls_last: bool,
+) -> impl Fn(Option<T>, Option<T>) -> bool
+where
+    T: PartialOrd + Default + Copy,
+{
+    move |a: Option<T>, b: Option<T>| match (a, b) {
+        (None, None) => true,
+        (Some(_), None) => nulls_last,
+        (None, Some(_)) => !nulls_last,
+        (Some(i), Some(j)) => {
+            if descending {
+                i >= j
+            } else {
+                i <= j
+            }
+        },
+    }
+}
+
 pub fn _merge_sorted_dfs(
     left: &DataFrame,
     right: &DataFrame,
     left_s: &Series,
     right_s: &Series,
     check_schema: bool,
+    descending: bool,
+    nulls_last: bool,
 ) -> PolarsResult<DataFrame> {
     if check_schema {
         left.schema_equal(right)?;
@@ -31,7 +54,7 @@ pub fn _merge_sorted_dfs(
         return Ok(right.clone());
     }
 
-    let merge_indicator = series_to_merge_indicator(left_s, right_s)?;
+    let merge_indicator = series_to_merge_indicator(left_s, right_s, descending, nulls_last)?;
     let new_columns = left
         .columns()
         .iter()
@@ -186,14 +209,19 @@ where
     }
 }
 
-fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<bool>> {
+fn series_to_merge_indicator(
+    lhs: &Series,
+    rhs: &Series,
+    descending: bool,
+    nulls_last: bool,
+) -> PolarsResult<Vec<bool>> {
     #[cfg(feature = "dtype-categorical")]
     if lhs.dtype().is_categorical() || lhs.dtype().is_enum() {
         let cat_phys = lhs.dtype().cat_physical().unwrap();
         with_match_categorical_physical_type!(cat_phys, |$C| {
             let lhs = lhs.cat::<$C>().unwrap();
             let rhs = rhs.cat::<$C>().unwrap();
-            return Ok(get_merge_indicator(lhs.iter_str(), rhs.iter_str()));
+            return Ok(get_merge_indicator(lhs.iter_str(), rhs.iter_str(), descending, nulls_last));
         })
     }
 
@@ -201,6 +229,8 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
         return Ok(get_merge_indicator(
             lhs.row_encode_ordered(false, false)?.iter(),
             rhs.row_encode_ordered(false, false)?.iter(),
+            descending,
+            nulls_last,
         ));
     }
 
@@ -212,29 +242,29 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
         DataType::Boolean => {
             let lhs = lhs_s.bool().unwrap();
             let rhs = rhs_s.bool().unwrap();
-            get_merge_indicator(lhs.iter(), rhs.iter())
+            get_merge_indicator(lhs.iter(), rhs.iter(), descending, nulls_last)
         },
         DataType::Binary => {
             let lhs = lhs_s.binary().unwrap();
             let rhs = rhs_s.binary().unwrap();
-            get_merge_indicator(lhs.iter(), rhs.iter())
+            get_merge_indicator(lhs.iter(), rhs.iter(), descending, nulls_last)
         },
         DataType::String => {
             let lhs = lhs.str().unwrap().as_binary();
             let rhs = rhs.str().unwrap().as_binary();
-            get_merge_indicator(lhs.iter(), rhs.iter())
+            get_merge_indicator(lhs.iter(), rhs.iter(), descending, nulls_last)
         },
         DataType::BinaryOffset => {
             let lhs = lhs_s.binary_offset().unwrap();
             let rhs = rhs_s.binary_offset().unwrap();
-            get_merge_indicator(lhs.iter(), rhs.iter())
+            get_merge_indicator(lhs.iter(), rhs.iter(), descending, nulls_last)
         },
         dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(lhs_s.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs_s.as_ref().as_ref().as_ref();
                     let rhs: &ChunkedArray<$T> = rhs_s.as_ref().as_ref().as_ref();
 
-                    get_merge_indicator(lhs.iter(), rhs.iter())
+                    get_merge_indicator(lhs.iter(), rhs.iter(),descending, nulls_last)
 
             })
         },
@@ -246,15 +276,17 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
 // get a boolean values, left: true, right: false
 // that indicate from which side we should take a value
 fn get_merge_indicator<T>(
-    mut a_iter: impl ExactSizeIterator<Item = T>,
-    mut b_iter: impl ExactSizeIterator<Item = T>,
+    mut a_iter: impl ExactSizeIterator<Item = Option<T>>,
+    mut b_iter: impl ExactSizeIterator<Item = Option<T>>,
+    descending: bool,
+    nulls_last: bool,
 ) -> Vec<bool>
 where
     T: PartialOrd + Default + Copy,
 {
     const A_INDICATOR: bool = true;
     const B_INDICATOR: bool = false;
-
+    let cmp = _make_comparator(descending, nulls_last);
     let a_len = a_iter.size_hint().0;
     let b_len = b_iter.size_hint().0;
     if a_len == 0 {
@@ -264,7 +296,7 @@ where
         return vec![A_INDICATOR; a_len];
     }
 
-    let mut current_a = T::default();
+    let mut current_a = Some(T::default());
     let cap = a_len + b_len;
     let mut out = Vec::with_capacity(cap);
 
@@ -272,7 +304,7 @@ where
 
     for a in &mut a_iter {
         current_a = a;
-        if a <= current_b {
+        if cmp(a, current_b) {
             out.push(A_INDICATOR);
             continue;
         }
@@ -281,7 +313,7 @@ where
         loop {
             if let Some(b) = b_iter.next() {
                 current_b = b;
-                if b >= a {
+                if cmp(a, b) {
                     out.push(A_INDICATOR);
                     break;
                 }
@@ -294,7 +326,7 @@ where
             return out;
         }
     }
-    if current_a < current_b {
+    if !cmp(current_b, current_a) {
         out.push(B_INDICATOR);
     }
     // check if current value already is added
@@ -311,7 +343,12 @@ where
 #[test]
 fn test_merge_sorted() {
     fn get_merge_indicator_sliced<T: PartialOrd + Default + Copy>(a: &[T], b: &[T]) -> Vec<bool> {
-        get_merge_indicator(a.iter().copied(), b.iter().copied())
+        get_merge_indicator(
+            a.iter().copied().map(Some),
+            b.iter().copied().map(Some),
+            false,
+            false,
+        )
     }
 
     let a = [1, 2, 4, 6, 9];

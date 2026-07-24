@@ -422,6 +422,8 @@ impl<'a> TreeFmtNode<'a> {
                     input_right,
                     key,
                     maintain_order,
+                    descending: _,
+                    nulls_last: _,
                 } => ND(
                     wh(
                         h,

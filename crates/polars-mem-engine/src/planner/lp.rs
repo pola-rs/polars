@@ -854,8 +854,9 @@ fn create_physical_plan_impl(
             input_left,
             input_right,
             key,
-            // In the in-memory engine, merge_sorted is always order-maintaining.
             maintain_order: _,
+            descending,
+            nulls_last,
         } => {
             let (input_left, input_right) = state.with_new_branch(|new_state| {
                 (
@@ -870,6 +871,8 @@ fn create_physical_plan_impl(
                 input_left,
                 input_right,
                 key,
+                descending,
+                nulls_last,
             };
             Ok(Box::new(exec))
         },

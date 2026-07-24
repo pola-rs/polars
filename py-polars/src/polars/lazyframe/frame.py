@@ -9118,15 +9118,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         key: str | Sequence[str],
         *,
         maintain_order: bool = False,
+        descending: bool = False,
+        nulls_last: bool = False,
     ) -> LazyFrame:
         """
         Take two sorted DataFrames and merge them by the sorted key.
 
         The output of this operation will also be sorted.
-        It is the callers responsibility that the frames
-        are sorted in ascending order by the key(s), with null
-        keys at the end, otherwise the order of the output
-        will not make sense.
+        It is the callers responsibility that the frames are sorted by the key(s),
+        ascending unless ``descending=True``, with null placement matching the
+        ``nulls_last`` parameter, otherwise the order of the output will not
+        make sense.
 
         The schemas of both LazyFrames must be equal.
 
@@ -9142,6 +9144,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             If ``True``, the output is guaranteed to have left-biased ordering
             for equal keys: rows from the left frame appear before rows from
             the right frame when their keys are equal.
+        descending
+            If ``True``, inputs are assumed to be sorted in descending order,
+            and the merged output will also be in descending order.
+        nulls_last
+            If ``True`` null values are assumed to be trailing all non null entries,
+            and will appear at the end of the merged output
 
         Examples
         --------
@@ -9220,7 +9228,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         require_same_type(self, other)
         keys = [key] if isinstance(key, str) else list(key)
         return self._from_pyldf(
-            self._ldf.merge_sorted(other._ldf, keys, maintain_order)
+            self._ldf.merge_sorted(
+                other._ldf, keys, maintain_order, descending, nulls_last
+            )
         )
 
     def set_sorted(
