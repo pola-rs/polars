@@ -22,6 +22,30 @@ def test_reverse_series() -> None:
     assert s.reverse().to_list() == ["x", "y", None, "b", "a"]
 
 
+def test_reverse_all_null_list_keeps_inner_dtype_28409() -> None:
+    lf = pl.LazyFrame({"L": [None]}, schema={"L": pl.List(pl.Int64)}).reverse()
+
+    planned = lf.collect_schema()["L"]
+    assert planned == pl.List(pl.Int64)
+    assert lf.collect().schema["L"] == planned
+    assert lf.collect(engine="streaming").schema["L"] == planned
+
+
+def test_reverse_diagonal_concat_null_fill_28409() -> None:
+    # repro from #28409: empty left branch → all-null List after diagonal concat
+    a = pl.LazyFrame({"L": [[1, 2]], "b": [1]})
+    b = pl.LazyFrame({"z": [7]})
+    q = pl.concat(
+        [a.sort("b").filter(pl.col("b") < -9), b],
+        how="diagonal",
+    ).reverse()
+
+    planned = q.collect_schema()["L"]
+    assert planned == pl.List(pl.Int64)
+    assert q.collect().schema["L"] == planned
+    assert q.collect(engine="streaming").schema["L"] == planned
+
+
 def test_reverse_binary() -> None:
     # single chunk
     s = pl.Series("values", ["a", "b", "c", "d"]).cast(pl.Binary)
