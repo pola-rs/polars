@@ -619,6 +619,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT QUANTILE_DISC(col1) FROM df;
     /// ```
     QuantileDisc,
+    /// SQL 'range' function.
+    /// Returns the difference between the maximum and minimum values in the grouping.
+    /// ```sql
+    /// SELECT RANGE(col1) FROM df;
+    /// ```
+    Range,
     /// SQL 'min' function.
     /// Returns the smallest (minimum) of all the elements in the grouping.
     /// ```sql
@@ -889,6 +895,7 @@ impl PolarsSQLFunctions {
             "quantile_cont",
             "quantile_disc",
             "radians",
+            "range",
             "rank",
             "regexp_like",
             "replace",
@@ -1046,6 +1053,7 @@ impl PolarsSQLFunctions {
             "min" => Self::Min,
             "quantile_cont" => Self::QuantileCont,
             "quantile_disc" => Self::QuantileDisc,
+            "range" => Self::Range,
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "string_agg" | "listagg" | "group_concat" => Self::StringAgg,
             "sum" => Self::Sum,
@@ -1648,6 +1656,7 @@ impl SQLFunctionVisitor<'_> {
                 }
             },
             Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),
+            Range => self.visit_unary(|e| e.clone().max() - e.min()),
             StdDev => self.visit_unary(|e| e.std(1)),
             StringAgg => self.visit_string_agg(),
             Sum => self.visit_unary_with_opt_cumulative(sql_sum, Expr::cum_sum),

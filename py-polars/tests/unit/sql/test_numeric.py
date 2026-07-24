@@ -212,6 +212,65 @@ def test_stddev_variance() -> None:
         )
 
 
+def test_range() -> None:
+    df = pl.DataFrame(
+        {
+            "v1": [-1.0, 0.0, 1.0],
+            "v2": [5.5, 0.0, 3.0],
+            "v3": [-10, None, 10],
+        }
+    )
+    with pl.SQLContext(df=df) as ctx:
+        out = ctx.execute(
+            """
+            SELECT
+              RANGE(v1) AS "v1_range",
+              RANGE(v2) AS "v2_range",
+              RANGE(v3) AS "v3_range"
+            FROM df
+            """
+        ).collect()
+
+        assert_frame_equal(
+            out,
+            pl.DataFrame(
+                {
+                    "v1_range": [2.0],
+                    "v2_range": [5.5],
+                    "v3_range": [20],
+                }
+            ),
+        )
+
+
+def test_range_group_by() -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["a", "a", "b", "b", "b"],
+            "value": [1, 5, 10, 2, 8],
+        }
+    )
+    with pl.SQLContext(df=df) as ctx:
+        out = ctx.execute(
+            """
+            SELECT grp, RANGE(value) AS value_range
+            FROM df
+            GROUP BY grp
+            ORDER BY grp
+            """
+        ).collect()
+
+        assert_frame_equal(
+            out,
+            pl.DataFrame(
+                {
+                    "grp": ["a", "b"],
+                    "value_range": [4, 8],
+                }
+            ),
+        )
+
+
 def test_int_div_true_division() -> None:
     df = pl.DataFrame({"num": [1], "denum": [3]})
     with pl.SQLContext(df=df, eager=True) as ctx:
