@@ -57,25 +57,14 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
         },
         Time64(_) => unreachable!(), // remaining are not valid
         Timestamp(time_unit, tz) => {
-            // chrono's `NaiveDateTime`/`DateTime<Tz>` `Display` was
-            // space-separated (not jiff's default ISO 8601 "T" separator),
-            // and for the tz-aware case was "<naive> <offset-or-abbrev>" with
-            // no bracketed zone annotation; format explicitly to match.
-            const CHRONO_STYLE: &str = "%Y-%m-%d %H:%M:%S%.f";
-            // A fixed numeric offset (`+02:00`) prints its literal colon-style
-            // offset, matching chrono's `FixedOffset` `Display`. A named IANA
-            // zone (`Europe/Lisbon`) prints its abbreviation (`CET`) instead,
-            // matching chrono-tz's `Tz` `Display` - `%Z` would print `+02`
-            // (no minutes) for the fixed-offset case, so the two need
-            // different format strings.
-            const CHRONO_STYLE_OFFSET: &str = "%Y-%m-%d %H:%M:%S%.f %:z";
-            const CHRONO_STYLE_ABBREV: &str = "%Y-%m-%d %H:%M:%S%.f %Z";
             // Formatting must never panic, even for a physically
             // out-of-range value - degrade gracefully instead of going
             // through `dyn_primitive!`'s infallible `Display`-based
             // expansion, since `timestamp_to_broken_down_time_opt` can fail
             // for a value so far out-of-range that even a timezone-less
-            // `DateTime` can't represent it.
+            // `DateTime` can't represent it. Beyond that, this is just
+            // jiff's own default rendering (ISO 8601, "T"-separated) -
+            // there's no need to reproduce chrono's `Display` styling here.
             if let Some(tz) = tz {
                 let timezone = temporal_conversions::parse_offset(tz.as_str());
                 match timezone {
@@ -94,7 +83,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                                 Some(tm) => write!(
                                     f,
                                     "{}",
-                                    tm.to_string(CHRONO_STYLE_OFFSET)
+                                    tm.to_string("%Y-%m-%dT%H:%M:%S%.f%:z")
                                         .unwrap_or_else(|_| "<out-of-range datetime>".to_string())
                                 ),
                                 None => write!(f, "<out-of-range datetime>"),
@@ -120,7 +109,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                                         Some(tm) => write!(
                                             f,
                                             "{}",
-                                            tm.to_string(CHRONO_STYLE_ABBREV).unwrap_or_else(
+                                            tm.to_string("%Y-%m-%dT%H:%M:%S%.f%:z").unwrap_or_else(
                                                 |_| "<out-of-range datetime>".to_string()
                                             )
                                         ),
@@ -145,7 +134,6 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
             } else {
                 dyn_primitive!(array, i64, |time| {
                     temporal_conversions::timestamp_to_naive_datetime(time, *time_unit)
-                        .strftime(CHRONO_STYLE)
                 })
             }
         },
