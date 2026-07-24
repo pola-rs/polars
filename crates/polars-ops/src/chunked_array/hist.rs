@@ -239,19 +239,20 @@ pub fn hist_series(
     include_category: bool,
     include_breakpoint: bool,
 ) -> PolarsResult<Series> {
+    polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "'hist' is only supported for numeric data");
+
     let mut bins_arg = None;
 
     let owned_bins;
     if let Some(bins) = bins {
         polars_ensure!(bins.null_count() == 0, InvalidOperation: "nulls not supported in 'bins' argument");
-        let bins = bins.cast(&DataType::Float64)?;
+        let bins = bins.strict_cast(&DataType::Float64)?;
         let bins_s = bins.rechunk();
         owned_bins = bins_s;
         let bins = owned_bins.f64().unwrap();
         let bins = bins.cont_slice().unwrap();
         bins_arg = Some(bins);
     };
-    polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "'hist' is only supported for numeric data");
 
     let out = with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
          let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
