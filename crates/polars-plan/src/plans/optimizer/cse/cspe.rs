@@ -122,14 +122,14 @@ struct IDGeneratorVisitor<'map, 'arena> {
 
 fn shallow_hasher<'a>(
     node: Node,
-    childs_ids: &[DeduplicationId],
+    child_ids: &[DeduplicationId],
     lp_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
 ) -> u64 {
     let mut hasher = DefaultHasher::new();
 
     IRHashWrap::new(node, lp_arena, expr_arena, true).hash(&mut hasher);
-    for &child_id in childs_ids {
+    for &child_id in child_ids {
         hasher.write_u32(child_id.0);
     }
 
