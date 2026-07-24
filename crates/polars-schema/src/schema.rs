@@ -565,11 +565,11 @@ where
 
     /// Returns a new [`Schema`] with a subset of all fields whose `predicate`
     /// evaluates to true.
-    pub fn retain_mut<F>(&mut self, f: F)
+    pub fn retain_mut<F>(&mut self, mut f: F)
     where
-        F: FnMut(&mut PlSmallStr, &mut Field) -> bool,
+        F: FnMut(&PlSmallStr, &mut Field) -> bool,
     {
-        self.fields.retain2(f);
+        self.fields.retain2(|k, v| f(k, v));
     }
 }
 
