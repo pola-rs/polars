@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::plans::{FunctionIR, OpaquePythonUdf};
+use crate::plans::FunctionIR;
+#[cfg(feature = "python")]
+use crate::plans::OpaquePythonUdf;
 
 impl PartialEq for FunctionIR {
     // Mirrors `impl Hash for FunctionIR`

@@ -3,7 +3,9 @@ use std::sync::Arc;
 use polars_utils::arena::Arena;
 
 use super::IR;
-use crate::plans::{AExpr, ArrowPredicate, ExprIR, PythonOptions, PythonPredicate};
+use crate::plans::{AExpr, ExprIR};
+#[cfg(feature = "python")]
+use crate::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
 
 pub trait ExpressionComparator {
     fn equals(&mut self, lhs: &ExprIR, rhs: &ExprIR, expr_arena: &Arena<AExpr>) -> bool;
