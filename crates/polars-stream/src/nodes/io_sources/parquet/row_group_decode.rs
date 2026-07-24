@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use polars_async::executor::TaskPriority;
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
+use polars_compute::filter::expand_boolean_kernel;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn};
 use polars_core::series::Series;
@@ -452,6 +453,10 @@ impl RowGroupDecoder {
         let scan_predicate = self.predicate.as_ref().unwrap();
 
         let use_column_predicates = self.allow_column_predicates
+            && !self
+                .projected_field_classification
+                .eager_predicate
+                .is_empty()
             && !row_group_data
                 .row_group_metadata
                 .parquet_columns()
@@ -463,21 +468,19 @@ impl RowGroupDecoder {
                     )
                 });
 
-        let cols_per_thread = (self
-            .projected_field_classification
-            .live_predicate
-            .len()
-            .div_ceil(self.num_pipelines))
-        .max(1);
+        let predicate_field_indices = if use_column_predicates {
+            self.projected_field_classification.eager_predicate.clone()
+        } else {
+            self.projected_field_classification.live_predicate.clone()
+        };
+        let cols_per_thread = (predicate_field_indices.len().div_ceil(self.num_pipelines)).max(1);
         let task_handles = {
-            let predicate_field_indices =
-                self.projected_field_classification.live_predicate.clone();
             let projected_arrow_fields = self.projected_arrow_fields.clone();
             let row_group_data = row_group_data.clone();
 
             parallelize_first_to_local(
                 TaskPriority::Low,
-                (0..self.projected_field_classification.live_predicate.len())
+                (0..predicate_field_indices.len())
                     .step_by(cols_per_thread)
                     .map(move |offset| {
                         let row_group_data = row_group_data.clone();
@@ -527,13 +530,7 @@ impl RowGroupDecoder {
         }
 
         let (live_df_filtered, mask) = if use_column_predicates {
-            assert!(
-                scan_predicate
-                    .column_predicates
-                    .residual_predicate
-                    .is_none()
-            );
-            if let [mask] = masks.as_slice() {
+            let (eager_df, mut eager_mask) = if let [mask] = masks.as_slice() {
                 (
                     unsafe { DataFrame::new_unchecked_infer_height(live_columns) },
                     BooleanChunked::from_bitmap(PlSmallStr::EMPTY, mask.clone()),
@@ -562,6 +559,71 @@ impl RowGroupDecoder {
                     unsafe { DataFrame::new_unchecked_infer_height(live_columns) },
                     mask,
                 )
+            };
+
+            if let Some(residual_predicate) =
+                scan_predicate.column_predicates.residual_predicate.as_ref()
+            {
+                let eager_mask_bitmap = materialize_mask(&mut eager_mask);
+                let num_candidates = eager_mask_bitmap.set_bits();
+                let additional_columns = self
+                    .decode_columns_prefiltered(
+                        row_group_data.clone(),
+                        self.projected_field_classification
+                            .additional_predicate
+                            .clone(),
+                        &eager_mask,
+                        &eager_mask_bitmap,
+                        num_candidates,
+                    )
+                    .await?;
+
+                let mut live_columns = self
+                    .projected_field_classification
+                    .eager_predicate
+                    .iter()
+                    .copied()
+                    .zip(eager_df.into_columns())
+                    .chain(
+                        self.projected_field_classification
+                            .additional_predicate
+                            .iter()
+                            .copied()
+                            .zip(additional_columns),
+                    )
+                    .collect::<Vec<_>>();
+                live_columns.sort_unstable_by_key(|(field_idx, _)| *field_idx);
+                let live_df = unsafe {
+                    DataFrame::new_unchecked(
+                        num_candidates,
+                        live_columns.into_iter().map(|(_, column)| column).collect(),
+                    )
+                };
+
+                let residual_mask = residual_predicate.evaluate_io(&live_df)?;
+                let mut residual_mask = residual_mask.bool().unwrap().clone();
+                let residual_mask_bitmap = materialize_mask(&mut residual_mask);
+                // Splat residual's mask back into row group coordinate
+                // space, anding with the eager bitmap.
+                let mask = BooleanChunked::from_bitmap(
+                    PlSmallStr::EMPTY,
+                    expand_boolean_kernel(&residual_mask_bitmap, &eager_mask_bitmap),
+                );
+                let live_columns = filter_cols(
+                    live_df.into_columns(),
+                    &residual_mask,
+                    self.target_values_per_thread,
+                )
+                .await?;
+
+                (
+                    unsafe {
+                        DataFrame::new_unchecked(residual_mask_bitmap.set_bits(), live_columns)
+                    },
+                    mask,
+                )
+            } else {
+                (eager_df, eager_mask)
             }
         } else {
             let mut live_df = unsafe {
@@ -611,12 +673,7 @@ impl RowGroupDecoder {
         }
 
         let projection_height = row_group_data.row_group_metadata.num_rows();
-        mask.rechunk_mut();
-        let mask_bitmap = mask.downcast_as_array();
-        let mask_bitmap = match mask_bitmap.validity() {
-            None => mask_bitmap.values().clone(),
-            Some(v) => mask_bitmap.values() & v,
-        };
+        let mask_bitmap = materialize_mask(&mut mask);
 
         assert_eq!(mask_bitmap.len(), projection_height);
 
@@ -698,6 +755,15 @@ impl RowGroupDecoder {
             columns.extend(fut.await?);
         }
         Ok(columns)
+    }
+}
+
+fn materialize_mask(mask: &mut BooleanChunked) -> Bitmap {
+    mask.rechunk_mut();
+    let array = mask.downcast_as_array();
+    match array.validity() {
+        None => array.values().clone(),
+        Some(validity) => array.values() & validity,
     }
 }
 
