@@ -1,0 +1,60 @@
+[package]
+name = "polars-plugin"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+readme = "README.md"
+repository.workspace = true
+description = "Runtime for Polars expression plugins"
+
+[dependencies]
+arrow = { workspace = true, default-features = false }
+polars-config = { workspace = true }
+polars-core = { workspace = true, default-features = false, features = ["allow_unused"] }
+polars-error = { workspace = true }
+polars-ffi = { workspace = true }
+polars-plugin-derive = { workspace = true }
+serde = { version = "1" }
+serde-pickle = { version = "1" }
+
+[features]
+dtype-full = [
+  "dtype-date",
+  "dtype-datetime",
+  "dtype-duration",
+  "dtype-time",
+  "dtype-array",
+  "dtype-i8",
+  "dtype-i16",
+  "dtype-i128",
+  "dtype-decimal",
+  "dtype-u8",
+  "dtype-u16",
+  "dtype-u128",
+  "dtype-f16",
+  "dtype-categorical",
+  "dtype-struct",
+]
+dtype-date = ["polars-core/dtype-date"]
+dtype-datetime = ["polars-core/dtype-datetime"]
+dtype-duration = ["polars-core/dtype-duration"]
+dtype-time = ["polars-core/dtype-time"]
+dtype-decimal = ["polars-core/dtype-decimal"]
+dtype-array = ["polars-core/dtype-array"]
+dtype-i8 = ["polars-core/dtype-i8"]
+dtype-i16 = ["polars-core/dtype-i16"]
+dtype-i128 = ["polars-core/dtype-i128"]
+dtype-u8 = ["polars-core/dtype-u8"]
+dtype-u16 = ["polars-core/dtype-u16"]
+dtype-u128 = ["polars-core/dtype-u128"]
+dtype-f16 = ["polars-core/dtype-f16"]
+dtype-struct = ["polars-core/dtype-struct"]
+dtype-categorical = ["polars-core/dtype-categorical"]
+dtype-extension = ["polars-core/dtype-extension"]
+object = ["polars-core/object"]
+bigidx = ["polars-core/bigidx"]
+
+[lints]
+workspace = true

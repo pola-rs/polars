@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - crates/**
+      - pyo3-polars/**
       - examples/**
       - Cargo.toml
       - .github/workflows/test-rust.yml
@@ -13,6 +14,7 @@ on:
       - "2.0"
     paths:
       - crates/**
+      - pyo3-polars/**
       - examples/**
       - Cargo.toml
       - .github/workflows/test-rust.yml
@@ -142,8 +144,11 @@ jobs:
       - name: Run cargo hack
         run: cargo hack check -p polars --each-feature --no-dev-deps && cargo check -p polars-stream
 
-      - name: Test pyo3-polars and bigidx
-        run: cargo check -p pyo3-polars --no-default-features --features pyo3-polars/derive,polars/bigidx
+      - name: Test expression plugins
+        run: |
+          cargo build -p standalone_plugin --features bigidx
+          cargo check -p expression_lib
+          cargo check -p pyo3-polars --no-default-features --features pyo3-polars/derive,polars/bigidx
 
   check-dsl-schema:
     runs-on: ubuntu-latest
