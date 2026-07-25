@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
   "crates/*",
+  "crates/polars-plugin/examples/standalone-expression",
   "docs/source/src/rust",
   "py-polars/runtime/polars-runtime-32",
   "py-polars/runtime/polars-runtime-64",
@@ -132,6 +133,8 @@ polars-ooc = { version = "0.55.1", path = "crates/polars-ooc", default-features 
 polars-ops = { version = "0.55.1", path = "crates/polars-ops", default-features = false }
 polars-parquet = { version = "0.55.1", path = "crates/polars-parquet", default-features = false }
 polars-plan = { version = "0.55.1", path = "crates/polars-plan", default-features = false }
+polars-plugin = { version = "0.55.1", path = "crates/polars-plugin" }
+polars-plugin-derive = { version = "0.55.1", path = "crates/polars-plugin-derive" }
 polars-python = { version = "0.55.1", path = "crates/polars-python", default-features = false }
 polars-row = { version = "0.55.1", path = "crates/polars-row", default-features = false }
 polars-schema = { version = "0.55.1", path = "crates/polars-schema", default-features = false }
