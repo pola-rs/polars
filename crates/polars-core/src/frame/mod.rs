@@ -1374,7 +1374,6 @@ impl DataFrame {
         renames: impl Iterator<Item = (&'a str, PlSmallStr)>,
     ) -> PolarsResult<&mut Self> {
         let schema = self.schema().clone();
-        let mut new_columns = self.columns().to_vec();
 
         for (from, to) in renames {
             if from == to.as_str() {
@@ -1385,21 +1384,21 @@ impl DataFrame {
                 .index_of(from)
                 .ok_or_else(|| polars_err!(col_not_found = from))?;
 
-            new_columns[idx].rename(to);
+            unsafe { self.columns_mut() }
+                .get_mut(idx)
+                .unwrap()
+                .rename(to);
         }
 
         // Check for duplicates.
         let schema = Schema::from_iter_check_duplicates(
-            new_columns
+            self.columns()
                 .iter()
                 .map(|c| c.name().clone())
                 .zip_eq(schema.iter_values().cloned()),
         )?;
 
-        unsafe {
-            *self.columns_mut() = new_columns;
-            self.set_schema(Arc::new(schema))
-        };
+        unsafe { self.set_schema(Arc::new(schema)) };
 
         Ok(self)
     }
