@@ -2,7 +2,7 @@
 name = "expression_lib"
 version = "0.1.0"
 edition = "2021"
-license = "MIT"
+license.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 arrow = { workspace = true, default-features = false }
 num = "0.4.3"
 polars = { workspace = true, features = ["timezones", "allow_unused"] }
+polars-plan = { workspace = true }
 pyo3 = { workspace = true }
 pyo3-polars = { workspace = true, features = ["derive"] }
 rayon = { workspace = true }
