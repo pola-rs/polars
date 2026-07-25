@@ -1370,9 +1370,9 @@ impl DataFrame {
     }
 
     pub fn rename_many<'a>(
-        &mut self,
+        mut self,
         renames: impl Iterator<Item = (&'a str, PlSmallStr)>,
-    ) -> PolarsResult<&mut Self> {
+    ) -> PolarsResult<Self> {
         let schema = self.schema().clone();
 
         for (from, to) in renames {

@@ -334,7 +334,7 @@ pub fn gather_and_postprocess(
             let renamed = format_pl_smallstr!("{}{}", c, args.suffix());
             (c.as_str(), renamed)
         });
-    right.rename_many(renames).unwrap();
+    right = right.rename_many(renames).unwrap();
 
     left.hstack_mut(right.columns())?;
 
