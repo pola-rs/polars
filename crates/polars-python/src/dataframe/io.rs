@@ -23,7 +23,7 @@ impl PyDataFrame {
     py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
     skip_rows, skip_lines, projection, separator, rechunk, columns, encoding, n_threads, path,
     overwrite_dtype, overwrite_dtype_slice, low_memory, comment_prefix, quote_char,
-    null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
+    null_values, empty_string_is_null, try_parse_dates, skip_rows_after_header,
     row_index, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, schema)
 )]
     pub fn read_csv(
@@ -49,7 +49,7 @@ impl PyDataFrame {
         comment_prefix: Option<&str>,
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
-        missing_utf8_is_empty_string: bool,
+        empty_string_is_null: bool,
         try_parse_dates: bool,
         skip_rows_after_header: usize,
         row_index: Option<(String, IdxSize)>,
@@ -110,7 +110,7 @@ impl PyDataFrame {
                     CsvParseOptions::default()
                         .with_separator(separator.as_bytes()[0])
                         .with_encoding(encoding.0)
-                        .with_missing_is_null(!missing_utf8_is_empty_string)
+                        .with_missing_is_null(empty_string_is_null)
                         .with_comment_prefix(comment_prefix)
                         .with_null_values(null_values)
                         .with_try_parse_dates(try_parse_dates)
@@ -173,7 +173,7 @@ impl PyDataFrame {
         let (mmap_bytes_r, mmap_path) = get_mmap_bytes_reader_and_path(&py_f)?;
 
         let mmap_path = if memory_map { mmap_path } else { None };
-        py.enter_polars_df(move || {
+        py.enter_polars_df(move || unsafe {
             IpcReader::new(mmap_bytes_r)
                 .with_projection(projection)
                 .with_columns(columns)

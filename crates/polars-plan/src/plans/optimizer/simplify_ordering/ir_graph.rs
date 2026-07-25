@@ -1,4 +1,4 @@
-use polars_core::prelude::{InitHashMaps, PlHashMap};
+use polars_core::prelude::{InitHashMaps, PlIndexMap};
 use polars_utils::UnitVec;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::array::{array_concat, array_split};
@@ -23,7 +23,7 @@ struct CacheNodes {
 
 #[derive(Default)]
 pub(crate) struct CacheNodeUpdater {
-    inner: PlHashMap<UniqueId, CacheNodes>,
+    inner: PlIndexMap<UniqueId, CacheNodes>,
 }
 
 impl CacheNodeUpdater {
@@ -51,16 +51,16 @@ pub(crate) fn build_ir_traversal_graph<EdgeKey, Edge>(
     roots: &[Node],
     ir_arena: &mut Arena<IR>,
 ) -> (
-    Vec<Node>,                                     // Nodes in sink->source traversal order
-    PlHashMap<IRNodeKey, IRNodeEdgeKeys<EdgeKey>>, // Edge keys for each node
-    SlotMap<EdgeKey, Edge>,                        // Edges slotmap
-    CacheNodeUpdater,                              // All arena nodes that use this cache ID.
+    Vec<Node>,                                      // Nodes in sink->source traversal order
+    PlIndexMap<IRNodeKey, IRNodeEdgeKeys<EdgeKey>>, // Edge keys for each node
+    SlotMap<EdgeKey, Edge>,                         // Edges slotmap
+    CacheNodeUpdater,                               // All arena nodes that use this cache ID.
 )
 where
     EdgeKey: slotmap::Key,
     Edge: Default,
 {
-    let mut cache_track: PlHashMap<UniqueId, CacheNodes> = PlHashMap::new();
+    let mut cache_track: PlIndexMap<UniqueId, CacheNodes> = PlIndexMap::new();
     let mut num_nodes: usize = 0;
 
     let mut ir_nodes_stack = Vec::with_capacity(roots.len() + 8);
@@ -70,7 +70,7 @@ where
         let ir = ir_arena.get(ir_node);
 
         if let IR::Cache { id, .. } = ir {
-            use hashbrown::hash_map::Entry;
+            use indexmap::map::Entry;
 
             match cache_track.entry(*id) {
                 Entry::Occupied(mut v) => {
@@ -95,8 +95,8 @@ where
     num_nodes += cache_track.len();
 
     let mut all_edges_map: SlotMap<EdgeKey, Edge> = SlotMap::with_capacity_and_key(num_nodes);
-    let mut ir_node_to_edges_map: PlHashMap<IRNodeKey, IRNodeEdgeKeys<EdgeKey>> =
-        PlHashMap::with_capacity(num_nodes);
+    let mut ir_node_to_edges_map: PlIndexMap<IRNodeKey, IRNodeEdgeKeys<EdgeKey>> =
+        PlIndexMap::with_capacity(num_nodes);
 
     ir_nodes_stack.reserve_exact(num_nodes);
     ir_nodes_stack.extend_from_slice(roots);
@@ -134,22 +134,18 @@ where
         for i in 0..num_inputs {
             let input_node = ir_nodes_stack[i + inputs_start_idx];
             let input_node_key = IRNodeKey::new(input_node, ir_arena);
-            let _ = ir_node_to_edges_map.try_insert(input_node_key, IRNodeEdgeKeys::default());
             let IRNodeEdgeKeys {
                 out_edges: input_node_out_edges,
                 out_nodes: input_node_out_nodes,
                 ..
-            } = ir_node_to_edges_map.get_mut(&input_node_key).unwrap();
+            } = ir_node_to_edges_map.entry(input_node_key).or_default();
 
             input_node_out_edges.push(current_node_in_edges[i]);
             input_node_out_nodes.push(current_node);
         }
 
         let current_node_key = IRNodeKey::new(current_node, ir_arena);
-
-        let _ = ir_node_to_edges_map.try_insert(current_node_key, IRNodeEdgeKeys::default());
-        let current_edges = ir_node_to_edges_map.get_mut(&current_node_key).unwrap();
-
+        let current_edges = ir_node_to_edges_map.entry(current_node_key).or_default();
         assert!(current_edges.in_edges.is_empty());
         current_edges.in_edges = current_node_in_edges;
     }

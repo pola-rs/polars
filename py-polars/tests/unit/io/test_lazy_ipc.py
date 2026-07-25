@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import sys
 import typing
 from typing import IO, TYPE_CHECKING, Any
 
@@ -309,7 +311,7 @@ def test_sink_ipc_record_batch_size(record_batch_size: int, n_chunks: int) -> No
     n_rows = 100
     buf = io.BytesIO()
 
-    df0 = pl.DataFrame({"a": list(range(n_rows))})
+    df0 = pl.DataFrame({"a": range(n_rows)})
     df = df0
     while n_chunks > 1:
         df = pl.concat([df, df0])
@@ -322,12 +324,14 @@ def test_sink_ipc_record_batch_size(record_batch_size: int, n_chunks: int) -> No
     assert_frame_equal(out, df)
 
     buf.seek(0)
-    reader = pyarrow.ipc.open_file(buf)
-    n_batches = reader.num_record_batches
-    for i in range(n_batches):
-        n_rows = reader.get_batch(i).num_rows
+    with pyarrow.ipc.open_file(buf) as reader:
+        record_batch_lengths = [
+            reader.get_batch(i).num_rows for i in range(reader.num_record_batches)
+        ]
+
+    for i, n_rows in enumerate(record_batch_lengths):
         assert n_rows == record_batch_size or (
-            i + 1 == n_batches and n_rows <= record_batch_size
+            i + 1 == len(record_batch_lengths) and n_rows <= record_batch_size
         )
 
 
@@ -610,3 +614,67 @@ def test_scan_ipc_slice_empty_file() -> None:
     actual = pl.scan_ipc(bufs).slice(50, 100).collect()
 
     assert_frame_equal(expected, actual)
+
+
+@pytest.mark.slow
+@pytest.mark.write_disk
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="needs unix-only `resource` module to measure memory usage",
+)
+@pytest.mark.parametrize("force_async", [True, False])
+def test_sink_ipc_memory_usage(force_async: bool) -> None:
+    import subprocess
+    import sys
+
+    def mem_usage(n_chunks: int) -> int:
+        n_runs = 3
+
+        return min(
+            int(
+                subprocess.check_output(
+                    [
+                        sys.executable,
+                        "-c",
+                        """\
+import resource
+import sys
+import tempfile
+
+import polars as pl
+
+(_, n_chunks) = sys.argv
+
+
+s = pl.Series([0], dtype=pl.UInt32).new_from_index(
+    0,
+    1_000_000,
+)
+df = pl.concat(s for _ in range(int(n_chunks))).to_frame()
+
+with tempfile.NamedTemporaryFile() as f:
+    df.write_ipc(f.name)
+
+print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+
+""",
+                        str(n_chunks),
+                    ],
+                    env={
+                        "POLARS_FORCE_ASYNC": "1" if force_async else "0",
+                        **os.environ,
+                    },
+                ).decode()
+            )
+            for _ in range(n_runs)
+        )
+
+    m1 = mem_usage(1)
+    m10 = mem_usage(10)
+
+    ratio = m10 / m1
+
+    # Ratio
+    # 1.42.1: ~1.17
+    # Fixed branch (debug build): ~1.008
+    assert ratio < 1.05

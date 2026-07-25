@@ -108,7 +108,7 @@ impl ComputeNode for InMemorySourceNode {
                     }
 
                     let morsel_seq = MorselSeq::new(seq).offset_by(slf.seq_offset);
-                    let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
+                    let mut morsel = Morsel::new_unregistered(df, morsel_seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;

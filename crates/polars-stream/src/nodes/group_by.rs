@@ -161,7 +161,7 @@ impl GroupBySinkState {
                 while let Some((input_idx, morsel)) = recv.recv().await {
                     // Compute hot group indices from key.
                     let seq = morsel.seq().to_u64();
-                    let mut df = morsel.into_df();
+                    let mut df = morsel.into_df().await;
                     let mut key_columns = Vec::new();
                     for selector in &key_selectors_per_input[input_idx] {
                         let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;
@@ -526,7 +526,7 @@ pub struct GroupByNode {
     num_inputs: usize,
     num_pipelines: usize,
     output_schema: Arc<Schema>,
-    spill_ctx: Arc<MostRecentSpillContext>,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl GroupByNode {

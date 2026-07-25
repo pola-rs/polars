@@ -29,10 +29,6 @@ impl OptPyCloudOptions<'_> {
         cloud_scheme: Option<CloudScheme>,
         credential_provider: Option<Py<PyAny>>,
     ) -> PyResult<Option<CloudOptions>> {
-        if self.0.is_none() && credential_provider.is_none() {
-            return Ok(None);
-        }
-
         let py = self.0.py();
 
         let mut storage_options: Vec<(PyBackedStr, String)> = vec![];
@@ -127,7 +123,7 @@ impl OptPyCloudOptions<'_> {
         if file_cache_ttl > 0 {
             cloud_options.file_cache_ttl = file_cache_ttl;
         }
-        verbose_print_sensitive(|| format!("extracted cloud_options: {:?}", &cloud_options));
+        verbose_print_sensitive(|| format!("extracted cloud_options: {:?}", cloud_options));
 
         Ok(Some(cloud_options))
     }

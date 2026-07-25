@@ -157,8 +157,8 @@ impl ExecutionState {
     }
 
     /// Toggle this to measure execution times.
-    pub fn time_nodes(&mut self, start: std::time::Instant) {
-        self.node_timer = Some(NodeTimer::new(start))
+    pub fn time_nodes(&mut self, query_start: std::time::Instant, optimization_duration: Duration) {
+        self.node_timer = Some(NodeTimer::new(query_start, optimization_duration))
     }
     pub fn has_node_timer(&self) -> bool {
         self.node_timer.is_some()
@@ -182,7 +182,7 @@ impl ExecutionState {
 
     // This is wrong when the U64 overflows which will never happen.
     pub fn should_stop(&self) -> PolarsResult<()> {
-        try_raise_keyboard_interrupt();
+        try_raise_polars_abort();
         polars_ensure!(!self.stop.load(), ComputeError: "query interrupted");
         Ok(())
     }

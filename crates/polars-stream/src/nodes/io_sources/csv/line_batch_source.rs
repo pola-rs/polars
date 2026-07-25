@@ -82,7 +82,6 @@ impl LineBatchSource {
 
         let read_loop_handle =
             tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn_blocking(move || {
-                let handle = tokio::runtime::Handle::current();
                 if verbose {
                     eprintln!("[CsvSource]: Start line splitting async");
                 }
@@ -100,7 +99,7 @@ impl LineBatchSource {
 
                 while let Some(batch) = producer.next_batch()? {
                     // Effectively, this is `blocking_send`.
-                    if handle.block_on(line_batch_tx.send(batch)).is_err() {
+                    if ASYNC.block_on(line_batch_tx.send(batch)).is_err() {
                         break;
                     }
                 }

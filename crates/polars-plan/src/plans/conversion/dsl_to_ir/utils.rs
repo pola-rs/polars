@@ -10,7 +10,7 @@ pub(super) struct DslConversionContext<'a> {
     pub(super) cache_file_info: SourcesToFileInfo,
     pub(super) pushdown_maintain_errors: bool,
     pub(super) verbose: bool,
-    pub(super) seen_caches: PlHashMap<UniqueId, Node>,
+    pub(super) seen_caches: PlIndexMap<UniqueId, Node>,
 }
 
 pub(super) fn expand_expressions(

@@ -1,5 +1,5 @@
 use bitflags::bitflags;
-use polars_core::prelude::PlHashMap;
+use polars_core::prelude::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 
 use crate::dsl::EvalVariant;
@@ -91,7 +91,7 @@ pub(crate) struct ExprOrderSimplifier<'a> {
 
     /// Entries for nodes whose subtrees will no longer change when revisited with a de-ordering
     /// recursion state.
-    revisit_cache: &'a mut PlHashMap<Node, ObservableOrders>,
+    revisit_cache: &'a mut PlIndexMap<Node, ObservableOrders>,
     internally_observed: ObservableOrders,
 
     expr_arena: &'a mut Arena<AExpr>,
@@ -100,7 +100,7 @@ pub(crate) struct ExprOrderSimplifier<'a> {
 impl<'a> ExprOrderSimplifier<'a> {
     pub fn new(
         expr_arena: &'a mut Arena<AExpr>,
-        revisit_cache: &'a mut PlHashMap<Node, ObservableOrders>,
+        revisit_cache: &'a mut PlIndexMap<Node, ObservableOrders>,
     ) -> Self {
         Self {
             struct_field_ordering: None,
@@ -529,7 +529,7 @@ impl ExprOrderSimplifier<'_> {
 
                 let observable_in_offset = self.rec(offset, RS::NO_DEORDER);
                 let observable_in_length = self.rec(length, RS::NO_DEORDER);
-                let observable_in_input = self.rec(input, recursion);
+                let observable_in_input = self.rec(input, RS::NO_DEORDER);
 
                 let mut acc = ExprOrderAcc::default();
                 acc.add(observable_in_offset, offset);

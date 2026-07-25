@@ -7,9 +7,10 @@ from typing import TYPE_CHECKING, Any
 import polars._reexport as pl
 from polars import exceptions
 from polars import functions as F
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
-from polars._utils.various import _NamespaceSuggestMixin
+from polars._utils.various import _NamespaceSuggestMixin, _Omitted
 from polars._utils.wrap import wrap_expr
 from polars._warnings import issue_warning
 
@@ -191,7 +192,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         *,
         fraction: float | IntoExprColumn | None = None,
         with_replacement: bool = False,
-        shuffle: bool = False,
+        shuffle: bool | None = None,
         seed: int | None = None,
     ) -> Expr:
         """
@@ -207,7 +208,12 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Determines the order of the sampled values.
+            If True, sampled values are explicitly shuffled.
+            If False, the relative order of the sampled values is preserved.
+            (i.e. they appear in the same order as the original input list).
+            If None (default), no ordering guarantee; uses the most performant
+            algorithm.
         seed
             Seed for the random number generator. If set to None (default), a
             random seed is generated for each sample operation.
@@ -215,7 +221,11 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1, 2, 3], [4, 5]], "n": [2, 1]})
-        >>> df.with_columns(sample=pl.col("values").list.sample(n=pl.col("n"), seed=1))
+        >>> df.with_columns(
+        ...     sample=pl.col("values").list.sample(
+        ...         n=pl.col("n"), shuffle=False, seed=1
+        ...     )
+        ... )
         shape: (2, 3)
         ┌───────────┬─────┬───────────┐
         │ values    ┆ n   ┆ sample    │
@@ -1113,7 +1123,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.list_tail(n_pyexpr))
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
+    def explode(
+        self, *, empty_as_null: bool = _Omitted, keep_nulls: bool = True
+    ) -> Expr:
         """
         Returns a column with a separate row for every list element.
 
@@ -1136,7 +1148,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
-        >>> df.select(pl.col("a").list.explode())
+        >>> df.select(pl.col("a").list.explode(empty_as_null=False))
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -1151,6 +1163,13 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         │ 6   │
         └─────┘
         """
+        if empty_as_null is _Omitted:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
+
         return wrap_expr(
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
@@ -1288,6 +1307,11 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
             if upper_bound is None:
                 msg = "`Expr.list.to_struct` requires either `fields` to be a sequence or `upper_bound` to be set.\n\nThis used to be allowed but produced unpredictable results."
                 raise exceptions.InvalidOperationError(msg)
+
+            issue_deprecation_warning(
+                "list.to_struct() without a list of field names is deprecated. Please "
+                "pass a list of field names."
+            )
 
             if fields is None:
                 fields = [f"field_{i}" for i in range(upper_bound)]

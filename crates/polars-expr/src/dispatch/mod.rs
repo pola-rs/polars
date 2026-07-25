@@ -303,6 +303,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::Repeat => map_as_slice!(misc::repeat),
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => map!(misc::rank, options, seed),
+        F::AsList => map_as_slice!(misc::as_list),
         #[cfg(feature = "dtype-struct")]
         F::AsStruct => {
             map_as_slice!(misc::as_struct)
@@ -504,6 +505,10 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::EwmMean { options } => map!(misc::ewm_mean, options),
         #[cfg(feature = "ewma_by")]
         F::EwmMeanBy { half_life } => map_as_slice!(misc::ewm_mean_by, half_life),
+        #[cfg(feature = "ewma")]
+        F::EwmSum { options } => map!(misc::ewm_sum, options),
+        #[cfg(feature = "ewma_by")]
+        F::EwmSumBy { half_life } => map_as_slice!(misc::ewm_sum_by, half_life),
         #[cfg(feature = "ewma")]
         F::EwmStd { options } => map!(misc::ewm_std, options),
         #[cfg(feature = "ewma")]

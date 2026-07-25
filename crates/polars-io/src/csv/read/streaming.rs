@@ -780,8 +780,9 @@ fn infer_schema(
             content_lines,
             infer_all_as_str,
             &options.parse_options,
+            options.column_names_overwrite.as_deref(),
             options.schema_overwrite.as_deref(),
-        )
+        )?
     };
 
     if let Some(schema) = &options.schema {
@@ -809,6 +810,10 @@ fn infer_schema(
     }
 
     if let Some(dtypes) = options.dtype_overwrite.as_deref() {
+        polars_ensure!(
+            dtypes.len() <= inferred_schema.len(),
+            InvalidOperation: "The number of schema overrides must be less than or equal to the number of fields"
+        );
         for (i, dtype) in dtypes.iter().enumerate() {
             inferred_schema.set_dtype_at_index(i, dtype.clone());
         }

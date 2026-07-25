@@ -44,6 +44,11 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
     PolarsError::SQLInterface(err.to_string().into())
 }
 
+/// Represents a boolean-typed NULL literal (aka: SQL "UNKNOWN" truth value).
+fn sql_unknown() -> Expr {
+    lit(NULL).cast(DataType::Boolean)
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
 /// Categorises the type of (allowed) subquery constraint
@@ -227,8 +232,18 @@ impl SQLExprVisitor<'_> {
                 negated,
             } => {
                 let expr = self.visit_expr(expr)?;
-                let elems = self.visit_array_expr(list, true, Some(&expr))?;
-                let is_in = expr.is_in(elems, false);
+                let elems = self.visit_array_expr(list, false, Some(&expr))?;
+                let set_has_null = matches!(
+                    &elems,
+                    Expr::Literal(LiteralValue::Series(s)) if s.null_count() > 0
+                );
+                let membership = expr.is_in(elems.implode(false), false);
+                let is_in = if set_has_null {
+                    // Non-match against sets containing NULL is unknown, not FALSE
+                    membership.or(sql_unknown())
+                } else {
+                    membership
+                };
                 Ok(if *negated { is_in.not() } else { is_in })
             },
             SQLExpr::InSubquery {
@@ -1193,11 +1208,18 @@ impl SQLExprVisitor<'_> {
     ) -> PolarsResult<Expr> {
         let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
         let expr = self.visit_expr(expr)?;
-        Ok(if negated {
-            expr.is_in(subquery_result, false).not()
-        } else {
-            expr.is_in(subquery_result, false)
-        })
+        let Expr::SubPlan(_, cols) = &subquery_result else {
+            unreachable!("SingleColumn subquery must lower to a SubPlan");
+        };
+        let value_set = col(cols[0].0.clone()).first();
+        let membership = expr.is_in(subquery_result, false);
+        let set_has_null = value_set.clone().list().contains(lit(NULL), true);
+        let set_is_empty = value_set.list().len().eq(lit(0u32));
+        let is_in = when(set_is_empty)
+            .then(lit(false))
+            .otherwise(membership.or(set_has_null.and(sql_unknown())));
+
+        Ok(if negated { is_in.not() } else { is_in })
     }
 
     /// Visit `CASE` control flow expression.

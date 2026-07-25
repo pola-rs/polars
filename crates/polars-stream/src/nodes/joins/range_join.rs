@@ -330,7 +330,8 @@ async fn compute_and_emit_task(
     let mut builder_point = DataFrameBuilder::new(params.point_schema.clone());
     let mut builder_interval = DataFrameBuilder::new(params.interval_schema.clone());
     while let Ok(morsel) = recv.recv().await {
-        let (interval_df, seq, st, _) = morsel.into_inner();
+        let (interval_sf, seq, st, _) = morsel.into_inner();
+        let interval_df = interval_sf.into_df().await;
 
         // Range join is always an INNER join, so remove nulls first
         let mut acc: Option<BooleanChunked> = None;
@@ -444,7 +445,7 @@ async fn freeze_builders_and_emit(
     };
 
     drop_key_columns(&mut output, params);
-    let mut morsel = Morsel::new(output, seq, st);
+    let mut morsel = Morsel::new_unregistered(output, seq, st);
     if let Some(wt) = wt {
         morsel.set_consume_token(wt);
     }

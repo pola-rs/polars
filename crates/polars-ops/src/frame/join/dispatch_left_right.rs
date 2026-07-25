@@ -85,7 +85,7 @@ pub fn materialize_left_join_from_series(
     } else {
         right.drop(s_right.name()).unwrap()
     };
-    try_raise_keyboard_interrupt();
+    try_raise_polars_abort();
 
     #[cfg(feature = "chunked_ids")]
     match (left_idx, right_idx) {

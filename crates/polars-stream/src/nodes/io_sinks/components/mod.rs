@@ -1,3 +1,4 @@
+pub mod df_with_offset;
 pub mod error_capture;
 pub mod exclude_keys_projection;
 pub mod file_provider;

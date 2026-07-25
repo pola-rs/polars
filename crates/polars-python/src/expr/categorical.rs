@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 
 use crate::PyExpr;
+use crate::expr::datatype::PyDataTypeExpr;
 
 #[pymethods]
 impl PyExpr {
@@ -27,5 +28,13 @@ impl PyExpr {
     #[pyo3(signature = (offset, length=None))]
     fn cat_slice(&self, offset: i64, length: Option<usize>) -> Self {
         self.inner.clone().cat().slice(offset, length).into()
+    }
+
+    fn cat_to(&self, dtype: PyDataTypeExpr, strict: bool) -> Self {
+        self.inner.clone().cat().to(dtype.inner, strict).into()
+    }
+
+    fn cat_physical(&self) -> Self {
+        self.inner.clone().cat().physical().into()
     }
 }

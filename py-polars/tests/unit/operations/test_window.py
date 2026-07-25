@@ -766,7 +766,9 @@ def test_window_implode_explode() -> None:
             "y": [2, 2, 2, 3, 3, 3, 4, 4, 4],
         }
     ).select(
-        works=(pl.col.x * pl.col.x.implode().explode()).over(pl.col.y),
+        works=(pl.col.x * pl.col.x.implode().explode(empty_as_null=False)).over(
+            pl.col.y
+        ),
     ).to_dict(as_series=False) == {"works": [1, 4, 9, 1, 4, 9, 1, 4, 9]}
 
 
@@ -906,8 +908,6 @@ def test_aggregate_gather_over_dtype_24632(
     assert q.collect_schema() == q.collect().schema
 
 
-@pytest.mark.may_fail_auto_streaming  # reason: issue
-# https://github.com/pola-rs/polars/issues/24865
 @pytest.mark.parametrize(
     ("expr", "mapping_strategy", "result"),
     [
@@ -968,8 +968,6 @@ def test_mapping_strategy_scalar_matrix(
         assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming  # reason: issue
-# https://github.com/pola-rs/polars/issues/24865
 @pytest.mark.parametrize(
     "expr",
     [

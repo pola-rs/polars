@@ -73,6 +73,9 @@ if sys.version_info >= (3, 11):
     _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
     _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
+# Sentinel value to disallow None
+_Omitted: Any = object()
+
 
 def _process_null_values(
     null_values: None | str | Sequence[str] | dict[str, str] = None,
@@ -88,8 +91,7 @@ def _is_generator(val: object | Iterator[T]) -> TypeIs[Iterator[T]]:
         (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
         or isinstance(val, MappingView)
         or (
-            sys.version_info >= (3, 11)
-            and isinstance(val, _reverse_mapping_views)  # pyrefly: ignore[unknown-name]
+            sys.version_info >= (3, 11) and isinstance(val, _reverse_mapping_views)  # pyrefly: ignore[unknown-name]
         )
     )
 
@@ -221,7 +223,9 @@ def _in_notebook() -> bool:
     try:
         from IPython import get_ipython
 
-        if "IPKernelApp" not in get_ipython().config:  # pragma: no cover
+        if (
+            ipy := get_ipython()
+        ) is not None and "IPKernelApp" not in ipy.config:  # pragma: no cover
             return False
     except ImportError:
         return False

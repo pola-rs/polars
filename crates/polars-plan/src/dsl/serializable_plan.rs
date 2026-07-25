@@ -150,7 +150,7 @@ pub(crate) enum SerializableDslPlanNode {
     MergeSorted {
         input_left: DslPlanKey,
         input_right: DslPlanKey,
-        key: PlSmallStr,
+        key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
     IR {

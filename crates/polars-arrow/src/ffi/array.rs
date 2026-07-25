@@ -100,7 +100,11 @@ impl ArrowArray {
     /// # Safety
     /// This method releases `buffers`. Consumers of this struct *must* call `release` before
     /// releasing this struct, or contents in `buffers` leak.
-    pub(crate) fn new(array: Box<dyn Array>) -> Self {
+    pub(crate) fn new(mut array: Box<dyn Array>) -> Self {
+        if let Some(struct_array) = array.as_any_mut().downcast_mut::<StructArray>() {
+            *struct_array = struct_array.to_ffi_aligned();
+        }
+
         #[allow(unused_mut)]
         let (offset, mut buffers, children, dictionary) =
             offset_buffers_children_dictionary(array.as_ref());
@@ -576,7 +580,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
 /// Furthermore, this struct assumes that the incoming data agrees with the C data interface.
 #[derive(Debug, Clone)]
 pub struct InternalArrowArray {
-    // Arc is used for sharability since this is immutable
+    // Arc is used for shareability since this is immutable
     array: Arc<ArrowArray>,
     // Arced to reduce cost of cloning
     dtype: Arc<ArrowDataType>,
