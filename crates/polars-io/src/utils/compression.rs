@@ -5,7 +5,7 @@ use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_error::{feature_gated, to_compute_err};
 
-use crate::utils::file::{Writeable, WriteableTrait};
+use crate::utils::file::{Writable, WritableTrait};
 use crate::utils::stream_buf_reader::ReaderSource;
 use crate::utils::sync_on_close::SyncOnCloseType;
 
@@ -388,16 +388,16 @@ impl ByteSourceReader<ReaderSource> {
     }
 }
 
-/// Constructor for `WriteableTrait` compressed encoders.
+/// Constructor for `WritableTrait` compressed encoders.
 pub enum CompressedWriter {
     #[cfg(feature = "decompress")]
-    Gzip(Option<flate2::write::GzEncoder<Writeable>>),
+    Gzip(Option<flate2::write::GzEncoder<Writable>>),
     #[cfg(feature = "decompress")]
-    Zstd(Option<zstd::Encoder<'static, Writeable>>),
+    Zstd(Option<zstd::Encoder<'static, Writable>>),
 }
 
 impl CompressedWriter {
-    pub fn gzip(writer: Writeable, level: Option<u32>) -> Self {
+    pub fn gzip(writer: Writable, level: Option<u32>) -> Self {
         feature_gated!("decompress", {
             Self::Gzip(Some(flate2::write::GzEncoder::new(
                 writer,
@@ -406,7 +406,7 @@ impl CompressedWriter {
         })
     }
 
-    pub fn zstd(writer: Writeable, level: Option<u32>) -> std::io::Result<Self> {
+    pub fn zstd(writer: Writable, level: Option<u32>) -> std::io::Result<Self> {
         feature_gated!("decompress", {
             zstd::Encoder::new(writer, level.unwrap_or(3) as i32)
                 .map(Some)
@@ -435,7 +435,7 @@ impl Write for CompressedWriter {
     }
 }
 
-impl WriteableTrait for CompressedWriter {
+impl WritableTrait for CompressedWriter {
     fn close(&mut self) -> std::io::Result<()> {
         feature_gated!("decompress", {
             let writer = match self {

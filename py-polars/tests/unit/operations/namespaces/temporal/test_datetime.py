@@ -1559,3 +1559,40 @@ def test_out_of_range_date_year_11991() -> None:
     # is_leap_year should also return null for out-of-range dates
     result_leap = s.dt.is_leap_year()
     assert result_leap[0] is None
+
+
+@pytest.mark.parametrize(
+    "method", ["day", "month", "year", "hour", "minute", "second", "weekday"]
+)
+def test_dt_extract_with_null_tz_aware_27862(method: str) -> None:
+    # A null slot's backing value may be anything (only valid, initialized
+    # memory is guaranteed); pandas/pyarrow leave i64::MIN there. Extraction
+    # must skip the masked slot rather than convert it, which previously panicked.
+    pa = pytest.importorskip("pyarrow")
+    i64_min = -(2**63)
+    values = (1609459200000000).to_bytes(8, "little", signed=True) + i64_min.to_bytes(
+        8, "little", signed=True
+    )
+    arr = pa.Array.from_buffers(
+        pa.timestamp("us", tz="UTC"),
+        2,
+        [pa.py_buffer(bytes([0b01])), pa.py_buffer(values)],
+    )
+    s: pl.Series = pl.from_arrow(arr)  # type: ignore[assignment]
+    out = getattr(s.dt, method)()
+    assert out[1] is None
+    assert out[0] is not None
+
+
+@pytest.mark.parametrize("tz", [None, "UTC"])
+@pytest.mark.parametrize("method", ["day", "month", "year", "hour", "minute", "second"])
+def test_dt_extract_present_out_of_range_27862(method: str, tz: str | None) -> None:
+    # A *present* (non-null) timestamp that is out of the representable datetime
+    # range must yield null, not a garbage default value or a panic. Build it by
+    # casting a raw i64 that is far beyond chrono's range into a Datetime column.
+    s = pl.Series([9_000_000_000_000_000_000], dtype=pl.Int64).cast(
+        pl.Datetime("us", tz)
+    )
+    assert s.null_count() == 0  # the value is present, not masked
+    out = getattr(s.dt, method)()
+    assert out[0] is None

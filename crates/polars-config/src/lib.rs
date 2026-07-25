@@ -1,5 +1,6 @@
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::time::Duration;
 
 mod engine;
 mod parse;
@@ -45,7 +46,6 @@ const PRUNE_PARQUET_METADATA: &str = "POLARS_PRUNE_PARQUET_METADATA";
 const DEFAULT_PRUNE_PARQUET_METADATA: bool = false;
 
 const RESOLVE_METADATA_LEVEL: &str = "POLARS_RESOLVE_METADATA_LEVEL";
-const DEFAULT_RESOLVE_METADATA_LEVEL: ResolveMode = ResolveMode::RowCounts;
 
 // Private.
 const VERBOSE_SENSITIVE: &str = "POLARS_VERBOSE_SENSITIVE";
@@ -74,6 +74,9 @@ const DEFAULT_OOC_MEMORY_BUDGET_FRACTION: f64 = 0.8;
 const OOC_MEMORY_BUDGET_MB: &str = "POLARS_OOC_MEMORY_BUDGET_MB";
 const DEFAULT_OOC_MEMORY_BUDGET_MB: u64 = u64::MAX;
 
+const OOC_DISK_BUDGET_MB: &str = "POLARS_OOC_DISK_BUDGET_MB";
+const DEFAULT_OOC_DISK_BUDGET_MB: u64 = u64::MAX;
+
 const OOC_SPILL_MIN_BYTES: &str = "POLARS_OOC_SPILL_MIN_BYTES";
 const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 64 * 1024; // 64 KB
 
@@ -91,6 +94,10 @@ const DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS: bool = false;
 
 const ALLOW_NESTED_CSPE: &str = "POLARS_ALLOW_NESTED_CSPE";
 const DEFAULT_ALLOW_NESTED_CSPE: bool = false;
+
+const DNS_LOG_THRESHOLD_MS: &str = "POLARS_DNS_LOG_THRESHOLD_MS";
+/// Sentinel meaning "env var not set / logging disabled".
+const DNS_LOG_THRESHOLD_DISABLED: u64 = u64::MAX;
 
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
@@ -136,10 +143,12 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_SPILL_COMPRESSION_LEVEL,
     OOC_MEMORY_BUDGET_FRACTION,
     OOC_MEMORY_BUDGET_MB,
+    OOC_DISK_BUDGET_MB,
     OOC_SPILL_MIN_BYTES,
     OOC_LOG_METRICS,
     JOIN_SAMPLE_LIMIT,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
+    DNS_LOG_THRESHOLD_MS,
 ];
 
 pub struct Config {
@@ -163,10 +172,12 @@ pub struct Config {
     ooc_spill_compression_level: AtomicU64,
     ooc_memory_budget_fraction: AtomicU64,
     ooc_memory_budget_bytes: AtomicU64,
+    ooc_disk_budget_bytes: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
     ooc_log_metrics: AtomicBool,
     join_sample_limit: AtomicU64,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
+    dns_log_threshold_ms: AtomicU64,
 }
 
 impl Config {
@@ -183,7 +194,7 @@ impl Config {
                 DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
             ),
             prune_parquet_metadata: AtomicBool::new(DEFAULT_PRUNE_PARQUET_METADATA),
-            resolve_metadata_level: AtomicU8::new(DEFAULT_RESOLVE_METADATA_LEVEL as u8),
+            resolve_metadata_level: AtomicU8::new(ResolveMode::default() as u8),
 
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
@@ -197,6 +208,9 @@ impl Config {
             ooc_memory_budget_bytes: AtomicU64::new(
                 DEFAULT_OOC_MEMORY_BUDGET_MB.saturating_mul(1_000_000),
             ),
+            ooc_disk_budget_bytes: AtomicU64::new(
+                DEFAULT_OOC_DISK_BUDGET_MB.saturating_mul(1_000_000),
+            ),
             ooc_spill_min_bytes: AtomicU64::new(DEFAULT_OOC_SPILL_MIN_BYTES),
             ooc_log_metrics: AtomicBool::new(false),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
@@ -204,6 +218,7 @@ impl Config {
                 DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
             ),
             allow_nested_cspe: AtomicBool::new(DEFAULT_ALLOW_NESTED_CSPE),
+            dns_log_threshold_ms: AtomicU64::new(DNS_LOG_THRESHOLD_DISABLED),
         };
         cfg.reload_env_vars();
         cfg
@@ -276,7 +291,7 @@ impl Config {
             ),
             RESOLVE_METADATA_LEVEL => self.resolve_metadata_level.store(
                 val.and_then(|x| parse::parse_resolve_mode(var, x))
-                    .unwrap_or(DEFAULT_RESOLVE_METADATA_LEVEL) as u8,
+                    .unwrap_or_default() as u8,
                 Ordering::Relaxed,
             ),
 
@@ -323,6 +338,12 @@ impl Config {
                     .saturating_mul(1_000_000),
                 Ordering::Relaxed,
             ),
+            OOC_DISK_BUDGET_MB => self.ooc_disk_budget_bytes.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_DISK_BUDGET_MB)
+                    .saturating_mul(1_000_000),
+                Ordering::Relaxed,
+            ),
             OOC_SPILL_MIN_BYTES => self.ooc_spill_min_bytes.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_OOC_SPILL_MIN_BYTES),
@@ -345,6 +366,11 @@ impl Config {
                     Ordering::Relaxed,
                 )
             },
+            DNS_LOG_THRESHOLD_MS => self.dns_log_threshold_ms.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DNS_LOG_THRESHOLD_DISABLED),
+                Ordering::Relaxed,
+            ),
             _ => {
                 if var.starts_with("POLARS_") {
                     if self.warn_unknown_config.load(Ordering::Relaxed) {
@@ -457,6 +483,11 @@ impl Config {
     }
 
     #[inline(always)]
+    pub fn ooc_disk_budget_bytes(&self) -> u64 {
+        self.ooc_disk_budget_bytes.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
     pub fn ooc_spill_min_bytes(&self) -> u64 {
         self.ooc_spill_min_bytes.load(Ordering::Relaxed)
     }
@@ -483,6 +514,14 @@ impl Config {
     pub fn projection_pushdown_prune_strict_hconcat_inputs(&self) -> bool {
         self.projection_pushdown_prune_strict_hconcat_inputs
             .load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn dns_log_threshold(&self) -> Option<Duration> {
+        match self.dns_log_threshold_ms.load(Ordering::Relaxed) {
+            DNS_LOG_THRESHOLD_DISABLED => None,
+            ms => Some(Duration::from_millis(ms)),
+        }
     }
 }
 

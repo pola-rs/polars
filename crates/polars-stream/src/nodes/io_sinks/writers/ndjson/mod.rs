@@ -1,3 +1,5 @@
+use std::num::NonZeroU64;
+
 use polars_async::executor::{self, TaskPriority};
 use polars_async::primitives::connector;
 use polars_core::config;
@@ -5,13 +7,11 @@ use polars_core::runtime::ASYNC;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::ndjson::NDJsonWriterOptions;
-use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
-use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::io_sinks::components::sink_morsel::{SinkMorsel, SinkMorselPermit};
 use crate::nodes::io_sinks::components::size::{
-    NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
+    NonZeroRowCountAndSize, SplitMode, TargetSinkMorselSize,
 };
 use crate::nodes::io_sinks::writers::interface::{
     FileOpenTaskHandle, FileWriterStarter, ideal_sink_morsel_size_env,
@@ -40,10 +40,10 @@ impl NDJsonWriterStarter {
         if initialized_state.is_none() {
             let (env_num_rows, env_num_bytes) = ideal_sink_morsel_size_env();
 
-            let ideal_morsel_size = RowCountAndSize {
-                num_rows: env_num_rows
-                    .unwrap_or(get_ideal_morsel_size().try_into().unwrap_or(IdxSize::MAX)),
-                num_bytes: env_num_bytes.unwrap_or(8 * 1024 * 1024),
+            let ideal_morsel_size = NonZeroRowCountAndSize {
+                num_rows: env_num_rows.unwrap_or(const { NonZeroIdxSize::new(25 * 1024).unwrap() }),
+                num_bytes: env_num_bytes
+                    .unwrap_or(const { NonZeroU64::new(8 * 1024 * 1024).unwrap() }),
             };
 
             let serialized_row_size_estimate = u64::saturating_mul(self.schema.len() as _, 50);
@@ -51,10 +51,10 @@ impl NDJsonWriterStarter {
             let base_allocation_size: usize = u64::min(
                 64 * 1024 * 1024,
                 u64::min(
-                    ideal_morsel_size.num_bytes.saturating_mul(3),
+                    ideal_morsel_size.num_bytes.get().saturating_mul(3),
                     u64::saturating_mul(
                         serialized_row_size_estimate,
-                        ideal_morsel_size.num_rows as _,
+                        ideal_morsel_size.num_rows.get() as _,
                     ),
                 ),
             ) as _;
@@ -62,8 +62,6 @@ impl NDJsonWriterStarter {
             if config::verbose() {
                 eprintln!("[NDJsonWriterStarter]: base_allocation_size: {base_allocation_size}")
             }
-
-            let ideal_morsel_size = NonZeroRowCountAndSize::new(ideal_morsel_size).unwrap();
 
             *initialized_state = Some(InitializedState {
                 ideal_morsel_size,
@@ -80,11 +78,14 @@ impl FileWriterStarter for NDJsonWriterStarter {
         "ndjson"
     }
 
-    fn takeable_rows_provider(&self) -> TakeableRowsProvider {
-        TakeableRowsProvider {
-            max_size: self.initialized_state().ideal_morsel_size,
-            byte_size_min_rows: NonZeroIdxSize::new(256).unwrap(),
-            allow_non_max_size: true,
+    fn target_sink_morsel_size(&self) -> TargetSinkMorselSize {
+        let ideal_morsel_size = self.initialized_state().ideal_morsel_size;
+
+        TargetSinkMorselSize {
+            target_num_rows: ideal_morsel_size.num_rows,
+            target_num_bytes: ideal_morsel_size.num_bytes,
+            target_num_bytes_min_rows: const { NonZeroIdxSize::new(256).unwrap() },
+            target_num_rows_mode: SplitMode::Approximate,
         }
     }
 

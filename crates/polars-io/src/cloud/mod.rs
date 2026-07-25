@@ -19,6 +19,9 @@ pub use polars_object_store::*;
 #[cfg(feature = "cloud")]
 pub mod cloud_writer;
 #[cfg(feature = "cloud")]
+pub mod concurrency;
+pub mod concurrency_config;
+#[cfg(feature = "cloud")]
 pub mod credential_provider;
 
 #[cfg(feature = "cloud")]

@@ -15,6 +15,7 @@ pub mod async_utils;
 pub mod binary_search;
 pub mod bool;
 pub mod cache;
+pub mod calc_morsel_split;
 pub mod cardinality_sketch;
 pub mod cell;
 pub mod chunks;
@@ -74,7 +75,6 @@ pub mod io;
 #[cfg(feature = "mmap")]
 pub mod mmap;
 pub mod nulls;
-pub mod partitioned;
 
 pub use index::{IdxSize, NullableIdxSize};
 pub use io::*;

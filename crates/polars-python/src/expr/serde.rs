@@ -3,35 +3,20 @@ use std::io::{BufReader, BufWriter};
 use polars::lazy::prelude::Expr;
 use polars_utils::pl_serialize;
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 
 use crate::PyExpr;
-use crate::error::PyPolarsErr;
 use crate::exceptions::ComputeError;
 use crate::file::get_file_like;
 
 #[pymethods]
 impl PyExpr {
-    // Pickle we set FC is false, as that is used for caching (compact is faster) and is not intended to be used
-    // across different versions.
     fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        // Used in pickle/pickling
-        let mut writer: Vec<u8> = vec![];
-        pl_serialize::SerializeOptions::default()
-            .serialize_into_writer::<_, _, false>(&mut writer, &self.inner)
-            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-
-        Ok(PyBytes::new(py, &writer))
+        crate::conversion::serde_pickle(&self.inner, py)
     }
 
     fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
-        // Used in pickle/pickling
-        let bytes = state.extract::<PyBackedBytes>()?;
-        self.inner = pl_serialize::SerializeOptions::default()
-            .deserialize_from_reader::<_, _, false>(&*bytes)
-            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-        Ok(())
+        crate::conversion::serde_unpickle(&mut self.inner, state)
     }
 
     /// Serialize into binary data.

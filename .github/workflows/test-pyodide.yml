@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Disable incompatible features
         env:
@@ -34,7 +34,7 @@ jobs:
           sed -E -i "/^  \"(${FEATURES})\",$/d" crates/polars-python/Cargo.toml py-polars/runtime/polars-runtime-32/Cargo.toml
 
       - name: Setup emsdk
-        uses: mymindstorm/setup-emsdk@v14
+        uses: mymindstorm/setup-emsdk@v16
         with:
           # This should match the exact version of Emscripten used by Pyodide
           version: 3.1.58

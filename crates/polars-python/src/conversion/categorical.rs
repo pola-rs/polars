@@ -67,6 +67,10 @@ impl PyCategories {
         Some(self.categories.mapping().cat_to_str(cat)?.to_owned())
     }
 
+    pub fn num_cats_upper_bound(&self) -> usize {
+        self.categories.mapping().num_cats_upper_bound()
+    }
+
     pub fn is_global(&self) -> bool {
         self.categories.is_global()
     }

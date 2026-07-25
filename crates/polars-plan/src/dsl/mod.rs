@@ -1500,6 +1500,18 @@ impl Expr {
     }
 
     #[cfg(feature = "ewma")]
+    /// Calculate the exponentially-weighted moving sum.
+    pub fn ewm_sum(self, options: EWMOptions) -> Self {
+        self.map_unary(FunctionExpr::EwmSum { options })
+    }
+
+    #[cfg(feature = "ewma_by")]
+    /// Calculate the exponentially-weighted moving sum by a time column.
+    pub fn ewm_sum_by(self, times: Expr, half_life: Duration) -> Self {
+        self.map_binary(FunctionExpr::EwmSumBy { half_life }, times)
+    }
+
+    #[cfg(feature = "ewma")]
     /// Calculate the exponentially-weighted moving standard deviation.
     pub fn ewm_std(self, options: EWMOptions) -> Self {
         self.map_unary(FunctionExpr::EwmStd { options })

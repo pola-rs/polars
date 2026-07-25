@@ -265,30 +265,34 @@ def test_from_dicts_struct() -> None:
 @pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
-    assert df.to_series().list.to_struct().to_list() == [
-        {"field_0": 1, "field_1": 2, "field_2": 3},
-        {"field_0": 1, "field_1": 2, "field_2": None},
-    ]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert df.to_series().list.to_struct().to_list() == [
+            {"field_0": 1, "field_1": 2, "field_2": 3},
+            {"field_0": 1, "field_1": 2, "field_2": None},
+        ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    assert df.to_series().list.to_struct(
-        fields=lambda idx: f"col_name_{idx}"
-    ).to_list() == [
-        {"col_name_0": 1, "col_name_1": 2},
-        {"col_name_0": 1, "col_name_1": 2},
-    ]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert df.to_series().list.to_struct(
+            fields=lambda idx: f"col_name_{idx}"
+        ).to_list() == [
+            {"col_name_0": 1, "col_name_1": 2},
+            {"col_name_0": 1, "col_name_1": 2},
+        ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    assert df.to_series().list.to_struct("max_width").to_list() == [
-        {"field_0": 1, "field_1": 2, "field_2": None},
-        {"field_0": 1, "field_1": 2, "field_2": 3},
-    ]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert df.to_series().list.to_struct("max_width").to_list() == [
+            {"field_0": 1, "field_1": 2, "field_2": None},
+            {"field_0": 1, "field_1": 2, "field_2": 3},
+        ]
 
     # set upper bound
     df = pl.DataFrame({"lists": [[1, 1, 1], [0, 1, 0], [1, 0, 0]]})
-    assert df.lazy().select(pl.col("lists").list.to_struct(upper_bound=3)).unnest(
-        "lists"
-    ).sum().collect().columns == ["field_0", "field_1", "field_2"]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert df.lazy().select(pl.col("lists").list.to_struct(upper_bound=3)).unnest(
+            "lists"
+        ).sum().collect().columns == ["field_0", "field_1", "field_2"]
 
 
 def test_sort_df_with_list_struct() -> None:
@@ -502,7 +506,8 @@ def test_list_of_struct_unique() -> None:
     assert {"a": 1, "b": 11} in unique_el
 
 
-def test_nested_explode_4026() -> None:
+@pytest.mark.parametrize("empty_as_null", [False, True])
+def test_nested_explode_4026(empty_as_null: bool) -> None:
     df = pl.DataFrame(
         {
             "data": [
@@ -515,7 +520,7 @@ def test_nested_explode_4026() -> None:
         }
     )
 
-    assert df.explode("data").to_dict(as_series=False) == {
+    assert df.explode("data", empty_as_null=empty_as_null).to_dict(as_series=False) == {
         "data": [
             {"account_id": 10, "values": [1, 2]},
             {"account_id": 11, "values": [10, 20]},
@@ -1081,7 +1086,7 @@ def test_struct_chunked_zip_18119() -> None:
     b = pl.concat([b_dfs[4], b_dfs[1]])
     mask = pl.concat([mask_dfs[3], mask_dfs[2]])
 
-    df = pl.concat([a, b, mask], how="horizontal")
+    df = pl.concat([a, b, mask], how="horizontal", strict=True)
 
     assert_frame_equal(
         df.select(pl.when(pl.col.f).then(pl.col.a).otherwise(pl.col.b)),
@@ -1228,11 +1233,12 @@ def test_list_to_struct_19208() -> None:
             ]
         }
     )
-    assert pl.concat([df[0], df[1], df[2]]).select(
-        pl.col("nested").list.to_struct(upper_bound=1)
-    ).to_dict(as_series=False) == {
-        "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
-    }
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert pl.concat([df[0], df[1], df[2]]).select(
+            pl.col("nested").list.to_struct(upper_bound=1)
+        ).to_dict(as_series=False) == {
+            "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
+        }
 
 
 def test_struct_reverse_outer_validity_19445() -> None:
@@ -1346,7 +1352,8 @@ def test_zip_outer_validity_infinite_recursion_21267() -> None:
     )
 
 
-def test_struct_arithmetic_broadcast_21376() -> None:
+@pytest.mark.parametrize("empty_as_null", [False, True])
+def test_struct_arithmetic_broadcast_21376(empty_as_null: bool) -> None:
     df = pl.DataFrame(
         {
             "struct1": [{"low": 1, "mid": 2, "up": 3}],
@@ -1362,7 +1369,7 @@ def test_struct_arithmetic_broadcast_21376() -> None:
     )
     out = (
         df.with_row_index()
-        .explode("list_struct")
+        .explode("list_struct", empty_as_null=empty_as_null)
         .select((pl.col("struct1") + pl.col("list_struct")).alias("add_struct"))
     )
     assert_frame_equal(out, expected)
@@ -1435,7 +1442,7 @@ def test_struct_equal_missing_null_25360() -> None:
     q1 = lf.select(a1=pl.col.a.slice(1, 1).first())
     q2 = lf.group_by(pl.lit(1)).agg(a2=pl.col.a.slice(1, 1).first()).drop("literal")
 
-    q = pl.concat([q1, q2], how="horizontal").collect()
+    q = pl.concat([q1, q2], how="horizontal", strict=True).collect()
 
     result = q.select(
         eq=pl.col.a1.eq(pl.col.a2),
@@ -1918,6 +1925,8 @@ def test_with_fields_optimize_expr_fused_multiply_add_27233() -> None:
         pl.col.s.struct.with_fields(fma=pl.field("x") * pl.lit(2) + pl.field("y"))
     )
     expected = pl.concat(
-        [df.unnest("s"), pl.DataFrame({"fma": [31, 61]})], how="horizontal"
+        [df.unnest("s"), pl.DataFrame({"fma": [31, 61]})],
+        how="horizontal",
+        strict=True,
     )
     assert_frame_equal(out.unnest("s"), expected)

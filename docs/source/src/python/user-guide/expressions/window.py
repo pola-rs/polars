@@ -42,7 +42,7 @@ result = (
         pl.col("Speed").rank("dense", descending=True).alias("Speed rank"),
     )
     .select(pl.col("Name"), pl.col("Type 1"), pl.col("Speed rank"))
-    .explode("Name", "Speed rank")
+    .explode("Name", "Speed rank", empty_as_null=False)
 )
 
 print(result)

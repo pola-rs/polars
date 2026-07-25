@@ -15,7 +15,7 @@ pub enum ListFunction {
     Sample {
         is_fraction: bool,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     },
     Slice,

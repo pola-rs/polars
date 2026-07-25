@@ -203,19 +203,26 @@ class CredentialProviderAWS(CachingCredentialProvider):
             msg = "did not receive any credentials from boto3.Session.get_credentials()"
             raise self.EmptyCredentialError(msg)
 
+        # Important: Do this before fetching expiry, `creds.*` property access
+        # might be needed for the expiry to be generated
+        # (e.g. DeferredRefreshableCredentials).
+        creds_dict = {
+            "aws_access_key_id": creds.access_key,
+            "aws_secret_access_key": creds.secret_key,
+            **({"aws_session_token": creds.token} if creds.token is not None else {}),
+        }
+
         expiry = (
             int(expiry.timestamp())
             if isinstance(expiry := getattr(creds, "_expiry_time", None), datetime)
             else None
         )
 
-        return {
-            "aws_access_key_id": creds.access_key,
-            "aws_secret_access_key": creds.secret_key,
-            **({"aws_session_token": creds.token} if creds.token is not None else {}),
-        }, expiry
+        return creds_dict, expiry
 
     def _finish_assume_role(self, session: Any) -> CredentialProviderFunctionReturn:
+        assert self.assume_role is not None
+
         client = session.client("sts")
 
         sts_response = client.assume_role(**self.assume_role)

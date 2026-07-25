@@ -5,10 +5,11 @@ use polars_utils::python_function::PythonFunction;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 
+use super::arrow_predicate::ArrowPredicate;
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::plans::{ExprIR, PlSmallStr};
 
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Debug, Default)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct PythonOptions {
     /// A function that returns a Python Generator.
@@ -32,15 +33,10 @@ pub struct PythonOptions {
     pub is_pure: bool,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Debug, Default)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum PythonPredicate {
-    // A pyarrow predicate python expression
-    // can be evaluated with python.eval
-    PyArrow {
-        predicate: String,
-        has_residual: bool,
-    },
+    PyArrow(ArrowPredicate),
     Polars(ExprIR),
     #[default]
     None,

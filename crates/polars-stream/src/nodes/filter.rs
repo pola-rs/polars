@@ -58,7 +58,7 @@ impl ComputeNode for FilterNode {
                         })
                         .await?;
 
-                    if morsel.df().height() == 0 {
+                    if morsel.height() == 0 {
                         continue;
                     }
 

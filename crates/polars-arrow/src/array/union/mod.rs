@@ -28,7 +28,7 @@ pub struct UnionArray {
     types: Buffer<i8>,
     // Invariant: `map.len() == fields.len()`
     // Invariant: every item in `map` is `> 0 && < fields.len()`
-    map: Option<[usize; 127]>,
+    map: Option<[usize; 128]>,
     fields: Vec<Box<dyn Array>>,
     // Invariant: when set, `offsets.len() == types.len()`
     offsets: Option<Buffer<i32>>,
@@ -99,7 +99,7 @@ impl UnionArray {
             // * types = [5, 7, 5, 7, 7, 7, 5, 7, 7, 5, 5]
             // * ids = [5, 7]
             // => hash = [0, 0, 0, 0, 0, 0, 1, 0, ...]
-            let mut hash = [0; 127];
+            let mut hash = [0; 128];
 
             for (pos, &id) in ids.iter().enumerate() {
                 if !(0..=127).contains(&id) {

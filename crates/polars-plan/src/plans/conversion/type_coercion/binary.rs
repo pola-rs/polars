@@ -1,3 +1,4 @@
+use polars_core::series::arithmetic::NumericListOp;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::matches_any_order;
 
@@ -96,6 +97,59 @@ fn process_struct_numeric_arithmetic(
     }
 }
 
+fn process_list_numeric_arithmetic(
+    type_left: DataType,
+    type_right: DataType,
+    node_left: Node,
+    node_right: Node,
+    op: Operator,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<Option<AExpr>> {
+    let list_op = match op {
+        Operator::Plus => NumericListOp::add(),
+        Operator::Minus => NumericListOp::sub(),
+        Operator::Multiply => NumericListOp::mul(),
+        Operator::TrueDivide | Operator::RustDivide => NumericListOp::div(),
+        Operator::FloorDivide => NumericListOp::floor_div(),
+        Operator::Modulus => NumericListOp::rem(),
+        _ => return Ok(None),
+    };
+
+    let Ok(leaf_st) =
+        list_op.try_get_leaf_supertype(type_left.leaf_dtype(), type_right.leaf_dtype())
+    else {
+        return Ok(None);
+    };
+    if leaf_st.is_unknown() {
+        return Ok(None);
+    }
+
+    let cast_unknown_leaf = |expr_arena: &mut Arena<AExpr>, node: Node, dtype: &DataType| {
+        if dtype.leaf_dtype().is_unknown() {
+            expr_arena.add(AExpr::Cast {
+                expr: node,
+                dtype: dtype.cast_leaf(leaf_st.clone()),
+                options: CastOptions::NonStrict,
+            })
+        } else {
+            node
+        }
+    };
+
+    let new_node_left = cast_unknown_leaf(expr_arena, node_left, &type_left);
+    let new_node_right = cast_unknown_leaf(expr_arena, node_right, &type_right);
+
+    if new_node_left == node_left && new_node_right == node_right {
+        return Ok(None);
+    }
+
+    Ok(Some(AExpr::BinaryExpr {
+        left: new_node_left,
+        op,
+        right: new_node_right,
+    }))
+}
+
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
@@ -115,103 +169,14 @@ fn err_date_str_compare() -> PolarsResult<()> {
     }
 }
 
-pub(super) fn process_binary(
-    expr_arena: &mut Arena<AExpr>,
-    input_schema: &Schema,
+pub(super) fn coerced_binop_dtype(
+    expr_arena: &Arena<AExpr>,
     node_left: Node,
+    type_left: &DataType,
     op: Operator,
     node_right: Node,
-) -> PolarsResult<Option<AExpr>> {
-    let (left, type_left): (&AExpr, DataType) =
-        unpack!(get_aexpr_and_type(expr_arena, node_left, input_schema));
-    let (right, type_right): (&AExpr, DataType) =
-        unpack!(get_aexpr_and_type(expr_arena, node_right, input_schema));
-
-    match (&type_left, &type_right) {
-        (Unknown(UnknownKind::Any), Unknown(UnknownKind::Any)) => return Ok(None),
-        (
-            Unknown(UnknownKind::Any),
-            Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
-        ) => {
-            let right = unpack!(materialize(right));
-            let right = expr_arena.add(right);
-
-            return Ok(Some(AExpr::BinaryExpr {
-                left: node_left,
-                op,
-                right,
-            }));
-        },
-        (
-            Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
-            Unknown(UnknownKind::Any),
-        ) => {
-            let left = unpack!(materialize(left));
-            let left = expr_arena.add(left);
-
-            return Ok(Some(AExpr::BinaryExpr {
-                left,
-                op,
-                right: node_right,
-            }));
-        },
-        _ => {},
-    }
-
-    if op.is_comparison()
-        && let Some(rewrite) = (match (left, right) {
-            (_, AExpr::Literal(lv)) => {
-                if let LiteralValue::Scalar(s) = lv.clone().materialize() {
-                    coerce_comparison_literal(node_left, &type_left, op, s.clone(), expr_arena)
-                } else {
-                    None
-                }
-            },
-            (AExpr::Literal(lv), _) => {
-                if let LiteralValue::Scalar(s) = lv.clone().materialize() {
-                    coerce_comparison_literal(
-                        node_right,
-                        &type_right,
-                        op.swap_operands(),
-                        s,
-                        expr_arena,
-                    )
-                    .map(|rewrite| match rewrite {
-                        CmpLiteralRhsRewrite::ReplaceLit(new_lit) => {
-                            CmpLiteralRhsRewrite::NewAExpr {
-                                aexpr: AExpr::BinaryExpr {
-                                    left: node_right,
-                                    op: op.swap_operands(),
-                                    right: expr_arena
-                                        .add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
-                                },
-                                output_constraint: None,
-                            }
-                        },
-                        CmpLiteralRhsRewrite::NewAExpr { .. } => rewrite,
-                    })
-                } else {
-                    None
-                }
-            },
-            _ => None,
-        })
-    {
-        return Ok(Some(match rewrite {
-            CmpLiteralRhsRewrite::ReplaceLit(new_lit) => AExpr::BinaryExpr {
-                left: node_left,
-                op,
-                right: expr_arena.add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
-            },
-            CmpLiteralRhsRewrite::NewAExpr {
-                aexpr,
-                output_constraint: _,
-            } => aexpr,
-        }));
-    }
-
-    unpack!(early_escape(&type_left, &type_right));
-
+    type_right: &DataType,
+) -> PolarsResult<Option<DataType>> {
     let left = expr_arena.get(node_left);
     let right = expr_arena.get(node_right);
 
@@ -294,31 +259,160 @@ pub(super) fn process_binary(
             | (_, List(_)) => return Ok(None),
             #[cfg(feature = "dtype-array")]
             (Array(..), _) | (_, Array(..)) => return Ok(None),
-            #[cfg(feature = "dtype-struct")]
-            (Struct(_), a) | (a, Struct(_)) if a.is_primitive_numeric() => {
-                return process_struct_numeric_arithmetic(
-                    type_left, type_right, node_left, node_right, op, expr_arena,
-                );
-            },
             _ => {},
         }
-    } else if compares_cat_to_string(&type_left, &type_right, op) {
+    } else if compares_cat_to_string(type_left, type_right, op) {
         return Ok(None);
     }
 
     // Coerce types:
-    let st = unpack!(get_supertype(&type_left, &type_right));
-    let mut st = modify_supertype(st, left, right, &type_left, &type_right);
+    let st = unpack!(get_supertype(type_left, type_right));
+    let mut st = modify_supertype(st, left, right, type_left, type_right);
 
-    if is_cat_str_binary(&type_left, &type_right) {
+    if is_cat_str_binary(type_left, type_right) {
         st = String
     }
 
     // TODO! raise here?
     // We should at least never cast to Unknown.
-    if matches!(st, DataType::Unknown(UnknownKind::Any)) {
+    if matches!(st, DataType::Unknown(_)) {
         return Ok(None);
     }
+
+    Ok(Some(st))
+}
+
+pub(super) fn process_binary(
+    expr_arena: &mut Arena<AExpr>,
+    input_schema: &Schema,
+    node_left: Node,
+    op: Operator,
+    node_right: Node,
+) -> PolarsResult<Option<AExpr>> {
+    use DataType::*;
+
+    let (left, type_left): (&AExpr, DataType) =
+        unpack!(get_aexpr_and_type(expr_arena, node_left, input_schema));
+    let (right, type_right): (&AExpr, DataType) =
+        unpack!(get_aexpr_and_type(expr_arena, node_right, input_schema));
+
+    match (&type_left, &type_right) {
+        (Unknown(UnknownKind::Any), Unknown(UnknownKind::Any)) => return Ok(None),
+        (
+            Unknown(UnknownKind::Any),
+            Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
+        ) => {
+            let right = unpack!(materialize(right));
+            let right = expr_arena.add(right);
+
+            return Ok(Some(AExpr::BinaryExpr {
+                left: node_left,
+                op,
+                right,
+            }));
+        },
+        (
+            Unknown(UnknownKind::Int(_) | UnknownKind::Float | UnknownKind::Str),
+            Unknown(UnknownKind::Any),
+        ) => {
+            let left = unpack!(materialize(left));
+            let left = expr_arena.add(left);
+
+            return Ok(Some(AExpr::BinaryExpr {
+                left,
+                op,
+                right: node_right,
+            }));
+        },
+        _ => {},
+    }
+
+    if op.is_comparison()
+        && let Some(rewrite) = (match (left, right) {
+            (_, AExpr::Literal(lv)) => {
+                if let LiteralValue::Scalar(s) = lv.clone().materialize() {
+                    coerce_comparison_literal(node_left, &type_left, op, s.clone(), expr_arena)
+                } else {
+                    None
+                }
+            },
+            (AExpr::Literal(lv), _) => {
+                if let LiteralValue::Scalar(s) = lv.clone().materialize() {
+                    coerce_comparison_literal(
+                        node_right,
+                        &type_right,
+                        op.swap_operands().unwrap(),
+                        s,
+                        expr_arena,
+                    )
+                    .map(|rewrite| match rewrite {
+                        CmpLiteralRhsRewrite::ReplaceLit(new_lit) => {
+                            CmpLiteralRhsRewrite::NewAExpr {
+                                aexpr: AExpr::BinaryExpr {
+                                    left: node_right,
+                                    op: op.swap_operands().unwrap(),
+                                    right: expr_arena
+                                        .add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
+                                },
+                                output_constraint: None,
+                            }
+                        },
+                        CmpLiteralRhsRewrite::NewAExpr { .. } => rewrite,
+                    })
+                } else {
+                    None
+                }
+            },
+            _ => None,
+        })
+    {
+        return Ok(Some(match rewrite {
+            CmpLiteralRhsRewrite::ReplaceLit(new_lit) => AExpr::BinaryExpr {
+                left: node_left,
+                op,
+                right: expr_arena.add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
+            },
+            CmpLiteralRhsRewrite::NewAExpr {
+                aexpr,
+                output_constraint: _,
+            } => aexpr,
+        }));
+    }
+
+    unpack!(early_escape(&type_left, &type_right));
+
+    #[cfg(feature = "dtype-struct")]
+    if op.is_arithmetic()
+        && matches!(
+            (&type_left, &type_right),
+            (DataType::Struct(_), a) | (a, DataType::Struct(_))
+                if a.is_primitive_numeric()
+        )
+    {
+        return process_struct_numeric_arithmetic(
+            type_left, type_right, node_left, node_right, op, expr_arena,
+        );
+    }
+
+    if op.is_arithmetic()
+        && (type_left.is_list()
+            || type_right.is_list()
+            || type_left.is_array()
+            || type_right.is_array())
+    {
+        return process_list_numeric_arithmetic(
+            type_left, type_right, node_left, node_right, op, expr_arena,
+        );
+    }
+
+    let st = unpack!(coerced_binop_dtype(
+        expr_arena,
+        node_left,
+        &type_left,
+        op,
+        node_right,
+        &type_right,
+    )?);
 
     // Only cast if the type is not already the super type.
     // this can prevent an expensive flattening and subsequent aggregation
