@@ -143,8 +143,18 @@ impl CovState {
 
         let weight = x.len() as f64;
         let inv_weight = 1.0 / weight;
-        let mean_x = alg_sum_f64(x.iter().copied()) * inv_weight;
-        let mean_y = alg_sum_f64(y.iter().copied()) * inv_weight;
+
+        let mean_x = if x.iter().all(|&v| v == x[0]) {
+            x[0]
+        } else {
+            alg_sum_f64(x.iter().copied()) * inv_weight
+        };
+        let mean_y = if y.iter().all(|&v| v == y[0]) {
+            y[0]
+        } else {
+            alg_sum_f64(y.iter().copied()) * inv_weight
+        };
+
         Self {
             weight,
             mean_x,
@@ -212,8 +222,18 @@ impl PearsonState {
 
         let weight = x.len() as f64;
         let inv_weight = 1.0 / weight;
-        let mean_x = alg_sum_f64(x.iter().copied()) * inv_weight;
-        let mean_y = alg_sum_f64(y.iter().copied()) * inv_weight;
+
+        let mean_x = if x.iter().all(|&v| v == x[0]) {
+            x[0]
+        } else {
+            alg_sum_f64(x.iter().copied()) * inv_weight
+        };
+        let mean_y = if y.iter().all(|&v| v == y[0]) {
+            y[0]
+        } else {
+            alg_sum_f64(y.iter().copied()) * inv_weight
+        };
+
         let mut dp_xx = 0.0;
         let mut dp_xy = 0.0;
         let mut dp_yy = 0.0;
@@ -718,4 +738,48 @@ where
         });
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cov_constant_column_is_exact_zero() {
+        let b = [0.01, -0.02, 0.03, -0.01, 0.02];
+        for &c in &[0.01_f64, 0.3, 0.7, 0.25] {
+            let a = [c; 5];
+            let state = CovState::new(&a, &b);
+            assert_eq!(
+                state.finalize(0),
+                Some(0.0),
+                "cov should be exactly 0.0 when one column is constant (c = {c})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_cov_constant_column_across_chunks_is_exact_zero() {
+        let b: Vec<f64> = (0..300).map(|i| (i as f64 * 0.017) % 1.0 - 0.5).collect();
+        for &c in &[0.01_f64, 0.3, 0.7] {
+            let a = vec![c; 300];
+            let x = PrimitiveArray::<f64>::from_vec(a);
+            let y = PrimitiveArray::<f64>::from_vec(b.clone());
+            let state = cov(&x, &y);
+            assert_eq!(state.finalize(0), Some(0.0), "c = {c}, n = 300");
+        }
+    }
+
+    #[test]
+    fn test_pearson_corr_constant_column_is_nan() {
+        let b = [0.01, -0.02, 0.03, -0.01, 0.02];
+        for &c in &[0.01_f64, 0.3, 0.7, 0.25] {
+            let a = [c; 5];
+            let state = PearsonState::new(&a, &b);
+            assert!(
+                state.finalize().is_nan(),
+                "pearson_corr should be NaN when one column is constant (c = {c})"
+            );
+        }
+    }
 }
