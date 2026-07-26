@@ -123,6 +123,34 @@ def test_arr_dot_broadcast_and_chunks() -> None:
     assert_series_equal(empty.arr.dot(rhs), pl.Series("a", [], dtype=pl.Float32))
 
 
+def test_arr_dot_expr_broadcast() -> None:
+    df = pl.DataFrame(
+        {"embedding": [[1.0, 2.0], [3.0, 4.0]]},
+        schema={"embedding": pl.Array(pl.Float32, 2)},
+    )
+    query = pl.lit([10.0, 20.0], dtype=pl.Array(pl.Float32, 2))
+
+    result = df.select(score=pl.col("embedding").arr.dot(query))
+    expected = pl.DataFrame({"score": [50.0, 110.0]}, schema={"score": pl.Float32})
+    assert_frame_equal(result, expected)
+
+
+def test_arr_dot_sliced_inputs() -> None:
+    lhs = pl.Series(
+        "a",
+        [[0.0, 0.0], [1.0, 2.0], [3.0, 4.0]],
+        dtype=pl.Array(pl.Float64, 2),
+    ).slice(1, 2)
+    rhs = pl.Series(
+        "b",
+        [[0.0, 0.0], [10.0, 20.0]],
+        dtype=pl.Array(pl.Float64, 2),
+    ).slice(1, 1)
+
+    expected = pl.Series("a", [50.0, 110.0], dtype=pl.Float64)
+    assert_series_equal(lhs.arr.dot(rhs), expected)
+
+
 def test_arr_dot_nulls() -> None:
     lhs = pl.Series(
         "a",
@@ -201,6 +229,9 @@ def test_arr_dot_errors() -> None:
     float32 = pl.Series("b", [[1.0, 2.0]], dtype=pl.Array(pl.Float32, 2))
     with pytest.raises(pl.exceptions.SchemaError, match="matching inner dtypes"):
         lhs.arr.dot(float32)
+
+    with pytest.raises(InvalidOperationError, match=r"arr\.dot expects Array inputs"):
+        lhs.to_frame().select(pl.col("a").arr.dot(pl.lit([1.0, 2.0])))
 
     different_width = pl.Series("b", [[1.0, 2.0, 3.0]], dtype=pl.Array(pl.Float64, 3))
     with pytest.raises(pl.exceptions.ShapeError, match="equal array widths"):
