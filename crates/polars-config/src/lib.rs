@@ -497,10 +497,6 @@ impl Config {
         self.ooc_log_metrics.load(Ordering::Relaxed)
     }
 
-    pub fn ooc_spill_dir(&self) -> std::path::PathBuf {
-        ooc_spill_dir()
-    }
-
     #[inline(always)]
     pub fn join_sample_limit(&self) -> u64 {
         self.join_sample_limit.load(Ordering::Relaxed)
