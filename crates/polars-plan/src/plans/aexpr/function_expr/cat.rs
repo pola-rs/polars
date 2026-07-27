@@ -37,14 +37,7 @@ impl IRCategoricalFunction {
     }
 
     pub fn function_options(&self) -> FunctionOptions {
-        use IRCategoricalFunction as C;
-        match self {
-            #[cfg(feature = "strings")]
-            C::LenBytes | C::LenChars | C::StartsWith(_) | C::EndsWith(_) | C::Slice(_, _) => {
-                FunctionOptions::elementwise()
-            },
-            C::To(_, _) | C::Physical => FunctionOptions::elementwise(),
-        }
+        FunctionOptions::elementwise()
     }
 }
 

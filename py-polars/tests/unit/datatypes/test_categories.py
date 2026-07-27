@@ -128,24 +128,24 @@ cats = pl.Categories()
 assert cats.is_global()
 
 df = pl.DataFrame({"x": ["a", "b", "c"]}, schema={"x": pl.Categorical})
-assert set(list(cats)) == {"a", "b", "c"}
+assert set(cats) == {"a", "b", "c"}
 df2 = pl.DataFrame({"x": ["d", "e", "f"]}, schema={"x": pl.Categorical})
-assert set(list(cats)) == {"a", "b", "c", "d", "e", "f"}
+assert set(cats) == {"a", "b", "c", "d", "e", "f"}
 del df
 del df2
 df3 = pl.DataFrame({"x": ["x"]}, schema={"x": pl.Categorical})
-assert set(list(cats)) == {"x"}
+assert set(cats) == {"x"}
 del df3
 
 keep_alive = pl.DataFrame({"x": []}, schema={"x": pl.Categorical})
 df = pl.DataFrame({"x": ["a", "b", "c"]}, schema={"x": pl.Categorical})
-assert set(list(cats)) == {"a", "b", "c"}
+assert set(cats) == {"a", "b", "c"}
 df2 = pl.DataFrame({"x": ["d", "e", "f"]}, schema={"x": pl.Categorical})
-assert set(list(cats)) == {"a", "b", "c", "d", "e", "f"}
+assert set(cats) == {"a", "b", "c", "d", "e", "f"}
 del df
 del df2
 df3 = pl.DataFrame({"x": ["x"]}, schema={"x": pl.Categorical})
-assert set(list(cats)) == {"a", "b", "c", "d", "e", "f", "x"}
+assert set(cats) == {"a", "b", "c", "d", "e", "f", "x"}
 
 print("OK", end="")
 """,
