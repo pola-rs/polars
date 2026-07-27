@@ -603,19 +603,22 @@ impl RowGroupDecoder {
                 let residual_mask = residual_predicate.evaluate_io(&live_df)?;
                 let mut residual_mask = residual_mask.bool().unwrap().clone();
                 let residual_mask_bitmap = materialize_mask(&mut residual_mask);
-                // Splat residual's mask back into row group coordinate
-                // space, anding with the eager bitmap.
-                let mask = BooleanChunked::from_bitmap(
-                    PlSmallStr::EMPTY,
-                    expand_boolean_kernel(&residual_mask_bitmap, &eager_mask_bitmap),
-                );
                 let live_columns = filter_cols(
                     live_df.into_columns(),
                     &residual_mask,
                     self.target_values_per_thread,
                 )
                 .await?;
-
+                let mask = if self.projected_field_classification.payload.is_empty() {
+                    None
+                } else {
+                    // Splat residual's mask back into row group coordinate
+                    // space, anding with the eager bitmap.
+                    Some(BooleanChunked::from_bitmap(
+                        PlSmallStr::EMPTY,
+                        expand_boolean_kernel(&residual_mask_bitmap, &eager_mask_bitmap),
+                    ))
+                };
                 (
                     unsafe {
                         DataFrame::new_unchecked(residual_mask_bitmap.set_bits(), live_columns)
@@ -623,7 +626,7 @@ impl RowGroupDecoder {
                     mask,
                 )
             } else {
-                (eager_df, eager_mask)
+                (eager_df, Some(eager_mask))
             }
         } else {
             let mut live_df = unsafe {
@@ -653,12 +656,17 @@ impl RowGroupDecoder {
 
             (
                 unsafe { DataFrame::new_unchecked(filtered_height, filtered) },
-                mask.clone(),
+                Some(mask.clone()),
             )
         };
 
-        self.finish_prefiltered_decode(row_group_data, live_df_filtered, mask)
-            .await
+        if self.projected_field_classification.payload.is_empty() {
+            Ok(live_df_filtered)
+        } else {
+            debug_assert!(mask.is_some());
+            self.finish_prefiltered_decode(row_group_data, live_df_filtered, mask.unwrap())
+                .await
+        }
     }
 
     async fn finish_prefiltered_decode(
@@ -667,11 +675,6 @@ impl RowGroupDecoder {
         live_df_filtered: DataFrame,
         mut mask: BooleanChunked,
     ) -> PolarsResult<DataFrame> {
-        if self.projected_field_classification.payload.is_empty() {
-            // User or test may have explicitly requested prefiltering
-            return Ok(live_df_filtered);
-        }
-
         let projection_height = row_group_data.row_group_metadata.num_rows();
         let mask_bitmap = materialize_mask(&mut mask);
 
