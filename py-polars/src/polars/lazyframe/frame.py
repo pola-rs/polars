@@ -1625,7 +1625,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
         >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
-        ... ).show_graph()  # doctest: +SKIP
+        ... ).show_graph(plan_stage="ir")  # doctest: +SKIP
         """
         engine = _select_engine(engine)
 
@@ -1636,8 +1636,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if plan_stage is None:
             issue_deprecation_warning(
                 "The default value of `plan_stage` will change from 'ir' to 'physical' in Polars 2.0. "
-                'Explicitly set `plan_stage="ir"` suppress this warning.',
-                version="1.43.0",
+                'Explicitly set `plan_stage="ir"` to suppress this warning.',
+                version="1.44.0",
             )
             plan_stage = "ir"
 
