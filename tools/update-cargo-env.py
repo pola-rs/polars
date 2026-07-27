@@ -26,6 +26,8 @@ if os.environ.get("RUSTFLAGS"):
 else:
     build.pop("rustflags", None)
 
+toml["build"] = build
+
 if os.environ.get("CFLAGS"):
     env["CFLAGS"] = os.environ.get("CFLAGS")
 else:
