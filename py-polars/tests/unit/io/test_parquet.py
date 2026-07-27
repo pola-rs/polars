@@ -1807,6 +1807,35 @@ def test_parametric_small_page_mask_filtering(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df.filter(expr))
 
 
+@pytest.mark.parametrize("expr", [("payload", "eager_b"), ("eager_b", "residual")])
+def test_prefiltered_mixed_eager_and_residual_predicates(expr: tuple[str, ...]) -> None:
+    df = pl.DataFrame(
+        {
+            "residual": [float(i % 5) if i % 11 else None for i in range(130)],
+            "payload": [f"value-{i}" for i in range(130)],
+            "eager_a": range(130),
+            "eager_b": range(129, -1, -1),
+        }
+    )
+    predicate = (
+        (pl.col("eager_a") >= 17)
+        & (pl.col("eager_b") < 100)
+        & (pl.col("residual") < 2.0)
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f, data_page_size=128)
+
+    f.seek(0)
+    result = (
+        pl.scan_parquet(f, parallel="prefiltered")
+        .filter(predicate)
+        .select(*expr)
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(result, df.filter(predicate).select(*expr))
+
+
 @pytest.mark.parametrize(
     "value",
     [
