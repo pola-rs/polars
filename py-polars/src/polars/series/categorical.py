@@ -23,28 +23,6 @@ class CatNameSpace:
     def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
-    @deprecated(
-        "`cat.get_categories()` is deprecated. To get the distinct values present in "
-        "a Categorical column, use `Series.unique()`. For the fixed category list of an "
-        "Enum, use its `dtype.categories`. This method will be removed in Polars 2.0.",
-    )
-    def get_categories(self) -> Series:
-        """
-        Get the categories stored in this data type.
-
-        Examples
-        --------
-        >>> s = pl.Series(["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical)
-        >>> s.cat.get_categories()  # doctest: +SKIP
-        shape: (3,)
-        Series: '' [str]
-        [
-            "foo"
-            "bar"
-            "ham"
-        ]
-        """
-
     def len_bytes(self) -> Series:
         """
         Return the byte-length of the string representation of each value.
