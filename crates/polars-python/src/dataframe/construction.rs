@@ -13,16 +13,17 @@ use crate::utils::EnterPolarsExt;
 #[pymethods]
 impl PyDataFrame {
     #[staticmethod]
-    #[pyo3(signature = (data, schema=None, infer_schema_length=None))]
+    #[pyo3(signature = (data, schema=None, strict=true, infer_schema_length=None))]
     pub fn from_rows(
         py: Python<'_>,
         data: Vec<Wrap<Row>>,
         schema: Option<Wrap<Schema>>,
+        strict: bool,
         infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
         let data = vec_extract_wrapped(data);
         let schema = schema.map(|wrap| wrap.0);
-        py.enter_polars(move || finish_from_rows(data, schema, None, infer_schema_length))
+        py.enter_polars(move || finish_from_rows(data, schema, None, strict, infer_schema_length))
     }
 
     #[staticmethod]
@@ -66,7 +67,7 @@ impl PyDataFrame {
             ))
         });
         py.enter_polars(move || {
-            finish_from_rows(rows, schema, schema_overrides, infer_schema_length)
+            finish_from_rows(rows, schema, schema_overrides, strict, infer_schema_length)
         })
     }
 
@@ -85,6 +86,7 @@ fn finish_from_rows(
     rows: Vec<Row>,
     schema: Option<Schema>,
     schema_overrides: Option<Schema>,
+    strict: bool,
     infer_schema_length: Option<usize>,
 ) -> PyResult<PyDataFrame> {
     let schema = if let Some(mut schema) = schema {
@@ -95,7 +97,8 @@ fn finish_from_rows(
         rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?
     };
 
-    let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
+    let df = DataFrame::from_rows_and_schema_strict(&rows, &schema, strict)
+        .map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }
 

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import DataOrientationWarning, InvalidOperationError
+from polars.exceptions import DataOrientationWarning, InvalidOperationError, SchemaError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -116,6 +116,34 @@ def test_df_init_strict() -> None:
     df = pl.DataFrame(data, schema=schema, strict=False)
     assert df["a"].to_list() == [1, 2, 3]
     assert df["a"].dtype == pl.Int8
+
+
+def test_df_init_rows_strict() -> None:
+    data = [{"id": 10, "status": "draft"}, {"id": 10, "status": "archived"}]
+    enum_dtype = pl.Enum(["draft", "published"])
+
+    with pytest.raises(SchemaError, match="archived"):
+        pl.DataFrame(data, schema={"id": pl.Int64, "status": enum_dtype})
+
+    with pytest.raises(SchemaError, match="archived"):
+        pl.DataFrame(
+            data,
+            schema={"id": pl.Int64, "status": None},
+            schema_overrides={"status": enum_dtype},
+        )
+
+    with pytest.raises(SchemaError, match="archived"):
+        pl.DataFrame(data, schema_overrides={"status": enum_dtype})
+
+    result = pl.DataFrame(
+        data,
+        schema={"id": pl.Int64, "status": enum_dtype},
+        strict=False,
+    )
+    assert result.to_dict(as_series=False) == {
+        "id": [10, 10],
+        "status": ["draft", None],
+    }
 
 
 def test_df_init_from_series_strict() -> None:
