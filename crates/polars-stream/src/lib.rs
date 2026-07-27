@@ -13,10 +13,17 @@ pub use graph::{GraphNodeKey, LogicalPipe, LogicalPipeKey};
 pub use skeleton::StreamingQuery;
 mod metrics;
 pub use metrics::{GraphMetrics, NodeMetrics};
+mod observer_metrics;
+pub use observer_metrics::StreamingQueryMetrics;
+pub use polars_observer::{
+    QueryMetrics, QueryObserver, QueryObserverFactory, observer, set_query_observer_factory,
+};
 mod morsel;
 mod nodes;
 mod physical_plan;
-pub use physical_plan::{NodeStyle, PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior};
+pub use physical_plan::{
+    NodeStyle, PhysNode, PhysNodeKey, PhysNodeKind, ZipBehavior, physical_plan_to_description,
+};
 mod pipe;
 mod utils;
 

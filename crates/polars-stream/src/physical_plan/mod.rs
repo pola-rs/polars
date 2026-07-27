@@ -34,6 +34,7 @@ mod io;
 mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
+mod to_description;
 mod to_graph;
 
 pub use fmt::{NodeStyle, visualize_plan};
@@ -46,6 +47,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::{UnitVec, unitvec};
 use slotmap::{SecondaryMap, SlotMap};
+pub use to_description::physical_plan_to_description;
 pub use to_graph::physical_plan_to_graph;
 
 pub use self::lower_ir::StreamingLowerIRContext;

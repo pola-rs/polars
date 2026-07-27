@@ -14,6 +14,8 @@
 pub mod catalog;
 #[cfg(feature = "polars_cloud_client")]
 pub mod cloud_client;
+#[cfg(feature = "pymethods")]
+pub mod cloud_observer;
 #[cfg(feature = "polars_cloud_server")]
 pub mod cloud_server;
 pub mod conversion;
