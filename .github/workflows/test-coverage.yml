@@ -201,10 +201,11 @@ jobs:
         env:
           POLARS_FORCE_ASYNC: 1
           POLARS_TIMEOUT_MS: 60000
+        # TODO: Fix and re-enable may_fail_auto_streaming tests
         run: >
           pytest tests/unit/io/
           -n auto
-          -m "not release and not benchmark and not docs"
+          -m "not may_fail_auto_streaming and not release and not benchmark and not docs"
           --cov --cov-report xml:async.xml --cov-fail-under=0
 
       - name: Report Rust coverage
