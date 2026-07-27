@@ -342,11 +342,15 @@ pub fn lower_ir(
             input_right,
             key,
             maintain_order,
+            descending,
+            nulls_last,
         } => {
             let input_left = *input_left;
             let input_right = *input_right;
             let key = key.clone();
             let maintain_order = *maintain_order;
+            let descending = *descending;
+            let nulls_last = *nulls_last;
 
             let mut phys_left = lower_ir!(input_left)?;
             let mut phys_right = lower_ir!(input_right)?;
@@ -370,6 +374,15 @@ pub fn lower_ir(
             // lexicographic order over all keys is respected.
             let needs_row_encode = key.len() > 1 || key_dtypes.iter().any(|dt| dt.is_nested());
 
+            // When we row encode, the descending / nulls_last options are baked
+            // into the encoding, so the node itself must compare the encoded
+            // column ascending with nulls first to avoid applying them twice.
+            let (node_descending, node_nulls_last) = if needs_row_encode {
+                (false, false)
+            } else {
+                (descending, nulls_last)
+            };
+
             // Add the key column as the last column for both inputs.
             for s in [&mut phys_left, &mut phys_right] {
                 let key_expr = if needs_row_encode {
@@ -381,8 +394,10 @@ pub fn lower_ir(
                         exprs,
                         key_dtypes.clone(),
                         RowEncodingVariant::Ordered {
-                            descending: None,
-                            nulls_last: None,
+                            // The options are uniform across all key columns, so
+                            // broadcast the single flag to one entry per column.
+                            descending: Some(vec![descending; key.len()]),
+                            nulls_last: Some(vec![nulls_last; key.len()]),
                             broadcast_nulls: None,
                         },
                         expr_arena,
@@ -399,6 +414,8 @@ pub fn lower_ir(
                 input_left: phys_left,
                 input_right: phys_right,
                 maintain_order,
+                descending: node_descending,
+                nulls_last: node_nulls_last,
             }
         },
 
