@@ -43,32 +43,11 @@ impl DataFrame {
         Self::from_rows_iter_and_schema(rows.iter(), schema)
     }
 
-    /// Create a new [`DataFrame`] from rows, respecting the `strict` parameter
-    /// when constructing fallback data types.
-    pub fn from_rows_and_schema_strict(
-        rows: &[Row],
-        schema: &Schema,
-        strict: bool,
-    ) -> PolarsResult<Self> {
-        Self::from_rows_iter_and_schema_impl(rows.iter(), schema, strict)
-    }
-
     /// Create a new [`DataFrame`] from an iterator over rows.
     ///
     /// This should only be used when you have row wise data, as this is a lot slower
     /// than creating the [`Series`] in a columnar fashion.
-    pub fn from_rows_iter_and_schema<'a, I>(rows: I, schema: &Schema) -> PolarsResult<Self>
-    where
-        I: Iterator<Item = &'a Row<'a>>,
-    {
-        Self::from_rows_iter_and_schema_impl(rows, schema, false)
-    }
-
-    fn from_rows_iter_and_schema_impl<'a, I>(
-        mut rows: I,
-        schema: &Schema,
-        strict: bool,
-    ) -> PolarsResult<Self>
+    pub fn from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> PolarsResult<Self>
     where
         I: Iterator<Item = &'a Row<'a>>,
     {
@@ -100,17 +79,8 @@ impl DataFrame {
         let v = buffers
             .into_iter()
             .zip(schema.iter_names())
-            .map(|(mut b, name)| {
-                let mut c = b
-                    .reset(0, strict)
-                    .map_err(|err| {
-                        if strict {
-                            polars_err!(SchemaMismatch: "{err}")
-                        } else {
-                            err
-                        }
-                    })?
-                    .into_column();
+            .map(|(b, name)| {
+                let mut c = b.into_series()?.into_column();
                 // if the schema adds a column not in the rows, we
                 // fill it with nulls
                 if c.is_empty() {

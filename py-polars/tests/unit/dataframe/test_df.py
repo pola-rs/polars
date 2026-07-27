@@ -1245,6 +1245,7 @@ def test_literal_series() -> None:
             ],
             schema=expected_schema,  # type: ignore[arg-type]
             orient="row",
+            strict=False,
         ),
         out,
         abs_tol=0.00001,
@@ -1355,6 +1356,7 @@ def test_from_generator_or_iterable() -> None:
         data=chain(repeat({"col": 1}, length_minus_1 := 100), repeat({"col": 1.1}, 1)),
         infer_schema_length=None,
         chunk_size=length_minus_1,
+        strict=False,
     )
     assert d.dtypes() == [pl.Float64()]
 
@@ -1369,6 +1371,7 @@ def test_from_generator_or_iterable() -> None:
         pl.DataFrame(
             data=gen_named(1),
             schema_overrides={"a": pl.Float64(), "c": pl.Float64()},
+            strict=False,
         ),
         pl.DataFrame([{"a": 0.0, "b": 0, "c": 1.0, "d": 1}]),
     )
@@ -1467,7 +1470,11 @@ def test_from_records_with_schema_overrides_12032() -> None:
         {"id": 9223671840084328467, "x": 666.5, "y": 1698177261953686},
         {"id": 9187643043065364505, "x": 999, "y": 9223372036854775807},
     ]
-    df = pl.from_records(rec, schema_overrides={"x": pl.Float32, "id": pl.UInt64})
+    df = pl.from_records(
+        rec,
+        schema_overrides={"x": pl.Float32, "id": pl.UInt64},
+        strict=False,
+    )
     assert df.schema == OrderedDict(
         [
             ("id", pl.UInt64),
@@ -3225,7 +3232,7 @@ def test_from_dicts_with_override() -> None:
         {"a": "1", "b": "1", "c": "-5.0"},
     ]
     override = {"a": pl.Int32, "b": pl.UInt64, "c": pl.Float32}
-    result = pl.from_dicts(data, schema_overrides=override)
+    result = pl.from_dicts(data, schema_overrides=override, strict=False)
     assert_frame_equal(
         result,
         pl.DataFrame(
