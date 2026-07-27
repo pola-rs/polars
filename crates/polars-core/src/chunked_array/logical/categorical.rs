@@ -300,6 +300,7 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
             // TODO @ cat-rework: remove after exposing to/from physical functions.
             dt if dt.is_integer() => {
                 polars_warn!(
+                    Deprecation,
                     "casting from {:?} to {dtype:?} is deprecated.\n\
                     Instead of `.cast({dtype:?})`, use `.cat.physical()`.",
                     self.dtype
