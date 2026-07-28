@@ -17,5 +17,5 @@ from polars.testing.parametric import series
 @example(s=pl.Series(dtype=pl.Array(pl.Date, 1)))
 def test_to_list(s: pl.Series) -> None:
     values = s.to_list()
-    result = pl.Series(values, dtype=s.dtype)
+    result = pl.Series(values, dtype=s.dtype, strict=False)
     assert_series_equal(s, result, categorical_as_str=True)

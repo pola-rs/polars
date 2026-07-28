@@ -230,7 +230,10 @@ def series(  # noqa: D417
             )
         )
 
-    s = Series(name=name, values=values, dtype=dtype)
+    # Drawn values are logically valid for the dtype but may extract with a
+    # different physical representation (e.g. Python floats for Float16 fields);
+    # construct leniently so they are coerced rather than rejected.
+    s = Series(name=name, values=values, dtype=dtype, strict=False)
 
     # Apply masking out of values
     if do_mask_out:

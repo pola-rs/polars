@@ -1419,6 +1419,7 @@ def test_month_day_nano_from_ffi_15969(plmonkeypatch: PlMonkeyPatch) -> None:
                         "nanoseconds": pl.Duration(time_unit="ns"),
                     }
                 ),
+                strict=False,
             ),
         ]
     )
