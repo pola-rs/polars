@@ -366,6 +366,7 @@ def test_glob_ipc(df: pl.DataFrame, tmp_path: Path) -> None:
         assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@pytest.mark.write_disk
 def test_binview_ipc(tmp_path: Path) -> None:
     df = pl.DataFrame({"foo": ["aa" * 10, "bb", None, "small", "big" * 20]})
     file_path = tmp_path / "dump.ipc"
