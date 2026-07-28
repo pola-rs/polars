@@ -12,7 +12,6 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.various import (
-    is_non_empty_sequence_of,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
@@ -47,7 +46,6 @@ def read_ipc(
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
-    memory_map: bool = False,
     storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -79,10 +77,6 @@ def read_ipc(
         Only valid when `use_pyarrow=False`.
     use_pyarrow
         Use pyarrow or the native Rust reader.
-    memory_map
-        Try to memory map the file. This can greatly improve performance on repeated
-        queries as the OS may cache pages.
-        Only uncompressed IPC files can be memory mapped.
     storage_options
         Extra options that make sense for `fsspec.open()` or a particular storage
         connection, e.g. host, port, username, password, etc.
@@ -118,8 +112,14 @@ def read_ipc(
           E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")`
           will fail.
     """
+    projection, column_names = parse_columns_arg(columns)
+    del columns
+    row_index = parse_row_index_args(row_index_name, row_index_offset)
+    del row_index_name
+    del row_index_offset
+
     if use_pyarrow:
-        if n_rows and not memory_map:
+        if n_rows:
             msg = (
                 "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
             )
@@ -138,7 +138,7 @@ def read_ipc(
                 err_suffix="is required when using 'read_ipc(..., use_pyarrow=True)'",
             )
 
-            if columns is not None and is_non_empty_sequence_of(columns, str):
+            if column_names is not None:
                 initial_pos: Any = None
 
                 if hasattr(data, "tell") and callable(data.tell):
@@ -148,7 +148,7 @@ def read_ipc(
                     schema = ipc_f.schema
 
                 idx_lookup = {name: i for i, name in enumerate(schema.names)}
-                columns = [idx_lookup[name] for name in columns]
+                projection = [idx_lookup[name] for name in column_names]
 
                 if (
                     initial_pos is not None
@@ -159,30 +159,35 @@ def read_ipc(
 
             with pyarrow_ipc.open_file(
                 data,
-                options=pyarrow_ipc.IpcReadOptions(included_fields=columns),
+                options=pyarrow_ipc.IpcReadOptions(included_fields=projection),
             ) as ipc_f:
                 tbl = ipc_f.read_all()
 
             df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
-            if row_index_name is not None:
-                df = df.with_row_index(row_index_name, row_index_offset)
+
             if n_rows is not None:
-                df = df.slice(0, n_rows)
+                df = df.head(n_rows)
+
+            if row_index is not None:
+                name, offset = row_index
+                df = df.with_row_index(name, offset)
+
             return df
 
     lf = scan_ipc(
         source,
         n_rows=n_rows,
         storage_options=storage_options,
-        row_index_name=row_index_name,
-        row_index_offset=row_index_offset,
     )
 
-    if columns:
-        if isinstance(columns[0], int):
-            lf = lf.select(F.nth(columns))  # type: ignore[arg-type]
-        else:
-            lf = lf.select(columns)
+    if column_names is not None:
+        lf = lf.select(column_names)
+    elif projection is not None:
+        lf = lf.select(F.nth(projection))
+
+    if row_index is not None:
+        name, offset = row_index
+        lf = lf.with_row_index(name, offset)
 
     df = lf.collect()
 
