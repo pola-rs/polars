@@ -697,10 +697,7 @@ pub fn function_expr_sortedness(
             descending: Some(false),
             nulls_last: Some(false),
         }),
-        IRFunctionExpr::SetSortedFlag(sortedness) => match sortedness.descending {
-            Some(_) => Some(*sortedness),
-            None => None,
-        },
+        IRFunctionExpr::SetSortedFlag(sortedness) => sortedness.descending.map(|_| *sortedness),
 
         IRFunctionExpr::Unique(true)
         | IRFunctionExpr::DropNulls
