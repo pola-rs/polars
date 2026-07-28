@@ -3,22 +3,36 @@ use std::sync::Arc;
 use polars_core::prelude::{PlIndexMap, PlIndexSet};
 use polars_utils::aliases::InitHashMaps;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::scratch_vec::ScratchVec;
 
 use super::aexpr::AExpr;
 use super::ir::IR;
 use super::{PlSmallStr, aexpr_to_leaf_names_iter};
 use crate::plans::ExprIR;
+use crate::plans::projection_height::aexpr_projection_height_rec;
+use crate::prelude::projection_height::ExprProjectionHeight;
+
+enum ExprSource {
+    Original { non_scalar_output_height: bool },
+    Replaced,
+}
 
 pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>) {
+    use ExprProjectionHeight as EH;
+
     let mut ir_stack = Vec::with_capacity(16);
     ir_stack.push(root);
 
-    // key: output_name, value: (expr, is_original)
-    let mut input_name_to_expr_map: PlIndexMap<PlSmallStr, (ExprIR, bool)> = PlIndexMap::new();
+    // key: output_name, value: (expr, _)
+    let mut input_name_to_expr_map: PlIndexMap<PlSmallStr, (ExprIR, ExprSource)> =
+        PlIndexMap::new();
     let mut input_names_accessed_by_non_candidates: PlIndexSet<PlSmallStr> = PlIndexSet::new();
     let mut push_candidate_idxs: Vec<usize> = vec![];
     let mut new_current_exprs: Vec<ExprIR> = vec![];
     let mut visited_caches = PlIndexSet::new();
+
+    let mut ae_nodes_stack = ScratchVec::default();
+    let mut ae_heights_stack = ScratchVec::default();
 
     while let Some(current_node) = ir_stack.pop() {
         let current_ir = lp_arena.get(current_node);
@@ -63,12 +77,33 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         input_names_accessed_by_non_candidates.clear();
         push_candidate_idxs.clear();
         new_current_exprs.clear();
+        let mut input_non_scalar_output_height_count: usize = 0;
 
-        input_name_to_expr_map.extend(
-            input_exprs
-                .iter()
-                .map(|e| (e.output_name().clone(), (e.clone(), true))),
-        );
+        input_name_to_expr_map.extend(input_exprs.iter().map(|e| {
+            let non_scalar_output_height = !matches!(
+                aexpr_projection_height_rec(
+                    e.node(),
+                    expr_arena,
+                    &mut ae_nodes_stack,
+                    &mut ae_heights_stack
+                ),
+                EH::Scalar
+            );
+
+            if non_scalar_output_height {
+                input_non_scalar_output_height_count += 1;
+            }
+
+            (
+                e.output_name().clone(),
+                (
+                    e.clone(),
+                    ExprSource::Original {
+                        non_scalar_output_height,
+                    },
+                ),
+            )
+        }));
 
         if input_name_to_expr_map.len() != input_exprs.len() {
             if cfg!(debug_assertions) {
@@ -111,6 +146,46 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
             !input_names_accessed_by_non_candidates.contains(e.output_name())
         });
 
+        // E.g. `LazyFrame().with_columns(a=int_range(5)).with_columns(a=1)`, we cannot prune the int_range as
+        // otherwise the query may succeed with 1 row instead of erroring.
+        let mut last_match_idx: usize = 0;
+        if input_non_scalar_output_height_count != 0
+            && push_candidate_idxs.len() >= input_non_scalar_output_height_count
+            && push_candidate_idxs
+                .iter()
+                .map(|&i| {
+                    let e = &current_exprs[i];
+
+                    let would_replace_non_scalar_with_scalar = matches!(
+                        input_name_to_expr_map.get(e.output_name()),
+                        Some((
+                            _,
+                            ExprSource::Original {
+                                non_scalar_output_height: true
+                            }
+                        ))
+                    ) && matches!(
+                        aexpr_projection_height_rec(
+                            e.node(),
+                            expr_arena,
+                            &mut ae_nodes_stack,
+                            &mut ae_heights_stack
+                        ),
+                        EH::Scalar
+                    );
+
+                    if would_replace_non_scalar_with_scalar {
+                        last_match_idx = i;
+                    }
+
+                    usize::from(would_replace_non_scalar_with_scalar)
+                })
+                .sum::<usize>()
+                == input_non_scalar_output_height_count
+        {
+            push_candidate_idxs.remove(last_match_idx);
+        }
+
         let mut candidate_idx: usize = 0;
 
         for (i, e) in current_exprs.iter().enumerate() {
@@ -123,7 +198,8 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
             if push_candidate_idxs.get(candidate_idx) == Some(&i) {
                 candidate_idx += 1;
-                input_name_to_expr_map.insert(e.output_name().clone(), (e.clone(), false));
+                input_name_to_expr_map
+                    .insert(e.output_name().clone(), (e.clone(), ExprSource::Replaced));
                 continue;
             }
 
@@ -136,13 +212,10 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
         input_exprs.clear();
 
-        for (output_name, (e, is_original)) in input_name_to_expr_map
-            .iter()
-            .map(|x| (x.0.clone(), x.1.clone()))
-        {
-            input_exprs.push(e);
+        for (output_name, (e, e_src)) in input_name_to_expr_map.iter().map(|x| (x.0.clone(), x.1)) {
+            input_exprs.push(e.clone());
 
-            if !is_original {
+            if !matches!(e_src, ExprSource::Original { .. }) {
                 let dtype = current_schema.get(&output_name).unwrap().clone();
                 Arc::make_mut(input_schema).insert(output_name, dtype);
             }
