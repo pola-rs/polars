@@ -485,9 +485,11 @@ pub struct SinkedPathsCallbackArgs {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, Default, Hash, PartialEq)]
 pub struct SinkedPathInfo {
     pub path: PlRefPath,
+    pub num_rows: u64,
+    pub num_bytes: u64,
 }
 
 impl SinkedPathsCallback {
@@ -507,7 +509,12 @@ impl SinkedPathsCallback {
 
                         let SinkedPathsCallbackArgs { path_info_list } = args;
 
-                        for SinkedPathInfo { path } in path_info_list {
+                        for SinkedPathInfo {
+                            path,
+                            num_rows: _,
+                            num_bytes: _,
+                        } in path_info_list
+                        {
                             use pyo3::types::PyListMethods;
 
                             let path: &str = path.as_str();
@@ -533,18 +540,35 @@ impl SinkedPathsCallback {
 
                 let SinkedPathsCallbackArgs { path_info_list } = args;
 
-                let py_paths = PyList::empty(py);
+                let py_sinked_paths_list = PyList::empty(py);
 
-                for SinkedPathInfo { path } in path_info_list {
+                let sinked_path_dataclass_cls =
+                    polars_utils::python_convert_registry::get_python_convert_registry()
+                        .py_sinked_path_dataclass();
+
+                for SinkedPathInfo {
+                    path,
+                    num_rows,
+                    num_bytes,
+                } in path_info_list
+                {
                     use pyo3::types::PyListMethods;
 
                     let path: &str = path.as_str();
 
-                    py_paths.append(path)?;
+                    let kwargs = PyDict::new(py);
+                    kwargs.set_item(intern!(py, "path"), path)?;
+                    kwargs.set_item(intern!(py, "num_bytes"), num_bytes)?;
+                    kwargs.set_item(intern!(py, "num_rows"), num_rows)?;
+                    py_sinked_paths_list.append(sinked_path_dataclass_cls.call(
+                        py,
+                        (),
+                        Some(&kwargs),
+                    )?)?;
                 }
 
                 let kwargs = PyDict::new(py);
-                kwargs.set_item(intern!(py, "paths"), py_paths)?;
+                kwargs.set_item(intern!(py, "paths"), py_sinked_paths_list)?;
 
                 let args_dataclass =
                     polars_utils::python_convert_registry::get_python_convert_registry()

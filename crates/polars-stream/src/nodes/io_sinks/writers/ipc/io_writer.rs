@@ -19,8 +19,8 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::ipc::pl_ipc_metadata::{POLARS_IPC_METADATA_KEY, PlIpcMetadata};
 use polars_io::schema_to_arrow_checked;
 use polars_io::utils::bytes_bufferer::{BytesBufferer, BytesBuffererConfig};
-use polars_io::utils::file::Writable;
 
+use crate::nodes::io_sinks::components::writable::Writable;
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
 use crate::nodes::io_sinks::writers::ipc::{IpcBatch, IpcBatchType};
 
@@ -37,7 +37,7 @@ pub struct IOWriter {
 }
 
 impl IOWriter {
-    pub async fn run(self) -> PolarsResult<()> {
+    pub async fn run(self) -> PolarsResult<u64> {
         let IOWriter {
             file,
             mut ipc_batch_rx,
@@ -47,16 +47,17 @@ impl IOWriter {
             write_custom_pl_metadata,
         } = self;
 
-        let (mut writable, sync_on_close) = file.await?;
+        let (mut target, sync_on_close) = file.await?;
 
         let mut writer = WritableWrap {
-            writable: &mut writable,
+            writable: target.as_writable(),
         };
 
         let mut custom_pl_metadata = write_custom_pl_metadata.then_some(PlIpcMetadata::default());
 
         let mut record_blocks = vec![];
         let mut dictionary_blocks = vec![];
+        let mut num_bytes_written: u64 = ARROW_MAGIC_V2_PADDED.len() as u64;
 
         writer
             .write_multiple_owned([Buffer::from_static(&ARROW_MAGIC_V2_PADDED)])
@@ -75,7 +76,7 @@ impl IOWriter {
         finish_ipc_message_bytes(&mut schema_bytes)?;
 
         let schema_bytes_len = schema_bytes.len();
-
+        num_bytes_written = num_bytes_written.saturating_add(schema_bytes_len as u64);
         writer.write_multiple_owned(schema_bytes).await?;
 
         current_byte_offset += schema_bytes_len;
@@ -111,7 +112,10 @@ impl IOWriter {
                 .write_multiple_owned(
                     std::iter::once(Buffer::from_vec(continuation_bytes))
                         .chain(message_bytes)
-                        .chain(arrow_data_bytes),
+                        .chain(arrow_data_bytes)
+                        .inspect(|n| {
+                            num_bytes_written = num_bytes_written.saturating_add(n.len() as u64)
+                        }),
                 )
                 .await?;
 
@@ -148,10 +152,13 @@ impl IOWriter {
             custom_metadata,
         )?;
 
+        num_bytes_written = num_bytes_written.saturating_add(schema_bytes.len() as u64);
         writer.write_multiple_owned(schema_bytes).await?;
-        writable.close(sync_on_close)?;
+        writer.flush().await?;
+        drop(writer);
+        target.close(sync_on_close).await?;
 
-        Ok(())
+        Ok(num_bytes_written)
     }
 }
 
@@ -166,20 +173,20 @@ fn schema_bytes_bufferer_config() -> &'static BytesBuffererConfig {
 }
 
 struct WritableWrap<'a> {
-    writable: &'a mut Writable,
+    writable: Writable<'a>,
 }
 
 impl<'a> Deref for WritableWrap<'a> {
-    type Target = Writable;
+    type Target = Writable<'a>;
 
     fn deref(&self) -> &Self::Target {
-        self.writable
+        &self.writable
     }
 }
 
 impl<'a> DerefMut for WritableWrap<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.writable
+        &mut self.writable
     }
 }
 
@@ -188,19 +195,14 @@ impl<'a> WritableWrap<'a> {
     where
         I: IntoIterator<Item = Buffer<u8>>,
     {
-        use polars_io::utils::file::Writable::*;
-
-        match self.writable {
-            Cloud(v) => {
-                for buffer in bytes {
-                    v.write_all_owned(Bytes::from_owner(buffer)).await?;
-                }
-            },
-            Dyn(_) | Local(_) => {
-                for buffer in bytes {
-                    self.write_all(Buffer::as_slice(&buffer))?;
-                }
-            },
+        if self.writable.is_cloud() {
+            for buffer in bytes {
+                self.write_all_owned(&mut Bytes::from_owner(buffer)).await?;
+            }
+        } else {
+            for buffer in bytes {
+                self.write_all(Buffer::as_slice(&buffer)).await?;
+            }
         }
 
         Ok(())
