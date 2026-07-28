@@ -40,42 +40,43 @@ pub(super) struct StartedState {
 
 impl InternalCloudWriter {
     pub(super) async fn start(&mut self) -> PolarsResult<()> {
-        // Calling start() upfront is a no-op for single-PUT buffering.
-        // We defer initiating `put_multipart_opts` until data actually exceeds
-        // the first chunk payload in `put()`.
         Ok(())
     }
 
     /// Internal helper that actually initializes the S3 multipart upload session.
     async fn start_multipart(&mut self) -> PolarsResult<()> {
-        if matches!(&self.state, WriterState::NotStarted(_)) {
-            let path_ref = &self.path;
-            let multipart = PlMultipartUpload::new(
-                self.store
-                    .exec_with_rebuild_retry_on_err(|s| async move {
-                        s.put_multipart_opts(path_ref, object_store::PutMultipartOptions::default())
-                            .await
-                    })
-                    .await?,
-                self.store.error_context(),
-            );
+        match &self.state {
+            WriterState::Finished => panic!("Cannot start multipart on a finished InternalCloudWriter"),
+            WriterState::Started(_) => return Ok(()),
+            WriterState::NotStarted(_) => {},
+        }
 
-            let (error_capture, error_handle) = ErrorCapture::new();
+        let path_ref = &self.path;
+        let multipart = PlMultipartUpload::new(
+            self.store
+                .exec_with_rebuild_retry_on_err(|s| async move {
+                    s.put_multipart_opts(path_ref, object_store::PutMultipartOptions::default())
+                        .await
+                })
+                .await?,
+            self.store.error_context(),
+        );
 
-            let old_state = std::mem::replace(
-                &mut self.state,
-                WriterState::Started(StartedState {
-                    multipart,
-                    tasks: FuturesUnordered::new(),
-                    error_handle,
-                    error_capture,
-                }),
-            );
+        let (error_capture, error_handle) = ErrorCapture::new();
 
-            // If there was a buffered first payload, upload it as the first multipart chunk
-            if let WriterState::NotStarted(Some(first_payload)) = old_state {
-                self.put_into_started(first_payload).await?;
-            }
+        let old_state = std::mem::replace(
+            &mut self.state,
+            WriterState::Started(StartedState {
+                multipart,
+                tasks: FuturesUnordered::new(),
+                error_handle,
+                error_capture,
+            }),
+        );
+
+        // If there was a buffered first payload, upload it as the first multipart chunk
+        if let WriterState::NotStarted(Some(first_payload)) = old_state {
+            self.put_into_started(first_payload).await?;
         }
 
         Ok(())
