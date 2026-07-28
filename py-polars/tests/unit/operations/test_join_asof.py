@@ -1453,6 +1453,27 @@ def test_join_asof_not_sorted_streaming_grouped_27457(
 
 
 @pytest.mark.parametrize(
+    ("nulls_last", "groups", "expected_v"),
+    [
+        (False, [None, 0, 1], [None, 8, 9]),
+        (True, [0, 1, None], [7, 8, None]),
+    ],
+)
+def test_join_asof_streaming_by_set_sorted_28538(
+    nulls_last: bool, groups: list[int | None], expected_v: list[int | None]
+) -> None:
+    left = pl.LazyFrame({"group": groups, "time": [1, 1, 1]}).with_columns(
+        pl.col("group").set_sorted(nulls_last=nulls_last)
+    )
+    right = pl.LazyFrame(
+        {"group": groups, "time": [0, 0, 0], "v": [7, 8, 9]}
+    ).with_columns(pl.col("group").set_sorted(nulls_last=nulls_last))
+    out = left.join_asof(right, on="time", by="group").collect()
+    expected = pl.DataFrame({"group": groups, "time": [1, 1, 1], "v": expected_v})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
     "dtypes",
     [
         (pl.Int64, pl.Int64),
