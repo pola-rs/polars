@@ -703,3 +703,27 @@ def test_scan_csv_new_columns_28343() -> None:
         ).collect(),
         pl.DataFrame({"x": [0, 1], "y": [0, 2], "z": [None, 3], "t": [None, 4]}),
     )
+
+
+def test_scan_csv_infer_schema_files() -> None:
+    data = [
+        b"""\
+a
+1
+""",
+        b"""\
+a
+A
+""",
+    ]
+
+    expect_df = pl.DataFrame({"a": ["1", "A"]})
+
+    assert_frame_equal(pl.scan_csv(data).collect(), expect_df)
+    assert_frame_equal(pl.scan_csv(data, infer_schema_files=2).collect(), expect_df)
+
+    with pytest.raises(ComputeError, match="could not parse `A` as dtype `i64`"):
+        pl.scan_csv(data, infer_schema_files=1).collect()
+
+    with pytest.raises(ValueError, match="invalid zero value"):
+        pl.scan_csv(data, infer_schema_files=0)
