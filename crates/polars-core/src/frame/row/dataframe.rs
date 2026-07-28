@@ -249,6 +249,13 @@ mod tests {
             ),
             (DataType::Null, AnyValue::Null, AnyValue::Int64(1)),
         ];
+        #[cfg(feature = "dtype-f16")]
+        {
+            use polars_utils::float16::pf16;
+            let f16 = AnyValue::Float16(pf16::from(1.0f32));
+            cases.push((DataType::Float32, f16.clone(), AnyValue::Int64(1)));
+            cases.push((DataType::Float64, f16, AnyValue::Int64(1)));
+        }
         #[cfg(feature = "dtype-date")]
         cases.push((
             DataType::Date,
