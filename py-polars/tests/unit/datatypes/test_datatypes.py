@@ -264,7 +264,6 @@ def test_max_min(
 
 
 def test_unknown_resolve() -> None:
-
     q = pl.LazyFrame({"dec": [D("0.25")]})
     assert "Float64" in q.select(pl.col("dec") * (1.0 * 1)).explain()
     q = pl.LazyFrame({"x": 76}, schema={"x": pl.Int32}).select(
@@ -273,6 +272,13 @@ def test_unknown_resolve() -> None:
     plan = q.explain()
     assert "Float64" in plan
     assert "dyn" not in plan
+
+
+def test_unknown_binary_dyn_int_float_non_literal_28539() -> None:
+    assert_frame_equal(
+        pl.select(pl.lit(-2).abs() // pl.lit(0.5)),
+        pl.DataFrame({"literal": pl.Series([4.0], dtype=pl.Float64)}),
+    )
 
 
 def test_unknown_lit_right_arithmetic_28180() -> None:

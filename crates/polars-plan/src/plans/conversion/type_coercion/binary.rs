@@ -273,10 +273,11 @@ pub(super) fn coerced_binop_dtype(
         st = String
     }
 
-    // TODO! raise here?
-    // We should at least never cast to Unknown.
     if matches!(st, DataType::Unknown(_)) {
-        return Ok(None);
+        st = st.materialize_unknown(true)?;
+        if matches!(st, DataType::Unknown(_)) {
+            return Ok(None);
+        }
     }
 
     Ok(Some(st))
