@@ -871,6 +871,7 @@ class PyLazyFrame:
         null_values: Any | None,
         empty_string_is_null: bool,
         infer_schema_length: int | None,
+        infer_schema_files: int,
         with_schema_modify: Any | None,
         rechunk: bool,
         skip_rows_after_header: int,
