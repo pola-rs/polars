@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import os
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Literal
 
@@ -14,14 +13,11 @@ from polars._utils.deprecation import (
 )
 from polars._utils.various import (
     is_non_empty_sequence_of,
-    is_str_sequence,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.io._utils import (
     get_sources,
-    is_glob_pattern,
-    is_local_file,
     parse_columns_arg,
     parse_row_index_args,
     prepare_file_arg,
@@ -122,51 +118,20 @@ def read_ipc(
           E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")`
           will fail.
     """
-    if (
-        # Check that it is not a BytesIO object
-        isinstance(v := source, (str, Path))
-    ) and (
-        # HuggingFace only for now ⊂( ◜◒◝ )⊃
-        (is_hf := str(v).startswith("hf://"))
-        # Also dispatch on FORCE_ASYNC, so that this codepath gets run
-        # through by our test suite during CI.
-        or os.getenv("POLARS_FORCE_ASYNC") == "1"
-        # TODO: Dispatch all paths to `scan_ipc` - this will need a breaking
-        # change to the `storage_options` parameter.
-    ):
-        if is_hf and use_pyarrow:
+    if use_pyarrow:
+        if n_rows and not memory_map:
+            msg = (
+                "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
+            )
+            raise ValueError(msg)
+
+        if (isinstance(v := source, (str, Path))) and str(v).startswith("hf://"):
             msg = "`use_pyarrow=True` is not supported for Hugging Face"
             raise ValueError(msg)
 
-        lf = scan_ipc(
-            source,
-            n_rows=n_rows,
-            storage_options=storage_options,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-        )
-
-        if columns:
-            if isinstance(columns[0], int):
-                lf = lf.select(F.nth(columns))  # type: ignore[arg-type]
-            else:
-                lf = lf.select(columns)
-
-        df = lf.collect()
-
-        if rechunk:
-            df = df.rechunk()
-
-        return df
-
-    if use_pyarrow and n_rows and not memory_map:
-        msg = "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
-        raise ValueError(msg)
-
-    with prepare_file_arg(
-        source, use_pyarrow=use_pyarrow, storage_options=storage_options
-    ) as data:
-        if use_pyarrow:
+        with prepare_file_arg(
+            source, use_pyarrow=use_pyarrow, storage_options=storage_options
+        ) as data:
             pyarrow_ipc = import_optional(
                 "pyarrow.ipc",
                 err_prefix="",
@@ -205,65 +170,26 @@ def read_ipc(
                 df = df.slice(0, n_rows)
             return df
 
-        return _read_ipc_impl(
-            data,
-            columns=columns,
-            n_rows=n_rows,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-            rechunk=rechunk,
-            memory_map=memory_map,
-        )
-
-
-def _read_ipc_impl(
-    source: str | Path | IO[bytes] | bytes,
-    *,
-    columns: Sequence[int] | Sequence[str] | None = None,
-    n_rows: int | None = None,
-    row_index_name: str | None = None,
-    row_index_offset: int = 0,
-    rechunk: bool = True,
-    memory_map: bool = True,
-) -> DataFrame:
-    if isinstance(source, (str, Path)):
-        source = normalize_filepath(source, check_not_directory=False)
-    if isinstance(columns, str):
-        columns = [columns]
-
-    if isinstance(source, str) and is_glob_pattern(source) and is_local_file(source):
-        scan = scan_ipc(
-            source,
-            n_rows=n_rows,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-        )
-        if columns is None:
-            df = scan.collect()
-        elif is_str_sequence(columns, allow_str=False):
-            df = scan.select(columns).collect()
-        else:
-            msg = (
-                "cannot use glob patterns and integer based projection as `columns` argument"
-                "\n\nUse columns: List[str]"
-            )
-            raise TypeError(msg)
-
-        if rechunk:
-            df = df.rechunk()
-
-        return df
-
-    projection, columns = parse_columns_arg(columns)
-    pydf = PyDataFrame.read_ipc(
+    lf = scan_ipc(
         source,
-        columns,
-        projection,
-        n_rows,
-        parse_row_index_args(row_index_name, row_index_offset),
-        memory_map=memory_map,
+        n_rows=n_rows,
+        storage_options=storage_options,
+        row_index_name=row_index_name,
+        row_index_offset=row_index_offset,
     )
-    return wrap_df(pydf)
+
+    if columns:
+        if isinstance(columns[0], int):
+            lf = lf.select(F.nth(columns))  # type: ignore[arg-type]
+        else:
+            lf = lf.select(columns)
+
+    df = lf.collect()
+
+    if rechunk:
+        df = df.rechunk()
+
+    return df
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
