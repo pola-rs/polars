@@ -158,8 +158,9 @@ def test_map_batches_preserves_python_exception_28535() -> None:
             self.body = body
 
     def raises_provider_error(_series: pl.Series) -> pl.Series:
+        message = "the provider rejected the request"
         raise RequiresContext(
-            "the provider rejected the request",
+            message,
             response={"status": 400},
             body={"error": "invalid_request"},
         )
