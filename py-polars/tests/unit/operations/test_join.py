@@ -4406,11 +4406,7 @@ def test_join_slice_maintain_order_28419_28448() -> None:
 
 def test_join_slice_maintain_order_negative_offset_overshoot_28538() -> None:
     lf = pl.LazyFrame({"a": [1, 2]})
-    q = (
-        lf
-        .join(lf, on="a", maintain_order="left")
-        .tail(6)
-    )
+    q = lf.join(lf, on="a", maintain_order="left").tail(6)
     expected = pl.DataFrame({"a": [1, 2]})
 
     assert_frame_equal(q.collect(), expected)
