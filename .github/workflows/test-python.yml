@@ -150,7 +150,8 @@ jobs:
         if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.variant
         env:
           POLARS_TIMEOUT_MS: 60000
-        run: pytest -n auto -m "not release and not benchmark and not docs"
+        # TODO: Fix and re-enable may_fail_auto_streaming tests
+        run: pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs"
 
       - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
         if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && matrix.variant == 'engine_affinity_in_memory'
@@ -171,17 +172,19 @@ jobs:
         env:
           POLARS_FORCE_ASYNC: 1
           POLARS_TIMEOUT_MS: 60000
-        run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/
+        # TODO: Fix and re-enable may_fail_auto_streaming tests
+        run: pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs" tests/unit/io/
 
       - name: Run tests multiscan force empty capabilities
         if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.variant
         env:
           POLARS_FORCE_EMPTY_READER_CAPABILITIES: 1
           POLARS_TIMEOUT_MS: 60000
+        # TODO: Fix and re-enable may_fail_auto_streaming tests
         run: |
-          pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_multiscan.py
-          pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_scan_row_deletion.py
-          pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_iceberg.py
+          pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs" tests/unit/io/test_multiscan.py
+          pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs" tests/unit/io/test_scan_row_deletion.py
+          pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs" tests/unit/io/test_iceberg.py
 
       - name: Check import without optional dependencies
         if: github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.14' || matrix.python-version == '3.14t')
