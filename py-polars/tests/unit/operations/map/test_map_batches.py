@@ -165,7 +165,9 @@ def test_map_batches_preserves_python_exception_28535() -> None:
             body={"error": "invalid_request"},
         )
 
-    with pytest.raises(RequiresContext, match="the provider rejected the request") as exc_info:
+    with pytest.raises(
+        RequiresContext, match="the provider rejected the request"
+    ) as exc_info:
         pl.DataFrame({"x": [1]}).select(
             pl.col("x").map_batches(raises_provider_error, return_dtype=pl.Int64)
         )
@@ -178,8 +180,7 @@ def test_map_batches_preserves_python_exception_28535() -> None:
         notes = getattr(err, "__notes__", None)
         assert notes is not None
         assert any(
-            "This error occurred in the following expression:" in note
-            for note in notes
+            "This error occurred in the following expression:" in note for note in notes
         )
 
 
