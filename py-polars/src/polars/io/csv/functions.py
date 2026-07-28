@@ -240,7 +240,6 @@ def read_csv(
 
         This defaults to `False` if `has_header=False` and a `schema` is specified,
         and `True` otherwise.
-        and `True` otherwise.
     truncate_ragged_lines
         Truncate lines that are longer than the schema.
     decimal_comma
