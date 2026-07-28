@@ -105,3 +105,22 @@ def test_sort_node_prune_hint_multiple() -> None:
         .select(pl.col("idx"))
     )
     assert 'SORT BY [maintain_order: true] [col("a"), col("b")]' in q.explain()
+
+
+@pytest.mark.parametrize("idx_descending", [False, True])
+@pytest.mark.parametrize("output_descending", [False, True])
+def test_sort_node_collapse_gather_28491(
+    idx_descending: bool, output_descending: bool
+) -> None:
+    indices = pl.LazyFrame({"idx": [0, 1, 2]}, schema={"idx": pl.UInt32}).sort(
+        "idx", descending=idx_descending
+    )
+    q = (
+        pl.LazyFrame({"a": [1, 2, 3]})
+        .sort("a")
+        .gather(indices)
+        .sort("a", descending=output_descending)
+    )
+
+    values = [3, 2, 1] if output_descending else [1, 2, 3]
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": values}))

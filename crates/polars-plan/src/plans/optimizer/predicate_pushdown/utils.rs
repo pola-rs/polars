@@ -325,7 +325,7 @@ pub fn pushdown_eligibility(
     // Note: has_window is constant.
     let can_use_column = |col: &str| {
         if has_window {
-            common_window_inputs.contains(col)
+            common_window_inputs.contains(col) && !modified_projection_columns.contains(col)
         } else {
             !modified_projection_columns.contains(col)
         }

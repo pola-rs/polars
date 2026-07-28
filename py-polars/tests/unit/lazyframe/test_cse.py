@@ -922,9 +922,10 @@ def test_cse_as_struct_19253() -> None:
 
 @pytest.mark.may_fail_auto_streaming
 def test_cse_as_struct_value_counts_20927() -> None:
-    assert pl.DataFrame({"x": [i for i in range(1, 6) for _ in range(i)]}).select(
+    q = pl.LazyFrame({"x": [i for i in range(1, 6) for _ in range(i)]}).select(
         pl.struct("x").value_counts().struct.unnest()
-    ).sort("count").to_dict(as_series=False) == {
+    )
+    assert q.collect().sort("count").to_dict(as_series=False) == {
         "x": [{"x": 1}, {"x": 2}, {"x": 3}, {"x": 4}, {"x": 5}],
         "count": [1, 2, 3, 4, 5],
     }
@@ -1667,3 +1668,10 @@ def test_cspe_with_pushable_filters_scan_19479(tmp_path: Path) -> None:
 
     result = pl.concat([expr1, expr2])
     assert "CACHE[id:" not in result.explain()
+
+
+def test_cse_single_scalar_does_not_broadcast_28407() -> None:
+    e = pl.lit(5).abs()
+    q = pl.LazyFrame({"a": [1, 2, 3]}).select((e + e).alias("o"))
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"o": 10}, schema={"o": pl.Int32}))

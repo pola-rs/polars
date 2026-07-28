@@ -86,14 +86,25 @@ pub(super) fn process_group_by(
 
     opt.pushdown_and_assign(input, new_acc_predicates, lp_arena, expr_arena)?;
 
-    let lp = GroupBy {
-        input,
-        keys,
-        aggs,
-        schema,
-        apply,
-        maintain_order,
-        options,
-    };
+    let lp = hive::rewrite_hive(
+        IR::GroupBy {
+            input,
+            keys,
+            aggs,
+            schema,
+            maintain_order,
+            options,
+            apply,
+        },
+        opt,
+        lp_arena,
+        expr_arena,
+    )?;
+
+    let rewrote_to_union = matches!(lp, IR::Union { .. });
+    if rewrote_to_union {
+        opt.hive_rewrite_active = true;
+    }
+
     Ok(opt.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
 }

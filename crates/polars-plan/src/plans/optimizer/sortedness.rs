@@ -508,7 +508,7 @@ fn is_sorted_rec(
                     }
                 },
             }
-            Some(input_sorted)
+            Some(IRSorted(out_sorted.into()))
         },
         IR::MapFunction { input, function } => match function {
             FunctionIR::Hint(hint) => match hint {

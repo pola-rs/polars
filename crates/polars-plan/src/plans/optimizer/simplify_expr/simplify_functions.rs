@@ -218,24 +218,26 @@ pub(super) fn optimize_functions(
                 AExpr::Literal(lv) if lv.bool().is_some() => {
                     Some(AExpr::Literal(Scalar::from(!lv.bool().unwrap()).into()))
                 },
-                // not(x.is_null) => x.is_not_null
+                // not(x.is_y) => x.is_not_y  and  not(x.is_not_y) => x.is_y
                 AExpr::Function {
                     input,
-                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
+                    function:
+                        IRFunctionExpr::Boolean(
+                            f @ IRBooleanFunction::IsNull
+                            | f @ IRBooleanFunction::IsNan
+                            | f @ IRBooleanFunction::IsNotNull
+                            | f @ IRBooleanFunction::IsNotNan,
+                        ),
                     options,
                 } => Some(AExpr::Function {
                     input: input.clone(),
-                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
-                    options: *options,
-                }),
-                // not(x.is_not_null) => x.is_null
-                AExpr::Function {
-                    input,
-                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
-                    options,
-                } => Some(AExpr::Function {
-                    input: input.clone(),
-                    function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNull),
+                    function: IRFunctionExpr::Boolean(match f {
+                        IRBooleanFunction::IsNull => IRBooleanFunction::IsNotNull,
+                        IRBooleanFunction::IsNan => IRBooleanFunction::IsNotNan,
+                        IRBooleanFunction::IsNotNull => IRBooleanFunction::IsNull,
+                        IRBooleanFunction::IsNotNan => IRBooleanFunction::IsNan,
+                        _ => unreachable!(),
+                    }),
                     options: *options,
                 }),
                 // not(a == b) => a != b

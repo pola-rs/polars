@@ -1,5 +1,6 @@
 mod dynamic;
 mod group_by;
+mod hive;
 mod join;
 mod keys;
 mod utils;
