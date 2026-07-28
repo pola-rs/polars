@@ -281,7 +281,6 @@ def test_unknown_resolve() -> None:
         (pl.lit(-2).abs() + pl.lit(0.5), pl.Float64, 2.5),
         (pl.lit(0.5) + pl.lit(-2).abs(), pl.Float64, 2.5),
         (pl.lit(1.0).abs() + pl.lit(2).abs(), pl.Float64, 3.0),
-
         (pl.lit(-1).abs() + pl.lit(-1).abs(), pl.Int32, 2),
         (pl.lit(2**40).abs() + pl.lit(-1).abs(), pl.Int64, 2**40 + 1),
     ],
@@ -301,7 +300,6 @@ def test_unknown_binary_dyn_int_float_non_literal_28539(
         (pl.lit(1.0).abs() + pl.lit(1.0).abs() + pl.col("f"), 3.0),
         (pl.lit(1.0).abs() * pl.lit(2.0).abs() + pl.col("f"), 3.0),
         (pl.lit(2).abs() + pl.col("f"), 3.0),
-
         ((pl.lit(1.0).abs() + pl.lit(2).abs()) + pl.col("f"), 4.0),
         ((pl.lit(1.0).abs() + pl.lit(2).abs()) // pl.col("f"), 3.0),
     ],
