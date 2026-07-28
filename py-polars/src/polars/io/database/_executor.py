@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Coroutine, Sequence
+from collections.abc import Coroutine, Iterable, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
 from typing import TYPE_CHECKING, Any, Final, cast
 
 from polars import functions as F
 from polars._utils.various import parse_version, qualified_type_name
-from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT
 from polars.exceptions import (
     DuplicateError,
@@ -26,7 +25,7 @@ from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterator
     from types import TracebackType
 
     import pyarrow as pa
@@ -162,7 +161,12 @@ class ConnectionExecutor:
         fetch_batches = driver_properties["fetch_batches"]
         if not iter_batches or fetch_batches is None:
             fetch_method = driver_properties["fetch_all"]
-            yield getattr(self.result, fetch_method)()
+            res = getattr(self.result, fetch_method)()
+
+            if isinstance(res, Iterable):
+                yield from res
+            else:
+                yield res
         else:
             size = [batch_size] if driver_properties["exact_batch_size"] else []
             repeat_batch_calls = driver_properties["repeat_batch_calls"]
@@ -244,7 +248,7 @@ class ConnectionExecutor:
                 frames = (
                     self._apply_overrides(batch, (schema_overrides or {}))
                     if isinstance(batch, DataFrame)
-                    else from_arrow(batch, schema_overrides=schema_overrides)
+                    else DataFrame(batch)
                     for batch in self._fetch_arrow(
                         driver_properties,
                         iter_batches=iter_batches,
