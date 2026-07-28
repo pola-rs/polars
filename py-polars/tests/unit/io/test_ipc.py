@@ -367,11 +367,11 @@ def test_glob_ipc(df: pl.DataFrame, tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_binview_ipc_mmap(tmp_path: Path) -> None:
+def test_binview_ipc(tmp_path: Path) -> None:
     df = pl.DataFrame({"foo": ["aa" * 10, "bb", None, "small", "big" * 20]})
     file_path = tmp_path / "dump.ipc"
     df.write_ipc(file_path, compat_level=CompatLevel.newest())
-    read = pl.read_ipc(file_path, memory_map=True)
+    read = pl.read_ipc(file_path)
     assert_frame_equal(df, read)
 
 
@@ -440,10 +440,7 @@ def test_read_ipc_only_loads_selected_columns(
     memory_usage_without_pyarrow.reset_tracking()
 
     # Only load one column:
-    kwargs = {}
-    if not stream:
-        kwargs["memory_map"] = False
-    df = read_ipc(stream, str(file_path), columns=["b"], rechunk=False, **kwargs)
+    df = read_ipc(stream, str(file_path), columns=["b"], rechunk=False)
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 32_000_000 at least, but there's some overhead.
@@ -617,4 +614,25 @@ def test_read_ipc_pyarrow() -> None:
     assert_frame_equal(
         pl.read_ipc(f, columns=["b"], use_pyarrow=True),
         pl.DataFrame({"b": 2}),
+    )
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+def test_read_ipc_projection_and_row_index(use_pyarrow: bool) -> None:
+    f = io.BytesIO()
+    pl.DataFrame({"a": 1, "b": 2}).write_ipc(f)
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.read_ipc(f, columns=["b"], row_index_name="index", use_pyarrow=use_pyarrow),
+        pl.DataFrame(
+            {"index": 0, "b": 2}, schema_overrides={"index": pl.get_index_type()}
+        ),
+    )
+
+    assert_frame_equal(
+        pl.read_ipc(f, columns=[1], row_index_name="index", use_pyarrow=use_pyarrow),
+        pl.DataFrame(
+            {"index": 0, "b": 2}, schema_overrides={"index": pl.get_index_type()}
+        ),
     )
