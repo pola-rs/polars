@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import os
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Literal
 
@@ -13,15 +12,11 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.various import (
-    is_non_empty_sequence_of,
-    is_str_sequence,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.io._utils import (
     get_sources,
-    is_glob_pattern,
-    is_local_file,
     parse_columns_arg,
     parse_row_index_args,
     prepare_file_arg,
@@ -51,7 +46,6 @@ def read_ipc(
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
-    memory_map: bool = False,
     storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -83,10 +77,6 @@ def read_ipc(
         Only valid when `use_pyarrow=False`.
     use_pyarrow
         Use pyarrow or the native Rust reader.
-    memory_map
-        Try to memory map the file. This can greatly improve performance on repeated
-        queries as the OS may cache pages.
-        Only uncompressed IPC files can be memory mapped.
     storage_options
         Extra options that make sense for `fsspec.open()` or a particular storage
         connection, e.g. host, port, username, password, etc.
@@ -125,43 +115,6 @@ def read_ipc(
           E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")`
           will fail.
     """
-    if (
-        # Check that it is not a BytesIO object
-        isinstance(v := source, (str, Path))
-    ) and (
-        # HuggingFace only for now ⊂( ◜◒◝ )⊃
-        (is_hf := str(v).startswith("hf://"))
-        # Also dispatch on FORCE_ASYNC, so that this codepath gets run
-        # through by our test suite during CI.
-        or os.getenv("POLARS_FORCE_ASYNC") == "1"
-        # TODO: Dispatch all paths to `scan_ipc` - this will need a breaking
-        # change to the `storage_options` parameter.
-    ):
-        if is_hf and use_pyarrow:
-            msg = "`use_pyarrow=True` is not supported for Hugging Face"
-            raise ValueError(msg)
-
-        lf = scan_ipc(
-            source,
-            n_rows=n_rows,
-            storage_options=storage_options,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-        )
-
-        if columns:
-            if isinstance(columns[0], int):
-                lf = lf.select(F.nth(columns))  # type: ignore[arg-type]
-            else:
-                lf = lf.select(columns)
-
-        df = lf._collect_eager()
-
-        if rechunk:
-            df = df.rechunk()
-
-        return df
-
     if rechunk is not None:
         issue_deprecation_warning(
             "`rechunk` parameter on read_ipc() will be removed. "
@@ -172,21 +125,33 @@ def read_ipc(
     else:
         rechunk = False
 
-    if use_pyarrow and n_rows and not memory_map:
-        msg = "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
-        raise ValueError(msg)
+    projection, column_names = parse_columns_arg(columns)
+    del columns
+    row_index = parse_row_index_args(row_index_name, row_index_offset)
+    del row_index_name
+    del row_index_offset
 
-    with prepare_file_arg(
-        source, use_pyarrow=use_pyarrow, storage_options=storage_options
-    ) as data:
-        if use_pyarrow:
+    if use_pyarrow:
+        if n_rows:
+            msg = (
+                "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
+            )
+            raise ValueError(msg)
+
+        if (isinstance(v := source, (str, Path))) and str(v).startswith("hf://"):
+            msg = "`use_pyarrow=True` is not supported for Hugging Face"
+            raise ValueError(msg)
+
+        with prepare_file_arg(
+            source, use_pyarrow=use_pyarrow, storage_options=storage_options
+        ) as data:
             pyarrow_ipc = import_optional(
                 "pyarrow.ipc",
                 err_prefix="",
                 err_suffix="is required when using 'read_ipc(..., use_pyarrow=True)'",
             )
 
-            if columns is not None and is_non_empty_sequence_of(columns, str):
+            if column_names is not None:
                 initial_pos: Any = None
 
                 if hasattr(data, "tell") and callable(data.tell):
@@ -196,7 +161,7 @@ def read_ipc(
                     schema = ipc_f.schema
 
                 idx_lookup = {name: i for i, name in enumerate(schema.names)}
-                columns = [idx_lookup[name] for name in columns]
+                projection = [idx_lookup[name] for name in column_names]
 
                 if (
                     initial_pos is not None
@@ -207,76 +172,42 @@ def read_ipc(
 
             with pyarrow_ipc.open_file(
                 data,
-                options=pyarrow_ipc.IpcReadOptions(included_fields=columns),
+                options=pyarrow_ipc.IpcReadOptions(included_fields=projection),
             ) as ipc_f:
                 tbl = ipc_f.read_all()
 
             df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
-            if row_index_name is not None:
-                df = df.with_row_index(row_index_name, row_index_offset)
+
             if n_rows is not None:
-                df = df.slice(0, n_rows)
+                df = df.head(n_rows)
+
+            if row_index is not None:
+                name, offset = row_index
+                df = df.with_row_index(name, offset)
+
             return df
 
-        return _read_ipc_impl(
-            data,
-            columns=columns,
-            n_rows=n_rows,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-            rechunk=rechunk,
-            memory_map=memory_map,
-        )
-
-
-def _read_ipc_impl(
-    source: str | Path | IO[bytes] | bytes,
-    *,
-    columns: Sequence[int] | Sequence[str] | None = None,
-    n_rows: int | None = None,
-    row_index_name: str | None = None,
-    row_index_offset: int = 0,
-    rechunk: bool = True,
-    memory_map: bool = True,
-) -> DataFrame:
-    if isinstance(source, (str, Path)):
-        source = normalize_filepath(source, check_not_directory=False)
-    if isinstance(columns, str):
-        columns = [columns]
-
-    if isinstance(source, str) and is_glob_pattern(source) and is_local_file(source):
-        scan = scan_ipc(
-            source,
-            n_rows=n_rows,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-        )
-        if columns is None:
-            df = scan._collect_eager()
-        elif is_str_sequence(columns, allow_str=False):
-            df = scan.select(columns)._collect_eager()
-        else:
-            msg = (
-                "cannot use glob patterns and integer based projection as `columns` argument"
-                "\n\nUse columns: List[str]"
-            )
-            raise TypeError(msg)
-
-        if rechunk:
-            df = df.rechunk()
-
-        return df
-
-    projection, columns = parse_columns_arg(columns)
-    pydf = PyDataFrame.read_ipc(
+    lf = scan_ipc(
         source,
-        columns,
-        projection,
-        n_rows,
-        parse_row_index_args(row_index_name, row_index_offset),
-        memory_map=memory_map,
+        n_rows=n_rows,
+        storage_options=storage_options,
     )
-    return wrap_df(pydf)
+
+    if column_names is not None:
+        lf = lf.select(column_names)
+    elif projection is not None:
+        lf = lf.select(F.nth(projection))
+
+    if row_index is not None:
+        name, offset = row_index
+        lf = lf.with_row_index(name, offset)
+
+    df = lf._collect_eager()
+
+    if rechunk:
+        df = df.rechunk()
+
+    return df
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
