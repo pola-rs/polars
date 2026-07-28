@@ -91,6 +91,16 @@ impl Executor for ProjectionExec {
             }
         }
         let df = self.input.execute(state)?;
-        self.execute_impl(state, df)
+        let height = df.height();
+        let mut df = self.execute_impl(state, df)?;
+
+        // Note: Should be unreachable as DSL->IR would rewrite it to SimpleProjection.
+        if df.shape() == (0, 0) && self.options.maintain_dataframe_height {
+            unsafe {
+                df.set_height(height);
+            }
+        }
+
+        Ok(df)
     }
 }
