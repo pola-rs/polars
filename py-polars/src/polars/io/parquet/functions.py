@@ -76,7 +76,6 @@ def read_parquet(
     memory_map: bool = True,
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] = "raise",
-    allow_missing_columns: bool | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -189,17 +188,6 @@ def read_parquet(
         * `insert`: Inserts the missing columns using NULLs as the row values.
         * `raise`: Raises an error.
 
-    allow_missing_columns
-        When reading a list of parquet files, if a column existing in the first
-        file cannot be found in subsequent files, the default behavior is to
-        raise an error. However, if `allow_missing_columns` is set to
-        `True`, a full-NULL column is returned instead of erroring for the files
-        that do not contain the column.
-
-        .. deprecated:: 1.30.0
-            Use the parameter `missing_columns` instead and pass one of
-            `('insert', 'raise')`.
-
     Returns
     -------
     DataFrame
@@ -251,16 +239,6 @@ def read_parquet(
             memory_map=memory_map,
             rechunk=rechunk,
         )
-
-    if allow_missing_columns is not None:
-        issue_deprecation_warning(
-            "the parameter `allow_missing_columns` for `read_parquet` is deprecated. "
-            "Use the parameter `missing_columns` instead and pass one of "
-            "`('insert', 'raise')`.",
-            version="1.30.0",
-        )
-
-        missing_columns = "insert" if allow_missing_columns else "raise"
 
     # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
