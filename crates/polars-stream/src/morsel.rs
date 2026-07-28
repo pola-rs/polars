@@ -5,6 +5,7 @@ use std::sync::Arc;
 use polars_async::primitives::linearizer::{Inserter, Linearizer};
 use polars_async::primitives::wait_group::WaitToken;
 use polars_core::frame::DataFrame;
+use polars_ooc::{PinnedFrameMut, PinnedRef, SpillFrame};
 use polars_utils::priority::Priority;
 use polars_utils::relaxed_cell::RelaxedCell;
 
@@ -78,10 +79,10 @@ impl SourceToken {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Morsel {
     /// The data contained in this morsel.
-    df: DataFrame,
+    sf: SpillFrame,
 
     /// The sequence number of this morsel. May only stay equal or increase
     /// within a pipeline.
@@ -95,34 +96,71 @@ pub struct Morsel {
 }
 
 impl Morsel {
-    pub fn new(df: DataFrame, seq: MorselSeq, source_token: SourceToken) -> Self {
+    pub fn new(sf: SpillFrame, seq: MorselSeq, source_token: SourceToken) -> Self {
         Self {
-            df,
+            sf,
             seq,
             source_token,
             consume_token: None,
         }
     }
 
-    #[allow(unused)]
-    pub fn into_inner(self) -> (DataFrame, MorselSeq, SourceToken, Option<WaitToken>) {
-        (self.df, self.seq, self.source_token, self.consume_token)
+    pub fn new_unregistered(df: DataFrame, seq: MorselSeq, source_token: SourceToken) -> Self {
+        Self {
+            sf: SpillFrame::new_unregistered(df),
+            seq,
+            source_token,
+            consume_token: None,
+        }
     }
 
+    pub fn into_inner(self) -> (SpillFrame, MorselSeq, SourceToken, Option<WaitToken>) {
+        (self.sf, self.seq, self.source_token, self.consume_token)
+    }
+
+    #[inline(always)]
     pub fn height(&self) -> usize {
-        self.df.height()
+        self.sf.height()
     }
 
-    pub fn into_df(self) -> DataFrame {
-        self.df
+    #[inline(always)]
+    pub fn sf(&self) -> &SpillFrame {
+        &self.sf
     }
 
-    pub fn df(&self) -> &DataFrame {
-        &self.df
+    #[inline(always)]
+    pub fn into_sf(self) -> SpillFrame {
+        self.sf
     }
 
-    pub fn df_mut(&mut self) -> &mut DataFrame {
-        &mut self.df
+    #[inline(always)]
+    pub async fn into_df(self) -> DataFrame {
+        self.sf.into_df().await
+    }
+
+    #[inline(always)]
+    pub fn into_df_blocking(self) -> DataFrame {
+        self.sf.into_df_blocking()
+    }
+
+    #[inline(always)]
+    pub async fn df(&self) -> PinnedRef<'_, DataFrame> {
+        self.sf.get().await
+    }
+
+    #[inline(always)]
+    pub fn df_blocking(&self) -> PinnedRef<'_, DataFrame> {
+        self.sf.get_blocking()
+    }
+
+    #[inline(always)]
+    pub async fn df_mut(&mut self) -> PinnedFrameMut<'_> {
+        self.sf.get_mut().await
+    }
+
+    #[inline(always)]
+    pub fn df_mut_blocking(&mut self) -> PinnedFrameMut<'_> {
+        self.sf.get_mut_blocking()
     }
 
     pub fn seq(&self) -> MorselSeq {
@@ -133,27 +171,83 @@ impl Morsel {
         self.seq = seq;
     }
 
-    #[allow(unused)]
-    pub fn map<F: FnOnce(DataFrame) -> DataFrame>(mut self, f: F) -> Self {
-        self.df = f(self.df);
-        self
+    pub fn set_df(&mut self, df: DataFrame) {
+        let old_registry = self.sf.unregister();
+        let sf = SpillFrame::new_unregistered(df);
+        self.sf = sf;
+        if let Some((ctx, param)) = old_registry {
+            ctx.register(&self.sf, param);
+        }
     }
 
-    pub fn try_map<E, F: FnOnce(DataFrame) -> Result<DataFrame, E>>(
-        mut self,
+    pub async fn map<F: FnOnce(DataFrame) -> DataFrame>(self, f: F) -> Self {
+        let Self {
+            mut sf,
+            seq,
+            source_token,
+            consume_token,
+        } = self;
+        let old_registry = sf.unregister();
+        let df = f(sf.into_df().await);
+        let sf = SpillFrame::new_unregistered(df);
+        if let Some((ctx, param)) = old_registry {
+            ctx.register(&sf, param);
+        }
+        Self {
+            sf,
+            seq,
+            source_token,
+            consume_token,
+        }
+    }
+
+    pub async fn try_map<E, F: FnOnce(DataFrame) -> Result<DataFrame, E>>(
+        self,
         f: F,
     ) -> Result<Self, E> {
-        self.df = f(self.df)?;
-        Ok(self)
+        let Self {
+            mut sf,
+            seq,
+            source_token,
+            consume_token,
+        } = self;
+        let old_registry = sf.unregister();
+        let df = f(sf.into_df().await)?;
+        let sf = SpillFrame::new_unregistered(df);
+        if let Some((ctx, param)) = old_registry {
+            ctx.register(&sf, param);
+        }
+        Ok(Self {
+            sf,
+            seq,
+            source_token,
+            consume_token,
+        })
     }
 
-    pub async fn async_try_map<E, M, F>(mut self, f: M) -> Result<Self, E>
+    pub async fn async_try_map<E, M, F>(self, f: M) -> Result<Self, E>
     where
         M: FnOnce(DataFrame) -> F,
         F: Future<Output = Result<DataFrame, E>>,
     {
-        self.df = f(self.df).await?;
-        Ok(self)
+        let Self {
+            mut sf,
+            seq,
+            source_token,
+            consume_token,
+        } = self;
+        let old_registry = sf.unregister();
+        let df = f(sf.into_df().await).await?;
+        let sf = SpillFrame::new_unregistered(df);
+        if let Some((ctx, param)) = old_registry {
+            ctx.register(&sf, param);
+        }
+        Ok(Self {
+            sf,
+            seq,
+            source_token,
+            consume_token,
+        })
     }
 
     pub fn set_consume_token(&mut self, token: WaitToken) {

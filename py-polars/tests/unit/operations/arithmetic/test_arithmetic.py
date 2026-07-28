@@ -23,7 +23,7 @@ from polars import (
     UInt64,
 )
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_frame_equal, assert_schema_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, UNSIGNED_INTEGER_DTYPES
 
 if TYPE_CHECKING:
@@ -1026,3 +1026,14 @@ def test_fma_unknown_type_coercion_28315() -> None:
         df.select(expr),
         pl.Series("x", [1e-30, 1.0], dtype=pl.Float32).to_frame(),
     )
+
+
+def test_truediv_decimal_schema_28372() -> None:
+    lf = pl.LazyFrame(
+        {"x": [1.0, 2.5, 3.5656]}, schema={"x": pl.Decimal(15, 2)}
+    ).select(f=pl.col.x.sum() / 7.0, i=pl.col.x.sum() / 7)
+    expected = pl.LazyFrame(
+        {"f": [1.01], "i": [1.01]}, schema_overrides={"i": pl.Decimal(38, 2)}
+    )
+    assert_schema_equal(lf.collect_schema(), expected.collect_schema())
+    assert_frame_equal(lf, expected)

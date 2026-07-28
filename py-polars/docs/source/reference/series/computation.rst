@@ -41,6 +41,8 @@ Computation
     Series.entropy
     Series.ewm_mean
     Series.ewm_mean_by
+    Series.ewm_sum
+    Series.ewm_sum_by
     Series.ewm_std
     Series.ewm_var
     Series.exp

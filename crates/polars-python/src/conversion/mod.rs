@@ -2015,3 +2015,27 @@ impl<'py> IntoPyObject<'py> for Wrap<PlRefPath> {
         self.0.as_str().into_pyobject(py)
     }
 }
+
+impl<'a, 'py, T> FromPyObject<'a, 'py> for Wrap<Buffer<T>>
+where
+    Vec<T>: FromPyObject<'a, 'py>,
+{
+    type Error = <Vec<T> as FromPyObject<'a, 'py>>::Error;
+
+    fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
+        Vec::<T>::extract(obj).map(Buffer::from_vec).map(Wrap)
+    }
+}
+
+impl<'py, T> IntoPyObject<'py> for Wrap<Buffer<T>>
+where
+    T: IntoPyObject<'py> + Clone,
+{
+    type Target = PyList;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        PyList::new(py, self.0.iter().cloned())
+    }
+}

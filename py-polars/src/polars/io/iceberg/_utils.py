@@ -29,6 +29,7 @@ from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_s
 from polars.exceptions import ComputeError
+from polars.io._utils import null_count_dtype
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -550,7 +551,9 @@ class IcebergColumnStatisticsLoader:
         c = self.column_name
         assert len(self.null_count) == expected_height
 
-        out = pl.Series(f"{c}_nc", self.null_count, dtype=pl.UInt32).to_frame()
+        out = pl.Series(
+            f"{c}_nc", self.null_count, dtype=null_count_dtype(self.column_dtype)
+        ).to_frame()
 
         if self.load_from_bytes_impl is None:
             s = (

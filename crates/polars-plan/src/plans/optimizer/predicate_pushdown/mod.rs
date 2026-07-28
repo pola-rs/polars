@@ -1,5 +1,6 @@
 mod dynamic;
 mod group_by;
+mod hive;
 mod join;
 mod keys;
 mod utils;
@@ -23,7 +24,7 @@ pub struct PredicatePushDown {
     // Normally this is 0. Only needed for CSPE.
     caches_pass_allowance: u32,
     nodes_scratch: ScratchUnitVec<Node>,
-    streaming: bool,
+    pub(crate) streaming: bool,
     // Controls pushing filters past fallible projections
     maintain_errors: bool,
     // Set while re-processing the branches `join::hive::rewrite_hive` so we don't re-enter

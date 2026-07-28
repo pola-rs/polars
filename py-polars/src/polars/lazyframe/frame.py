@@ -1391,10 +1391,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
                Running with `POLARS_VERBOSE=1` will provide information if a query
                falls back (and why).
-
-            .. note::
-               The GPU engine does not support streaming, if streaming
-               is enabled then GPU execution is switched off.
         optimizations
             The optimization passes done during query optimization.
 
@@ -1602,10 +1598,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
                Running with `POLARS_VERBOSE=1` will provide information if a query
                falls back (and why).
-
-            .. note::
-               The GPU engine does not support streaming, if streaming
-               is enabled then GPU execution is switched off.
         plan_stage : {'ir', 'physical'}
             Select the stage to display. Currently only the streaming engine has a
             separate physical stage, for the other engines both IR and physical are the
@@ -2167,10 +2159,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
                Running with `POLARS_VERBOSE=1` will provide information if a query
                falls back (and why).
-
-            .. note::
-               The GPU engine does not support streaming, if streaming
-               is enabled then GPU execution is switched off.
         optimizations
             The optimization passes done during query optimization.
 
@@ -2312,10 +2300,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
                Running with `POLARS_VERBOSE=1` will provide information if a query
                falls back (and why).
-
-            .. note::
-               The GPU engine does not support streaming, if streaming is enabled,
-               then GPU execution is switched off.
         optimizations
             The optimization passes done during query optimization.
 
@@ -2520,10 +2504,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
                Running with `POLARS_VERBOSE=1` will provide information if a query
                falls back (and why).
-
-            .. note::
-               The GPU engine does not support streaming, or running in the
-               background. If either are enabled, then GPU execution is switched off.
         background
             Run the query in the background and get a handle to the query.
             This handle can be used to fetch the result or cancel the query.

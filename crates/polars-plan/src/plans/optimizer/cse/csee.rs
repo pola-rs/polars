@@ -12,10 +12,12 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::_boost_hash_combine;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::vec::CapacityByFactor;
 
 use crate::constants::CSE_REPLACED;
 use crate::plans::aexpr::is_inherently_nondeterministic_top_level;
+use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::visitor::{
     IRNode, IRNodeArena, RewriteRecursion, RewritingVisitor, TreeWalker as _, VisitRecursion,
     Visitor,
@@ -287,6 +289,8 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) 
         AExpr::Rolling { .. } => true,
         AExpr::Over { .. } => true,
         #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { .. } => true,
+        AExpr::Eval { .. } => true,
         AExpr::Ternary { .. } => is_groupby,
         ae => {
             if element_wise_select_only {
@@ -735,6 +739,9 @@ pub(crate) struct CommonSubExprOptimizer {
     // Only supports element-wise CSEE
     // on SELECT/HSTACK
     element_wise_select_only: bool,
+
+    nodes_scratch: ScratchVec<Node>,
+    heights_scratch: ScratchVec<ExprProjectionHeight>,
 }
 
 impl CommonSubExprOptimizer {
@@ -747,6 +754,8 @@ impl CommonSubExprOptimizer {
             replaced_identifiers: Default::default(),
             name_validation: Default::default(),
             element_wise_select_only,
+            nodes_scratch: ScratchVec::default(),
+            heights_scratch: ScratchVec::default(),
         }
     }
 
@@ -934,6 +943,22 @@ impl CommonSubExprOptimizer {
             // Add the tmp columns
             for id in self.replaced_identifiers.inner.keys() {
                 let (node, _count) = self.se_count.get(id, expr_arena).unwrap();
+
+                // Avoid accidentally broadcasting <scalar literal>.<elementwise_ops..>
+                if self.element_wise_select_only
+                    && !matches!(
+                        aexpr_projection_height_rec(
+                            *node,
+                            expr_arena,
+                            &mut self.nodes_scratch,
+                            &mut self.heights_scratch
+                        ),
+                        ExprProjectionHeight::Column
+                    )
+                {
+                    return Ok(None);
+                }
+
                 let name = id.materialize();
                 let out_e = ExprIR::new(*node, OutputName::Alias(name));
                 new_expr.push(out_e)

@@ -1177,6 +1177,20 @@ where
     }
 }
 
+#[cfg(feature = "dtype-f16")]
+impl Float16Chunked {
+    pub(crate) unsafe fn agg_quantile(
+        &self,
+        groups: &GroupsType,
+        quantile: f64,
+        method: QuantileMethod,
+    ) -> Series {
+        agg_quantile_generic::<_, Float16Type>(self, groups, quantile, method)
+    }
+    pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
+        agg_median_generic::<_, Float16Type>(self, groups)
+    }
+}
 impl Float32Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,

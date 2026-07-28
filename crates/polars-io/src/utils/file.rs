@@ -1,5 +1,4 @@
 use std::io;
-#[cfg(feature = "cloud")]
 use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -44,7 +43,9 @@ impl Writable {
     pub fn try_new(
         path: PlRefPath,
         #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_options: Option<&CloudOptions>,
-        #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_upload_chunk_size: usize,
+        #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_upload_chunk_size: Option<
+            NonZeroUsize,
+        >,
         #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_upload_concurrency: usize,
         io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Self> {
@@ -95,6 +96,23 @@ impl Writable {
 
             Self::Local(polars_utils::open_file_write(&path)?)
         })
+    }
+
+    /// If this writer holds a cloud writer, it will `mem::take(T)`. `T` is unmodified for other
+    /// writer types.
+    #[cfg(feature = "cloud")]
+    pub async fn write_all_owned<T>(&mut self, src: &mut T) -> io::Result<()>
+    where
+        T: AsRef<[u8]> + Default + Drop, // `Drop` is to exclude `&[u8]` slices.
+        bytes::Bytes: From<T>,
+    {
+        match self {
+            Self::Cloud(v) => {
+                v.write_all_owned(bytes::Bytes::from(std::mem::take(src)))
+                    .await
+            },
+            Self::Dyn(_) | Self::Local(_) => self.write_all(src.as_ref()),
+        }
     }
 
     /// This returns `Result<>` - if a write was performed before calling this,
@@ -222,7 +240,7 @@ impl DerefMut for BufferedWritable<'_> {
 async fn new_cloud_writer(
     path: PlRefPath,
     cloud_options: Option<&CloudOptions>,
-    cloud_upload_chunk_size: usize,
+    cloud_upload_chunk_size: Option<NonZeroUsize>,
     cloud_upload_concurrency: NonZeroUsize,
     io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<crate::cloud::cloud_writer::CloudWriter> {
@@ -248,6 +266,7 @@ async fn new_cloud_writer(
 #[cfg(feature = "cloud")]
 mod async_writable {
     use std::io;
+    use std::num::NonZeroUsize;
     use std::ops::{Deref, DerefMut};
     use std::pin::Pin;
     use std::sync::Arc;
@@ -304,7 +323,7 @@ mod async_writable {
         pub async fn try_new(
             path: PlRefPath,
             cloud_options: Option<&CloudOptions>,
-            cloud_upload_chunk_size: usize,
+            cloud_upload_chunk_size: Option<NonZeroUsize>,
             cloud_upload_concurrency: usize,
             io_metrics: Option<Arc<IOMetrics>>,
         ) -> PolarsResult<Self> {

@@ -2495,6 +2495,21 @@ def test_full_null_cast_to_empty_struct_23276() -> None:
     assert s.cast(pl.Struct({})).to_list() == [None, None, None]
 
 
+# shuffle=True and shuffle=None both rely on rand::seq::index::sample's
+# unspecified order, so they produce the same behavior here
+@pytest.mark.parametrize("shuffle", [False, None, True])
+def test_series_sample_reworked_shuffle_23557(shuffle: bool | None) -> None:
+    s = pl.Series("x", [1, 2, 3, 4])
+
+    result = s.sample(n=2, shuffle=shuffle, seed=0).to_list()
+
+    if shuffle is False:
+        assert result == [1, 2]
+    else:
+        assert len(result) == 2
+        assert set(result).issubset({1, 2, 3, 4})
+
+
 @pytest.mark.parametrize(
     ("old", "new"),
     [

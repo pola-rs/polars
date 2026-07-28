@@ -1,15 +1,15 @@
 use std::num::NonZeroUsize;
-use std::ops::Range;
+use std::ops::RangeInclusive;
 
 use arrow::io::write_owned::WriteBytesOwned;
 use polars_buffer::Buffer;
 
 #[derive(Debug, Clone)]
 pub struct BytesBuffererConfig {
-    pub target_size: Range<NonZeroUsize>,
+    pub target_size: RangeInclusive<NonZeroUsize>,
     /// `min..max` allocation size. `min` / `max` must be less than
     /// `target_size.min` / `target_size.max` respectively.
-    pub copy_buffer_reserve_size: Range<NonZeroUsize>,
+    pub copy_buffer_reserve_size: RangeInclusive<NonZeroUsize>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -23,8 +23,8 @@ pub struct BytesBuffererStats {
 /// Utility for byte buffering logic. Accepts both owned [`Buffer<u8>`] and borrowed `&[u8]` incoming
 /// bytes.
 pub struct BytesBufferer {
-    target_size: Range<NonZeroUsize>,
-    copy_buffer_reserve_size: Range<NonZeroUsize>,
+    target_size: RangeInclusive<NonZeroUsize>,
+    copy_buffer_reserve_size: RangeInclusive<NonZeroUsize>,
     buffered_bytes: Vec<Buffer<u8>>,
     copy_buffer: Vec<u8>,
     num_bytes_buffered: usize,
@@ -77,7 +77,7 @@ impl BytesBufferer {
         }
 
         let copy_buffer_was_empty = !self.commit_copy_buffer();
-        let half_min_target_size = self.target_size.start.get() / 2;
+        let half_min_target_size = self.target_size.start().get() / 2;
 
         if copy_buffer_was_empty
             && bytes.len() < half_min_target_size
@@ -94,11 +94,11 @@ impl BytesBufferer {
 
         let bytes_len = bytes.len();
 
-        if let Some((n_parts, part_size, rem)) = (bytes.len() / self.target_size.end.get()
-            ..=bytes.len().div_ceil(self.target_size.end.get()))
+        if let Some((n_parts, part_size, rem)) = (bytes.len() / self.target_size.end().get()
+            ..=bytes.len().div_ceil(self.target_size.end().get()))
             .filter(|n_parts| *n_parts != 0)
             .map(|n_parts| (n_parts, bytes.len() / n_parts, bytes.len() % n_parts))
-            .max_by_key(|(_, part_size, _)| part_size.abs_diff(self.target_size.end.get()))
+            .max_by_key(|(_, part_size, _)| part_size.abs_diff(self.target_size.end().get()))
             && n_parts > 1
         {
             for i in 0..n_parts {
@@ -162,8 +162,8 @@ impl BytesBufferer {
 
         let reserve_size = usize::max(self.num_bytes_buffered.saturating_mul(2), incoming_len)
             .clamp(
-                self.copy_buffer_reserve_size.start.get(),
-                self.copy_buffer_reserve_size.end.get(),
+                self.copy_buffer_reserve_size.start().get(),
+                self.copy_buffer_reserve_size.end().get(),
             );
 
         // Avoid over-allocating for small header pushes.

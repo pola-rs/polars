@@ -506,6 +506,10 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "ewma_by")]
         F::EwmMeanBy { half_life } => map_as_slice!(misc::ewm_mean_by, half_life),
         #[cfg(feature = "ewma")]
+        F::EwmSum { options } => map!(misc::ewm_sum, options),
+        #[cfg(feature = "ewma_by")]
+        F::EwmSumBy { half_life } => map_as_slice!(misc::ewm_sum_by, half_life),
+        #[cfg(feature = "ewma")]
         F::EwmStd { options } => map!(misc::ewm_std, options),
         #[cfg(feature = "ewma")]
         F::EwmVar { options } => map!(misc::ewm_var, options),

@@ -780,8 +780,9 @@ fn infer_schema(
             content_lines,
             infer_all_as_str,
             &options.parse_options,
+            options.column_names_overwrite.as_deref(),
             options.schema_overwrite.as_deref(),
-        )
+        )?
     };
 
     if let Some(schema) = &options.schema {

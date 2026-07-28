@@ -430,6 +430,10 @@ impl IRFunctionExpr {
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma")]
+            EwmSum { .. } => mapper.map_numeric_to_float_dtype(true),
+            #[cfg(feature = "ewma_by")]
+            EwmSumBy { .. } => mapper.map_numeric_to_float_dtype(true),
+            #[cfg(feature = "ewma")]
             EwmStd { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma")]
             EwmVar { .. } => mapper.var_dtype(),
@@ -462,6 +466,18 @@ impl IRFunctionExpr {
                 Some(OutputName::Field(name.clone()))
             },
             _ => None,
+        }
+    }
+
+    // For these functions, the output dtype depends on the input names
+    pub(crate) fn output_depends_on_input_names(&self) -> bool {
+        match self {
+            #[cfg(feature = "dtype-struct")]
+            IRFunctionExpr::AsStruct
+            | IRFunctionExpr::ValueCounts { .. }
+            | IRFunctionExpr::CumReduceHorizontal { .. }
+            | IRFunctionExpr::CumFoldHorizontal { .. } => true,
+            _ => false,
         }
     }
 }

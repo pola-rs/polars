@@ -1,5 +1,6 @@
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::time::Duration;
 
 mod engine;
 mod parse;
@@ -94,6 +95,10 @@ const DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS: bool = false;
 const ALLOW_NESTED_CSPE: &str = "POLARS_ALLOW_NESTED_CSPE";
 const DEFAULT_ALLOW_NESTED_CSPE: bool = false;
 
+const DNS_LOG_THRESHOLD_MS: &str = "POLARS_DNS_LOG_THRESHOLD_MS";
+/// Sentinel meaning "env var not set / logging disabled".
+const DNS_LOG_THRESHOLD_DISABLED: u64 = u64::MAX;
+
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
     VERBOSE,
@@ -143,6 +148,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_LOG_METRICS,
     JOIN_SAMPLE_LIMIT,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
+    DNS_LOG_THRESHOLD_MS,
 ];
 
 pub struct Config {
@@ -171,6 +177,7 @@ pub struct Config {
     ooc_log_metrics: AtomicBool,
     join_sample_limit: AtomicU64,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
+    dns_log_threshold_ms: AtomicU64,
 }
 
 impl Config {
@@ -211,6 +218,7 @@ impl Config {
                 DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
             ),
             allow_nested_cspe: AtomicBool::new(DEFAULT_ALLOW_NESTED_CSPE),
+            dns_log_threshold_ms: AtomicU64::new(DNS_LOG_THRESHOLD_DISABLED),
         };
         cfg.reload_env_vars();
         cfg
@@ -358,6 +366,11 @@ impl Config {
                     Ordering::Relaxed,
                 )
             },
+            DNS_LOG_THRESHOLD_MS => self.dns_log_threshold_ms.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DNS_LOG_THRESHOLD_DISABLED),
+                Ordering::Relaxed,
+            ),
             _ => {
                 if var.starts_with("POLARS_") {
                     if self.warn_unknown_config.load(Ordering::Relaxed) {
@@ -501,6 +514,14 @@ impl Config {
     pub fn projection_pushdown_prune_strict_hconcat_inputs(&self) -> bool {
         self.projection_pushdown_prune_strict_hconcat_inputs
             .load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn dns_log_threshold(&self) -> Option<Duration> {
+        match self.dns_log_threshold_ms.load(Ordering::Relaxed) {
+            DNS_LOG_THRESHOLD_DISABLED => None,
+            ms => Some(Duration::from_millis(ms)),
+        }
     }
 }
 

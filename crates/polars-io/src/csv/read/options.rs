@@ -2,6 +2,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::datatypes::{DataType, Field};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
@@ -28,6 +29,8 @@ pub struct CsvReadOptions {
     pub projection: Option<Arc<Vec<usize>>>,
     pub schema: Option<SchemaRef>,
     pub schema_overwrite: Option<SchemaRef>,
+    /// Override the names from the file. This is Python `scan_csv(new_columns=...)`
+    pub column_names_overwrite: Option<Buffer<PlSmallStr>>,
     pub dtype_overwrite: Option<Arc<Vec<DataType>>>,
     // CSV-specific options
     pub parse_options: Arc<CsvParseOptions>,
@@ -76,6 +79,7 @@ impl Default for CsvReadOptions {
             projection: None,
             schema: None,
             schema_overwrite: None,
+            column_names_overwrite: None,
             dtype_overwrite: None,
 
             parse_options: Default::default(),
@@ -175,6 +179,15 @@ impl CsvReadOptions {
     /// Overwrites the data types in the schema by column name.
     pub fn with_schema_overwrite(mut self, schema_overwrite: Option<SchemaRef>) -> Self {
         self.schema_overwrite = schema_overwrite;
+        self
+    }
+
+    /// Overwrite the column names inferred from the file.
+    pub fn with_column_names_overwrite(
+        mut self,
+        column_names_overwrite: Buffer<PlSmallStr>,
+    ) -> Self {
+        self.column_names_overwrite = Some(column_names_overwrite);
         self
     }
 

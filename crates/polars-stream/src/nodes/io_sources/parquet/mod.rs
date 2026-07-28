@@ -294,7 +294,7 @@ impl FileReader for ParquetFileReader {
 
             let handle = executor::spawn(TaskPriority::Low, async move {
                 let _ = tx
-                    .send_morsel(Morsel::new(
+                    .send_morsel(Morsel::new_unregistered(
                         DataFrame::empty_with_height(single_morsel_height),
                         MorselSeq::default(),
                         SourceToken::default(),

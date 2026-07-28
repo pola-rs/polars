@@ -440,6 +440,6 @@ impl PhysicalExpr for SortByExpr {
     }
 
     fn is_scalar(&self) -> bool {
-        false
+        self.input.is_scalar()
     }
 }

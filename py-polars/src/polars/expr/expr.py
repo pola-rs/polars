@@ -10617,7 +10617,7 @@ Consider using {self}.implode() instead"""
         *,
         fraction: float | IntoExprColumn | None = None,
         with_replacement: bool = False,
-        shuffle: bool = False,
+        shuffle: bool | None = None,
         seed: int | None = None,
     ) -> Expr:
         """
@@ -10633,7 +10633,12 @@ Consider using {self}.implode() instead"""
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Determines the order of the sampled elements.
+            If True, sampled elements are explicitly shuffled.
+            If False, the relative order of the sampled elements is preserved.
+            (i.e. they appear in the same order as the original input).
+            If None (default), no ordering guarantee; uses the most performant
+            algorithm.
         seed
             Seed for the random number generator. If set to None (default), a
             random seed is generated for each sample operation.
@@ -10641,7 +10646,11 @@ Consider using {self}.implode() instead"""
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").sample(fraction=1.0, with_replacement=True, seed=1))
+        >>> df.select(
+        ...     pl.col("a").sample(
+        ...         fraction=1.0, with_replacement=True, shuffle=False, seed=1
+        ...     )
+        ... )
         shape: (3, 1)
         ┌─────┐
         │ a   │
@@ -10763,6 +10772,68 @@ Consider using {self}.implode() instead"""
             self._pyexpr.ewm_mean(alpha, adjust, min_samples, ignore_nulls)
         )
 
+    @unstable()
+    def ewm_sum(
+        self,
+        *,
+        com: float | None = None,
+        span: float | None = None,
+        half_life: float | None = None,
+        alpha: float | None = None,
+        min_samples: int = 1,
+        ignore_nulls: bool = False,
+    ) -> Expr:
+        r"""
+        Compute exponentially-weighted moving sum.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        com
+            Specify decay in terms of center of mass, :math:`\gamma`, with
+
+                .. math::
+                    \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
+        span
+            Specify decay in terms of span, :math:`\theta`, with
+
+                .. math::
+                    \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
+        half_life
+            Specify decay in terms of half-life, :math:`\tau`, with
+
+                .. math::
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \tau } \right\} \;
+                    \forall \; \tau > 0
+        alpha
+            Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
+        min_samples
+            Minimum number of observations in window required to have a value
+            (otherwise result is null).
+        ignore_nulls
+            Ignore missing values when calculating weights.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").ewm_sum(alpha=0.5))
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 1.0  │
+        │ 2.5  │
+        │ 4.25 │
+        └──────┘
+        """
+        alpha = _prepare_alpha(com, span, half_life, alpha)
+        return wrap_expr(self._pyexpr.ewm_sum(alpha, min_samples, ignore_nulls))
+
     def ewm_mean_by(
         self,
         by: str_ | IntoExpr,
@@ -10855,6 +10926,69 @@ Consider using {self}.implode() instead"""
         by_pyexpr = parse_into_expression(by)
         half_life = parse_as_duration_string(half_life)
         return wrap_expr(self._pyexpr.ewm_mean_by(by_pyexpr, half_life))
+
+    @unstable()
+    def ewm_sum_by(
+        self,
+        by: str_ | IntoExpr,
+        *,
+        half_life: str_ | timedelta,
+    ) -> Expr:
+        r"""
+        Compute time-based exponentially-weighted moving sum.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
+        :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMS is calculated as
+
+            .. math::
+
+                y_0 &= x_0
+
+                \lambda_i &= \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
+
+                y_i &= x_i + \lambda_i y_{i-1}; \quad i > 0
+
+        where :math:`\tau` is the `half_life`.
+
+        Parameters
+        ----------
+        by
+            Column to use as reference for the time decay.
+        half_life
+            Half-life of the exponential decay.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "values": [1, 2, 3, 4, 5],
+        ...         "times": [0, 1, 2, 5, 6],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     pl.col("values").ewm_sum_by("times", half_life="1i"),
+        ... )
+        shape: (5, 1)
+        ┌──────────┐
+        │ values   │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.0      │
+        │ 2.5      │
+        │ 4.25     │
+        │ 4.53125  │
+        │ 7.265625 │
+        └──────────┘
+        """
+        by_pyexpr = parse_into_expression(by)
+        half_life = parse_as_duration_string(half_life)
+        return wrap_expr(self._pyexpr.ewm_sum_by(by_pyexpr, half_life))
 
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_std(

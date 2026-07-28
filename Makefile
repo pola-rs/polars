@@ -110,15 +110,18 @@ update-cargo-env: $(VENV_BIN)/python
 	@RUSTFLAGS="$(RUSTFLAGS)" CFLAGS="$(CFLAGS)" $(VENV_BIN)/python tools/update-cargo-env.py
 
 .PHONY: build
-build: update-cargo-env ## Compile and install Python Polars for development
+build: build-mindebug  ## Compile and install Python Polars for development (alias for build-mindebug)
+
+.PHONY: build-debug
+build-debug: update-cargo-env  ## Compile and install Python Polars for development with full debug symbols
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter $(ARGS) --uv \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile debug-dev $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-mindebug
-build-mindebug: update-cargo-env  ## Same as build, but don't include full debug information
+build-mindebug: update-cargo-env  ## Compile and install Python Polars for development with reduced debug symbols
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter --profile mindebug-dev $(ARGS) --uv \
+	&& $(VENV_BIN)/maturin develop -m $(RUNTIME_CARGO_TOML) --features backtrace_filter $(ARGS) --uv \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-release

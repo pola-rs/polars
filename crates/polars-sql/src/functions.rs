@@ -646,6 +646,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT SUM(col1) FROM df;
     /// ```
     Sum,
+    /// SQL 'total' function.
+    /// Returns the sum of all the elements in the grouping; unlike `SUM`,
+    /// empty or all-null input returns zero rather than `NULL`.
+    /// ```sql
+    /// SELECT TOTAL(col1) FROM df;
+    /// ```
+    Total,
     /// SQL 'variance' function.
     /// Returns the variance of all the elements in the grouping.
     /// ```sql
@@ -907,6 +914,7 @@ impl PolarsSQLFunctions {
             "sum",
             "tan",
             "tand",
+            "total",
             "unnest",
             "upper",
             "var",
@@ -1041,6 +1049,7 @@ impl PolarsSQLFunctions {
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "string_agg" | "listagg" | "group_concat" => Self::StringAgg,
             "sum" => Self::Sum,
+            "total" => Self::Total,
             "var" | "variance" | "var_samp" => Self::Variance,
 
             // ----
@@ -1599,7 +1608,7 @@ impl SQLFunctionVisitor<'_> {
             // Aggregate functions
             // ----
             Avg => self.visit_unary(Expr::mean),
-            Corr => self.visit_binary(polars_lazy::dsl::pearson_corr),
+            Corr => self.visit_binary(sql_corr),
             Count => self.visit_count(),
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
             CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
@@ -1641,7 +1650,8 @@ impl SQLFunctionVisitor<'_> {
             Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),
             StdDev => self.visit_unary(|e| e.std(1)),
             StringAgg => self.visit_string_agg(),
-            Sum => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
+            Sum => self.visit_unary_with_opt_cumulative(sql_sum, Expr::cum_sum),
+            Total => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
             Variance => self.visit_unary(|e| e.var(1)),
 
             // ----
@@ -2194,11 +2204,16 @@ impl SQLFunctionVisitor<'_> {
         let base = self.parse_sql_arg(sql_expr)?;
         let base =
             self.apply_aggregate_clauses(base, is_distinct, &clauses, sql_expr, "STRING_AGG")?;
-        Ok(base
+        let joined = base
+            .clone()
             .cast(DataType::String)
             .implode(true)
             .list()
-            .join(separator, true))
+            .join(separator, true);
+
+        Ok(when(base.clone().null_count().lt(base.len()))
+            .then(joined)
+            .otherwise(lit(LiteralValue::untyped_null())))
     }
 
     fn visit_arr_to_string(&mut self) -> PolarsResult<Expr> {
@@ -2427,6 +2442,27 @@ impl SQLFunctionVisitor<'_> {
             self.func.to_string()
         );
     }
+}
+
+/// SQL requires `SUM` to return `NULL` when there are no non-null values to aggregate.
+fn sql_sum(expr: Expr) -> Expr {
+    when(expr.clone().null_count().lt(expr.clone().len()))
+        .then(expr.sum())
+        .otherwise(lit(LiteralValue::untyped_null()))
+}
+
+/// SQL semantics require `NULL` when there are no complete (eg: both non-null)
+/// pairs to correlate, whereas Polars' native `pearson_corr` returns `NaN`.
+fn sql_corr(a: Expr, b: Expr) -> Expr {
+    let has_corr_pairs = a
+        .clone()
+        .is_not_null()
+        .and(b.clone().is_not_null())
+        .any(true);
+
+    when(has_corr_pairs)
+        .then(polars_lazy::dsl::pearson_corr(a, b))
+        .otherwise(lit(LiteralValue::untyped_null()))
 }
 
 /// Returns true if the SQL expression is a non-null literal value (e.g. `1`, `'hello'`, `TRUE`).

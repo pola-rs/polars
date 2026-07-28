@@ -6,7 +6,6 @@ use polars_core::prelude::*;
 use super::patterns::{self, Pattern};
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
-use crate::chunkedarray::string::strptime;
 use crate::prelude::string::strptime::StrpTimeState;
 
 polars_utils::regex_cache::cached_regex! {
@@ -141,70 +140,54 @@ pub trait StrpTimeParser<T> {
 #[cfg(feature = "dtype-datetime")]
 impl StrpTimeParser<i64> for DatetimeInfer<Int64Type> {
     fn parse_bytes(&mut self, val: &[u8], time_unit: Option<TimeUnit>) -> Option<i64> {
-        if self.fmt_len == 0 {
-            self.fmt_len = strptime::fmt_len(self.latest_fmt.as_bytes())?;
-        }
         let transform = match time_unit {
             Some(TimeUnit::Nanoseconds) => datetime_to_timestamp_ns,
             Some(TimeUnit::Microseconds) => datetime_to_timestamp_us,
             Some(TimeUnit::Milliseconds) => datetime_to_timestamp_ms,
             _ => unreachable!(), // time_unit has to be provided for datetime
         };
-        unsafe {
-            self.transform_bytes
-                .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
-                .map(transform)
-                .or_else(|| {
-                    // TODO! this will try all patterns.
-                    // somehow we must early escape if value is invalid
-                    for fmt in self.patterns {
-                        if self.fmt_len == 0 {
-                            self.fmt_len = strptime::fmt_len(fmt.as_bytes())?;
-                        }
-                        if let Some(parsed) = self
-                            .transform_bytes
-                            .parse(val, fmt.as_bytes(), self.fmt_len)
-                            .map(datetime_to_timestamp_us)
-                        {
-                            self.latest_fmt = fmt;
-                            return Some(parsed);
-                        }
+        self.transform_bytes
+            .parse(val, self.latest_fmt.as_bytes())
+            .map(transform)
+            .or_else(|| {
+                // TODO! this will try all patterns.
+                // Somehow we must early escape if value is invalid.
+                for fmt in self.patterns {
+                    if let Some(parsed) = self
+                        .transform_bytes
+                        .parse(val, fmt.as_bytes())
+                        .map(datetime_to_timestamp_us)
+                    {
+                        self.latest_fmt = fmt;
+                        return Some(parsed);
                     }
-                    None
-                })
-        }
+                }
+                None
+            })
     }
 }
 
 #[cfg(feature = "dtype-date")]
 impl StrpTimeParser<i32> for DatetimeInfer<Int32Type> {
     fn parse_bytes(&mut self, val: &[u8], _time_unit: Option<TimeUnit>) -> Option<i32> {
-        if self.fmt_len == 0 {
-            self.fmt_len = strptime::fmt_len(self.latest_fmt.as_bytes())?;
-        }
-        unsafe {
-            self.transform_bytes
-                .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
-                .map(|ndt| naive_date_to_date(ndt.date()))
-                .or_else(|| {
-                    // TODO! this will try all patterns.
-                    // somehow we must early escape if value is invalid
-                    for fmt in self.patterns {
-                        if self.fmt_len == 0 {
-                            self.fmt_len = strptime::fmt_len(fmt.as_bytes())?;
-                        }
-                        if let Some(parsed) = self
-                            .transform_bytes
-                            .parse(val, fmt.as_bytes(), self.fmt_len)
-                            .map(|ndt| naive_date_to_date(ndt.date()))
-                        {
-                            self.latest_fmt = fmt;
-                            return Some(parsed);
-                        }
+        self.transform_bytes
+            .parse(val, self.latest_fmt.as_bytes())
+            .map(|ndt| naive_date_to_date(ndt.date()))
+            .or_else(|| {
+                // TODO! this will try all patterns.
+                // somehow we must early escape if value is invalid
+                for fmt in self.patterns {
+                    if let Some(parsed) = self
+                        .transform_bytes
+                        .parse(val, fmt.as_bytes())
+                        .map(|ndt| naive_date_to_date(ndt.date()))
+                    {
+                        self.latest_fmt = fmt;
+                        return Some(parsed);
                     }
-                    None
-                })
-        }
+                }
+                None
+            })
     }
 }
 
@@ -215,7 +198,6 @@ pub struct DatetimeInfer<T: PolarsNumericType> {
     latest_fmt: &'static str,
     transform: fn(&str, &str) -> Option<T::Native>,
     transform_bytes: StrpTimeState,
-    fmt_len: u16,
     pub logical_type: DataType,
 }
 
@@ -256,7 +238,6 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
             latest_fmt: patterns[0],
             transform,
             transform_bytes: StrpTimeState::default(),
-            fmt_len: 0,
             logical_type: DataType::Datetime(time_unit, None),
         })
     }
@@ -274,7 +255,6 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int32Type> {
                 latest_fmt: patterns::DATE_D_M_Y[0],
                 transform: transform_date,
                 transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
                 logical_type: DataType::Date,
             }),
             Pattern::DateYMD => Ok(DatetimeInfer {
@@ -283,7 +263,6 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int32Type> {
                 latest_fmt: patterns::DATE_Y_M_D[0],
                 transform: transform_date,
                 transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
                 logical_type: DataType::Date,
             }),
             _ => polars_bail!(ComputeError: "could not convert pattern"),
@@ -301,7 +280,6 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
                     return None;
                 }
                 for fmt in self.patterns {
-                    self.fmt_len = 0;
                     if let Some(parsed) = (self.transform)(val, fmt) {
                         self.latest_fmt = fmt;
                         return Some(parsed);

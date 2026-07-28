@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes.group import INTEGER_DTYPES
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -1114,3 +1114,62 @@ def test_comparison_literal_downcast_rewrites() -> None:
         pl.col("u16").is_between(1 << 16, 1 << 17),
         'when(col("u16").is_not_null()).then(false).otherwise(null)',
     )
+
+
+def test_is_between_coerces_dynamic_float_bounds_28278() -> None:
+    # These are distinct in float64, but the same in float32
+    x = 1.0000001192092896  # == 1 + eps_f32
+    lower_bound = 1.00000015  # < 1 + 2*eps_f32
+
+    q = pl.LazyFrame({"x": [x]}, schema={"x": pl.Float32}).select(
+        binary=pl.col("x") >= lower_bound,
+        is_between=pl.col("x").is_between(lower_bound, 2.0),
+    )
+
+    assert q.collect().row(0) == (True, True)
+    assert "dyn float" not in q.explain()
+
+    q_f64 = pl.LazyFrame({"x": [x]}, schema={"x": pl.Float64}).select(
+        binary=pl.col("x") >= lower_bound,
+        is_between=pl.col("x").is_between(lower_bound, 2.0),
+    )
+    assert q_f64.collect().row(0) == (False, False)
+    assert "dyn float" not in q_f64.explain()
+
+
+def test_is_between_coerces_dynamic_numeric_bounds() -> None:
+    q = pl.LazyFrame(
+        {"x": [0.5, 3.5, 7.5]},
+        schema={"x": pl.Float64},
+    ).select(
+        integer_bounds=pl.col("x").is_between(3, 7),
+        mixed_bounds=pl.col("x").is_between(3, 7.0),
+    )
+
+    plan = q.explain()
+    assert "dyn int" not in plan
+    assert "dyn float" not in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "integer_bounds": [False, True, False],
+                "mixed_bounds": [False, True, False],
+            }
+        ),
+    )
+
+
+@pytest.mark.parametrize("dtype", [pl.Date(), pl.Datetime("us")])
+def test_is_between_rejects_datetime_string_28253(dtype: pl.DataType) -> None:
+    df = pl.LazyFrame({"value": []}, schema={"value": dtype})
+
+    q = df.select(
+        pl.col("value").is_between(pl.lit("2000-01-01"), pl.lit("2000-01-02"))
+    )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot compare 'date/datetime/time' to a string value",
+    ):
+        q.explain()

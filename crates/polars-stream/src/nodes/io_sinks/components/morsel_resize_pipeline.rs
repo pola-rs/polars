@@ -89,7 +89,9 @@ impl MorselResizePipeline {
                 let df: DataFrame;
                 drop(wait_token.take());
 
-                (df, _, _, wait_token) = morsel.into_inner();
+                let sf;
+                (sf, _, _, wait_token) = morsel.into_inner();
+                df = sf.into_df().await;
 
                 if df.height() == 0 {
                     continue;

@@ -1011,7 +1011,7 @@ impl DataFrame {
             unsafe { self.columns_mut() }.push(column)
         } else {
             // Unordered column insertion is not handled.
-            panic!()
+            panic!("{:?}, {}", output_schema, column.name());
         }
 
         Ok(self)

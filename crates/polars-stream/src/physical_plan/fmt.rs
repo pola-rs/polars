@@ -836,6 +836,8 @@ fn visualize_plan_rec(
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmSum { input, options: _ } => ("ewm-sum".to_string(), &[*input][..]),
+        #[cfg(feature = "ewma")]
         PhysNodeKind::EwmVar { input, options: _ } => ("ewm-var".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmStd { input, options: _ } => ("ewm-std".to_string(), &[*input][..]),

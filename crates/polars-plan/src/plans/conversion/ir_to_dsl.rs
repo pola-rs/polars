@@ -1149,6 +1149,10 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "ewma_by")]
         IF::EwmMeanBy { half_life } => F::EwmMeanBy { half_life },
         #[cfg(feature = "ewma")]
+        IF::EwmSum { options } => F::EwmSum { options },
+        #[cfg(feature = "ewma_by")]
+        IF::EwmSumBy { half_life } => F::EwmSumBy { half_life },
+        #[cfg(feature = "ewma")]
         IF::EwmStd { options } => F::EwmStd { options },
         #[cfg(feature = "ewma")]
         IF::EwmVar { options } => F::EwmVar { options },

@@ -559,7 +559,14 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         let mut join_tuples_left = &*join_tuples_left;
         let mut join_tuples_right = &*join_tuples_right;
 
-        if let Some((offset, len)) = args.slice {
+        let already_left_sorted = sorted
+            && matches!(
+                args.maintain_order,
+                MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
+            );
+        let need_sort = args.maintain_order != MaintainOrderJoin::None && !already_left_sorted;
+
+        if !need_sort && let Some((offset, len)) = args.slice {
             join_tuples_left = slice_slice(join_tuples_left, offset, len);
             join_tuples_right = slice_slice(join_tuples_right, offset, len);
         }
@@ -576,53 +583,52 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         }
         let right = unsafe { IdxCa::mmap_slice("b".into(), join_tuples_right) };
 
-        let already_left_sorted = sorted
-            && matches!(
+        try_raise_polars_abort();
+
+        let (df_left, df_right) = if need_sort {
+            let mut df = unsafe {
+                DataFrame::new_unchecked_infer_height(vec![
+                    left.into_series().into(),
+                    right.into_series().into(),
+                ])
+            };
+
+            let columns = match args.maintain_order {
+                MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => vec!["a"],
+                MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => vec!["b"],
+                _ => unreachable!(),
+            };
+
+            let options = SortMultipleOptions::new()
+                .with_order_descending(false)
+                .with_maintain_order(true);
+
+            df.sort_in_place(columns, options)?;
+
+            if let Some((offset, len)) = args.slice {
+                df = df.slice(offset, usize::min(len, df.height()));
+            }
+
+            let [mut a, b]: [Column; 2] = df.into_columns().try_into().unwrap();
+            if matches!(
                 args.maintain_order,
                 MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
-            );
-        try_raise_polars_abort();
-        let (df_left, df_right) =
-            if args.maintain_order != MaintainOrderJoin::None && !already_left_sorted {
-                let mut df = unsafe {
-                    DataFrame::new_unchecked_infer_height(vec![
-                        left.into_series().into(),
-                        right.into_series().into(),
-                    ])
-                };
+            ) {
+                a.set_sorted_flag(IsSorted::Ascending);
+            }
 
-                let columns = match args.maintain_order {
-                    MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => vec!["a"],
-                    MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => vec!["b"],
-                    _ => unreachable!(),
-                };
-
-                let options = SortMultipleOptions::new()
-                    .with_order_descending(false)
-                    .with_maintain_order(true);
-
-                df.sort_in_place(columns, options)?;
-
-                let [mut a, b]: [Column; 2] = df.into_columns().try_into().unwrap();
-                if matches!(
-                    args.maintain_order,
-                    MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
-                ) {
-                    a.set_sorted_flag(IsSorted::Ascending);
-                }
-
-                RAYON.join(
-                    // SAFETY: join indices are known to be in bounds
-                    || unsafe { left_df.take_unchecked(a.idx().unwrap()) },
-                    || unsafe { other.take_unchecked(b.idx().unwrap()) },
-                )
-            } else {
-                RAYON.join(
-                    // SAFETY: join indices are known to be in bounds
-                    || unsafe { left_df.take_unchecked(left.into_series().idx().unwrap()) },
-                    || unsafe { other.take_unchecked(right.into_series().idx().unwrap()) },
-                )
-            };
+            RAYON.join(
+                // SAFETY: join indices are known to be in bounds
+                || unsafe { left_df.take_unchecked(a.idx().unwrap()) },
+                || unsafe { other.take_unchecked(b.idx().unwrap()) },
+            )
+        } else {
+            RAYON.join(
+                // SAFETY: join indices are known to be in bounds
+                || unsafe { left_df.take_unchecked(left.into_series().idx().unwrap()) },
+                || unsafe { other.take_unchecked(right.into_series().idx().unwrap()) },
+            )
+        };
 
         _finish_join(df_left, df_right, args.suffix)
     }

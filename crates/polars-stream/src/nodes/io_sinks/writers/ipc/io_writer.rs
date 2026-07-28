@@ -59,7 +59,7 @@ impl IOWriter {
         let mut dictionary_blocks = vec![];
 
         writer
-            .write_multiple_owned_unbuffered([Buffer::from_static(&ARROW_MAGIC_V2_PADDED)])
+            .write_multiple_owned([Buffer::from_static(&ARROW_MAGIC_V2_PADDED)])
             .await?;
 
         let mut current_byte_offset: usize = ARROW_MAGIC_V2_PADDED.len();
@@ -76,7 +76,7 @@ impl IOWriter {
 
         let schema_bytes_len = schema_bytes.len();
 
-        writer.write_multiple_owned_unbuffered(schema_bytes).await?;
+        writer.write_multiple_owned(schema_bytes).await?;
 
         current_byte_offset += schema_bytes_len;
 
@@ -108,7 +108,7 @@ impl IOWriter {
             current_byte_offset += metadata_num_bytes + arrow_data_num_bytes;
 
             writer
-                .write_multiple_owned_unbuffered(
+                .write_multiple_owned(
                     std::iter::once(Buffer::from_vec(continuation_bytes))
                         .chain(message_bytes)
                         .chain(arrow_data_bytes),
@@ -148,7 +148,7 @@ impl IOWriter {
             custom_metadata,
         )?;
 
-        writer.write_multiple_owned_unbuffered(schema_bytes).await?;
+        writer.write_multiple_owned(schema_bytes).await?;
         writable.close(sync_on_close)?;
 
         Ok(())
@@ -159,8 +159,8 @@ impl IOWriter {
 fn schema_bytes_bufferer_config() -> &'static BytesBuffererConfig {
     &const {
         BytesBuffererConfig {
-            target_size: NonZeroUsize::new(8192).unwrap()..NonZeroUsize::MAX,
-            copy_buffer_reserve_size: NonZeroUsize::new(8192).unwrap()..NonZeroUsize::MAX,
+            target_size: NonZeroUsize::new(8192).unwrap()..=NonZeroUsize::MAX,
+            copy_buffer_reserve_size: NonZeroUsize::new(8192).unwrap()..=NonZeroUsize::MAX,
         }
     }
 }
@@ -184,7 +184,7 @@ impl<'a> DerefMut for WritableWrap<'a> {
 }
 
 impl<'a> WritableWrap<'a> {
-    async fn write_multiple_owned_unbuffered<I>(&mut self, bytes: I) -> PolarsResult<()>
+    async fn write_multiple_owned<I>(&mut self, bytes: I) -> PolarsResult<()>
     where
         I: IntoIterator<Item = Buffer<u8>>,
     {
@@ -192,8 +192,9 @@ impl<'a> WritableWrap<'a> {
 
         match self.writable {
             Cloud(v) => {
-                v.write_multiple_owned_unbuffered(bytes.into_iter().map(Bytes::from_owner))
-                    .await?;
+                for buffer in bytes {
+                    v.write_all_owned(Bytes::from_owner(buffer)).await?;
+                }
             },
             Dyn(_) | Local(_) => {
                 for buffer in bytes {

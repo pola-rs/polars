@@ -279,11 +279,21 @@ impl WeakSpillContext {
 }
 
 pub trait ParameterFreeSpillContext {
-    fn register<T, S>(&self, token: &T)
+    fn register_no_spill_check<T, S>(&self, token: &T)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
         Self: Sized;
+
+    fn register<T, S>(&self, token: &T) -> impl Future<Output = ()>
+    where
+        T: AsRef<SpillToken<S>>,
+        S: Spillable,
+        Self: Sized,
+    {
+        self.register_no_spill_check(token);
+        memory_manager().spill()
+    }
 }
 
 /// A context that spills the most-recently registered spillable when asked.
@@ -301,7 +311,7 @@ impl MostRecentSpillContext {
 }
 
 impl ParameterFreeSpillContext for MostRecentSpillContext {
-    fn register<T, S>(&self, token: &T)
+    fn register_no_spill_check<T, S>(&self, token: &T)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
@@ -338,7 +348,7 @@ impl LeastRecentSpillContext {
 }
 
 impl ParameterFreeSpillContext for LeastRecentSpillContext {
-    fn register<T, S>(&self, token: &T)
+    fn register_no_spill_check<T, S>(&self, token: &T)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
@@ -371,7 +381,7 @@ impl RandomSpillContext {
 }
 
 impl ParameterFreeSpillContext for RandomSpillContext {
-    fn register<T, S>(&self, token: &T)
+    fn register_no_spill_check<T, S>(&self, token: &T)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
