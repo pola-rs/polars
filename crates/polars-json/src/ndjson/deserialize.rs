@@ -22,6 +22,7 @@ pub fn deserialize_iter<'a>(
 ) -> PolarsResult<ArrayRef> {
     let mut arr: Vec<Box<dyn Array>> = Vec::new();
     let mut buf = Vec::with_capacity(std::cmp::min(buf_size + count + 2, u32::MAX as usize));
+    let mut validation_buf = Vec::new();
     buf.push(b'[');
 
     fn _deserializer(
@@ -44,6 +45,11 @@ pub fn deserialize_iter<'a>(
     let mut row_iter = rows.peekable();
 
     while let Some(row) = row_iter.next() {
+        validation_buf.clear();
+        validation_buf.extend_from_slice(row.as_bytes());
+        simd_json::to_borrowed_value(&mut validation_buf)
+            .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
+
         buf.extend_from_slice(row.as_bytes());
         buf.push(b',');
 
