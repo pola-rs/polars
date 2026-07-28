@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Literal
 
 import polars._reexport as pl
@@ -37,6 +36,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from polars import DataFrame, DataType, LazyFrame
     from polars._typing import SchemaDict, StorageOptionsDict
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_ipc(
-    source: str | Path | IO[bytes] | bytes,
+    source: str | Path | os.PathLike[str] | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -124,10 +124,10 @@ def read_ipc(
     """
     if (
         # Check that it is not a BytesIO object
-        isinstance(v := source, (str, Path))
+        isinstance(v := source, (str, os.PathLike))
     ) and (
         # HuggingFace only for now ⊂( ◜◒◝ )⊃
-        (is_hf := str(v).startswith("hf://"))
+        (is_hf := os.fspath(v).startswith("hf://"))
         # Also dispatch on FORCE_ASYNC, so that this codepath gets run
         # through by our test suite during CI.
         or os.getenv("POLARS_FORCE_ASYNC") == "1"
@@ -215,7 +215,7 @@ def read_ipc(
 
 
 def _read_ipc_impl(
-    source: str | Path | IO[bytes] | bytes,
+    source: str | Path | os.PathLike[str] | IO[bytes] | bytes,
     *,
     columns: Sequence[int] | Sequence[str] | None = None,
     n_rows: int | None = None,
@@ -224,7 +224,7 @@ def _read_ipc_impl(
     rechunk: bool = True,
     memory_map: bool = True,
 ) -> DataFrame:
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         source = normalize_filepath(source, check_not_directory=False)
     if isinstance(columns, str):
         columns = [columns]
@@ -264,7 +264,7 @@ def _read_ipc_impl(
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_ipc_stream(
-    source: str | Path | IO[bytes] | bytes,
+    source: str | Path | os.PathLike[str] | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -344,7 +344,7 @@ def read_ipc_stream(
 
 
 def _read_ipc_stream_impl(
-    source: str | Path | IO[bytes] | bytes,
+    source: str | Path | os.PathLike[str] | IO[bytes] | bytes,
     *,
     columns: Sequence[int] | Sequence[str] | None = None,
     n_rows: int | None = None,
@@ -352,7 +352,7 @@ def _read_ipc_stream_impl(
     row_index_offset: int = 0,
     rechunk: bool = True,
 ) -> DataFrame:
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         source = normalize_filepath(source, check_not_directory=False)
     if isinstance(columns, str):
         columns = [columns]
@@ -369,7 +369,9 @@ def _read_ipc_stream_impl(
     return wrap_df(pydf)
 
 
-def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataType]:
+def read_ipc_schema(
+    source: str | Path | os.PathLike[str] | IO[bytes] | bytes,
+) -> dict[str, DataType]:
     """
     Get the schema of an IPC file without reading data.
 
@@ -386,7 +388,7 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
     dict
         Dictionary mapping column names to datatypes
     """
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         source = normalize_filepath(source, check_not_directory=False)
 
     return _read_ipc_schema(source)
@@ -398,10 +400,12 @@ def scan_ipc(
     source: (
         str
         | Path
+        | os.PathLike[str]
         | IO[bytes]
         | bytes
         | list[str]
         | list[Path]
+        | list[os.PathLike[str]]
         | list[IO[bytes]]
         | list[bytes]
     ),

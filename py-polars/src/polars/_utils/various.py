@@ -103,7 +103,7 @@ def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> b
 
 def is_path_or_str_sequence(
     val: object, *, allow_str: bool = False, include_series: bool = False
-) -> TypeGuard[Sequence[str | Path]]:
+) -> TypeGuard[Sequence[str | os.PathLike[str]]]:
     """
     Check that `val` is a sequence of strings or paths.
 
@@ -119,7 +119,7 @@ def is_path_or_str_sequence(
     return (
         not isinstance(val, bytes)
         and isinstance(val, Sequence)
-        and _is_iterable_of(val, (Path, str))
+        and _is_iterable_of(val, (str, os.PathLike))
     )
 
 
@@ -251,7 +251,9 @@ def arrlen(obj: Any) -> int | None:
         return None
 
 
-def normalize_filepath(path: str | Path, *, check_not_directory: bool = True) -> str:
+def normalize_filepath(
+    path: str | os.PathLike[str], *, check_not_directory: bool = True
+) -> str:
     """Create a string path, expanding the home directory if present."""
     # don't use pathlib here as it modifies slashes (s3:// -> s3:/)
     path = os.path.expanduser(path)  # noqa: PTH111
@@ -626,7 +628,7 @@ def display_dot_graph(
     *,
     dot: str,
     show: bool = True,
-    output_path: str | Path | None = None,
+    output_path: str | Path | os.PathLike[str] | None = None,
     raw_output: bool = False,
     figsize: tuple[float, float] = (16.0, 12.0),
 ) -> str | None:
@@ -636,7 +638,7 @@ def display_dot_graph(
 
     output_type = (
         "svg"
-        if (output_path is not None and str(output_path).endswith(".svg"))
+        if (output_path is not None and os.fspath(output_path).endswith(".svg"))
         or _in_notebook()
         or _in_marimo_notebook()
         or "POLARS_DOT_SVG_VIEWER" in os.environ

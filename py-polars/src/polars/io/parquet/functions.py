@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
-from pathlib import Path
+import os
 from typing import IO, TYPE_CHECKING, Any
 
 import polars.functions as F
@@ -34,6 +34,7 @@ with contextlib.suppress(ImportError):
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
     from typing import Literal
 
     from polars import DataFrame, DataType, LazyFrame
@@ -296,10 +297,12 @@ def read_parquet(
 def _read_parquet_with_pyarrow(
     source: str
     | Path
+    | os.PathLike[str]
     | IO[bytes]
     | bytes
     | list[str]
     | list[Path]
+    | list[os.PathLike[str]]
     | list[IO[bytes]]
     | list[bytes],
     *,
@@ -316,7 +319,9 @@ def _read_parquet_with_pyarrow(
     )
     pyarrow_options = pyarrow_options or {}
 
-    sources: list[str | Path | IO[bytes] | bytes | list[str] | list[Path]] = []
+    sources: list[
+        str | Path | os.PathLike[str] | IO[bytes] | bytes | list[str] | list[Path]
+    ] = []
     if isinstance(source, list):
         if len(source) > 0 and isinstance(source[0], (bytes, io.IOBase)):
             sources = source  # type: ignore[assignment]
@@ -360,7 +365,9 @@ def _read_parquet_with_pyarrow(
         return plconcat(results)
 
 
-def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataType]:
+def read_parquet_schema(
+    source: str | Path | os.PathLike[str] | IO[bytes] | bytes,
+) -> dict[str, DataType]:
     """
     Get the schema of a Parquet file without reading data.
 
@@ -389,7 +396,7 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
 
 
 def read_parquet_metadata(
-    source: str | Path | IO[bytes] | bytes,
+    source: str | Path | os.PathLike[str] | IO[bytes] | bytes,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     retries: int | None = None,
@@ -441,7 +448,7 @@ def read_parquet_metadata(
     dict
         Dictionary with the metadata. Empty if no custom metadata is available.
     """
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         source = normalize_filepath(source, check_not_directory=False)
 
     if retries is not None:

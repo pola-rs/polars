@@ -14,6 +14,7 @@ import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
+from tests.unit.utils.pathlike import HostilePathLike
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -94,6 +95,34 @@ def test_df_serde_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
     out = pl.DataFrame.deserialize(file_path)
 
     assert_frame_equal(df, out, categorical_as_str=True)
+
+
+@pytest.mark.write_disk
+def test_df_serde_to_from_os_pathlike_17828(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    file_path = tmp_path / "small.bin"
+    df.serialize(HostilePathLike(file_path))
+    out = pl.DataFrame.deserialize(HostilePathLike(file_path))
+
+    assert_frame_equal(df, out)
+
+
+@pytest.mark.write_disk
+def test_df_serde_to_from_open_file_handle(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    # An open file handle is neither a path nor a `BytesIO`/`StringIO`, so it
+    # exercises the fall-through (non-path) branch of `serialize_polars_object`.
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    file_path = tmp_path / "small.bin"
+    with file_path.open("wb") as f:
+        df.serialize(f)
+    with file_path.open("rb") as f:
+        out = pl.DataFrame.deserialize(f)
+
+    assert_frame_equal(df, out)
 
 
 def test_df_serde2(df: pl.DataFrame) -> None:

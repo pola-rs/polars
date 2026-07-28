@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import os
 from io import BytesIO, StringIO
-from pathlib import Path
 from typing import TYPE_CHECKING, Literal, overload
 
 from polars._utils.various import normalize_filepath
@@ -11,6 +11,7 @@ from polars._utils.various import normalize_filepath
 if TYPE_CHECKING:
     from collections.abc import Callable
     from io import IOBase
+    from pathlib import Path
 
     from polars._typing import SerializationFormat
 
@@ -26,14 +27,14 @@ def serialize_polars_object(
 @overload
 def serialize_polars_object(
     serializer: Callable[[IOBase | str], None],
-    file: IOBase | str | Path,
+    file: IOBase | str | Path | os.PathLike[str],
     format: SerializationFormat,
 ) -> None: ...
 
 
 def serialize_polars_object(
     serializer: Callable[[IOBase | str], None],
-    file: IOBase | str | Path | None,
+    file: IOBase | str | Path | os.PathLike[str] | None,
     format: SerializationFormat,
 ) -> bytes | str | None:
     """Serialize a Polars object (DataFrame/LazyFrame/Expr)."""
@@ -55,7 +56,7 @@ def serialize_polars_object(
         serialized = serialize_to_bytes()
         file.write(serialized)
         return None
-    elif isinstance(file, (str, Path)):
+    elif isinstance(file, (str, os.PathLike)):
         file = normalize_filepath(file)
         serializer(file)
         return None

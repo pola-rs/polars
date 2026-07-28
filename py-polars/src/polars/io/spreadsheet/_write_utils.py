@@ -583,7 +583,7 @@ def _xl_worksheet_in_workbook(
 
 
 def _xl_setup_workbook(
-    workbook: Workbook | IO[bytes] | Path | str | None,
+    workbook: Workbook | IO[bytes] | Path | str | PathLike[str] | None,
     worksheet: str | Worksheet | None = None,
     *,
     use_zip64: bool = False,
@@ -622,7 +622,7 @@ def _xl_setup_workbook(
             file: Path | IO[bytes]
             if workbook is None:
                 file = Path("dataframe.xlsx")
-            elif isinstance(workbook, str):
+            elif isinstance(workbook, (str, PathLike)):
                 file = Path(workbook)
             else:
                 file = workbook

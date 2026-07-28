@@ -14,7 +14,6 @@ from collections.abc import (
     Sized,
 )
 from io import BytesIO, StringIO
-from pathlib import Path
 from typing import (
     IO,
     TYPE_CHECKING,
@@ -130,6 +129,7 @@ if TYPE_CHECKING:
     )
     from datetime import timedelta
     from io import IOBase
+    from pathlib import Path
     from typing import Concatenate, Literal, ParamSpec
 
     import deltalake
@@ -498,7 +498,7 @@ class DataFrame:
     @classmethod
     def deserialize(
         cls,
-        source: str | bytes | Path | IOBase,
+        source: str | bytes | Path | os.PathLike[str] | IOBase,
         *,
         format: SerializationFormat = "binary",
     ) -> DataFrame:
@@ -545,7 +545,7 @@ class DataFrame:
         """
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
-        elif isinstance(source, (str, Path)):
+        elif isinstance(source, (str, os.PathLike)):
             source = normalize_filepath(source)
         elif isinstance(source, bytes):
             source = io.BytesIO(source)
@@ -2791,12 +2791,15 @@ class DataFrame:
 
     @overload
     def serialize(
-        self, file: IOBase | str | Path, *, format: SerializationFormat = ...
+        self,
+        file: IOBase | str | Path | os.PathLike[str],
+        *,
+        format: SerializationFormat = ...,
     ) -> None: ...
 
     def serialize(
         self,
-        file: IOBase | str | Path | None = None,
+        file: IOBase | str | Path | os.PathLike[str] | None = None,
         *,
         format: SerializationFormat = "binary",
     ) -> bytes | str | None:
@@ -2862,9 +2865,11 @@ class DataFrame:
     def write_json(self, file: None = ...) -> str: ...
 
     @overload
-    def write_json(self, file: IOBase | str | Path) -> None: ...
+    def write_json(self, file: IOBase | str | Path | os.PathLike[str]) -> None: ...
 
-    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
+    def write_json(
+        self, file: IOBase | str | Path | os.PathLike[str] | None = None
+    ) -> str | None:
         """
         Serialize to JSON representation.
 
@@ -2902,7 +2907,7 @@ class DataFrame:
             json_str = write_json_to_string()
             file.write(json_str)
             return None
-        elif isinstance(file, (str, Path)):
+        elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
             self._df.write_json(file)
             return None
@@ -2923,7 +2928,7 @@ class DataFrame:
     @overload
     def write_ndjson(
         self,
-        file: str | Path | IO[bytes] | IO[str],
+        file: str | Path | os.PathLike[str] | IO[bytes] | IO[str],
         *,
         compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
         compression_level: int | None = None,
@@ -2932,7 +2937,7 @@ class DataFrame:
 
     def write_ndjson(
         self,
-        file: str | Path | IO[bytes] | IO[str] | None = None,
+        file: str | Path | os.PathLike[str] | IO[bytes] | IO[str] | None = None,
         *,
         compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
         compression_level: int | None = None,
@@ -2982,7 +2987,7 @@ class DataFrame:
         '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
         """
         should_return_buffer = False
-        target: str | Path | IO[bytes] | IO[str]
+        target: str | Path | os.PathLike[str] | IO[bytes] | IO[str]
         if file is None:
             target = cast("IO[bytes]", BytesIO())
             should_return_buffer = True
@@ -3039,7 +3044,7 @@ class DataFrame:
     @overload
     def write_csv(
         self,
-        file: str | Path | IO[str] | IO[bytes],
+        file: str | Path | os.PathLike[str] | IO[str] | IO[bytes],
         *,
         include_bom: bool = ...,
         compression: Literal["uncompressed", "gzip", "zstd"] = ...,
@@ -3065,7 +3070,7 @@ class DataFrame:
 
     def write_csv(
         self,
-        file: str | Path | IO[str] | IO[bytes] | None = None,
+        file: str | Path | os.PathLike[str] | IO[str] | IO[bytes] | None = None,
         *,
         include_bom: bool = False,
         compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
@@ -3225,7 +3230,7 @@ class DataFrame:
             null_value = None
 
         should_return_buffer = False
-        target: str | Path | IO[bytes] | IO[str]
+        target: str | Path | os.PathLike[str] | IO[bytes] | IO[str]
         if file is None:
             target = cast("IO[bytes]", BytesIO())
             should_return_buffer = True
@@ -3292,7 +3297,7 @@ class DataFrame:
 
     def write_avro(
         self,
-        file: str | Path | IO[bytes],
+        file: str | Path | os.PathLike[str] | IO[bytes],
         compression: AvroCompression = "uncompressed",
         name: str = "",
     ) -> None:
@@ -3324,7 +3329,7 @@ class DataFrame:
         """
         if compression is None:
             compression = "uncompressed"
-        if isinstance(file, (str, Path)):
+        if isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
         if name is None:
             name = ""
@@ -3333,7 +3338,7 @@ class DataFrame:
 
     def write_excel(
         self,
-        workbook: str | Workbook | IO[bytes] | Path | None = None,
+        workbook: str | Workbook | IO[bytes] | Path | os.PathLike[str] | None = None,
         worksheet: str | Worksheet | None = None,
         *,
         position: tuple[int, int] | str = "A1",
@@ -3931,7 +3936,7 @@ class DataFrame:
     @overload
     def write_ipc(
         self,
-        file: str | Path | IO[bytes],
+        file: str | Path | os.PathLike[str] | IO[bytes],
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -3946,7 +3951,7 @@ class DataFrame:
     @deprecate_renamed_parameter("future", "compat_level", version="1.1")
     def write_ipc(
         self,
-        file: str | Path | IO[bytes] | None,
+        file: str | Path | os.PathLike[str] | IO[bytes] | None,
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -4034,7 +4039,7 @@ class DataFrame:
         True
         """
         return_bytes = file is None
-        target: str | Path | IO[bytes]
+        target: str | Path | os.PathLike[str] | IO[bytes]
         if file is None:
             target = BytesIO()
         else:
@@ -4068,7 +4073,7 @@ class DataFrame:
     @overload
     def write_ipc_stream(
         self,
-        file: str | Path | IO[bytes],
+        file: str | Path | os.PathLike[str] | IO[bytes],
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -4077,7 +4082,7 @@ class DataFrame:
     @deprecate_renamed_parameter("future", "compat_level", version="1.1")
     def write_ipc_stream(
         self,
-        file: str | Path | IO[bytes] | None,
+        file: str | Path | os.PathLike[str] | IO[bytes] | None,
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
@@ -4118,7 +4123,7 @@ class DataFrame:
         return_bytes = file is None
         if return_bytes:
             file = BytesIO()
-        elif isinstance(file, (str, Path)):
+        elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
 
         compat_level_py: int | bool
@@ -4135,7 +4140,7 @@ class DataFrame:
 
     def write_parquet(
         self,
-        file: str | Path | IO[bytes],
+        file: str | Path | os.PathLike[str] | IO[bytes],
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
@@ -4295,7 +4300,7 @@ class DataFrame:
         """
         if compression is None:
             compression = "uncompressed"
-        if isinstance(file, (str, Path)):
+        if isinstance(file, (str, os.PathLike)):
             if partition_by is not None or (
                 pyarrow_options is not None and pyarrow_options.get("partition_cols")
             ):
@@ -4354,7 +4359,7 @@ class DataFrame:
 
             return
 
-        target: str | Path | IO[bytes] | PartitionBy = file
+        target: str | Path | os.PathLike[str] | IO[bytes] | PartitionBy = file
         engine: EngineType = "streaming"
         if partition_by is not None:
             if not isinstance(file, str):
@@ -4787,7 +4792,7 @@ class DataFrame:
     @overload
     def write_delta(
         self,
-        target: str | Path | deltalake.DeltaTable,
+        target: str | Path | os.PathLike[str] | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
         overwrite_schema: bool | None = ...,
@@ -4799,7 +4804,7 @@ class DataFrame:
     @overload
     def write_delta(
         self,
-        target: str | Path | deltalake.DeltaTable,
+        target: str | Path | os.PathLike[str] | deltalake.DeltaTable,
         *,
         mode: Literal["merge"],
         overwrite_schema: bool | None = ...,
@@ -4810,7 +4815,7 @@ class DataFrame:
 
     def write_delta(
         self,
-        target: str | Path | deltalake.DeltaTable,
+        target: str | Path | os.PathLike[str] | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         overwrite_schema: bool | None = None,
@@ -5001,8 +5006,8 @@ class DataFrame:
 
         _check_for_unsupported_types(self.dtypes)
 
-        if isinstance(target, (str, Path)):
-            target = _resolve_delta_lake_uri(str(target), strict=False)
+        if isinstance(target, (str, os.PathLike)):
+            target = _resolve_delta_lake_uri(target, strict=False)
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,

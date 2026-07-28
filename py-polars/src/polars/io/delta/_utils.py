@@ -13,13 +13,17 @@ from polars.io._utils import null_count_dtype
 from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
 
 if TYPE_CHECKING:
+    import os
+
     from deltalake import DeltaTable
 
     from polars import DataFrame, DataType, Series
     from polars._typing import PolarsDataType, SchemaDict, StorageOptionsDict
 
 
-def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> str:
+def _resolve_delta_lake_uri(
+    table_uri: str | Path | os.PathLike[str], *, strict: bool = True
+) -> str:
     resolved_uri = str(
         Path(table_uri).expanduser().resolve(strict)
         if _get_path_scheme(table_uri) is None
@@ -30,7 +34,7 @@ def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> st
 
 
 def _get_delta_lake_table(
-    table_path: str | Path | DeltaTable,
+    table_path: str | Path | os.PathLike[str] | DeltaTable,
     version: int | str | datetime | None = None,
     storage_options: StorageOptionsDict | None = None,
     delta_table_options: dict[str, Any] | None = None,
