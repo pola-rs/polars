@@ -2,7 +2,7 @@ pub mod storage;
 
 use std::ops::ControlFlow;
 
-use polars_core::prelude::{InitHashMaps as _, PlHashMap};
+use polars_utils::aliases::{InitHashMaps, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::unique_id::UniqueId;
 use polars_utils::{UnitVec, unitvec};
@@ -22,8 +22,9 @@ pub fn get_ir_cache_hits<Key>(
     root: Node,
     mut arena: &Arena<IR>,
     visit_stack: &mut Vec<Node>,
-) -> PlHashMap<UniqueId, IRCacheNodeVisit<Key>> {
-    let mut cache_out_edge_keys_map: PlHashMap<UniqueId, IRCacheNodeVisit<Key>> = PlHashMap::new();
+) -> PlIndexMap<UniqueId, IRCacheNodeVisit<Key>> {
+    let mut cache_out_edge_keys_map: PlIndexMap<UniqueId, IRCacheNodeVisit<Key>> =
+        PlIndexMap::new();
 
     TreeTraversalImpl {
         storage: &mut arena,
@@ -35,7 +36,7 @@ pub fn get_ir_cache_hits<Key>(
             || (),
             |key, storage: &mut &Arena<IR>, _| {
                 ControlFlow::Continue(if let IR::Cache { id, .. } = storage.get(key) {
-                    use hashbrown::hash_map::Entry;
+                    use indexmap::map::Entry;
 
                     match cache_out_edge_keys_map.entry(*id) {
                         Entry::Occupied(mut e) => {

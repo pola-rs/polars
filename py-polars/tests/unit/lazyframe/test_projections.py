@@ -140,11 +140,12 @@ def test_unnest_columns_available() -> None:
         }
     ).lazy()
 
-    q = df.with_columns(
-        pl.col("genres")
-        .str.split("|")
-        .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
-    ).unnest("genres")
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        q = df.with_columns(
+            pl.col("genres")
+            .str.split("|")
+            .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
+        ).unnest("genres")
 
     out = q.collect()
     assert out.to_dict(as_series=False) == {
@@ -825,7 +826,7 @@ def test_projection_pushdown_removes_row_index() -> None:
 def test_projection_pushdown_select_len() -> None:
     lf = pl.LazyFrame({"a": [0, 1, 2]})
 
-    a_add1 = '(col("a")) + (1)'
+    a_add1 = 'col("a") + 1'
     assert a_add1 in lf.select(pl.col("a") + 1).explain()
     q = lf.select(pl.col("a") + 1).select(pl.len())
 
@@ -864,7 +865,7 @@ def test_projection_pushdown_non_projected_sort_column() -> None:
 def test_projection_pushdown_filter_len_to_sum() -> None:
     q = pl.LazyFrame({"a": [0, 1, 2]}).tail(2).filter(pl.col("a") < 2).select(pl.len())
     plan = q.explain()
-    assert '(col("a")) < (2)].sum()' in plan
+    assert 'col("a") < 2).sum()' in plan
 
     assert_frame_equal(
         q.collect(),
@@ -879,7 +880,7 @@ def test_projection_pushdown_filter_len_to_sum() -> None:
     )
     plan = q.explain()
     assert 'PROJECT["a"] 1/2 COLUMNS' in plan
-    assert '(col("a")) < (2)].sum()' in plan
+    assert 'col("a") < 2).sum()' in plan
 
     assert_frame_equal(
         q.collect(),

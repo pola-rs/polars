@@ -209,7 +209,7 @@ pub struct SenderExt<T, S> {
     connector: Arc<Connector<T, S>>,
 }
 
-unsafe impl<T: Send, S: Sync> Send for SenderExt<T, S> {}
+unsafe impl<T: Send, S: Send + Sync> Send for SenderExt<T, S> {}
 
 impl<T, S> Drop for SenderExt<T, S> {
     fn drop(&mut self) {
@@ -221,7 +221,7 @@ pub struct ReceiverExt<T, S> {
     connector: Arc<Connector<T, S>>,
 }
 
-unsafe impl<T: Send, S: Sync> Send for ReceiverExt<T, S> {}
+unsafe impl<T: Send, S: Send + Sync> Send for ReceiverExt<T, S> {}
 
 impl<T, S> Drop for ReceiverExt<T, S> {
     fn drop(&mut self) {

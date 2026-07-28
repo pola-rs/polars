@@ -65,6 +65,15 @@ ARROW_DRIVER_REGISTRY: Final[dict[str, list[ArrowDriverProperties]]] = {
             "minimum_version": None,
         }
     ],
+    "oracledb": [
+        {
+            "fetch_all": "fetch_df_all",
+            "fetch_batches": "fetch_df_batches",
+            "exact_batch_size": True,
+            "repeat_batch_calls": False,
+            "minimum_version": "3.0.0",
+        }
+    ],
     "snowflake": [
         {
             "fetch_all": "fetch_arrow_all",

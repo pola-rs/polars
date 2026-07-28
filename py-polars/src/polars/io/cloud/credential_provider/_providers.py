@@ -221,6 +221,8 @@ class CredentialProviderAWS(CachingCredentialProvider):
         return creds_dict, expiry
 
     def _finish_assume_role(self, session: Any) -> CredentialProviderFunctionReturn:
+        assert self.assume_role is not None
+
         client = session.client("sts")
 
         sts_response = client.assume_role(**self.assume_role)

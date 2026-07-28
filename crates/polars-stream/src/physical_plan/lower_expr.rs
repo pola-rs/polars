@@ -1555,11 +1555,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(row_idx_col_aexpr);
             },
 
-            #[cfg(any(
-                feature = "dtype-date",
-                feature = "dtype-datetime",
-                feature = "dtype-time"
-            ))]
+            #[cfg(all(feature = "strings", feature = "temporal"))]
             AExpr::Function {
                 input: ref inner_exprs,
                 function:
@@ -2483,6 +2479,7 @@ fn lower_exprs_with_ctx(
                 input: input_exprs,
                 function:
                     ewm_variant @ IRFunctionExpr::EwmMean { options }
+                    | ewm_variant @ IRFunctionExpr::EwmSum { options }
                     | ewm_variant @ IRFunctionExpr::EwmVar { options }
                     | ewm_variant @ IRFunctionExpr::EwmStd { options },
                 options: _,
@@ -2504,6 +2501,7 @@ fn lower_exprs_with_ctx(
 
                 let kind = match ewm_variant {
                     IRFunctionExpr::EwmMean { .. } => PhysNodeKind::EwmMean { input, options },
+                    IRFunctionExpr::EwmSum { .. } => PhysNodeKind::EwmSum { input, options },
                     IRFunctionExpr::EwmVar { .. } => PhysNodeKind::EwmVar { input, options },
                     IRFunctionExpr::EwmStd { .. } => PhysNodeKind::EwmStd { input, options },
                     _ => unreachable!(),

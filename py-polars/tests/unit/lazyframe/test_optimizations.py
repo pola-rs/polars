@@ -18,7 +18,7 @@ def test_is_null_followed_by_all() -> None:
         pl.col("val").is_null().all()
     )
 
-    assert r'[[(col("val").len()) == (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() == col("val").null_count())]' in result_lf.explain()
     assert "is_null" not in result_lf.collect_schema()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -143,7 +143,7 @@ def test_is_not_null_followed_by_sum() -> None:
         pl.col("val").is_not_null().sum()
     )
 
-    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() - col("val").null_count())]' in result_lf.explain()
     assert "is_not_null" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -173,7 +173,7 @@ def test_drop_nulls_followed_by_len() -> None:
         pl.col("val").drop_nulls().len()
     )
 
-    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() - col("val").null_count())]' in result_lf.explain()
     assert "drop_nulls" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -198,7 +198,7 @@ def test_drop_nulls_followed_by_count() -> None:
         pl.col("val").drop_nulls().count()
     )
 
-    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() - col("val").null_count())]' in result_lf.explain()
     assert "drop_nulls" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -699,6 +699,20 @@ def test_slice_pushdown_with_cache_arena_take_panic_26905() -> None:
     )
 
 
+def test_slice_pushdown_past_empty_union_28408() -> None:
+    lf = pl.LazyFrame({"x": [1]})
+    q = pl.concat([lf, lf]).filter(pl.col("x") == 0).slice(1, 1)
+
+    assert_frame_equal(q.collect(), pl.DataFrame(schema={"x": pl.Int64}))
+
+
+def test_slice_pushdown_shared_join_input_28127() -> None:
+    lf = pl.LazyFrame({"a": ["x"]}).filter(pl.lit(True)).select("a").slice(0, 1)
+    q = lf.join(lf, on="a", how="inner")
+
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
+
+
 def test_drop_nulls_first_last_optimization_25478() -> None:
     lf = pl.LazyFrame({"a": [None, 1, None, 3, None]})
     lf = lf.select(a=pl.col.a.drop_nulls().first(), b=pl.col.a.drop_nulls().last())
@@ -1086,6 +1100,20 @@ def test_forbid_flatten_sliced_union_27455() -> None:
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 100]}))
 
+    frame_1 = pl.LazyFrame({"x": [1]})
+    frame_2 = pl.LazyFrame({"x": [2]})
+    frame_3 = pl.LazyFrame({"x": [3]})
+    frame_4 = pl.LazyFrame({"x": [4]})
+
+    q = pl.concat(
+        [
+            pl.concat([frame_1, frame_2]),
+            pl.concat([frame_3, frame_4]).slice(0, 1),
+        ]
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": [1, 2, 3]}))
+
 
 def test_lazyframe_gather_select_len() -> None:
     lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4], "b": True})
@@ -1212,3 +1240,37 @@ def test_projection_pushdown_row_index_reorder_28015() -> None:
             schema=out.schema,
         ),
     )
+
+
+def test_projection_pushdown_groupby_len_28094() -> None:
+    q = (
+        pl.LazyFrame(
+            {"i128": [1], "u128": [1], "bool": [True]},
+            schema={"i128": pl.Int128, "u128": pl.UInt128, "bool": pl.Boolean},
+        )
+        .group_by("i128", "u128")
+        .agg(pl.first("bool"))
+        .select(pl.len())
+    )
+
+    assert q.collect().item() == 1
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory", "auto"])
+def test_predicate_pushdown_with_cse_sink_cross_filter_28287(
+    engine: str,
+) -> None:
+    left = pl.DataFrame({"x": [1, 2, 3]}).lazy()
+    right = pl.DataFrame({"y": [10, 20]}).lazy()
+
+    filtered = left.join(right, how="cross").filter(pl.col("x") + pl.col("y") == 22)
+    row_sum = (pl.col("x") + pl.col("y")).alias("row_sum")
+    lf = (
+        pl.concat([filtered, filtered.select(row_sum)], how="horizontal_extend")
+        .unique("row_sum")
+        .drop("row_sum")
+    )
+
+    f = io.BytesIO()
+    lf.sink_parquet(f, engine=engine)  # type: ignore[call-overload]
+    assert_frame_equal(pl.read_parquet(f), pl.DataFrame({"x": 2, "y": 20}))

@@ -124,11 +124,27 @@ impl LazyCsvReader {
         self
     }
 
+    #[must_use]
+    pub fn with_column_names_overwrite(
+        mut self,
+        column_names_overwrite: Buffer<PlSmallStr>,
+    ) -> Self {
+        self.read_options.column_names_overwrite = Some(column_names_overwrite);
+        self
+    }
+
     /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
     /// of the total schema.
     #[must_use]
     pub fn with_dtype_overwrite(mut self, schema: Option<SchemaRef>) -> Self {
         self.read_options.schema_overwrite = schema;
+        self
+    }
+
+    /// Overwrite dtypes by position.
+    #[must_use]
+    pub fn with_dtype_overwrite_by_position(mut self, dtypes: Option<Arc<Vec<DataType>>>) -> Self {
+        self.read_options.dtype_overwrite = dtypes;
         self
     }
 

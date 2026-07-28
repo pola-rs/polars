@@ -195,6 +195,7 @@ pub enum IRFunctionExpr {
         has_min: bool,
         has_max: bool,
     },
+    AsList,
     #[cfg(feature = "dtype-struct")]
     AsStruct,
     #[cfg(feature = "top_k")]
@@ -368,6 +369,14 @@ pub enum IRFunctionExpr {
         half_life: Duration,
     },
     #[cfg(feature = "ewma")]
+    EwmSum {
+        options: EWMOptions,
+    },
+    #[cfg(feature = "ewma_by")]
+    EwmSumBy {
+        half_life: Duration,
+    },
+    #[cfg(feature = "ewma")]
     EwmStd {
         options: EWMOptions,
     },
@@ -524,6 +533,7 @@ impl Hash for IRFunctionExpr {
             ArgWhere => {},
             #[cfg(feature = "trigonometry")]
             Atan2 => {},
+            AsList => {},
             #[cfg(feature = "dtype-struct")]
             AsStruct => {},
             #[cfg(feature = "sign")]
@@ -666,6 +676,10 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { half_life } => (half_life).hash(state),
             #[cfg(feature = "ewma")]
+            EwmSum { options } => options.hash(state),
+            #[cfg(feature = "ewma_by")]
+            EwmSumBy { half_life } => (half_life).hash(state),
+            #[cfg(feature = "ewma")]
             EwmStd { options } => options.hash(state),
             #[cfg(feature = "ewma")]
             EwmVar { options } => options.hash(state),
@@ -793,6 +807,7 @@ impl Display for IRFunctionExpr {
                 (true, false) => "clip_min",
                 _ => unreachable!(),
             },
+            AsList => "as_list",
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
@@ -900,6 +915,10 @@ impl Display for IRFunctionExpr {
             EwmMean { .. } => "ewm_mean",
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { .. } => "ewm_mean_by",
+            #[cfg(feature = "ewma")]
+            EwmSum { .. } => "ewm_sum",
+            #[cfg(feature = "ewma_by")]
+            EwmSumBy { .. } => "ewm_sum_by",
             #[cfg(feature = "ewma")]
             EwmStd { .. } => "ewm_std",
             #[cfg(feature = "ewma")]
@@ -1116,6 +1135,8 @@ impl IRFunctionExpr {
             },
             #[cfg(feature = "round_series")]
             F::Clip { .. } => FunctionOptions::elementwise(),
+            F::AsList => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             #[cfg(feature = "dtype-struct")]
             F::AsStruct => FunctionOptions::elementwise().with_flags(|f| {
                 f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::INPUT_WILDCARD_EXPANSION
@@ -1246,11 +1267,11 @@ impl IRFunctionExpr {
                     f
                 }),
             #[cfg(feature = "ewma")]
-            F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } => {
+            F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } | F::EwmSum { .. } => {
                 FunctionOptions::length_preserving()
             },
             #[cfg(feature = "ewma_by")]
-            F::EwmMeanBy { .. } => FunctionOptions::length_preserving(),
+            F::EwmMeanBy { .. } | F::EwmSumBy { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "replace")]
             F::Replace => FunctionOptions::elementwise(),
             #[cfg(feature = "replace")]

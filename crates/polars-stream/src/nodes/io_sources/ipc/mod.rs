@@ -218,7 +218,7 @@ impl FileReader for IpcFileReader {
                 },
         } = args
         else {
-            panic!("unsupported args: {:?}", &args)
+            panic!("unsupported args: {:?}", args)
         };
 
         debug_assert!(!matches!(pre_slice_arg, Some(Slice::Negative { .. })));
@@ -528,7 +528,11 @@ impl FileReader for IpcFileReader {
 
                 if disable_morsel_split {
                     if morsel_send
-                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .send_morsel(Morsel::new_unregistered(
+                            df,
+                            morsel_seq,
+                            source_token.clone(),
+                        ))
                         .await
                         .is_err()
                     {
@@ -569,7 +573,11 @@ impl FileReader for IpcFileReader {
                     last_morsel_pipelines,
                 ) {
                     if morsel_send
-                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .send_morsel(Morsel::new_unregistered(
+                            df,
+                            morsel_seq,
+                            source_token.clone(),
+                        ))
                         .await
                         .is_err()
                     {

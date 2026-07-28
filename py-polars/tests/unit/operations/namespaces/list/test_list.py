@@ -415,11 +415,13 @@ def test_list_sample() -> None:
     s = pl.Series("values", [[1, 2, 3, None], [None, None], [1, 2], None])
 
     expected_sample_n = pl.Series("values", [[3, None], [None], [2], None])
-    result_n = s.list.sample(n=pl.Series([2, 1, 1, 1]), seed=1)
+    result_n = s.list.sample(n=pl.Series([2, 1, 1, 1]), shuffle=False, seed=1)
     assert_series_equal(result_n, expected_sample_n)
 
     expected_sample_frac = pl.Series("values", [[3, None], [None], [1, 2], None])
-    result_frac = s.list.sample(fraction=pl.Series([0.5, 0.5, 1.0, 0.3]), seed=1)
+    result_frac = s.list.sample(
+        fraction=pl.Series([0.5, 0.5, 1.0, 0.3]), shuffle=False, seed=1
+    )
     assert_series_equal(result_frac, expected_sample_frac)
 
     df = pl.DataFrame(
@@ -430,8 +432,10 @@ def test_list_sample() -> None:
         }
     )
     df = df.select(
-        sample_n=pl.col("values").list.sample(n=pl.col("n"), seed=1),
-        sample_frac=pl.col("values").list.sample(fraction=pl.col("frac"), seed=1),
+        sample_n=pl.col("values").list.sample(n=pl.col("n"), shuffle=False, seed=1),
+        sample_frac=pl.col("values").list.sample(
+            fraction=pl.col("frac"), shuffle=False, seed=1
+        ),
     )
     expected_df = pl.DataFrame(
         {
@@ -681,17 +685,21 @@ def test_list_unique2() -> None:
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
 
-    assert df.select(pl.col("n").list.to_struct(upper_bound=3)).rows(named=True) == [
-        {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
-        {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
-    ]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert df.select(pl.col("n").list.to_struct(upper_bound=3)).rows(
+            named=True
+        ) == [
+            {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
+            {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
+        ]
 
-    assert df.select(
-        pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", upper_bound=3)
-    ).rows(named=True) == [
-        {"n": {"n0": 0, "n1": 1, "n2": 2}},
-        {"n": {"n0": 0, "n1": 1, "n2": None}},
-    ]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert df.select(
+            pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", upper_bound=3)
+        ).rows(named=True) == [
+            {"n": {"n0": 0, "n1": 1, "n2": 2}},
+            {"n": {"n0": 0, "n1": 1, "n2": None}},
+        ]
 
     assert df.select(pl.col("n").list.to_struct(fields=["one", "two", "three"])).rows(
         named=True
@@ -710,9 +718,10 @@ def test_list_to_struct() -> None:
     # * Specifying an upper bound calls the field name getter function to
     #   retrieve the lazy schema
     # * The upper bound is respected during execution
-    q = df.lazy().select(
-        pl.col("n").list.to_struct(fields=str, upper_bound=2).struct.unnest()
-    )
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        q = df.lazy().select(
+            pl.col("n").list.to_struct(fields=str, upper_bound=2).struct.unnest()
+        )
     assert q.collect_schema() == {"0": pl.Int64, "1": pl.Int64}
     assert_frame_equal(q.collect(), pl.DataFrame({"0": [0, 0], "1": [1, 1]}))
 
@@ -1384,6 +1393,23 @@ def test_list_sample_fraction_with_replacement_27344() -> None:
 
     result = df.select(pl.col("x").list.sample(fraction=2, with_replacement=True))
     assert result["x"][0].to_list() == [1, 1]
+
+
+# shuffle=True and shuffle=None both rely on rand::seq::index::sample's
+# unspecified order, so they produce the same behavior here
+@pytest.mark.parametrize("shuffle", [False, None, True])
+def test_list_sample_reworked_shuffle_23557(shuffle: bool | None) -> None:
+    df = pl.DataFrame({"x": [[1, 2, 3, 4]]})
+
+    result = df.select(pl.col("x").list.sample(n=2, shuffle=shuffle, seed=0))["x"][
+        0
+    ].to_list()
+
+    if shuffle is False:
+        assert result == [1, 2]
+    else:
+        assert len(result) == 2
+        assert set(result).issubset({1, 2, 3, 4})
 
 
 def test_list_eval_exceed_idx_size() -> None:

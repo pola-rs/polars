@@ -291,7 +291,7 @@ fn visualize_plan_rec(
             let mut label = "select".to_string();
             let mut f = EscapeLabel(&mut label);
             if columns.iter().all(|(out, col)| out == col) {
-                write!(f, "\n{}", &columns.values().join(", ")).unwrap();
+                write!(f, "\n{}", columns.values().join(", ")).unwrap();
             } else {
                 for (out, col) in columns {
                     if out == col {
@@ -835,6 +835,8 @@ fn visualize_plan_rec(
         PhysNodeKind::Gather { input, idxs, .. } => ("gather".to_string(), &[*input, *idxs][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmSum { input, options: _ } => ("ewm-sum".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmVar { input, options: _ } => ("ewm-var".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]

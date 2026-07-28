@@ -99,7 +99,7 @@ impl PyDataFrame {
         py: Python<'_>,
         n: &PySeries,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         py.enter_polars_df(|| {
@@ -115,7 +115,7 @@ impl PyDataFrame {
         py: Python<'_>,
         frac: &PySeries,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         py.enter_polars_df(|| {

@@ -393,6 +393,58 @@ def test_group_by_having_with_nulls() -> None:
     )
 
 
+def test_group_by_having_composite_aggregates() -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["a", "a", "b", "b", "c"],
+            "val": [10, 20, 5, 15, 100],
+        }
+    )
+    # SUM (null-guarded wrapper) as a bare HAVING predicate operand
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING SUM(val) > 25 ORDER BY grp",
+        compare_with="sqlite",
+        expected={"grp": ["a", "c"]},
+    )
+    # SUM wrapped in a further scalar function
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING ABS(SUM(val)) > 25 ORDER BY grp",
+        compare_with="sqlite",
+        expected={"grp": ["a", "c"]},
+    )
+    # composite SUM combined with another aggregate
+    assert_sql_matches(
+        df,
+        query="SELECT grp FROM self GROUP BY grp HAVING SUM(val) / COUNT(*) > 10 ORDER BY grp",
+        compare_with="sqlite",
+        expected={"grp": ["a", "c"]},
+    )
+    # STRING_AGG (implode+join composite) as a HAVING predicate
+    txt = pl.DataFrame({"grp": ["a", "a", "b"], "s": ["x", "y", "z"]})
+    assert_sql_matches(
+        txt,
+        query="SELECT grp FROM self GROUP BY grp HAVING STRING_AGG(s, ',') = 'x,y'",
+        compare_with="duckdb",
+        expected={"grp": ["a"]},
+    )
+    # CORR (null-guarded composite) as a HAVING predicate
+    corr = pl.DataFrame(
+        {
+            "grp": [1, 1, 1, 2, 2, 2],
+            "x": [1.0, 2.0, 3.0, 1.0, 2.0, 3.0],
+            "y": [2.0, 4.0, 6.0, 6.0, 4.0, 2.0],
+        }
+    )
+    assert_sql_matches(
+        corr,
+        query="SELECT grp FROM self GROUP BY grp HAVING CORR(x, y) > 0 ORDER BY grp",
+        compare_with="duckdb",
+        expected={"grp": [1]},
+    )
+
+
 @pytest.mark.parametrize(
     ("having_clause", "expected"),
     [
@@ -682,4 +734,123 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
     assert_frame_equal(
         q.collect(),
         pl.DataFrame({"len": pl.Series([5], dtype=pl.get_index_type())}),
+    )
+
+
+def test_sum_and_total_28434() -> None:
+    # `SUM` over an empty/all-null input should return NULL (SQL standard).
+    # `TOTAL` is the (SQLite) non-standard counterpart that returns zero.
+    all_null = pl.DataFrame({"a": [None, None]}, schema={"a": pl.Int64})
+    grp = pl.DataFrame(
+        {"g": [1, 1, 2, 2], "a": [None, None, 3, 4]},
+        schema={"g": pl.Int64, "a": pl.Int64},
+    )
+    mixed = pl.DataFrame({"a": [1, None, 2]}, schema={"a": pl.Int64})
+
+    # scalar: all-null -> SUM is NULL, TOTAL is 0
+    expected = pl.DataFrame(
+        data={"s": [None], "t": [0]},
+        schema={"s": pl.Int64, "t": pl.Int64},
+    )
+    assert_frame_equal(
+        all_null.sql("SELECT SUM(a) AS s, TOTAL(a) AS t FROM self"), expected
+    )
+    assert_frame_equal(
+        all_null.sql("""
+            SELECT
+              SUM(a) OVER () AS s,
+              TOTAL(a) OVER () AS t,
+            FROM self
+        """),
+        expected,
+    )
+
+    # all-null group -> (NULL, 0); a group with values sums identically for both
+    assert_frame_equal(
+        grp.sql("SELECT g, SUM(a) AS s, TOTAL(a) AS t FROM self GROUP BY g ORDER BY g"),
+        pl.DataFrame(
+            {"g": [1, 2], "s": [None, 7], "t": [0, 7]},
+            schema={"g": pl.Int64, "s": pl.Int64, "t": pl.Int64},
+        ),
+    )
+    # a mix of null and non-null values sums identically for both
+    assert_frame_equal(
+        mixed.sql("SELECT SUM(a) AS s, TOTAL(a) AS t FROM self"),
+        pl.DataFrame({"s": [3], "t": [3]}, schema={"s": pl.Int64, "t": pl.Int64}),
+    )
+    # dtype is preserved across numeric types (float stays float)
+    all_null_f32 = pl.DataFrame({"a": [None, None]}, schema={"a": pl.Float32})
+    assert_frame_equal(
+        all_null_f32.sql("SELECT SUM(a) AS s, TOTAL(a) AS t FROM self"),
+        pl.DataFrame(
+            {"s": [None], "t": [0.0]}, schema={"s": pl.Float32, "t": pl.Float32}
+        ),
+    )
+
+    # `SUM`-specific NULL conformance (no `TOTAL` analog), checked against sqlite
+    assert_sql_matches(
+        all_null,
+        query="SELECT COALESCE(SUM(a), -99) AS s FROM self",
+        compare_with="sqlite",
+        expected={"s": [-99]},
+    )
+    assert_sql_matches(
+        all_null,
+        query="SELECT SUM(a) AS s, AVG(a) AS m FROM self",
+        compare_with="sqlite",
+        expected={"s": [None], "m": [None]},
+    )
+
+
+def test_corr_no_complete_pairs_returns_null() -> None:
+    # `CORR` returns NULL when there are no complete (both-non-null) pairs
+    allnull = pl.DataFrame(
+        {"a": [None, None], "b": [None, None]},
+        schema={"a": pl.Float64, "b": pl.Float64},
+    )
+    assert_sql_matches(
+        allnull,
+        query="SELECT CORR(a, b) AS c FROM self",
+        compare_with="duckdb",
+        expected={"c": [None]},
+    )
+
+    # rows exist, but no single row has both values non-null -> NULL
+    no_pairs = pl.DataFrame(
+        {"a": [1.0, None], "b": [None, 2.0]},
+        schema={"a": pl.Float64, "b": pl.Float64},
+    )
+    assert_sql_matches(
+        no_pairs,
+        query="SELECT CORR(a, b) AS c FROM self",
+        compare_with="duckdb",
+        expected={"c": [None]},
+    )
+
+    # a well-defined correlation is unaffected by the fix
+    corr = pl.DataFrame(
+        {"a": [1.0, 2.0, 3.0], "b": [2.0, 4.0, 6.0]},
+        schema={"a": pl.Float64, "b": pl.Float64},
+    )
+    assert_sql_matches(
+        corr,
+        query="SELECT CORR(a, b) AS c FROM self",
+        compare_with="duckdb",
+        expected={"c": [1.0]},
+    )
+
+    # an all-null group yields NULL; a group with a real correlation is computed
+    grp = pl.DataFrame(
+        {
+            "g": [1, 1, 2, 2, 2],
+            "a": [None, None, 1.0, 2.0, 3.0],
+            "b": [None, None, 2.0, 4.0, 6.0],
+        },
+        schema={"g": pl.Int64, "a": pl.Float64, "b": pl.Float64},
+    )
+    assert_sql_matches(
+        grp,
+        query="SELECT g, CORR(a, b) AS c FROM self GROUP BY g ORDER BY g",
+        compare_with="duckdb",
+        expected={"g": [1, 2], "c": [None, 1.0]},
     )

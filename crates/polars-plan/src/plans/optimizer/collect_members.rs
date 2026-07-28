@@ -7,7 +7,7 @@ use super::*;
 #[cfg(feature = "cse")]
 #[derive(Default)]
 struct UniqueScans {
-    ids: PlHashSet<u64>,
+    ids: PlIndexSet<u64>,
     count: usize,
 }
 

@@ -3,7 +3,7 @@ use std::panic::AssertUnwindSafe;
 use polars::frame::DataFrame;
 use polars::series::IntoSeries;
 use polars_error::PolarsResult;
-use polars_error::signals::{KeyboardInterrupt, catch_keyboard_interrupt};
+use polars_error::abort::{QueryAborted, catch_polars_abort};
 use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::marker::Ungil;
 use pyo3::types::PyAnyMethods;
@@ -144,12 +144,16 @@ impl EnterPolarsExt for Python<'_> {
         } else {
             None
         };
-        let ret = self.detach(|| catch_keyboard_interrupt(AssertUnwindSafe(f)));
+        let ret = self.detach(|| catch_polars_abort(AssertUnwindSafe(f)));
         cancel_polars_timeout(timeout);
         match ret {
             Ok(Ok(ret)) => Ok(ret),
             Ok(Err(err)) => Err(PyErr::from(err.into())),
-            Err(KeyboardInterrupt) => Err(PyKeyboardInterrupt::new_err("")),
+            Err(QueryAborted::KeyboardInterrupt) => Err(PyKeyboardInterrupt::new_err("")),
+            Err(QueryAborted::OocOutOfDisk) => Err(PyPolarsErr::Other(
+                "query aborted, raise POLARS_OOC_DISK_BUDGET_MB".to_string(),
+            )
+            .into()),
         }
     }
 }

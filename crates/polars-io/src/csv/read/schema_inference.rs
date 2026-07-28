@@ -19,8 +19,9 @@ pub(super) fn infer_file_schema_impl(
     content_lines: &[Buffer<u8>],
     infer_all_as_str: bool,
     parse_options: &CsvParseOptions,
+    column_names_overwrite: Option<&[PlSmallStr]>,
     schema_overwrite: Option<&Schema>,
-) -> Schema {
+) -> PolarsResult<Schema> {
     let mut headers = header_line
         .as_ref()
         .map(|line| infer_headers(line, parse_options))
@@ -28,7 +29,7 @@ pub(super) fn infer_file_schema_impl(
 
     let extend_header_with_unknown_column = header_line.is_none();
 
-    let mut column_types = vec![PlHashSet::<DataType>::with_capacity(4); headers.len()];
+    let mut column_types = vec![PlIndexSet::<DataType>::with_capacity(4); headers.len()];
     let mut nulls = vec![false; headers.len()];
 
     for content_line in content_lines {
@@ -43,7 +44,27 @@ pub(super) fn infer_file_schema_impl(
         );
     }
 
-    build_schema(&headers, &column_types, schema_overwrite)
+    if let Some(column_names_overwrite) = column_names_overwrite {
+        // 2.0: Replace with checks against missing/extra columns policy.
+        polars_ensure!(
+            column_names_overwrite.len() <= headers.len(),
+            ShapeMismatch:
+            "The length of the new names list should be equal to or less than the original column length",
+        );
+        for (i, name) in column_names_overwrite.iter().cloned().enumerate() {
+            if i < headers.len() {
+                headers[i] = name
+            } else {
+                headers.push(name)
+            }
+
+            if i >= column_types.len() {
+                column_types.push(PlIndexSet::from_iter(Some(DataType::Null)))
+            }
+        }
+    }
+
+    Ok(build_schema(&headers, &column_types, schema_overwrite))
 }
 
 fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec<PlSmallStr> {
@@ -93,7 +114,7 @@ fn infer_types_from_line(
     headers: &mut Vec<PlSmallStr>,
     extend_header_with_unknown_column: bool,
     parse_options: &CsvParseOptions,
-    column_types: &mut Vec<PlHashSet<DataType>>,
+    column_types: &mut Vec<PlIndexSet<DataType>>,
     nulls: &mut Vec<bool>,
 ) {
     let line_len = line.len();
@@ -193,7 +214,7 @@ fn infer_types_from_line(
 
 fn build_schema(
     headers: &[PlSmallStr],
-    column_types: &[PlHashSet<DataType>],
+    column_types: &[PlIndexSet<DataType>],
     schema_overwrite: Option<&Schema>,
 ) -> Schema {
     assert!(headers.len() == column_types.len());
@@ -227,7 +248,7 @@ fn build_schema(
     )
 }
 
-pub fn finish_infer_field_schema(possibilities: &PlHashSet<DataType>) -> DataType {
+pub fn finish_infer_field_schema(possibilities: &PlIndexSet<DataType>) -> DataType {
     // determine data type based on possible types
     // if there are incompatible types, use DataType::String
     match possibilities.len() {
@@ -362,7 +383,7 @@ mod tests {
     #[test]
     #[cfg(feature = "dtype-i128")]
     fn test_finish_infer_field_schema_i64_and_i128() {
-        let mut possibilities = PlHashSet::new();
+        let mut possibilities = PlIndexSet::new();
         possibilities.insert(DataType::Int64);
         possibilities.insert(DataType::Int128);
         assert_eq!(finish_infer_field_schema(&possibilities), DataType::Int128);

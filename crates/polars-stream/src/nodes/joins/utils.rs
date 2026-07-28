@@ -197,8 +197,8 @@ pub(super) async fn stop_and_buffer_pipe_contents<F>(
 
     while let Ok(morsel) = port.recv().await {
         morsel.source_token().stop();
-        let (df, _, _, _) = morsel.into_inner();
-        buffer_morsel(df);
+        let (sf, _, _, _) = morsel.into_inner();
+        buffer_morsel(sf.into_df().await);
     }
 }
 

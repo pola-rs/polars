@@ -97,7 +97,7 @@ def test_write_with_storage_options_22873(tmp_path: Path) -> None:
             with pytest.raises(
                 TypeError, match="unexpected keyword argument 'storage_options'"
             ):
-                func(df, path, storage_options={"test": "1"})  # type: ignore[operator]
+                func(df, path, storage_options={"test": "1"})  # type: ignore[call-overload]
 
             continue
 

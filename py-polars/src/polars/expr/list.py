@@ -192,7 +192,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         *,
         fraction: float | IntoExprColumn | None = None,
         with_replacement: bool = False,
-        shuffle: bool = False,
+        shuffle: bool | None = None,
         seed: int | None = None,
     ) -> Expr:
         """
@@ -208,7 +208,12 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Determines the order of the sampled values.
+            If True, sampled values are explicitly shuffled.
+            If False, the relative order of the sampled values is preserved.
+            (i.e. they appear in the same order as the original input list).
+            If None (default), no ordering guarantee; uses the most performant
+            algorithm.
         seed
             Seed for the random number generator. If set to None (default), a
             random seed is generated for each sample operation.
@@ -216,7 +221,11 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1, 2, 3], [4, 5]], "n": [2, 1]})
-        >>> df.with_columns(sample=pl.col("values").list.sample(n=pl.col("n"), seed=1))
+        >>> df.with_columns(
+        ...     sample=pl.col("values").list.sample(
+        ...         n=pl.col("n"), shuffle=False, seed=1
+        ...     )
+        ... )
         shape: (2, 3)
         ┌───────────┬─────┬───────────┐
         │ values    ┆ n   ┆ sample    │
@@ -1298,6 +1307,11 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
             if upper_bound is None:
                 msg = "`Expr.list.to_struct` requires either `fields` to be a sequence or `upper_bound` to be set.\n\nThis used to be allowed but produced unpredictable results."
                 raise exceptions.InvalidOperationError(msg)
+
+            issue_deprecation_warning(
+                "list.to_struct() without a list of field names is deprecated. Please "
+                "pass a list of field names."
+            )
 
             if fields is None:
                 fields = [f"field_{i}" for i in range(upper_bound)]

@@ -209,15 +209,19 @@ pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewAr
             .unwrap();
     }
 
-    const MAX_BYTES_PER_BUFFER: usize = u32::MAX as usize;
-
     let size = from.size();
+    let max_bytes_per_buffer = if size <= BINVIEW_ARROW_BUFFER_LEN_LIMIT {
+        BINVIEW_ARROW_BUFFER_LEN_LIMIT
+    } else {
+        BINVIEW_MAX_ROW_BYTE_LEN
+    };
+    assert!(size <= max_bytes_per_buffer);
     let num_bytes = from.len() * size;
-    let num_buffers = num_bytes.div_ceil(MAX_BYTES_PER_BUFFER);
+    let num_buffers = num_bytes.div_ceil(max_bytes_per_buffer);
     assert!(num_buffers < u32::MAX as usize);
 
-    let num_elements_per_buffer = MAX_BYTES_PER_BUFFER / size;
-    // This is NOT equal to MAX_BYTES_PER_BUFFER because of integer division
+    let num_elements_per_buffer = max_bytes_per_buffer / size;
+    // This is NOT equal to max_bytes_per_buffer because of integer division
     let split_point = num_elements_per_buffer * size;
 
     // This is zero-copy for the buffer since split just increases the data since

@@ -175,7 +175,7 @@ def test_to_numpy_zero_copy_path_writable() -> None:
     x[:, 1] = 2.0
     df = pl.DataFrame(x)
     x = df.to_numpy(writable=True)
-    assert x.flags["WRITEABLE"]
+    assert x.flags.writeable
 
 
 def test_df_to_numpy_structured_not_zero_copy() -> None:

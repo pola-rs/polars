@@ -764,7 +764,7 @@ def test_order_simplify_exprs() -> None:
         rev=(pl.col("a").sort() + 1).sort().sort(descending=True),
     )
     plan = q.explain()
-    assert '(col("a")) + (1)].sort(desc).alias' in plan
+    assert '(col("a") + 1).sort(desc).alias' in plan
 
     assert_frame_equal(
         q.collect(),

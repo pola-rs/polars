@@ -127,6 +127,8 @@ def _switcher_version(git_ref: str) -> str:
 git_ref = os.environ.get("POLARS_VERSION", "main")
 switcher_version = _switcher_version(git_ref)
 
+html_context = {"is_dev_build": switcher_version == "dev"}
+
 if switcher_version != "dev" and int(switcher_version) >= 1:
     # In this case we generate a docs sitemap for stable
     extensions.append("sphinx_sitemap")

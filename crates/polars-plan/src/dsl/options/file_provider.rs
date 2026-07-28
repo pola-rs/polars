@@ -5,7 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType};
 use polars_error::PolarsResult;
 use polars_io::hive::HivePathFormatter;
-use polars_io::utils::file::Writeable;
+use polars_io::utils::file::Writable;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::prelude::PlanCallback;
@@ -19,7 +19,7 @@ pub struct FileProviderArgs {
 
 pub enum FileProviderReturn {
     Path(String),
-    Writeable(Writeable),
+    Writable(Writable),
 }
 
 pub type FileProviderFunction = PlanCallback<FileProviderArgs, FileProviderReturn>;

@@ -1,9 +1,10 @@
 use std::hash::BuildHasher;
 
-use hashbrown::hash_map::RawEntryMut;
+use indexmap::map::RawEntryApiV1;
+use indexmap::map::raw_entry_v1::RawEntryMut;
 use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_core::config::verbose;
-use polars_core::prelude::PlHashMap;
+use polars_core::prelude::PlIndexMap;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_utils::aliases::PlFixedStateQuality;
@@ -11,10 +12,12 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::_boost_hash_combine;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::vec::CapacityByFactor;
 
 use crate::constants::CSE_REPLACED;
 use crate::plans::aexpr::is_inherently_nondeterministic_top_level;
+use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::visitor::{
     IRNode, IRNodeArena, RewriteRecursion, RewritingVisitor, TreeWalker as _, VisitRecursion,
     Visitor,
@@ -143,13 +146,13 @@ impl Identifier {
 
 #[derive(Default)]
 struct IdentifierMap<V> {
-    inner: PlHashMap<Identifier, V>,
+    inner: PlIndexMap<Identifier, V>,
 }
 
 impl<V> IdentifierMap<V> {
     fn get(&self, id: &Identifier, arena: &Arena<AExpr>) -> Option<&V> {
         self.inner
-            .raw_entry()
+            .raw_entry_v1()
             .from_hash(id.hash(), |k| k.is_equal(id, arena))
             .map(|(_k, v)| v)
     }
@@ -163,12 +166,12 @@ impl<V> IdentifierMap<V> {
         let h = id.hash();
         match self
             .inner
-            .raw_entry_mut()
+            .raw_entry_mut_v1()
             .from_hash(h, |k| k.is_equal(&id, arena))
         {
             RawEntryMut::Occupied(entry) => entry.into_mut(),
             RawEntryMut::Vacant(entry) => {
-                let (_, v) = entry.insert_with_hasher(h, id, v(), |id| id.hash());
+                let (_, v) = entry.insert_hashed_nocheck(h, id, v());
                 v
             },
         }
@@ -187,7 +190,7 @@ impl<V> IdentifierMap<V> {
 /// Does no analysis whether this leads to legal substitutions.
 #[derive(Default)]
 pub struct NaiveExprMerger {
-    node_to_uniq_id: PlHashMap<Node, u32>,
+    node_to_uniq_id: PlIndexMap<Node, u32>,
     uniq_id_to_node: Vec<Node>,
     identifier_to_uniq_id: IdentifierMap<u32>,
     arg_stack: Vec<Option<Identifier>>,
@@ -286,6 +289,8 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) 
         AExpr::Rolling { .. } => true,
         AExpr::Over { .. } => true,
         #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { .. } => true,
+        AExpr::Eval { .. } => true,
         AExpr::Ternary { .. } => is_groupby,
         ae => {
             if element_wise_select_only {
@@ -349,7 +354,7 @@ struct ExprIdentifierVisitor<'a> {
     se_count: &'a mut SubExprCount,
     /// Materialized `CSE` materialized (name) hashes can collide. So we validate that all CSE counts
     /// match name hash counts.
-    name_validation: &'a mut PlHashMap<u64, u32>,
+    name_validation: &'a mut PlIndexMap<u64, u32>,
     identifier_array: &'a mut IdentifierArray,
     // Index in pre-visit traversal order.
     pre_visit_idx: usize,
@@ -372,7 +377,7 @@ impl ExprIdentifierVisitor<'_> {
         identifier_array: &'a mut IdentifierArray,
         visit_stack: &'a mut Vec<VisitRecord>,
         is_group_by: bool,
-        name_validation: &'a mut PlHashMap<u64, u32>,
+        name_validation: &'a mut PlIndexMap<u64, u32>,
         element_wise_select_only: bool,
     ) -> ExprIdentifierVisitor<'a> {
         let id_array_offset = identifier_array.len();
@@ -729,11 +734,14 @@ pub(crate) struct CommonSubExprOptimizer {
     replaced_identifiers: IdentifierMap<()>,
     // these are cleared per expr node
     visit_stack: Vec<VisitRecord>,
-    name_validation: PlHashMap<u64, u32>,
+    name_validation: PlIndexMap<u64, u32>,
     // Set by the streaming engine
     // Only supports element-wise CSEE
     // on SELECT/HSTACK
     element_wise_select_only: bool,
+
+    nodes_scratch: ScratchVec<Node>,
+    heights_scratch: ScratchVec<ExprProjectionHeight>,
 }
 
 impl CommonSubExprOptimizer {
@@ -746,6 +754,8 @@ impl CommonSubExprOptimizer {
             replaced_identifiers: Default::default(),
             name_validation: Default::default(),
             element_wise_select_only,
+            nodes_scratch: ScratchVec::default(),
+            heights_scratch: ScratchVec::default(),
         }
     }
 
@@ -933,6 +943,22 @@ impl CommonSubExprOptimizer {
             // Add the tmp columns
             for id in self.replaced_identifiers.inner.keys() {
                 let (node, _count) = self.se_count.get(id, expr_arena).unwrap();
+
+                // Avoid accidentally broadcasting <scalar literal>.<elementwise_ops..>
+                if self.element_wise_select_only
+                    && !matches!(
+                        aexpr_projection_height_rec(
+                            *node,
+                            expr_arena,
+                            &mut self.nodes_scratch,
+                            &mut self.heights_scratch
+                        ),
+                        ExprProjectionHeight::Column
+                    )
+                {
+                    return Ok(None);
+                }
+
                 let name = id.materialize();
                 let out_e = ExprIR::new(*node, OutputName::Alias(name));
                 new_expr.push(out_e)

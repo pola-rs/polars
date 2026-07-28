@@ -748,6 +748,16 @@ impl Operator {
         )
     }
 
+    /// Comparisons that unconditionally propagate nulls: a null operand gives a
+    /// null result. Excludes the validity variants (`EqValidity` /
+    /// `NotEqValidity`), which treat null as a regular value.
+    pub fn is_null_propagating_comparison(&self) -> bool {
+        matches!(
+            self,
+            Self::Eq | Self::NotEq | Self::Lt | Self::LtEq | Self::Gt | Self::GtEq
+        )
+    }
+
     pub fn is_bitwise(&self) -> bool {
         matches!(self, Self::And | Self::Or | Self::Xor)
     }
@@ -756,28 +766,60 @@ impl Operator {
         self.is_comparison() || self.is_bitwise()
     }
 
-    pub fn swap_operands(self) -> Self {
+    /// The operator such that `b op.swap_operands() a` is equivalent to
+    /// `a op b`; `None` for non-commutative arithmetic, where no such operator
+    /// exists (swapping requires rewriting an operand: `a - b == -b + a`).
+    pub fn swap_operands(self) -> Option<Self> {
+        Some(match self {
+            Self::Eq => Self::Eq,
+            Self::NotEq => Self::NotEq,
+            Self::EqValidity => Self::EqValidity,
+            Self::NotEqValidity => Self::NotEqValidity,
+            Self::Lt => Self::Gt,
+            Self::Gt => Self::Lt,
+            Self::LtEq => Self::GtEq,
+            Self::GtEq => Self::LtEq,
+            Self::Plus => Self::Plus,
+            Self::Multiply => Self::Multiply,
+            Self::And => Self::And,
+            Self::Or => Self::Or,
+            Self::Xor => Self::Xor,
+            Self::LogicalAnd => Self::LogicalAnd,
+            Self::LogicalOr => Self::LogicalOr,
+            Self::Minus
+            | Self::RustDivide
+            | Self::TrueDivide
+            | Self::FloorDivide
+            | Self::Modulus => return None,
+        })
+    }
+
+    /// The complementary comparison, such that `!(a op b)` is equivalent to
+    /// `a op.negate() b`; `None` for non-comparison operators. Exact because
+    /// nulls stay null under negation (Kleene logic) and Polars orders floats
+    /// totally, unlike IEEE (where `!(a < b)` does not imply `a >= b` for NaN).
+    pub fn negate(self) -> Option<Self> {
         match self {
-            Operator::Eq => Operator::Eq,
-            Operator::Gt => Operator::Lt,
-            Operator::GtEq => Operator::LtEq,
-            Operator::LtEq => Operator::GtEq,
-            Operator::Or => Operator::Or,
-            Operator::LogicalAnd => Operator::LogicalAnd,
-            Operator::LogicalOr => Operator::LogicalOr,
-            Operator::Xor => Operator::Xor,
-            Operator::NotEq => Operator::NotEq,
-            Operator::EqValidity => Operator::EqValidity,
-            Operator::NotEqValidity => Operator::NotEqValidity,
-            // Operator::Divide requires modifying the right operand: left / right == 1/right * left
-            Operator::RustDivide => unimplemented!(),
-            Operator::Multiply => Operator::Multiply,
-            Operator::And => Operator::And,
-            Operator::Plus => Operator::Plus,
-            // Operator::Minus requires modifying the right operand: left - right == -right + left
-            Operator::Minus => unimplemented!(),
-            Operator::Lt => Operator::Gt,
-            _ => unimplemented!(),
+            Self::Eq => Some(Self::NotEq),
+            Self::NotEq => Some(Self::Eq),
+            Self::Lt => Some(Self::GtEq),
+            Self::LtEq => Some(Self::Gt),
+            Self::Gt => Some(Self::LtEq),
+            Self::GtEq => Some(Self::Lt),
+            Self::EqValidity => Some(Self::NotEqValidity),
+            Self::NotEqValidity => Some(Self::EqValidity),
+            Self::And
+            | Self::Or
+            | Self::Xor
+            | Self::LogicalAnd
+            | Self::LogicalOr
+            | Self::Plus
+            | Self::Minus
+            | Self::Multiply
+            | Self::RustDivide
+            | Self::TrueDivide
+            | Self::FloorDivide
+            | Self::Modulus => None,
         }
     }
 

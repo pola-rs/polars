@@ -307,8 +307,8 @@ async fn distribute_work_task(
         } else if let Some(ref mut recv) = recv_left
             && let Ok(m) = recv.recv().await
         {
-            let (df, _, st, _) = m.into_inner();
-            (df, st)
+            let (sf, _, st, _) = m.into_inner();
+            (sf.into_df().await, st)
         } else {
             stop_and_buffer_pipe_contents(recv_right.as_mut(), &mut |df| right_buffer.push_df(df))
                 .await;
@@ -319,7 +319,7 @@ async fn distribute_work_task(
             if let Some(ref mut recv) = recv_right
                 && let Ok(morsel_right) = recv.recv().await
             {
-                right_buffer.push_df(morsel_right.into_df());
+                right_buffer.push_df(morsel_right.into_df().await);
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.
@@ -572,7 +572,7 @@ async fn compute_and_emit_task(
     let mut scratch2 = ScratchVec::default();
     while let Ok((left_df, right_dfsb, seq, st)) = dist_recv.recv().await {
         let out = compute_asof_join(left_df, right_dfsb, params, &mut scratch1, &mut scratch2)?;
-        let mut morsel = Morsel::new(out, seq, st);
+        let mut morsel = Morsel::new_unregistered(out, seq, st);
         morsel.set_consume_token(wait_group.token());
         if send.send(morsel).await.is_err() {
             return Ok(());

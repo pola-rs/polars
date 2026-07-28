@@ -185,6 +185,7 @@ pub enum FunctionExpr {
         has_min: bool,
         has_max: bool,
     },
+    AsList,
     #[cfg(feature = "dtype-struct")]
     AsStruct,
     #[cfg(feature = "top_k")]
@@ -356,6 +357,14 @@ pub enum FunctionExpr {
         half_life: Duration,
     },
     #[cfg(feature = "ewma")]
+    EwmSum {
+        options: EWMOptions,
+    },
+    #[cfg(feature = "ewma_by")]
+    EwmSumBy {
+        half_life: Duration,
+    },
+    #[cfg(feature = "ewma")]
     EwmStd {
         options: EWMOptions,
     },
@@ -503,6 +512,7 @@ impl Hash for FunctionExpr {
             ArgWhere => {},
             #[cfg(feature = "trigonometry")]
             Atan2 => {},
+            AsList => {},
             #[cfg(feature = "dtype-struct")]
             AsStruct => {},
             #[cfg(feature = "sign")]
@@ -647,6 +657,10 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { half_life } => (half_life).hash(state),
             #[cfg(feature = "ewma")]
+            EwmSum { options } => options.hash(state),
+            #[cfg(feature = "ewma_by")]
+            EwmSumBy { half_life } => (half_life).hash(state),
+            #[cfg(feature = "ewma")]
             EwmStd { options } => options.hash(state),
             #[cfg(feature = "ewma")]
             EwmVar { options } => options.hash(state),
@@ -772,6 +786,7 @@ impl Display for FunctionExpr {
                 (true, false) => "clip_min",
                 _ => unreachable!(),
             },
+            AsList => "as_list",
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
@@ -877,6 +892,10 @@ impl Display for FunctionExpr {
             EwmMean { .. } => "ewm_mean",
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { .. } => "ewm_mean_by",
+            #[cfg(feature = "ewma")]
+            EwmSum { .. } => "ewm_sum",
+            #[cfg(feature = "ewma_by")]
+            EwmSumBy { .. } => "ewm_sum_by",
             #[cfg(feature = "ewma")]
             EwmStd { .. } => "ewm_std",
             #[cfg(feature = "ewma")]

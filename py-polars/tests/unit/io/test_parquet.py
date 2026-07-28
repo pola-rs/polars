@@ -3432,7 +3432,7 @@ def test_scan_parquet_skip_row_groups_with_cast(
         cast_options=pl.ScanCastOptions(
             integer_cast="upcast",
             float_cast=["upcast", "downcast"],
-            datetime_cast=["convert-timezone", "nanosecond-downcast"],
+            datetime_cast=("convert-timezone", "nanosecond-downcast"),
             missing_struct_fields="insert",
         ),
     ).filter(filter_expr)
@@ -3489,7 +3489,7 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
         cast_options=pl.ScanCastOptions(
             integer_cast="upcast",
             float_cast=["upcast", "downcast"],
-            datetime_cast=["convert-timezone", "nanosecond-downcast"],
+            datetime_cast=("convert-timezone", "nanosecond-downcast"),
             missing_struct_fields="insert",
         ),
     ).filter(filter_expr)
@@ -4365,7 +4365,9 @@ def test_multi_file_resolve_metadata_level(
     expected_est: int,
 ) -> None:
     # Skewed layout: file 0 = 2 rows, files 1-2 = 3 each (true total 8).
-    # `none` extrapolates 2 * 3 = 6; `row_counts`/`full` sum exactly.
+    # `none` extrapolates 2 * 3 = 6; `row_counts`/`full` sum exactly. (`sampled`
+    # is budget-dependent, so it is tested in a subprocess below where the budget
+    # is pinned, not here where this process's budget is uncontrolled.)
     for i, n in enumerate([2, 3, 3]):
         pl.DataFrame({"x": range(n)}).write_parquet(tmp_path / f"part_{i}.parquet")
 
@@ -4375,3 +4377,62 @@ def test_multi_file_resolve_metadata_level(
     lf = pl.scan_parquet(tmp_path / "part_*.parquet")
     assert lf.collect().height == 8
     assert f"ESTIMATED ROWS: {expected_est}" in lf.explain(optimized=True)
+
+
+@pytest.mark.write_disk
+def test_resolve_metadata_sampled_extrapolates(tmp_path: Path) -> None:
+    # `sampled` only extrapolates when the file count exceeds the concurrency
+    # budget; at or below it the whole set is read and the count is exact. The
+    # budget is a process-wide OnceLock (not refreshed by `reload_env_vars`), so
+    # cap it to 2 in a fresh subprocess. Layout [2, 3, 3]: budget 2 samples
+    # file 0 + file 1 and extrapolates (2 + 3) * 3 // 2 = 7.
+    for i, n in enumerate([2, 3, 3]):
+        pl.DataFrame({"x": range(n)}).write_parquet(tmp_path / f"part_{i}.parquet")
+
+    if sys.platform.startswith("win"):
+        return
+
+    glob = str(tmp_path / "part_*.parquet")
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            f"""\
+import os
+import sys
+
+os.environ["POLARS_CONCURRENCY_BUDGET"] = "2"
+os.environ["POLARS_RESOLVE_METADATA_LEVEL"] = "sampled"
+
+import polars as pl
+
+lf = pl.scan_parquet({glob!r})
+assert lf.collect().height == 8
+assert "ESTIMATED ROWS: 7" in lf.explain(optimized=True)
+print("OK", end="", file=sys.stderr)
+""",
+        ],
+        stderr=subprocess.STDOUT,
+        timeout=30,
+    )
+    assert out == b"OK"
+
+
+def test_parquet_prefilter_fixed_size_binary_27781() -> None:
+    val = b"0x004521bdf6bf838e71c0b977678adae368c3ac5d5c665cef09cbd61a9d591d3f"
+
+    table = pa.table(
+        {
+            "market": pa.array([val, val], type=pa.binary(66)),
+            "asset_id": ["abc", "def"],
+        }
+    )
+
+    f = io.BytesIO()
+    pq.write_table(table, f)
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.scan_parquet(f).filter(pl.col("market") == val).collect(),
+        pl.DataFrame(table),
+    )

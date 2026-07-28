@@ -51,7 +51,6 @@ pub mod temporal;
 mod to_vec;
 mod trusted_len;
 pub(crate) use arg_min_max::*;
-use arrow::legacy::prelude::*;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::StructChunked;
 
@@ -285,7 +284,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         else if self.null_count() == self.len() {
             Some(0)
         } else if self.is_sorted_any() {
-            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+            let out = if self
+                .chunks
+                .iter()
+                .find(|arr| !arr.is_empty())
+                .unwrap()
+                .is_null(0)
+            {
                 // nulls are all at the start
                 0
             } else {
@@ -314,7 +319,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         else if self.null_count() == 0 {
             Some(0)
         } else if self.is_sorted_any() {
-            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+            let out = if self
+                .chunks
+                .iter()
+                .find(|arr| !arr.is_empty())
+                .unwrap()
+                .is_null(0)
+            {
                 // nulls are all at the start
                 self.null_count()
             } else {
@@ -343,7 +354,13 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         else if self.null_count() == 0 {
             Some(self.len() - 1)
         } else if self.is_sorted_any() {
-            let out = if unsafe { self.downcast_get_unchecked(0).is_null_unchecked(0) } {
+            let out = if self
+                .chunks
+                .iter()
+                .find(|arr| !arr.is_empty())
+                .unwrap()
+                .is_null(0)
+            {
                 // nulls are all at the start
                 self.len() - 1
             } else {
@@ -745,7 +762,10 @@ impl ArrayChunked {
         length: usize,
     ) -> Self {
         let dtype = DataType::Array(Box::new(inner_dtype.clone()), width);
-        let arrow_dtype = dtype.to_arrow(CompatLevel::newest()).to_storage_recursive();
+        let arrow_dtype = inner_dtype
+            .to_physical()
+            .to_arrow(CompatLevel::newest())
+            .to_fixed_size_list(width, true);
         let field = Arc::new(Field::new(name, dtype));
         if width == 0 {
             use arrow::array::builder::{ArrayBuilder, make_builder};

@@ -1,7 +1,7 @@
 use std::fmt::{self, Write};
 
 use polars_core::error::*;
-use polars_utils::aliases::PlHashSet;
+use polars_utils::aliases::PlIndexSet;
 use polars_utils::format_list_truncated;
 use polars_utils::unique_id::UniqueId;
 
@@ -426,8 +426,12 @@ impl<'a> TreeFmtNode<'a> {
                     wh(
                         h,
                         &format!(
-                            "MERGE SORTED[maintain_order: {:?}] ON '{key}'",
-                            maintain_order
+                            "MERGE SORTED[maintain_order: {:?}] ON [{}]",
+                            maintain_order,
+                            key.iter()
+                                .map(|k| format!("'{k}'"))
+                                .collect::<Vec<_>>()
+                                .join(", "),
                         ),
                     ),
                     [self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)]
@@ -466,7 +470,7 @@ pub(crate) struct TreeFmtVisitor {
     prev_depth: usize,
     depth: usize,
     width: usize,
-    seen_caches: PlHashSet<UniqueId>,
+    seen_caches: PlIndexSet<UniqueId>,
     pub(crate) display: TreeFmtVisitorDisplay,
 }
 

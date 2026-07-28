@@ -11,11 +11,11 @@ jobs:
   main:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Lint Markdown and TOML
         uses: dprint/check@v2.3
       - name: Spell Check with Typos
-        uses: crate-ci/typos@v1.42.0
+        uses: crate-ci/typos@v1.48.0
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Check for FIXME comments

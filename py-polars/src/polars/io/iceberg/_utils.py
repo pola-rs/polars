@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import ast
 import contextlib
+import uuid
 from _ast import GtE, Lt, LtE
 from ast import (
     Attribute,
@@ -28,6 +29,7 @@ from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_s
 from polars.exceptions import ComputeError
+from polars.io._utils import null_count_dtype
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -37,7 +39,7 @@ if TYPE_CHECKING:
     import pyiceberg.schema
     from pyiceberg.manifest import DataFile
     from pyiceberg.table import Table
-    from pyiceberg.types import IcebergType
+    from pyiceberg.types import IcebergType, NestedField
 
     from polars import DataFrame
 else:
@@ -263,6 +265,33 @@ def _(a: List) -> Any:
     return [_convert_predicate(e) for e in a.elts]
 
 
+def extract_field_initial_default(field: NestedField) -> pl.Series | None:
+    from pyiceberg.types import (
+        UUIDType,
+    )
+
+    if field.initial_default is None:
+        return None
+
+    value = field.initial_default
+
+    if isinstance(field.field_type, UUIDType):
+        assert isinstance(value, uuid.UUID)
+        value = value.bytes
+
+    return pl.Series([value], dtype=pl_dtype_from_iceberg_field(field))
+
+
+def pl_dtype_from_iceberg_field(field: NestedField) -> pl.DataType:
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    _, field_polars_dtype = pl.Schema(
+        schema_to_pyarrow(pyiceberg.schema.Schema(field))
+    ).popitem()
+
+    return field_polars_dtype
+
+
 class IdentityTransformedPartitionValuesBuilder:
     def __init__(
         self,
@@ -415,10 +444,6 @@ class IcebergStatisticsLoader:
         table: Table,
         projected_filter_schema: pyiceberg.schema.Schema,
     ) -> None:
-        import pyiceberg.schema
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
-
-        import polars as pl
         import polars._utils.logging
 
         verbose = polars._utils.logging.verbose()
@@ -435,9 +460,7 @@ class IcebergStatisticsLoader:
                 with contextlib.suppress(ValueError):
                     field_all_types.add(schema.find_field(field.field_id).field_type)
 
-            _, field_polars_dtype = pl.Schema(
-                schema_to_pyarrow(pyiceberg.schema.Schema(field))
-            ).popitem()
+            field_polars_dtype = pl_dtype_from_iceberg_field(field)
 
             load_from_bytes_impl = LoadFromBytesImpl.init_for_field_type(
                 field.field_type,
@@ -528,7 +551,9 @@ class IcebergColumnStatisticsLoader:
         c = self.column_name
         assert len(self.null_count) == expected_height
 
-        out = pl.Series(f"{c}_nc", self.null_count, dtype=pl.UInt32).to_frame()
+        out = pl.Series(
+            f"{c}_nc", self.null_count, dtype=null_count_dtype(self.column_dtype)
+        ).to_frame()
 
         if self.load_from_bytes_impl is None:
             s = (

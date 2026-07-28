@@ -5,7 +5,8 @@ Please see the contribution guidelines: https://docs.pola.rs/development/contrib
 First-time contributors must adhere to the following rules, or your PR(s) will be closed:
 
 - You must post a screenshot of you successfully running the test suite (`make test`),
-  locally on your machine (not the CI).
+  locally on your machine (not the CI). The screenshot must show your terminal window
+  borders clearly, it must not be cropped to only show text.
 - You may not have more than one open PR at a time.
 
 Note that if you used AI to generate code there are additional requirements you

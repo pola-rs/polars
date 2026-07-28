@@ -44,7 +44,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
 
@@ -86,7 +86,7 @@ jobs:
           uv build py-polars --out-dir dist
 
       - name: Upload base package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           path: dist
 
@@ -99,12 +99,12 @@ jobs:
         package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
 
       - name: Download base package
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -141,7 +141,7 @@ jobs:
           python -c 'import polars; polars.show_versions()'
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: sdist-${{ matrix.package }}
           path: dist/*.tar.gz
@@ -245,7 +245,7 @@ jobs:
           clang -v
           cmake --version
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
 
@@ -254,7 +254,7 @@ jobs:
         if: ${{ runner.os == 'Linux' }}
 
       - name: Download base package
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -344,7 +344,7 @@ jobs:
           command: build
           target: ${{ matrix.target }}
           args: >
-            --profile ${{ inputs.dry-run == true && 'mindebug-dev' || 'dist-release' }}
+            --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --out dist
           manylinux: auto
@@ -358,7 +358,7 @@ jobs:
           python -c 'import polars; polars.show_versions()'
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheel-${{ matrix.package }}-${{ matrix.job_config }}
           path: dist/*.whl
@@ -374,7 +374,7 @@ jobs:
 
     steps:
       - name: Download sdists and wheels
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -393,7 +393,7 @@ jobs:
     needs: [publish-to-pypi]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.sha }}
 

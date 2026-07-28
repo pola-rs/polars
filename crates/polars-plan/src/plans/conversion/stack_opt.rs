@@ -17,7 +17,7 @@ pub struct ConversionOptimizer {
     // then it can occur that we take a slot multiple times.
     // So we keep track of the arena versions used and allow only
     // one unique IR cache to be reused.
-    pub(super) used_arenas: PlHashSet<u32>,
+    pub(super) used_arenas: PlIndexSet<u32>,
 }
 
 struct ExtendVec<'a> {

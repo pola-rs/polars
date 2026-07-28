@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import io
 import os
+import subprocess
+import sys
 from itertools import permutations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 
+import pyarrow.ipc
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
     from polars._typing import EngineType
@@ -488,4 +492,235 @@ def test_sink_predicate_pushdown_streaming_flag_27922() -> None:
     assert_frame_equal(
         pl.scan_ipc(f).collect(),
         pl.DataFrame({"role": ["ST"], "key": ["st"], "tags": [["ST"]]}),
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("input_chunk_lengths", "expected_written_chunk_lengths"),
+    [
+        ([0], []),
+        ([1], [1]),
+        # Note: Following numbers expect a default target sink morsel size (rows)
+        # of 122_880.
+        ([81_920], [81_920]),
+        ([163_840], [163_840]),
+        ([163_841], [81_921, 81_920]),  # Cutoff @ (4/3)*122_880
+        ([250_000, 250_000], [125_000, 125_000, 125_000, 125_000]),
+        # Tiny<>Large chunk splitting
+        ([1, 350], [351]),
+        ([1, 351], [1, 351]),
+        ([1, 351, 6475], [1, 6826]),
+        ([1, 351, 6476], [1, 351, 6476]),
+        ([1, 351, 6476, 25903], [1, 351, 32379]),
+        ([1, 351, 6476, 25904], [1, 351, 6476, 25904]),
+        ([1, 351, 6476, 25904, 51807], [1, 351, 6476, 77711]),
+        ([1, 351, 6476, 25904, 51808], [1, 351, 6476, 25904, 51808]),
+        ([1, 351, 6476, 25904, 51808, 71073], [1, 351, 6476, 25904, 51808, 71073]),
+        (
+            [1, 351, 6476, 25904, 51808, 71073, 71073],
+            [1, 351, 6476, 25904, 51808, 142146],
+        ),
+        (
+            [1, 351, 6476, 25904, 51808, 71073, 71074],
+            [1, 351, 6476, 25904, 51808, 71073, 71074],
+        ),
+        # Does not accept LHS(large)>RHS(tiny), this protects against
+        # [tiny, large, tiny, large] from creating too many chunks.
+        ([351, 1], [352]),
+        ([351, 1, 6474], [6826]),
+        # From 352<>6475 threshold at 3rd chunk prevents combining
+        ([351, 1, 6475], [352, 6475]),
+        # Ideal morsel size is 100_000; ensure we don't split morsels of this size.
+        ([100_000, 100_000, 100_000], [100_000, 100_000, 100_000]),
+    ],
+)
+def test_sink_morsel_splitting_without_user_configuration(
+    input_chunk_lengths: list[int],
+    expected_written_chunk_lengths: list[int],
+) -> None:
+    s = pl.Series("x", [1], dtype=pl.UInt8)
+    df = pl.concat(s.new_from_index(0, n) for n in input_chunk_lengths).to_frame()
+
+    assert df.to_series(0).chunk_lengths() == input_chunk_lengths
+
+    buf = io.BytesIO()
+    df.write_ipc(buf)
+
+    with pyarrow.ipc.open_file(buf) as f:
+        record_batch_lengths = [
+            f.get_record_batch(i).num_rows for i in range(f.num_record_batches)
+        ]
+
+    assert record_batch_lengths == expected_written_chunk_lengths
+
+
+@pytest.mark.parametrize(
+    ("input_chunk_lengths", "expected_written_chunk_lengths"),
+    [
+        ([250_000, 250_000], [122_880, 122_880, 122_880, 122_880, 8480]),
+    ],
+)
+def test_sink_morsel_splitting_with_user_configuration(
+    input_chunk_lengths: list[int],
+    expected_written_chunk_lengths: list[int],
+) -> None:
+
+    s = pl.Series("x", [1], dtype=pl.UInt8)
+    df = pl.concat(s.new_from_index(0, n) for n in input_chunk_lengths).to_frame()
+
+    assert df.to_series(0).chunk_lengths() == input_chunk_lengths
+
+    # We must split exactly when the user requests a specific record batch size,
+    # even if this causes the morsels to span across chunk boundaries.
+    buf = io.BytesIO()
+    df.write_ipc(buf, record_batch_size=122_880)
+
+    with pyarrow.ipc.open_file(buf) as f:
+        record_batch_lengths = [
+            f.get_record_batch(i).num_rows for i in range(f.num_record_batches)
+        ]
+
+    assert record_batch_lengths == expected_written_chunk_lengths
+
+
+@pytest.mark.write_disk
+def test_sink_deadlock_28284(tmp_path: Path) -> None:
+    data_path = tmp_path / "lineitem.parquet"
+    out_path = tmp_path / "out.parquet"
+
+    pl.DataFrame(
+        {
+            "l_extendedprice": [1.0, 2.0, 3.0, 4.0],
+            "l_discount": [0.05, 0.06, 0.05, 0.07],
+            "l_quantity": [10, 20, 30, 5],
+        }
+    ).write_parquet(data_path)
+
+    assert (
+        subprocess.check_output(
+            [
+                sys.executable,
+                "-c",
+                """\
+import sys
+
+import polars as pl
+
+(_, data_path, out_path) = sys.argv
+
+q = (
+    pl.scan_parquet(data_path)
+    .filter(pl.col("l_discount").is_between(0.05, 0.07), pl.col("l_quantity") < 24)
+    .select(
+        (pl.col("l_extendedprice") * pl.col("l_discount")).sum().alias("revenue")
+    )
+)
+
+sink = q.sink_parquet(out_path, lazy=True)
+preview = q.head(10)
+count = q.select(pl.len())
+
+pl.collect_all([sink, preview, count], engine="streaming")
+print("OK", end="")
+""",
+                str(data_path),
+                str(out_path),
+            ],
+            timeout=3,
+        ).decode()
+        == "OK"
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_upload_chunk_size_config(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    capfd.readouterr()
+    pl.LazyFrame({"x": 1}).sink_ipc(format_file_uri(tmp_path / "data.ipc"))
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith("None")
+
+    capfd.readouterr()
+    with pytest.raises(OSError):
+        pl.LazyFrame({"x": 1}).sink_ipc(
+            "s3://.../...",
+            storage_options={
+                "max_retries": 0,
+                "aws_endpoint_url": "https://localhost:333",
+            },
+        )
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+        "Some(33554432)"
+    )
+
+    plmonkeypatch.setenv("POLARS_UPLOAD_CHUNK_SIZE", "13579")
+
+    capfd.readouterr()
+    pl.LazyFrame({"x": 1}).sink_ipc(format_file_uri(tmp_path / "data.ipc"))
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+        "Some(13579)"
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_upload_chunk_size_config_partitioned(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    capfd.readouterr()
+    pl.LazyFrame({"x": 1}).sink_ipc(
+        pl.PartitionBy(
+            format_file_uri(tmp_path / "data.ipc"),
+            max_rows_per_file=1,
+        )
+    )
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith("None")
+
+    capfd.readouterr()
+    with pytest.raises(OSError):
+        pl.LazyFrame({"x": 1}).sink_ipc(
+            pl.PartitionBy(
+                "s3://.../...",
+                max_rows_per_file=1,
+            ),
+            storage_options={
+                "max_retries": 0,
+                "aws_endpoint_url": "https://localhost:333",
+            },
+        )
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+        "Some(6291456)"
+    )
+
+    plmonkeypatch.setenv("POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE", "13579")
+
+    capfd.readouterr()
+    pl.LazyFrame({"x": 1}).sink_ipc(
+        pl.PartitionBy(
+            format_file_uri(tmp_path / "data.ipc"),
+            max_rows_per_file=1,
+        )
+    )
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+        "Some(13579)"
     )

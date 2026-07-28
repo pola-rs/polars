@@ -77,7 +77,10 @@ impl ComputeNode for UnorderedUnionNode {
                         while let Ok(mut morsel) = receiver.recv().await {
                             // Ensure the morsel matches the expected output schema,
                             // casting nulls to the appropriate output type.
-                            morsel.df_mut().ensure_matches_schema(&output_schema)?;
+                            morsel
+                                .df_mut()
+                                .await
+                                .ensure_matches_schema(&output_schema)?;
 
                             if sender.send(morsel).await.is_err() {
                                 break;

@@ -16,7 +16,11 @@ from polars.exceptions import (
     UnsuitableSQLError,
 )
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
-from polars.io.database._cursor_proxies import ODBCCursorProxy, SurrealDBCursorProxy
+from polars.io.database._cursor_proxies import (
+    ODBCCursorProxy,
+    OracleCursorProxy,
+    SurrealDBCursorProxy,
+)
 from polars.io.database._inference import dtype_from_cursor_description
 from polars.io.database._utils import _run_async
 
@@ -86,6 +90,8 @@ class ConnectionExecutor:
         )
         if self.driver_name == "surrealdb":
             connection = SurrealDBCursorProxy(client=connection)
+        elif self.driver_name == "oracledb" and hasattr(connection, "fetch_df_all"):
+            connection = OracleCursorProxy(connection)
 
         self.cursor = self._normalise_cursor(connection)
         self.result: Any = None
@@ -429,6 +435,13 @@ class ConnectionExecutor:
                 elif conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
                     return conn
+                elif conn.engine.driver == "oracledb" and hasattr(
+                    raw_conn := conn.engine.raw_connection().driver_connection,
+                    "fetch_df_all",
+                ):
+                    self.driver_name = "oracledb"
+                    self.can_close_cursor = True
+                    return cast("Cursor", OracleCursorProxy(raw_conn))
                 elif self._is_alchemy_engine(conn):
                     # note: if we create it, we can close it
                     self.can_close_cursor = True
@@ -595,13 +608,8 @@ class ConnectionExecutor:
             )
             if frame is not None:
                 if defer_cursor_close:
-                    frame = (
-                        df
-                        for df in CloseAfterFrameIter(
-                            frame,
-                            cursor=self.result,
-                        )
-                    )
+                    frame_cursor = CloseAfterFrameIter(frame, cursor=self.cursor)
+                    frame = (df for df in frame_cursor)
                 return frame
 
         msg = (

@@ -130,13 +130,13 @@ pub(crate) fn det_join_schema(
         // df(cols=[B, A, B_right])
         JoinType::Right if options.args.should_coalesce() => {
             // Get join names.
-            let mut join_on_left: PlHashSet<_> = PlHashSet::with_capacity(left_on.len());
+            let mut join_on_left: PlIndexSet<_> = PlIndexSet::with_capacity(left_on.len());
             for e in left_on {
                 let field = e.field(schema_left, expr_arena)?;
                 join_on_left.insert(field.name);
             }
 
-            let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
+            let mut join_on_right: PlIndexSet<_> = PlIndexSet::with_capacity(right_on.len());
             for e in right_on {
                 let field = e.field(schema_right, expr_arena)?;
                 join_on_right.insert(field.name);
@@ -190,7 +190,7 @@ pub(crate) fn det_join_schema(
                 join_on_right.insert(field.name);
             }
 
-            let mut right_by: PlHashSet<&PlSmallStr> = PlHashSet::default();
+            let mut right_by: PlIndexSet<&PlSmallStr> = PlIndexSet::default();
             #[cfg(feature = "asof_join")]
             if let JoinType::AsOf(asof_options) = &options.args.how {
                 if let Some(v) = &asof_options.right_by {

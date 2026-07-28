@@ -4,7 +4,7 @@ use std::sync::Arc;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
-use polars_ooc::{MostRecentSpillContext, SpillFrame};
+use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 
 use super::compute_node_prelude::*;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
@@ -29,7 +29,7 @@ struct ShiftState {
     frames: VecDeque<SpillFrame>,
     fill: DataFrame,
     seq: MorselSeq,
-    spill_ctx: Arc<MostRecentSpillContext>,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl ShiftState {
@@ -51,8 +51,8 @@ impl ShiftState {
                         continue;
                     }
                     self.rows_received += morsel.height();
-                    self.frames
-                        .push_back(SpillFrame::new(morsel.into_df(), &*self.spill_ctx).await);
+                    self.spill_ctx.register(morsel.sf()).await;
+                    self.frames.push_back(morsel.into_sf());
                 }
             }
 
@@ -75,7 +75,7 @@ impl ShiftState {
             };
             self.rows_sent += df.height();
 
-            let mut morsel = Morsel::new(df, self.seq, source_token.clone());
+            let mut morsel = Morsel::new_unregistered(df, self.seq, source_token.clone());
             self.seq = self.seq.successor();
             morsel.set_consume_token(wait_group.token());
             if send.send(morsel).await.is_err() {
@@ -98,8 +98,9 @@ impl ShiftState {
             let shift_needed = shift.saturating_sub(self.rows_received);
             self.rows_received += morsel.height();
             if shift_needed > 0 {
-                morsel =
-                    morsel.map(|df| df.slice(shift_needed.min(df.height()) as i64, df.height()));
+                morsel = morsel
+                    .map(|df| df.slice(shift_needed.min(df.height()) as i64, df.height()))
+                    .await;
             }
             if morsel.height() == 0 {
                 continue;
@@ -134,7 +135,7 @@ impl ShiftState {
             let df = self.fill.new_from_index(0, len);
             self.rows_sent += len;
 
-            let mut morsel = Morsel::new(df, self.seq, source_token.clone());
+            let mut morsel = Morsel::new_unregistered(df, self.seq, source_token.clone());
             self.seq = self.seq.successor();
             morsel.set_consume_token(wait_group.token());
             if send.send(morsel).await.is_err() {

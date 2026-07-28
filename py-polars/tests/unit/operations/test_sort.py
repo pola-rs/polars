@@ -1382,3 +1382,28 @@ def test_sort_by_reverse_preserves_null_placement_27917(
         df.lazy().select(expr).collect(),
         df.lazy().select(expr).collect(optimizations=pl.QueryOptFlags.none()),
     )
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_sort_by_reverse_preserves_tie_order_with_maintain_order_28386(
+    descending: bool,
+) -> None:
+    df = pl.DataFrame({"k": [1, 1, 1], "v": [10, 20, 30]})
+    expr = (
+        pl.col("v").sort_by("k", descending=descending, maintain_order=True).reverse()
+    )
+
+    assert_frame_equal(
+        df.lazy().select(expr).collect(),
+        df.lazy().select(expr).collect(optimizations=pl.QueryOptFlags.none()),
+    )
+
+
+def test_sort_scalar_broadcast_in_memory_28387() -> None:
+    lf = (
+        pl.DataFrame({"a": [1, 2, 3]})
+        .lazy()
+        .select(pl.col("a"), pl.lit(9).cast(pl.Int64).sort().alias("s"))
+    )
+    expected = pl.DataFrame({"a": [1, 2, 3], "s": [9, 9, 9]})
+    assert_frame_equal(lf.collect(), expected)

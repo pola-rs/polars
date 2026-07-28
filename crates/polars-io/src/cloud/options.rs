@@ -34,15 +34,21 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "cloud")]
 use super::credential_provider::PlCredentialProvider;
 #[cfg(feature = "cloud")]
-use super::dns::get_dns_cache_ttl;
-#[cfg(feature = "cloud")]
 use crate::cloud::ObjectStoreErrorContext;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-use crate::cloud::dns::CachingResolver;
+use crate::cloud::dns::{CachingResolver, DnsResolverConfig};
 #[cfg(feature = "file_cache")]
 use crate::file_cache::get_env_file_cache_ttl;
 #[cfg(feature = "aws")]
 use crate::pl_async::with_concurrency_budget;
+
+#[cfg(feature = "aws")]
+fn to_io_err(err: reqwest::Error) -> PolarsError {
+    PolarsError::IO {
+        error: Arc::new(std::io::Error::other(err)),
+        msg: None,
+    }
+}
 
 #[cfg(feature = "aws")]
 static BUCKET_REGION: LazyLock<
@@ -160,7 +166,7 @@ impl From<CloudRetryConfig> for object_store::RetryConfig {
         };
 
         if verbose() {
-            eprintln!("object-store retry config: {:?}", &out)
+            eprintln!("object-store retry config: {:?}", out)
         }
 
         return out;
@@ -297,7 +303,9 @@ pub(super) fn get_client_options() -> ClientOptions {
         ))
         .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
-        .with_dns_resolver(Arc::new(CachingResolver::new(get_dns_cache_ttl())))
+        .with_dns_resolver(Arc::new(
+            CachingResolver::new(DnsResolverConfig::from_env()),
+        ))
 }
 
 #[cfg(feature = "aws")]
@@ -464,7 +472,7 @@ impl CloudOptions {
                                 .head(format!("https://{bucket}.s3.amazonaws.com"))
                                 .send()
                                 .await
-                                .map_err(to_compute_err)
+                                .map_err(to_io_err)
                         })
                         .await?;
                         if let Some(region) = result.headers().get("x-amz-bucket-region") {
@@ -509,8 +517,17 @@ impl CloudOptions {
             builder
         };
 
+        let builder = if builder
+            .get_config_value(&AmazonS3ConfigKey::Checksum)
+            .is_none()
+        {
+            // AWS default checksum, which is also more efficient than SHA256.
+            builder.with_checksum_algorithm(object_store::aws::Checksum::CRC64NVME)
+        } else {
+            builder
+        };
+
         let out = builder
-            .with_checksum_algorithm(object_store::aws::Checksum::CRC64NVME)
             .with_unsigned_payload(true)
             .build()
             .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
@@ -565,7 +582,7 @@ impl CloudOptions {
                 if verbose {
                     eprintln!(
                         "[CloudOptions::build_azure]: Using credential provider {:?}",
-                        &v
+                        v
                     );
                 }
                 builder.with_credentials(v.into_azure_provider())
