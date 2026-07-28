@@ -698,14 +698,7 @@ pub fn function_expr_sortedness(
             nulls_last: Some(false),
         }),
         IRFunctionExpr::SetSortedFlag(sortedness) => match sortedness.descending {
-            Some(false) => Some(AExprSorted {
-                descending: Some(false),
-                nulls_last: None,
-            }),
-            Some(true) => Some(AExprSorted {
-                descending: Some(true),
-                nulls_last: None,
-            }),
+            Some(_) => Some(*sortedness),
             None => None,
         },
 
