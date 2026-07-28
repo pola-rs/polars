@@ -89,45 +89,27 @@ fn finish_from_rows(
     strict: bool,
     infer_schema_length: Option<usize>,
 ) -> PyResult<PyDataFrame> {
-    let schema = if let Some(mut schema) = schema {
+    // Strictly validate values only against dtypes the caller specified; dtypes
+    // inferred from the data are supertypes the values are meant to be coerced to.
+    let (schema, strict_columns) = if let Some(mut schema) = schema {
         resolve_schema_overrides(&mut schema, schema_overrides);
+        let strict_columns: Vec<bool> =
+            schema.iter_values().map(|dtype| dtype.is_known()).collect();
         update_schema_from_rows(&mut schema, &rows, infer_schema_length)?;
-        schema
+        (schema, strict_columns)
     } else {
-        rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?
+        let schema =
+            rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?;
+        let strict_columns = vec![false; schema.len()];
+        (schema, strict_columns)
     };
 
-    let num_rows = rows.len();
-
-    if strict && !rows.windows(2).all(|w| w[0].0.len() == w[1].0.len()) {
-        return Err(PyPolarsErr::from(polars_err!(
-            ComputeError: "rows must be of equal length"
-        ))
-        .into());
+    let df = if strict {
+        DataFrame::from_rows_and_schema_strict(&rows, &schema, Some(&strict_columns))
+    } else {
+        DataFrame::from_rows_and_schema(&rows, &schema)
     }
-
-    let mut column_values = (0..schema.len())
-        .map(|_| Vec::with_capacity(num_rows))
-        .collect::<Vec<_>>();
-
-    for row in rows {
-        let mut values = row.0.into_iter();
-        for column in &mut column_values {
-            column.push(values.next().unwrap_or(AnyValue::Null));
-        }
-    }
-
-    let columns: Vec<Column> = schema
-        .iter()
-        .zip(column_values)
-        .map(|((name, dtype), values)| {
-            Series::from_any_values_and_dtype(name.clone(), &values, dtype, strict)
-                .map(|series| series.into_column())
-        })
-        .collect::<PolarsResult<Vec<_>>>()
-        .map_err(PyPolarsErr::from)?;
-
-    let df = DataFrame::new(num_rows, columns).map_err(PyPolarsErr::from)?;
+    .map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }
 

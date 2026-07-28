@@ -20,6 +20,7 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
     PolarsInefficientMapWarning,
+    SchemaError,
 )
 from polars.testing import (
     assert_frame_equal,
@@ -90,6 +91,7 @@ def test_fill_null_temporal() -> None:
             ("j", pl.Duration("ns")),
         ],
         orient="row",
+        strict=False,
     )
 
     # fill literals
@@ -852,6 +854,7 @@ def test_temporal_dtypes_map_elements(
             "time": pl.Time,
         },
         orient="row",
+        strict=False,
     )
     assert_frame_equal(result, expected)
 
@@ -878,8 +881,14 @@ def test_timedelta_timeunit_init() -> None:
             ("z", pl.Duration("ns")),
         ],
         orient="row",
+        strict=False,
     )
     assert df.rows() == [(td_ms, td_us, td_us)]
+
+    # A timedelta extracts with microsecond precision; under strict construction
+    # it does not match a Duration column with a different time unit.
+    with pytest.raises(SchemaError, match="Duration"):
+        pl.DataFrame([[td_us]], schema=[("x", pl.Duration("ms"))], orient="row")
 
 
 def test_duration_filter() -> None:

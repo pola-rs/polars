@@ -12,6 +12,18 @@ use super::*;
 use crate::chunked_array::builder::NullChunkedBuilder;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
+#[cfg(feature = "dtype-date")]
+use crate::series::any_value::av_to_date_strict;
+#[cfg(feature = "dtype-datetime")]
+use crate::series::any_value::av_to_datetime_strict;
+#[cfg(feature = "dtype-duration")]
+use crate::series::any_value::av_to_duration_strict;
+#[cfg(feature = "dtype-time")]
+use crate::series::any_value::av_to_time_strict;
+use crate::series::any_value::{
+    av_to_bool_strict, av_to_f32_strict, av_to_f64_strict, av_to_integer_strict, av_to_str_strict,
+    invalid_value_error,
+};
 
 #[derive(Clone)]
 pub enum AnyValueBuffer<'a> {
@@ -163,6 +175,52 @@ impl<'a> AnyValueBuffer<'a> {
                 it might also be that a value overflows the data-type's capacity", val, val.dtype()
             )
         })
+    }
+
+    /// Add a value to the buffer, rejecting values that do not match the buffer's dtype.
+    ///
+    /// The accepted conversions are defined by the per-value `av_to_*_strict` helpers
+    /// shared with `Series::from_any_values_and_dtype`, so that both construction
+    /// paths have identical strict semantics.
+    #[inline]
+    pub(crate) fn add_strict(&mut self, value: &AnyValue<'a>) -> PolarsResult<()> {
+        use AnyValueBuffer::*;
+        match self {
+            Boolean(builder) => builder.append_option(av_to_bool_strict(value)?),
+            #[cfg(feature = "dtype-i8")]
+            Int8(builder) => builder.append_option(av_to_integer_strict::<Int8Type>(value)?),
+            #[cfg(feature = "dtype-i16")]
+            Int16(builder) => builder.append_option(av_to_integer_strict::<Int16Type>(value)?),
+            Int32(builder) => builder.append_option(av_to_integer_strict::<Int32Type>(value)?),
+            Int64(builder) => builder.append_option(av_to_integer_strict::<Int64Type>(value)?),
+            #[cfg(feature = "dtype-u8")]
+            UInt8(builder) => builder.append_option(av_to_integer_strict::<UInt8Type>(value)?),
+            #[cfg(feature = "dtype-u16")]
+            UInt16(builder) => builder.append_option(av_to_integer_strict::<UInt16Type>(value)?),
+            UInt32(builder) => builder.append_option(av_to_integer_strict::<UInt32Type>(value)?),
+            UInt64(builder) => builder.append_option(av_to_integer_strict::<UInt64Type>(value)?),
+            #[cfg(feature = "dtype-date")]
+            Date(builder) => builder.append_option(av_to_date_strict(value)?),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(builder, time_unit, time_zone) => builder.append_option(
+                av_to_datetime_strict(value, *time_unit, time_zone.as_ref())?,
+            ),
+            #[cfg(feature = "dtype-duration")]
+            Duration(builder, time_unit) => {
+                builder.append_option(av_to_duration_strict(value, *time_unit)?)
+            },
+            #[cfg(feature = "dtype-time")]
+            Time(builder) => builder.append_option(av_to_time_strict(value)?),
+            Float32(builder) => builder.append_option(av_to_f32_strict(value)?),
+            Float64(builder) => builder.append_option(av_to_f64_strict(value)?),
+            String(builder) => builder.append_option(av_to_str_strict(value)?),
+            Null(builder) => match value {
+                AnyValue::Null => builder.append_null(),
+                value => return Err(invalid_value_error(&DataType::Null, value)),
+            },
+            All(_, values) => values.push(value.clone().into_static()),
+        }
+        Ok(())
     }
 
     pub fn reset(&mut self, capacity: usize, strict: bool) -> PolarsResult<Series> {

@@ -176,6 +176,7 @@ def test_group_by_agg_equals_zero_3535() -> None:
             ("val2", pl.Float32),
         ],
         orient="row",
+        strict=False,
     )
     # group by the key, aggregating the two numeric cols
     assert df.group_by(pl.col("key"), maintain_order=True).agg(

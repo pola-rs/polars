@@ -1356,7 +1356,6 @@ def test_from_generator_or_iterable() -> None:
         data=chain(repeat({"col": 1}, length_minus_1 := 100), repeat({"col": 1.1}, 1)),
         infer_schema_length=None,
         chunk_size=length_minus_1,
-        strict=False,
     )
     assert d.dtypes() == [pl.Float64()]
 

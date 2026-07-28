@@ -1047,6 +1047,10 @@ def iterable_to_pydf(
             df = frame_chunk
             if not original_schema:
                 original_schema = list(df.schema.items())
+                # later chunks are built against this inferred schema; coerce to
+                # it rather than validate, so that chunk boundaries do not
+                # change inference semantics
+                strict = False
             if chunk_size != adaptive_chunk_size:
                 if (n_columns := df.width) > 0:
                     chunk_size = adaptive_chunk_size = n_chunk_elems // n_columns

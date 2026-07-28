@@ -16,7 +16,7 @@ macro_rules! invalid_operation_panic {
 }
 
 pub mod amortized_iter;
-mod any_value;
+pub(crate) mod any_value;
 pub mod arithmetic;
 pub mod arrow_export;
 pub mod builder;

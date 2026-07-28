@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 import sys
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any
 
@@ -139,6 +139,8 @@ def test_df_init_rows_strict_enum() -> None:
     with pytest.raises(SchemaError, match="archived"):
         pl.DataFrame(data, schema_overrides={"status": enum_dtype})
 
+    # Tuple rows build Enum columns as String and cast afterwards, so this
+    # (known) divergence surfaces the error as InvalidOperationError instead.
     with pytest.raises(InvalidOperationError, match="archived"):
         pl.DataFrame(
             [(10, "draft"), (10, "archived")],
@@ -155,6 +157,44 @@ def test_df_init_rows_strict_enum() -> None:
         "id": [10, 10],
         "status": ["draft", None],
     }
+
+
+def test_df_init_rows_strict_inferred_columns_coerce() -> None:
+    # Strictness applies to dtypes the caller specified; dtypes inferred from
+    # the data are supertypes, and the values are coerced to them.
+    result = pl.DataFrame([{"a": 1}, {"a": 2.5}])
+    assert result["a"].to_list() == [1.0, 2.5]
+    assert result["a"].dtype == pl.Float64
+
+    result = pl.DataFrame([("x", 1), ("y", 2.5)], orient="row")
+    assert result.to_series(1).to_list() == [1.0, 2.5]
+
+    # A partial schema only validates the specified columns strictly.
+    result = pl.DataFrame(
+        [{"a": 1, "b": 1}, {"a": 2.5, "b": 2}],
+        schema={"a": None, "b": pl.Int64},
+    )
+    assert result["a"].to_list() == [1.0, 2.5]
+    assert result["b"].dtype == pl.Int64
+
+    with pytest.raises(SchemaError, match="Float64"):
+        pl.DataFrame(
+            [{"a": 1, "b": 1}, {"a": 2.5, "b": 2.5}],
+            schema={"a": None, "b": pl.Int64},
+        )
+
+
+def test_df_init_chunked_generator_inferred_schema_coerces() -> None:
+    # Chunks after the first are built against the schema inferred from the
+    # first chunk; those dtypes must be coerced to, not strictly validated,
+    # so that chunk boundaries do not change inference semantics.
+    def gen() -> Iterator[dict[str, Any]]:
+        yield from ({"x": i} for i in range(1000))
+        yield {"x": 2.5}
+
+    result = pl.DataFrame(gen())
+    assert result.height == 1001
+    assert result["x"].dtype == pl.Int64
 
 
 def test_df_init_rows_strict_numeric() -> None:
