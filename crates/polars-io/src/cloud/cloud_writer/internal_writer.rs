@@ -46,7 +46,9 @@ impl InternalCloudWriter {
     /// Internal helper that actually initializes the S3 multipart upload session.
     async fn start_multipart(&mut self) -> PolarsResult<()> {
         match &self.state {
-            WriterState::Finished => panic!("Cannot start multipart on a finished InternalCloudWriter"),
+            WriterState::Finished => {
+                panic!("Cannot start multipart on a finished InternalCloudWriter")
+            },
             WriterState::Started(_) => return Ok(()),
             WriterState::NotStarted(_) => {},
         }
