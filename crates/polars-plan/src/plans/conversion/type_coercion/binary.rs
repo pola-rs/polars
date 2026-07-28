@@ -273,11 +273,10 @@ pub(super) fn coerced_binop_dtype(
         st = String
     }
 
+    // TODO! raise here?
+    // We should at least never cast to Unknown.
     if matches!(st, DataType::Unknown(_)) {
-        st = st.materialize_unknown(true)?;
-        if matches!(st, DataType::Unknown(_)) {
-            return Ok(None);
-        }
+        return Ok(None);
     }
 
     Ok(Some(st))
@@ -323,6 +322,30 @@ pub(super) fn process_binary(
                 left,
                 op,
                 right: node_right,
+            }));
+        },
+        (Unknown(UnknownKind::Int(_)), Unknown(UnknownKind::Float)) => {
+            let left = expr_arena.add(AExpr::Cast {
+                expr: node_left,
+                dtype: Unknown(UnknownKind::Float),
+                options: CastOptions::NonStrict,
+            });
+            return Ok(Some(AExpr::BinaryExpr {
+                left,
+                op,
+                right: node_right,
+            }));
+        },
+        (Unknown(UnknownKind::Float), Unknown(UnknownKind::Int(_))) => {
+            let right = expr_arena.add(AExpr::Cast {
+                expr: node_right,
+                dtype: Unknown(UnknownKind::Float),
+                options: CastOptions::NonStrict,
+            });
+            return Ok(Some(AExpr::BinaryExpr {
+                left: node_left,
+                op,
+                right,
             }));
         },
         _ => {},
