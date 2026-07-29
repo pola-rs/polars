@@ -19,6 +19,21 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
+def test_streaming_group_by_slice_out_of_range_28554() -> None:
+    query = (
+        pl.DataFrame({"k": [1], "a": [1]})
+        .lazy()
+        .group_by("k")
+        .agg(s=pl.col("a").sum())
+        .slice(2, 1)
+    )
+
+    assert_frame_equal(
+        query.collect(engine="streaming"),
+        pl.DataFrame(schema={"k": pl.Int64, "s": pl.Int64}),
+    )
+
+
 @pytest.mark.slow
 def test_streaming_group_by_sorted_fast_path_nulls_10273() -> None:
     df = pl.Series(
