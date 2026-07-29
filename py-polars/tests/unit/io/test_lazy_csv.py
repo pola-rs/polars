@@ -783,3 +783,8 @@ A,B
         pl.scan_csv(buf, schema=schema, has_header=False, skip_rows=1).collect(),
         pl.DataFrame({"x": "A", "y": "B"}),
     )
+
+
+def test_scan_csv_extra_columns_truncate_ragged_lines() -> None:
+    with pytest.raises(ValueError):
+        pl.scan_csv(b"", extra_columns="ignore", truncate_ragged_lines=False)

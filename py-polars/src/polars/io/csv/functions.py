@@ -816,7 +816,7 @@ def scan_csv(
     eol_char: str = "\n",
     new_columns: Sequence[str] | None = None,
     raise_if_empty: bool = True,
-    truncate_ragged_lines: bool = False,
+    truncate_ragged_lines: bool | None = None,
     decimal_comma: bool = False,
     glob: bool = True,
     storage_options: StorageOptionsDict | None = None,
@@ -1113,6 +1113,10 @@ def scan_csv(
         issue_unstable_warning(msg)
     else:
         extra_columns = "raise"
+
+    if extra_columns == "ignore" and truncate_ragged_lines is False:
+        msg = "cannot set truncate_ragged_lines=False with extra_columns='ignore'"
+        raise ValueError(msg)
 
     if missing_columns is not None:
         msg = "The `missing_columns` parameter of `scan_csv` is considered unstable."
