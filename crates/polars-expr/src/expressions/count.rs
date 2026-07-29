@@ -33,10 +33,10 @@ pub fn evaluate_count_on_ac<'a>(
                         let offsets = arr.offsets().as_slice();
 
                         let mut previous = 0i64;
-                        let counts: NoNull<IdxCa> = offsets[1..]
+                        let counts: NoNull<LenCa> = offsets[1..]
                             .iter()
                             .map(|&o| {
-                                let len = (o - previous) as IdxSize;
+                                let len = (o - previous) as LenSize;
                                 previous = o;
                                 len
                             })
@@ -44,11 +44,11 @@ pub fn evaluate_count_on_ac<'a>(
                         counts.into_inner()
                     },
                     _ => {
-                        let counts: NoNull<IdxCa> = list
+                        let counts: NoNull<LenCa> = list
                             .amortized_iter()
                             .map(|s| {
                                 if let Some(s) = s {
-                                    s.as_ref().len() as IdxSize
+                                    s.as_ref().len() as LenSize
                                 } else {
                                     1
                                 }

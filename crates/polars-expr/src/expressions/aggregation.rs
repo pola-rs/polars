@@ -147,12 +147,12 @@ impl PhysicalExpr for AggregationExpr {
             ),
             GroupByMethod::Groups => unreachable!(),
             GroupByMethod::NUnique => s.n_unique().map(|count| {
-                IdxCa::from_slice(s.name().clone(), &[count as IdxSize]).into_column()
+                LenCa::from_slice(s.name().clone(), &[count as LenSize]).into_column()
             }),
             GroupByMethod::Count { include_nulls } => {
                 let count = s.len() - s.null_count() * !include_nulls as usize;
 
-                Ok(IdxCa::from_slice(s.name().clone(), &[count as IdxSize]).into_column())
+                Ok(LenCa::from_slice(s.name().clone(), &[count as LenSize]).into_column())
             },
             GroupByMethod::Implode { maintain_order: _ } => s.implode().map(|ca| ca.into_column()),
             GroupByMethod::Std(ddof) => s
