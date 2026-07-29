@@ -94,6 +94,8 @@ pub fn count_rows_from_reader_par(
     let (_, mut leftover) = read_until_start_and_infer_schema(
         &reader_options,
         None,
+        true,
+        true,
         decompressed_size_hint,
         None,
         &mut reader,
