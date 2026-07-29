@@ -13,7 +13,7 @@ use crate::series::ops::SeriesSealed;
 
 pub trait SeriesMethods: SeriesSealed {
     /// Create a [`DataFrame`] with the unique `values` of this [`Series`] and a column `"counts"`
-    /// with dtype [`IdxType`]
+    /// with dtype [`LenType`]
     fn value_counts(
         &self,
         sort: bool,
