@@ -1634,10 +1634,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         _ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
         if plan_stage is None:
-            issue_deprecation_warning(
+            warnings.warn(
                 "The default value of `plan_stage` will change from 'ir' to 'physical' in Polars 2.0. "
                 'Explicitly set `plan_stage="ir"` to suppress this warning.',
-                version="1.44.0",
+                category=FutureWarning,
+                stacklevel=find_stacklevel(),
             )
             plan_stage = "ir"
 
