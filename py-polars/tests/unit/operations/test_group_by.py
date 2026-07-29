@@ -1736,7 +1736,7 @@ def test_group_by_input_independent_with_len_23868() -> None:
         out,
         pl.DataFrame(
             {"literal": "G", "len": 3},
-            schema={"literal": pl.String, "len": pl.get_index_type()},
+            schema={"literal": pl.String, "len": pl.Int64},
         ),
     )
 
@@ -2596,7 +2596,7 @@ def test_grouped_agg_parametric(
                     "key": [0, 1],
                     "a": [1, 1],
                 },
-                schema_overrides={"a": pl.get_index_type()},
+                schema_overrides={"a": pl.Int64},
             ),
         ),
         (
@@ -2613,7 +2613,7 @@ def test_grouped_agg_parametric(
                     "key": [0, 1],
                     "a": [1, 1],
                 },
-                schema_overrides={"a": pl.get_index_type()},
+                schema_overrides={"a": pl.Int64},
             ),
         ),
     ],
