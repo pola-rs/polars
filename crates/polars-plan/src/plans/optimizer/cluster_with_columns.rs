@@ -148,7 +148,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
         // E.g. `LazyFrame().with_columns(a=int_range(5)).with_columns(a=1)`, we cannot prune the int_range as
         // otherwise the query may succeed with 1 row instead of erroring.
-        let mut last_match_idx: usize = 0;
+        let mut last_match_idx: usize = usize::MAX;
         if input_non_scalar_output_height_count != 0
             && push_candidate_idxs.len() >= input_non_scalar_output_height_count
             && push_candidate_idxs
