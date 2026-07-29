@@ -2,7 +2,7 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::datatypes::AnyValue;
+use polars_core::datatypes::{AnyValue, LEN_DTYPE};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet,
@@ -832,7 +832,7 @@ fn lower_exprs_with_ctx(
                 let output_dtype = input_expr.dtype(input_schema, ctx.expr_arena)?.clone();
                 let group_by_output_schema = Arc::new(Schema::from_iter([
                     (key_name.clone(), output_dtype),
-                    (tmp_count_name.clone(), IDX_DTYPE),
+                    (tmp_count_name.clone(), LEN_DTYPE),
                 ]));
 
                 let keys = [input_expr.with_alias(key_name)];
@@ -896,7 +896,7 @@ fn lower_exprs_with_ctx(
                 let output_field = input_expr.field(input_schema, ctx.expr_arena)?;
                 let group_by_output_schema = Arc::new(Schema::from_iter([
                     output_field.clone().with_name(tmp_value_name.clone()),
-                    Field::new(tmp_count_name.clone(), IDX_DTYPE),
+                    Field::new(tmp_count_name.clone(), LEN_DTYPE),
                 ]));
 
                 let keys = [input_expr.with_alias(tmp_value_name.clone())];
@@ -969,7 +969,7 @@ fn lower_exprs_with_ctx(
                 )?;
 
                 let mut group_by_output_schema = stream.output_schema(ctx.phys_sm).as_ref().clone();
-                group_by_output_schema.insert(tmp_count_name.clone(), IDX_DTYPE);
+                group_by_output_schema.insert(tmp_count_name.clone(), LEN_DTYPE);
 
                 let keys = [AExprBuilder::col(tmp_value_name.clone(), ctx.expr_arena)
                     .expr_ir(tmp_value_name.clone())];
@@ -1356,7 +1356,7 @@ fn lower_exprs_with_ctx(
                             PlSmallStr::from_static(RLE_VALUE_COLUMN_NAME),
                             value_dtype.clone(),
                         ),
-                        Field::new(PlSmallStr::from_static(RLE_LENGTH_COLUMN_NAME), IDX_DTYPE),
+                        Field::new(PlSmallStr::from_static(RLE_LENGTH_COLUMN_NAME), LEN_DTYPE),
                     ]),
                 )]);
                 let node_key = ctx
@@ -1382,7 +1382,7 @@ fn lower_exprs_with_ctx(
                 )?;
                 let node_kind = PhysNodeKind::RleId(input);
 
-                let output_schema = Schema::from_iter([(value_key.clone(), IDX_DTYPE)]);
+                let output_schema = Schema::from_iter([(value_key.clone(), LEN_DTYPE)]);
                 let node_key = ctx
                     .phys_sm
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));
@@ -1483,7 +1483,7 @@ fn lower_exprs_with_ctx(
                 };
                 let stop_is_len = matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Len);
 
-                dtype == DataType::IDX_DTYPE && start_is_zero && stop_is_len
+                dtype == LEN_DTYPE && start_is_zero && stop_is_len
             } =>
             {
                 let out_name = unique_column_name();
@@ -1528,7 +1528,7 @@ fn lower_exprs_with_ctx(
 
                 let out_name = unique_column_name();
                 let mut row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
-                if dtype != IDX_DTYPE {
+                if dtype != LEN_DTYPE {
                     row_idx_col_aexpr = AExprBuilder::new_from_node(row_idx_col_aexpr)
                         .cast(dtype, ctx.expr_arena)
                         .node();

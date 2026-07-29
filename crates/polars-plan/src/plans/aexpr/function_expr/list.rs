@@ -85,7 +85,7 @@ impl IRListFunction {
             #[cfg(feature = "list_gather")]
             GatherEvery => mapper.ensure_is_list()?.with_same_dtype(),
             #[cfg(feature = "list_count")]
-            CountMatches => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
+            CountMatches => mapper.ensure_is_list()?.with_dtype(LEN_DTYPE),
             Sum => mapper.nested_sum_type(),
             Min => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
             Max => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
@@ -117,7 +117,7 @@ impl IRListFunction {
                 Ok(DataType::List(Box::new(inner_dt)))
             }),
             Sort(_) => mapper.ensure_is_list()?.with_same_dtype(),
-            Length => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
+            Length => mapper.ensure_is_list()?.with_dtype(LEN_DTYPE),
             #[cfg(feature = "list_sets")]
             SetOperation(_) => mapper.ensure_is_list()?.with_same_dtype(),
             Join(_) => mapper.try_map_dtype(|dtype| {

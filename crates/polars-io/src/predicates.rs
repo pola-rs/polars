@@ -362,7 +362,7 @@ pub trait SkipBatchPredicate: Send + Sync {
 
         columns.push(Column::new_scalar(
             PlSmallStr::from_static("len"),
-            Scalar::new(IDX_DTYPE, batch_size.into()),
+            Scalar::new(LEN_DTYPE, batch_size.into()),
             1,
         ));
 

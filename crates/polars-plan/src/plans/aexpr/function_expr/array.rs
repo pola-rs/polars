@@ -64,7 +64,7 @@ impl IRArrayFunction {
                     &mut mapper.args().iter().map(|x| (x.name.as_str(), &x.dtype)),
                 )?,
             )),
-            Length => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
+            Length => mapper.ensure_is_array()?.with_dtype(LEN_DTYPE),
             Min | Max => mapper
                 .ensure_is_array()?
                 .map_to_list_and_array_inner_dtype(),
@@ -85,7 +85,7 @@ impl IRArrayFunction {
             #[cfg(feature = "is_in")]
             Contains { nulls_equal: _ } => mapper.ensure_is_array()?.with_dtype(DataType::Boolean),
             #[cfg(feature = "array_count")]
-            CountMatches => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
+            CountMatches => mapper.ensure_is_array()?.with_dtype(LEN_DTYPE),
             Shift => mapper.ensure_is_array()?.with_same_dtype(),
             Explode { .. } => mapper.ensure_is_array()?.try_map_to_array_inner_dtype(),
             Slice(offset, length) => mapper

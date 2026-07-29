@@ -44,7 +44,7 @@ impl PhysicalExpr for LenExpr {
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
-        Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE))
+        Ok(Field::new(PlSmallStr::from_static(LEN), LEN_DTYPE))
     }
 
     fn is_scalar(&self) -> bool {

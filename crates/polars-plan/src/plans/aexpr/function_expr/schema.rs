@@ -35,7 +35,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "abs")]
             Abs => mapper.with_same_dtype(),
             Negate => mapper.with_same_dtype(),
-            NullCount => mapper.with_dtype(IDX_DTYPE),
+            NullCount => mapper.with_dtype(LEN_DTYPE),
             Pow(pow_function) => match pow_function {
                 IRPowFunction::Generic => mapper.pow_dtype(),
                 _ => mapper.map_numeric_to_float_dtype(true),
@@ -196,7 +196,7 @@ impl IRFunctionExpr {
                 let count_dt = if *normalize {
                     DataType::Float64
                 } else {
-                    IDX_DTYPE
+                    LEN_DTYPE
                 };
                 DataType::Struct(vec![
                     Field::new(fields[0].name().clone(), dt.clone()),
@@ -204,10 +204,10 @@ impl IRFunctionExpr {
                 ])
             }),
             #[cfg(feature = "unique_counts")]
-            UniqueCounts => mapper.with_dtype(IDX_DTYPE),
+            UniqueCounts => mapper.with_dtype(LEN_DTYPE),
             Shift | Reverse => mapper.with_same_dtype(),
             #[cfg(feature = "cum_agg")]
-            CumCount { .. } => mapper.with_dtype(IDX_DTYPE),
+            CumCount { .. } => mapper.with_dtype(LEN_DTYPE),
             #[cfg(feature = "cum_agg")]
             CumSum { .. } => mapper.map_dtype(cum::dtypes::cum_sum),
             #[cfg(feature = "cum_agg")]
@@ -217,7 +217,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "cum_agg")]
             CumMax { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "approx_unique")]
-            ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
+            ApproxNUnique => mapper.with_dtype(LEN_DTYPE),
             #[cfg(feature = "hist")]
             Hist {
                 include_category,
@@ -238,10 +238,10 @@ impl IRFunctionExpr {
                             DataType::from_categories(Categories::global()),
                         ));
                     }
-                    fields.push(Field::new(PlSmallStr::from_static("count"), IDX_DTYPE));
+                    fields.push(Field::new(PlSmallStr::from_static("count"), LEN_DTYPE));
                     mapper.with_dtype(DataType::Struct(fields))
                 } else {
-                    mapper.with_dtype(IDX_DTYPE)
+                    mapper.with_dtype(LEN_DTYPE)
                 }
             },
             #[cfg(feature = "diff")]
@@ -350,12 +350,12 @@ impl IRFunctionExpr {
             #[cfg(feature = "rle")]
             RLE => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![
-                    Field::new(PlSmallStr::from_static("len"), IDX_DTYPE),
+                    Field::new(PlSmallStr::from_static("len"), LEN_DTYPE),
                     Field::new(PlSmallStr::from_static("value"), dt.clone()),
                 ])
             }),
             #[cfg(feature = "rle")]
-            RLEID => mapper.with_dtype(IDX_DTYPE),
+            RLEID => mapper.with_dtype(LEN_DTYPE),
             ToPhysical => mapper.to_physical_type(),
             #[cfg(feature = "random")]
             Random { .. } => mapper.with_same_dtype(),
@@ -412,7 +412,7 @@ impl IRFunctionExpr {
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
                 if f.dtype == DataType::Boolean {
-                    f.dtype = IDX_DTYPE;
+                    f.dtype = LEN_DTYPE;
                 }
                 f
             }),
@@ -717,7 +717,7 @@ impl<'a> FieldsMapper<'a> {
         use DataType::*;
         self.map_dtype(|dtype| match dtype {
             Int8 | UInt8 | Int16 | UInt16 => Int64,
-            Boolean => IDX_DTYPE,
+            Boolean => LEN_DTYPE,
             dt => dt.clone(),
         })
     }
@@ -733,7 +733,7 @@ impl<'a> FieldsMapper<'a> {
         })?;
 
         match dt {
-            Boolean => first.coerce(IDX_DTYPE),
+            Boolean => first.coerce(LEN_DTYPE),
             UInt8 | Int8 | Int16 | UInt16 => first.coerce(Int64),
             _ => first.coerce(dt),
         }

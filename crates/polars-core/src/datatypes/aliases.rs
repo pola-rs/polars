@@ -12,6 +12,7 @@ pub type IdxCa = UInt32Chunked;
 pub type IdxCa = UInt64Chunked;
 
 pub const IDX_DTYPE: DataType = DataType::IDX_DTYPE;
+pub const LEN_DTYPE: DataType = DataType::Int64;
 
 #[cfg(not(feature = "bigidx"))]
 pub type IdxType = UInt32Type;

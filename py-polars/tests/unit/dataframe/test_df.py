@@ -3183,10 +3183,7 @@ def test_window_deadlock() -> None:
 
 def test_sum_empty_column_names() -> None:
     df = pl.DataFrame({"x": [], "y": []}, schema={"x": pl.Boolean, "y": pl.Boolean})
-    expected = pl.DataFrame(
-        {"x": [0], "y": [0]},
-        schema={"x": pl.get_index_type(), "y": pl.get_index_type()},
-    )
+    expected = pl.DataFrame({"x": [0], "y": [0]}, schema={"x": pl.Int64, "y": pl.Int64})
     assert_frame_equal(df.sum(), expected)
 
 

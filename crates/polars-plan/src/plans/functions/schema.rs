@@ -41,7 +41,7 @@ impl FunctionIR {
             FastCount { alias, .. } => {
                 let mut schema: Schema = Schema::with_capacity(1);
                 let name = alias.clone().unwrap_or_else(get_len_name);
-                schema.insert_at_index(0, name, IDX_DTYPE)?;
+                schema.insert_at_index(0, name, LEN_DTYPE)?;
                 Ok(Cow::Owned(Arc::new(schema)))
             },
             Rechunk => Ok(Cow::Borrowed(input_schema)),

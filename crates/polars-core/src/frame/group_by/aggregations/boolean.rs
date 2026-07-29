@@ -267,7 +267,7 @@ impl BooleanChunked {
     }
 
     pub(crate) unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
-        self.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
+        self.cast_with_options(&LEN_DTYPE, CastOptions::Overflowing)
             .unwrap()
             .agg_sum(groups)
     }

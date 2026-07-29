@@ -55,7 +55,7 @@ impl_sum_cast!(u128);
 pub fn sum_output_dtype(in_dtype: &DataType) -> DataType {
     use DataType::*;
     match in_dtype {
-        Boolean => IDX_DTYPE,
+        Boolean => LEN_DTYPE,
         Int8 | UInt8 | Int16 | UInt16 => Int64,
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, scale) => Decimal(DEC128_MAX_PREC, *scale),
@@ -482,7 +482,7 @@ impl QuantileAggSeries for Float64Chunked {
 impl ChunkAggSeries for BooleanChunked {
     fn sum_reduce(&self) -> Scalar {
         let v = self.sum();
-        Scalar::new(IDX_DTYPE, v.into())
+        Scalar::new(LEN_DTYPE, v.into())
     }
     fn max_reduce(&self) -> Scalar {
         let v = self.max();

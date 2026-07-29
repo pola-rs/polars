@@ -47,7 +47,7 @@ impl NumericOp {
                 DataType::Float64
             }
         } else if prim_dtype_lhs == &DataType::Boolean && prim_dtype_rhs == &DataType::Boolean {
-            return Ok(IDX_DTYPE);
+            return Ok(LEN_DTYPE);
         } else {
             dtype
         })

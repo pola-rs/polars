@@ -4,11 +4,12 @@ mod skip_batches;
 use std::borrow::Cow;
 
 pub use column_expr::*;
+use polars_core::datatypes::LEN_DTYPE;
+use polars_core::prelude::DataType;
 #[cfg(feature = "dtype-struct")]
 use polars_core::prelude::Field;
 #[cfg(feature = "is_in")]
 use polars_core::prelude::{AnyValue, Series};
-use polars_core::prelude::{DataType, IDX_DTYPE};
 use polars_core::schema::Schema;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -19,9 +20,9 @@ use super::{AExpr, LiteralValue};
 
 /// Statistics-frame dtype of a column's `<col>_nc` (null-count) column.
 ///
-/// Scalar (and non-struct nested) columns carry a single row-level count ([`IDX_DTYPE`]); a
+/// Scalar (and non-struct nested) columns carry a single row-level count ([`LEN_DTYPE`]); a
 /// struct column carries a *per-field* count whose shape mirrors the column (each leaf replaced
-/// by [`IDX_DTYPE`]), so the skip-batch predicate can prune on an individual struct field via
+/// by [`LEN_DTYPE`]), so the skip-batch predicate can prune on an individual struct field via
 /// `col("<col>_nc").struct.field(..)`. The parquet/Delta producers build the `_nc` array to
 /// match this dtype.
 pub fn null_count_dtype(dtype: &DataType) -> DataType {
@@ -33,7 +34,7 @@ pub fn null_count_dtype(dtype: &DataType) -> DataType {
                 .map(|f| Field::new(f.name().clone(), null_count_dtype(f.dtype())))
                 .collect(),
         ),
-        _ => IDX_DTYPE,
+        _ => LEN_DTYPE,
     }
 }
 

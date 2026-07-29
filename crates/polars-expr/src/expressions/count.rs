@@ -73,7 +73,7 @@ pub fn evaluate_count_on_ac<'a>(
         match ac.agg_state() {
             AggState::LiteralScalar(_) => unreachable!(),
             AggState::AggregatedScalar(c) => {
-                c.is_not_null().cast(&IDX_DTYPE).unwrap().into_column()
+                c.is_not_null().cast(&LEN_DTYPE).unwrap().into_column()
             },
             AggState::AggregatedList(s) => {
                 let ca = s.list()?;
@@ -104,7 +104,7 @@ pub fn evaluate_count_on_ac<'a>(
                                     });
                                     count
                                 })
-                                .collect_ca_trusted_with_dtype(PlSmallStr::EMPTY, IDX_DTYPE)
+                                .collect_ca_trusted_with_dtype(PlSmallStr::EMPTY, LEN_DTYPE)
                         },
                         GroupsType::Slice { groups, .. } => {
                             // Slice and use computed null count
@@ -116,7 +116,7 @@ pub fn evaluate_count_on_ac<'a>(
                                     len - s.slice(start as i64, len as usize).null_count()
                                         as IdxSize
                                 })
-                                .collect_ca_trusted_with_dtype(PlSmallStr::EMPTY, IDX_DTYPE)
+                                .collect_ca_trusted_with_dtype(PlSmallStr::EMPTY, LEN_DTYPE)
                         },
                     }
                 };

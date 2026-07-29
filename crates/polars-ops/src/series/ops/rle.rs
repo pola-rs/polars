@@ -168,7 +168,7 @@ pub fn rle(s: &Column) -> PolarsResult<Column> {
 /// Similar to `rle`, but maps values to run IDs.
 pub fn rle_id(s: &Column) -> PolarsResult<Column> {
     if s.is_empty() {
-        return Ok(Column::new_empty(s.name().clone(), &IDX_DTYPE));
+        return Ok(Column::new_empty(s.name().clone(), &LEN_DTYPE));
     }
 
     let (s1, s2) = (s.slice(0, s.len() - 1), s.slice(1, s.len()));

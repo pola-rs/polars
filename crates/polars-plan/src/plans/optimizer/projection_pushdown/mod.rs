@@ -4,6 +4,7 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use edge::Edge;
+use polars_core::datatypes::LEN_DTYPE;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, ScratchIndexMap, ScratchIndexSet};
 use polars_core::schema::Schema;
@@ -1335,12 +1336,12 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         )];
                         max_horizontal_inputs
                             .push(ExprIR::from_column_name(name.clone(), self.expr_arena));
-                        new_output_schema.insert(name.clone(), DataType::IDX_DTYPE);
+                        new_output_schema.insert(name.clone(), LEN_DTYPE);
 
                         let select_ir_node = storage.add(IR::Select {
                             input: *input_ir_node,
                             expr: exprs,
-                            schema: Arc::new(Schema::from_iter([(name, DataType::IDX_DTYPE)])),
+                            schema: Arc::new(Schema::from_iter([(name, LEN_DTYPE)])),
                             options: ProjectionOptions {
                                 run_parallel: false,
                                 duplicate_check: false,

@@ -51,7 +51,7 @@ impl AExpr {
                 .get_field(POLARS_ELEMENT)
                 .ok_or_else(|| polars_err!(invalid_element_use)),
 
-            Len => Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE)),
+            Len => Ok(Field::new(PlSmallStr::from_static(LEN), LEN_DTYPE)),
             #[cfg(feature = "dynamic_group_by")]
             Rolling { function, .. } => {
                 let e = ctx.arena.get(*function);
@@ -194,7 +194,7 @@ impl AExpr {
                                     field.dtype()
                                 )
                             },
-                            Boolean => Some(IDX_DTYPE),
+                            Boolean => Some(LEN_DTYPE),
                             UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
                             #[cfg(feature = "dtype-decimal")]
                             Decimal(_, scale) => Some(Decimal(DEC128_MAX_PREC, *scale)),
@@ -239,12 +239,12 @@ impl AExpr {
                     },
                     NUnique(expr) => {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        field.coerce(IDX_DTYPE);
+                        field.coerce(LEN_DTYPE);
                         Ok(field)
                     },
                     Count { input, .. } => {
                         let mut field = ctx.arena.get(*input).to_field_impl(ctx)?;
-                        field.coerce(IDX_DTYPE);
+                        field.coerce(LEN_DTYPE);
                         Ok(field)
                     },
                 }
@@ -604,7 +604,7 @@ fn get_arithmetic_field(
                 (_, Duration(_)) | (Duration(_), _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                 },
-                (Boolean, Boolean) => IDX_DTYPE,
+                (Boolean, Boolean) => LEN_DTYPE,
                 (l @ List(a), r @ List(b))
                     if ![a, b]
                         .into_iter()

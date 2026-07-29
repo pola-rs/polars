@@ -226,7 +226,7 @@ pub trait SeriesOpsTime: AsSeries {
     ) -> PolarsResult<Series> {
         let mut s = self.as_series().clone();
         if s.dtype() == &DataType::Boolean {
-            s = s.cast(&DataType::IDX_DTYPE).unwrap();
+            s = s.cast(&LEN_DTYPE).unwrap();
         }
         if matches!(
             s.dtype(),
@@ -256,7 +256,7 @@ pub trait SeriesOpsTime: AsSeries {
         if options.weights.is_some() {
             s = s.to_float()?;
         } else if s.dtype() == &DataType::Boolean {
-            s = s.cast(&DataType::IDX_DTYPE).unwrap();
+            s = s.cast(&LEN_DTYPE).unwrap();
         } else if matches!(
             s.dtype(),
             DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
