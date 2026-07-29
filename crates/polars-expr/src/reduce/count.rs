@@ -4,8 +4,8 @@ use polars_core::error::constants::LENGTH_LIMIT_MSG;
 use super::*;
 
 pub struct CountReduce {
-    counts: Vec<u64>,
-    evicted_counts: Vec<u64>,
+    counts: Vec<i64>,
+    evicted_counts: Vec<i64>,
     include_nulls: bool,
 }
 
@@ -43,7 +43,7 @@ impl GroupedReduction for CountReduce {
         if !self.include_nulls {
             count -= values.null_count();
         }
-        self.counts[group_idx as usize] += count as u64;
+        self.counts[group_idx as usize] += count as i64;
         Ok(())
     }
 
@@ -68,7 +68,7 @@ impl GroupedReduction for CountReduce {
                     self.evicted_counts.push(*grp);
                     *grp = 0;
                 }
-                *grp += valid.get_bit_unchecked(*i as usize) as u64;
+                *grp += valid.get_bit_unchecked(*i as usize) as i64;
             }
         } else {
             for (_, g) in subset.iter().zip(group_idxs) {
@@ -110,12 +110,12 @@ impl GroupedReduction for CountReduce {
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
-        let v: Vec<u64> = core::mem::take(&mut self.counts);
+        let v: Vec<i64> = core::mem::take(&mut self.counts);
         let len = v.len();
 
-        let v: Vec<IdxSize> = v
+        let v: Vec<i64> = v
             .into_iter()
-            .filter_map(|x| IdxSize::try_from(x).ok())
+            .filter_map(|x| i64::try_from(x).ok())
             .collect();
 
         polars_ensure!(
@@ -124,7 +124,7 @@ impl GroupedReduction for CountReduce {
             LENGTH_LIMIT_MSG
         );
 
-        Ok(IdxCa::from_vec(PlSmallStr::EMPTY, v).into_series())
+        Ok(Int64Chunked::from_vec(PlSmallStr::EMPTY, v).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {

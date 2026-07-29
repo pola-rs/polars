@@ -2097,7 +2097,7 @@ def test_group_by_order_dispatch(name: str | None) -> None:
     name = "len" if name is None else name
     expected = pl.DataFrame(
         data={"x": ["b", "a"], name: [2, 1]},
-        schema_overrides={name: pl.get_index_type()},
+        schema_overrides={name: pl.Int64},
     )
     assert_frame_equal(result, expected)
     assert_frame_equal(lazy_result.collect(), expected)
