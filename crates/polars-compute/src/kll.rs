@@ -69,11 +69,11 @@ struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
     /// and height *0*. So the order of `levels` is *reversed* wrt `items`.
     items: Vec<T>,
     levels: Vec<Level>,
+    k: usize,
     /// Total number of items that were consumed by this sketch.
     consumed_items: usize,
-    /// Cached capacity of the base compactor, i.e. `compactor_threshold(k, levels.len() - 1)`.
-    base_threshold: usize,
-    k: usize,
+    /// Maximum number of items before we compact.
+    max_size: usize,
     rng: SmallRng,
     scratch: Vec<T>,
 }
@@ -98,14 +98,11 @@ impl<T: fmt::Debug + Clone + TotalOrd> KLLSketch<T> {
     pub fn new(error: f64) -> Self {
         let k = compute_k(error, FAILURE_PROBABILITY, CAPACITY_DECAY);
         let state = IngestingState {
-            // The expected capacity of the vec is equal to the sum of the size of each compactor,
-            // which is [k, (2/3)*k, (2/3)²*k, ...].  The sum of this geometric series is equal to
-            // k / (1 - 2/3) = 3*k
-            items: Vec::with_capacity(3 * k),
+            items: Vec::new(),
             levels: vec![Level { offset: 0, size: 0 }],
-            consumed_items: 0,
-            base_threshold: compactor_threshold(k, 0),
             k,
+            consumed_items: 0,
+            max_size: k,
             rng: SmallRng::from_rng(&mut rand::rng()),
             scratch: Vec::default(),
         };
@@ -150,7 +147,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> KLLSketch<T> {
 impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
     pub fn update(&mut self, value: T) {
         // Fast compare
-        if self.levels[0].size >= self.base_threshold {
+        if self.items.len() >= self.max_size {
             self.compact();
         }
 
@@ -164,20 +161,21 @@ impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
     /// A compactor can only have grown since the last sweep if the one below it was compacted, so
     /// we can stop as soon as we hit one that is not full.
     fn compact(&mut self) {
-        let mut level = 0;
-        while self.levels[level].size >= compactor_threshold(self.k, self.levels.len() - 1 - level)
-        {
-            if level == self.levels.len() - 1 {
-                self.add_new_compactor();
+        for level in 0..self.levels.len() {
+            if self.levels[level].size >= compactor_threshold(self.k, self.levels.len() - 1 - level)
+            {
+                if level == self.levels.len() - 1 {
+                    self.add_new_compactor();
+                }
+                self.compact_level(level);
+                return;
             }
-            self.compact_level(level);
-            level += 1;
         }
     }
 
     fn add_new_compactor(&mut self) {
         self.levels.push(Level { offset: 0, size: 0 });
-        self.base_threshold = compactor_threshold(self.k, self.levels.len() - 1);
+        self.max_size += self.levels.len() - 1;
     }
 
     fn compact_level(&mut self, level: usize) {
