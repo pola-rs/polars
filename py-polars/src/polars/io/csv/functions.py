@@ -1134,6 +1134,9 @@ def scan_csv(
         msg = "cannot set truncate_ragged_lines=False with extra_columns='ignore'"
         raise ValueError(msg)
 
+    if truncate_ragged_lines is None:
+        truncate_ragged_lines = extra_columns == "ignore"
+
     if missing_columns is not None:
         msg = "The `missing_columns` parameter of `scan_csv` is considered unstable."
         issue_unstable_warning(msg)

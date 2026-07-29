@@ -386,10 +386,6 @@ impl LazyFileListReader for LazyCsvReader {
         let extra_columns_policy = self.extra_columns_policy;
         let missing_columns_policy = self.missing_columns_policy.unwrap_or_default();
 
-        if extra_columns_policy == ExtraColumnsPolicy::Ignore {
-            self = self.with_truncate_ragged_lines(true);
-        }
-
         let lf: LazyFrame = DslBuilder::scan_csv(
             self.sources,
             self.read_options,
