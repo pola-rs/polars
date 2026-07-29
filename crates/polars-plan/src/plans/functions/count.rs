@@ -15,10 +15,7 @@ pub fn count_rows(
             FileScanIR::Csv { options } => count_all_rows_csv(sources, options, cloud_options),
             _ => unreachable!(),
         };
-        let count = count?;
-        let count: LenSize = count.try_into().map_err(
-            |_| polars_err!(ComputeError: "count of {} exceeded maximum row size", count),
-        )?;
+        let count = count? as LenSize;
         let column_name = alias.unwrap_or(PlSmallStr::from_static(crate::constants::LEN));
 
         Ok(unsafe { DataFrame::new_unchecked(1, vec![Column::new(column_name, [count])]) })

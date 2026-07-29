@@ -28,8 +28,8 @@ use crate::plans::optimizer::projection_pushdown::edge::{
 };
 use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::{
-    AExpr, ArenaExprIter, ArenaLpIter, ExprIR, ExprOrigin, FunctionIR, IR, IRAggExpr, IRBuilder,
-    IRFunctionExpr, OutputName, det_join_schema,
+    AExpr, AExprBuilder, ArenaExprIter, ArenaLpIter, ExprIR, ExprOrigin, FunctionIR, IR, IRAggExpr,
+    IRBuilder, IRFunctionExpr, OutputName, det_join_schema,
 };
 use crate::prelude::{DistinctOptionsIR, ProjectionOptions};
 use crate::traversal::edge_provider::NodeEdgesProvider;
@@ -781,7 +781,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 let predicate_node = predicate.node();
 
                 'len_to_predicate_sum: {
-                    // .filter(x == 3).select(pl.len()) -> .select((x == 3).sum())
+                    // .filter(x == 3).select(pl.len()) -> .select((x == 3).cast(LEN_DTYPE).sum())
                     if out_edge.projection() != Projection::Len {
                         break 'len_to_predicate_sum;
                     }
@@ -808,10 +808,11 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         break 'len_to_predicate_sum;
                     };
 
-                    self.expr_arena.replace(
-                        select_len_ae_node,
-                        AExpr::Agg(IRAggExpr::Sum(predicate_node)),
-                    );
+                    let replace = AExprBuilder::new_from_node(predicate_node)
+                        .cast(LEN_DTYPE, self.expr_arena) // TODO: Should we change the sum type of Boolean to LEN_DTYPE?
+                        .sum(self.expr_arena)
+                        .build(self.expr_arena);
+                    self.expr_arena.replace(select_len_ae_node, replace);
 
                     *out_edge.projection_mut() = Projection::Names;
                     let names = out_edge.names_mut();

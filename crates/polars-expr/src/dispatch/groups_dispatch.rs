@@ -7,12 +7,13 @@ use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
+use polars_core::datatypes::LEN_DTYPE;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
     AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions,
-    GroupsType, IDX_DTYPE, IntoColumn,
+    GroupsType, IntoColumn,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -84,7 +85,7 @@ pub fn null_count<'a>(
     let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
 
     if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &mut ac.state {
-        *s = s.is_null().cast(&IDX_DTYPE).unwrap().into_column();
+        *s = s.is_null().cast(&LEN_DTYPE).unwrap().into_column();
         return Ok(ac);
     }
 
