@@ -130,7 +130,6 @@ pub(super) fn convert_functions(
             use CategoricalFunction as C;
             use IRCategoricalFunction as IC;
             I::Categorical(match categorical_function {
-                C::GetCategories => IC::GetCategories,
                 #[cfg(feature = "strings")]
                 C::LenBytes => IC::LenBytes,
                 #[cfg(feature = "strings")]
