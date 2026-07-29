@@ -123,7 +123,7 @@ def test_unique_counts() -> None:
             None,
         ],
     )
-    expect = pl.Series("x", [2, 2, 1, 1], dtype=pl.get_index_type())
+    expect = pl.Series("x", [2, 2, 1, 1], dtype=pl.Int64)
     out = s.unique_counts()
     assert_series_equal(expect, out)
 

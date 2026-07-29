@@ -49,7 +49,7 @@ def assert_fast_count(
         # * Otherwise should have at least one `project: 0` (there is 1 per file).
         assert project_logs == {"project: 0"}
 
-    assert result.schema == {expected_name: pl.get_index_type()}
+    assert result.schema == {expected_name: pl.Int64}
     assert result.item() == expected_count
 
     # We disable the fast-count optimization to check that the normal scan

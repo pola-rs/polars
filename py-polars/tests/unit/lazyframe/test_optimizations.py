@@ -127,7 +127,7 @@ def test_is_null_followed_by_sum() -> None:
     # edge case of empty series
     lf = pl.LazyFrame({"val": []}, schema={"val": pl.Int32})
 
-    expected_df = pl.DataFrame({"val": [0]}, schema={"val": pl.get_index_type()})
+    expected_df = pl.DataFrame({"val": [0]}, schema={"val": pl.Int64()})
     result_df = lf.select(pl.col("val").is_null().sum()).collect()
     assert_frame_equal(expected_df, result_df)
 
@@ -137,7 +137,7 @@ def test_is_not_null_followed_by_sum() -> None:
 
     expected_df = pl.DataFrame(
         {"group": [0, 1, 2], "val": [2, 0, 1]},
-        schema_overrides={"val": pl.get_index_type()},
+        schema_overrides={"val": pl.Int64()},
     )
     result_lf = lf.group_by("group", maintain_order=True).agg(
         pl.col("val").is_not_null().sum()
@@ -157,7 +157,7 @@ def test_is_not_null_followed_by_sum() -> None:
     # edge case of empty series
     lf = pl.LazyFrame({"val": []}, schema={"val": pl.Int32})
 
-    expected_df = pl.DataFrame({"val": [0]}, schema={"val": pl.get_index_type()})
+    expected_df = pl.DataFrame({"val": [0]}, schema={"val": pl.Int64})
     result_df = lf.select(pl.col("val").is_not_null().sum()).collect()
     assert_frame_equal(expected_df, result_df)
 
@@ -167,7 +167,7 @@ def test_drop_nulls_followed_by_len() -> None:
 
     expected_df = pl.DataFrame(
         {"group": [0, 1, 2], "val": [2, 0, 1]},
-        schema_overrides={"val": pl.get_index_type()},
+        schema_overrides={"val": pl.Int64},
     )
     result_lf = lf.group_by("group", maintain_order=True).agg(
         pl.col("val").drop_nulls().len()

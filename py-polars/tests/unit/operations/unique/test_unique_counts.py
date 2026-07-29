@@ -9,7 +9,7 @@ from polars.testing.parametric import series
 
 def test_unique_counts() -> None:
     s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
-    expected = pl.Series("id", [1, 2, 3], dtype=pl.get_index_type())
+    expected = pl.Series("id", [1, 2, 3], dtype=pl.Int64)
     assert_series_equal(s.unique_counts(), expected)
 
 
@@ -34,15 +34,15 @@ def test_unique_counts_on_dates() -> None:
 
 def test_unique_counts_null() -> None:
     s = pl.Series([])
-    expected = pl.Series([], dtype=pl.get_index_type())
+    expected = pl.Series([], dtype=pl.Int64)
     assert_series_equal(s.unique_counts(), expected)
 
     s = pl.Series([None])
-    expected = pl.Series([1], dtype=pl.get_index_type())
+    expected = pl.Series([1], dtype=pl.Int64)
     assert_series_equal(s.unique_counts(), expected)
 
     s = pl.Series([None, None, None])
-    expected = pl.Series([3], dtype=pl.get_index_type())
+    expected = pl.Series([3], dtype=pl.Int64)
     assert_series_equal(s.unique_counts(), expected)
 
 
