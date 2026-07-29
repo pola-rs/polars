@@ -378,7 +378,7 @@ impl LazyCsvReader {
 
 impl LazyFileListReader for LazyCsvReader {
     /// Get the final [LazyFrame].
-    fn finish(mut self) -> PolarsResult<LazyFrame> {
+    fn finish(self) -> PolarsResult<LazyFrame> {
         let rechunk = self.rechunk();
         let row_index = self.row_index().cloned();
         let pre_slice = self.n_rows().map(|len| Slice::Positive { offset: 0, len });
