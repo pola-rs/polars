@@ -559,7 +559,7 @@ impl CloudOptions {
         } else {
             builder
         };
-        
+
         // Insert HTTP middleware with rate-limiter.
         let builder = match &rate_limiter {
             Some(rate_limiter) => {
