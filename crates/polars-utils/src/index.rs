@@ -28,6 +28,15 @@ pub const fn idxsize_to_u64(
     }
 }
 
+/// Avoids clippy::useless_conversion
+#[inline(always)]
+pub fn lensize_try_from<T>(x: T) -> Result<LenSize, <LenSize as TryFrom<T>>::Error>
+where
+    LenSize: TryFrom<T>,
+{
+    LenSize::try_from(x)
+}
+
 #[cfg(not(feature = "bigidx"))]
 pub type NonZeroIdxSize = std::num::NonZeroU32;
 #[cfg(feature = "bigidx")]
