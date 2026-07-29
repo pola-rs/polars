@@ -865,11 +865,7 @@ def test_projection_pushdown_filter_len_to_sum() -> None:
     q = pl.LazyFrame({"a": [0, 1, 2]}).tail(2).filter(pl.col("a") < 2).select(pl.len())
     plan = q.explain()
     assert 'col("a") < 2).sum()' in plan
-
-    assert_frame_equal(
-        q.collect(),
-        pl.DataFrame({"len": 1}, schema={"len": pl.get_index_type()}),
-    )
+    assert_frame_equal(q.collect(), pl.DataFrame({"len": 1}, schema={"len": pl.Int64}))
 
     q = (
         pl.LazyFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
@@ -880,11 +876,7 @@ def test_projection_pushdown_filter_len_to_sum() -> None:
     plan = q.explain()
     assert 'PROJECT["a"] 1/2 COLUMNS' in plan
     assert 'col("a") < 2).sum()' in plan
-
-    assert_frame_equal(
-        q.collect(),
-        pl.DataFrame({"b": 1}, schema={"b": pl.get_index_type()}),
-    )
+    assert_frame_equal(q.collect(), pl.DataFrame({"b": 1}, schema={"b": pl.Int64}))
 
 
 @pytest.mark.parametrize(
