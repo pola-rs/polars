@@ -148,7 +148,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
     pub fn update(&mut self, value: T) {
         // Fast compare
         if self.items.len() >= self.max_size {
-            self.compact();
+            self.compact(true);
         }
 
         self.items.push(value);
@@ -156,11 +156,11 @@ impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
         self.levels[0].size += 1;
     }
 
-    /// Compact every full compactor, walking up from the base.
+    /// Compact all of the compactors from base to top.
     ///
-    /// A compactor can only have grown since the last sweep if the one below it was compacted, so
-    /// we can stop as soon as we hit one that is not full.
-    fn compact(&mut self) {
+    /// If break_early is true, then the sweeping stops once a compaction has
+    /// taken place.
+    fn compact(&mut self, break_early: bool) {
         for level in 0..self.levels.len() {
             if self.levels[level].size >= compactor_threshold(self.k, self.levels.len() - 1 - level)
             {
@@ -168,7 +168,9 @@ impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
                     self.add_new_compactor();
                 }
                 self.compact_level(level);
-                return;
+                if break_early {
+                    break;
+                };
             }
         }
     }
