@@ -125,13 +125,9 @@ def test_collect_schema_rolling_ewm_float32_28564(expr: pl.Expr) -> None:
 
 
 def test_collect_schema_rolling_temporal_preserved_28564() -> None:
-    q = pl.LazyFrame({"a": [date(2020, 1, 1)]}).select(
-        pl.col("a").rolling_mean(1)
-    )
+    q = pl.LazyFrame({"a": [date(2020, 1, 1)]}).select(pl.col("a").rolling_mean(1))
 
-    assert q.collect_schema() == q.collect().schema == {
-        "a": pl.Datetime("us")
-    }
+    assert q.collect_schema() == q.collect().schema == {"a": pl.Datetime("us")}
 
 
 @pytest.mark.parametrize(
@@ -166,6 +162,27 @@ def test_collect_schema_decimal_precision_28564(expr: pl.Expr) -> None:
     q = pl.LazyFrame(series).select(expr)
 
     assert q.collect_schema() == q.collect().schema == {"a": pl.Decimal(38, 2)}
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected"),
+    [
+        (pl.Int64, pl.Decimal(38, 2)),
+        (pl.Float16, pl.Float64),
+        (pl.Float32, pl.Float64),
+    ],
+)
+def test_collect_schema_decimal_rhs_28564(
+    dtype: pl.DataType, expected: pl.DataType
+) -> None:
+    q = pl.LazyFrame(
+        {
+            "a": pl.Series([2], dtype=dtype),
+            "b": pl.Series([Decimal("1.5")], dtype=pl.Decimal(10, 2)),
+        }
+    ).select(pl.col("a") / pl.col("b"))
+
+    assert q.collect_schema() == q.collect().schema == {"a": expected}
 
 
 def test_collect_schema_decimal_cum_prod_28564() -> None:
