@@ -4454,5 +4454,6 @@ def test_full_join_slice_pushdown_no_maintain_order_28551(
     q = lf1.join(lf2, on="a", how="full").slice(offset, length)
     result = q.collect(engine="streaming")
 
-    # We should never push the slice left or right (or both), otherwise some rows will not match
+    # We should never push the slice left or right (or both), otherwise some rows will
+    # not match
     assert result.null_count().sum_horizontal().item() == 0
