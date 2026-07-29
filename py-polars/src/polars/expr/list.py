@@ -149,7 +149,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         ┌──────────────┬─────┐
         │ a            ┆ len │
         │ ---          ┆ --- │
-        │ list[i64]    ┆ u32 │
+        │ list[i64]    ┆ i64 │
         ╞══════════════╪═════╡
         │ [1, 2, null] ┆ 3   │
         │ [5]          ┆ 1   │
@@ -516,7 +516,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         ┌───────────┬──────────┐
         │ a         ┆ n_unique │
         │ ---       ┆ ---      │
-        │ list[i64] ┆ u32      │
+        │ list[i64] ┆ i64      │
         ╞═══════════╪══════════╡
         │ [1, 1, 2] ┆ 2        │
         │ [2, 3, 4] ┆ 3        │
@@ -1345,7 +1345,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         ┌──────────────┬────────────┐
         │ a            ┆ null_count │
         │ ---          ┆ ---        │
-        │ list[i64]    ┆ u32        │
+        │ list[i64]    ┆ i64        │
         ╞══════════════╪════════════╡
         │ [1, null]    ┆ 1          │
         │ [42, 13]     ┆ 0          │

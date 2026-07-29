@@ -121,7 +121,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
         >>> s = pl.Series([[1, 2, None], [5]])
         >>> s.list.len()
         shape: (2,)
-        Series: '' [u32]
+        Series: '' [i64]
         [
             3
             1
@@ -391,7 +391,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
         >>> s = pl.Series("a", [[1, 1, 2], [2, 3, 4]])
         >>> s.list.n_unique()
         shape: (2,)
-        Series: 'a' [u32]
+        Series: 'a' [i64]
         [
             2
             3
@@ -1048,7 +1048,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
         >>> s = pl.Series("a", [[1, None], [42, 13], [None, None]])
         >>> s.list.agg(pl.element().null_count())
         shape: (3,)
-        Series: 'a' [u32]
+        Series: 'a' [i64]
         [
             1
             0

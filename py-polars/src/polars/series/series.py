@@ -2900,7 +2900,7 @@ class Series:
         ┌───────┬───────┐
         │ color ┆ count │
         │ ---   ┆ ---   │
-        │ str   ┆ u32   │
+        │ str   ┆ i64   │
         ╞═══════╪═══════╡
         │ red   ┆ 2     │
         │ green ┆ 1     │
@@ -2914,7 +2914,7 @@ class Series:
         ┌───────┬─────┐
         │ color ┆ n   │
         │ ---   ┆ --- │
-        │ str   ┆ u32 │
+        │ str   ┆ i64 │
         ╞═══════╪═════╡
         │ blue  ┆ 3   │
         │ red   ┆ 2   │
@@ -2951,7 +2951,7 @@ class Series:
         >>> s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
         >>> s.unique_counts()
         shape: (3,)
-        Series: 'id' [u32]
+        Series: 'id' [i64]
         [
             1
             2

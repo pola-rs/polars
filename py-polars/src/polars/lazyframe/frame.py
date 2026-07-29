@@ -7885,7 +7885,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
-        │ u32 ┆ u32 ┆ u32 │
+        │ i64 ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
         │ 1   ┆ 1   ┆ 0   │
         └─────┴─────┴─────┘
@@ -9301,7 +9301,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
-        │ u32 ┆ u32 ┆ u32 │
+        │ i64 ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╡
         │ 4   ┆ 3   ┆ 0   │
         └─────┴─────┴─────┘

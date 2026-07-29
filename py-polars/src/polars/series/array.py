@@ -173,7 +173,7 @@ class ArrayNameSpace:
         >>> s = pl.Series("a", [[1, 2], [4, 4]], dtype=pl.Array(pl.Int64, 2))
         >>> s.arr.n_unique()
         shape: (2,)
-        Series: 'a' [u32]
+        Series: 'a' [i64]
         [
             2
             1
@@ -253,7 +253,7 @@ class ArrayNameSpace:
         >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
         >>> s.arr.len()
         shape: (2,)
-        Series: 'a' [u32]
+        Series: 'a' [i64]
         [
             2
             2
@@ -875,7 +875,7 @@ class ArrayNameSpace:
         ... )
         >>> s.arr.agg(pl.element().null_count())
         shape: (3,)
-        Series: 'a' [u32]
+        Series: 'a' [i64]
         [
             1
             0
