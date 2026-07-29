@@ -429,14 +429,14 @@ pub fn cum_count(s: &Series, reverse: bool) -> PolarsResult<Series> {
     cum_count_with_init(s, reverse, 0)
 }
 
-pub fn cum_count_with_init(s: &Series, reverse: bool, init: IdxSize) -> PolarsResult<Series> {
+pub fn cum_count_with_init(s: &Series, reverse: bool, init: i64) -> PolarsResult<Series> {
     let mut out = if s.null_count() == 0 {
         // Fast paths for no nulls
         cum_count_no_nulls(s.name().clone(), s.len(), reverse, init)
     } else {
         let ca = s.is_not_null();
-        let out: IdxCa = if reverse {
-            let mut count = init + (s.len() - s.null_count()) as IdxSize;
+        let out: Int64Chunked = if reverse {
+            let mut count = init + (s.len() as i64 - s.null_count() as i64);
             let mut prev = false;
             unary_elementwise_values(&ca, |v: bool| {
                 if prev {
@@ -463,10 +463,10 @@ pub fn cum_count_with_init(s: &Series, reverse: bool, init: IdxSize) -> PolarsRe
     Ok(out)
 }
 
-fn cum_count_no_nulls(name: PlSmallStr, len: usize, reverse: bool, init: IdxSize) -> Series {
-    let start = 1 as IdxSize;
-    let end = len as IdxSize + 1;
-    let ca: NoNull<IdxCa> = if reverse {
+fn cum_count_no_nulls(name: PlSmallStr, len: usize, reverse: bool, init: i64) -> Series {
+    let start = 1 as i64;
+    let end = len as i64 + 1;
+    let ca: NoNull<Int64Chunked> = if reverse {
         (start..end).rev().map(|v| v + init).collect()
     } else {
         (start..end).map(|v| v + init).collect()
