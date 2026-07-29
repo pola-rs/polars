@@ -715,7 +715,7 @@ def test_scan_csv_new_columns_28343() -> None:
     )
 
 
-def test_scan_csv_with_schema_respects_file_column_order_11723() -> None:
+def test_scan_csv_with_schema_respects_schema_column_order_11723() -> None:
     buf = b"""\
 a,b
 A,B
