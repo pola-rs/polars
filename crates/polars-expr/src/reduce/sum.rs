@@ -205,7 +205,7 @@ struct BoolSumReducer;
 
 impl Reducer for BoolSumReducer {
     type Dtype = BooleanType;
-    type Value = IdxSize;
+    type Value = i64;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
@@ -219,11 +219,11 @@ impl Reducer for BoolSumReducer {
 
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<bool>, _seq_id: u64) {
-        *a += b.unwrap_or(false) as IdxSize;
+        *a += b.unwrap_or(false) as Self::Value;
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        *v += ca.sum().unwrap_or(0) as IdxSize;
+        *v += ca.sum().unwrap_or(0) as Self::Value;
     }
 
     fn finish(
@@ -234,6 +234,6 @@ impl Reducer for BoolSumReducer {
     ) -> PolarsResult<Series> {
         assert!(m.is_none());
         assert!(dtype == &DataType::Boolean);
-        Ok(IdxCa::from_vec(PlSmallStr::EMPTY, v).into_series())
+        Ok(Int64Chunked::from_vec(PlSmallStr::EMPTY, v).into_series())
     }
 }
