@@ -552,17 +552,20 @@ impl GroupsType {
         self.len() == 0
     }
 
-    pub fn group_count(&self) -> IdxCa {
+    pub fn group_count(&self) -> Int64Chunked {
         match self {
             GroupsType::Idx(groups) => {
-                let ca: NoNull<IdxCa> = groups
+                let ca: NoNull<Int64Chunked> = groups
                     .iter()
-                    .map(|(_first, idx)| idx.len() as IdxSize)
+                    .map(|(_first, idx)| idx.len() as i64)
                     .collect_trusted();
                 ca.into_inner()
             },
             GroupsType::Slice { groups, .. } => {
-                let ca: NoNull<IdxCa> = groups.iter().map(|[_first, len]| *len).collect_trusted();
+                let ca: NoNull<Int64Chunked> = groups
+                    .iter()
+                    .map(|[_first, len]| *len as i64)
+                    .collect_trusted();
                 ca.into_inner()
             },
         }
