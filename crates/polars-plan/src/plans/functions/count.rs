@@ -16,7 +16,7 @@ pub fn count_rows(
             _ => unreachable!(),
         };
         let count = count?;
-        let count: IdxSize = count.try_into().map_err(
+        let count: LenSize = count.try_into().map_err(
             |_| polars_err!(ComputeError: "count of {} exceeded maximum row size", count),
         )?;
         let column_name = alias.unwrap_or(PlSmallStr::from_static(crate::constants::LEN));
