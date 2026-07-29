@@ -4437,10 +4437,9 @@ def test_join_slice_pushdown_maintain_order_matrix_28551(
         offset, length
     )
     expected = q.collect(
-        engine="streaming",
         optimizations=pl.QueryOptFlags().update(slice_pushdown=False),
     )
-    result = q.collect(engine="streaming")
+    result = q.collect()
     assert_frame_equal(result, expected)
 
 
@@ -4452,7 +4451,7 @@ def test_full_join_slice_pushdown_no_maintain_order_28551(
     lf2 = pl.LazyFrame({"a": [4, 3, 2, 1]})
 
     q = lf1.join(lf2, on="a", how="full").slice(offset, length)
-    result = q.collect(engine="streaming")
+    result = q.collect()
 
     # We should never push the slice left or right (or both), otherwise some rows will
     # not match
