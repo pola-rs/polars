@@ -207,6 +207,8 @@ impl DataType {
         }
     };
 
+    pub const LEN_DTYPE: Self = DataType::Int64;
+
     pub fn pretty_format(&self) -> String {
         match self {
             #[cfg(feature = "dtype-struct")]

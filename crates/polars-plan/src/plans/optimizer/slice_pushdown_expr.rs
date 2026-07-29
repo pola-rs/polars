@@ -145,8 +145,8 @@ impl Slice {
             && let (LiteralValue::Scalar(offset), LiteralValue::Scalar(len)) =
                 (offset.clone().materialize(), len.clone().materialize())
             && let (Ok(offset), Ok(len)) = (
-                offset.cast_with_options(&LEN_DTYPE, CastOptions::NonStrict),
-                len.cast_with_options(&LEN_DTYPE, CastOptions::NonStrict),
+                offset.cast_with_options(&DataType::Int64, CastOptions::NonStrict),
+                len.cast_with_options(&DataType::IDX_DTYPE, CastOptions::NonStrict),
             )
             && let AnyValue::Int64(offset) = offset.as_any_value()
             && let Some(len) = match len.as_any_value() {
