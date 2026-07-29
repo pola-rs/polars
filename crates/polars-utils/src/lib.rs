@@ -76,7 +76,7 @@ pub mod io;
 pub mod mmap;
 pub mod nulls;
 
-pub use index::{IdxSize, NullableIdxSize};
+pub use index::{IdxSize, LenSize, NullableIdxSize};
 pub use io::*;
 pub use pl_str::unique_column_name;
 

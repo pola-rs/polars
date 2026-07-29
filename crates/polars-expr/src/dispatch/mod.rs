@@ -6,7 +6,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, GroupPositions};
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::{IRBooleanFunction, IRFunctionExpr, IRPowFunction};
-use polars_utils::IdxSize;
+use polars_utils::{IdxSize, LenSize};
 
 use crate::prelude::{AggregationContext, PhysicalExpr};
 use crate::state::ExecutionState;
@@ -167,7 +167,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::NullCount => {
             let f = |s: &mut [Column]| {
                 let s = &s[0];
-                Ok(Column::new(s.name().clone(), [s.null_count() as IdxSize]))
+                Ok(Column::new(s.name().clone(), [s.null_count() as LenSize]))
             };
             wrap!(f)
         },
