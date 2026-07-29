@@ -65,8 +65,9 @@ impl IRFunctionExpr {
                 use IRRollingFunction::*;
                 match function {
                     Min | Max => mapper.with_same_dtype(),
-                    Mean | Quantile | Std => mapper.moment_dtype(),
-                    Var => mapper.var_dtype(),
+                    Mean | Quantile => mapper.float_dtype(true, true, false, "rolling aggregation"),
+                    Std => mapper.float_dtype(false, true, false, "rolling_std"),
+                    Var => mapper.float_dtype(false, false, false, "rolling_var"),
                     Sum => mapper.sum_dtype(),
                     Rank => match options.fn_params {
                         Some(RollingFnParams::Rank {
@@ -209,7 +210,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "cum_agg")]
             CumSum { .. } => mapper.map_dtype(cum::dtypes::cum_sum),
             #[cfg(feature = "cum_agg")]
-            CumProd { .. } => mapper.map_dtype(cum::dtypes::cum_prod),
+            CumProd { .. } => mapper.try_map_dtype(cum::dtypes::cum_prod),
             #[cfg(feature = "cum_agg")]
             CumMin { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "cum_agg")]
@@ -426,7 +427,7 @@ impl IRFunctionExpr {
                 f
             }),
             #[cfg(feature = "ewma")]
-            EwmMean { .. } => mapper.map_numeric_to_float_dtype(true),
+            EwmMean { .. } => mapper.float_dtype(false, true, true, "ewm_mean"),
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma")]
@@ -434,9 +435,9 @@ impl IRFunctionExpr {
             #[cfg(feature = "ewma_by")]
             EwmSumBy { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma")]
-            EwmStd { .. } => mapper.map_numeric_to_float_dtype(true),
+            EwmStd { .. } => mapper.float_dtype(false, true, true, "ewm_std"),
             #[cfg(feature = "ewma")]
-            EwmVar { .. } => mapper.var_dtype(),
+            EwmVar { .. } => mapper.float_dtype(false, false, true, "ewm_var"),
             #[cfg(feature = "replace")]
             Replace => mapper.with_same_dtype(),
             #[cfg(feature = "replace")]
@@ -571,6 +572,48 @@ impl<'a> FieldsMapper<'a> {
             DataType::Array(inner, _) => map_inner(inner),
             DataType::List(inner) => map_inner(inner),
             _ => map_inner(dt),
+        })
+    }
+
+    #[cfg(any(feature = "rolling_window", feature = "ewma"))]
+    fn float_dtype(
+        &self,
+        preserve_temporal: bool,
+        allow_duration: bool,
+        preserve_float16: bool,
+        op: &'static str,
+    ) -> PolarsResult<Field> {
+        let _ = (preserve_temporal, allow_duration, preserve_float16);
+        self.try_map_dtype(|dt| {
+            let dtype = match dt {
+                DataType::Unknown(_) => dt.clone(),
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(_) if !allow_duration => {
+                    polars_bail!(InvalidOperation: "operation `{op}` is not supported for `{dt}`")
+                },
+                #[cfg(feature = "dtype-date")]
+                DataType::Date if preserve_temporal => {
+                    DataType::Datetime(TimeUnit::Microseconds, None)
+                },
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(_, _) if preserve_temporal => dt.clone(),
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(_) if preserve_temporal => dt.clone(),
+                #[cfg(feature = "dtype-time")]
+                DataType::Time if preserve_temporal => dt.clone(),
+                #[cfg(feature = "dtype-f16")]
+                DataType::Float16 if preserve_float16 => DataType::Float16,
+                DataType::Float32 => DataType::Float32,
+                DataType::Float64 => DataType::Float64,
+                DataType::Boolean | DataType::String | DataType::Null => DataType::Float64,
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(..) => DataType::Float64,
+                dt if dt.is_primitive_numeric() || dt.is_temporal() => DataType::Float64,
+                dt => {
+                    polars_bail!(InvalidOperation: "operation `{op}` is not supported for `{dt}`")
+                },
+            };
+            Ok(dtype)
         })
     }
 
