@@ -105,9 +105,9 @@ where
         _dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none());
-        let ca: IdxCa = v
+        let ca: Int64Chunked = v
             .into_iter()
-            .map(|sketch| sketch.estimate().min(IdxSize::MAX as usize) as IdxSize)
+            .map(|sketch| sketch.estimate().min(i64::MAX as usize) as i64)
             .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
     }
