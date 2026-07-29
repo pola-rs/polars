@@ -849,7 +849,7 @@ def test_projection_pushdown_horizontal_extend_select_len() -> None:
     assert plan.index("len()") > plan.index("HCONCAT")
     assert_frame_equal(
         q.collect(),
-        pl.Series("len", [5], dtype=pl.get_index_type()).to_frame(),
+        pl.Series("len", [5], dtype=pl.Int64).to_frame(),
     )
 
 
