@@ -61,17 +61,25 @@ impl IOSinkNodeConfig {
     pub fn cloud_upload_chunk_size(&self) -> Option<NonZeroUsize> {
         // Only when `is_cloud_location() == true`. This excludes FORCE_ASYNC'ed local paths,
         // to avoid unnecessary memory copying.
-        polars_io::configs::env_upload_chunk_size().or(self
-            .target
-            .is_cloud_location()
-            .then_some(DEFAULT_UPLOAD_CHUNK_SIZE))
+        polars_io::configs::env_upload_chunk_size().or((self.target.is_cloud_location()
+            || self.file_write_format_requires_buffering())
+        .then_some(DEFAULT_UPLOAD_CHUNK_SIZE))
     }
 
     pub fn partitioned_upload_chunk_size(&self) -> Option<NonZeroUsize> {
-        polars_io::configs::env_partitioned_upload_chunk_size().or(self
+        polars_io::configs::env_partitioned_upload_chunk_size().or((self
             .target
             .is_cloud_location()
-            .then_some(DEFAULT_PARTITIONED_UPLOAD_CHUNK_SIZE))
+            || self.file_write_format_requires_buffering())
+        .then_some(DEFAULT_PARTITIONED_UPLOAD_CHUNK_SIZE))
+    }
+
+    fn file_write_format_requires_buffering(&self) -> bool {
+        match &self.file_format {
+            #[cfg(feature = "parquet")]
+            FileWriteFormat::Parquet(_) => true,
+            _ => false,
+        }
     }
 
     pub fn upload_concurrency(&self) -> NonZeroUsize {
