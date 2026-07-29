@@ -231,10 +231,10 @@ impl GroupedReduction for NullCountReduce {
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
-        let ca: IdxCa = self
+        let ca: LenCa = self
             .counts
             .drain(..)
-            .map(|l| IdxSize::try_from(l).expect(LENGTH_LIMIT_MSG))
+            .map(|l| LenSize::try_from(l).expect(LENGTH_LIMIT_MSG))
             .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())
     }
