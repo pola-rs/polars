@@ -1227,8 +1227,8 @@ def test_cpse_predicates_25030() -> None:
     expected = pl.DataFrame(
         [
             pl.Series("key", [2], dtype=pl.Int64),
-            pl.Series("len", [1], dtype=pl.UInt32),
-            pl.Series("len_right", [2], dtype=pl.UInt32),
+            pl.Series("len", [1], dtype=pl.Int64),
+            pl.Series("len_right", [2], dtype=pl.Int64),
             pl.Series("x", [2], dtype=pl.Int64),
             pl.Series("y", [1], dtype=pl.Int64),
         ]

@@ -663,7 +663,7 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
     assert plan.startswith("SELECT")
     assert_frame_equal(
         q.collect(),
-        pl.DataFrame({"len": pl.Series([5], dtype=pl.get_index_type())}),
+        pl.DataFrame({"len": pl.Series([5], dtype=pl.Int64)}),
     )
 
     q = lf.group_by().agg("a")
@@ -711,7 +711,7 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
                 "1": 1,
                 "2": 2,
                 "a_max": 4,
-                "len": pl.Series([5], dtype=pl.get_index_type()),
+                "len": pl.Series([5], dtype=pl.Int64),
             },
             schema_overrides={"a_max": pl.Int64},
         ),
@@ -733,7 +733,7 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
     assert "AGGREGATE" not in plan
     assert_frame_equal(
         q.collect(),
-        pl.DataFrame({"len": pl.Series([5], dtype=pl.get_index_type())}),
+        pl.DataFrame({"len": pl.Series([5], dtype=pl.Int64)}),
     )
 
 

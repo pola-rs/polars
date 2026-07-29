@@ -955,7 +955,7 @@ def test_list_n_unique() -> None:
 
     out = df.select(n_unique=pl.col("a").list.n_unique())
     expected = pl.DataFrame(
-        {"n_unique": [2, 1, 1, None, 0]}, schema={"n_unique": pl.get_index_type()}
+        {"n_unique": [2, 1, 1, None, 0]}, schema={"n_unique": pl.Int64}
     )
     assert_frame_equal(out, expected)
 

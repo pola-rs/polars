@@ -286,7 +286,7 @@ def test_apply_custom_function() -> None:
             "cars_count": [3, 2],
         }
     )
-    expected = expected.with_columns(pl.col("cars_count").cast(pl.get_index_type()))
+    expected = expected.with_columns(pl.col("cars_count").cast(pl.Int64))
     assert_frame_equal(df, expected)
 
 
@@ -1156,7 +1156,7 @@ def test_group_lengths() -> None:
             "unique_counts_sum": [1.0, 1.0],
             "unique_len": [2, 3],
         },
-        schema_overrides={"unique_len": pl.get_index_type()},
+        schema_overrides={"unique_len": pl.Int64},
     )
     assert_frame_equal(result.collect(), expected)
 

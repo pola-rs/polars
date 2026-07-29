@@ -522,7 +522,7 @@ def test_horizontal_sum_in_group_by_15102() -> None:
         pl.DataFrame(
             {
                 "num_null": pl.Series([0, 2, 3], dtype=pl.get_index_type()),
-                "len": pl.Series([nbr_records] * 3, dtype=pl.get_index_type()),
+                "len": pl.Series([nbr_records] * 3, dtype=pl.Int64),
             }
         ),
     )
@@ -729,7 +729,7 @@ def test_horizontal_mean_in_group_by_15115() -> None:
         pl.DataFrame(
             {
                 "mean_null": pl.Series([0.25, 0.5, 0.75, 1.0], dtype=pl.Float64),
-                "len": pl.Series([nbr_records] * 4, dtype=pl.get_index_type()),
+                "len": pl.Series([nbr_records] * 4, dtype=pl.Int64),
             }
         ),
     )

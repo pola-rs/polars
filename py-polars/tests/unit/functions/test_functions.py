@@ -613,8 +613,8 @@ def test_lazy_functions() -> None:
         pl.DataFrame(
             data=expected,
             schema_overrides={
-                "a_n_unique": pl.get_index_type(),
-                "b_n_unique": pl.get_index_type(),
+                "a_n_unique": pl.Int64,
+                "b_n_unique": pl.Int64,
             },
         ),
     )

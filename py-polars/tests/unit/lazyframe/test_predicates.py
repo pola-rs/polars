@@ -705,9 +705,7 @@ def test_predicate_pushdown_struct_unnest_19632() -> None:
 
     assert_frame_equal(
         q.collect(),
-        pl.DataFrame(
-            {"a": 1, "count": 1}, schema={"a": pl.Int64, "count": pl.get_index_type()}
-        ),
+        pl.DataFrame({"a": 1, "count": 1}, schema={"a": pl.Int64, "count": pl.Int64}),
     )
 
 
@@ -1512,7 +1510,7 @@ def test_predicate_pushdown_block_at_embedded_slice_groupby_26824() -> None:
         q.collect(),
         pl.DataFrame(
             {"a": 1, "len": 1},
-            schema_overrides={"len": pl.get_index_type()},
+            schema_overrides={"len": pl.Int64},
         ),
     )
 

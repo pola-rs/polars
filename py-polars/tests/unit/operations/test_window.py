@@ -405,7 +405,7 @@ def test_window_cached_keys_sorted_update_4183() -> None:
     )
     expected = pl.DataFrame(
         {"count": [2, 2, 1], "rank": [1, 2, 1]},
-        schema={"count": pl.get_index_type(), "rank": pl.get_index_type()},
+        schema={"count": pl.Int64, "rank": pl.get_index_type()},
     )
     assert_frame_equal(result, expected)
 

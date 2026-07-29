@@ -18,7 +18,6 @@ from polars.exceptions import (
     ComputeError,
     InvalidOperationError,
 )
-from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 
@@ -924,7 +923,7 @@ def test_group_by_multiple_column_reference() -> None:
         ("mean", [], [1.0, None], pl.Float64),
         ("median", [], [1.0, None], pl.Float64),
         ("min", [], [1, None], pl.Int64),
-        ("n_unique", [], [1, 0], pl.get_index_type()),
+        ("n_unique", [], [1, 0], pl.Int64),
         ("quantile", [0.5], [1.0, None], pl.Float64),
     ],
 )
@@ -1482,7 +1481,7 @@ def test_enum_perfect_group_by_21360() -> None:
         pl.DataFrame(
             [
                 pl.Series("col", ["a"], dtype),
-                pl.Series("len", [1], get_index_type()),
+                pl.Series("len", [1], pl.Int64),
             ]
         ),
     )
@@ -1537,7 +1536,7 @@ def test_group_by_arrays_22574(maintain_order: bool) -> None:
         pl.DataFrame(
             [
                 pl.Series("a", [[1], [2]], pl.Array(pl.Int64, 1)),
-                pl.Series("len", [1, 2], pl.get_index_type()),
+                pl.Series("len", [1, 2], pl.Int64),
             ]
         ),
         check_row_order=maintain_order,
@@ -1555,7 +1554,7 @@ def test_group_by_arrays_22574(maintain_order: bool) -> None:
                 pl.Series(
                     "a", [[[1, 2]], [[2, 3]]], pl.Array(pl.Array(pl.Int64, 2), 1)
                 ),
-                pl.Series("len", [1, 2], pl.get_index_type()),
+                pl.Series("len", [1, 2], pl.Int64),
             ]
         ),
         check_row_order=maintain_order,
@@ -2991,8 +2990,8 @@ def test_group_by_cse_alias_26423() -> None:
         {"a": [1, 2, 3, 4], "len": [2, 2, 1, 1], "len_a": [2, 2, 1, 1]},
         schema={
             "a": pl.Int64,
-            "len": pl.get_index_type(),
-            "len_a": pl.get_index_type(),
+            "len": pl.Int64,
+            "len_a": pl.Int64,
         },
     )
     assert_frame_equal(result, expected, check_row_order=False)
@@ -3044,7 +3043,7 @@ def test_structify_keyword_27147() -> None:
     result = df.group_by("b").agg(__structify=pl.len()).sort("b")
     expected = pl.DataFrame(
         {"b": [1, 2], "__structify": [2, 1]},
-        schema_overrides={"__structify": pl.UInt32},
+        schema_overrides={"__structify": pl.Int64},
     )
     assert_frame_equal(result, expected)
 

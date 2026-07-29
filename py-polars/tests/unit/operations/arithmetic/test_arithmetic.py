@@ -733,7 +733,7 @@ def test_literal_subtract_schema_13284() -> None:
         .with_columns(pl.col("a") - pl.lit(1))
         .group_by("a")
         .len()
-    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.get_index_type())])
+    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.Int64)])
 
 
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)

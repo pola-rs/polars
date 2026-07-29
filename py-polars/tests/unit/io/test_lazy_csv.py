@@ -365,7 +365,7 @@ def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> 
         .select(pl.len())
         .collect()
     )
-    expected = pl.DataFrame({"len": 27}, schema={"len": pl.get_index_type()})
+    expected = pl.DataFrame({"len": 27}, schema={"len": pl.Int64})
     assert_frame_equal(df, expected)
 
 

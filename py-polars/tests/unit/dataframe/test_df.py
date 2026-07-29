@@ -1944,7 +1944,7 @@ def test_group_by_agg_n_unique_empty_group_idx_path() -> None:
     expected = pl.DataFrame(
         {
             "key": [1, 2],
-            "n_unique": pl.Series([3, 0], dtype=pl.get_index_type()),
+            "n_unique": pl.Series([3, 0], dtype=pl.Int64),
         }
     )
     assert_frame_equal(out, expected)
@@ -1964,7 +1964,7 @@ def test_group_by_agg_n_unique_empty_group_slice_path() -> None:
     expected = pl.DataFrame(
         {
             "key": [1, 2],
-            "n_unique": pl.Series([0, 0], dtype=pl.get_index_type()),
+            "n_unique": pl.Series([0, 0], dtype=pl.Int64),
         }
     )
     assert_frame_equal(out, expected)
@@ -3183,7 +3183,10 @@ def test_window_deadlock() -> None:
 
 def test_sum_empty_column_names() -> None:
     df = pl.DataFrame({"x": [], "y": []}, schema={"x": pl.Boolean, "y": pl.Boolean})
-    expected = pl.DataFrame({"x": [0], "y": [0]}, schema={"x": pl.Int64, "y": pl.Int64})
+    expected = pl.DataFrame(
+        {"x": [0], "y": [0]},
+        schema={"x": pl.get_index_type(), "y": pl.get_index_type()},
+    )
     assert_frame_equal(df.sum(), expected)
 
 

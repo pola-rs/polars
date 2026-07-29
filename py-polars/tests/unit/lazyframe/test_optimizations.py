@@ -114,7 +114,7 @@ def test_is_null_followed_by_sum() -> None:
 
     expected_df = pl.DataFrame(
         {"group": [0, 1, 2], "val": [1, 1, 0]},
-        schema_overrides={"val": pl.get_index_type()},
+        schema_overrides={"val": pl.Int64},
     )
     result_lf = lf.group_by("group", maintain_order=True).agg(
         pl.col("val").is_null().sum()
@@ -192,7 +192,7 @@ def test_drop_nulls_followed_by_count() -> None:
 
     expected_df = pl.DataFrame(
         {"group": [0, 1, 2], "val": [2, 0, 1]},
-        schema_overrides={"val": pl.get_index_type()},
+        schema_overrides={"val": pl.Int64},
     )
     result_lf = lf.group_by("group", maintain_order=True).agg(
         pl.col("val").drop_nulls().count()
@@ -622,9 +622,7 @@ def test_fast_count_alias_18581() -> None:
     df = pl.scan_csv(f).select(pl.len().alias("weird_name")).collect()
 
     # Just check the value, let assert_frame_equal handle dtype matching
-    expected = pl.DataFrame(
-        {"weird_name": [2]}, schema={"weird_name": pl.get_index_type()}
-    )
+    expected = pl.DataFrame({"weird_name": [2]}, schema={"weird_name": pl.Int64})
     assert_frame_equal(expected, df)
 
 

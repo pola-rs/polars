@@ -511,7 +511,7 @@ def test_rolling_group_by_empty_groups_by_take_6330() -> None:
                 "Date": [1, 2, 3, 4, 1, 2, 3, 4],
                 "len": [0, 1, 2, 2, 0, 1, 2, 2],
             },
-            schema_overrides={"len": pl.get_index_type()},
+            schema_overrides={"len": pl.Int64},
         ),
         check_row_order=False,
     )

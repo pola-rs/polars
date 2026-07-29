@@ -558,7 +558,7 @@ def test_array_n_unique() -> None:
 
     out = df.select(n_unique=pl.col("a").arr.n_unique())
     expected = pl.DataFrame(
-        {"n_unique": [2, 1, 1, None]}, schema={"n_unique": pl.get_index_type()}
+        {"n_unique": [2, 1, 1, None]}, schema={"n_unique": pl.Int64}
     )
     assert_frame_equal(out, expected)
 
