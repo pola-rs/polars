@@ -187,6 +187,22 @@ def test_sink_boolean_panic_25806(sink: Any, scan: Any) -> None:
     assert_frame_equal(scan(f).collect(), df)
 
 
+def test_sink_ipc_cloud_single_put(tmp_path: Path) -> None:
+    # 1. Create a small LazyFrame
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+
+    # 2. Define cloud file path (or file URI)
+    out_file = tmp_path / "test_out.ipc"
+    file_uri = format_file_uri(out_file)
+
+    # 3. Sink IPC payload
+    df.lazy().sink_ipc(file_uri)
+
+    # 4. Verify data integrity upon reading back
+    result = pl.read_ipc(out_file)
+    assert_frame_equal(result, df)
+
+
 def test_collect_all_lazy() -> None:
     with TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
