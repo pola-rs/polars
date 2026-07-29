@@ -890,6 +890,8 @@ pub fn lower_ir(
                     let extra_columns_policy = match &*scan_type {
                         #[cfg(feature = "parquet")]
                         FileScanIR::Parquet { .. } => unified_scan_args.extra_columns_policy,
+                        #[cfg(feature = "csv")]
+                        FileScanIR::Csv { .. } => unified_scan_args.extra_columns_policy,
 
                         _ => {
                             if unified_scan_args.projection.is_some() {
@@ -926,6 +928,7 @@ pub fn lower_ir(
                         predicate_file_skip_applied,
                         hive_parts,
                         cast_columns_policy: unified_scan_args.cast_columns_policy,
+                        extra_columns_policy: unified_scan_args.extra_columns_policy,
                         missing_columns_policy: unified_scan_args.missing_columns_policy,
                         forbid_extra_columns,
                         include_file_paths: unified_scan_args.include_file_paths,

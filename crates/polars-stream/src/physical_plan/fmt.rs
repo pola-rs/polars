@@ -521,6 +521,7 @@ fn visualize_plan_rec(
             hive_parts,
             include_file_paths,
             cast_columns_policy: _,
+            extra_columns_policy: _,
             missing_columns_policy: _,
             forbid_extra_columns: _,
             deletion_files,
