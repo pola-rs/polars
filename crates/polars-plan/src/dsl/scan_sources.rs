@@ -51,7 +51,6 @@ pub enum ScanSources {
     Paths(Buffer<PlRefPath>),
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Files(Arc<[File]>),
-    #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Buffers(Arc<[Buffer<u8>]>),
 }
 
