@@ -112,7 +112,7 @@ struct BoolSumReducer;
 
 impl Reducer for BoolSumReducer {
     type Dtype = BooleanType;
-    type Value = LenSize;
+    type Value = IdxSize;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
@@ -141,6 +141,6 @@ impl Reducer for BoolSumReducer {
     ) -> PolarsResult<Series> {
         assert!(m.is_none());
         assert!(dtype == &DataType::Boolean);
-        Ok(LenCa::from_vec(PlSmallStr::EMPTY, v).into_series())
+        Ok(IdxCa::from_vec(PlSmallStr::EMPTY, v).into_series())
     }
 }

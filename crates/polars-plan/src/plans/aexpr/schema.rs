@@ -194,7 +194,7 @@ impl AExpr {
                                     field.dtype()
                                 )
                             },
-                            Boolean => Some(LEN_DTYPE),
+                            Boolean => Some(IDX_DTYPE),
                             UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
                             #[cfg(feature = "dtype-decimal")]
                             Decimal(_, scale) => Some(Decimal(DEC128_MAX_PREC, *scale)),
@@ -604,7 +604,7 @@ fn get_arithmetic_field(
                 (_, Duration(_)) | (Duration(_), _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                 },
-                (Boolean, Boolean) => LEN_DTYPE,
+                (Boolean, Boolean) => IDX_DTYPE,
                 (l @ List(a), r @ List(b))
                     if ![a, b]
                         .into_iter()

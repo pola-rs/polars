@@ -217,7 +217,7 @@ pub fn sum_horizontal(
     if !ignore_nulls && non_null_cols.len() < columns.len() {
         // We must determine the correct return dtype.
         let return_dtype = match dtypes_to_supertype(non_null_cols.iter().map(|c| c.dtype()))? {
-            DataType::Boolean => LEN_DTYPE,
+            DataType::Boolean => IDX_DTYPE,
             dt => dt,
         };
         return Ok(Some(Column::full_null(

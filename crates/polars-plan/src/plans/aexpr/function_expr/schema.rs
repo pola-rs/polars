@@ -412,7 +412,7 @@ impl IRFunctionExpr {
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => mapper.map_to_supertype().map(|mut f| {
                 if f.dtype == DataType::Boolean {
-                    f.dtype = LEN_DTYPE;
+                    f.dtype = IDX_DTYPE;
                 }
                 f
             }),
@@ -717,7 +717,7 @@ impl<'a> FieldsMapper<'a> {
         use DataType::*;
         self.map_dtype(|dtype| match dtype {
             Int8 | UInt8 | Int16 | UInt16 => Int64,
-            Boolean => LEN_DTYPE,
+            Boolean => IDX_DTYPE,
             dt => dt.clone(),
         })
     }
@@ -733,7 +733,7 @@ impl<'a> FieldsMapper<'a> {
         })?;
 
         match dt {
-            Boolean => first.coerce(LEN_DTYPE),
+            Boolean => first.coerce(IDX_DTYPE),
             UInt8 | Int8 | Int16 | UInt16 => first.coerce(Int64),
             _ => first.coerce(dt),
         }
