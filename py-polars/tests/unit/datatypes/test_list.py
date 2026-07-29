@@ -555,7 +555,7 @@ def test_logical_parallel_list_collect() -> None:
         )
         .unnest("Values")
     )
-    assert out.dtypes == [pl.String, pl.Categorical, pl.get_index_type()]
+    assert out.dtypes == [pl.String, pl.Categorical, pl.Int64]
     assert out.to_dict(as_series=False) == {
         "Group": ["GroupA", "GroupA"],
         "Values": ["Value1", "Value2"],

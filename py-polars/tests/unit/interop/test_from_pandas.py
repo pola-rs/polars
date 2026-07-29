@@ -330,7 +330,7 @@ def test_untrusted_categorical_input() -> None:
     result = df.group_by("x").len()
     expected = pl.DataFrame(
         {"x": ["x"], "len": [1]},
-        schema={"x": pl.Categorical, "len": pl.get_index_type()},
+        schema={"x": pl.Categorical, "len": pl.Int64},
     )
     assert_frame_equal(result, expected, categorical_as_str=True)
 
