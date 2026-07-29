@@ -144,6 +144,7 @@ impl DeletionFilesProvider {
                 use std::pin::Pin;
 
                 use polars_plan::dsl::deletion::IcebergDeletes;
+                use polars_plan::dsl::{ExtraColumnsPolicy, MissingColumnsPolicy};
 
                 let paths = paths.get(&scan_source_idx)?;
 
@@ -212,6 +213,8 @@ impl DeletionFilesProvider {
                                         pre_slice: None,
                                         predicate: None,
                                         cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
+                                        extra_columns_policy: ExtraColumnsPolicy::Raise,
+                                        missing_columns_policy: MissingColumnsPolicy::Raise,
                                         num_pipelines,
                                         disable_morsel_split: false,
                                         last_morsel_pipelines: 1,

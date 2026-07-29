@@ -885,6 +885,7 @@ class PyLazyFrame:
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
         include_file_paths: str | None,
+        extra_columns: str | None,
         missing_columns: str | None,
     ) -> PyLazyFrame: ...
     @staticmethod
