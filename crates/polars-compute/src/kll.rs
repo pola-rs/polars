@@ -81,7 +81,7 @@ struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
 #[derive(Debug, Default)]
 struct FinalizedState<T: fmt::Debug + Clone + TotalOrd> {
     items: Box<[T]>,
-    cum_weight: Box<[usize]>,
+    cum_weight: Option<Box<[usize]>>,
 }
 
 #[derive(Debug)]
@@ -120,7 +120,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> KLLSketch<T> {
     pub fn finalize(&mut self) {
         let placeholder = State::Finalized(FinalizedState {
             items: Box::new([]),
-            cum_weight: Box::new([]),
+            cum_weight: None,
         });
         let state = mem::replace(&mut self.0, placeholder);
         let State::Ingesting(state) = state else {
@@ -264,14 +264,18 @@ impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
         let base = levels[0];
         items[base.offset..base.offset + base.size].sort_unstable_by(TotalOrd::tot_cmp);
 
+        if levels.len() == 1 {
+            return FinalizedState {
+                items: items.into_boxed_slice(),
+                cum_weight: None,
+            };
+        }
+
         // Merge all sorted levels
         scratch.clear();
         let mut finalized_items = scratch;
         let mut cum_weights = Vec::with_capacity(items.len());
         let mut cursors: Vec<usize> = vec![0; levels.len()];
-
-        // TODO: [amber] I think it would be nice if, in case we only have a base layer, we just
-        // sort and return it, and keep `cursors` empty. This would save an allocation.
 
         // Are we done draining this level?
         let is_done = |level: usize, cursors: &[usize]| cursors[level] >= levels[level].size;
@@ -303,14 +307,17 @@ impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
 
         FinalizedState {
             items: finalized_items.into_boxed_slice(),
-            cum_weight: cum_weights.into_boxed_slice(),
+            cum_weight: Some(cum_weights.into_boxed_slice()),
         }
     }
 }
 
 impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
     fn num_items(&self) -> usize {
-        self.cum_weight.last().map(|x| *x).unwrap_or(0)
+        match &self.cum_weight {
+            Some(cum_weight) => cum_weight.last().map(|x| *x).unwrap_or(0),
+            None => self.items.len(),
+        }
     }
 
     fn estimate_rank(&self, value: &T) -> usize {
@@ -319,9 +326,12 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
 
     fn estimate_quantile(&self, quantile: f64) -> &T {
         let estimated_rank = (self.num_items() as f64 * quantile).round_ties_even() as usize;
-        let idx = match self.cum_weight.binary_search(&estimated_rank) {
-            Ok(x) => x,
-            Err(x) => x,
+        let idx = match &self.cum_weight {
+            Some(cum_weight) => match cum_weight.binary_search(&estimated_rank) {
+                Ok(x) => x,
+                Err(x) => x,
+            },
+            None => estimated_rank.clamp(0, self.items.len() - 1),
         };
         &self.items[idx]
     }
