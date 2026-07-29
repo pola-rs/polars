@@ -631,7 +631,7 @@ def test_bool_numeric_supertype(dtype: PolarsDataType) -> None:
 
 @pytest.mark.parametrize("dtype", [pl.String(), pl.String, str])
 def test_cast_consistency(dtype: PolarsDataType | PythonDataType) -> None:
-    assert pl.DataFrame().with_columns(a=pl.lit(0.0)).with_columns(
+    assert pl.DataFrame(height=1).with_columns(a=pl.lit(0.0)).with_columns(
         b=pl.col("a").cast(dtype), c=pl.lit(0.0).cast(dtype)
     ).to_dict(as_series=False) == {"a": [0.0], "b": ["0.0"], "c": ["0.0"]}
 
