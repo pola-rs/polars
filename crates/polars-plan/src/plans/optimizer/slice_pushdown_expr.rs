@@ -203,6 +203,7 @@ impl Slice {
                 )))),
                 expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
                     LEN_DTYPE,
+                    #[allow(clippy::unnecessary_fallible_conversions)]
                     AnyValue::Int64(LenSize::try_from(*len).unwrap()),
                 )))),
             ),
