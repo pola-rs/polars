@@ -985,7 +985,7 @@ impl PhysicalExpr for WindowExpr {
                         .all()
                         .iter()
                         .zip(lengths.iter())
-                        .any(|(i, l)| i.len() as IdxSize != l.unwrap()),
+                        .any(|(i, l)| i.len() as LenSize != l.unwrap()),
                     GroupsType::Slice {
                         groups,
                         overlapping: _,
@@ -993,7 +993,7 @@ impl PhysicalExpr for WindowExpr {
                     } => groups
                         .iter()
                         .zip(lengths.iter())
-                        .any(|([_, i], l)| *i != l.unwrap()),
+                        .any(|([_, i], l)| *i as LenSize != l.unwrap()),
                 };
 
                 polars_ensure!(

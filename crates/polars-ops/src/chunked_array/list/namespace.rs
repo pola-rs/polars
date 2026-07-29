@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use arrow::array::ValueSize;
+use arrow::array::{Int64Array, ValueSize};
 use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
@@ -302,13 +302,13 @@ pub trait ListNameSpaceImpl: AsList {
         unsafe { ca.apply_amortized_same_type(|s| s.as_ref().slice(offset, length)) }
     }
 
-    fn lst_lengths(&self) -> IdxCa {
+    fn lst_lengths(&self) -> LenCa {
         let ca = self.as_list();
 
         let ca_validity = ca.rechunk_validity();
 
         if ca_validity.as_ref().is_some_and(|x| x.set_bits() == 0) {
-            return IdxCa::full_null(ca.name().clone(), ca.len());
+            return LenCa::full_null(ca.name().clone(), ca.len());
         }
 
         let mut lengths = Vec::with_capacity(ca.len());
@@ -316,13 +316,13 @@ pub trait ListNameSpaceImpl: AsList {
             let offsets = arr.offsets().as_slice();
             let mut last = offsets[0];
             for o in &offsets[1..] {
-                lengths.push((*o - last) as IdxSize);
+                lengths.push((*o - last) as LenSize);
                 last = *o;
             }
         });
 
-        let arr = IdxArr::from_vec(lengths).with_validity(ca_validity);
-        IdxCa::with_chunk(ca.name().clone(), arr)
+        let arr = Int64Array::from_vec(lengths).with_validity(ca_validity);
+        LenCa::with_chunk(ca.name().clone(), arr)
     }
 
     /// Get the value by index in the sublists.
