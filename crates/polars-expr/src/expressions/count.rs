@@ -78,15 +78,15 @@ pub fn evaluate_count_on_ac<'a>(
             AggState::AggregatedList(s) => {
                 let ca = s.list()?;
                 ca.series_iter()
-                    .map(|opt_s| opt_s.map(|s| s.len() as IdxSize - s.null_count() as IdxSize))
-                    .collect::<IdxCa>()
+                    .map(|opt_s| opt_s.map(|s| s.len() as LenSize - s.null_count() as LenSize))
+                    .collect::<LenCa>()
                     .into_column()
             },
             AggState::NotAggregated(s) => {
                 let s = s.clone();
                 let groups = ac.groups();
-                let out: IdxCa = if matches!(s.dtype(), &DataType::Null) {
-                    IdxCa::full(s.name().clone(), 0, groups.len())
+                let out: LenCa = if matches!(s.dtype(), &DataType::Null) {
+                    LenCa::full(s.name().clone(), 0, groups.len())
                 } else {
                     match groups.as_ref().as_ref() {
                         GroupsType::Idx(idx) => {
@@ -97,10 +97,10 @@ pub fn evaluate_count_on_ac<'a>(
                             let validity = array.validity().unwrap();
                             idx.iter()
                                 .map(|(_, g)| {
-                                    let mut count = 0 as IdxSize;
+                                    let mut count = 0 as LenSize;
                                     // Count valid values
                                     g.iter().for_each(|i| unsafe {
-                                        count += validity.get_bit_unchecked(*i as usize) as IdxSize;
+                                        count += validity.get_bit_unchecked(*i as usize) as LenSize;
                                     });
                                     count
                                 })
@@ -113,8 +113,9 @@ pub fn evaluate_count_on_ac<'a>(
                                 .map(|g| {
                                     let start = g[0];
                                     let len = g[1];
-                                    len - s.slice(start as i64, len as usize).null_count()
-                                        as IdxSize
+                                    len as LenSize
+                                        - s.slice(start as i64, len as usize).null_count()
+                                            as LenSize
                                 })
                                 .collect_ca_trusted_with_dtype(PlSmallStr::EMPTY, LEN_DTYPE)
                         },
