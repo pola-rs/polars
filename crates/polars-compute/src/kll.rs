@@ -12,8 +12,8 @@ use rand::{RngExt, SeedableRng};
 //   This makes sense, because on average we have less data to deal with.
 //   (24.1 vs 20.7 seconds)
 
-/// KLL calls this `δ`. Equivalent to 99% success rate.
-const FAILURE_PROBABILITY: f64 = 0.01;
+/// KLL calls this `δ`. Equivalent to 99.9999% success rate.
+const FAILURE_PROBABILITY: f64 = 1e-6;
 /// `CAPACITY_DECAY` specifies how much smaller compactor h+1 is wrt to h.
 /// KLL calls this `c`.
 const CAPACITY_DECAY: f64 = 2.0 / 3.0;
