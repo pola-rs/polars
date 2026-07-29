@@ -610,6 +610,7 @@ pub async fn csv_file_info(
     row_index: Option<&RowIndex>,
     csv_options: &mut CsvReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    extra_columns_policy: ExtraColumnsPolicy,
     missing_columns_policy: MissingColumnsPolicy,
 ) -> PolarsResult<FileInfo> {
     use polars_core::error::feature_gated;
@@ -783,6 +784,8 @@ pub async fn csv_file_info(
         let (schema, _) = read_until_start_and_infer_schema(
             csv_options,
             None,
+            extra_columns_policy == ExtraColumnsPolicy::Ignore,
+            missing_columns_policy == MissingColumnsPolicy::Insert,
             decompressed_slice_size_hint,
             Some(Box::new(|line| {
                 first_row_len = line.len() + 1;
@@ -1227,6 +1230,7 @@ this scan to succeed with an empty DataFrame.",
                         unified_scan_args.row_index.as_ref(),
                         Arc::make_mut(&mut options),
                         cloud_options,
+                        unified_scan_args.extra_columns_policy,
                         unified_scan_args.missing_columns_policy,
                     )
                     .await?
