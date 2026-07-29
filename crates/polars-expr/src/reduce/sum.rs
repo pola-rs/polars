@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 
 use arrow::array::PrimitiveArray;
-use num_traits::Zero;
+use num_traits::{AsPrimitive, Zero};
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 use polars_core::prelude::sum_output_dtype;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
-use polars_utils::index::{idxsize_to_u64, idxsize_try_from};
+use polars_utils::index::idxsize_try_from;
 
 use super::*;
 
@@ -112,23 +112,23 @@ where
 /// Reduces as u64. Converts to IdxSize on `finish()`, raising bigidx error if the
 /// result doesn't fit into the configured `IdxSize`.
 #[derive(Default)]
-pub struct IdxTypeCheckedSumReducer(PhantomData<(IdxType, UInt64Type)>);
+pub struct LenTypeCheckedSumReducer(PhantomData<(IdxType, LenType)>);
 
-impl IdxTypeCheckedSumReducer {
+impl LenTypeCheckedSumReducer {
     pub fn new_grouped_reduction() -> VecGroupedReduction<Self> {
         VecGroupedReduction::new(DataType::IDX_DTYPE, Self::default())
     }
 }
 
-impl Clone for IdxTypeCheckedSumReducer {
+impl Clone for LenTypeCheckedSumReducer {
     fn clone(&self) -> Self {
         Self(PhantomData)
     }
 }
 
-impl Reducer for IdxTypeCheckedSumReducer {
+impl Reducer for LenTypeCheckedSumReducer {
     type Dtype = IdxType;
-    type Value = <<UInt64Type as PolarsNumericType>::Native as SumCast>::Sum;
+    type Value = <<LenType as PolarsNumericType>::Native as SumCast>::Sum;
 
     #[inline(always)]
     fn init(&self) -> Self::Value {
@@ -151,18 +151,18 @@ impl Reducer for IdxTypeCheckedSumReducer {
         b: Option<<Self::Dtype as PolarsNumericType>::Native>,
         _seq_id: u64,
     ) {
-        *a += b.map(idxsize_to_u64).unwrap_or(0);
+        *a += b.map(AsPrimitive::as_).unwrap_or(0);
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         for arr in ca.downcast_iter() {
             if arr.has_nulls() {
                 for x in arr.iter() {
-                    *v += x.copied().map(idxsize_to_u64).unwrap_or(0);
+                    *v += x.copied().map(AsPrimitive::as_).unwrap_or(0);
                 }
             } else {
                 for x in arr.values_iter().copied() {
-                    *v += idxsize_to_u64(x);
+                    *v += x as Self::Value;
                 }
             }
         }
