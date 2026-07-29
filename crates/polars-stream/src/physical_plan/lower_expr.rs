@@ -1356,7 +1356,7 @@ fn lower_exprs_with_ctx(
                             PlSmallStr::from_static(RLE_VALUE_COLUMN_NAME),
                             value_dtype.clone(),
                         ),
-                        Field::new(PlSmallStr::from_static(RLE_LENGTH_COLUMN_NAME), LEN_DTYPE),
+                        Field::new(PlSmallStr::from_static(RLE_LENGTH_COLUMN_NAME), IDX_DTYPE),
                     ]),
                 )]);
                 let node_key = ctx
@@ -1382,7 +1382,7 @@ fn lower_exprs_with_ctx(
                 )?;
                 let node_kind = PhysNodeKind::RleId(input);
 
-                let output_schema = Schema::from_iter([(value_key.clone(), LEN_DTYPE)]);
+                let output_schema = Schema::from_iter([(value_key.clone(), IDX_DTYPE)]);
                 let node_key = ctx
                     .phys_sm
                     .insert(PhysNode::new(Arc::new(output_schema), node_kind));
@@ -1483,7 +1483,7 @@ fn lower_exprs_with_ctx(
                 };
                 let stop_is_len = matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Len);
 
-                dtype == LEN_DTYPE && start_is_zero && stop_is_len
+                dtype == IDX_DTYPE && start_is_zero && stop_is_len
             } =>
             {
                 let out_name = unique_column_name();
@@ -1528,7 +1528,7 @@ fn lower_exprs_with_ctx(
 
                 let out_name = unique_column_name();
                 let mut row_idx_col_aexpr = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
-                if dtype != LEN_DTYPE {
+                if dtype != IDX_DTYPE {
                     row_idx_col_aexpr = AExprBuilder::new_from_node(row_idx_col_aexpr)
                         .cast(dtype, ctx.expr_arena)
                         .node();
