@@ -7,7 +7,7 @@ use arrow::types::{NativeType, PrimitiveType};
 use polars_utils::aliases::{InitHashMaps, PlHashSet};
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
-use polars_utils::{IdxSize, UnitVec};
+use polars_utils::{IdxSize, LenSize, UnitVec};
 
 // Rebuild the amortized hashset when capacity exceeds `needed` by this
 // factor and is above `REBUILD_MIN_CAPACITY`. `.clear()` is O(capacity);
@@ -53,10 +53,10 @@ pub trait AmortizedUnique: Send + Sync + 'static {
     /// # Safety
     ///
     /// All indices i should be 0 <= i < values.len()
-    unsafe fn n_unique_idx(&mut self, values: &dyn Array, idxs: &[IdxSize]) -> IdxSize;
+    unsafe fn n_unique_idx(&mut self, values: &dyn Array, idxs: &[IdxSize]) -> LenSize;
 
     /// Get the number of unique items in an array slice.
-    fn n_unique_slice(&mut self, values: &dyn Array, start: IdxSize, length: IdxSize) -> IdxSize;
+    fn n_unique_slice(&mut self, values: &dyn Array, start: IdxSize, length: IdxSize) -> LenSize;
 }
 
 pub fn amortized_unique_from_dtype(dtype: &ArrowDataType) -> Box<dyn AmortizedUnique> {
@@ -141,13 +141,13 @@ impl AmortizedUnique for NullUnique {
         }
     }
 
-    unsafe fn n_unique_idx(&mut self, _values: &dyn Array, idxs: &[IdxSize]) -> IdxSize {
-        IdxSize::from(!idxs.is_empty())
+    unsafe fn n_unique_idx(&mut self, _values: &dyn Array, idxs: &[IdxSize]) -> LenSize {
+        LenSize::from(!idxs.is_empty())
     }
 
-    fn n_unique_slice(&mut self, values: &dyn Array, start: IdxSize, length: IdxSize) -> IdxSize {
+    fn n_unique_slice(&mut self, values: &dyn Array, start: IdxSize, length: IdxSize) -> LenSize {
         assert!(start.saturating_add(length) as usize <= values.len());
-        IdxSize::from(length > 0)
+        LenSize::from(length > 0)
     }
 }
 
@@ -262,9 +262,9 @@ impl AmortizedUnique for BooleanUnique {
         }
     }
 
-    unsafe fn n_unique_idx(&mut self, values: &dyn Array, idxs: &[IdxSize]) -> IdxSize {
+    unsafe fn n_unique_idx(&mut self, values: &dyn Array, idxs: &[IdxSize]) -> LenSize {
         if idxs.len() <= 1 {
-            return idxs.len() as IdxSize;
+            return idxs.len() as LenSize;
         }
 
         let values = values.as_any().downcast_ref::<BooleanArray>().unwrap();
@@ -282,7 +282,7 @@ impl AmortizedUnique for BooleanUnique {
                     Some(true) => 1 << 2,
                 };
             }
-            IdxSize::from(seen.count_ones())
+            LenSize::from(seen.count_ones())
         } else {
             let values = values.values();
             if values.set_bits() == 0 || values.unset_bits() == 0 {
@@ -301,9 +301,9 @@ impl AmortizedUnique for BooleanUnique {
         }
     }
 
-    fn n_unique_slice(&mut self, values: &dyn Array, start: IdxSize, length: IdxSize) -> IdxSize {
+    fn n_unique_slice(&mut self, values: &dyn Array, start: IdxSize, length: IdxSize) -> LenSize {
         if length <= 1 {
-            return length;
+            return length as LenSize;
         }
 
         let values = values.as_any().downcast_ref::<BooleanArray>().unwrap();
@@ -323,10 +323,10 @@ impl AmortizedUnique for BooleanUnique {
 
             if num_valid as IdxSize == length {
                 let num_trues = values.set_bits() as IdxSize;
-                1 + IdxSize::from(num_trues != length && num_trues != 0)
+                1 + LenSize::from(num_trues != length && num_trues != 0)
             } else {
                 let num_trues = values.num_intersections_with(validity);
-                2 + IdxSize::from(num_trues != num_valid && num_trues != 0)
+                2 + LenSize::from(num_trues != num_valid && num_trues != 0)
             }
         } else {
             let values = values.values();
@@ -337,7 +337,7 @@ impl AmortizedUnique for BooleanUnique {
             let values = BitMask::from_bitmap(values);
             let values = values.sliced(start as usize, length as usize);
             let num_trues = values.set_bits();
-            1 + IdxSize::from(num_trues != 0 && num_trues != values.len())
+            1 + LenSize::from(num_trues != 0 && num_trues != values.len())
         }
     }
 }
@@ -414,9 +414,9 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
         }
     }
 
-    unsafe fn n_unique_idx(&mut self, values: &dyn Array, idxs: &[IdxSize]) -> IdxSize {
+    unsafe fn n_unique_idx(&mut self, values: &dyn Array, idxs: &[IdxSize]) -> LenSize {
         if idxs.len() <= 1 {
-            return idxs.len() as IdxSize;
+            return idxs.len() as LenSize;
         }
 
         let values = values.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
@@ -428,7 +428,7 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
                 let value = unsafe { values.get_unchecked(i as usize) };
                 value.map(TotalOrdWrap)
             }));
-            self.1.len() as IdxSize
+            self.1.len() as LenSize
         } else {
             let values = values.values();
             reset_amortized(&mut self.0, idxs.len());
@@ -437,13 +437,13 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
                 let value = *unsafe { values.get_unchecked(i as usize) };
                 TotalOrdWrap(value)
             }));
-            self.0.len() as IdxSize
+            self.0.len() as LenSize
         }
     }
 
-    fn n_unique_slice(&mut self, values: &dyn Array, start: IdxSize, length: IdxSize) -> IdxSize {
+    fn n_unique_slice(&mut self, values: &dyn Array, start: IdxSize, length: IdxSize) -> LenSize {
         if length <= 1 {
-            return length;
+            return length as LenSize;
         }
 
         let values = values.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
@@ -456,7 +456,7 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
                 let value = unsafe { values.get_unchecked(i as usize) };
                 value.map(TotalOrdWrap)
             }));
-            self.1.len() as IdxSize
+            self.1.len() as LenSize
         } else {
             let values = values.values();
             reset_amortized(&mut self.0, length as usize);
@@ -465,7 +465,7 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
                     .iter()
                     .map(|&v| TotalOrdWrap(v)),
             );
-            self.0.len() as IdxSize
+            self.0.len() as LenSize
         }
     }
 }
@@ -579,9 +579,9 @@ impl AmortizedUnique for BinaryViewUnique {
         }
     }
 
-    unsafe fn n_unique_idx(&mut self, values: &dyn Array, idxs: &[IdxSize]) -> IdxSize {
+    unsafe fn n_unique_idx(&mut self, values: &dyn Array, idxs: &[IdxSize]) -> LenSize {
         if idxs.len() <= 1 {
-            return idxs.len() as IdxSize;
+            return idxs.len() as LenSize;
         }
 
         let values = values.as_any().downcast_ref::<BinaryViewArray>().unwrap();
@@ -594,7 +594,7 @@ impl AmortizedUnique for BinaryViewUnique {
                 // SAFETY: Gets cleared at end of the scope.
                 value.map(|v| unsafe { std::mem::transmute::<&[u8], &'static [u8]>(v) })
             }));
-            let out = self.1.len() as IdxSize;
+            let out = self.1.len() as LenSize;
             reset_amortized(&mut self.1, idxs.len());
             out
         } else {
@@ -618,15 +618,15 @@ impl AmortizedUnique for BinaryViewUnique {
                     unsafe { std::mem::transmute::<&[u8], &'static [u8]>(value) }
                 }));
             }
-            let out = self.0.len() as IdxSize;
+            let out = self.0.len() as LenSize;
             reset_amortized(&mut self.0, idxs.len());
             out
         }
     }
 
-    fn n_unique_slice(&mut self, values: &dyn Array, start: IdxSize, length: IdxSize) -> IdxSize {
+    fn n_unique_slice(&mut self, values: &dyn Array, start: IdxSize, length: IdxSize) -> LenSize {
         if length <= 1 {
-            return length;
+            return length as LenSize;
         }
 
         let values = values.as_any().downcast_ref::<BinaryViewArray>().unwrap();
@@ -640,7 +640,7 @@ impl AmortizedUnique for BinaryViewUnique {
                 // SAFETY: Gets cleared at end of the scope.
                 value.map(|v| unsafe { std::mem::transmute::<&[u8], &'static [u8]>(v) })
             }));
-            let out = self.1.len() as IdxSize;
+            let out = self.1.len() as LenSize;
             reset_amortized(&mut self.1, length as usize);
             out
         } else {
@@ -667,7 +667,7 @@ impl AmortizedUnique for BinaryViewUnique {
                     unsafe { std::mem::transmute::<&[u8], &'static [u8]>(value) }
                 }));
             }
-            let out = self.0.len() as IdxSize;
+            let out = self.0.len() as LenSize;
             reset_amortized(&mut self.0, length as usize);
             out
         }
@@ -749,9 +749,9 @@ impl AmortizedUnique for BinaryUnique {
         }
     }
 
-    unsafe fn n_unique_idx(&mut self, values: &dyn Array, idxs: &[IdxSize]) -> IdxSize {
+    unsafe fn n_unique_idx(&mut self, values: &dyn Array, idxs: &[IdxSize]) -> LenSize {
         if idxs.len() <= 1 {
-            return idxs.len() as IdxSize;
+            return idxs.len() as LenSize;
         }
 
         let values = values.as_any().downcast_ref::<LargeBinaryArray>().unwrap();
@@ -764,7 +764,7 @@ impl AmortizedUnique for BinaryUnique {
                 // SAFETY: Gets cleared at end of the scope.
                 value.map(|v| unsafe { std::mem::transmute::<&[u8], &'static [u8]>(v) })
             }));
-            let out = self.1.len() as IdxSize;
+            let out = self.1.len() as LenSize;
             reset_amortized(&mut self.1, idxs.len());
             out
         } else {
@@ -775,15 +775,15 @@ impl AmortizedUnique for BinaryUnique {
                 // SAFETY: Gets cleared at end of the scope.
                 unsafe { std::mem::transmute::<&[u8], &'static [u8]>(value) }
             }));
-            let out = self.0.len() as IdxSize;
+            let out = self.0.len() as LenSize;
             reset_amortized(&mut self.0, idxs.len());
             out
         }
     }
 
-    fn n_unique_slice(&mut self, values: &dyn Array, start: IdxSize, length: IdxSize) -> IdxSize {
+    fn n_unique_slice(&mut self, values: &dyn Array, start: IdxSize, length: IdxSize) -> LenSize {
         if length <= 1 {
-            return length;
+            return length as LenSize;
         }
 
         let values = values.as_any().downcast_ref::<LargeBinaryArray>().unwrap();
@@ -797,7 +797,7 @@ impl AmortizedUnique for BinaryUnique {
                 // SAFETY: Gets cleared at end of the scope.
                 value.map(|v| unsafe { std::mem::transmute::<&[u8], &'static [u8]>(v) })
             }));
-            let out = self.1.len() as IdxSize;
+            let out = self.1.len() as LenSize;
             reset_amortized(&mut self.1, length as usize);
             out
         } else {
@@ -808,7 +808,7 @@ impl AmortizedUnique for BinaryUnique {
                 // SAFETY: Gets cleared at end of the scope.
                 unsafe { std::mem::transmute::<&[u8], &'static [u8]>(value) }
             }));
-            let out = self.0.len() as IdxSize;
+            let out = self.0.len() as LenSize;
             reset_amortized(&mut self.0, length as usize);
             out
         }

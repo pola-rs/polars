@@ -323,12 +323,12 @@ impl Series {
                     .map_with(CloneWrapper(state), |state, idxs| unsafe {
                         let idxs = idxs.as_slice();
                         if idxs.len() > N_UNIQUE_SORT_FALLBACK_THRESHOLD {
-                            col.take_slice_unchecked(idxs).n_unique().unwrap() as IdxSize
+                            col.take_slice_unchecked(idxs).n_unique().unwrap() as LenSize
                         } else {
                             state.0.n_unique_idx(values, idxs)
                         }
                     })
-                    .collect::<NoNull<IdxCa>>(),
+                    .collect::<NoNull<LenCa>>(),
                 GroupsType::Slice {
                     groups,
                     overlapping: _,
@@ -338,12 +338,12 @@ impl Series {
                     .map_with(CloneWrapper(state), |state, &[start, len]| {
                         let len_us = len as usize;
                         if len_us > N_UNIQUE_SORT_FALLBACK_THRESHOLD {
-                            col.slice(start as i64, len_us).n_unique().unwrap() as IdxSize
+                            col.slice(start as i64, len_us).n_unique().unwrap() as LenSize
                         } else {
                             state.0.n_unique_slice(values, start, len)
                         }
                     })
-                    .collect::<NoNull<IdxCa>>(),
+                    .collect::<NoNull<LenCa>>(),
             })
             .into_inner()
             .into_series()
