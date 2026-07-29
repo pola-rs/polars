@@ -102,13 +102,13 @@ def test_array_lengths() -> None:
     out = df.select(pl.col("a").arr.len(), pl.col("b").arr.len())
     expected_df = pl.DataFrame(
         {"a": [3], "b": [2]},
-        schema={"a": pl.get_index_type(), "b": pl.get_index_type()},
+        schema={"a": pl.Int64, "b": pl.Int64},
     )
     assert_frame_equal(out, expected_df)
 
     assert pl.Series("a", [], pl.Array(pl.Null, 1)).arr.len().to_list() == []
     assert pl.Series(
-        "a", [[1, 2, 3], None, [7, 8, 9]], pl.Array(pl.get_index_type(), 3)
+        "a", [[1, 2, 3], None, [7, 8, 9]], pl.Array(pl.Int64, 3)
     ).arr.len().to_list() == [3, None, 3]
 
 
