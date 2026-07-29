@@ -111,19 +111,6 @@ impl GroupedReduction for CountReduce {
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         let v: Vec<LenSize> = core::mem::take(&mut self.counts);
-        let len = v.len();
-
-        let v: Vec<LenSize> = v
-            .into_iter()
-            .filter_map(|x| LenSize::try_from(x).ok())
-            .collect();
-
-        polars_ensure!(
-            v.len() == len,
-            ComputeError:
-            LENGTH_LIMIT_MSG
-        );
-
         Ok(LenCa::from_vec(PlSmallStr::EMPTY, v).into_series())
     }
 
@@ -133,8 +120,8 @@ impl GroupedReduction for CountReduce {
 }
 
 pub struct NullCountReduce {
-    counts: Vec<u64>,
-    evicted_counts: Vec<u64>,
+    counts: Vec<LenSize>,
+    evicted_counts: Vec<LenSize>,
 }
 
 impl NullCountReduce {
@@ -166,7 +153,7 @@ impl GroupedReduction for NullCountReduce {
         _seq_id: u64,
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
-        self.counts[group_idx as usize] += values.null_count() as u64;
+        self.counts[group_idx as usize] += values.null_count() as i64;
         Ok(())
     }
 
@@ -191,7 +178,7 @@ impl GroupedReduction for NullCountReduce {
                     self.evicted_counts.push(*grp);
                     *grp = 0;
                 }
-                *grp += (!valid.get_bit_unchecked(*i as usize)) as u64;
+                *grp += (!valid.get_bit_unchecked(*i as usize)) as i64;
             }
         } else {
             for (_, g) in subset.iter().zip(group_idxs) {
@@ -231,12 +218,8 @@ impl GroupedReduction for NullCountReduce {
     }
 
     fn finalize(&mut self) -> PolarsResult<Series> {
-        let ca: LenCa = self
-            .counts
-            .drain(..)
-            .map(|l| LenSize::try_from(l).expect(LENGTH_LIMIT_MSG))
-            .collect_ca(PlSmallStr::EMPTY);
-        Ok(ca.into_series())
+        let v: Vec<LenSize> = core::mem::take(&mut self.counts);
+        Ok(LenCa::from_vec(PlSmallStr::EMPTY, v).into_series())
     }
 
     fn as_any(&self) -> &dyn Any {

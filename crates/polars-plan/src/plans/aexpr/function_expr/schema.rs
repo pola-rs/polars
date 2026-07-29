@@ -350,7 +350,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "rle")]
             RLE => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![
-                    Field::new(PlSmallStr::from_static("len"), LEN_DTYPE),
+                    Field::new(PlSmallStr::from_static("len"), IDX_DTYPE),
                     Field::new(PlSmallStr::from_static("value"), dt.clone()),
                 ])
             }),
