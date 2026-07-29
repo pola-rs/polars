@@ -20,7 +20,7 @@ use polars_core::scalar::Scalar;
 use polars_core::series::{ChunkCompareEq, Series};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{IdxSize, UnitVec};
+use polars_utils::{IdxSize, LenSize, UnitVec};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::expressions::evaluate_count_on_ac;
@@ -95,7 +95,7 @@ pub fn null_count<'a>(
     let Some(validity) = values.rechunk_validity() else {
         ac.state = AggState::AggregatedScalar(Column::new_scalar(
             name,
-            (0 as IdxSize).into(),
+            (0 as LenSize).into(),
             groups.len(),
         ));
         return Ok(ac);
@@ -103,13 +103,13 @@ pub fn null_count<'a>(
 
     RAYON.install(|| {
         let validity = BitMask::from_bitmap(&validity);
-        let null_count: Vec<IdxSize> = match &**ac.groups.as_ref() {
+        let null_count: Vec<LenSize> = match &**ac.groups.as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
                 .map(|(_, idx)| {
                     idx.iter()
-                        .map(|i| IdxSize::from(!unsafe { validity.get_bit_unchecked(*i as usize) }))
-                        .sum::<IdxSize>()
+                        .map(|i| LenSize::from(!unsafe { validity.get_bit_unchecked(*i as usize) }))
+                        .sum::<LenSize>()
                 })
                 .collect(),
             GroupsType::Slice {
@@ -120,7 +120,7 @@ pub fn null_count<'a>(
                 .into_par_iter()
                 .map(|[start, length]| {
                     unsafe { validity.sliced_unchecked(*start as usize, *length as usize) }
-                        .unset_bits() as IdxSize
+                        .unset_bits() as LenSize
                 })
                 .collect(),
         };
