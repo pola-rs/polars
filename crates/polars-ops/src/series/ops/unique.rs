@@ -9,7 +9,7 @@ use polars_core::utils::NoNull;
 use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
-fn unique_counts_helper<I, J>(items: I) -> IdxCa
+fn unique_counts_helper<I, J>(items: I) -> LenCa
 where
     I: Iterator<Item = J>,
     J: TotalHash + TotalEq + ToTotalOrd,
@@ -22,18 +22,18 @@ where
             .and_modify(|cnt| {
                 *cnt += 1;
             })
-            .or_insert(1 as IdxSize);
+            .or_insert(1 as LenSize);
     }
-    let out: NoNull<IdxCa> = map.into_values().collect();
+    let out: NoNull<LenCa> = map.into_values().collect();
     out.into_inner()
 }
 
 /// Returns a count of the unique values in the order of appearance.
 pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
     if s.is_empty() {
-        return Ok(IdxCa::new(s.name().clone(), [] as [IdxSize; 0]).into_series());
+        return Ok(Int64Chunked::new(s.name().clone(), [] as [LenSize; 0]).into_series());
     } else if s.null_count() == s.len() {
-        return Ok(IdxCa::new(s.name().clone(), [s.len() as IdxSize]).into_series());
+        return Ok(Int64Chunked::new(s.name().clone(), [s.len() as LenSize]).into_series());
     }
 
     let mut s = Cow::Borrowed(s);
@@ -78,11 +78,11 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
         DataType::Boolean => {
             let ca = s.bool()?;
 
-            let num_trues = ca.num_trues() as IdxSize;
-            let num_nulls = ca.null_count() as IdxSize;
-            let num_falses = ca.len() as IdxSize - num_trues - num_nulls;
+            let num_trues = ca.num_trues() as LenSize;
+            let num_nulls = ca.null_count() as LenSize;
+            let num_falses = ca.len() as LenSize - num_trues - num_nulls;
 
-            let values: Vec<IdxSize> = match ca.get(0) {
+            let values: Vec<LenSize> = match ca.get(0) {
                 Some(false) if num_nulls == 0 && num_trues == 0 => vec![num_falses],
                 Some(false) if num_nulls == 0 => vec![num_falses, num_trues],
                 Some(false) if num_trues == 0 => vec![num_falses, num_nulls],
@@ -123,7 +123,7 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
                     }
                 },
             };
-            Ok(IdxCa::new(s.name().clone(), values).into_series())
+            Ok(LenCa::new(s.name().clone(), values).into_series())
         },
 
         #[cfg(feature = "dtype-extension")]

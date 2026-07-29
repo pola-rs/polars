@@ -10,6 +10,8 @@ pub type IdxSize = u32;
 #[cfg(feature = "bigidx")]
 pub type IdxSize = u64;
 
+pub type LenSize = i64;
+
 /// Avoids clippy::unnecessary_cast when compiling with bigidx enabled.
 #[inline]
 pub const fn idxsize_to_u64(

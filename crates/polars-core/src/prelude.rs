@@ -11,7 +11,7 @@ pub use polars_compute::rolling::{
 };
 pub use polars_row::RowEncodingOptions;
 pub use polars_utils::aliases::*;
-pub use polars_utils::index::{ChunkId, IdxSize, NullableIdxSize};
+pub use polars_utils::index::{ChunkId, IdxSize, LenSize, NullableIdxSize};
 pub use polars_utils::pl_str::PlSmallStr;
 pub(crate) use polars_utils::total_ord::{TotalEq, TotalOrd};
 
