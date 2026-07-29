@@ -3823,7 +3823,7 @@ class Expr(metaclass=_Meta):
         return wrap_expr(self._pyexpr.approx_n_unique())
 
     def approx_quantile(
-        self, quantile: float | list_[float] | Expr, *, error: float = 1 / 1_000_000
+        self, quantile: float | list_[float] | Expr, *, error: float = 1 / 100
     ) -> Expr:
         """Compute approximate quantile(s) of an expression."""
         # TODO: [amber] Extend docstring
