@@ -139,7 +139,7 @@ def test_count() -> None:
             "one_null_float": [2],
             "no_nulls_int": [3],
         },
-    ).cast(pl.get_index_type())
+    ).cast(pl.Int64)
     assert_frame_equal(lf_result, expected)
     assert_frame_equal(df_result, expected.collect())
 

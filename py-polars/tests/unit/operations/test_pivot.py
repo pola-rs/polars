@@ -171,8 +171,8 @@ def test_pivot_categorical_index(maintain_order: bool) -> None:
         {"A": ["Fire", "Water"], "Car": [1, 2], "Ship": [1, 0]},
         schema={
             "A": pl.Categorical,
-            "Car": pl.get_index_type(),
-            "Ship": pl.get_index_type(),
+            "Car": pl.Int64,
+            "Ship": pl.Int64,
         },
     )
     assert_frame_equal(result, expected, check_row_order=maintain_order)
@@ -212,8 +212,8 @@ def test_pivot_categorical_index(maintain_order: bool) -> None:
         schema={
             "A": pl.Categorical,
             "C": pl.Categorical,
-            "Car": pl.get_index_type(),
-            "Ship": pl.get_index_type(),
+            "Car": pl.Int64,
+            "Ship": pl.Int64,
         },
     )
     assert_frame_equal(result, expected, check_row_order=maintain_order)
