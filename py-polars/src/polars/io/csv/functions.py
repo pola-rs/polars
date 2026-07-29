@@ -90,7 +90,7 @@ def read_csv(
     row_index_offset: int = 0,
     sample_size: int = 1024,
     eol_char: str = "\n",
-    raise_if_empty: bool = True,
+    raise_if_empty: bool | None = None,
     truncate_ragged_lines: bool = False,
     decimal_comma: bool = False,
     glob: bool = True,
@@ -255,8 +255,13 @@ def read_csv(
         with windows line endings (``\r\n``), one can go with the default ``\n``. The
         extra ``\r`` will be removed when processed.
     raise_if_empty
-        When there is no data in the source, `NoDataError` is raised. If this parameter
-        is set to False, an empty DataFrame (with no columns) is returned instead.
+        Control behavior when scanning empty files:
+
+        * `True`: Raise a `NoDataError`.
+        * `False`: Return 0 rows.
+
+        This defaults to `False` if `has_header=False` and a `schema` is specified,
+        and `True` otherwise.
     truncate_ragged_lines
         Truncate lines that are longer than the schema.
     decimal_comma
@@ -335,6 +340,9 @@ def read_csv(
     ):
         msg = "`schema_overrides` should be of type list or dict"
         raise TypeError(msg)
+
+    if raise_if_empty is None:
+        raise_if_empty = schema is None or has_header
 
     if (
         use_pyarrow
@@ -815,8 +823,8 @@ def scan_csv(
     try_parse_dates: bool = False,
     eol_char: str = "\n",
     new_columns: Sequence[str] | None = None,
-    raise_if_empty: bool = True,
     truncate_ragged_lines: bool | None = None,
+    raise_if_empty: bool | None = None,
     decimal_comma: bool = False,
     glob: bool = True,
     storage_options: StorageOptionsDict | None = None,
@@ -939,8 +947,13 @@ def scan_csv(
         scanning a headerless CSV file). If the given list is shorter than the width of
         the DataFrame the remaining columns will have their original name.
     raise_if_empty
-        When there is no data in the source, `NoDataError` is raised. If this parameter
-        is set to False, an empty LazyFrame (with no columns) is returned instead.
+        Control behavior when scanning empty files:
+
+        * `True`: Raise a `NoDataError`.
+        * `False`: Return 0 rows.
+
+        This defaults to `False` if `has_header=False` and a `schema` is specified,
+        and `True` otherwise.
     truncate_ragged_lines
         Truncate lines that are longer than the schema.
     decimal_comma
@@ -1085,6 +1098,9 @@ def scan_csv(
 
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
+
+    if raise_if_empty is None:
+        raise_if_empty = schema is None or has_header
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)

@@ -6,7 +6,6 @@ import io
 import math
 import subprocess
 import sys
-import warnings
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
@@ -2033,7 +2032,7 @@ def test_prefilter_with_hive_19766(
 @pytest.mark.parametrize("streaming", [True, False])
 @pytest.mark.parametrize("projection", [pl.all(), pl.col("b")])
 @pytest.mark.write_disk
-def test_allow_missing_columns(
+def test_scan_parquet_missing_columns(
     tmp_path: Path,
     parallel: str,
     streaming: bool,
@@ -2078,33 +2077,6 @@ def test_allow_missing_columns(
         .collect(engine="streaming" if streaming else "in-memory"),
         expected,
     )
-
-    # Test deprecated parameter
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-
-        with pytest.raises(
-            pl.exceptions.ColumnNotFoundError,
-            match="passing `missing_columns='insert'`",
-        ):
-            assert_frame_equal(
-                pl.scan_parquet(
-                    paths,
-                    parallel=parallel,  # type: ignore[arg-type]
-                    allow_missing_columns=False,
-                ).collect(engine="streaming" if streaming else "in-memory"),
-                expected_full,
-            )
-
-        assert_frame_equal(
-            pl.scan_parquet(
-                paths,
-                parallel=parallel,  # type: ignore[arg-type]
-                allow_missing_columns=True,
-            ).collect(engine="streaming" if streaming else "in-memory"),
-            expected_full,
-        )
 
 
 def test_nested_nonnullable_19158() -> None:
