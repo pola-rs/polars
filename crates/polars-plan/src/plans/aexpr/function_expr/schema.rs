@@ -355,7 +355,7 @@ impl IRFunctionExpr {
                 ])
             }),
             #[cfg(feature = "rle")]
-            RLEID => mapper.with_dtype(LEN_DTYPE),
+            RLEID => mapper.with_dtype(IDX_DTYPE),
             ToPhysical => mapper.to_physical_type(),
             #[cfg(feature = "random")]
             Random { .. } => mapper.with_same_dtype(),
