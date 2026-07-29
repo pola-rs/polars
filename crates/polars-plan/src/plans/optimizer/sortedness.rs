@@ -768,6 +768,16 @@ pub fn function_expr_sortedness(
                 return None;
             };
 
+            let input_dtype = arena
+                .get(e.node())
+                .to_dtype(&ToFieldContext::new(arena, schema))
+                .ok()?;
+            if !matches!(input_dtype, DataType::String) {
+                // The natural sorting of the input might be different from the lexicographical order
+                // of the string representations
+                return None;
+            }
+
             rec_ae!(e.node())
         },
 
