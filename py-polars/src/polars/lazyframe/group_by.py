@@ -402,7 +402,7 @@ class LazyGroupBy:
         ┌────────┬─────┐
         │ a      ┆ len │
         │ ---    ┆ --- │
-        │ str    ┆ u32 │
+        │ str    ┆ i64 │
         ╞════════╪═════╡
         │ Apple  ┆ 2   │
         │ Orange ┆ 1   │
@@ -412,7 +412,7 @@ class LazyGroupBy:
         ┌────────┬─────┐
         │ a      ┆ n   │
         │ ---    ┆ --- │
-        │ str    ┆ u32 │
+        │ str    ┆ i64 │
         ╞════════╪═════╡
         │ Apple  ┆ 2   │
         │ Orange ┆ 1   │

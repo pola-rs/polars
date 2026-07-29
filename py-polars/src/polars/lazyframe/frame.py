@@ -7312,7 +7312,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
-        │ u32 ┆ u32 │
+        │ i64 ┆ i64 │
         ╞═════╪═════╡
         │ 4   ┆ 2   │
         └─────┴─────┘
