@@ -107,6 +107,19 @@ def test_sort_node_prune_hint_multiple() -> None:
     assert 'SORT BY [maintain_order: true] [col("a"), col("b")]' in q.explain()
 
 
+def test_reverse_sortedness_nulls_last_28558() -> None:
+    q = (
+        pl.LazyFrame({"a": [1, 2, 3, None, None]})
+        .sort("a", nulls_last=True)
+        .reverse()
+        .sort("a", descending=True, nulls_last=True)
+    )
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [3, 2, 1, None, None]}),
+    )
+
+
 @pytest.mark.parametrize("idx_descending", [False, True])
 @pytest.mark.parametrize("output_descending", [False, True])
 def test_sort_node_collapse_gather_28491(
