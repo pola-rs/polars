@@ -31,9 +31,9 @@ where
 /// Returns a count of the unique values in the order of appearance.
 pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
     if s.is_empty() {
-        return Ok(Int64Chunked::new(s.name().clone(), [] as [LenSize; 0]).into_series());
+        return Ok(LenCa::new(s.name().clone(), [] as [LenSize; 0]).into_series());
     } else if s.null_count() == s.len() {
-        return Ok(Int64Chunked::new(s.name().clone(), [s.len() as LenSize]).into_series());
+        return Ok(LenCa::new(s.name().clone(), [s.len() as LenSize]).into_series());
     }
 
     let mut s = Cow::Borrowed(s);

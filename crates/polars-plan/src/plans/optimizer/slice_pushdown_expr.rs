@@ -203,7 +203,7 @@ impl Slice {
                 )))),
                 expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
                     LEN_DTYPE,
-                    AnyValue::Int64(i64::try_from(*len).unwrap()),
+                    AnyValue::Int64(LenSize::try_from(*len).unwrap()),
                 )))),
             ),
             Self::Opaque { offset, len } => (*offset, *len),
