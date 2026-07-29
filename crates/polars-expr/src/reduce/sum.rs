@@ -127,7 +127,7 @@ impl Clone for LenTypeCheckedSumReducer {
 }
 
 impl Reducer for LenTypeCheckedSumReducer {
-    type Dtype = IdxType;
+    type Dtype = LenType;
     type Value = <<LenType as PolarsNumericType>::Native as SumCast>::Sum;
 
     #[inline(always)]
