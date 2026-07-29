@@ -28,7 +28,10 @@ pub fn new_approx_n_unique_reduction(dtype: DataType) -> PolarsResult<Box<dyn Gr
             CategoricalPhysical::U16 => Box::new(VGR::new(dtype, R::<UInt16Type>::default())),
             CategoricalPhysical::U32 => Box::new(VGR::new(dtype, R::<UInt32Type>::default())),
         },
-        Null => Box::new(super::NullGroupedReduction::new(Scalar::new_idxsize(1))),
+        Null => Box::new(super::NullGroupedReduction::new(Scalar::new(
+            DataType::LEN_DTYPE,
+            AnyValue::Int64(1),
+        ))),
         _ => {
             polars_bail!(InvalidOperation: "`approx_n_unique` operation not supported for dtype `{dtype}`")
         },
