@@ -171,15 +171,15 @@ class Expr:
         >>> df = pl.DataFrame({"values": ["a", "b"]}).select(
         ...     pl.col("values").cast(pl.Categorical)
         ... )
-        >>> df.select(pl.col("values").cat.get_categories())
+        >>> df.select(pl.col("values").cat.starts_with("a"))
         shape: (2, 1)
         ┌────────┐
         │ values │
         │ ---    │
-        │ str    │
+        │ bool   │
         ╞════════╡
-        │ a      │
-        │ b      │
+        │ true   │
+        │ false  │
         └────────┘
         """
         return ExprCatNameSpace(self)
