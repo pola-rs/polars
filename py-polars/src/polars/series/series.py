@@ -3240,7 +3240,7 @@ class Series:
         >>> s = pl.Series(["x", "k", None, "d"])
         >>> s.cum_count()
         shape: (4,)
-        Series: '' [u32]
+        Series: '' [i64]
         [
             1
             2
