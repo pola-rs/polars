@@ -1459,7 +1459,7 @@ fn test_filter_count() -> PolarsResult<()> {
             .filter(col("fruits").eq(lit("banana")))
             .count()])
         .collect()?;
-    assert_eq!(out.column("fruits")?.idx()?.get(0), Some(3));
+    assert_eq!(out.column("fruits")?.i64()?.get(0), Some(3));
     Ok(())
 }
 
