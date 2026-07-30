@@ -849,7 +849,10 @@ def test_write_csv_always_quote_preserves_nulls(chunk_override: None) -> None:
 
     csv_data = df.write_csv(quote_style="always")
 
-    assert csv_data == '"s","i","b","f"\n"a","1","true","1.5"\n,,,\n"","2","false","2.5"\n'
+    assert (
+        csv_data
+        == '"s","i","b","f"\n"a","1","true","1.5"\n,,,\n"","2","false","2.5"\n'
+    )
     assert_frame_equal(df, pl.read_csv(io.StringIO(csv_data)))
 
 
