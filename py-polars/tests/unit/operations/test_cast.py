@@ -1009,7 +1009,7 @@ def test_cast_to_list_not_supported() -> None:
 def test_cast_int_to_categorical_deprecated(dtype: PolarsDataType) -> None:
     _dummy = pl.Series("a", ["cat0", "cat1", "cat2"], dtype=dtype)
 
-    msg = r"conversion from `u32` to `(cat|enum)` failed"
+    msg = r"casting from u32 to enum is not supported"
     with pytest.raises(match=msg):
         pl.Series("a", [2, 0, 1], dtype=pl.UInt32).cast(dtype)
 
