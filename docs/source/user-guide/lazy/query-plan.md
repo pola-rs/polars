@@ -73,11 +73,16 @@ to:
 
 Now we visualize the optimized plan with `show_graph`.
 
-{{code_block('user-guide/lazy/query-plan','show',['show_graph'])}}
+{{code_block('user-guide/lazy/query-plan','showir',['show_graph'])}}
 
 ```python exec="on" session="user-guide/lazy/query-plan"
 --8<-- "python/user-guide/lazy/query-plan.py:createplan2"
 ```
+
+When using the streaming engine, we can also visualize the physical plan by
+setting `plan_type="streaming"` (the default).
+
+{{code_block('user-guide/lazy/query-plan','showphysical',['show_graph'])}}
 
 We can also print the optimized plan with `explain`
 
