@@ -1575,6 +1575,31 @@ def test_sliced_struct_arrow_export_19612() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("values", "dtype", "expected"),
+    [
+        (
+            [[0, 0], [1, 2], [3, 4], None, [7, 8]],
+            pl.Array(pl.Int64, 2),
+            [[1, 2], [3, 4], None],
+        ),
+        (
+            [[0], [1, 2], [3, 4, 5], None, [7, 8]],
+            pl.List(pl.Int64),
+            [[1, 2], [3, 4, 5], None],
+        ),
+    ],
+)
+def test_sliced_nested_arrow_export_28583(
+    values: list[Any], dtype: pl.DataType, expected: list[Any]
+) -> None:
+    s = pl.Series(values, dtype=dtype).slice(1, 3)
+
+    assert s.to_list() == expected
+    assert s.to_arrow().to_pylist() == expected
+    assert pa.table(s.to_frame()).column(0).to_pylist() == expected
+
+
 def test_from_arrow_capsule_24511() -> None:
     # 2.0: Remove FutureWarning and change expected values to be struct-type Series.
     with pytest.warns(FutureWarning):
