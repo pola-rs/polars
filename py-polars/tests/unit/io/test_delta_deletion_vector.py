@@ -552,6 +552,8 @@ def test_scan_delta_dv_single(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
+    from filelock import FileLock
+
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     path = tmp_path / "delta_table"
@@ -570,6 +572,12 @@ def test_scan_delta_dv_single(
     import duckdb
 
     conn = duckdb.connect()
+
+    lock_file = tmp_path / "duckdb_delta_install.lock"
+    with FileLock(lock_file):
+        conn.execute("INSTALL delta;")
+    conn.execute("LOAD delta;")
+
     df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
     assert_frame_equal(out, df_duckdb, check_row_order=False)
 
