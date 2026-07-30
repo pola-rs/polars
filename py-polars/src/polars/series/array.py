@@ -76,13 +76,15 @@ class ArrayNameSpace:
         ]
         """
 
-    def dot(self, other: Series) -> Series:
+    def dot(self, other: IntoExpr) -> Series:
         """
-        Compute row-wise dot product with another Array Series.
+        Compute row-wise dot product with another Array Series or query vector.
 
         Both inputs must contain equal-width arrays with matching ``Float32`` or
         ``Float64`` inner dtypes.
         Series with one row is broadcast against other Series.
+        A Python sequence or one-dimensional NumPy array is treated as a one-row
+        query and cast to this Series' data type.
         Products containing an inner null are ignored. An outer null row produces
         a null.
 
@@ -96,6 +98,16 @@ class ArrayNameSpace:
         [
             17.0
             53.0
+        ]
+
+        A Python sequence can be used as a broadcast query.
+
+        >>> a.arr.dot([2.0, 3.0])
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            8.0
+            18.0
         ]
         """
 

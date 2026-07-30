@@ -4,6 +4,8 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from polars import functions as F
+from polars._dependencies import _check_for_numpy
+from polars._dependencies import numpy as np
 from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import _Omitted
@@ -290,7 +292,10 @@ class ExprArrayNameSpace:
         Parameters
         ----------
         other
-            Array expression to compute dot product with.
+            Array expression or query vector to compute dot product with.
+            A Python sequence or one-dimensional NumPy array is treated as a
+            one-row query and cast to the data type of the input expression.
+            Expression inputs must have matching Array data types.
 
         Examples
         --------
@@ -315,9 +320,9 @@ class ExprArrayNameSpace:
         │ 53.0 │
         └──────┘
 
-        A one-row Array expression can be used as a broadcast query.
+        A Python sequence can be used as a broadcast query.
 
-        >>> query = pl.lit([2.0, 3.0], dtype=pl.Array(pl.Float64, 2))
+        >>> query = [2.0, 3.0]
         >>> df.select(pl.col("a").arr.dot(query))
         shape: (2, 1)
         ┌──────┐
@@ -329,8 +334,31 @@ class ExprArrayNameSpace:
         │ 18.0 │
         └──────┘
         """
+        is_raw_vector = isinstance(other, Sequence) and not isinstance(
+            other, (str, bytes)
+        )
+        if _check_for_numpy(other) and isinstance(other, np.ndarray):
+            if other.ndim != 1:
+                msg = "arr.dot query vector must be one-dimensional"
+                raise ValueError(msg)
+            other = other.tolist()
+            is_raw_vector = True
+
         other_pyexpr = parse_into_expression(other)
-        return wrap_expr(self._pyexpr.arr_dot(other_pyexpr))
+        if is_raw_vector:
+            is_literal_expr = False
+        else:
+            from polars.expr.expr import Expr
+
+            is_literal_expr = isinstance(other, Expr) and other.meta.is_literal(
+                allow_aliasing=True
+            )
+        return wrap_expr(
+            self._pyexpr.arr_dot(
+                other_pyexpr,
+                cast_to_lhs_dtype=is_raw_vector or is_literal_expr,
+            )
+        )
 
     def std(self, ddof: int = 1) -> Expr:
         """
