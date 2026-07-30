@@ -155,7 +155,7 @@ impl IRStringFunction {
             ConcatVertical { .. } | ConcatHorizontal { .. } => mapper.with_dtype(DataType::String),
             #[cfg(feature = "regex")]
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
-            CountMatches(_) => mapper.with_dtype(DataType::UInt32),
+            CountMatches(_) => mapper.with_dtype(DataType::Int64),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Extract(_) => mapper.with_same_dtype(),
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::String))),

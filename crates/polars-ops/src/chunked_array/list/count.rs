@@ -48,7 +48,9 @@ pub fn list_count_matches(ca: &ListChunked, value: AnyValue) -> PolarsResult<Ser
         ChunkCompareEq::<&Series>::equal_missing(&s, &value).map(|ca| ca.into_series())
     })?;
     let out = count_boolean_bits(&ca);
-    Ok(out.into_series())
+    // TODO: Once we change the sum type of booleans to Int64, we can change
+    // count_boolean_bits to return a LenCa, and remove this cast.
+    Ok(out.cast(&LEN_DTYPE)?)
 }
 
 pub(super) fn count_boolean_bits(ca: &ListChunked) -> IdxCa {
