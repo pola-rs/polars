@@ -157,10 +157,10 @@ impl CsvSerializer {
         let serializers = self.build_serializers(df.columns(), &mut serializers_vec)?;
 
         for _ in 0..df.height() {
-            serializers[0].serialize(buffer, options);
+            let _ = serializers[0].serialize(buffer, options);
             for serializer in &mut serializers[1..] {
                 buffer.push(options.separator);
-                serializer.serialize(buffer, options);
+                let _ = serializer.serialize(buffer, options);
             }
 
             buffer.extend_from_slice(options.line_terminator.as_bytes());
@@ -268,7 +268,7 @@ pub fn csv_header(names: &[&str], options: &SerializeOptions) -> PolarsResult<Ve
         &fake_arr,
     );
     for i in 0..names.len() {
-        names_serializer.serialize(&mut header, options);
+        let _ = names_serializer.serialize(&mut header, options);
         if i != names.len() - 1 {
             header.push(options.separator);
         }

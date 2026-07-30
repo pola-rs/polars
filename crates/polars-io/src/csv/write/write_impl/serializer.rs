@@ -5,8 +5,7 @@
 //! We need to differentiate between several kinds of types, and several kinds of escaping we support:
 //!
 //!  - The simplest escaping mechanism are [`QuoteStyle::Always`] and [`QuoteStyle::Never`].
-//!    For `Never` we just never quote. For `Always` we pass any serializer that never quotes
-//!    to [`quote_serializer()`] then it becomes quoted properly.
+//!    For `Never` we just never quote. For `Always` we quote every non-null value.
 //!  - [`QuoteStyle::Necessary`] (the default) is only relevant for strings and floats with decimal_comma,
 //!    as these are the only types that can have newlines (row separators), commas (default column separators)
 //!    or quotes. String escaping is complicated anyway, and it is all inside [`string_serializer()`].
@@ -57,7 +56,8 @@ impl std::fmt::Write for IgnoreFmt {
 }
 
 pub(super) trait Serializer<'a> {
-    fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions);
+    /// Serializes one value and returns whether that value was null.
+    fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) -> bool;
 }
 
 fn make_serializer<'a, T, I: Iterator<Item = Option<T>>, const QUOTE_NON_NULL: bool>(
@@ -75,7 +75,7 @@ fn make_serializer<'a, T, I: Iterator<Item = Option<T>>, const QUOTE_NON_NULL: b
         F: FnMut(T, &mut Vec<u8>, &SerializeOptions),
         I: Iterator<Item = Option<T>>,
     {
-        fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) {
+        fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) -> bool {
             let item = self.iter.next().expect(TOO_MANY_MSG);
             match item {
                 Some(item) => {
@@ -86,8 +86,12 @@ fn make_serializer<'a, T, I: Iterator<Item = Option<T>>, const QUOTE_NON_NULL: b
                     if QUOTE_NON_NULL {
                         buf.push(options.quote_char);
                     }
+                    false
                 },
-                None => buf.extend_from_slice(options.null.as_bytes()),
+                None => {
+                    buf.extend_from_slice(options.null.as_bytes());
+                    true
+                },
             }
         }
     }
@@ -312,8 +316,9 @@ fn float_serializer_with_precision_positional_decimal_comma<I: NativeType>(
 fn null_serializer(_array: &NullArray) -> impl Serializer<'_> {
     struct NullSerializer;
     impl<'a> Serializer<'a> for NullSerializer {
-        fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) {
+        fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) -> bool {
             buf.extend_from_slice(options.null.as_bytes());
+            true
         }
     }
     NullSerializer
@@ -444,10 +449,10 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
 
     impl<'a, F, Iter> Serializer<'a> for StringSerializer<F, Iter>
     where
-        F: FnMut(&mut Iter, &mut Vec<u8>, &SerializeOptions),
+        F: FnMut(&mut Iter, &mut Vec<u8>, &SerializeOptions) -> bool,
     {
-        fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) {
-            (self.serialize)(&mut self.iter, buf, options);
+        fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) -> bool {
+            (self.serialize)(&mut self.iter, buf, options)
         }
     }
 
@@ -489,12 +494,13 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                 move |iter: &mut Iter, buf: &mut Vec<u8>, options: &SerializeOptions| {
                     let Some(s) = f(iter) else {
                         buf.extend_from_slice(options.null.as_bytes());
-                        return;
+                        return true;
                     };
                     let quote_char = options.quote_char;
                     buf.push(quote_char);
                     serialize_str_escaped(buf, s.as_bytes(), quote_char, true);
                     buf.push(quote_char);
+                    false
                 };
             Box::new(StringSerializer { serialize, iter })
         },
@@ -503,12 +509,13 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                 move |iter: &mut Iter, buf: &mut Vec<u8>, options: &SerializeOptions| {
                     let Some(s) = f(iter) else {
                         buf.extend_from_slice(options.null.as_bytes());
-                        return;
+                        return true;
                     };
                     let quote_char = options.quote_char;
                     buf.push(quote_char);
                     serialize_str_escaped(buf, s.as_bytes(), quote_char, true);
                     buf.push(quote_char);
+                    false
                 };
             Box::new(StringSerializer { serialize, iter })
         },
@@ -517,13 +524,13 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                 move |iter: &mut Iter, buf: &mut Vec<u8>, options: &SerializeOptions| {
                     let Some(s) = f(iter) else {
                         buf.extend_from_slice(options.null.as_bytes());
-                        return;
+                        return true;
                     };
                     let quote_char = options.quote_char;
                     // An empty string conflicts with null, so it is necessary to quote.
                     if s.is_empty() {
                         buf.extend_from_slice(&[quote_char, quote_char]);
-                        return;
+                        return false;
                     }
                     let needs_quote = memchr3(options.separator, LF, CR, s.as_bytes()).is_some();
                     if needs_quote {
@@ -533,6 +540,7 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                     if needs_quote {
                         buf.push(quote_char);
                     }
+                    false
                 };
             Box::new(StringSerializer { serialize, iter })
         },
@@ -541,9 +549,10 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                 move |iter: &mut Iter, buf: &mut Vec<u8>, options: &SerializeOptions| {
                     let Some(s) = f(iter) else {
                         buf.extend_from_slice(options.null.as_bytes());
-                        return;
+                        return true;
                     };
                     buf.extend_from_slice(s.as_bytes());
+                    false
                 };
             Box::new(StringSerializer { serialize, iter })
         },
@@ -553,10 +562,16 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
 fn quote_serializer<'a>(serializer: impl Serializer<'a>) -> impl Serializer<'a> {
     struct QuoteSerializer<S>(S);
     impl<'a, S: Serializer<'a>> Serializer<'a> for QuoteSerializer<S> {
-        fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) {
+        fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) -> bool {
+            let quote_pos = buf.len();
             buf.push(options.quote_char);
-            self.0.serialize(buf, options);
-            buf.push(options.quote_char);
+            if self.0.serialize(buf, options) {
+                buf.remove(quote_pos);
+                true
+            } else {
+                buf.push(options.quote_char);
+                false
+            }
         }
     }
     QuoteSerializer(serializer)
@@ -903,10 +918,10 @@ pub(super) fn serializer_for<'a>(
 
 #[cfg(test)]
 mod test {
-    use arrow::array::NullArray;
+    use arrow::array::{NullArray, PrimitiveArray};
     use polars_core::prelude::ArrowDataType;
 
-    use super::string_serializer;
+    use super::{Serializer, integer_serializer, quote_serializer, string_serializer};
     use crate::csv::write::options::{QuoteStyle, SerializeOptions};
 
     // It is the most complex serializer with most edge cases, it definitely needs a comprehensive test.
@@ -917,7 +932,7 @@ mod test {
             let fake_array = NullArray::new(ArrowDataType::Null, 0);
             let mut serializer = string_serializer(|s| *s, options, |_| s, &fake_array);
             let mut buf = Vec::new();
-            serializer.serialize(&mut buf, options);
+            let _ = serializer.serialize(&mut buf, options);
             let serialized = std::str::from_utf8(&buf).unwrap();
             // Don't use `assert_eq!()` because it prints debug format and it's hard to read with all the escapes.
             if serialized != expected {
@@ -978,5 +993,23 @@ mod test {
         check_string_serialization(&non_numeric_quote, Some("a,b"), r#""a,b""#);
         check_string_serialization(&non_numeric_quote, Some("a\nb"), "\"a\nb\"");
         check_string_serialization(&non_numeric_quote, Some("a\rb"), "\"a\rb\"");
+    }
+
+    #[test]
+    fn test_quote_serializer_preserves_nulls() {
+        let options = SerializeOptions {
+            quote_style: QuoteStyle::Always,
+            ..SerializeOptions::default()
+        };
+        let array = PrimitiveArray::<i64>::from([Some(1), None]);
+        let mut serializer = quote_serializer(integer_serializer(&array));
+        let mut buf = Vec::new();
+
+        assert!(!serializer.serialize(&mut buf, &options));
+        assert_eq!(std::str::from_utf8(&buf).unwrap(), r#""1""#);
+
+        buf.clear();
+        assert!(serializer.serialize(&mut buf, &options));
+        assert_eq!(std::str::from_utf8(&buf).unwrap(), "");
     }
 }

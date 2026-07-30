@@ -838,11 +838,18 @@ def test_csv_empty_quotes_char_1622(chunk_override: None) -> None:
 
 
 def test_write_csv_always_quote_preserves_nulls(chunk_override: None) -> None:
-    df = pl.DataFrame({"s": ["a", None, ""]})
+    df = pl.DataFrame(
+        {
+            "s": ["a", None, ""],
+            "i": [1, None, 2],
+            "b": [True, None, False],
+            "f": [1.5, None, 2.5],
+        }
+    )
 
     csv_data = df.write_csv(quote_style="always")
 
-    assert csv_data == '"s"\n"a"\n\n""\n'
+    assert csv_data == '"s","i","b","f"\n"a","1","true","1.5"\n,,,\n"","2","false","2.5"\n'
     assert_frame_equal(df, pl.read_csv(io.StringIO(csv_data)))
 
 
@@ -1926,9 +1933,9 @@ def test_csv_quote_styles(chunk_override: None) -> None:
 
     assert df.write_csv(quote_style="always", **temporal_formats) == (
         '"float","string","int","bool","date","datetime","time","decimal"\n'
-        '"1.0","a","1","true","2077-07-05","","03:01:00","1.0"\n'
-        '"2.0","a,bc","2","false","","2077-07-05T03:01:00","03:01:00","2.0"\n'
-        '"","""hello","3","","2077-07-05","2077-07-05T03:01:00","",""\n'
+        '"1.0","a","1","true","2077-07-05",,"03:01:00","1.0"\n'
+        '"2.0","a,bc","2","false",,"2077-07-05T03:01:00","03:01:00","2.0"\n'
+        ',"""hello","3",,"2077-07-05","2077-07-05T03:01:00",,\n'
     )
     assert df.write_csv(quote_style="necessary", **temporal_formats) == (
         "float,string,int,bool,date,datetime,time,decimal\n"

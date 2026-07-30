@@ -97,7 +97,7 @@ pub enum QuoteStyle {
     /// This is the default.
     #[default]
     Necessary,
-    /// Quote every field. Always.
+    /// Quote every non-null field. Always.
     Always,
     /// Quote non-numeric fields.
     ///
