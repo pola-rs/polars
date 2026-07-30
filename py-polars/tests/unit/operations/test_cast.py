@@ -1102,3 +1102,21 @@ def test_cast_int_to_categorical_deprecated(dtype: PolarsDataType) -> None:
 
     expected = pl.Series("a", ["cat2", "cat0", "cat1"], dtype=dtype)
     assert_series_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Categorical(pl.Categories.random(physical=pl.UInt32)),
+        pl.Enum(["cat0", "cat1", "cat2"]),
+    ],
+)
+def test_cast_categorical_to_int_deprecated(dtype: PolarsDataType) -> None:
+    _dummy = pl.Series("a", ["cat0", "cat1", "cat2"], dtype=dtype)
+
+    msg = rf"casting from {re.escape(str(dtype.base_type()))}\(\S+\) to UInt32 is deprecated."
+    with pytest.deprecated_call(match=msg):
+        actual = pl.Series("a", ["cat2", "cat0", "cat1"], dtype=dtype).cast(pl.UInt32)
+
+    expected = pl.Series("a", [2, 0, 1], dtype=pl.UInt32)
+    assert_series_equal(actual, expected)
