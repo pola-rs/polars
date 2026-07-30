@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from polars import functions as F
 from polars._dependencies import _check_for_numpy
@@ -279,7 +279,7 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_sum())
 
-    def dot(self, other: IntoExpr) -> Expr:
+    def dot(self, other: IntoExpr | Sequence[Any]) -> Expr:
         """
         Compute row-wise dot product with another Array expression.
 
@@ -299,6 +299,9 @@ class ExprArrayNameSpace:
 
         Notes
         -----
+        Coordinates are paired strictly by position; no label alignment is
+        performed.
+
         Coordinate pairs containing an inner null are skipped. If a non-null row
         has no valid coordinate pairs, the result is ``0.0``. Similarity pipelines
         should validate or fill inner nulls when zero must mean orthogonality.
@@ -345,17 +348,19 @@ class ExprArrayNameSpace:
         │ 18.0 │
         └──────┘
         """
-        is_raw_vector = isinstance(other, Sequence) and not isinstance(
-            other, (str, bytes)
-        )
-        if _check_for_numpy(other) and isinstance(other, np.ndarray):
+        if isinstance(other, Sequence) and not isinstance(other, (str, bytes)):
+            other = list(other)
+            is_raw_vector = True
+        elif _check_for_numpy(other) and isinstance(other, np.ndarray):
             if other.ndim != 1:
                 msg = "arr.dot query vector must be one-dimensional"
                 raise ValueError(msg)
             other = other.tolist()
             is_raw_vector = True
+        else:
+            is_raw_vector = False
 
-        other_pyexpr = parse_into_expression(other)
+        other_pyexpr = parse_into_expression(cast("IntoExpr", other))
         if is_raw_vector:
             is_literal_expr = False
         else:

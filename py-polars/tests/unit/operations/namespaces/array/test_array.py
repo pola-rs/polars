@@ -4,9 +4,8 @@ import datetime
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import pytest
-
 import polars as pl
+import pytest
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -147,6 +146,7 @@ def test_arr_dot_query_vector(dtype: pl.DataType) -> None:
 
     for query in (
         [10.0, 20.0],
+        (10.0, 20.0),
         np.array([10.0, 20.0]),
         pl.lit([10.0, 20.0]),
     ):
