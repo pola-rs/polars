@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -135,6 +136,37 @@ def test_arr_dot_expr_broadcast() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_arr_dot_query_vector(dtype: pl.DataType) -> None:
+    embedding = pl.Series(
+        "embedding",
+        [[1.0, 2.0], [3.0, 4.0]],
+        dtype=pl.Array(dtype, 2),
+    )
+    expected = pl.Series("embedding", [50.0, 110.0], dtype=dtype)
+
+    for query in (
+        [10.0, 20.0],
+        np.array([10.0, 20.0]),
+        pl.lit([10.0, 20.0]),
+    ):
+        assert_series_equal(embedding.arr.dot(query), expected)
+
+
+def test_arr_dot_query_vector_must_be_one_dimensional() -> None:
+    embedding = pl.Series(
+        "embedding",
+        [[1.0, 2.0]],
+        dtype=pl.Array(pl.Float32, 2),
+    )
+
+    with pytest.raises(ValueError, match="query vector must be one-dimensional"):
+        embedding.arr.dot(np.array([[1.0, 2.0]]))
+
+    with pytest.raises(ComputeError, match="specified width 2"):
+        embedding.arr.dot([1.0, 2.0, 3.0])
+
+
 def test_arr_dot_sliced_inputs() -> None:
     lhs = pl.Series(
         "a",
@@ -229,9 +261,6 @@ def test_arr_dot_errors() -> None:
     float32 = pl.Series("b", [[1.0, 2.0]], dtype=pl.Array(pl.Float32, 2))
     with pytest.raises(pl.exceptions.SchemaError, match="matching inner dtypes"):
         lhs.arr.dot(float32)
-
-    with pytest.raises(InvalidOperationError, match=r"arr\.dot expects Array inputs"):
-        lhs.to_frame().select(pl.col("a").arr.dot(pl.lit([1.0, 2.0])))
 
     different_width = pl.Series("b", [[1.0, 2.0, 3.0]], dtype=pl.Array(pl.Float64, 3))
     with pytest.raises(pl.exceptions.ShapeError, match="equal array widths"):

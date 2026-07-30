@@ -24,8 +24,15 @@ impl PyExpr {
         self.inner.clone().arr().sum().into()
     }
 
-    fn arr_dot(&self, other: PyExpr) -> Self {
-        self.inner.clone().arr().dot(other.inner).into()
+    fn arr_dot(&self, other: PyExpr, cast_to_lhs_dtype: bool) -> Self {
+        let other = if cast_to_lhs_dtype {
+            other
+                .inner
+                .strict_cast(DataTypeExpr::OfExpr(Box::new(self.inner.clone())))
+        } else {
+            other.inner
+        };
+        self.inner.clone().arr().dot(other).into()
     }
 
     fn arr_std(&self, ddof: u8) -> Self {
