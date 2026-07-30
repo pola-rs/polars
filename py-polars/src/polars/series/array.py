@@ -88,6 +88,17 @@ class ArrayNameSpace:
         Products containing an inner null are ignored. An outer null row produces
         a null.
 
+        Notes
+        -----
+        Coordinate pairs containing an inner null are skipped. If a non-null row
+        has no valid coordinate pairs, the result is ``0.0``. Similarity pipelines
+        should validate or fill inner nulls when zero must mean orthogonality.
+
+        Accumulation and output use the input floating-point data type. NaN and
+        infinity follow floating-point multiplication and addition semantics.
+        Results are not guaranteed to be bitwise identical to mathematically
+        equivalent expressions that use a different reduction path.
+
         Examples
         --------
         >>> a = pl.Series("a", [[1.0, 2.0], [3.0, 4.0]], dtype=pl.Array(pl.Float64, 2))

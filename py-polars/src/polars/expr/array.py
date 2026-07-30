@@ -297,6 +297,17 @@ class ExprArrayNameSpace:
             one-row query and cast to the data type of the input expression.
             Expression inputs must have matching Array data types.
 
+        Notes
+        -----
+        Coordinate pairs containing an inner null are skipped. If a non-null row
+        has no valid coordinate pairs, the result is ``0.0``. Similarity pipelines
+        should validate or fill inner nulls when zero must mean orthogonality.
+
+        Accumulation and output use the input floating-point data type. NaN and
+        infinity follow floating-point multiplication and addition semantics.
+        Results are not guaranteed to be bitwise identical to mathematically
+        equivalent expressions that use a different reduction path.
+
         Examples
         --------
         >>> df = pl.DataFrame(

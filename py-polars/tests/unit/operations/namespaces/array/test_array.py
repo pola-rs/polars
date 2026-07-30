@@ -199,6 +199,16 @@ def test_arr_dot_nulls() -> None:
     expected = pl.Series("a", [4.0, None, 0.0], dtype=pl.Float64)
     assert_series_equal(result, expected)
 
+    all_inner_null = pl.Series(
+        "a",
+        [[None, None]],
+        dtype=pl.Array(pl.Float64, 2),
+    )
+    assert_series_equal(
+        all_inner_null.arr.dot(all_inner_null),
+        pl.Series("a", [0.0], dtype=pl.Float64),
+    )
+
     zero_width = pl.Series("a", [[], None], dtype=pl.Array(pl.Float64, 0))
     assert_series_equal(
         zero_width.arr.dot(zero_width),
@@ -206,22 +216,75 @@ def test_arr_dot_nulls() -> None:
     )
 
 
+@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
+def test_arr_dot_special_floating_values(dtype: pl.DataType) -> None:
+    lhs = pl.Series(
+        "a",
+        [
+            [float("nan"), 1.0, 2.0],
+            [float("inf"), 1.0, 2.0],
+            [-float("inf"), 1.0, 2.0],
+            [float("inf"), 1.0, 2.0],
+            [float("inf"), -float("inf"), 1.0],
+            [1e20, 1.0, -1e20],
+        ],
+        dtype=pl.Array(dtype, 3),
+    )
+    rhs = pl.Series(
+        "b",
+        [
+            [1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ],
+        dtype=pl.Array(dtype, 3),
+    )
+    expected = pl.Series(
+        "a",
+        [
+            float("nan"),
+            float("inf"),
+            -float("inf"),
+            float("nan"),
+            float("nan"),
+            0.0,
+        ],
+        dtype=dtype,
+    )
+
+    result = lhs.arr.dot(rhs)
+    assert_series_equal(result, expected)
+    assert_series_equal(result, (lhs * rhs).arr.sum())
+
+    fragmented_lhs = pl.concat([lhs.slice(0, 2), lhs.slice(2)], rechunk=False)
+    fragmented_rhs = pl.concat([rhs.slice(0, 4), rhs.slice(4)], rechunk=False)
+    assert fragmented_lhs.n_chunks() == 2
+    assert fragmented_rhs.n_chunks() == 2
+    assert_series_equal(fragmented_lhs.arr.dot(fragmented_rhs), expected)
+
+
 @pytest.mark.parametrize(
-    ("dtype", "rel_tol", "abs_tol"),
+    ("dtype", "rel_tol", "abs_tol", "with_inner_nulls"),
     [
-        (pl.Float32, 1e-5, 1e-5),
-        (pl.Float64, 1e-12, 1e-12),
+        (pl.Float32, 1e-5, 1e-5, False),
+        (pl.Float32, 1e-5, 1e-5, True),
+        (pl.Float64, 1e-12, 1e-12, False),
+        (pl.Float64, 1e-12, 1e-12, True),
     ],
 )
-def test_arr_dot_wide_inner_nulls(
+def test_arr_dot_wide(
     dtype: pl.DataType,
     rel_tol: float,
     abs_tol: float,
+    with_inner_nulls: bool,
 ) -> None:
     width = 768
     lhs_values = [
         None
-        if index % 37 == 0
+        if with_inner_nulls and index % 37 == 0
         else (
             (-1.0 if index % 2 else 1.0)
             * 10.0 ** ((index % 21) - 10)
@@ -231,7 +294,7 @@ def test_arr_dot_wide_inner_nulls(
     ]
     rhs_values = [
         None
-        if index % 41 == 0
+        if with_inner_nulls and index % 41 == 0
         else (index % 17 + 1) / 19.0 / 10.0 ** ((index % 21) - 10)
         for index in range(width)
     ]
