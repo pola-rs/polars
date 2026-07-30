@@ -39,9 +39,7 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
 
 pub(super) fn length(s: &Column) -> PolarsResult<Column> {
     let array = s.array()?;
-    let width = array.width();
-    let width = LenSize::try_from(width)
-        .map_err(|_| polars_err!(bigidx, ctx = "array length", size = width))?;
+    let width = i64::try_from(array.width()).expect("overflow");
 
     let mut c = Column::new_scalar(array.name().clone(), width.into(), array.len());
     if let Some(validity) = array.rechunk_validity() {
