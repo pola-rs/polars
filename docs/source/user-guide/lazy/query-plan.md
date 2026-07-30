@@ -79,8 +79,8 @@ Now we visualize the optimized plan with `show_graph`.
 --8<-- "python/user-guide/lazy/query-plan.py:createplan2"
 ```
 
-When using the streaming engine, we can also visualize the physical plan by
-setting `plan_type="streaming"` (the default).
+When using the streaming engine, we can also visualize the physical plan by setting
+`plan_type="streaming"` (the default).
 
 {{code_block('user-guide/lazy/query-plan','showphysical',['show_graph'])}}
 
