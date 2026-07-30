@@ -101,6 +101,7 @@ ignore-missing-imports = [
   "IPython.*",
   "altair.*",
   "duckdb.*",
+  "filelock.*",
   "pyiceberg.*",
 ]
 # pyrefly equivalent of mypy's `follow_imports = "skip"`
