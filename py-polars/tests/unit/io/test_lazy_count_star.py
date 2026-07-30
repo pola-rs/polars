@@ -5,8 +5,6 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING, Any
 
-from polars.exceptions import ComputeError
-
 if TYPE_CHECKING:
     from pathlib import Path
 
