@@ -290,7 +290,9 @@ def test_parquet_bloom_filter_prune(
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
-    plmonkeypatch.setenv("POLARS_BLOOM_FILTER_PRUNE", "1")
+    # `blocks` rather than `auto`: under POLARS_FORCE_ASYNC=1 even local files are
+    # object-store-backed, which `auto` classifies as cloud and does not probe.
+    plmonkeypatch.setenv("POLARS_BLOOM_FILTER_PRUNE", "blocks")
 
     rows_per_row_group = 10
     num_row_groups = 10

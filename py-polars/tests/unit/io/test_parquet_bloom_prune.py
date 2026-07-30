@@ -32,7 +32,7 @@ def _write_bloom_parquet(path: Path, row_groups: list[pa.Table], column: str) ->
 def test_int8_bloom_prune_finds_present_value(
     plmonkeypatch: PlMonkeyPatch, tmp_path: Path
 ) -> None:
-    plmonkeypatch.setenv("POLARS_BLOOM_FILTER_PRUNE", "1")
+    plmonkeypatch.setenv("POLARS_BLOOM_FILTER_PRUNE", "blocks")
     path = tmp_path / "int8_bloom.parquet"
     rg_with_needle = pa.table({"x": pa.array([42, 0, 1], type=pa.int8())})
     rg_without_needle = pa.table({"x": pa.array([2, 3, 4], type=pa.int8())})
@@ -46,7 +46,7 @@ def test_int8_bloom_prune_finds_present_value(
 def test_int16_bloom_prune_finds_present_value(
     plmonkeypatch: PlMonkeyPatch, tmp_path: Path
 ) -> None:
-    plmonkeypatch.setenv("POLARS_BLOOM_FILTER_PRUNE", "1")
+    plmonkeypatch.setenv("POLARS_BLOOM_FILTER_PRUNE", "blocks")
     path = tmp_path / "int16_bloom.parquet"
     rg_with_needle = pa.table({"x": pa.array([-100, 0, 1], type=pa.int16())})
     rg_without_needle = pa.table({"x": pa.array([2, 3, 4], type=pa.int16())})
