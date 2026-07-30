@@ -487,13 +487,12 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
         QuoteStyle::Always => {
             let serialize =
                 move |iter: &mut Iter, buf: &mut Vec<u8>, options: &SerializeOptions| {
-                    let quote_char = options.quote_char;
-                    buf.push(quote_char);
                     let Some(s) = f(iter) else {
                         buf.extend_from_slice(options.null.as_bytes());
-                        buf.push(quote_char);
                         return;
                     };
+                    let quote_char = options.quote_char;
+                    buf.push(quote_char);
                     serialize_str_escaped(buf, s.as_bytes(), quote_char, true);
                     buf.push(quote_char);
                 };
@@ -932,7 +931,7 @@ mod test {
             quote_style: QuoteStyle::Always,
             ..SerializeOptions::default()
         };
-        check_string_serialization(&always_quote, None, r#""""#);
+        check_string_serialization(&always_quote, None, r#""#);
         check_string_serialization(&always_quote, Some(""), r#""""#);
         check_string_serialization(&always_quote, Some("a"), r#""a""#);
         check_string_serialization(&always_quote, Some("\""), r#""""""#);

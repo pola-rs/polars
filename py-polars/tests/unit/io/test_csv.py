@@ -837,6 +837,15 @@ def test_csv_empty_quotes_char_1622(chunk_override: None) -> None:
     pl.read_csv(b"a,b,c,d\nA1,B1,C1,1\nA2,B2,C2,2\n", quote_char="")
 
 
+def test_write_csv_always_quote_preserves_nulls(chunk_override: None) -> None:
+    df = pl.DataFrame({"s": ["a", None, ""]})
+
+    csv_data = df.write_csv(quote_style="always")
+
+    assert csv_data == '"s"\n"a"\n\n""\n'
+    assert_frame_equal(df, pl.read_csv(io.StringIO(csv_data)))
+
+
 def test_ignore_try_parse_dates(chunk_override: None) -> None:
     csv = textwrap.dedent(
         """\
