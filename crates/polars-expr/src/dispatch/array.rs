@@ -1,4 +1,4 @@
-use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::prelude::{Column, DataType, ExplodeOptions, IntoColumn, SortOptions};
 use polars_ops::prelude::array::ArrayNameSpace;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
