@@ -350,16 +350,15 @@ pub fn coalesce_columns(s: &[Column]) -> PolarsResult<Column> {
     // TODO! this can be faster if we have more than two inputs.
     polars_ensure!(!s.is_empty(), NoData: "cannot coalesce empty list");
     let mut out = s[0].clone();
-    for s in s {
-        if !out.null_count() == 0 {
+    for s in &s[1..] {
+        if out.null_count() == 0 {
             return Ok(out);
-        } else {
-            let mask = out.is_not_null();
-            out = out
-                .as_materialized_series()
-                .zip_with_same_type(&mask, s.as_materialized_series())?
-                .into();
         }
+        let mask = out.is_not_null();
+        out = out
+            .as_materialized_series()
+            .zip_with_same_type(&mask, s.as_materialized_series())?
+            .into();
     }
     Ok(out)
 }
@@ -403,6 +402,18 @@ mod tests {
         assert_eq!(
             Vec::from(df.max_horizontal().unwrap().unwrap().i32().unwrap()),
             &[Some(4), Some(2), Some(6)]
+        );
+    }
+
+    #[test]
+    fn test_coalesce_columns() {
+        let a = Column::new("a".into(), [Some(1), None, Some(3)]);
+        let b = Column::new("b".into(), [Some(10), Some(20), None]);
+        let c = Column::new("c".into(), [Some(100), Some(200), Some(300)]);
+        let res = coalesce_columns(&[a, b, c]).unwrap();
+        assert_eq!(
+            Vec::from(res.i32().unwrap()),
+            &[Some(1), Some(20), Some(3)]
         );
     }
 }
