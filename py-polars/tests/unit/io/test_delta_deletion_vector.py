@@ -545,6 +545,7 @@ def test_scan_delta_dv_normalize_scheme(
         (10, list(range(10))),
     ],
 )
+@pytest.mark.xdist_group(name="duckdb")
 def test_scan_delta_dv_single(
     n_rows: int,
     dv: list[int],
@@ -552,7 +553,6 @@ def test_scan_delta_dv_single(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    from filelock import FileLock
 
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
@@ -573,9 +573,6 @@ def test_scan_delta_dv_single(
 
     conn = duckdb.connect()
 
-    lock_file = tmp_path / "duckdb_delta_install.lock"
-    with FileLock(lock_file):
-        conn.execute("INSTALL delta;")
     conn.execute("LOAD delta;")
 
     df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
