@@ -1029,10 +1029,7 @@ def test_cast_categorical_to_int_unsupported(dtype: PolarsDataType) -> None:
 
     msg = "^cannot cast categorical types to UInt32."
     with pytest.raises(ComputeError, match=msg):
-        actual = pl.Series("a", ["cat2", "cat0", "cat1"], dtype=dtype).cast(pl.UInt32)
-
-    expected = pl.Series("a", [2, 0, 1], dtype=pl.UInt32)
-    assert_series_equal(actual, expected)
+        pl.Series("a", ["cat2", "cat0", "cat1"], dtype=dtype).cast(pl.UInt32)
 
 
 def test_strict_struct_cast_field_count_mismatch() -> None:
