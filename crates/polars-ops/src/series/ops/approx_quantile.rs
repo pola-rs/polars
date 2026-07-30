@@ -7,7 +7,7 @@ pub fn approx_quantile(s: &Column, quantile: &Series, error: f64) -> PolarsResul
     let mut sketch = kll::KLLSketch::new(error);
     for item in ca.iter() {
         if let Some(item) = item {
-            sketch.update(item);
+            sketch.update(&[item]);
         }
     }
     sketch.finalize();

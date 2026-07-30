@@ -1,3 +1,6 @@
+use std::fmt;
+
+use polars_compute::kll::KLLSketch;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::total_ord::TotalOrd;
 use rand::SeedableRng;
@@ -14,16 +17,17 @@ pub fn new_approx_quantile_reduction(
     use DataType::*;
     use VecGroupedReduction as VGR;
     Ok(match dtype {
-        Boolean => Box::new(VGR::new(dtype, R::<BooleanType>::new())),
         _ if dtype.is_primitive_numeric() || dtype.is_temporal() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
-                Box::new(VGR::new(dtype, R::<$T>::new()))
+                Box::new(VGR::new(dtype, R::<$T>::new(error)))
             })
         },
-        String => Box::new(VGR::new(dtype, R::<StringType>::new())),
-        Binary => Box::new(VGR::new(dtype, R::<BinaryType>::new())),
+        // TODO: [amber]
+        // Boolean => Box::new(VGR::new(dtype, R::<BooleanType>::new(error))),
+        // String => Box::new(VGR::new(dtype, R::<StringType>::new(error))),
+        // Binary => Box::new(VGR::new(dtype, R::<BinaryType>::new(error))),
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(dtype, R::<Int128Type>::new())),
+        Decimal(_, _) => Box::new(VGR::new(dtype, R::<Int128Type>::new(error))),
         Null => Box::new(super::NullGroupedReduction::new(Scalar::new_idxsize(1))),
         _ => {
             polars_bail!(InvalidOperation: "`approx_n_unique` operation not supported for dtype `{dtype}`")
@@ -32,14 +36,14 @@ pub fn new_approx_quantile_reduction(
 }
 
 struct ApproxQuantileReducer<T> {
-    rng: SmallRng,
+    error: f64,
     marker: PhantomData<T>,
 }
 
 impl<T> ApproxQuantileReducer<T> {
-    fn new() -> Self {
+    fn new(error: f64) -> Self {
         Self {
-            rng: SmallRng::from_rng(&mut rand::rng()),
+            error,
             marker: PhantomData,
         }
     }
@@ -48,7 +52,7 @@ impl<T> ApproxQuantileReducer<T> {
 impl<T> Clone for ApproxQuantileReducer<T> {
     fn clone(&self) -> Self {
         Self {
-            rng: self.rng.clone(),
+            error: self.error,
             marker: PhantomData,
         }
     }
@@ -56,14 +60,14 @@ impl<T> Clone for ApproxQuantileReducer<T> {
 
 impl<T> Reducer for ApproxQuantileReducer<T>
 where
-    T: PolarsPhysicalType,
-    for<'a> T::Physical<'a>: TotalOrd,
+    T: PolarsNumericType,
+    T::Native: Clone + TotalOrd + fmt::Debug,
 {
     type Dtype = T;
-    type Value = ();
+    type Value = KLLSketch<T::Native>;
 
     fn init(&self) -> Self::Value {
-        todo!()
+        KLLSketch::new(self.error)
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
@@ -72,11 +76,13 @@ where
 
     fn reduce_one(
         &self,
-        a: &mut Self::Value,
-        b: Option<<Self::Dtype as PolarsDataType>::Physical<'_>>,
-        seq_id: u64,
+        sketch: &mut Self::Value,
+        value: Option<<Self::Dtype as PolarsDataType>::Physical<'_>>,
+        _seq_id: u64,
     ) {
-        todo!()
+        if let Some(value) = value {
+            sketch.update(&[value]);
+        }
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64) {

@@ -4,6 +4,8 @@ use polars_utils::total_ord::TotalOrd;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
+// TODO: [amber] Reseed on clone()
+
 // [amber]
 // * In experiments I benchmarked that a Vec<Vec<T>> approach is slower than
 //   having a single `items` Vec<T>.  I suspect that is due to the fact that the
@@ -62,7 +64,7 @@ struct Level {
     size: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
     /// Contents of the compactors. The offsets of the compactors are stored
     /// in the levels vector. The top-level compactor is stored at the start
@@ -83,25 +85,25 @@ struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
     scratch: Vec<T>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 struct FinalizedState<T: fmt::Debug + Clone + TotalOrd> {
     items: Box<[T]>,
     cum_weight: Option<Box<[usize]>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum State<T: fmt::Debug + Clone + TotalOrd> {
     Ingesting(IngestingState<T>),
     Finalized(FinalizedState<T>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct KLLSketch<T: fmt::Debug + Clone + TotalOrd>(State<T>);
 
 impl<T: fmt::Debug + Clone + TotalOrd> KLLSketch<T> {
     pub fn new(error: f64) -> Self {
-        let k = compute_k(error, FAILURE_PROBABILITY, CAPACITY_DECAY);
+        let k = compute_k(error);
         let state = IngestingState {
             items: Vec::new(),
             levels: vec![Level { offset: 0, size: 0 }],
@@ -115,11 +117,11 @@ impl<T: fmt::Debug + Clone + TotalOrd> KLLSketch<T> {
     }
 
     #[inline]
-    pub fn update(&mut self, value: T) {
+    pub fn update(&mut self, array: &[T]) {
         let State::Ingesting(state) = &mut self.0 else {
             unreachable!()
         };
-        state.update(value);
+        state.update(array);
     }
 
     pub fn finalize(&mut self) {
@@ -150,15 +152,23 @@ impl<T: fmt::Debug + Clone + TotalOrd> KLLSketch<T> {
 }
 
 impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
-    pub fn update(&mut self, value: T) {
-        // Fast compare
-        if self.items.len() >= self.max_size {
-            self.compact(true);
+    #[inline]
+    pub fn update(&mut self, array: &[T]) {
+        let mut offset = 0;
+        while offset < array.len() {
+            // Fast compare
+            if self.items.len() >= self.max_size {
+                self.compact(true);
+            }
+            let space_left = self.max_size - self.items.len();
+            debug_assert!(space_left > 0);
+            let ingest_chunk_len = space_left.min(array[offset..].len());
+            let ingest_items = &array[offset..offset + ingest_chunk_len];
+            self.items.extend_from_slice(ingest_items);
+            self.levels[0].size += ingest_items.len();
+            offset += ingest_items.len();
         }
-
-        self.items.push(value);
-        self.consumed_items += 1;
-        self.levels[0].size += 1;
+        self.consumed_items += array.len();
     }
 
     /// Compact all of the compactors from base to top.
@@ -172,7 +182,9 @@ impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
                 if level == self.levels.len() - 1 {
                     self.add_new_compactor();
                 }
+                let old_size = self.items.len();
                 self.compact_level(level);
+                debug_assert!(self.items.len() < old_size);
                 if break_early {
                     break;
                 };
@@ -182,7 +194,9 @@ impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
 
     fn add_new_compactor(&mut self) {
         self.levels.push(Level { offset: 0, size: 0 });
-        self.max_size += self.levels.len() - 1;
+        self.max_size = (0..self.levels.len())
+            .map(|level| compactor_threshold(self.k, self.levels.len() - 1 - level))
+            .sum();
     }
 
     fn compact_level(&mut self, level: usize) {
