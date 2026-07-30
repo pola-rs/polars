@@ -21,8 +21,6 @@ pub type IdxType = UInt32Type;
 #[cfg(feature = "bigidx")]
 pub type IdxType = UInt64Type;
 
-pub type LenType = Int64Type;
-
 pub use polars_utils::pl_str::PlSmallStr;
 
 /// This hashmap uses an IdHasher
