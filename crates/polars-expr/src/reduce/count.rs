@@ -152,7 +152,7 @@ impl GroupedReduction for NullCountReduce {
         _seq_id: u64,
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
-        self.counts[group_idx as usize] += values.null_count() as i64;
+        self.counts[group_idx as usize] += values.null_count() as LenSize;
         Ok(())
     }
 
@@ -177,7 +177,7 @@ impl GroupedReduction for NullCountReduce {
                     self.evicted_counts.push(*grp);
                     *grp = 0;
                 }
-                *grp += (!valid.get_bit_unchecked(*i as usize)) as i64;
+                *grp += (!valid.get_bit_unchecked(*i as usize)) as LenSize;
             }
         } else {
             for (_, g) in subset.iter().zip(group_idxs) {
