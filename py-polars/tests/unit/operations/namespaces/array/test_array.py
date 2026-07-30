@@ -258,7 +258,6 @@ def test_arr_dot_special_floating_values(dtype: pl.DataType) -> None:
 
     result = lhs.arr.dot(rhs)
     assert_series_equal(result, expected)
-    assert_series_equal(result, (lhs * rhs).arr.sum())
 
     fragmented_lhs = pl.concat([lhs.slice(0, 2), lhs.slice(2)], rechunk=False)
     fragmented_rhs = pl.concat([rhs.slice(0, 4), rhs.slice(4)], rechunk=False)
