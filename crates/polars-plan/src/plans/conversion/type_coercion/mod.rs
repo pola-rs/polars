@@ -957,37 +957,19 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             #[cfg(feature = "string_pad")]
             AExpr::Function {
                 function:
-                    ref function @ IRFunctionExpr::StringExpr(
+                    IRFunctionExpr::StringExpr(
                         IRStringFunction::PadStart { .. }
                         | IRStringFunction::PadEnd { .. }
                         | IRStringFunction::ZFill,
                     ),
-                ref input,
-                options,
-            } => {
-                let (_, length_type) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
-
-                if length_type == DataType::UInt64 {
-                    None
-                } else {
-                    let function = function.clone();
-                    let mut input = input.clone();
-                    cast_expr_ir(
-                        &mut input[1],
-                        &length_type,
-                        &DataType::UInt64,
-                        expr_arena,
-                        CastOptions::Strict,
-                    )?;
-
-                    Some(AExpr::Function {
-                        function,
-                        input,
-                        options,
-                    })
-                }
-            },
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, _| Ok((i == 1).then_some(DataType::UInt64)), // length
+            )?,
 
             #[cfg(all(feature = "strings", feature = "concat_str"))]
             AExpr::Function {
@@ -1154,75 +1136,34 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             },
             #[cfg(feature = "range")]
             AExpr::Function {
-                function:
-                    ref function @ IRFunctionExpr::Range(IRRangeFunction::IntRanges { dtype: _ }),
-                ref input,
-                options,
-            } => {
-                let (_, type_start) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
-                let (_, type_end) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
-                let (_, type_step) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
-
-                polars_ensure!(type_start.is_numeric() || type_start.is_null(), InvalidOperation: "`start` must be numeric for `int_ranges`, got {}", type_start);
-                polars_ensure!(type_end.is_numeric() || type_end.is_null(), InvalidOperation: "`end` must be numeric for `int_ranges`, got {}", type_end);
-                polars_ensure!(type_step.is_numeric() || type_step.is_null(), InvalidOperation: "`step` must be numeric for `int_ranges`, got {}", type_step);
-
-                if [&type_start, &type_end, &type_step]
-                    .into_iter()
-                    .all(|dtype| dtype == &DataType::Int64)
-                {
-                    return Ok(None);
-                }
-
-                let function = function.clone();
-                let mut input = input.clone();
-                for (i, dtype) in [type_start, type_end, type_step].into_iter().enumerate() {
-                    cast_expr_ir(
-                        &mut input[i],
-                        &dtype,
-                        &DataType::Int64,
-                        expr_arena,
-                        CastOptions::Strict,
-                    )?;
-                }
-
-                Some(AExpr::Function {
-                    function,
-                    input,
-                    options,
-                })
-            },
+                function: IRFunctionExpr::Range(IRRangeFunction::IntRanges { .. }),
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, dtype| {
+                    let name = ["start", "end", "step"][i];
+                    polars_ensure!(
+                        dtype.is_numeric() || dtype.is_null(),
+                        InvalidOperation: "`{name}` must be numeric for `int_ranges`, got {dtype}"
+                    );
+                    Ok(Some(DataType::Int64))
+                },
+            )?,
+            // Cast the input to `Float64`.
             #[cfg(feature = "moment")]
             AExpr::Function {
-                function: ref function @ (IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..)),
-                ref input,
-                options,
-            } => {
-                let (_, type_input) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
-
-                if matches!(type_input, DataType::Float64) {
-                    return Ok(None);
-                }
-
-                let function = function.clone();
-                let mut input = input.clone();
-                cast_expr_ir(
-                    &mut input[0],
-                    &type_input,
-                    &DataType::Float64,
-                    expr_arena,
-                    CastOptions::Strict,
-                )?;
-                Some(AExpr::Function {
-                    function,
-                    input,
-                    options,
-                })
-            },
+                function: IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..),
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, _| Ok((i == 0).then_some(DataType::Float64)),
+            )?,
             #[cfg(all(feature = "range", feature = "dtype-date"))]
             AExpr::Function {
                 function:
