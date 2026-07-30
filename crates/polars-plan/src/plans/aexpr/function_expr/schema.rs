@@ -238,10 +238,10 @@ impl IRFunctionExpr {
                             DataType::from_categories(Categories::global()),
                         ));
                     }
-                    fields.push(Field::new(PlSmallStr::from_static("count"), LEN_DTYPE));
+                    fields.push(Field::new(PlSmallStr::from_static("count"), IDX_DTYPE));
                     mapper.with_dtype(DataType::Struct(fields))
                 } else {
-                    mapper.with_dtype(LEN_DTYPE)
+                    mapper.with_dtype(IDX_DTYPE)
                 }
             },
             #[cfg(feature = "diff")]
