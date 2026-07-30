@@ -21,3 +21,14 @@ def test_single_chunk_vertical_parallelism_28593() -> None:
         df.lazy().with_columns(expression).collect(engine="in-memory"),
         df.with_columns(expression),
     )
+
+
+def test_single_chunk_nested_eval_not_partitioned() -> None:
+    df = pl.DataFrame({"a": [[{"fld": 1}]] * 100_000})
+    expression = pl.col("a").list.eval(pl.element().struct.field("fld"))
+
+    out_select = df.lazy().select(expression).collect(engine="in-memory")
+    out_with_columns = df.lazy().with_columns(expression).collect(engine="in-memory")
+
+    assert out_select.n_chunks() == 1
+    assert out_with_columns.n_chunks() == 1

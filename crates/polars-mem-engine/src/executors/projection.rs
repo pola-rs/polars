@@ -14,6 +14,7 @@ pub struct ProjectionExec {
     pub(crate) options: ProjectionOptions,
     // Can run all operations elementwise
     pub(crate) allow_vertical_parallelism: bool,
+    pub(crate) allow_single_chunk_vertical_parallelism: bool,
 }
 
 impl ProjectionExec {
@@ -24,8 +25,9 @@ impl ProjectionExec {
     ) -> PolarsResult<DataFrame> {
         let n_partitions = RAYON.current_num_threads();
         let n_chunks = df.first_col_n_chunks();
-        let split_single_chunk =
-            n_chunks == 1 && should_split_vertically(df.height(), self.expr.len(), n_partitions);
+        let split_single_chunk = self.allow_single_chunk_vertical_parallelism
+            && n_chunks == 1
+            && should_split_vertically(df.height(), self.expr.len(), n_partitions);
 
         // Vertical and horizontal parallelism.
         let df = if self.allow_vertical_parallelism

@@ -12,6 +12,7 @@ pub struct StackExec {
     pub(crate) options: ProjectionOptions,
     // Can run all operations elementwise
     pub(crate) allow_vertical_parallelism: bool,
+    pub(crate) allow_single_chunk_vertical_parallelism: bool,
 }
 
 impl StackExec {
@@ -23,8 +24,9 @@ impl StackExec {
         let schema = &*self.output_schema;
         let n_partitions = RAYON.current_num_threads();
         let n_chunks = df.first_col_n_chunks();
-        let split_single_chunk =
-            n_chunks == 1 && should_split_vertically(df.height(), self.exprs.len(), n_partitions);
+        let split_single_chunk = self.allow_single_chunk_vertical_parallelism
+            && n_chunks == 1
+            && should_split_vertically(df.height(), self.exprs.len(), n_partitions);
 
         // Vertical and horizontal parallelism.
         let df = if self.allow_vertical_parallelism
