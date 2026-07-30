@@ -1152,7 +1152,6 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     Ok(Some(DataType::Int64))
                 },
             )?,
-            // Cast the input to `Float64`.
             #[cfg(feature = "moment")]
             AExpr::Function {
                 function: IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..),
@@ -1492,11 +1491,6 @@ fn cast_expr_ir(
     Ok(())
 }
 
-/// Cast the inputs of the `AExpr::Function` at `node` to a target dtype determined per-input.
-///
-/// `target` receives an input's index and dtype and returns `Some(dtype)` if that input should be
-/// cast, `None` to leave it unchanged, or an error to reject the input.
-/// Returns `Ok(None)` when no input needs casting.
 fn coerce_function_inputs(
     node: Node,
     expr_arena: &mut Arena<AExpr>,
