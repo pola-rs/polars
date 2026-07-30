@@ -886,7 +886,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
         >>> s = pl.Series("a", [[0], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]])
         >>> s.list.count_matches(1)
         shape: (5,)
-        Series: 'a' [u32]
+        Series: 'a' [i64]
         [
             0
             1

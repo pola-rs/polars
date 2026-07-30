@@ -1176,7 +1176,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         ┌─────────────┬────────────────┐
         │ a           ┆ number_of_twos │
         │ ---         ┆ ---            │
-        │ list[i64]   ┆ u32            │
+        │ list[i64]   ┆ i64            │
         ╞═════════════╪════════════════╡
         │ [0]         ┆ 0              │
         │ [1]         ┆ 0              │

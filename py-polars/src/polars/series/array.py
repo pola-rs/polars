@@ -713,7 +713,7 @@ class ArrayNameSpace:
         >>> s = pl.Series("a", [[1, 2, 3], [2, 2, 2]], dtype=pl.Array(pl.Int64, 3))
         >>> s.arr.count_matches(2)
         shape: (2,)
-        Series: 'a' [u32]
+        Series: 'a' [i64]
         [
             1
             3
