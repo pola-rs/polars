@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.wrap import wrap_s
@@ -76,7 +76,7 @@ class ArrayNameSpace:
         ]
         """
 
-    def dot(self, other: IntoExpr) -> Series:
+    def dot(self, other: IntoExpr | Sequence[Any]) -> Series:
         """
         Compute row-wise dot product with another Array Series or query vector.
 
@@ -90,6 +90,9 @@ class ArrayNameSpace:
 
         Notes
         -----
+        Coordinates are paired strictly by position; no label alignment is
+        performed.
+
         Coordinate pairs containing an inner null are skipped. If a non-null row
         has no valid coordinate pairs, the result is ``0.0``. Similarity pipelines
         should validate or fill inner nulls when zero must mean orthogonality.
