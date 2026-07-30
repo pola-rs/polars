@@ -1,19 +1,16 @@
 //! Row-group pruning using Parquet split-block bloom filters.
 //!
-//! Called from [`super::statistics::calculate_row_group_pred_pushdown_skip_mask`].
-//!
 //! Statistics (min/max) run first; blooms are probed only on row groups not already
 //! skipped by stats. The bloom mask is OR-merged with the statistics mask (set bit = skip).
 //!
-//! Blooms are probabilistic; a fully dictionary-encoded chunk's dictionary page gives exact
-//! membership and should take precedence once dictionary-based skipping exists (cost-gated by
-//! dictionary size). See the design note on [`super::statistics::calculate_row_group_pred_pushdown_skip_mask`].
+//! Future dictionary-based skipping: see the design note on
+//! [`super::statistics::calculate_row_group_pred_pushdown_skip_mask`].
 
 use std::ops::Range;
-use std::sync::Arc;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use polars_core::prelude::{PlHashMap, Scalar};
+use polars_config::BloomPruning;
+use polars_core::prelude::{DataType, PlHashMap, Scalar};
 use polars_error::PolarsResult;
 use polars_io::predicates::{
     ScanIOPredicate, SpecializedColumnPredicate, bloom_hashes_for_scalars,
@@ -28,15 +25,25 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::projection::ArrowFieldProjection;
 
+/// Whether bloom filters should be probed for a scan of the given source.
+///
+/// `Auto` probes local sources only: serial per-row-group probes on high-latency storage
+/// lose to not pruning; `whole`/`blocks` opt cloud sources in explicitly.
+pub(super) fn should_probe_blooms(mode: BloomPruning, is_cloud: bool) -> bool {
+    match mode {
+        BloomPruning::Off => false,
+        BloomPruning::Auto => !is_cloud,
+        BloomPruning::Whole | BloomPruning::Blocks => true,
+    }
+}
+
 /// On-disk Arrow field name and precomputed hashes used to probe that column's Bloom filter.
 pub(super) struct BloomColumnPred {
     pub(super) arrow_field_name: PlSmallStr,
     pub(super) hashes: Box<[u64]>,
 }
 
-/// Combine statistics- and Bloom filter-derived skip masks.
-///
-/// Either path may mark a row group for skipping; we take the union (`|`).
+/// Union (`|`) of the statistics- and Bloom filter-derived skip masks.
 pub(super) fn merge_row_group_skip_masks(
     statistics_mask: Bitmap,
     bloom_mask: Option<Bitmap>,
@@ -53,24 +60,30 @@ pub(super) fn collect_bloom_preds(
     predicate: &ScanIOPredicate,
     projected_arrow_fields: &[ArrowFieldProjection],
 ) -> Option<Vec<BloomColumnPred>> {
-    // Name translation table from what the filter uses to what Parquet stores on disk (Bloom offsets live in chunk metadata by Arrow name).
-    let output_to_arrow_name: PlHashMap<_, _> = projected_arrow_fields
-        .iter()
-        .map(|p| (p.output_name().clone(), p.arrow_field().name.clone()))
-        .collect();
-
+    let mut output_to_arrow_name = None;
     let mut bloom_preds = Vec::new();
     for (output_name, (_, specialized)) in predicate.column_predicates.predicates.iter() {
         if !predicate.live_columns.contains(output_name) {
             continue;
         }
-        let Some(values) = bloom_pred_values(specialized) else {
+        let Some(values) = bloom_pred_values(specialized.as_ref()) else {
+            continue;
+        };
+        // Output name -> on-disk Arrow name (bloom offsets are keyed by Arrow name in chunk
+        // metadata), built on the first bloom-eligible predicate. Casting projections are
+        // excluded: the literal is hashed in the output dtype while the file's bloom was
+        // hashed in the file dtype, so probing would wrongly skip row groups.
+        let output_to_arrow_name = output_to_arrow_name.get_or_insert_with(|| {
+            projected_arrow_fields
+                .iter()
+                .filter(|p| DataType::from_arrow_field(p.arrow_field()) == *p.output_dtype())
+                .map(|p| (p.output_name().clone(), p.arrow_field().name.clone()))
+                .collect::<PlHashMap<_, _>>()
+        });
+        let Some(arrow_field_name) = output_to_arrow_name.get(output_name) else {
             continue;
         };
         let Some(hashes) = bloom_hashes_for_scalars(values) else {
-            continue;
-        };
-        let Some(arrow_field_name) = output_to_arrow_name.get(output_name) else {
             continue;
         };
         bloom_preds.push(BloomColumnPred {
@@ -84,16 +97,17 @@ pub(super) fn collect_bloom_preds(
 
 /// For each row group not already skipped by `statistics_mask`, probe on-disk Bloom filters.
 ///
-/// Returns `None` if there are no Bloom predicates. Otherwise returns a bitmap of length
-/// `row_groups.len()` where `true` means skip (value cannot be in Bloom) for row groups not
-/// already skipped by statistics; for those skipped by statistics, the Bloom mask is irrelevant.
+/// Returns `None` if there are no Bloom predicates, otherwise a bitmap of length
+/// `row_groups.len()` where `true` means skip (a probed value cannot be present). Bits of
+/// row groups already skipped by statistics are left `false`.
 pub(super) async fn bloom_filter_row_group_skip_mask(
     row_groups: &[RowGroupMetadata],
-    byte_source: Arc<DynByteSource>,
-    bloom_preds: Option<Vec<BloomColumnPred>>,
+    byte_source: &DynByteSource,
+    bloom_preds: Option<&[BloomColumnPred]>,
     statistics_mask: &Bitmap,
+    whole_read: bool,
 ) -> PolarsResult<Option<Bitmap>> {
-    let Some(bloom_preds) = bloom_preds.as_deref().filter(|p| !p.is_empty()) else {
+    let Some(bloom_preds) = bloom_preds else {
         return Ok(None);
     };
 
@@ -104,42 +118,40 @@ pub(super) async fn bloom_filter_row_group_skip_mask(
 
     for (i, rg) in row_groups.iter().enumerate() {
         if statistics_mask.get_bit(i) {
-            // Already skipped by min/max; bloom probe would not change the merged mask
-            // so this value is irrelevant.
+            // Already skipped by min/max; the bloom probe cannot change the merged mask.
             skip.push(false);
             continue;
         }
-        skip.push(should_skip_row_group(rg, bloom_preds, &byte_source, &mut bitset).await?);
+        skip.push(
+            should_skip_row_group(rg, bloom_preds, byte_source, &mut bitset, whole_read).await?,
+        );
     }
 
     Ok(Some(skip.freeze()))
 }
 
 /// Literals to hash into the Bloom filter; `None` for non-point predicates (ranges, strings, …).
-fn bloom_pred_values(specialized: &Option<SpecializedColumnPredicate>) -> Option<&[Scalar]> {
-    match specialized {
-        Some(SpecializedColumnPredicate::Equal(s)) => Some(std::slice::from_ref(s)),
-        Some(SpecializedColumnPredicate::EqualOneOf(v)) => {
+fn bloom_pred_values(specialized: Option<&SpecializedColumnPredicate>) -> Option<&[Scalar]> {
+    use SpecializedColumnPredicate as S;
+    match specialized? {
+        S::Equal(s) => Some(std::slice::from_ref(s)),
+        S::EqualOneOf(v) => {
             (v.len() <= polars_config::config().bloom_in_filter_threshold()).then_some(v.as_ref())
         },
-        _ => None,
+        // Ranges and substring/regex predicates cannot be answered by a point-membership bloom.
+        S::Between(..) | S::StartsWith(_) | S::EndsWith(_) | S::RegexMatch(_) => None,
     }
 }
 
 /// Byte range of the serialized Bloom filter for a column chunk, if present and valid.
 ///
-/// Returns `None` on missing metadata or values we cannot read safely (caller treats as “might contain”).
+/// Returns `None` on missing or unusable metadata (caller treats as "might contain").
 fn bloom_byte_range(meta: &ColumnChunkMetadata) -> Option<Range<usize>> {
-    let offset = meta.bloom_filter_offset()?;
-    if offset < 0 {
-        return None;
-    }
-    let offset = offset as usize;
-    let len = meta.bloom_filter_length()?;
-    if len <= 0 {
-        return None;
-    }
-    let end = offset.checked_add(len as usize)?;
+    let offset = usize::try_from(meta.bloom_filter_offset()?).ok()?;
+    let len = usize::try_from(meta.bloom_filter_length()?)
+        .ok()
+        .filter(|&l| l > 0)?;
+    let end = offset.checked_add(len)?;
     Some(offset..end)
 }
 
@@ -149,12 +161,17 @@ async fn should_skip_row_group(
     bloom_preds: &[BloomColumnPred],
     byte_source: &DynByteSource,
     bitset: &mut Vec<u8>,
+    whole_read: bool,
 ) -> PolarsResult<bool> {
     for pred in bloom_preds {
+        // An empty hash set (empty `is_in` haystack) matches nothing; skip without any reads.
+        if pred.hashes.is_empty() {
+            return Ok(true);
+        }
         let Some(idxs) = rg.columns_idxs_under_root_iter(pred.arrow_field_name.as_str()) else {
             continue;
         };
-        // Structs/lists map to 0 or 2+ chunks; Blooms are per chunk, so we cannot pick a single Bloom for a nested field.
+        // Nested fields map to 0 or 2+ chunks; blooms are per chunk, so none applies.
         if idxs.len() != 1 {
             continue;
         }
@@ -163,9 +180,8 @@ async fn should_skip_row_group(
             continue;
         };
 
-        let any_might_match = probe_bloom_hashes(&pred.hashes, range, byte_source, bitset)
-            .await
-            .unwrap_or(true);
+        let any_might_match =
+            probe_bloom_hashes(&pred.hashes, range, byte_source, bitset, whole_read).await?;
 
         if !any_might_match {
             return Ok(true);
@@ -174,23 +190,33 @@ async fn should_skip_row_group(
     Ok(false)
 }
 
-/// Max bytes to read for the Thrift Bloom filter header; Apache Arrow seems to think 20 is enough.
+/// Max bytes to read for the Thrift Bloom filter header (~12-20 bytes; 64 leaves margin).
 const BLOOM_HEADER_READ_CAP: usize = 64;
 
-/// Probe Bloom filter literals, reading only the split-block(s) needed when cheaper than the full slice.
+/// Max filter size fetched as one request under whole-filter reads; well above realistic
+/// filter sizes (~1 MiB writer caps), so only absurd declared lengths fall back to block reads.
+const BLOOM_WHOLE_READ_CAP: usize = 4 * 1024 * 1024;
+
+/// Probe Bloom filter literals.
+///
+/// `whole_read` fetches the filter in one request (up to [`BLOOM_WHOLE_READ_CAP`]); otherwise
+/// the header first, then only the needed block(s) when cheaper. Corrupt or unsupported
+/// filters resolve to `Ok(true)` (inconclusive); `Err` only on byte-source IO failure.
 async fn probe_bloom_hashes(
     hashes: &[u64],
     bloom_range: Range<usize>,
     byte_source: &DynByteSource,
     bitset: &mut Vec<u8>,
+    whole_read: bool,
 ) -> PolarsResult<bool> {
+    if whole_read && bloom_range.len() <= BLOOM_WHOLE_READ_CAP {
+        let bloom_bytes = byte_source.get_range(bloom_range).await?;
+        return Ok(might_contain_any_hashes(bloom_bytes.as_ref(), hashes, bitset).unwrap_or(true));
+    }
+
     let header_end = bloom_range
         .end
         .min(bloom_range.start.saturating_add(BLOOM_HEADER_READ_CAP));
-    if header_end <= bloom_range.start {
-        return Ok(true);
-    }
-
     let prefix = byte_source.get_range(bloom_range.start..header_end).await?;
     // Unsupported, truncated, or corrupt header: treat as inconclusive (may contain matches).
     let Some(layout) = bloom_filter_layout(prefix.as_ref()).ok().flatten() else {
@@ -198,35 +224,36 @@ async fn probe_bloom_hashes(
     };
 
     let bitset_start = bloom_range.start + layout.header_len;
-    let bitset_end = bitset_start
+    if bitset_start
         .checked_add(layout.bitset_num_bytes)
-        .filter(|&end| end <= bloom_range.end);
-    if bitset_end.is_none() {
+        .is_none_or(|end| end > bloom_range.end)
+    {
         return Ok(true);
     }
 
     let block_indices = unique_block_indices(hashes, layout.bitset_num_bytes);
     if !prefer_block_reads(block_indices.len(), &layout, bloom_range.len()) {
-        let bloom_bytes = byte_source.get_range(bloom_range).await?;
-        // Corrupt or truncated bloom bytes: inconclusive, do not skip the row group.
+        // The prefix already holds the whole filter when the range fits inside the header cap.
+        let bloom_bytes = if header_end == bloom_range.end {
+            prefix
+        } else {
+            byte_source.get_range(bloom_range).await?
+        };
         return Ok(might_contain_any_hashes(bloom_bytes.as_ref(), hashes, bitset).unwrap_or(true));
     }
 
+    // Shared so the range request and the `blocks_by_offset` lookup derive offsets identically.
+    let block_start = |idx: usize| bitset_start + idx * BLOCK_SIZE;
+
     let mut block_ranges: Vec<Range<usize>> = block_indices
         .iter()
-        .map(|&idx| {
-            let start = bitset_start + idx * BLOCK_SIZE;
-            start..start + BLOCK_SIZE
-        })
+        .map(|&idx| block_start(idx)..block_start(idx) + BLOCK_SIZE)
         .collect();
     let blocks_by_offset = byte_source.get_ranges(&mut block_ranges).await?;
 
     Ok(any_hashes_might_be_in_blocks(
         hashes,
         layout.bitset_num_bytes,
-        |idx| {
-            let start = bitset_start + idx * BLOCK_SIZE;
-            blocks_by_offset.get(&start).map(|b| b.as_ref())
-        },
+        |idx| blocks_by_offset.get(&block_start(idx)).map(|b| b.as_ref()),
     ))
 }

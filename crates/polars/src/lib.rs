@@ -403,9 +403,11 @@
 //! * `POLARS_ALLOW_EXTENSION` -> allows for [`ObjectChunked<T>`] to be used in arrow, opening up possibilities like using
 //!   `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
-//! * `POLARS_NO_BLOOM_FILTER_PRUNE` -> if set to `1`, row-group pruning via Parquet bloom filters is
-//!   disabled (column statistics pruning is controlled separately by `POLARS_NO_PARQUET_STATISTICS` /
-//!   `scan_parquet(..., use_statistics=...)`).
+//! * `POLARS_BLOOM_FILTER_PRUNE` -> row-group pruning via Parquet bloom filters, off by default.
+//!   `1`/`auto` prunes where the engine expects a win (currently local sources only); `whole`
+//!   (single-request filter reads) or `blocks` (header + block reads) force pruning on any
+//!   source. Column statistics pruning is separate and on by default
+//!   (`scan_parquet(..., use_statistics=...)`).
 //! * `POLARS_BLOOM_IN_FILTER_THRESHOLD` -> maximum number of `is_in` literals that will be probed
 //!   against Parquet bloom filters during row-group pruning (default: `10`). Larger `is_in` lists
 //!   will not use bloom pruning to avoid overhead.

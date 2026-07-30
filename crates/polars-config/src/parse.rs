@@ -39,6 +39,16 @@ pub fn parse_engine(var: &str, val: &str) -> Option<Engine> {
     }
 }
 
+pub fn parse_bloom_pruning(var: &str, val: &str) -> Option<crate::BloomPruning> {
+    match val.trim_ascii().parse::<crate::BloomPruning>() {
+        Ok(x) => Some(x),
+        Err(e) => {
+            polars_warn!("illegal value '{val}' found while parsing option '{var}' ({e})");
+            None
+        },
+    }
+}
+
 pub fn parse_spill_format(var: &str, val: &str) -> Option<SpillFormat> {
     match val.trim_ascii().parse::<SpillFormat>() {
         Ok(x) => Some(x),

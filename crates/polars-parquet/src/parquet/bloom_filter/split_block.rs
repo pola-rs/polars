@@ -16,7 +16,7 @@ fn block_mut(bitset: &mut [u8], block_index: usize) -> &mut [u8] {
     &mut bitset[block_index * BLOCK_SIZE..(block_index + 1) * BLOCK_SIZE]
 }
 
-/// Block index for `hash` from its upper 32 bits. `bitset_len` must be a multiple of [`BLOCK_SIZE`].
+/// Block index for `hash` (upper 32 bits). `bitset_len` must be a multiple of [`BLOCK_SIZE`].
 #[inline]
 pub fn hash_to_block_index(hash: u64, bitset_len: usize) -> usize {
     let number_of_blocks = bitset_len as u64 / BLOCK_SIZE as u64;
@@ -82,7 +82,10 @@ pub fn is_maybe_in_block(block: &[u8], hash: u64) -> bool {
 ///
 /// In Parquet this bitset is the filter for one column chunk. `false` means
 /// definitely not present; `true` means may be present (or inconclusive).
+///
+/// `bitset` must be a non-empty whole number of [`BLOCK_SIZE`]-byte blocks.
 pub fn is_maybe_in_bitset(bitset: &[u8], hash: u64) -> bool {
+    debug_assert!(!bitset.is_empty() && bitset.len().is_multiple_of(BLOCK_SIZE));
     let block_index = hash_to_block_index(hash, bitset.len());
     is_maybe_in_block(block(bitset, block_index), hash)
 }

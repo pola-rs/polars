@@ -2,21 +2,28 @@ use std::io::{Read, Seek, SeekFrom};
 
 use polars_parquet_format::thrift::protocol::TCompactInputProtocol;
 use polars_parquet_format::{
-    BloomFilterAlgorithm, BloomFilterCompression, BloomFilterHeader, SplitBlockAlgorithm,
-    Uncompressed,
+    BloomFilterAlgorithm, BloomFilterCompression, BloomFilterHash, BloomFilterHeader,
+    SplitBlockAlgorithm, Uncompressed, XxHash,
 };
 
+use crate::parquet::bloom_filter::split_block::BLOCK_SIZE;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::ColumnChunkMetadata;
 
 /// Returns the bitset length if the header is supported, otherwise `None`.
-fn supported_bitset_num_bytes(header: &BloomFilterHeader) -> ParquetResult<Option<usize>> {
+///
+/// Lengths that are zero, negative, or not a multiple of [`BLOCK_SIZE`] are malformed and
+/// unsupported.
+fn supported_bitset_num_bytes(header: &BloomFilterHeader) -> Option<usize> {
     if header.algorithm != BloomFilterAlgorithm::BLOCK(SplitBlockAlgorithm {})
         || header.compression != BloomFilterCompression::UNCOMPRESSED(Uncompressed {})
+        || header.hash != BloomFilterHash::XXHASH(XxHash {})
     {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(header.num_bytes.try_into()?))
+    usize::try_from(header.num_bytes)
+        .ok()
+        .filter(|&n| n != 0 && n.is_multiple_of(BLOCK_SIZE))
 }
 
 /// Parsed split-block bloom filter header (Thrift) prefix.
@@ -35,7 +42,7 @@ pub fn bloom_filter_layout(bytes: &[u8]) -> ParquetResult<Option<BloomFilterLayo
     let mut reader = std::io::Cursor::new(bytes);
     let mut prot = TCompactInputProtocol::new(&mut reader, usize::MAX);
     let header = BloomFilterHeader::read_from_in_protocol(&mut prot)?;
-    let Some(bitset_num_bytes) = supported_bitset_num_bytes(&header)? else {
+    let Some(bitset_num_bytes) = supported_bitset_num_bytes(&header) else {
         return Ok(None);
     };
     let header_len = reader.position() as usize;
@@ -46,15 +53,12 @@ pub fn bloom_filter_layout(bytes: &[u8]) -> ParquetResult<Option<BloomFilterLayo
 }
 
 /// Returns the bitset length if the header is supported, otherwise clears `bitset` and returns `None`.
-fn supported_bitset_length(
-    header: &BloomFilterHeader,
-    bitset: &mut Vec<u8>,
-) -> ParquetResult<Option<usize>> {
-    let Some(length) = supported_bitset_num_bytes(header)? else {
+fn supported_bitset_length(header: &BloomFilterHeader, bitset: &mut Vec<u8>) -> Option<usize> {
+    let Some(length) = supported_bitset_num_bytes(header) else {
         bitset.clear();
-        return Ok(None);
+        return None;
     };
-    Ok(Some(length))
+    Some(length)
 }
 
 fn prepare_bitset(bitset: &mut Vec<u8>, length: usize) -> ParquetResult<()> {
@@ -83,7 +87,7 @@ pub fn read<R: Read + Seek>(
     // deserialize header
     let mut prot = TCompactInputProtocol::new(&mut reader, usize::MAX); // max is ok since `BloomFilterHeader` never allocates
     let header = BloomFilterHeader::read_from_in_protocol(&mut prot)?;
-    let Some(length) = supported_bitset_length(&header, bitset)? else {
+    let Some(length) = supported_bitset_length(&header, bitset) else {
         return Ok(());
     };
 
@@ -98,7 +102,7 @@ pub fn read_from_bytes(bytes: &[u8], bitset: &mut Vec<u8>) -> ParquetResult<()> 
     let mut reader = std::io::Cursor::new(bytes);
     let mut prot = TCompactInputProtocol::new(&mut reader, usize::MAX);
     let header = BloomFilterHeader::read_from_in_protocol(&mut prot)?;
-    let Some(length) = supported_bitset_length(&header, bitset)? else {
+    let Some(length) = supported_bitset_length(&header, bitset) else {
         return Ok(());
     };
 

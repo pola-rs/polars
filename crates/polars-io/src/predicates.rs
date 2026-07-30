@@ -126,6 +126,11 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
 pub fn bloom_hashes_for_scalars(scalars: &[Scalar]) -> Option<Box<[u64]>> {
     let mut hashes = Vec::with_capacity(scalars.len());
     for scalar in scalars {
+        // `Time` is nanoseconds while the file may store TIME(MILLIS/MICROS); hashing the
+        // nanosecond literal against those stored values would wrongly skip row groups.
+        if scalar.dtype() == &DataType::Time {
+            return None;
+        }
         let parquet_scalar = cast_to_parquet_scalar(scalar.clone())?;
         hashes.push(hash_parquet_scalar(&parquet_scalar)?);
     }

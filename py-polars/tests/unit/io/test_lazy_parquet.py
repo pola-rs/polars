@@ -290,6 +290,7 @@ def test_parquet_bloom_filter_prune(
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_BLOOM_FILTER_PRUNE", "1")
 
     rows_per_row_group = 10
     num_row_groups = 10
