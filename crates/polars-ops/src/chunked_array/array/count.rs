@@ -16,7 +16,7 @@ pub fn array_count_matches(ca: &ArrayChunked, value: AnyValue) -> PolarsResult<S
     let out = count_boolean_bits(&ca);
     // TODO: Once we change the sum type of booleans to Int64, we can change
     // count_boolean_bits to return a LenCa, and remove this cast.
-    Ok(out.cast(&LEN_DTYPE)?)
+    out.cast(&LEN_DTYPE)
 }
 
 pub(super) fn count_boolean_bits(ca: &ArrayChunked) -> IdxCa {
