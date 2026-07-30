@@ -102,11 +102,11 @@ impl FilterExec {
             if df.first_col_n_chunks() > 1 {
                 let chunks = df.split_chunks().collect::<Vec<_>>();
                 self.execute_chunks(chunks, state)
-            } else if df.width() < n_partitions {
-                self.execute_hor(df, state)
-            } else {
+            } else if should_split_vertically(df.height(), df.width(), n_partitions) {
                 let chunks = df.split_chunks_by_n(n_partitions, true);
                 self.execute_chunks(chunks, state)
+            } else {
+                self.execute_hor(df, state)
             }
         } else {
             self.execute_hor(df, state)
