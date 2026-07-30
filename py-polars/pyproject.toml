@@ -152,6 +152,7 @@ module = [
   "dateutil.*",
   "deltalake.*",
   "duckdb.*",
+  "filelock.*",
   "fsspec.*",
   "gevent",
   "great_tables",
