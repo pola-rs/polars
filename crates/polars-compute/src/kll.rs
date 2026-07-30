@@ -12,7 +12,7 @@ use rand::{RngExt, SeedableRng};
 //   This makes sense, because on average we have less data to deal with.
 //   (24.1 vs 20.7 seconds)
 
-/// KLL calls this `δ`. Equivalent to 99.9999% success rate.
+/// KLL calls this `δ`. Equivalent to a 99.9999% success rate per queried value.
 const FAILURE_PROBABILITY: f64 = 1e-6;
 /// `CAPACITY_DECAY` specifies how much smaller compactor h+1 is wrt to h.
 /// KLL calls this `c`.
@@ -20,35 +20,40 @@ const CAPACITY_DECAY: f64 = 2.0 / 3.0;
 
 const MIN_COMPACTOR_SIZE: usize = 2;
 
-fn compute_k(error: f64, delta: f64, c: f64) -> usize {
-    /*
-    This is still claude output. [amber] Please check:
+/// Smallest `k` guaranteeing rank error <= `error * n` w.p. >= 1 - `delta` for a
+/// *single* query value. Union-bound over ~`1/error` values (i.e. pass
+/// `delta * error`) if you need all quantiles to hold simultaneously.
+///
+/// Randomized compaction makes the rank error a zero-mean sum of independent
+/// steps: compacting level `h` shifts the estimate by ±2^h, and only when the
+/// number of compacted items below the query is odd. Level `h` has capacity
+/// `k_h = k c^(H-h)` and items of weight 2^h, so it compacts at most
+/// `n / (2^h k_h)` times and, taking every step as ±2^h (worst-case parity),
+///
+///     Var <= sum_h 4^h * n / (2^h * k_h) = (n * 2^H / k) * sum_j (2c)^-j
+///          = (n * 2^H / k) * 2c/(2c-1)                        [needs c > 1/2]
+///
+/// A level above `H` only appears once the old top compactor -- capacity `k`,
+/// weight 2^(H-1) -- filled up, so `2^H <= 2n/k` and
+///
+///     std <= (n/k) * 2 sqrt(c / (2c - 1)).
+///
+/// The steps are bounded, so Hoeffding gives a sub-Gaussian tail with exactly
+/// that variance proxy: the error stays below `z * std` except w.p. `delta`,
+/// with `z = sqrt(2 ln(2/delta))`. Hence
+///
+///     k = z * 2 sqrt(c / (2c - 1)) / error.
+///
+/// This is the worst case; the schedule in `compact()` lets compactors run past
+/// their thresholds, so the measured std is 0.25..1.08 * n/k (k in 16..50k,
+/// n in 1e4..1e8, random/sorted/reverse-sorted input) against the 2.83 * n/k
+/// bound used here.
+fn compute_k(error: f64) -> usize {
+    assert!(error > 0.0 && error < 1.0, "invalid error: {error}");
 
-    Smallest `k` guaranteeing rank error <= `error * n` w.p. >= 1 - `delta`.
-
-    This is the sizing for the PLAIN varying-capacity hierarchy (this class).
-    The sampler variant has its own `SamplingKLLSketch.k_for_error`.
-
-    The randomized compactions make the estimated rank of any fixed value an
-    unbiased random walk whose variance is a geometric series over the levels:
-
-        Var(rank error) ~ n**2 * (c / (2c - 1)) / k**2,
-
-    so the error std, as a fraction of the stream length, is ~sqrt(c/(2c-1))/k.
-    The error concentrates like a Gaussian, so it stays below `z * eps_std`
-    except with probability `delta`, `z = sqrt(2 ln(2/delta))`:
-
-        k = z * sqrt(c / (2c - 1)) / error.
-
-    `heuristic_result` below is that (slightly loose) form; `paper_result` is
-    KLL Theorem 1 exactly, `k = (1/error) sqrt(log(2/delta) / C)`, `C=c^2(2c-1)`.
-    `c` must exceed 1/2, else the variance series diverges.
-    */
-
-    let z = f64::sqrt(2.0 * f64::ln(2.0 / delta)); // Gaussian tail factor for prob. 1 - delta
-    let spread = f64::sqrt(c / (2.0 * c - 1.0)); // sqrt of the per-level variance series
-    let heuristic_result = f64::max(2.0, f64::ceil(z * spread / error)) as usize;
-    heuristic_result
+    let z = f64::sqrt(2.0 * f64::ln(2.0 / FAILURE_PROBABILITY)); // sub-Gaussian tail factor for prob. 1 - delta
+    let spread = 2.0 * f64::sqrt(CAPACITY_DECAY / (2.0 * CAPACITY_DECAY - 1.0)); // std bound in units of n/k
+    f64::max(MIN_COMPACTOR_SIZE as f64, f64::ceil(z * spread / error)) as usize
 }
 
 #[derive(Debug, Clone, Copy)]
