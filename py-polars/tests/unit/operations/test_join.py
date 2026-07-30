@@ -4428,7 +4428,9 @@ def test_join_nested_key_nulls_not_equal_28584(
     dtype: pl.DataType, present: Any, missing: Any, inner_null: Any
 ) -> None:
     left = pl.DataFrame({"k": pl.Series([present, missing], dtype=dtype), "l": [0, 1]})
-    right = pl.DataFrame({"k": pl.Series([missing, present], dtype=dtype), "r": [10, 11]})
+    right = pl.DataFrame(
+        {"k": pl.Series([missing, present], dtype=dtype), "r": [10, 11]}
+    )
 
     # default, nulls_equal=False
     assert left.join(right, on="k", how="inner").height == 1
@@ -4450,4 +4452,3 @@ def test_join_nested_key_nulls_not_equal_28584(
     assert left.join(right, on="k", how="full", nulls_equal=True).height == 2
     assert left.join(right, on="k", how="semi", nulls_equal=True).height == 2
     assert left.join(right, on="k", how="anti", nulls_equal=True).height == 0
-
