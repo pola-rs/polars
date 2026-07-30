@@ -3,7 +3,6 @@ use std::ops::ControlFlow;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_utils::UnitVec;
 use polars_utils::collection::{Collection, CollectionWrap, MappedCollection};
-use polars_utils::index::lensize_try_from;
 
 use super::*;
 use crate::plans::optimizer::slice_pushdown_lp::{
@@ -203,8 +202,17 @@ impl Slice {
                     AnyValue::Int64(*offset),
                 )))),
                 expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
-                    LEN_DTYPE,
-                    AnyValue::Int64(lensize_try_from(*len).unwrap()),
+                    DataType::IDX_DTYPE,
+                    {
+                        #[cfg(not(feature = "bigidx"))]
+                        {
+                            AnyValue::UInt32(*len)
+                        }
+                        #[cfg(feature = "bigidx")]
+                        {
+                            AnyValue::UInt64(*len)
+                        }
+                    },
                 )))),
             ),
             Self::Opaque { offset, len } => (*offset, *len),
