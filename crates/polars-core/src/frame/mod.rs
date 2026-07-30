@@ -2438,7 +2438,7 @@ impl DataFrame {
     #[must_use]
     pub fn null_count(&self) -> Self {
         let cols =
-            self.apply_columns(|c| Column::new(c.name().clone(), [c.null_count() as IdxSize]));
+            self.apply_columns(|c| Column::new(c.name().clone(), [c.null_count() as LenSize]));
         unsafe { Self::new_unchecked(1, cols) }
     }
 
