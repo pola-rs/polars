@@ -4,8 +4,9 @@ import datetime
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import polars as pl
 import pytest
+
+import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
