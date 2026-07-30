@@ -186,7 +186,7 @@ def test_hive_partitioned_slice_pushdown(
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
     schema = q.collect_schema()
-    expect_count = pl.select(pl.lit(1, dtype=pl.UInt32).alias(x) for x in schema)
+    expect_count = pl.select(pl.lit(1, dtype=pl.Int64).alias(x) for x in schema)
 
     assert_frame_equal(
         q.head(1)

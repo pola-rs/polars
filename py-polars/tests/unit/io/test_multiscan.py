@@ -1148,7 +1148,7 @@ def test_hive_group_by_rewrite_to_partitioned_union(tmp_path: Path) -> None:
     out = q.sort("foo")
     expected = pl.DataFrame(
         {"foo": [1, 2, 3], "x_sum": [11, 20, 30], "len": [2, 1, 1]},
-        schema_overrides={"len": pl.get_index_type()},
+        schema_overrides={"len": pl.Int64},
     )
     assert_frame_equal(out.collect(), expected)
     assert_frame_equal(

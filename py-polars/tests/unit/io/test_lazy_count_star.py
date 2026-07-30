@@ -426,9 +426,4 @@ def test_scan_select_len_overflow_28351(plmonkeypatch: PlMonkeyPatch) -> None:
     )
 
     q = pl.scan_ipc(files).select(pl.len())
-
-    if pl.get_index_type() == pl.UInt32:
-        with pytest.raises(ComputeError):
-            q.collect()
-    else:
-        assert q.collect() == 3 * ((1 << 31) - 1)
+    assert q.collect() == 3 * ((1 << 31) - 1)
