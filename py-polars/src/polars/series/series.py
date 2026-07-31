@@ -2439,9 +2439,9 @@ class Series:
 
         Notes
         -----
-        NaN values are ordered after all other floating-point values. They
-        are not treated
-        as nulls, so call ``drop_nans`` first when NaN values should be excluded.
+        NaN values are ordered after all other floating-point values. They are
+        not treated as nulls, so call ``drop_nans`` first when NaN values
+        should be excluded.
 
         Examples
         --------
@@ -2476,9 +2476,9 @@ class Series:
 
         Notes
         -----
-        NaN values are ordered after all other floating-point values. They
-        are not treated
-        as nulls, so call ``drop_nans`` first when NaN values should be excluded.
+        NaN values are ordered after all other floating-point values. They are
+        not treated as nulls, so call ``drop_nans`` first when NaN values
+        should be excluded.
 
         Returns
         -------
