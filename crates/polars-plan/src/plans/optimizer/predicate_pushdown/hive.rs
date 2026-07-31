@@ -202,6 +202,7 @@ pub fn rewrite_hive(
                             [r.as_str()],
                             JoinArgs {
                                 how: options.args.how.clone(),
+                                nulls_equal: options.args.nulls_equal,
                                 ..Default::default()
                             },
                             None,
@@ -346,7 +347,8 @@ fn make_predicate(
     AExprBuilder::col(predicate_name, expr_arena)
         .is_in(
             AExprBuilder::lit(LiteralValue::Series(SpecialEq::new(values)), expr_arena),
-            false, // nulls_equal
+            // Hive __HIVE_DEFAULT_PARTITION__ can produce nulls
+            true,
             expr_arena,
         )
         .expr_ir_unnamed()

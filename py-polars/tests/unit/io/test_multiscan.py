@@ -1312,3 +1312,59 @@ def test_hive_group_by_rewrite_repeated_partition_values(tmp_path: Path) -> None
 
     out = q.sort("foo").collect()
     assert_frame_equal(out, pl.DataFrame({"foo": [1, 2], "x": [3, 7]}))
+
+
+@pytest.mark.write_disk
+def test_hive_group_by_rewrite_null_partition(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    (root / "foo=1").mkdir(parents=True)
+    (root / "foo=__HIVE_DEFAULT_PARTITION__").mkdir(parents=True)
+
+    pl.DataFrame({"x": [10, 20]}).write_parquet(root / "foo=1" / "data.parquet")
+    pl.DataFrame({"x": [5]}).write_parquet(
+        root / "foo=__HIVE_DEFAULT_PARTITION__" / "data.parquet"
+    )
+
+    lf = pl.scan_parquet(root, hive_partitioning=True)
+    q = lf.group_by("foo").agg(pl.sum("x")).sort("foo", nulls_last=True)
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"foo": [1, None], "x": [30, 5]}),
+    )
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
+
+
+@pytest.mark.parametrize("nulls_equal", [False, True])
+@pytest.mark.write_disk
+def test_hive_join_rewrite_null_partition(tmp_path: Path, nulls_equal: bool) -> None:
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+
+    for root, name, frames in [
+        (left_root, "x", {"foo=1": [10], "foo=2": [20]}),
+        (right_root, "y", {"foo=1": [100]}),
+    ]:
+        for part, values in frames.items():
+            (root / part).mkdir(parents=True)
+            pl.DataFrame({name: values}).write_parquet(root / part / "data.parquet")
+
+        (root / "foo=__HIVE_DEFAULT_PARTITION__").mkdir(parents=True)
+        pl.DataFrame({name: [0]}).write_parquet(
+            root / "foo=__HIVE_DEFAULT_PARTITION__" / "data.parquet"
+        )
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    for how in ["inner", "left"]:
+        q = left.join(right, on="foo", how=how, nulls_equal=nulls_equal).sort(  # type: ignore[arg-type]
+            "foo", "x", nulls_last=True
+        )
+        assert_frame_equal(
+            q.collect(),
+            q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+        )
