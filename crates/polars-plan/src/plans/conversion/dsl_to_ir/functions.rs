@@ -35,7 +35,18 @@ pub(super) fn convert_functions(
                 A::Min => IA::Min,
                 A::Max => IA::Max,
                 A::Sum => IA::Sum,
-                A::Dot => IA::Dot,
+                A::Dot { cast_to_lhs_dtype } => {
+                    if cast_to_lhs_dtype {
+                        let dtype = e[0].dtype(ctx.schema, ctx.arena)?.clone();
+                        let cast = ctx.arena.add(AExpr::Cast {
+                            expr: e[1].node(),
+                            dtype,
+                            options: CastOptions::Strict,
+                        });
+                        e[1].set_node(cast);
+                    }
+                    IA::Dot
+                },
                 A::ToList => IA::ToList,
                 A::Std(v) => IA::Std(v),
                 A::Var(v) => IA::Var(v),

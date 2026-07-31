@@ -36,8 +36,15 @@ impl ArrayNameSpace {
     /// Both arrays must have matching `Float32` or `Float64` inner dtypes. Inner null
     /// products are ignored. An outer null row produces a null.
     pub fn dot(self, other: Expr) -> Expr {
-        self.0
-            .map_binary(FunctionExpr::ArrayExpr(ArrayFunction::Dot), other)
+        self.dot_with_options(other, false)
+    }
+
+    #[doc(hidden)]
+    pub fn dot_with_options(self, other: Expr, cast_to_lhs_dtype: bool) -> Expr {
+        self.0.map_binary(
+            FunctionExpr::ArrayExpr(ArrayFunction::Dot { cast_to_lhs_dtype }),
+            other,
+        )
     }
 
     /// Compute the std of the items in every subarray.
