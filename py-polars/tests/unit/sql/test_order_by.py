@@ -377,9 +377,6 @@ def test_order_by_correlated_subquery() -> None:
 
 
 def test_order_by_subquery_over_set_operation() -> None:
-    # The set-op paths return the sorted frame directly, with no projection to strip
-    # the subquery placeholder column, so it has to be dropped explicitly.
-    #
     # Not compared against a reference engine: standard SQL only lets an ORDER BY
     # after a set operation name output columns, and DuckDB rejects the query
     # ("add the expression to every SELECT, or move the UNION into a FROM clause").

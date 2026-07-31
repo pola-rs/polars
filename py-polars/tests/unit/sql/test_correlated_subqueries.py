@@ -198,10 +198,8 @@ def _decorrelation_count(ctx: pl.SQLContext, query: str) -> int:
 
 
 def test_repeated_correlated_subquery_is_decorrelated_once() -> None:
-    # Each decorrelation is a row-index + join_where + group_by + join-back, so the
-    # same subquery appearing in several places must not be lowered more than once.
-    # WHERE runs before the filter and the SELECT list after it, but filtering
-    # preserves the materialised column, so those share too.
+    # Decorrelation is expensive, so the same subquery appearing in several places
+    # must be lowered once rather than once per occurrence.
     frames = {
         "t1": pl.DataFrame({"k": [1, 2, 3]}),
         "t2": pl.DataFrame({"k": [1, 1, 2], "w": [5, 7, 9]}),

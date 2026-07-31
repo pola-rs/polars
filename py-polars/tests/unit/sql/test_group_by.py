@@ -873,9 +873,8 @@ def test_corr_no_complete_pairs_returns_null() -> None:
 
 
 def test_correlated_subquery_in_group_by_select_list() -> None:
-    # The decorrelated result column is per-input-row but constant within the group
-    # (the correlation is on the grouping key), so it must reduce rather than be
-    # rejected as not participating in the GROUP BY.
+    # Previously rejected as not participating in the GROUP BY, leaking an internal
+    # column name into the error.
     frames = {
         "t1": pl.DataFrame({"k": [1, 2, 3]}),
         "t2": pl.DataFrame({"k": [1, 1, 2], "w": [5, 7, 9]}),

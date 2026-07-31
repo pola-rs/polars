@@ -449,14 +449,9 @@ impl SQLContext {
     // join over `lf`, substituting each one for the column its lowering
     // materialised. Returns the updated frame together with the rewritten
     // expression, which borrows `expr` unchanged when nothing was lowered.
+    // Subqueries that can't be lowered are left in place.
     //
-    // `bindings` carries the subqueries already lowered against `lf`, so that the
-    // same subquery appearing in several expressions is decorrelated once. See
-    // [`SubqueryBindings`] for when a set may be shared across calls.
-    //
-    // Uncorrelated subqueries and shapes we can't soundly lower are left in
-    // place for the generic scalar-subquery path (or, for `EXISTS`, for the
-    // expression visitor to reject).
+    // See [`SubqueryBindings`] for when a set may be shared across calls.
     pub(crate) fn lower_correlated_subqueries<'a>(
         &mut self,
         lf: LazyFrame,
@@ -465,9 +460,8 @@ impl SQLContext {
         scope: LowerScope,
         bindings: &mut SubqueryBindings,
     ) -> PolarsResult<(LazyFrame, Cow<'a, SQLExpr>)> {
-        // Cheap pre-check: the vast majority of expressions contain no subquery at
-        // all, and those must not pay for the clone the mutable visit requires.
-        // A subquery this scope won't claim only costs a wasted clone and walk.
+        // The mutable visit needs an owned expression; skip the clone when there is
+        // nothing to rewrite.
         if !expr_contains_subquery(expr) {
             return Ok((lf, Cow::Borrowed(expr)));
         }
@@ -484,8 +478,6 @@ impl SQLContext {
         if let ControlFlow::Break(e) = VisitMut::visit(&mut rewritten, &mut lowering) {
             return Err(e);
         }
-        // Not derivable from `bindings`: a reused binding rewrites this expression
-        // without recording a new one.
         let rewritten = if lowering.changed {
             Cow::Owned(rewritten)
         } else {
@@ -1046,34 +1038,22 @@ fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
     Some(select)
 }
 
-/// Correlated subqueries already lowered against a frame, mapping each to the column its
-/// decorrelation materialised, so the same subquery appearing in several expressions is
-/// decorrelated once rather than once per expression. Each decorrelation is a row-index +
-/// `join_where` + `group_by` + join-back, so the saving is a real one.
+/// Correlated subqueries already lowered against a frame, each mapped to the column its
+/// decorrelation materialised. The `bool` is the `exists` flag: a scalar subquery and an
+/// `EXISTS` over the same inner query materialise different columns and must not share a
+/// binding.
 ///
-/// Subqueries are compared structurally; sqlparser's AST derives `Eq`, so this needs no
-/// rendering to text. The `bool` is the `exists` flag: the same inner query yields a value
-/// column for a scalar subquery but a boolean flag for `EXISTS`, so the two must not share
-/// a binding.
-///
-/// A set may be shared across calls only while the materialised columns stay present and
-/// keep their per-row meaning. Filtering and semi/anti joins preserve both, so the WHERE,
-/// SELECT-list and HAVING passes of one SELECT share one set. Anything that re-projects or
-/// aggregates the frame must start a fresh one -- notably ORDER BY, which runs after the
-/// final projection has already dropped these columns.
+/// A set is only valid while its columns are still present and still mean the same thing
+/// per row, so it may be shared across passes over one frame but must be started afresh
+/// once the frame has been re-projected or aggregated.
 pub(crate) type SubqueryBindings = Vec<(Query, bool, PlSmallStr)>;
 
 /// Which correlated-subquery node kinds a lowering pass should claim.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LowerScope {
-    /// Scalar subqueries only. `[NOT] EXISTS` is deliberately left alone so
-    /// that top-level WHERE conjuncts can still be claimed by the semi/anti
-    /// join fast path in `rewrite_subquery_conjuncts`, which is a far better
-    /// lowering than a boolean flag column.
+    /// Scalar subqueries only, leaving `[NOT] EXISTS` for the semi/anti join rewrite.
     ScalarOnly,
-    /// Scalar subqueries and `[NOT] EXISTS`. Used everywhere the semi/anti
-    /// join fast path can't apply: the SELECT list, HAVING, and the residual
-    /// WHERE conjuncts that fast path declined.
+    /// Scalar subqueries and `[NOT] EXISTS`.
     ScalarAndExists,
 }
 
@@ -1086,12 +1066,8 @@ fn lowerable_kind(expr: &SQLExpr, scope: LowerScope) -> bool {
 }
 
 /// Rewrites correlated subqueries in-place into references to the columns their
-/// decorrelated lowering materialises, threading the growing `LazyFrame`
-/// through the traversal.
-///
-/// `query_depth` keeps each subquery a leaf: its own inner query is decorrelated
-/// as a unit by `try_decorrelate_*`, never recursed into looking for more
-/// candidates to lower against the *outer* schema.
+/// decorrelated lowering materialises, threading the growing `LazyFrame` through the
+/// traversal. `query_depth` keeps each subquery a leaf rather than recursing into it.
 struct CorrelatedLowering<'a> {
     ctx: &'a mut SQLContext,
     lf: LazyFrame,
@@ -1161,13 +1137,10 @@ impl VisitorMut for CorrelatedLowering<'_> {
         };
         let name = match self.lower(subquery, exists) {
             Ok(Some(name)) => name,
-            // Left in place for the generic path / the visitor's error.
             Ok(None) => return ControlFlow::Continue(()),
             Err(e) => return ControlFlow::Break(e),
         };
-        // `visit_identifier` resolves an identifier to exactly `col(<name>)`,
-        // which is what the subquery now stands for. `EXISTS` is never NULL, so
-        // negating `NOT EXISTS` here needs no three-valued-logic care.
+        // `EXISTS` is never NULL, so negating it needs no three-valued-logic care.
         let resolved = SQLExpr::Identifier(Ident::new(name.as_str()));
         *expr = if negated {
             SQLExpr::UnaryOp {

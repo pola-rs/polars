@@ -246,8 +246,6 @@ impl SQLExprVisitor<'_> {
                 // (eg: `COUNT(*) IN (1, 3)` in a HAVING/GROUP BY context), instead producing a
                 // spurious `list[bool]`; the `eq`/`or` chain doesn't have that problem.
                 let expr_is_aggregate = has_expr(&expr, |e| matches!(e, Expr::Agg(_) | Expr::Len));
-                // Failing to build an element Series *is* the "not all literals" signal,
-                // so the parse doubles as the fast-path test.
                 let elements = if expr_is_aggregate {
                     None
                 } else {

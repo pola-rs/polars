@@ -116,9 +116,7 @@ def test_collision_with_wildcard(df_naming: pl.DataFrame) -> None:
 def test_unaliased_scalar_subquery_name_is_stable() -> None:
     """An unnamed scalar subquery gets Polars' usual name for unnamed expressions.
 
-    It previously took the internal placeholder column's name, which is drawn from a
-    process-wide counter, so the same query produced a different output column name on
-    every execution.
+    It previously took an internal name that differed on every execution.
     """
     frames = {"t": pl.DataFrame({"v": [1, 2, 3]})}
     query = "SELECT (SELECT MAX(v) FROM t) FROM t"
