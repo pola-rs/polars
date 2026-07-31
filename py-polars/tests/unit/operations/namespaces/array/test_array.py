@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import io
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -150,7 +151,6 @@ def test_arr_dot_query_vector(dtype: pl.DataType) -> None:
         [10.0, 20.0],
         (10.0, 20.0),
         np.array([10.0, 20.0]),
-        pl.lit([10.0, 20.0]),
     ):
         assert_series_equal(embedding.arr.dot(query), expected)
 
@@ -174,9 +174,57 @@ def test_arr_dot_query_vector_expansion() -> None:
     )
 
     for columns in (pl.col("f32", "f64"), cs.by_dtype(pl.Array)):
-        for query in ([10.0, 20.0], pl.lit([10.0, 20.0])):
+        for query in ([10.0, 20.0], np.array([10.0, 20.0])):
             result = df.lazy().select(columns.arr.dot(query)).collect()
             assert_frame_equal(result, expected)
+
+
+def test_arr_dot_literal_expr_preserves_dtype() -> None:
+    df = pl.DataFrame(
+        {"lhs": [[1.0, 2.0], [3.0, 4.0]]},
+        schema={"lhs": pl.Array(pl.Float64, 2)},
+    )
+    rhs = pl.Series(
+        "rhs",
+        [[10.0, 20.0], [30.0, 40.0]],
+        dtype=pl.Array(pl.Float32, 2),
+    )
+
+    for other in (
+        pl.lit(rhs),
+        pl.lit([10.0, 20.0], dtype=pl.Array(pl.Float32, 2)),
+    ):
+        with pytest.raises(pl.exceptions.SchemaError, match="matching inner dtypes"):
+            df.select(pl.col("lhs").arr.dot(other))
+
+    with pytest.raises(InvalidOperationError, match="expects Array inputs"):
+        df.select(pl.col("lhs").arr.dot(pl.lit([10.0, 20.0])))
+
+
+def test_arr_dot_query_vector_expr_serde() -> None:
+    df = pl.DataFrame(
+        {
+            "f32": [[1.0, 2.0]],
+            "f64": [[3.0, 4.0]],
+        },
+        schema={
+            "f32": pl.Array(pl.Float32, 2),
+            "f64": pl.Array(pl.Float64, 2),
+        },
+    )
+    expected = pl.DataFrame(
+        {"f32": [50.0], "f64": [110.0]},
+        schema={"f32": pl.Float32, "f64": pl.Float64},
+    )
+    expr = cs.by_dtype(pl.Array).arr.dot([10.0, 20.0])
+
+    binary = expr.meta.serialize(format="binary")
+    binary_expr = pl.Expr.deserialize(io.BytesIO(binary), format="binary")
+    assert_frame_equal(df.select(binary_expr), expected)
+
+    json = expr.meta.serialize(format="json")
+    json_expr = pl.Expr.deserialize(io.StringIO(json), format="json")
+    assert_frame_equal(df.select(json_expr), expected)
 
 
 def test_arr_dot_query_vector_must_be_one_dimensional() -> None:
