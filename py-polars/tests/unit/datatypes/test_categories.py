@@ -71,7 +71,7 @@ def test_categories_lookup(cats: pl.Categories) -> None:
     vals = ["foo", "bar", None, "moo", "bar", "moo", "foo", None]
     df = pl.DataFrame({"x": vals}, schema={"x": pl.Categorical(cats)})
     cat_vals = pl.Series("x", [cats[v] for v in vals], dtype=cats.physical())
-    assert_series_equal(cat_vals, df["x"].cast(cats.physical()))
+    assert_series_equal(cat_vals, df["x"].cat.physical())
     cat_strs = pl.Series("x", [cats[v] for v in cat_vals])
     assert_series_equal(cat_strs, df["x"].cast(pl.String))
 
