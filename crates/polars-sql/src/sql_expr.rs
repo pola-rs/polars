@@ -398,11 +398,6 @@ impl SQLExprVisitor<'_> {
         subquery: &Subquery,
         restriction: SubqueryRestriction,
     ) -> PolarsResult<Expr> {
-        // A correlated scalar subquery is decorrelated up-front into an outer
-        // join that materialises its result column; resolve to that column.
-        if let Some(expr) = self.ctx.correlated_subquery_expr(subquery) {
-            return Ok(expr);
-        }
         // note: we have to execute subqueries in an isolated scope to prevent
         // propagating any context/arena mutation into the rest of the query
         let lf = self
@@ -420,21 +415,19 @@ impl SQLExprVisitor<'_> {
         ))
     }
 
-    /// Visit a `[NOT] EXISTS (subquery)` expression appearing outside the
-    /// shapes `rewrite_subquery_conjuncts` lowers directly to a semi/anti join
-    /// or count-filter (a top-level WHERE conjunct): inside an `OR` chain,
-    /// `CASE`, or the SELECT list. Such an `EXISTS` is decorrelated ahead of
-    /// time into a boolean flag column (see `decorrelate_exists_subqueries`);
-    /// this just resolves the node to that column, negating for `NOT EXISTS`
-    /// (safe unconditionally: `EXISTS` is never NULL, so no 3VL nuance here).
-    fn visit_exists(&mut self, subquery: &Subquery, negated: bool) -> PolarsResult<Expr> {
-        let Some(flag) = self.ctx.exists_subquery_expr(subquery) else {
-            polars_bail!(
-                SQLInterface:
-                "EXISTS subquery is not currently supported in this position: {:?}", subquery
-            );
-        };
-        Ok(if negated { flag.not() } else { flag })
+    /// Visit a `[NOT] EXISTS (subquery)` expression.
+    ///
+    /// A supported `EXISTS` never reaches here: a top-level WHERE conjunct is
+    /// lowered to a semi/anti join or count-filter by `rewrite_subquery_conjuncts`,
+    /// and one nested inside an `OR` chain, `CASE`, or the SELECT list is
+    /// rewritten into a reference to a boolean flag column by
+    /// `lower_correlated_subqueries` before parsing. Reaching the visitor means
+    /// neither claimed it.
+    fn visit_exists(&mut self, subquery: &Subquery, _negated: bool) -> PolarsResult<Expr> {
+        polars_bail!(
+            SQLInterface:
+            "EXISTS subquery is not currently supported in this position: {:?}", subquery
+        )
     }
 
     /// Visit a single SQL identifier.

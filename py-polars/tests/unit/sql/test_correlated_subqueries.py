@@ -130,3 +130,58 @@ def test_uncorrelated_scalar_subquery_still_works() -> None:
         compare_with="duckdb",
         expected={"a": [1, 2, 3], "mx": [30, 30, 30]},
     )
+
+
+def _having_frames() -> dict[str, pl.DataFrame]:
+    # Chosen so the correlated and uncorrelated readings of the same HAVING
+    # subquery select different groups.
+    return {
+        "t": pl.DataFrame({"g": [1, 1, 2, 2, 3], "v": [10, 20, 30, 40, 50]}),
+        "r": pl.DataFrame({"k": [1, 2, 3], "c": [25, 100, 10]}),
+    }
+
+
+def test_correlated_subquery_in_having() -> None:
+    # Per-group thresholds are 25/100/10, so groups 1 and 3 pass. Resolving the
+    # correlation against the inner relation instead would compare every group
+    # against SUM(c) = 135 and select nothing.
+    assert_sql_matches(
+        frames=_having_frames(),
+        query=(
+            "SELECT g, SUM(v) AS s FROM t "
+            "GROUP BY g "
+            "HAVING SUM(v) > (SELECT SUM(c) FROM r WHERE r.k = t.g) "
+            "ORDER BY g"
+        ),
+        compare_with="duckdb",
+        expected={"g": [1, 3], "s": [30, 50]},
+    )
+
+
+def test_correlated_exists_in_having() -> None:
+    assert_sql_matches(
+        frames=_having_frames(),
+        query=(
+            "SELECT g, SUM(v) AS s FROM t "
+            "GROUP BY g "
+            "HAVING EXISTS (SELECT 1 FROM r WHERE r.k = t.g AND r.c > 50) "
+            "ORDER BY g"
+        ),
+        compare_with="duckdb",
+        expected={"g": [2], "s": [70]},
+    )
+
+
+def test_uncorrelated_subquery_in_having_still_works() -> None:
+    # AVG(c) = 45, so groups 2 and 3 pass.
+    assert_sql_matches(
+        frames=_having_frames(),
+        query=(
+            "SELECT g, SUM(v) AS s FROM t "
+            "GROUP BY g "
+            "HAVING SUM(v) > (SELECT AVG(c) FROM r) "
+            "ORDER BY g"
+        ),
+        compare_with="duckdb",
+        expected={"g": [2, 3], "s": [70, 50]},
+    )

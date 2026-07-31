@@ -2,6 +2,9 @@
 //! anti joins, decorrelating equi-correlation predicates into join keys.
 //! Subquery shapes the rewrites can't soundly express return `None` so the
 //! caller falls back to the generic filter path.
+use std::borrow::Cow;
+use std::ops::ControlFlow;
+
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
@@ -12,8 +15,9 @@ use polars_utils::{format_pl_smallstr, unique_column_name};
 #[cfg(feature = "semi_anti_join")]
 use sqlparser::ast::Distinct;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, GroupByExpr, Query, Select, SelectItem,
-    SetExpr, TableWithJoins,
+    BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, GroupByExpr, Ident, Query, Select,
+    SelectItem, SetExpr, TableWithJoins, UnaryOperator as SQLUnaryOperator, Visit, VisitMut,
+    Visitor, VisitorMut,
 };
 
 use crate::SQLContext;
@@ -441,34 +445,50 @@ impl SQLContext {
         Ok(only_inner.then_some(expr))
     }
 
-    // Lower every correlated scalar (aggregate) subquery reachable from
-    // `sql_exprs` into a decorrelated join over `lf`, registering each result
-    // column in `correlated_subqueries` so the expression visitor can resolve
-    // the subquery to that column. Uncorrelated subqueries and unsupported
-    // shapes are left untouched for the generic scalar-subquery path.
-    pub(crate) fn decorrelate_scalar_subqueries(
+    // Lower every correlated subquery reachable from `expr` into a decorrelated
+    // join over `lf`, substituting each one for the column its lowering
+    // materialised. Returns the updated frame together with the rewritten
+    // expression, which borrows `expr` unchanged when nothing was lowered.
+    //
+    // Uncorrelated subqueries and shapes we can't soundly lower are left in
+    // place for the generic scalar-subquery path (or, for `EXISTS`, for the
+    // expression visitor to reject).
+    pub(crate) fn lower_correlated_subqueries<'a>(
         &mut self,
-        mut lf: LazyFrame,
+        lf: LazyFrame,
         outer_schema: &Schema,
-        sql_exprs: &[&SQLExpr],
-    ) -> PolarsResult<LazyFrame> {
-        let mut candidates = Vec::new();
-        for e in sql_exprs {
-            collect_subqueries(e, &mut candidates);
+        expr: &'a SQLExpr,
+        scope: LowerScope,
+    ) -> PolarsResult<(LazyFrame, Cow<'a, SQLExpr>)> {
+        // Cheap pre-check: the vast majority of expressions contain no subquery
+        // at all, and those must not pay for a clone.
+        if !expr_has_lowerable_subquery(expr, scope) {
+            return Ok((lf, Cow::Borrowed(expr)));
         }
-        for subquery in candidates {
-            let key = subquery.to_string();
-            if self.correlated_subqueries.contains_key(&key) {
-                continue;
-            }
-            if let Some((new_lf, name)) =
-                self.try_decorrelate_scalar_subquery(lf.clone(), outer_schema, subquery)?
-            {
-                lf = new_lf;
-                self.correlated_subqueries.insert(key, name);
-            }
+        let mut rewritten = expr.clone();
+        let mut lowering = CorrelatedLowering {
+            ctx: self,
+            lf: Some(lf),
+            outer_schema,
+            scope,
+            bindings: Vec::new(),
+            query_depth: 0,
+            changed: false,
+        };
+        // UFCS: `Visit` is also in scope for the read-only pre-check above.
+        if let ControlFlow::Break(e) = VisitMut::visit(&mut rewritten, &mut lowering) {
+            return Err(e);
         }
-        Ok(lf)
+        let CorrelatedLowering { lf, changed, .. } = lowering;
+        let lf = lf.expect("lowering frame is only taken transiently");
+        Ok((
+            lf,
+            if changed {
+                Cow::Owned(rewritten)
+            } else {
+                Cow::Borrowed(expr)
+            },
+        ))
     }
 
     // Attempt the decorrelation of a single scalar aggregate subquery:
@@ -589,43 +609,6 @@ impl SQLContext {
             strict: true,
         });
         Ok(Some((joined, result_name)))
-    }
-
-    // Lower every `[NOT] EXISTS` subquery reachable from `sql_exprs` that
-    // wasn't already claimed by the top-level semi/anti-join or count-filter
-    // fast paths (in `rewrite_subquery_conjuncts`) into a decorrelated boolean
-    // flag column over `lf`, registering it in `exists_subqueries` so the
-    // expression visitor can resolve the `EXISTS` node to that column
-    // (negating it for `NOT EXISTS`). This is what lets `EXISTS` appear inside
-    // `OR` chains, `CASE`, or the SELECT list, where it can't be lowered to a
-    // join directly. Subquery shapes this can't soundly express are left
-    // untouched; the visitor then bails with a clear "not supported" error.
-    pub(crate) fn decorrelate_exists_subqueries(
-        &mut self,
-        mut lf: LazyFrame,
-        outer_schema: &Schema,
-        sql_exprs: &[&SQLExpr],
-    ) -> PolarsResult<LazyFrame> {
-        let mut candidates = Vec::new();
-        for e in sql_exprs {
-            collect_exists_predicates(e, &mut candidates);
-        }
-        for exists_expr in candidates {
-            let SQLExpr::Exists { subquery, .. } = exists_expr else {
-                unreachable!("collect_exists_predicates only collects SQLExpr::Exists nodes")
-            };
-            let key = subquery.to_string();
-            if self.exists_subqueries.contains_key(&key) {
-                continue;
-            }
-            if let Some((new_lf, name)) =
-                self.try_decorrelate_exists_subquery(lf.clone(), outer_schema, subquery)?
-            {
-                lf = new_lf;
-                self.exists_subqueries.insert(key, name);
-            }
-        }
-        Ok(lf)
     }
 
     // Attempt the decorrelation of a single `EXISTS` subquery into a boolean
@@ -1060,6 +1043,167 @@ fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
     Some(select)
 }
 
+/// Which correlated-subquery node kinds a lowering pass should claim.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LowerScope {
+    /// Scalar subqueries only. `[NOT] EXISTS` is deliberately left alone so
+    /// that top-level WHERE conjuncts can still be claimed by the semi/anti
+    /// join fast path in `rewrite_subquery_conjuncts`, which is a far better
+    /// lowering than a boolean flag column.
+    ScalarOnly,
+    /// Scalar subqueries and `[NOT] EXISTS`. Used everywhere the semi/anti
+    /// join fast path can't apply: the SELECT list, HAVING, and the residual
+    /// WHERE conjuncts that fast path declined.
+    ScalarAndExists,
+}
+
+/// True if `expr` contains a node this scope would attempt to lower, ignoring
+/// anything nested inside a subquery (which is lowered as a unit, if at all).
+/// Lets the common no-subquery case skip cloning the expression.
+fn expr_has_lowerable_subquery(expr: &SQLExpr, scope: LowerScope) -> bool {
+    struct Finder {
+        scope: LowerScope,
+        query_depth: usize,
+    }
+    impl Visitor for Finder {
+        type Break = ();
+        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth += 1;
+            ControlFlow::Continue(())
+        }
+        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+            self.query_depth -= 1;
+            ControlFlow::Continue(())
+        }
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            if self.query_depth == 0 && lowerable_kind(expr, self.scope) {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        }
+    }
+    expr.visit(&mut Finder {
+        scope,
+        query_depth: 0,
+    })
+    .is_break()
+}
+
+fn lowerable_kind(expr: &SQLExpr, scope: LowerScope) -> bool {
+    match expr {
+        SQLExpr::Subquery(_) => true,
+        SQLExpr::Exists { .. } => scope == LowerScope::ScalarAndExists,
+        _ => false,
+    }
+}
+
+/// Rewrites correlated subqueries in-place into references to the columns their
+/// decorrelated lowering materialises, threading the growing `LazyFrame`
+/// through the traversal.
+///
+/// `query_depth` keeps each subquery a leaf: its own inner query is decorrelated
+/// as a unit by `try_decorrelate_*`, never recursed into looking for more
+/// candidates to lower against the *outer* schema.
+struct CorrelatedLowering<'a> {
+    ctx: &'a mut SQLContext,
+    /// Taken and put back around each lowering, which consumes and rebuilds the
+    /// frame. Only ever `None` for the duration of a single lowering call.
+    lf: Option<LazyFrame>,
+    outer_schema: &'a Schema,
+    scope: LowerScope,
+    /// Subqueries already lowered in this pass, so that two occurrences of the
+    /// same subquery share one decorrelation. Compared structurally; sqlparser's
+    /// AST derives `Eq`, so this needs no rendering to text. The `bool` is the
+    /// `exists` flag: the same inner query yields a value column for a scalar
+    /// subquery but a boolean flag for `EXISTS`, so the two must not share.
+    bindings: Vec<(Query, bool, PlSmallStr)>,
+    query_depth: usize,
+    changed: bool,
+}
+
+impl CorrelatedLowering<'_> {
+    /// Lower `subquery` (or reuse an earlier identical lowering), returning the
+    /// materialised column name, or `None` if it can't be soundly lowered.
+    fn lower(&mut self, subquery: &Query, exists: bool) -> PolarsResult<Option<PlSmallStr>> {
+        if let Some((_, _, name)) = self
+            .bindings
+            .iter()
+            .find(|(q, is_exists, _)| *is_exists == exists && q == subquery)
+        {
+            return Ok(Some(name.clone()));
+        }
+        let lf = self
+            .lf
+            .take()
+            .expect("frame is available between lowerings");
+        let lowered = if exists {
+            self.ctx
+                .try_decorrelate_exists_subquery(lf.clone(), self.outer_schema, subquery)?
+        } else {
+            self.ctx
+                .try_decorrelate_scalar_subquery(lf.clone(), self.outer_schema, subquery)?
+        };
+        match lowered {
+            Some((new_lf, name)) => {
+                self.lf = Some(new_lf);
+                self.bindings.push((subquery.clone(), exists, name.clone()));
+                Ok(Some(name))
+            },
+            None => {
+                self.lf = Some(lf);
+                Ok(None)
+            },
+        }
+    }
+}
+
+impl VisitorMut for CorrelatedLowering<'_> {
+    type Break = PolarsError;
+
+    fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<PolarsError> {
+        self.query_depth += 1;
+        ControlFlow::Continue(())
+    }
+
+    fn post_visit_query(&mut self, _query: &mut Query) -> ControlFlow<PolarsError> {
+        self.query_depth -= 1;
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
+        // Inside a nested query: not ours to lower against the outer schema.
+        if self.query_depth > 0 || !lowerable_kind(expr, self.scope) {
+            return ControlFlow::Continue(());
+        }
+        let (subquery, exists, negated) = match &*expr {
+            SQLExpr::Subquery(subquery) => (subquery.as_ref(), false, false),
+            SQLExpr::Exists { subquery, negated } => (subquery.as_ref(), true, *negated),
+            _ => unreachable!("guarded by lowerable_kind"),
+        };
+        let name = match self.lower(subquery, exists) {
+            Ok(Some(name)) => name,
+            // Left in place for the generic path / the visitor's error.
+            Ok(None) => return ControlFlow::Continue(()),
+            Err(e) => return ControlFlow::Break(e),
+        };
+        // `visit_identifier` resolves an identifier to exactly `col(<name>)`,
+        // which is what the subquery now stands for. `EXISTS` is never NULL, so
+        // negating `NOT EXISTS` here needs no three-valued-logic care.
+        let resolved = SQLExpr::Identifier(Ident::new(name.as_str()));
+        *expr = if negated {
+            SQLExpr::UnaryOp {
+                op: SQLUnaryOperator::Not,
+                expr: Box::new(resolved),
+            }
+        } else {
+            resolved
+        };
+        self.changed = true;
+        ControlFlow::Continue(())
+    }
+}
+
 fn prefixed_inner(prefix: &str, name: &str) -> PlSmallStr {
     format_pl_smallstr!("{prefix}c_{name}")
 }
@@ -1148,163 +1292,5 @@ fn scalar_correlation_predicate(
             inner_on_left: false,
         }),
         _ => None,
-    }
-}
-
-// Collect the subquery nodes reachable from an SQL expression through the
-// common expression-nesting positions. Positions not covered here simply leave
-// their subqueries to the generic (uncorrelated) scalar-subquery path.
-fn collect_subqueries<'a>(expr: &'a SQLExpr, out: &mut Vec<&'a Query>) {
-    use sqlparser::ast::{FunctionArg, FunctionArgExpr, FunctionArguments};
-    match expr {
-        SQLExpr::Subquery(query) => out.push(query),
-        SQLExpr::Nested(e)
-        | SQLExpr::UnaryOp { expr: e, .. }
-        | SQLExpr::Cast { expr: e, .. }
-        | SQLExpr::Ceil { expr: e, .. }
-        | SQLExpr::Floor { expr: e, .. }
-        | SQLExpr::Extract { expr: e, .. }
-        | SQLExpr::IsNull(e)
-        | SQLExpr::IsNotNull(e)
-        | SQLExpr::IsTrue(e)
-        | SQLExpr::IsNotTrue(e)
-        | SQLExpr::IsFalse(e)
-        | SQLExpr::IsNotFalse(e)
-        | SQLExpr::Collate { expr: e, .. } => collect_subqueries(e, out),
-        SQLExpr::BinaryOp { left, right, .. } => {
-            collect_subqueries(left, out);
-            collect_subqueries(right, out);
-        },
-        SQLExpr::Between {
-            expr, low, high, ..
-        } => {
-            collect_subqueries(expr, out);
-            collect_subqueries(low, out);
-            collect_subqueries(high, out);
-        },
-        SQLExpr::InList { expr, list, .. } => {
-            collect_subqueries(expr, out);
-            list.iter().for_each(|e| collect_subqueries(e, out));
-        },
-        SQLExpr::Like { expr, pattern, .. } | SQLExpr::ILike { expr, pattern, .. } => {
-            collect_subqueries(expr, out);
-            collect_subqueries(pattern, out);
-        },
-        SQLExpr::Case {
-            operand,
-            conditions,
-            else_result,
-            ..
-        } => {
-            if let Some(op) = operand {
-                collect_subqueries(op, out);
-            }
-            for when in conditions {
-                collect_subqueries(&when.condition, out);
-                collect_subqueries(&when.result, out);
-            }
-            if let Some(e) = else_result {
-                collect_subqueries(e, out);
-            }
-        },
-        SQLExpr::Function(func) => {
-            if let FunctionArguments::List(list) = &func.args {
-                for arg in &list.args {
-                    if let FunctionArg::Unnamed(FunctionArgExpr::Expr(e))
-                    | FunctionArg::Named {
-                        arg: FunctionArgExpr::Expr(e),
-                        ..
-                    }
-                    | FunctionArg::ExprNamed {
-                        arg: FunctionArgExpr::Expr(e),
-                        ..
-                    } = arg
-                    {
-                        collect_subqueries(e, out);
-                    }
-                }
-            }
-        },
-        _ => {},
-    }
-}
-
-// Collect `[NOT] EXISTS` nodes reachable from an SQL expression through the
-// same expression-nesting positions `collect_subqueries` walks (an `EXISTS`
-// is a leaf here: its own inner query is decorrelated as a unit, not
-// recursed into). Positions not covered here simply leave the `EXISTS` to the
-// generic expression visitor, which bails with a clear error.
-fn collect_exists_predicates<'a>(expr: &'a SQLExpr, out: &mut Vec<&'a SQLExpr>) {
-    use sqlparser::ast::{FunctionArg, FunctionArgExpr, FunctionArguments};
-    match expr {
-        SQLExpr::Exists { .. } => out.push(expr),
-        SQLExpr::Nested(e)
-        | SQLExpr::UnaryOp { expr: e, .. }
-        | SQLExpr::Cast { expr: e, .. }
-        | SQLExpr::Ceil { expr: e, .. }
-        | SQLExpr::Floor { expr: e, .. }
-        | SQLExpr::Extract { expr: e, .. }
-        | SQLExpr::IsNull(e)
-        | SQLExpr::IsNotNull(e)
-        | SQLExpr::IsTrue(e)
-        | SQLExpr::IsNotTrue(e)
-        | SQLExpr::IsFalse(e)
-        | SQLExpr::IsNotFalse(e)
-        | SQLExpr::Collate { expr: e, .. } => collect_exists_predicates(e, out),
-        SQLExpr::BinaryOp { left, right, .. } => {
-            collect_exists_predicates(left, out);
-            collect_exists_predicates(right, out);
-        },
-        SQLExpr::Between {
-            expr, low, high, ..
-        } => {
-            collect_exists_predicates(expr, out);
-            collect_exists_predicates(low, out);
-            collect_exists_predicates(high, out);
-        },
-        SQLExpr::InList { expr, list, .. } => {
-            collect_exists_predicates(expr, out);
-            list.iter().for_each(|e| collect_exists_predicates(e, out));
-        },
-        SQLExpr::Like { expr, pattern, .. } | SQLExpr::ILike { expr, pattern, .. } => {
-            collect_exists_predicates(expr, out);
-            collect_exists_predicates(pattern, out);
-        },
-        SQLExpr::Case {
-            operand,
-            conditions,
-            else_result,
-            ..
-        } => {
-            if let Some(op) = operand {
-                collect_exists_predicates(op, out);
-            }
-            for when in conditions {
-                collect_exists_predicates(&when.condition, out);
-                collect_exists_predicates(&when.result, out);
-            }
-            if let Some(e) = else_result {
-                collect_exists_predicates(e, out);
-            }
-        },
-        SQLExpr::Function(func) => {
-            if let FunctionArguments::List(list) = &func.args {
-                for arg in &list.args {
-                    if let FunctionArg::Unnamed(FunctionArgExpr::Expr(e))
-                    | FunctionArg::Named {
-                        arg: FunctionArgExpr::Expr(e),
-                        ..
-                    }
-                    | FunctionArg::ExprNamed {
-                        arg: FunctionArgExpr::Expr(e),
-                        ..
-                    } = arg
-                    {
-                        collect_exists_predicates(e, out);
-                    }
-                }
-            }
-        },
-        _ => {},
     }
 }

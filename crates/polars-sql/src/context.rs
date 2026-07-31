@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ops::Deref;
 use std::sync::RwLock;
 
@@ -30,6 +31,7 @@ use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
     expr_has_window_functions, expr_references_any_column, expr_refers_to_table,
 };
+use crate::subquery::LowerScope;
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 
@@ -221,16 +223,6 @@ pub struct SQLContext {
     table_aliases: PlHashMap<String, String>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
-    // Maps a correlated scalar subquery (by its rendered SQL text) to the outer
-    // column that its decorrelated lowering materialised. Populated per-SELECT
-    // and consulted by the expression visitor.
-    pub(crate) correlated_subqueries: PlHashMap<String, PlSmallStr>,
-    // Maps a `[NOT] EXISTS` subquery (by its inner query's rendered SQL text,
-    // ignoring negation) to the boolean outer column its decorrelated lowering
-    // materialised. Populated per-SELECT and consulted by the expression
-    // visitor; `NOT EXISTS` negates the resolved column rather than getting a
-    // separate entry.
-    pub(crate) exists_subqueries: PlHashMap<String, PlSmallStr>,
 }
 
 impl Default for SQLContext {
@@ -244,8 +236,6 @@ impl Default for SQLContext {
             named_windows: Default::default(),
             lp_arena: Default::default(),
             expr_arena: Default::default(),
-            correlated_subqueries: Default::default(),
-            exists_subqueries: Default::default(),
         }
     }
 }
@@ -405,23 +395,6 @@ impl SQLContext {
 
     pub(crate) fn get_frame_schema(&mut self, frame: &mut LazyFrame) -> PolarsResult<SchemaRef> {
         frame.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
-    }
-
-    // Resolve a (previously decorrelated) correlated scalar subquery to the
-    // outer column its lowering produced, keyed by the subquery's SQL text.
-    pub(crate) fn correlated_subquery_expr(&self, subquery: &Query) -> Option<Expr> {
-        self.correlated_subqueries
-            .get(&subquery.to_string())
-            .map(|name| col(name.clone()))
-    }
-
-    // Resolve a (previously decorrelated) `[NOT] EXISTS` subquery to the
-    // boolean outer column its lowering produced, keyed by the inner query's
-    // SQL text (negation is applied by the caller).
-    pub(crate) fn exists_subquery_expr(&self, subquery: &Query) -> Option<Expr> {
-        self.exists_subqueries
-            .get(&subquery.to_string())
-            .map(|name| col(name.clone()))
     }
 
     pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
@@ -956,7 +929,12 @@ impl SQLContext {
                 Ok(lf.clear())
             } else {
                 // apply constraint as inverted filter (drops rows matching the selection)
-                Ok(self.process_where(lf.clone(), selection, FilterMode::RemoveTrue, None)?)
+                Ok(self.process_where(
+                    lf.clone(),
+                    selection.as_ref(),
+                    FilterMode::RemoveTrue,
+                    None,
+                )?)
             }
         } else {
             polars_bail!(SQLInterface: "unexpected statement type; expected DELETE")
@@ -1439,10 +1417,6 @@ impl SQLContext {
         // Check that the statement doesn't contain unsupported SELECT clauses
         self.validate_select(select_stmt)?;
 
-        // Correlated-subquery lowerings are scoped to a single SELECT.
-        self.correlated_subqueries.clear();
-        self.exists_subqueries.clear();
-
         // Parse named windows first, as they may be referenced in the SELECT clause
         self.register_named_windows(&select_stmt.named_window)?;
 
@@ -1494,46 +1468,85 @@ impl SQLContext {
         }
 
         // Apply `WHERE` constraint (using residual filter for implicit joins)
-        let effective_where = if implicit_join_filter.is_some() {
-            &implicit_join_filter
+        let where_expr = if implicit_join_filter.is_some() {
+            implicit_join_filter.as_ref()
         } else {
-            &select_stmt.selection
+            select_stmt.selection.as_ref()
         };
         let mut schema = self.get_frame_schema(&mut lf)?;
 
         // Lower correlated scalar subqueries in the WHERE clause into
-        // decorrelated joins before the filter is parsed.
-        if let Some(where_expr) = effective_where {
-            lf = self.decorrelate_scalar_subqueries(lf, &schema, &[where_expr])?;
-            schema = self.get_frame_schema(&mut lf)?;
-        }
+        // decorrelated joins before the filter is parsed. `[NOT] EXISTS` is
+        // deliberately left alone here so `process_where` can still claim
+        // top-level occurrences for the semi/anti-join fast path.
+        let effective_where = match where_expr {
+            Some(where_expr) => {
+                let lowered;
+                (lf, lowered) = self.lower_correlated_subqueries(
+                    lf,
+                    &schema,
+                    where_expr,
+                    LowerScope::ScalarOnly,
+                )?;
+                if matches!(lowered, Cow::Owned(_)) {
+                    schema = self.get_frame_schema(&mut lf)?;
+                }
+                Some(lowered)
+            },
+            None => None,
+        };
 
         lf = self.process_where(
             lf,
-            effective_where,
+            effective_where.as_deref(),
             FilterMode::KeepTrue,
             Some(schema.clone()),
         )?;
 
-        // Lower correlated scalar subqueries referenced by the projection list.
+        // Lower correlated subqueries referenced by the projection list, and by
+        // HAVING (which is parsed further below, but must be lowered against the
+        // pre-aggregation frame alongside the projections).
+        let mut lowered_projection: Option<Vec<SelectItem>> = None;
+        let mut lowered_having: Option<Cow<'_, SQLExpr>> = None;
         {
-            let proj_exprs: Vec<&SQLExpr> = select_stmt
-                .projection
-                .iter()
-                .filter_map(|item| match item {
-                    SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => {
-                        Some(e)
-                    },
-                    _ => None,
-                })
-                .collect();
-            if !proj_exprs.is_empty() {
-                lf = self.decorrelate_scalar_subqueries(lf, &schema, &proj_exprs)?;
-                schema = self.get_frame_schema(&mut lf)?;
-                lf = self.decorrelate_exists_subqueries(lf, &schema, &proj_exprs)?;
+            let mut changed = false;
+            for (idx, item) in select_stmt.projection.iter().enumerate() {
+                let (SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. }) = item
+                else {
+                    continue;
+                };
+                let lowered;
+                (lf, lowered) =
+                    self.lower_correlated_subqueries(lf, &schema, e, LowerScope::ScalarAndExists)?;
+                if let Cow::Owned(lowered) = lowered {
+                    changed = true;
+                    let items =
+                        lowered_projection.get_or_insert_with(|| select_stmt.projection.clone());
+                    match &mut items[idx] {
+                        SelectItem::UnnamedExpr(slot)
+                        | SelectItem::ExprWithAlias { expr: slot, .. } => *slot = lowered,
+                        _ => unreachable!("only expression items are lowered"),
+                    }
+                }
+            }
+            if let Some(having) = &select_stmt.having {
+                let lowered;
+                (lf, lowered) = self.lower_correlated_subqueries(
+                    lf,
+                    &schema,
+                    having,
+                    LowerScope::ScalarAndExists,
+                )?;
+                changed |= matches!(lowered, Cow::Owned(_));
+                lowered_having = Some(lowered);
+            }
+            if changed {
                 schema = self.get_frame_schema(&mut lf)?;
             }
         }
+        let projection: &[SelectItem] = lowered_projection
+            .as_deref()
+            .unwrap_or(&select_stmt.projection);
 
         // Determine projections
         let mut select_modifiers = SelectModifiers {
@@ -1562,8 +1575,12 @@ impl SQLContext {
             PlHashSet::new()
         };
 
-        let mut projections_with_flags =
-            self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
+        let mut projections_with_flags = self.column_projections(
+            projection,
+            select_stmt.flavor,
+            &schema,
+            &mut select_modifiers,
+        )?;
         let subquery_names;
         (lf, subquery_names) = self.process_subqueries(
             lf,
@@ -1811,9 +1828,8 @@ impl SQLContext {
             };
             lf
         } else {
-            let having = select_stmt
-                .having
-                .as_ref()
+            let having = lowered_having
+                .as_deref()
                 .map(|expr| parse_sql_expr(expr, self, Some(&schema)))
                 .transpose()?;
             let disambiguated_projections;
@@ -1875,13 +1891,12 @@ impl SQLContext {
     /// subqueries embedded in the projections have been resolved).
     fn column_projections(
         &mut self,
-        select_stmt: &Select,
+        projection: &[SelectItem],
+        flavor: SelectFlavor,
         schema: &SchemaRef,
         select_modifiers: &mut SelectModifiers,
     ) -> PolarsResult<Vec<(Expr, bool)>> {
-        if select_stmt.projection.is_empty()
-            && select_stmt.flavor == SelectFlavor::FromFirstNoSelect
-        {
+        if projection.is_empty() && flavor == SelectFlavor::FromFirstNoSelect {
             // eg: bare "FROM tbl" is equivalent to "SELECT * FROM tbl".
             return Ok(schema
                 .iter_names()
@@ -1889,10 +1904,10 @@ impl SQLContext {
                 .map(|name| (col(name.clone()), false))
                 .collect());
         }
-        let mut items: Vec<ProjectionItem> = Vec::with_capacity(select_stmt.projection.len());
+        let mut items: Vec<ProjectionItem> = Vec::with_capacity(projection.len());
         let mut has_qualified_wildcard = false;
 
-        for select_item in &select_stmt.projection {
+        for select_item in projection {
             match select_item {
                 SelectItem::UnnamedExpr(expr) => {
                     items.push(ProjectionItem::Exprs(
@@ -1980,7 +1995,7 @@ impl SQLContext {
     fn process_where(
         &mut self,
         mut lf: LazyFrame,
-        expr: &Option<SQLExpr>,
+        expr: Option<&SQLExpr>,
         filter_mode: FilterMode,
         schema: Option<SchemaRef>,
     ) -> PolarsResult<LazyFrame> {
@@ -2023,12 +2038,22 @@ impl SQLContext {
 
             // Any `[NOT] EXISTS` reachable in a residual conjunct (an OR
             // chain, CASE, or a subquery shape the fast path above couldn't
-            // reach) is decorrelated to a boolean flag column here so the
-            // expression visitor can resolve it below.
+            // reach) is decorrelated to a boolean flag column here, and the
+            // conjunct rewritten to reference it.
             let exists_schema = self.get_frame_schema(&mut lf)?;
-            lf = self.decorrelate_exists_subqueries(lf, &exists_schema, &residual_exprs)?;
+            let mut lowered_residuals = Vec::with_capacity(residual_exprs.len());
+            for e in &residual_exprs {
+                let lowered;
+                (lf, lowered) = self.lower_correlated_subqueries(
+                    lf,
+                    &exists_schema,
+                    e,
+                    LowerScope::ScalarAndExists,
+                )?;
+                lowered_residuals.push(lowered);
+            }
 
-            let Some(parsed_residual) = residual_exprs
+            let Some(parsed_residual) = lowered_residuals
                 .iter()
                 .map(|e| parse_sql_expr(e, self, Some(&*schema)))
                 .reduce(|a, b| Ok(a?.and(b?)))
@@ -2721,9 +2746,16 @@ impl SQLContext {
         }
 
         // Note: HAVING is evaluated in the group context by `group_by().having(...)`,
-        // so any reference to a SELECT alias is resolved to the aggregate it names
+        // so any reference to a SELECT alias is resolved to the aggregate it names.
+        //
+        // A decorrelated correlated-subquery result is a per-input-row column, which
+        // in that context would evaluate to a list per group; the correlation is on a
+        // grouping column, so the value is constant within the group and reduces to
+        // `col(..).first()` -- the same shape `process_subqueries` produces below for
+        // uncorrelated scalar subqueries.
         let having = having.map(|having_expr| {
             having_expr.map_expr(|e| match &e {
+                Expr::Column(name) if is_correlated_result_col(name) => e.clone().first(),
                 Expr::Column(name) => resolve_select_alias(name, &projections, &schema_before)
                     .map_or(e, |resolved| strip_outer_alias(&resolved)),
                 _ => e,
@@ -2807,7 +2839,10 @@ impl SQLContext {
                 }
             }
         }
-        Ok((aggregated.select(&output_projection), projections))
+        // Note: `projection_aliases`/`group_key_aliases` borrow from `projections`
+        // and outlive this expression, so the disambiguated list is cloned out
+        // rather than moved (cheap: `Expr` is `Arc`-backed).
+        Ok((aggregated.select(&output_projection), projections.clone()))
     }
 
     fn process_limit_offset(
