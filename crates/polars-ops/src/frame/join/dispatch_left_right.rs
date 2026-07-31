@@ -46,8 +46,11 @@ pub fn materialize_left_join_from_series(
 ) -> PolarsResult<(DataFrame, DataFrame)> {
     let mut s_left = s_left.clone();
     // Eagerly limit left if possible.
-    if let Some((offset, len)) = args.slice {
-        if offset == 0 {
+    if let Some((0, len)) = args.slice {
+        if !matches!(
+            args.maintain_order,
+            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
+        ) {
             left = left.slice(0, len);
             s_left = s_left.slice(0, len);
         }
