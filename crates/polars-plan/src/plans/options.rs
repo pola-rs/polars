@@ -297,6 +297,8 @@ pub struct ProjectionOptions {
     // Should length-1 Series be broadcast to the length of the dataframe.
     // Only used by CSE optimizer
     pub should_broadcast: bool,
+    // Maintain the input height on empty select(). Used by drop().
+    pub maintain_dataframe_height: bool,
 }
 
 impl Default for ProjectionOptions {
@@ -305,6 +307,7 @@ impl Default for ProjectionOptions {
             run_parallel: true,
             duplicate_check: true,
             should_broadcast: true,
+            maintain_dataframe_height: false,
         }
     }
 }
@@ -316,6 +319,8 @@ impl ProjectionOptions {
             run_parallel: self.run_parallel & other.run_parallel,
             duplicate_check: self.duplicate_check & other.duplicate_check,
             should_broadcast: self.should_broadcast | other.should_broadcast,
+            maintain_dataframe_height: self.maintain_dataframe_height
+                & other.maintain_dataframe_height,
         }
     }
 }
