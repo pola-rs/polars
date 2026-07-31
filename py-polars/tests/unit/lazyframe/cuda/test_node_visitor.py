@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 from polars._plr import _expr_nodes, _ir_nodes  # type: ignore[attr-defined]
-from polars._utils.wrap import wrap_df
+from polars._utils.wrap import wrap_df, wrap_expr
 from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
@@ -491,3 +491,240 @@ def test_rolling_by_variant_fn_params(
     name, _, _, _, fn_params = rolling_exprs[0]
     assert name == getattr(_expr_nodes.RollingFunctionBy, expected_name)
     assert fn_params == expected_fn_params
+
+
+def _collect_named_function_data(
+    query: pl.LazyFrame, kind: type
+) -> list[tuple[Any, ...]]:
+    """Return function_data tuples whose name is an instance of ``kind``."""
+    results: list[tuple[Any, ...]] = []
+
+    def callback(node_traverser: Any, query_start: int | None) -> None:
+        for expr_ir in node_traverser.get_exprs():
+            expr_node = node_traverser.view_expression(expr_ir.node)
+            if isinstance(expr_node, _expr_nodes.Function):
+                name, *options = expr_node.function_data
+                if isinstance(name, kind):
+                    results.append((name, *options))
+
+    query.collect(  # pyrefly: ignore[no-matching-overload]
+        post_opt_callback=callback  # type: ignore[call-overload]
+    )
+    return results
+
+
+def test_array_expr_visitor() -> None:
+    """An array function node is exposed as an ArrayFunction typed view."""
+    q = pl.LazyFrame(schema={"x": pl.Array(pl.Int64, 3)}).with_columns(
+        pl.col("x").arr.sum().alias("out"),
+    )
+    data = _collect_named_function_data(q, _expr_nodes.ArrayFunction)
+    assert len(data) == 1
+    (name,) = data[0]
+    assert name == _expr_nodes.ArrayFunction.Sum
+    assert hash(name) == hash(_expr_nodes.ArrayFunction.Sum)
+
+
+@pytest.mark.parametrize(
+    ("expr", "schema", "expected"),
+    [
+        (
+            pl.col("x").arr.len(),
+            {"x": pl.Array(pl.Int64, 3)},
+            (_expr_nodes.ArrayFunction.Length,),
+        ),
+        (
+            pl.col("x").arr.min(),
+            {"x": pl.Array(pl.Int64, 3)},
+            (_expr_nodes.ArrayFunction.Min,),
+        ),
+        (
+            pl.col("x").arr.max(),
+            {"x": pl.Array(pl.Int64, 3)},
+            (_expr_nodes.ArrayFunction.Max,),
+        ),
+        (
+            pl.col("x").arr.to_list(),
+            {"x": pl.Array(pl.Int64, 3)},
+            (_expr_nodes.ArrayFunction.ToList,),
+        ),
+        (
+            pl.col("x").arr.var(ddof=2),
+            {"x": pl.Array(pl.Float64, 3)},
+            (_expr_nodes.ArrayFunction.Var, 2),
+        ),
+        (
+            pl.col("x").arr.mean(),
+            {"x": pl.Array(pl.Float64, 3)},
+            (_expr_nodes.ArrayFunction.Mean,),
+        ),
+        (
+            pl.col("x").arr.median(),
+            {"x": pl.Array(pl.Float64, 3)},
+            (_expr_nodes.ArrayFunction.Median,),
+        ),
+        (
+            pl.col("x").arr.arg_min(),
+            {"x": pl.Array(pl.Int64, 3)},
+            (_expr_nodes.ArrayFunction.ArgMin,),
+        ),
+        (
+            pl.col("x").arr.arg_max(),
+            {"x": pl.Array(pl.Int64, 3)},
+            (_expr_nodes.ArrayFunction.ArgMax,),
+        ),
+        (
+            pl.col("x").arr.join("-", ignore_nulls=False),
+            {"x": pl.Array(pl.String, 3)},
+            (_expr_nodes.ArrayFunction.Join, False),
+        ),
+        (
+            pl.col("x").arr.count_matches(1),
+            {"x": pl.Array(pl.Int64, 3)},
+            (_expr_nodes.ArrayFunction.CountMatches,),
+        ),
+        (
+            pl.col("x").arr.shift(2),
+            {"x": pl.Array(pl.Int64, 3)},
+            (_expr_nodes.ArrayFunction.Shift,),
+        ),
+        (
+            pl.concat_arr("x", "y"),
+            {"x": pl.Array(pl.Int64, 3), "y": pl.Array(pl.Int64, 2)},
+            (_expr_nodes.ArrayFunction.Concat,),
+        ),
+    ],
+)
+def test_array_variant_function_data(
+    expr: pl.Expr, schema: dict[str, pl.DataType], expected: tuple[Any, ...]
+) -> None:
+    """Each Array variant exposes its discriminant and complete option payload."""
+    q = pl.LazyFrame(schema=schema).with_columns(expr.alias("out"))
+    data = _collect_named_function_data(q, _expr_nodes.ArrayFunction)
+    assert data == [expected]
+
+
+@pytest.mark.parametrize("null_on_oob", [True, False])
+def test_array_get_exposes_option(null_on_oob: bool) -> None:
+    """arr.get carries its ``null_on_oob`` flag as a trailing option."""
+    q = pl.LazyFrame(schema={"x": pl.Array(pl.Int64, 3)}).with_columns(
+        pl.col("x").arr.get(0, null_on_oob=null_on_oob).alias("out"),
+    )
+    data = _collect_named_function_data(q, _expr_nodes.ArrayFunction)
+    assert len(data) == 1
+    name, actual_null_on_oob = data[0]
+    assert name == _expr_nodes.ArrayFunction.Get
+    assert actual_null_on_oob is null_on_oob
+
+
+def test_array_std_exposes_ddof() -> None:
+    """arr.std carries its ddof as a trailing option."""
+    q = pl.LazyFrame(schema={"x": pl.Array(pl.Float64, 3)}).with_columns(
+        pl.col("x").arr.std(ddof=2).alias("out"),
+    )
+    data = _collect_named_function_data(q, _expr_nodes.ArrayFunction)
+    assert data == [(_expr_nodes.ArrayFunction.Std, 2)]
+
+
+def test_array_sort_exposes_sort_options() -> None:
+    """arr.sort mirrors list.sort's public option encoding."""
+    q = pl.LazyFrame(schema={"x": pl.Array(pl.Int64, 3)}).with_columns(
+        pl.col("x").arr.sort(descending=True, nulls_last=True).alias("out"),
+    )
+    data = _collect_named_function_data(q, _expr_nodes.ArrayFunction)
+    assert data == [(_expr_nodes.ArrayFunction.Sort, True, True)]
+
+
+def test_array_contains_exposes_nulls_equal() -> None:
+    """arr.contains carries its ``nulls_equal`` flag as a trailing option."""
+    q = pl.LazyFrame(schema={"x": pl.Array(pl.Int64, 3)}).with_columns(
+        pl.col("x").arr.contains(1, nulls_equal=False).alias("out"),
+    )
+    data = _collect_named_function_data(q, _expr_nodes.ArrayFunction)
+    assert data == [(_expr_nodes.ArrayFunction.Contains, False)]
+
+
+def test_array_explode_exposes_options() -> None:
+    """arr.explode exposes both ExplodeOptions fields in declaration order."""
+    q = pl.LazyFrame(schema={"x": pl.Array(pl.Int64, 3)}).with_columns(
+        pl.col("x").arr.explode(empty_as_null=False, keep_nulls=False).alias("out"),
+    )
+    data = _collect_named_function_data(q, _expr_nodes.ArrayFunction)
+    assert data == [(_expr_nodes.ArrayFunction.Explode, False, False)]
+
+
+def test_array_slice_exposes_offset_and_length() -> None:
+    """Fixed-width arr.slice exposes its constant offset and length."""
+    q = pl.LazyFrame(schema={"x": pl.Array(pl.Int64, 3)}).with_columns(
+        pl.col("x").arr.slice(-2, 1, as_array=True).alias("out"),
+    )
+    data = _collect_named_function_data(q, _expr_nodes.ArrayFunction)
+    assert data == [(_expr_nodes.ArrayFunction.Slice, -2, 1)]
+
+
+def test_array_to_struct_default_is_exposed() -> None:
+    """arr.to_struct() exposes the absent name generator as ``None``."""
+    q = pl.LazyFrame(schema={"x": pl.Array(pl.Int64, 3)}).with_columns(
+        pl.col("x").arr.to_struct().alias("out"),
+    )
+    data = _collect_named_function_data(q, _expr_nodes.ArrayFunction)
+    assert len(data) == 1
+    name, name_generator = data[0]
+    assert name == _expr_nodes.ArrayFunction.ToStruct
+    assert name_generator is None
+
+
+def test_array_to_struct_name_generator_is_not_exposed() -> None:
+    """A callback-backed field-name generator cannot be represented by the view."""
+    with pytest.warns(DeprecationWarning, match="with a callable is deprecated"):
+        expr = pl.col("x").arr.to_struct(fields=lambda i: f"field_{i}")
+    visitor = pl.LazyFrame(schema={"x": pl.Array(pl.Int64, 3)})._ldf.visit()
+    [node], _ = visitor.add_expressions([expr._pyexpr])
+    with pytest.raises(
+        NotImplementedError, match="array to_struct with a name generator"
+    ):
+        visitor.view_expression(node)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "is_elementwise", "changes_length", "expected_is_elementwise"),
+    [
+        (b"\x80visitor-kwargs", True, False, True),
+        (b"", False, False, False),
+        (b"", True, True, False),
+    ],
+)
+def test_ffi_plugin_expr_visitor(
+    kwargs: bytes,
+    is_elementwise: bool,
+    changes_length: bool,
+    expected_is_elementwise: bool,
+) -> None:
+    """An FFI plugin exposes its dispatch metadata without loading the library."""
+    from polars._plr import register_plugin_function  # type: ignore[attr-defined]
+
+    expr = wrap_expr(
+        register_plugin_function(
+            plugin_path="plugins/libvisitor.so",
+            function_name="score",
+            args=[pl.col("x")._pyexpr],
+            kwargs=kwargs,
+            is_elementwise=is_elementwise,
+            input_wildcard_expansion=False,
+            returns_scalar=False,
+            cast_to_supertype=False,
+            pass_name_to_apply=False,
+            changes_length=changes_length,
+        )
+    )
+    visitor = pl.LazyFrame(schema={"x": pl.Float64})._ldf.visit()
+    [node], _ = visitor.add_expressions([expr._pyexpr])
+    view = visitor.view_expression(node)
+    assert isinstance(view, _expr_nodes.Function)
+    assert view.function_data == (
+        "ffi_plugin",
+        "plugins/libvisitor.so",
+        "score",
+        kwargs,
+        expected_is_elementwise,
+    )
