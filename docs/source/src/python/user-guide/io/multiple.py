@@ -24,7 +24,12 @@ with open("docs/assets/images/multiple.png", "rb") as f:
 # --8<-- [end:creategraph]
 
 # --8<-- [start:graph]
+# Show the "ir" query plan
 pl.scan_csv("docs/assets/data/my_many_files_*.csv").show_graph(plan_stage="ir")
+
+# Show the "physical" query plan
+pl.scan_csv("docs/assets/data/my_many_files_*.csv").show_graph(plan_stage="physical")
+
 # --8<-- [end:graph]
 
 # --8<-- [start:glob]
