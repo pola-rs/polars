@@ -51,6 +51,9 @@ if TYPE_CHECKING:
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
 
+_N_INFER_FILES_DEFAULT = 10
+
+
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
@@ -831,7 +834,7 @@ def scan_csv(
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema: bool = True,
     infer_schema_length: int | None = N_INFER_DEFAULT,
-    infer_schema_files: int = (1 << 64) - 1,
+    infer_schema_files: int = _N_INFER_FILES_DEFAULT,
     n_rows: int | None = None,
     encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
@@ -1250,7 +1253,7 @@ def _scan_csv_impl(
     new_columns: Sequence[str] | None = None,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
-    infer_schema_files: int = (1 << 64) - 1,
+    infer_schema_files: int = _N_INFER_FILES_DEFAULT,
     n_rows: int | None = None,
     encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
