@@ -78,7 +78,7 @@ impl IRArrayFunction {
                     DataType::Array(inner, width) => (inner.as_ref(), *width),
                     dtype => polars_bail!(
                         InvalidOperation:
-                        "arr.dot expects Array inputs, got {dtype}"
+                        "expected Array datatype for array operation, got: {dtype:?}"
                     ),
                 };
                 let (rhs_inner, rhs_width) = match args[1].dtype() {
