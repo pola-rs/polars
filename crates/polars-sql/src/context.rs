@@ -67,8 +67,9 @@ impl SelectModifiers {
 /// For SELECT projection items; helps simplify any required disambiguation.
 enum ProjectionItem {
     QualifiedExprs(PlSmallStr, Vec<Expr>),
-    /// The `bool` marks whether expr here came from an explicit `AS` alias.
-    /// In that case only 1 item is is in the vec.
+    /// The `bool` marks whether the expr here came from an explicit `AS` alias.
+    /// In that case there is only 1 item in the vec; only `SELECT *` produces
+    /// multiple expressions.
     Exprs(Vec<Expr>, bool),
 }
 
@@ -1589,6 +1590,25 @@ impl SQLContext {
             projections_with_flags.iter_mut().map(|(e, _)| e).collect(),
         )?;
         schema = self.get_frame_schema(&mut lf)?;
+
+        // An unaliased projection that resolves to nothing but a subquery placeholder
+        // would otherwise take that placeholder's generated name, which is drawn from a
+        // process-wide counter -- so the same query yields a different output column name
+        // on every execution. Give it the name Polars uses for any other unnamed scalar
+        // expression; `disambiguate_output_names` handles the resulting collisions the
+        // same way it does for `SELECT 1+1, 2+2`.
+        for (expr, is_explicit_alias) in projections_with_flags.iter_mut() {
+            if *is_explicit_alias {
+                continue;
+            }
+            let is_bare_placeholder = expr
+                .to_field(&schema)
+                .is_ok_and(|f| subquery_names.contains(&f.name));
+            if is_bare_placeholder {
+                *expr = expr.clone().alias(PlSmallStr::from_static("literal"));
+            }
+        }
+
         let (mut projections, explicit_aliases): (Vec<Expr>, Vec<bool>) =
             projections_with_flags.into_iter().unzip();
 
@@ -2089,22 +2109,29 @@ impl SQLContext {
             // a constant predicate here and be evaluated against an empty frame.
             if !expr_references_any_column(expr) && !expr_contains_subquery(expr) {
                 let satisfied = evaluate_constant_join_predicate(self, expr)?;
-                let (left_key, right_key) = if satisfied {
-                    (lit(1i32), lit(1i32))
-                } else {
-                    (lit(1i32), lit(2i32))
-                };
-                return Ok(tbl_left
+                let builder = tbl_left
                     .frame
                     .clone()
                     .join_builder()
                     .with(tbl_right.frame.clone())
-                    .left_on([left_key])
-                    .right_on([right_key])
-                    .how(join_type)
                     .suffix(format!(":{}", tbl_right.name))
-                    .coalesce(JoinCoalesce::KeepColumns)
-                    .finish());
+                    .coalesce(JoinCoalesce::KeepColumns);
+
+                // An always-true INNER join is a cross join; expressing it as one avoids
+                // building a hash join over constant keys. The outer join types can't use
+                // it: `LEFT JOIN ... ON TRUE` still has to emit null-extended left rows
+                // when the right side is empty, where a cross join emits nothing.
+                return Ok(if satisfied && join_type == JoinType::Inner {
+                    builder.how(JoinType::Cross).finish()
+                } else {
+                    // Match every row against every row, or none against none.
+                    let right_key = if satisfied { lit(1i32) } else { lit(2i32) };
+                    builder
+                        .left_on([lit(1i32)])
+                        .right_on([right_key])
+                        .how(join_type)
+                        .finish()
+                });
             }
         }
         let (left_on, right_on, predicates) =
@@ -2646,9 +2673,10 @@ impl SQLContext {
         // tail of the set-op paths where no projection follows to remove them.
         let subquery_names;
         (lf, subquery_names) = self.process_subqueries(lf, by.iter_mut().collect())?;
-        for e in by.iter_mut() {
-            *e = broadcast_resolved_subqueries(std::mem::replace(e, Expr::Len), &subquery_names);
-        }
+        let by: Vec<Expr> = by
+            .into_iter()
+            .map(|e| broadcast_resolved_subqueries(e, &subquery_names))
+            .collect();
 
         let sorted = lf.sort_by_exprs(
             &by,

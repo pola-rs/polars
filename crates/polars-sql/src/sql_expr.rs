@@ -246,25 +246,27 @@ impl SQLExprVisitor<'_> {
                 // (eg: `COUNT(*) IN (1, 3)` in a HAVING/GROUP BY context), instead producing a
                 // spurious `list[bool]`; the `eq`/`or` chain doesn't have that problem.
                 let expr_is_aggregate = has_expr(&expr, |e| matches!(e, Expr::Agg(_) | Expr::Len));
-                if !expr_is_aggregate && self.array_expr_to_series(list).is_ok() {
-                    let elems = self.visit_array_expr(list, false, Some(&expr))?;
-                    let Expr::Literal(LiteralValue::Series(elems_series)) = &elems else {
-                        unreachable!(
-                            "visit_array_expr(.., result_as_element=false, ..) always returns a Series literal"
-                        )
-                    };
-                    let set_has_null = elems_series.null_count() > 0;
-                    let imploded = lit(elems_series.implode()?.into_series());
-                    let membership = expr.is_in(imploded, false);
-                    let is_in = if set_has_null {
-                        // Non-match against sets containing NULL is unknown, not FALSE
-                        membership.or(sql_unknown())
-                    } else {
-                        membership
-                    };
-                    Ok(if *negated { is_in.not() } else { is_in })
+                // Failing to build an element Series *is* the "not all literals" signal,
+                // so the parse doubles as the fast-path test.
+                let elements = if expr_is_aggregate {
+                    None
                 } else {
-                    self.visit_in_list_fallback(expr, list, *negated)
+                    self.array_expr_to_series(list).ok()
+                };
+                match elements {
+                    Some(elems) => {
+                        let elems = self.cast_array_elements_for(elems, Some(&expr))?;
+                        let set_has_null = elems.null_count() > 0;
+                        let membership = expr.is_in(lit(elems.implode()?.into_series()), false);
+                        let is_in = if set_has_null {
+                            // Non-match against sets containing NULL is unknown, not FALSE
+                            membership.or(sql_unknown())
+                        } else {
+                            membership
+                        };
+                        Ok(if *negated { is_in.not() } else { is_in })
+                    },
+                    None => self.visit_in_list_fallback(expr, list, *negated),
                 }
             },
             SQLExpr::InSubquery {
@@ -922,17 +924,13 @@ impl SQLExprVisitor<'_> {
         })
     }
 
-    /// Visit a SQL `ARRAY` list (including `IN` values).
-    fn visit_array_expr(
-        &mut self,
-        elements: &[SQLExpr],
-        result_as_element: bool,
+    /// Handle implicit temporal strings, eg: "dt IN ('2024-04-30','2024-05-01')".
+    /// (not yet as versatile as the temporal string conversions in visit_binary_op)
+    fn cast_array_elements_for(
+        &self,
+        elems: Series,
         dtype_expr_match: Option<&Expr>,
-    ) -> PolarsResult<Expr> {
-        let mut elems = self.array_expr_to_series(elements)?;
-
-        // handle implicit temporal strings, eg: "dt IN ('2024-04-30','2024-05-01')".
-        // (not yet as versatile as the temporal string conversions in visit_binary_op)
+    ) -> PolarsResult<Series> {
         if let (Some(Expr::Column(name)), Some(schema)) =
             (dtype_expr_match, self.active_schema.as_ref())
         {
@@ -942,11 +940,23 @@ impl SQLExprVisitor<'_> {
                         dtype,
                         DataType::Date | DataType::Time | DataType::Datetime(_, _)
                     ) {
-                        elems = elems.strict_cast(dtype)?;
+                        return elems.strict_cast(dtype);
                     }
                 }
             }
         }
+        Ok(elems)
+    }
+
+    /// Visit a SQL `ARRAY` list (including `IN` values).
+    fn visit_array_expr(
+        &mut self,
+        elements: &[SQLExpr],
+        result_as_element: bool,
+        dtype_expr_match: Option<&Expr>,
+    ) -> PolarsResult<Expr> {
+        let elems = self.array_expr_to_series(elements)?;
+        let elems = self.cast_array_elements_for(elems, dtype_expr_match)?;
 
         // if we are parsing the list as an element in a series, implode.
         // otherwise, return the series as-is.

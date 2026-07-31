@@ -111,3 +111,30 @@ def test_collision_with_wildcard(df_naming: pl.DataFrame) -> None:
         out = ctx.execute("SELECT *, a-b FROM t1 ORDER BY a")
 
     assert out.columns == ["a", "b", "c", "a:1"]
+
+
+def test_unaliased_scalar_subquery_name_is_stable() -> None:
+    """An unnamed scalar subquery gets Polars' usual name for unnamed expressions.
+
+    It previously took the internal placeholder column's name, which is drawn from a
+    process-wide counter, so the same query produced a different output column name on
+    every execution.
+    """
+    frames = {"t": pl.DataFrame({"v": [1, 2, 3]})}
+    query = "SELECT (SELECT MAX(v) FROM t) FROM t"
+
+    names = [
+        pl.SQLContext(frames=frames, eager=True).execute(query).columns
+        for _ in range(3)
+    ]
+    assert names == [["literal"], ["literal"], ["literal"]]
+
+    with pl.SQLContext(frames=frames, eager=True) as ctx:
+        # collisions disambiguate like any other repeated derived name
+        assert ctx.execute(
+            "SELECT (SELECT MAX(v) FROM t), (SELECT MIN(v) FROM t) FROM t"
+        ).columns == ["literal", "literal:1"]
+        # an explicit alias still wins
+        assert ctx.execute("SELECT (SELECT MAX(v) FROM t) AS mx FROM t").columns == [
+            "mx"
+        ]

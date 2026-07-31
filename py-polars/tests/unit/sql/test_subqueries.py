@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -535,27 +537,32 @@ def test_sql_subquery_not_rewritten(subquery: str) -> None:
         _subquery_ctx().execute(sql, eager=True)
 
 
-def test_scalar_subquery_only_projections_keep_table_height() -> None:
+@pytest.mark.parametrize(
+    ("projection", "value"),
+    [
+        ("(SELECT MAX(value) FROM df) + 1", 3001),
+        ("CASE WHEN (SELECT MAX(value) FROM df) > 5 THEN 'y' ELSE 'n' END", "y"),
+    ],
+)
+def test_scalar_subquery_only_projections_keep_table_height(
+    projection: str, value: Any
+) -> None:
     # Every projection derives its height from the subquery, so there is no plain
     # column to supply the frame height; the scalar must still broadcast to it.
-    df = pl.DataFrame({"value": [1000, 2000, 3000]})
+    # (`expected=` isn't usable here: an unaliased scalar subquery gets an internal
+    # output name, and the helper keys the expected frame by the polars column names.)
+    frames = {"df": pl.DataFrame({"value": [1000, 2000, 3000]})}
+    query = f"SELECT {projection} FROM df"
+
+    res = pl.SQLContext(frames=frames, eager=True).execute(query)
+    assert res.height == 3
+    assert res.to_series().to_list() == [value] * 3
 
     assert_sql_matches(
-        frames={"df": df},
-        query="SELECT (SELECT MAX(value) FROM df) + 1 FROM df",
+        frames=frames,
+        query=query,
         compare_with="duckdb",
         check_column_names=False,
-        expected={"m": [3001, 3001, 3001]},
-    )
-    assert_sql_matches(
-        frames={"df": df},
-        query=(
-            "SELECT CASE WHEN (SELECT MAX(value) FROM df) > 5 THEN 'y' ELSE 'n' END "
-            "FROM df"
-        ),
-        compare_with="duckdb",
-        check_column_names=False,
-        expected={"c": ["y", "y", "y"]},
     )
 
 

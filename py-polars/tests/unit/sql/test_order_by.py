@@ -378,14 +378,19 @@ def test_order_by_correlated_subquery() -> None:
 
 def test_order_by_subquery_over_set_operation() -> None:
     # The set-op paths return the sorted frame directly, with no projection to strip
-    # the subquery placeholder column.
+    # the subquery placeholder column, so it has to be dropped explicitly.
+    #
+    # Not compared against a reference engine: standard SQL only lets an ORDER BY
+    # after a set operation name output columns, and DuckDB rejects the query
+    # ("add the expression to every SELECT, or move the UNION into a FROM clause").
+    # Polars is more permissive here; rewriting the query to satisfy DuckDB would
+    # move the ORDER BY onto an outer SELECT and stop exercising the set-op path.
     frames = {
         "t1": pl.DataFrame({"k": [1, 2, 3]}),
         "t2": pl.DataFrame({"k": [1, 1, 2]}),
     }
-    assert_sql_matches(
-        frames=frames,
-        query="SELECT k FROM t1 UNION ALL SELECT k FROM t2 ORDER BY (SELECT MIN(k) FROM t2), k",
-        compare_with="duckdb",
-        expected={"k": [1, 1, 1, 2, 2, 3]},
+    res = pl.SQLContext(frames=frames, eager=True).execute(
+        "SELECT k FROM t1 UNION ALL SELECT k FROM t2 ORDER BY (SELECT MIN(k) FROM t2), k"
     )
+    assert res.columns == ["k"]
+    assert res["k"].to_list() == [1, 1, 1, 2, 2, 3]
