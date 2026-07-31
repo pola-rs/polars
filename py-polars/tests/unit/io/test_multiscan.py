@@ -1251,3 +1251,64 @@ def test_hive_join_rewrite_semi_join(tmp_path: Path) -> None:
             "foo"
         ),
     )
+
+
+@pytest.mark.write_disk
+def test_hive_join_rewrite_repeated_partition_values_28617(tmp_path: Path) -> None:
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+
+    # Nested partitioning: the first hive column repeats once per file, so the
+    # branches must be deduplicated on the partition value.
+    pl.DataFrame(
+        {
+            "cohort_index": [0, 0],
+            "chunk_index": [1, 2],
+            "index": [1, 1],
+            "value": [1, 1],
+        }
+    ).write_parquet(left_root, partition_by=["cohort_index", "chunk_index"])
+    pl.DataFrame(
+        {
+            "cohort_index": [0, 0, 0, 0, 0, 0],
+            "chunk_index": [1, 1, 1, 2, 2, 2],
+            "index": [1, 1, 1, 1, 1, 1],
+            "raster_index": [1, 2, 3, 1, 2, 3],
+        }
+    ).write_parquet(right_root, partition_by=["cohort_index", "chunk_index"])
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    on = ["chunk_index", "cohort_index", "index"]
+    q = right.join(left, on=on, how="inner")
+
+    out = q.sort("chunk_index", "raster_index").collect()
+    assert out.height == 6
+    assert_frame_equal(
+        out,
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort(
+            "chunk_index", "raster_index"
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_group_by_rewrite_repeated_partition_values(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+
+    # `foo` repeats over the nested `bar` partitions, so both `foo` values must
+    # end up in exactly one branch.
+    pl.DataFrame(
+        {"foo": [1, 1, 2, 2], "bar": [1, 2, 1, 2], "x": [1, 2, 3, 4]}
+    ).write_parquet(root, partition_by=["foo", "bar"])
+
+    lf = pl.scan_parquet(root, hive_partitioning=True)
+    q = lf.group_by("foo").agg(pl.sum("x"))
+    plan = q.explain()
+
+    assert plan.startswith("UNION[maintain_order: false]")
+    assert plan.count("AGGREGATE") == 2
+
+    out = q.sort("foo").collect()
+    assert_frame_equal(out, pl.DataFrame({"foo": [1, 2], "x": [3, 7]}))
