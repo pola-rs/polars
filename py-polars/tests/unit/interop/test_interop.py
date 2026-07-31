@@ -1619,3 +1619,12 @@ def test_from_arrow_capsule_24511() -> None:
         out,
         pl.DataFrame({"x": 1}),
     )
+
+
+def test_arrow_c_stream_binview_sliced_data_buffer_28612() -> None:
+    values = ["short", "a_string_longer_than_12"]
+    df = pl.DataFrame({"s": values})
+    tbl = pa.table(pl.DataFrame(df.to_arrow()))
+
+    assert tbl.schema.field("s").type == pa.string_view()
+    assert tbl.column("s").to_pylist() == values
