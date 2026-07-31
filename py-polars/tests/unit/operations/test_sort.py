@@ -1407,3 +1407,16 @@ def test_sort_scalar_broadcast_in_memory_28387() -> None:
     )
     expected = pl.DataFrame({"a": [1, 2, 3], "s": [9, 9, 9]})
     assert_frame_equal(lf.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        pl.Series([[i % 2] for i in range(100)], dtype=pl.List(pl.Int64)),
+        pl.Series([[i % 2, 0] for i in range(100)], dtype=pl.Array(pl.Int64, 2)),
+        pl.Series([{"a": i % 2} for i in range(100)], dtype=pl.Struct({"a": pl.Int64})),
+    ],
+)
+def test_sort_maintain_order_nested_keys_28586(key: pl.Series) -> None:
+    df = pl.DataFrame({"k": key, "r": range(key.len())})
+    assert_frame_equal(df.sort("k", maintain_order=True), df.sort(["k", "r"]))
