@@ -64,7 +64,8 @@ impl SelectModifiers {
 /// For SELECT projection items; helps simplify any required disambiguation.
 enum ProjectionItem {
     QualifiedExprs(PlSmallStr, Vec<Expr>),
-    /// The `bool` marks whether every expr here came from an explicit `AS` alias.
+    /// The `bool` marks whether expr here came from an explicit `AS` alias.
+    /// In that case only 1 item is is in the vec.
     Exprs(Vec<Expr>, bool),
 }
 
@@ -2806,7 +2807,7 @@ impl SQLContext {
                 }
             }
         }
-        Ok((aggregated.select(&output_projection), projections.clone()))
+        Ok((aggregated.select(&output_projection), projections))
     }
 
     fn process_limit_offset(
