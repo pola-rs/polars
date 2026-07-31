@@ -396,7 +396,7 @@ impl AExpr {
                 partition_by.clear();
                 partition_by.extend_from_slice(&inputs[1..inputs.len() - offset]);
                 if let Some((_, options)) = order_by {
-                    *order_by = Some((*inputs.last().unwrap(), *options));
+                    *order_by = Some((*inputs.last().unwrap(), options.clone()));
                 }
                 return self;
             },
@@ -509,7 +509,7 @@ impl AExpr {
                 partition_by.clear();
                 partition_by.extend_from_slice(&inputs[1..inputs.len() - offset]);
                 if let Some((_, options)) = order_by {
-                    *order_by = Some((*inputs.last().unwrap(), *options));
+                    *order_by = Some((*inputs.last().unwrap(), options.clone()));
                 }
                 return self;
             },
