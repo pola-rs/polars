@@ -351,7 +351,7 @@ pub fn coalesce_columns(s: &[Column]) -> PolarsResult<Column> {
     polars_ensure!(!s.is_empty(), NoData: "cannot coalesce empty list");
     let mut out = s[0].clone();
     for s in s {
-        if !out.null_count() == 0 {
+        if out.null_count() == 0 {
             return Ok(out);
         } else {
             let mask = out.is_not_null();
