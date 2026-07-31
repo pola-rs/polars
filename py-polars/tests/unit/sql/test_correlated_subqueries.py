@@ -189,7 +189,7 @@ def test_uncorrelated_subquery_in_having_still_works() -> None:
     )
 
 
-def _decorrelation_count(ctx: pl.SQLContext, query: str) -> int:
+def _decorrelation_count(ctx: pl.SQLContext[pl.LazyFrame], query: str) -> int:
     """Count decorrelation pipelines; each materialises one unique `..._idx` column."""
     plan = ctx.execute(query).explain()
     return len(
