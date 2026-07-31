@@ -4,16 +4,38 @@ use arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
 use arrow::bitmap::Bitmap;
 use arrow::pushable::Pushable;
 use polars_async::executor::{self, TaskPriority};
+use polars_config::BloomPruning;
 use polars_core::prelude::*;
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::FileMetadata;
+use polars_io::utils::byte_source::DynByteSource;
 use polars_parquet::read::RowGroupMetadata;
 use polars_parquet::read::statistics::{ArrowColumnStatisticsArrays, deserialize_all};
 use polars_plan::plans::predicates::null_count_dtype;
 use polars_utils::format_pl_smallstr;
 
+use crate::nodes::io_sources::parquet::bloom_filter_prune::{
+    bloom_filter_row_group_skip_mask, collect_bloom_preds, merge_row_group_skip_masks,
+    should_probe_blooms,
+};
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
+
+/// Arguments for [`calculate_row_group_pred_pushdown_skip_mask`].
+///
+/// Stored in a struct to avoid tripping clippy's `too_many_arguments` lint.
+pub(super) struct RowGroupPredPushdownArgs<'a> {
+    pub row_group_slice: Range<usize>,
+    pub use_statistics: bool,
+    pub predicate: Option<&'a ScanIOPredicate>,
+    pub metadata: &'a Arc<FileMetadata>,
+    pub projected_arrow_fields: Arc<[ArrowFieldProjection]>,
+    /// File bytes for bloom filters (not stored in `metadata.footer_buf`).
+    pub byte_source: Arc<DynByteSource>,
+    /// Updated to the position of the first row group.
+    pub row_index: Option<RowIndex>,
+    pub verbose: bool,
+}
 
 struct StatisticsColumns {
     min: Column,
@@ -75,38 +97,56 @@ impl StatisticsColumns {
     }
 }
 
+/// Builds a per–row-group skip mask from predicate pushdown (set bit = skip row group).
+///
+/// Two mechanisms are merged with bitwise OR (stats first, then blooms on survivors):
+/// - **Statistics** (`skip_batch_predicate` over min/max/null_count from the footer).
+/// - **Bloom filters** (equality / `is_in` literals probed via `byte_source` range reads).
+///
+/// **Future:** a fully dictionary-encoded chunk's dictionary page is an exact membership set,
+/// strictly stronger than a bloom; prefer it (cost-gated by dictionary size) once implemented.
 pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
-    row_group_slice: Range<usize>,
-    use_statistics: bool,
-    predicate: Option<&ScanIOPredicate>,
-    metadata: &Arc<FileMetadata>,
-    projected_arrow_fields: Arc<[ArrowFieldProjection]>,
-    // This is mut so that the offset is updated to the position of the first
-    // row group.
-    mut row_index: Option<RowIndex>,
-    verbose: bool,
+    args: RowGroupPredPushdownArgs<'_>,
 ) -> PolarsResult<Option<Bitmap>> {
-    if !use_statistics {
-        return Ok(None);
-    }
+    let RowGroupPredPushdownArgs {
+        row_group_slice,
+        use_statistics,
+        predicate,
+        metadata,
+        projected_arrow_fields,
+        byte_source,
+        mut row_index,
+        verbose,
+    } = args;
 
     let Some(predicate) = predicate else {
         return Ok(None);
     };
 
-    let Some(sbp) = predicate.skip_batch_predicate.as_ref() else {
-        return Ok(None);
+    // `use_statistics` gates Parquet *column statistics* (min/max/null_count) only.
+    // Bloom filters are separate footer metadata and are not disabled by this flag.
+    let has_skip_batch_predicate = use_statistics && predicate.skip_batch_predicate.is_some();
+    let bloom_mode = polars_config::config().bloom_filter_prune();
+    let bloom_preds = if should_probe_blooms(bloom_mode, byte_source.is_cloud()) {
+        collect_bloom_preds(predicate, projected_arrow_fields.as_ref())
+    } else {
+        None
     };
+    if !has_skip_batch_predicate && bloom_preds.is_none() {
+        return Ok(None);
+    }
 
-    let sbp = sbp.clone();
+    // Clone the skip batch predicate for the spawned task.
+    let sbp = predicate.skip_batch_predicate.clone();
 
     let num_row_groups = row_group_slice.len();
     let metadata = metadata.clone();
     let live_columns = predicate.live_columns.clone();
+    let projected_arrow_fields = projected_arrow_fields.clone();
 
-    // Note: We are spawning here onto the computational async runtime because the caller is being run
-    // on a tokio async thread.
-    let skip_row_group_mask = executor::spawn(TaskPriority::High, async move {
+    let bloom_metadata = metadata.clone();
+    let bloom_row_group_slice = row_group_slice.clone();
+    let statistics_mask = executor::spawn(TaskPriority::High, async move {
         let row_groups_slice = &metadata.row_groups[row_group_slice.clone()];
 
         if let Some(ri) = &mut row_index {
@@ -117,47 +157,72 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
             }
         }
 
-        let mut columns = Vec::with_capacity(1 + live_columns.len() * 3);
+        let statistics_mask = match sbp {
+            Some(sbp) if has_skip_batch_predicate => {
+                let mut columns = Vec::with_capacity(1 + live_columns.len() * 3);
 
-        let lengths: Vec<IdxSize> = row_groups_slice
-            .iter()
-            .map(|rg| rg.num_rows() as IdxSize)
-            .collect();
+                let lengths: Vec<IdxSize> = row_groups_slice
+                    .iter()
+                    .map(|rg| rg.num_rows() as IdxSize)
+                    .collect();
 
-        columns.push(Column::new("len".into(), lengths));
+                columns.push(Column::new("len".into(), lengths));
 
-        for projection in projected_arrow_fields.iter() {
-            let c = projection.output_name();
+                for projection in projected_arrow_fields.iter() {
+                    let c = projection.output_name();
 
-            if !live_columns.contains(c) {
-                continue;
-            }
+                    if !live_columns.contains(c) {
+                        continue;
+                    }
 
-            let mut statistics =
-                load_parquet_column_statistics(row_groups_slice, projection, &metadata.footer_buf)?;
+                    let mut statistics = load_parquet_column_statistics(
+                        row_groups_slice,
+                        projection,
+                        &metadata.footer_buf,
+                    )?;
 
-            // Note: Order is important here. We re-use the transform for the output column, meaning
-            // that it may set the column name.
-            statistics.min = projection.apply_transform(statistics.min)?;
-            statistics.max = projection.apply_transform(statistics.max)?;
+                    // Note: Order is important here. We re-use the transform for the output column, meaning
+                    // that it may set the column name.
+                    statistics.min = projection.apply_transform(statistics.min)?;
+                    statistics.max = projection.apply_transform(statistics.max)?;
 
-            let statistics = statistics.with_base_column_name(c);
+                    let statistics = statistics.with_base_column_name(c);
 
-            columns.extend([statistics.min, statistics.max, statistics.null_count]);
-        }
+                    columns.extend([statistics.min, statistics.max, statistics.null_count]);
+                }
 
-        if let Some(row_index) = row_index {
-            let statistics = build_row_index_statistics(&row_index, row_groups_slice)
-                .with_base_column_name(&row_index.name);
+                if let Some(row_index) = row_index {
+                    let statistics = build_row_index_statistics(&row_index, row_groups_slice)
+                        .with_base_column_name(&row_index.name);
 
-            columns.extend([statistics.min, statistics.max, statistics.null_count]);
-        }
+                    columns.extend([statistics.min, statistics.max, statistics.null_count]);
+                }
 
-        let statistics_df = DataFrame::new(num_row_groups, columns)?;
+                let statistics_df = DataFrame::new(num_row_groups, columns)?;
+                sbp.evaluate_with_stat_df(&statistics_df)?
+            },
+            _ => {
+                // Stats disabled or no skip_batch_predicate: do not prune from min/max/null_count.
+                Bitmap::new_with_value(false, num_row_groups)
+            },
+        };
 
-        sbp.evaluate_with_stat_df(&statistics_df)
+        PolarsResult::Ok(statistics_mask)
     })
     .await?;
+
+    let row_groups_slice = &bloom_metadata.row_groups[bloom_row_group_slice];
+    // Byte-source reads need the tokio context, so bloom probing stays out of the
+    // compute-executor task above.
+    let bloom_mask = bloom_filter_row_group_skip_mask(
+        row_groups_slice,
+        &byte_source,
+        bloom_preds.as_deref(),
+        &statistics_mask,
+        bloom_mode == BloomPruning::Whole,
+    )
+    .await?;
+    let skip_row_group_mask = merge_row_group_skip_masks(statistics_mask, bloom_mask);
 
     if verbose {
         eprintln!(

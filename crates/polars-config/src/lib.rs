@@ -2,12 +2,14 @@ use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::time::Duration;
 
+mod bloom_pruning;
 mod engine;
 mod parse;
 mod resolve_mode;
 mod spill_format;
 pub mod spill_path;
 
+pub use bloom_pruning::BloomPruning;
 pub use engine::Engine;
 use polars_error::polars_warn;
 pub use resolve_mode::ResolveMode;
@@ -46,6 +48,12 @@ const PRUNE_PARQUET_METADATA: &str = "POLARS_PRUNE_PARQUET_METADATA";
 const DEFAULT_PRUNE_PARQUET_METADATA: bool = false;
 
 const RESOLVE_METADATA_LEVEL: &str = "POLARS_RESOLVE_METADATA_LEVEL";
+
+const BLOOM_FILTER_PRUNE: &str = "POLARS_BLOOM_FILTER_PRUNE";
+const DEFAULT_BLOOM_FILTER_PRUNE: BloomPruning = BloomPruning::Off;
+
+const BLOOM_IN_FILTER_THRESHOLD: &str = "POLARS_BLOOM_IN_FILTER_THRESHOLD";
+const DEFAULT_BLOOM_IN_FILTER_THRESHOLD: u64 = 10; // Spark default.
 
 // Private.
 const VERBOSE_SENSITIVE: &str = "POLARS_VERBOSE_SENSITIVE";
@@ -110,6 +118,8 @@ static KNOWN_OPTIONS: &[&str] = &[
     ENGINE_AFFINITY,
     PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
     PRUNE_PARQUET_METADATA,
+    BLOOM_FILTER_PRUNE,
+    BLOOM_IN_FILTER_THRESHOLD,
     ALLOW_NESTED_CSPE,
     RESOLVE_METADATA_LEVEL,
     /*
@@ -161,6 +171,8 @@ pub struct Config {
     engine_affinity: AtomicU8,
     parquet_binary_statistics_truncate_length: AtomicU64,
     prune_parquet_metadata: AtomicBool,
+    bloom_filter_prune: AtomicU8,
+    bloom_in_filter_threshold: AtomicU64,
     allow_nested_cspe: AtomicBool,
     resolve_metadata_level: AtomicU8,
 
@@ -195,6 +207,8 @@ impl Config {
             ),
             prune_parquet_metadata: AtomicBool::new(DEFAULT_PRUNE_PARQUET_METADATA),
             resolve_metadata_level: AtomicU8::new(ResolveMode::default() as u8),
+            bloom_filter_prune: AtomicU8::new(DEFAULT_BLOOM_FILTER_PRUNE as u8),
+            bloom_in_filter_threshold: AtomicU64::new(DEFAULT_BLOOM_IN_FILTER_THRESHOLD),
 
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
@@ -282,6 +296,16 @@ impl Config {
             PRUNE_PARQUET_METADATA => self.prune_parquet_metadata.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_PRUNE_PARQUET_METADATA),
+                Ordering::Relaxed,
+            ),
+            BLOOM_FILTER_PRUNE => self.bloom_filter_prune.store(
+                val.and_then(|x| parse::parse_bloom_pruning(var, x))
+                    .unwrap_or(DEFAULT_BLOOM_FILTER_PRUNE) as u8,
+                Ordering::Relaxed,
+            ),
+            BLOOM_IN_FILTER_THRESHOLD => self.bloom_in_filter_threshold.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_BLOOM_IN_FILTER_THRESHOLD),
                 Ordering::Relaxed,
             ),
             ALLOW_NESTED_CSPE => self.allow_nested_cspe.store(
@@ -425,6 +449,22 @@ impl Config {
     #[inline(always)]
     pub fn prune_parquet_metadata(&self) -> bool {
         self.prune_parquet_metadata.load(Ordering::Relaxed)
+    }
+
+    /// Bloom-filter row-group pruning mode.
+    ///
+    /// Off by default; set via `POLARS_BLOOM_FILTER_PRUNE`.
+    pub fn bloom_filter_prune(&self) -> BloomPruning {
+        BloomPruning::from_discriminant(self.bloom_filter_prune.load(Ordering::Relaxed))
+    }
+
+    /// Maximum number of `is_in` literals probed against Parquet bloom filters during row-group
+    /// pruning (`POLARS_BLOOM_IN_FILTER_THRESHOLD`, default `10`).
+    pub fn bloom_in_filter_threshold(&self) -> usize {
+        self.bloom_in_filter_threshold
+            .load(Ordering::Relaxed)
+            .try_into()
+            .unwrap_or(usize::MAX)
     }
 
     /// Nested common subplan elimination.

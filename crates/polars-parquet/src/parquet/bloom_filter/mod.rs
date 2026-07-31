@@ -1,11 +1,18 @@
 //! API to read and use bloom filters
 mod hash;
 mod read;
+mod scalar;
 mod split_block;
 
 pub use hash::{hash_byte, hash_native};
-pub use read::read;
-pub use split_block::{insert, is_in_set};
+pub use read::{BloomFilterLayout, bloom_filter_layout, read};
+pub use scalar::{
+    any_hashes_might_be_in_blocks, hash_parquet_scalar, might_contain_any_hashes,
+    prefer_block_reads, unique_block_indices,
+};
+pub use split_block::{
+    BLOCK_SIZE, hash_to_block_index, insert, is_maybe_in_bitset, is_maybe_in_block,
+};
 
 #[cfg(test)]
 mod tests {
@@ -44,7 +51,7 @@ mod tests {
         for a in 0..11i64 {
             let hash = hash_native(a);
 
-            let valid = is_in_set(&bitset, hash);
+            let valid = is_maybe_in_bitset(&bitset, hash);
 
             assert_eq!(a < 10, valid);
         }
