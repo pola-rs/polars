@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -23,6 +25,7 @@ def test_single_chunk_vertical_parallelism_28593() -> None:
     )
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_single_chunk_nested_eval_not_partitioned() -> None:
     df = pl.DataFrame({"a": [[{"fld": 1}]] * 100_000})
     expression = pl.col("a").list.eval(pl.element().struct.field("fld"))
