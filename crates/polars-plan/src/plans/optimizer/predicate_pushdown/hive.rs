@@ -44,6 +44,16 @@ fn get_partitions(hive_df: &DataFrame) -> Vec<DataFrame> {
     split_df_as_ref(hive_df, std::cmp::min(n_parts, hive_df.height()), false)
 }
 
+// We must deduplicate so that we get unique files (keys) per partition.
+#[cfg(feature = "is_in")]
+fn unique_key_frame(hive_df: &DataFrame, key_name: &PlSmallStr) -> PolarsResult<DataFrame> {
+    hive_df
+        .column(key_name)?
+        .clone()
+        .into_frame()
+        .unique_stable(None, UniqueKeepStrategy::First, None)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn rewrite_hive(
     ir: IR,
@@ -78,20 +88,22 @@ pub fn rewrite_hive(
                 // We do that by pushing down an is_in predicate
                 // Later in the optimizer we prune the hive paths
                 // based on all the predicates.
-                let mut hive_col = None;
+                // Any hive column is valid to split on, prefer the leftmost as it is the coarsest.
+                let mut hive_col: Option<(usize, PlSmallStr)> = None;
                 let hive_schema = hive.schema();
                 for e in keys.iter() {
                     let key = expr_arena.get(e.node());
                     if let AExpr::Column(name) = key {
-                        if hive_schema.index_of(name) == Some(0) {
-                            hive_col = Some(name.clone());
-                            break;
+                        if let Some(idx) = hive_schema.index_of(name)
+                            && hive_col.as_ref().is_none_or(|(best, _)| idx < *best)
+                        {
+                            hive_col = Some((idx, name.clone()));
                         }
                     }
                 }
 
-                if let Some(key_name) = hive_col {
-                    let hive_df = hive.df().select_at_idx(0).unwrap().clone().into_frame();
+                if let Some((_, key_name)) = hive_col {
+                    let hive_df = unique_key_frame(hive.df(), &key_name)?;
 
                     let chunks = get_partitions(&hive_df);
 
@@ -162,35 +174,26 @@ pub fn rewrite_hive(
                 // We do that by pushing down an is_in predicate
                 // Later in the optimizer we prune the hive paths
                 // based on all the predicates.
-                let mut hive_cols = None;
+                // Any hive column is valid to split on, prefer the leftmost as it is the coarsest.
+                let mut hive_cols: Option<(usize, PlSmallStr, PlSmallStr)> = None;
                 let hive_left_schema = hive_left.schema();
                 let hive_right_schema = hive_right.schema();
                 for (l, r) in left_on.iter().zip(right_on.iter()) {
                     let l = expr_arena.get(l.node());
                     let r = expr_arena.get(r.node());
                     if let (AExpr::Column(l), AExpr::Column(r)) = (l, r) {
-                        if hive_left_schema.index_of(l) == Some(0)
-                            && hive_right_schema.index_of(r) == Some(0)
+                        if let Some(idx) = hive_left_schema.index_of(l)
+                            && hive_right_schema.contains(r)
+                            && hive_cols.as_ref().is_none_or(|(best, _, _)| idx < *best)
                         {
-                            hive_cols = Some((l.clone(), r.clone()));
-                            break;
+                            hive_cols = Some((idx, l.clone(), r.clone()));
                         }
                     }
                 }
 
-                if let Some((l, r)) = hive_cols {
-                    let hive_l = hive_left
-                        .df()
-                        .select_at_idx(0)
-                        .unwrap()
-                        .clone()
-                        .into_frame();
-                    let hive_r = hive_right
-                        .df()
-                        .select_at_idx(0)
-                        .unwrap()
-                        .clone()
-                        .into_frame();
+                if let Some((_, l, r)) = hive_cols {
+                    let hive_l = unique_key_frame(hive_left.df(), &l)?;
+                    let hive_r = unique_key_frame(hive_right.df(), &r)?;
 
                     let partitions = hive_l
                         .join(
@@ -199,6 +202,7 @@ pub fn rewrite_hive(
                             [r.as_str()],
                             JoinArgs {
                                 how: options.args.how.clone(),
+                                nulls_equal: options.args.nulls_equal,
                                 ..Default::default()
                             },
                             None,
@@ -343,7 +347,8 @@ fn make_predicate(
     AExprBuilder::col(predicate_name, expr_arena)
         .is_in(
             AExprBuilder::lit(LiteralValue::Series(SpecialEq::new(values)), expr_arena),
-            false, // nulls_equal
+            // Hive __HIVE_DEFAULT_PARTITION__ can produce nulls
+            true,
             expr_arena,
         )
         .expr_ir_unnamed()

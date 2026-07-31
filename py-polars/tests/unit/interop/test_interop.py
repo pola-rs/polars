@@ -22,7 +22,7 @@ from polars.exceptions import (
 )
 from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
+from tests.unit.utils.pycapsule_utils import PyCapsuleArrayHolder, PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
@@ -1009,10 +1009,10 @@ def test_df_pycapsule_interface() -> None:
     expected_schema = pl.Schema([("a", pl.Int128), ("b", pl.String), ("c", pl.String)])
 
     for arrow_obj in (
-        pl.from_arrow(capsule_df),  # capsule
+        pl.DataFrame(capsule_df),  # capsule
         out,  # table loaded from capsule
     ):
-        df_res = pl.from_arrow(arrow_obj, schema_overrides=schema_overrides)
+        df_res = pl.DataFrame(arrow_obj, schema_overrides=schema_overrides)
         assert expected_schema == df_res.schema  # type: ignore[union-attr]
         assert isinstance(df_res, pl.DataFrame)
         assert df.equals(df_res)
@@ -1573,3 +1573,49 @@ def test_sliced_struct_arrow_export_19612() -> None:
             pl.DataFrame(arrow_tbl),
             pl.DataFrame({"x": [expect_row_value]}, schema=df.schema),
         )
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype", "expected"),
+    [
+        (
+            [[0, 0], [1, 2], [3, 4], None, [7, 8]],
+            pl.Array(pl.Int64, 2),
+            [[1, 2], [3, 4], None],
+        ),
+        (
+            [[0], [1, 2], [3, 4, 5], None, [7, 8]],
+            pl.List(pl.Int64),
+            [[1, 2], [3, 4, 5], None],
+        ),
+    ],
+)
+def test_sliced_nested_arrow_export_28583(
+    values: list[Any], dtype: pl.DataType, expected: list[Any]
+) -> None:
+    s = pl.Series(values, dtype=dtype).slice(1, 3)
+
+    assert s.to_list() == expected
+    assert s.to_arrow().to_pylist() == expected
+    assert pa.table(s.to_frame()).column(0).to_pylist() == expected
+
+
+def test_from_arrow_capsule_24511() -> None:
+    # 2.0: Remove FutureWarning and change expected values to be struct-type Series.
+    with pytest.warns(FutureWarning):
+        out = pl.from_arrow(PyCapsuleStreamHolder(pl.DataFrame({"x": 1})))
+
+    assert isinstance(out, pl.DataFrame)
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"x": 1}),
+    )
+
+    with pytest.warns(FutureWarning):
+        out = pl.from_arrow(PyCapsuleArrayHolder(pl.Series([{"x": 1}]).to_arrow()))
+
+    assert isinstance(out, pl.DataFrame)
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"x": 1}),
+    )

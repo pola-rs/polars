@@ -5,14 +5,14 @@ use std::hash::Hasher;
 use std::sync::OnceLock;
 
 use polars_utils::format_pl_smallstr;
-#[cfg(feature = "ir_serde")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::*;
 use crate::constants::{get_len_name, get_literal_name, get_pl_element_name};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum OutputName {
     /// No not yet set.
     #[default]
@@ -61,7 +61,7 @@ impl OutputName {
 }
 
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ExprIR {
     /// Output name of this expression.
     output_name: OutputName,
@@ -69,7 +69,7 @@ pub struct ExprIR {
     /// Reduced expression.
     /// This expression is pruned from `alias` and already expanded.
     node: Node,
-    #[cfg_attr(feature = "ir_serde", serde(skip))]
+    #[cfg_attr(feature = "serde", serde(skip))]
     output_dtype: OnceLock<DataType>,
 }
 

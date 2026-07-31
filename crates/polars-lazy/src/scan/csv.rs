@@ -1,4 +1,7 @@
 #[cfg(feature = "csv")]
+use std::num::NonZeroUsize;
+
+#[cfg(feature = "csv")]
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
@@ -91,6 +94,12 @@ impl LazyCsvReader {
     #[must_use]
     pub fn with_infer_schema_length(mut self, num_rows: Option<usize>) -> Self {
         self.read_options.infer_schema_length = num_rows;
+        self
+    }
+
+    #[must_use]
+    pub fn with_infer_schema_files(mut self, infer_schema_files: NonZeroUsize) -> Self {
+        self.read_options.infer_schema_files = infer_schema_files;
         self
     }
 
