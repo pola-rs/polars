@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -152,6 +153,30 @@ def test_arr_dot_query_vector(dtype: pl.DataType) -> None:
         pl.lit([10.0, 20.0]),
     ):
         assert_series_equal(embedding.arr.dot(query), expected)
+
+
+def test_arr_dot_query_vector_expansion() -> None:
+    df = pl.DataFrame(
+        {
+            "f32": [[1.0, 2.0], [3.0, 4.0]],
+            "f64": [[5.0, 6.0], [7.0, 8.0]],
+            "other": [1, 2],
+        },
+        schema={
+            "f32": pl.Array(pl.Float32, 2),
+            "f64": pl.Array(pl.Float64, 2),
+            "other": pl.Int64,
+        },
+    )
+    expected = pl.DataFrame(
+        {"f32": [50.0, 110.0], "f64": [170.0, 230.0]},
+        schema={"f32": pl.Float32, "f64": pl.Float64},
+    )
+
+    for columns in (pl.col("f32", "f64"), cs.by_dtype(pl.Array)):
+        for query in ([10.0, 20.0], pl.lit([10.0, 20.0])):
+            result = df.lazy().select(columns.arr.dot(query)).collect()
+            assert_frame_equal(result, expected)
 
 
 def test_arr_dot_query_vector_must_be_one_dimensional() -> None:
