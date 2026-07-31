@@ -450,6 +450,10 @@ impl SQLContext {
     // materialised. Returns the updated frame together with the rewritten
     // expression, which borrows `expr` unchanged when nothing was lowered.
     //
+    // `bindings` carries the subqueries already lowered against `lf`, so that the
+    // same subquery appearing in several expressions is decorrelated once. See
+    // [`SubqueryBindings`] for when a set may be shared across calls.
+    //
     // Uncorrelated subqueries and shapes we can't soundly lower are left in
     // place for the generic scalar-subquery path (or, for `EXISTS`, for the
     // expression visitor to reject).
@@ -459,6 +463,7 @@ impl SQLContext {
         outer_schema: &Schema,
         expr: &'a SQLExpr,
         scope: LowerScope,
+        bindings: &mut SubqueryBindings,
     ) -> PolarsResult<(LazyFrame, Cow<'a, SQLExpr>)> {
         // Cheap pre-check: the vast majority of expressions contain no subquery at
         // all, and those must not pay for the clone the mutable visit requires.
@@ -472,17 +477,19 @@ impl SQLContext {
             lf,
             outer_schema,
             scope,
-            bindings: Vec::new(),
+            bindings,
             query_depth: 0,
+            changed: false,
         };
         if let ControlFlow::Break(e) = VisitMut::visit(&mut rewritten, &mut lowering) {
             return Err(e);
         }
-        // A binding is recorded for exactly the subqueries that were substituted.
-        let rewritten = if lowering.bindings.is_empty() {
-            Cow::Borrowed(expr)
-        } else {
+        // Not derivable from `bindings`: a reused binding rewrites this expression
+        // without recording a new one.
+        let rewritten = if lowering.changed {
             Cow::Owned(rewritten)
+        } else {
+            Cow::Borrowed(expr)
         };
         Ok((lowering.lf, rewritten))
     }
@@ -1039,6 +1046,23 @@ fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
     Some(select)
 }
 
+/// Correlated subqueries already lowered against a frame, mapping each to the column its
+/// decorrelation materialised, so the same subquery appearing in several expressions is
+/// decorrelated once rather than once per expression. Each decorrelation is a row-index +
+/// `join_where` + `group_by` + join-back, so the saving is a real one.
+///
+/// Subqueries are compared structurally; sqlparser's AST derives `Eq`, so this needs no
+/// rendering to text. The `bool` is the `exists` flag: the same inner query yields a value
+/// column for a scalar subquery but a boolean flag for `EXISTS`, so the two must not share
+/// a binding.
+///
+/// A set may be shared across calls only while the materialised columns stay present and
+/// keep their per-row meaning. Filtering and semi/anti joins preserve both, so the WHERE,
+/// SELECT-list and HAVING passes of one SELECT share one set. Anything that re-projects or
+/// aggregates the frame must start a fresh one -- notably ORDER BY, which runs after the
+/// final projection has already dropped these columns.
+pub(crate) type SubqueryBindings = Vec<(Query, bool, PlSmallStr)>;
+
 /// Which correlated-subquery node kinds a lowering pass should claim.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LowerScope {
@@ -1073,13 +1097,9 @@ struct CorrelatedLowering<'a> {
     lf: LazyFrame,
     outer_schema: &'a Schema,
     scope: LowerScope,
-    /// Subqueries already lowered in this pass, so that two occurrences of the
-    /// same subquery share one decorrelation. Compared structurally; sqlparser's
-    /// AST derives `Eq`, so this needs no rendering to text. The `bool` is the
-    /// `exists` flag: the same inner query yields a value column for a scalar
-    /// subquery but a boolean flag for `EXISTS`, so the two must not share.
-    bindings: Vec<(Query, bool, PlSmallStr)>,
+    bindings: &'a mut SubqueryBindings,
     query_depth: usize,
+    changed: bool,
 }
 
 impl CorrelatedLowering<'_> {
@@ -1157,6 +1177,7 @@ impl VisitorMut for CorrelatedLowering<'_> {
         } else {
             resolved
         };
+        self.changed = true;
         ControlFlow::Continue(())
     }
 }

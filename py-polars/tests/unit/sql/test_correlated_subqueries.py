@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 import polars as pl
@@ -184,4 +186,62 @@ def test_uncorrelated_subquery_in_having_still_works() -> None:
         ),
         compare_with="duckdb",
         expected={"g": [2, 3], "s": [70, 50]},
+    )
+
+
+def _decorrelation_count(ctx: pl.SQLContext, query: str) -> int:
+    """Count decorrelation pipelines; each materialises one unique `..._idx` column."""
+    plan = ctx.execute(query).explain()
+    return len(
+        {tok for tok in re.findall(r"__POLARS_CORR_\w+", plan) if tok.endswith("_idx")}
+    )
+
+
+def test_repeated_correlated_subquery_is_decorrelated_once() -> None:
+    # Each decorrelation is a row-index + join_where + group_by + join-back, so the
+    # same subquery appearing in several places must not be lowered more than once.
+    # WHERE runs before the filter and the SELECT list after it, but filtering
+    # preserves the materialised column, so those share too.
+    frames = {
+        "t1": pl.DataFrame({"k": [1, 2, 3]}),
+        "t2": pl.DataFrame({"k": [1, 1, 2], "w": [5, 7, 9]}),
+    }
+    sub = "(SELECT SUM(w) FROM t2 WHERE t2.k = t1.k)"
+
+    with pl.SQLContext(frames=frames) as ctx:
+        # twice in the SELECT list
+        assert (
+            _decorrelation_count(ctx, f"SELECT {sub} AS a, {sub} + 1 AS b FROM t1") == 1
+        )
+        # in WHERE and in the SELECT list
+        assert (
+            _decorrelation_count(ctx, f"SELECT {sub} AS a FROM t1 WHERE {sub} > 9") == 1
+        )
+        # in the SELECT list and in HAVING
+        assert (
+            _decorrelation_count(
+                ctx, f"SELECT k, {sub} AS a FROM t1 GROUP BY k HAVING {sub} > 9"
+            )
+            == 1
+        )
+        # genuinely different subqueries still get one each
+        other = "(SELECT MAX(w) FROM t2 WHERE t2.k = t1.k)"
+        assert (
+            _decorrelation_count(ctx, f"SELECT {sub} AS a, {other} AS b FROM t1") == 2
+        )
+        # EXISTS and a scalar subquery over the same inner query must not share:
+        # one yields a value column, the other a boolean flag
+        assert (
+            _decorrelation_count(
+                ctx, f"SELECT k, EXISTS {sub} AS e, {sub} AS s FROM t1"
+            )
+            == 2
+        )
+
+    # ...and the values are still right
+    assert_sql_matches(
+        frames=frames,
+        query=f"SELECT k, {sub} AS a, {sub} + 1 AS b FROM t1 ORDER BY k",
+        compare_with="duckdb",
+        expected={"k": [1, 2, 3], "a": [12, 9, None], "b": [13, 10, None]},
     )

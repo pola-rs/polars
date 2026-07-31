@@ -34,7 +34,7 @@ use crate::sql_visitors::{
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
     expr_refers_to_table,
 };
-use crate::subquery::LowerScope;
+use crate::subquery::{LowerScope, SubqueryBindings};
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 
@@ -1480,6 +1480,11 @@ impl SQLContext {
         };
         let mut schema = self.get_frame_schema(&mut lf)?;
 
+        // One binding set for every pass over this frame: WHERE runs before the filter
+        // and the projection list after it, but filtering preserves the decorrelated
+        // columns, so a subquery used in both is lowered once.
+        let mut bindings = SubqueryBindings::new();
+
         // Lower correlated scalar subqueries in the WHERE clause into
         // decorrelated joins before the filter is parsed. `[NOT] EXISTS` is
         // deliberately left alone here so `process_where` can still claim
@@ -1492,6 +1497,7 @@ impl SQLContext {
                     &schema,
                     where_expr,
                     LowerScope::ScalarOnly,
+                    &mut bindings,
                 )?;
                 if matches!(lowered, Cow::Owned(_)) {
                     schema = self.get_frame_schema(&mut lf)?;
@@ -1521,8 +1527,13 @@ impl SQLContext {
                     continue;
                 };
                 let lowered;
-                (lf, lowered) =
-                    self.lower_correlated_subqueries(lf, &schema, e, LowerScope::ScalarAndExists)?;
+                (lf, lowered) = self.lower_correlated_subqueries(
+                    lf,
+                    &schema,
+                    e,
+                    LowerScope::ScalarAndExists,
+                    &mut bindings,
+                )?;
                 if let Cow::Owned(lowered) = lowered {
                     changed = true;
                     let items =
@@ -1541,6 +1552,7 @@ impl SQLContext {
                     &schema,
                     having,
                     LowerScope::ScalarAndExists,
+                    &mut bindings,
                 )?;
                 changed |= matches!(lowered, Cow::Owned(_));
                 lowered_having = Some(lowered);
@@ -2074,6 +2086,9 @@ impl SQLContext {
             // reach) is decorrelated to a boolean flag column here, and the
             // conjunct rewritten to reference it.
             let exists_schema = self.get_frame_schema(&mut lf)?;
+            // Its own set rather than the caller's: `process_where` is also reached from
+            // DELETE, and the conjuncts here share only with each other.
+            let mut bindings = SubqueryBindings::new();
             let mut lowered_residuals = Vec::with_capacity(residual_exprs.len());
             for e in &residual_exprs {
                 let lowered;
@@ -2082,6 +2097,7 @@ impl SQLContext {
                     &exists_schema,
                     e,
                     LowerScope::ScalarAndExists,
+                    &mut bindings,
                 )?;
                 lowered_residuals.push(lowered);
             }
@@ -2658,6 +2674,10 @@ impl SQLContext {
             descending.resize(by.len(), desc_order);
         } else {
             let columns = &columns_iter.collect::<Vec<_>>();
+            // Its own set: ORDER BY runs after the final projection, which has already
+            // dropped any columns an earlier pass materialised, so nothing here can be
+            // reused from the SELECT-list pass.
+            let mut bindings = SubqueryBindings::new();
             for ob in order_by {
                 // note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
                 // https://www.postgresql.org/docs/current/queries-order.html
@@ -2674,6 +2694,7 @@ impl SQLContext {
                     &schema,
                     &ob.expr,
                     LowerScope::ScalarAndExists,
+                    &mut bindings,
                 )?;
 
                 // translate order expression, allowing ordinal values
