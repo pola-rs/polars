@@ -4416,6 +4416,44 @@ def test_join_slice_maintain_order_negative_offset_overshoot_28538() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("dtype", "present", "missing", "inner_null"),
+    [
+        (pl.List(pl.Int64), [1], None, [None]),
+        (pl.Array(pl.Int64, 1), [1], None, [None]),
+        (pl.Struct({"a": pl.Int64}), {"a": 1}, None, {"a": None}),
+    ],
+)
+def test_join_nested_key_nulls_not_equal_28584(
+    dtype: pl.DataType, present: Any, missing: Any, inner_null: Any
+) -> None:
+    left = pl.DataFrame({"k": pl.Series([present, missing], dtype=dtype), "l": [0, 1]})
+    right = pl.DataFrame(
+        {"k": pl.Series([missing, present], dtype=dtype), "r": [10, 11]}
+    )
+
+    # default, nulls_equal=False
+    assert left.join(right, on="k", how="inner").height == 1
+    assert left.join(right, on="k", how="left").sort("l")["r"].to_list() == [11, None]
+    assert left.join(right, on="k", how="full").height == 3
+    assert left.join(right, on="k", how="semi").height == 1
+    assert left.join(right, on="k", how="anti").height == 1
+
+    # inner nulls still match
+    left2 = pl.DataFrame({"k": pl.Series([inner_null], dtype=dtype), "l": [0]})
+    right2 = pl.DataFrame({"k": pl.Series([inner_null], dtype=dtype), "r": [9]})
+    assert left2.join(right2, on="k", how="inner").height == 1
+
+    # nulls_equal=True
+    assert left.join(right, on="k", how="inner", nulls_equal=True).height == 2
+    lr = left.join(right, on="k", how="left", nulls_equal=True)
+    assert lr.sort("l")["r"].to_list() == [11, 10]
+    assert left.join(right, on="k", how="right", nulls_equal=True).height == 2
+    assert left.join(right, on="k", how="full", nulls_equal=True).height == 2
+    assert left.join(right, on="k", how="semi", nulls_equal=True).height == 2
+    assert left.join(right, on="k", how="anti", nulls_equal=True).height == 0
+
+
 @pytest.mark.parametrize("how", ["inner", "left", "right", "full", "semi", "anti"])
 @pytest.mark.parametrize(
     "maintain_order", ["left", "right", "left_right", "right_left"]
