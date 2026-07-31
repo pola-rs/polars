@@ -870,3 +870,22 @@ def test_corr_no_complete_pairs_returns_null() -> None:
         compare_with="duckdb",
         expected={"g": [1, 2], "c": [None, 1.0]},
     )
+
+
+def test_correlated_subquery_in_group_by_select_list() -> None:
+    # The decorrelated result column is per-input-row but constant within the group
+    # (the correlation is on the grouping key), so it must reduce rather than be
+    # rejected as not participating in the GROUP BY.
+    frames = {
+        "t1": pl.DataFrame({"k": [1, 2, 3]}),
+        "t2": pl.DataFrame({"k": [1, 1, 2], "w": [5, 7, 9]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            "SELECT k, (SELECT SUM(w) FROM t2 WHERE t2.k = t1.k) AS s "
+            "FROM t1 GROUP BY k ORDER BY k"
+        ),
+        compare_with="duckdb",
+        expected={"k": [1, 2, 3], "s": [12, 9, None]},
+    )

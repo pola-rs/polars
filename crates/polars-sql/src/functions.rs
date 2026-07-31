@@ -2584,7 +2584,6 @@ impl SQLFunctionVisitor<'_> {
     }
 }
 
-/// SQL requires `SUM` to return `NULL` when there are no non-null values to aggregate.
 /// SQL semantics require `NULL` when there are no complete (eg: both non-null)
 /// pairs to correlate, whereas Polars' native `pearson_corr` returns `NaN`.
 fn sql_corr(a: Expr, b: Expr) -> Expr {

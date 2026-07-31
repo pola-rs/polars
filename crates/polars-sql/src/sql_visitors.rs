@@ -291,3 +291,32 @@ impl SQLVisitor for ColumnRefFinder {
 pub(crate) fn expr_references_any_column(expr: &SQLExpr) -> bool {
     expr.visit(&mut ColumnRefFinder).is_break()
 }
+
+// ---------------------------------------------------------------------------
+// SubqueryFinder
+// ---------------------------------------------------------------------------
+
+/// Visitor that checks if a SQL expression contains a subquery in any form.
+struct SubqueryFinder;
+
+impl SQLVisitor for SubqueryFinder {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+        if matches!(
+            expr,
+            SQLExpr::Subquery(_) | SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. }
+        ) {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    }
+}
+
+/// Check if a SQL expression contains a subquery. A subquery references no column of its
+/// own, so `expr_references_any_column` alone would misclassify `(SELECT ...) > 0` as a
+/// constant expression.
+pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
+    expr.visit(&mut SubqueryFinder).is_break()
+}

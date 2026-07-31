@@ -533,3 +533,51 @@ def test_sql_subquery_not_rewritten(subquery: str) -> None:
     sql = f"SELECT c_custkey FROM customer WHERE NOT EXISTS ({subquery})"
     with pytest.raises(SQLInterfaceError, match="not currently supported"):
         _subquery_ctx().execute(sql, eager=True)
+
+
+def test_scalar_subquery_only_projections_keep_table_height() -> None:
+    # Every projection derives its height from the subquery, so there is no plain
+    # column to supply the frame height; the scalar must still broadcast to it.
+    df = pl.DataFrame({"value": [1000, 2000, 3000]})
+
+    assert_sql_matches(
+        frames={"df": df},
+        query="SELECT (SELECT MAX(value) FROM df) + 1 FROM df",
+        compare_with="duckdb",
+        check_column_names=False,
+        expected={"m": [3001, 3001, 3001]},
+    )
+    assert_sql_matches(
+        frames={"df": df},
+        query=(
+            "SELECT CASE WHEN (SELECT MAX(value) FROM df) > 5 THEN 'y' ELSE 'n' END "
+            "FROM df"
+        ),
+        compare_with="duckdb",
+        check_column_names=False,
+        expected={"c": ["y", "y", "y"]},
+    )
+
+
+def test_subquery_unsupported_positions_report_sql_errors() -> None:
+    # These positions don't resolve subqueries; they must say so in SQL terms rather
+    # than surfacing the engine's internal "subplan not allowed here".
+    df1 = pl.DataFrame({"a": [1, 2, 3]})
+    df2 = pl.DataFrame({"b": [1, 2]})
+
+    with pytest.raises(
+        SQLInterfaceError, match="not currently supported in the GROUP BY"
+    ):
+        pl.sql("SELECT COUNT(*) FROM df1 GROUP BY (SELECT MAX(b) FROM df2)", eager=True)
+
+    with pytest.raises(SQLInterfaceError, match=r"not currently supported in the JOIN"):
+        pl.sql(
+            "SELECT * FROM df1 JOIN df2 ON df1.a = df2.b AND df1.a > (SELECT MAX(b) FROM df2)",
+            eager=True,
+        )
+
+    # column-free ON with a subquery must not be mistaken for a constant predicate
+    with pytest.raises(SQLInterfaceError, match=r"not currently supported in the JOIN"):
+        pl.sql(
+            "SELECT * FROM df1 JOIN df2 ON (SELECT COUNT(*) FROM df2) > 0", eager=True
+        )

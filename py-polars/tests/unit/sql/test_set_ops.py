@@ -549,3 +549,18 @@ def test_set_operations_order_by() -> None:
         },
         compare_with="sqlite",
     )
+
+
+def test_except_all_with_reserved_internal_column_name() -> None:
+    # `EXCEPT ALL` numbers duplicate rows in a helper column; that name must not be
+    # able to collide with a user column.
+    name = "__POLARS_SQL_SETOP_OCCURRENCE"
+    frames = {
+        "x": pl.DataFrame({name: [1, 1, 2]}),
+        "y": pl.DataFrame({name: [1]}),
+    }
+    res = pl.SQLContext(frames=frames, eager=True).execute(
+        "SELECT * FROM x EXCEPT ALL SELECT * FROM y"
+    )
+    assert res.columns == [name]
+    assert sorted(res[name].to_list()) == [1, 2]

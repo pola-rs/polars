@@ -9,7 +9,7 @@ use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
-use polars_utils::format_pl_smallstr;
+use polars_utils::{format_pl_smallstr, unique_column_name};
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
@@ -29,7 +29,8 @@ use crate::sql_expr::{
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
-    expr_has_window_functions, expr_references_any_column, expr_refers_to_table,
+    expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
+    expr_refers_to_table,
 };
 use crate::subquery::LowerScope;
 use crate::table_functions::PolarsTableFunctions;
@@ -635,22 +636,23 @@ impl SQLContext {
         };
 
         let lf = if bag_semantics {
-            const OCCURRENCE_COL: &str = "__POLARS_SQL_SETOP_OCCURRENCE";
+            let occurrence_col = unique_column_name();
             let mut lf_on = lf_cols.clone();
-            let mut rf_on = rf_cols.unwrap();
+            let mut rf_on =
+                rf_cols.expect("ALL quantifier always resolves the right-hand columns above");
 
             lf = lf.with_column(
                 int_range(lit(0), len(), 1, DataType::Int64)
                     .over(lf_cols.clone())?
-                    .alias(OCCURRENCE_COL),
+                    .alias(occurrence_col.clone()),
             );
             rf = rf.with_column(
                 int_range(lit(0), len(), 1, DataType::Int64)
                     .over(rf_on.clone())?
-                    .alias(OCCURRENCE_COL),
+                    .alias(occurrence_col.clone()),
             );
-            lf_on.push(col(OCCURRENCE_COL));
-            rf_on.push(col(OCCURRENCE_COL));
+            lf_on.push(col(occurrence_col.clone()));
+            rf_on.push(col(occurrence_col.clone()));
 
             let joined_tbl = lf
                 .join_builder()
@@ -660,7 +662,7 @@ impl SQLContext {
                 .left_on(lf_on)
                 .right_on(rf_on)
                 .finish();
-            joined_tbl.drop(cols([OCCURRENCE_COL]))
+            joined_tbl.drop(cols([occurrence_col]))
         } else {
             let join = lf.join_builder().with(rf).how(join_type).join_nulls(true);
             let joined_tbl = match rf_cols {
@@ -1715,6 +1717,9 @@ impl SQLContext {
                 });
             },
         };
+        for e in &group_by_keys {
+            reject_unresolved_subquery(e, "GROUP BY")?;
+        }
 
         lf = if group_by_keys.is_empty() {
             // The 'having' clause is only valid inside 'group by'
@@ -1746,11 +1751,9 @@ impl SQLContext {
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
-                    projection_heights |= if is_resolved_scalar_subquery(p, &subquery_names) {
-                        ExprSqlProjectionHeightBehavior::InheritsContext
-                    } else {
-                        ExprSqlProjectionHeightBehavior::identify_from_expr(p)
-                    };
+                    projection_heights |= ExprSqlProjectionHeightBehavior::identify_from_expr(
+                        &without_resolved_subqueries(p, &subquery_names),
+                    );
 
                     retained_cols.push(if have_order_by {
                         col(name.as_str())
@@ -2082,7 +2085,9 @@ impl SQLContext {
         join_type: JoinType,
     ) -> PolarsResult<LazyFrame> {
         if let JoinConstraint::On(expr) = constraint {
-            if !expr_references_any_column(expr) {
+            // A subquery references no column of its own, so it would otherwise look like
+            // a constant predicate here and be evaluated against an empty frame.
+            if !expr_references_any_column(expr) && !expr_contains_subquery(expr) {
                 let satisfied = evaluate_constant_join_predicate(self, expr)?;
                 let (left_key, right_key) = if satisfied {
                     (lit(1i32), lit(1i32))
@@ -2104,6 +2109,9 @@ impl SQLContext {
         }
         let (left_on, right_on, predicates) =
             process_join_constraint(constraint, tbl_left, tbl_right, self)?;
+        for e in left_on.iter().chain(&right_on).chain(&predicates) {
+            reject_unresolved_subquery(e, "JOIN ... ON")?;
+        }
         let coalesce_type = match constraint {
             // "NATURAL" joins should coalesce; otherwise we disambiguate
             JoinConstraint::Natural => JoinCoalesce::CoalesceColumns,
@@ -2254,8 +2262,12 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            (lf, _) = self.process_subqueries(lf, vec![&mut filter_expression])?;
+            let subquery_names;
+            (lf, subquery_names) = self.process_subqueries(lf, vec![&mut filter_expression])?;
             lf = lf.filter(filter_expression);
+            // Unlike the WHERE/HAVING uses of `process_subqueries`, QUALIFY runs after the
+            // final projection, so nothing downstream would drop the hconcat placeholders.
+            lf = drop_subquery_placeholders(lf, subquery_names);
         }
         Ok(lf)
     }
@@ -2607,9 +2619,20 @@ impl SQLContext {
                 nulls_last.push(!ob.options.nulls_first.unwrap_or(desc_order));
                 descending.push(desc_order);
 
+                // A correlated subquery here has to be decorrelated against the frame
+                // being sorted; left alone it would resolve its outer reference against
+                // the inner schema and silently answer the uncorrelated question.
+                let lowered;
+                (lf, lowered) = self.lower_correlated_subqueries(
+                    lf,
+                    &schema,
+                    &ob.expr,
+                    LowerScope::ScalarAndExists,
+                )?;
+
                 // translate order expression, allowing ordinal values
                 by.push(self.expr_or_ordinal(
-                    &ob.expr,
+                    &lowered,
                     columns,
                     selected,
                     Some(&schema),
@@ -2617,12 +2640,23 @@ impl SQLContext {
                 )?)
             }
         }
-        Ok(lf.sort_by_exprs(
+
+        // Uncorrelated subqueries are broadcast onto the frame as placeholder columns;
+        // drop them again after sorting, since `process_order_by` is also called at the
+        // tail of the set-op paths where no projection follows to remove them.
+        let subquery_names;
+        (lf, subquery_names) = self.process_subqueries(lf, by.iter_mut().collect())?;
+        for e in by.iter_mut() {
+            *e = broadcast_resolved_subqueries(std::mem::replace(e, Expr::Len), &subquery_names);
+        }
+
+        let sorted = lf.sort_by_exprs(
             &by,
             SortMultipleOptions::default()
                 .with_order_descending_multi(descending)
                 .with_nulls_last_multi(nulls_last),
-        ))
+        );
+        Ok(drop_subquery_placeholders(sorted, subquery_names))
     }
 
     fn process_group_by(
@@ -2648,6 +2682,20 @@ impl SQLContext {
                 .collect(),
             &schema_before,
         )?;
+
+        // A decorrelated correlated-subquery result is a per-input-row column, which the
+        // aggregation below would otherwise reject as not participating in the GROUP BY.
+        // The correlation is on a grouping column, so the value is constant within the
+        // group and reduces to `col(..).first()` -- the same treatment HAVING gets below.
+        let projections: Vec<Expr> = projections
+            .into_iter()
+            .map(|p| {
+                p.map_expr(|e| match &e {
+                    Expr::Column(name) if is_correlated_result_col(name) => e.clone().first(),
+                    _ => e,
+                })
+            })
+            .collect();
 
         // Note: remove the `group_by` keys as Polars adds those implicitly.
         let mut aliased_aggregations: PlHashMap<PlSmallStr, PlSmallStr> = PlHashMap::new();
@@ -3145,6 +3193,19 @@ fn is_simple_col_ref(expr: &Expr, col_name: &PlSmallStr) -> bool {
     }
 }
 
+/// Reject a parsed expression that still carries an unresolved subquery.
+///
+/// Only WHERE, HAVING, the SELECT list and ORDER BY run `process_subqueries`, so a
+/// `SubPlan` reaching any other clause would fail deep in the engine with an internal
+/// "not allowed in this context/location" message. Report it in SQL terms instead.
+fn reject_unresolved_subquery(expr: &Expr, clause: &str) -> PolarsResult<()> {
+    polars_ensure!(
+        !has_expr(expr, |e| matches!(e, Expr::SubPlan(_, _))),
+        SQLInterface: "subqueries are not currently supported in the {} clause", clause
+    );
+    Ok(())
+}
+
 /// Strip the outer alias from an expression (if present) for expression equality comparison.
 fn strip_outer_alias(expr: &Expr) -> Expr {
     if let Expr::Alias(inner, _) = expr {
@@ -3154,15 +3215,65 @@ fn strip_outer_alias(expr: &Expr) -> Expr {
     }
 }
 
-/// True if `expr` (aside from an optional outer alias) is exactly the column
-/// reference `process_subqueries` rewrites a resolved scalar subquery to.
-fn is_resolved_scalar_subquery(expr: &Expr, subquery_names: &PlHashSet<PlSmallStr>) -> bool {
-    match strip_outer_alias(expr) {
-        Expr::Agg(AggExpr::First(inner)) => {
-            matches!(inner.as_ref(), Expr::Column(name) if subquery_names.contains(name))
+/// Match the `col(<placeholder>).first()` shape `process_subqueries` rewrites a resolved
+/// scalar subquery to, returning the placeholder column name.
+fn resolved_subquery_column<'a>(
+    expr: &'a Expr,
+    subquery_names: &PlHashSet<PlSmallStr>,
+) -> Option<&'a PlSmallStr> {
+    match expr {
+        Expr::Agg(AggExpr::First(inner)) => match inner.as_ref() {
+            Expr::Column(name) if subquery_names.contains(name) => Some(name),
+            _ => None,
         },
-        _ => false,
+        _ => None,
     }
+}
+
+/// Replace every resolved scalar subquery in `expr` with a scalar literal.
+///
+/// The subquery's value is a scalar even though its shape is an aggregation over a column.
+/// Left as-is, `identify_from_expr` reads the `Agg` as height-independent and the `Column`
+/// as height-maintaining, neither of which is true; substituting a literal lets the
+/// surrounding expression be classified on its own terms. The result is only ever
+/// inspected for its shape, never evaluated.
+fn without_resolved_subqueries(expr: &Expr, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
+    if subquery_names.is_empty() {
+        return expr.clone();
+    }
+    expr.clone()
+        .map_expr(|e| match resolved_subquery_column(&e, subquery_names) {
+            Some(_) => lit(1i32),
+            None => e,
+        })
+}
+
+/// Rewrite every resolved scalar subquery in `expr` to the placeholder column itself.
+///
+/// `process_subqueries` reduces the broadcast placeholder with `.first()`, which is right
+/// in a filter or aggregation context but yields a length-1 series where a full-height one
+/// is required (sorting). The hconcat already broadcast the value across every row, so the
+/// bare column is the same value at the frame's height.
+fn broadcast_resolved_subqueries(expr: Expr, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
+    if subquery_names.is_empty() {
+        return expr;
+    }
+    expr.map_expr(|e| match resolved_subquery_column(&e, subquery_names) {
+        Some(name) => col(name.clone()),
+        None => e,
+    })
+}
+
+/// Drop the placeholder columns `process_subqueries` hconcat'd onto the frame, for callers
+/// that aren't followed by a projection which would remove them anyway.
+fn drop_subquery_placeholders(lf: LazyFrame, names: PlHashSet<PlSmallStr>) -> LazyFrame {
+    if names.is_empty() {
+        return lf;
+    }
+    lf.drop(Selector::ByName {
+        names: names.into_iter().collect(),
+        strict: true,
+    })
 }
 
 /// Resolve a SELECT alias to its underlying expression (for use in GROUP BY).

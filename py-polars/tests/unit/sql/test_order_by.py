@@ -341,3 +341,51 @@ def test_order_by_aggregate_with_aliased_key(query: str) -> None:
     """Test ORDER BY with aggregates and aliased group keys."""
     df = pl.DataFrame({"a": [1, 1, 2, 2, 3], "b": [10, 20, 30, 40, 50]})
     assert_sql_matches(df, query=query, compare_with="sqlite")
+
+
+def test_order_by_scalar_subquery() -> None:
+    # Ordering by a constant is a no-op, so the trailing key decides the order; the
+    # point is that the subquery resolves at all and leaves no placeholder column.
+    frames = {
+        "t1": pl.DataFrame({"k": [1, 2, 3]}),
+        "t2": pl.DataFrame({"k": [1, 1, 2], "w": [5, 7, 9]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT k FROM t1 ORDER BY (SELECT MIN(k) FROM t2), k DESC",
+        compare_with="duckdb",
+        expected={"k": [3, 2, 1]},
+    )
+
+
+def test_order_by_correlated_subquery() -> None:
+    # Per-row sort keys are 12, 9 and NULL, so DESC NULLS LAST gives k = 1, 2, 3.
+    # An unlowered correlated subquery would sort by a single constant instead.
+    frames = {
+        "t1": pl.DataFrame({"k": [1, 2, 3]}),
+        "t2": pl.DataFrame({"k": [1, 1, 2], "w": [5, 7, 9]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            "SELECT k FROM t1 "
+            "ORDER BY (SELECT SUM(w) FROM t2 WHERE t2.k = t1.k) DESC NULLS LAST"
+        ),
+        compare_with="duckdb",
+        expected={"k": [1, 2, 3]},
+    )
+
+
+def test_order_by_subquery_over_set_operation() -> None:
+    # The set-op paths return the sorted frame directly, with no projection to strip
+    # the subquery placeholder column.
+    frames = {
+        "t1": pl.DataFrame({"k": [1, 2, 3]}),
+        "t2": pl.DataFrame({"k": [1, 1, 2]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT k FROM t1 UNION ALL SELECT k FROM t2 ORDER BY (SELECT MIN(k) FROM t2), k",
+        compare_with="duckdb",
+        expected={"k": [1, 1, 1, 2, 2, 3]},
+    )
