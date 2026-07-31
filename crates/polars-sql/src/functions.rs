@@ -2194,8 +2194,7 @@ impl SQLFunctionVisitor<'_> {
                 FunctionArgExpr::Expr(sep_sql_expr),
             ] => {
                 // `GROUP_CONCAT` (SQLite) disallows DISTINCT together with a separator
-                // argument ("DISTINCT aggregates must have exactly one argument"); the
-                // standard `STRING_AGG`/`LISTAGG` forms (Postgres, DuckDB, ...) allow it.
+                // argument; the standard `STRING_AGG`/`LISTAGG` forms allow it.
                 let is_group_concat = self
                     .func
                     .name
@@ -2391,11 +2390,8 @@ impl SQLFunctionVisitor<'_> {
             Some(window_type) => {
                 let spec = self.resolve_window_spec(window_type)?;
                 if spec.order_by.is_empty() {
-                    // Non-cumulative windowed SUM: broadcast the null-guarded
-                    // aggregate. Unlike `min`/`max`/`mean`, Polars' native
-                    // `Expr::sum` returns 0 (not null) for an empty/all-null
-                    // input, so it needs the same NULL-guard as the
-                    // non-windowed path below to match SQL semantics.
+                    // Non-cumulative windowed SUM: broadcast the null-guarded aggregate.
+                    // SQL requires NULL, not 0, for an empty or all-null input.
                     let args = extract_args(self.func)?;
                     let arg = match args.as_slice() {
                         [FunctionArgExpr::Expr(sql_expr)] => self.parse_sql_arg(sql_expr)?,
@@ -2424,8 +2420,8 @@ impl SQLFunctionVisitor<'_> {
                     _ => return self.not_supported_error(),
                 };
                 if is_distinct {
-                    // Also bypasses the literal fast-path below, as it no longer matches
-                    // `Expr::Literal` once wrapped.
+                    // Also bypasses the literal fast path, no longer matching a literal
+                    // once wrapped.
                     arg = arg.unique();
                 }
                 let (total, non_empty) = match &arg {

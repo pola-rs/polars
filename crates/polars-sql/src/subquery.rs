@@ -106,9 +106,8 @@ impl SQLContext {
     // Lower `[NOT] EXISTS (SELECT ... FROM rel WHERE rel.k = outer.k ...)` to a
     // semi / anti join by decorrelating the equi-correlation predicate(s) into
     // join keys. DISTINCT is ignored: existence is invariant under
-    // deduplication. When the WHERE mixes in (or only has) a non-equality
-    // correlation predicate, falls back to `try_rewrite_exists_as_count_filter`,
-    // which handles arbitrary comparisons.
+    // deduplication. A non-equality correlation predicate falls back to the
+    // count-filter rewrite below.
     #[cfg(feature = "semi_anti_join")]
     fn try_rewrite_exists_as_join(
         &mut self,
@@ -164,14 +163,9 @@ impl SQLContext {
         )
     }
 
-    // Lower `[NOT] EXISTS (SELECT ... FROM rel WHERE <comparison-correlated>)`
-    // where the correlation predicate(s) aren't all plain equalities (so
-    // `split_subquery_conjuncts` bailed) to `count(*) > 0` (`== 0` for NOT
-    // EXISTS), reusing the row-index + `join_where` + group_by + left-join-back
-    // machinery `try_decorrelate_scalar_subquery` uses for correlated scalar
-    // aggregates. Unlike that function, the result is folded straight into a
-    // filter rather than left as a joined-on column, since an EXISTS predicate
-    // is consumed directly by the WHERE clause.
+    // Lower `[NOT] EXISTS (SELECT ... FROM rel WHERE <comparison-correlated>)`,
+    // whose correlation predicates aren't all plain equalities, to a
+    // `count(*) > 0` filter (`== 0` for NOT EXISTS).
     #[cfg(feature = "semi_anti_join")]
     #[expect(clippy::too_many_arguments)]
     fn try_rewrite_exists_as_count_filter(
@@ -199,8 +193,7 @@ impl SQLContext {
                 return Ok(None);
             }
         }
-        // No correlation: leave it to the existing (equi-only) path, which
-        // handles the fully-uncorrelated case identically.
+        // No correlation: leave it to the equi-only path.
         if corr_preds.is_empty() {
             return Ok(None);
         }
@@ -606,17 +599,11 @@ impl SQLContext {
         Ok(Some((joined, result_name)))
     }
 
-    // Attempt the decorrelation of a single `EXISTS` subquery into a boolean
-    // flag column: `count(*) > 0` over the correlated match set, using the
-    // same row-index + `join_where` + group_by + left-join-back machinery as
-    // `try_decorrelate_scalar_subquery` (and `try_rewrite_exists_as_count_filter`,
-    // whose result this folds straight into a filter instead of a column).
-    // When the subquery has no correlation predicate at all, the flag is a
-    // single constant boolean broadcast onto every outer row instead, since
-    // no join is needed to know whether the (fixed) inner relation is
-    // non-empty. Returns `None` for subquery shapes `eligible_subquery_select`
-    // or `scalar_correlation_predicate`/`try_parse_inner_only_expr` can't
-    // soundly classify.
+    // Attempt the decorrelation of a single `EXISTS` subquery into a boolean flag
+    // column holding `count(*) > 0` over the correlated match set. An uncorrelated
+    // subquery yields a single constant boolean broadcast onto every outer row
+    // instead, no join being needed to know whether a fixed relation is non-empty.
+    // Returns `None` for shapes that can't be soundly classified.
     fn try_decorrelate_exists_subquery(
         &mut self,
         lf: LazyFrame,
@@ -657,10 +644,8 @@ impl SQLContext {
         let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
 
         if corr_preds.is_empty() {
-            // Uncorrelated: the inner relation doesn't depend on the outer
-            // row, so its existence is a single constant boolean, broadcast
-            // onto every outer row (mirrors the uncorrelated scalar-subquery
-            // broadcast in `process_subqueries`).
+            // Uncorrelated: the inner relation doesn't depend on the outer row, so
+            // its existence is a single constant boolean broadcast onto every row.
             let inner_flag = inner_filtered.select([len().gt(lit(0)).alias(flag_name.clone())]);
             inner_flag.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
             let joined = concat_lf_horizontal(
@@ -1159,9 +1144,8 @@ fn prefixed_inner(prefix: &str, name: &str) -> PlSmallStr {
     format_pl_smallstr!("{prefix}c_{name}")
 }
 
-// Peel the alias/cast wrappers SQL puts around an aggregate (`COUNT(*)` lowers
-// to `len().cast(Int64)`) to reach the aggregate that determines the
-// empty-group value.
+// Peel the alias/cast wrappers SQL puts around an aggregate to reach the
+// aggregate that determines the empty-group value.
 fn agg_output_root(expr: &Expr) -> &Expr {
     match expr {
         Expr::Alias(inner, _) => agg_output_root(inner.as_ref()),

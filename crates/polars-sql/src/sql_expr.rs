@@ -236,15 +236,9 @@ impl SQLExprVisitor<'_> {
                 negated,
             } => {
                 let expr = self.visit_expr(expr)?;
-                // Try the all-literal fast path first (produces an imploded-Series `is_in`,
-                // which is load-bearing for predicate pushdown); if any element is not a
-                // literal (eg: a column reference or arithmetic expression), fall back to
-                // an OR-chain of equality comparisons.
-                //
-                // Also fall back when `expr` is (or contains) an aggregation: Polars' `is_in`
-                // doesn't reliably reduce to a scalar-per-group when its LHS is an aggregate
-                // (eg: `COUNT(*) IN (1, 3)` in a HAVING/GROUP BY context), instead producing a
-                // spurious `list[bool]`; the `eq`/`or` chain doesn't have that problem.
+                // Prefer the all-literal `is_in` fast path, which predicate pushdown can
+                // use. A non-literal element, or an aggregate on the left, falls back to an
+                // OR-chain of equality comparisons.
                 let expr_is_aggregate = has_expr(&expr, |e| matches!(e, Expr::Agg(_) | Expr::Len));
                 let elements = if expr_is_aggregate {
                     None
@@ -415,14 +409,8 @@ impl SQLExprVisitor<'_> {
         ))
     }
 
-    /// Visit a `[NOT] EXISTS (subquery)` expression.
-    ///
-    /// A supported `EXISTS` never reaches here: a top-level WHERE conjunct is
-    /// lowered to a semi/anti join or count-filter by `rewrite_subquery_conjuncts`,
-    /// and one nested inside an `OR` chain, `CASE`, or the SELECT list is
-    /// rewritten into a reference to a boolean flag column by
-    /// `lower_correlated_subqueries` before parsing. Reaching the visitor means
-    /// neither claimed it.
+    /// Visit a `[NOT] EXISTS (subquery)` expression that no earlier rewrite claimed,
+    /// which is to say one in a position that doesn't support it.
     fn visit_exists(&mut self, subquery: &Subquery, _negated: bool) -> PolarsResult<Expr> {
         polars_bail!(
             SQLInterface:
@@ -898,9 +886,8 @@ impl SQLExprVisitor<'_> {
     /// one or more non-literal expressions (eg: column references or arithmetic).
     ///
     /// Builds `expr = e1 OR expr = e2 OR ...` (negated with a trailing `NOT`, if
-    /// applicable). Polars' `eq` is NULL-propagating and `or`/`not` follow Kleene
-    /// logic, so this naturally reproduces the same three-valued-logic semantics
-    /// as the all-literal fast path (eg: `1 IN (2, NULL)` is unknown, not FALSE).
+    /// applicable), which carries SQL's three-valued logic: `1 IN (2, NULL)` is
+    /// unknown, not FALSE.
     fn visit_in_list_fallback(
         &mut self,
         expr: Expr,

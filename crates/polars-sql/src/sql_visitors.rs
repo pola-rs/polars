@@ -294,9 +294,7 @@ pub(crate) fn expr_references_any_column(expr: &SQLExpr) -> bool {
     expr.visit(&mut ColumnRefFinder).is_break()
 }
 
-/// Check if a SQL expression contains a subquery. A subquery references no column of its
-/// own, so `expr_references_any_column` alone would misclassify `(SELECT ...) > 0` as a
-/// constant expression.
+/// Check if a SQL expression contains a subquery, in any of its forms.
 pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
     visit_expressions(expr, |e| {
         if matches!(

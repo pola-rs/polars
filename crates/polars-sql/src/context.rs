@@ -154,17 +154,12 @@ fn disambiguate_projection_cols(
 
 /// Assign unique output names to SELECT-list projections that would otherwise collide.
 ///
-/// Unaliased expressions derive their output name from their left operand/argument
-/// (e.g. `a-b` -> "a", `abs(a)` -> "a"), so it's easy for two projections to want the
-/// same name even though SQL allows repeated/derived output names in a SELECT list.
-/// The first projection to claim a name keeps it; later unaliased projections that
-/// collide (with an earlier projection, or with any explicit `AS` alias anywhere in
-/// the list) get a `name:n` suffix. Explicit `AS` aliases are never renamed, so
-/// `SELECT 1 AS x, 2 AS x` keeps colliding (and erroring) as before. Likewise, an
-/// unaliased expression that is a verbatim repeat of the one already holding its
-/// name (e.g. `SELECT a, a` or a bare column re-selected alongside `SELECT *`) is
-/// left to collide too, since that's an actual duplicate column selection rather
-/// than an incidental name clash between different expressions.
+/// SQL allows repeated and derived output names in a SELECT list; Polars frames do not.
+/// The first projection to claim a name keeps it, and a later unaliased projection that
+/// collides gets a `name:n` suffix. Two cases are deliberately left to collide: explicit
+/// `AS` aliases, which are never renamed (`SELECT 1 AS x, 2 AS x`), and an unaliased
+/// expression that verbatim repeats the one already holding the name (`SELECT a, a`),
+/// which is a duplicate selection rather than an incidental clash.
 fn disambiguate_output_names(exprs: Vec<(Expr, bool)>, schema: &Schema) -> PolarsResult<Vec<Expr>> {
     let protected: PlHashSet<PlSmallStr> = exprs
         .iter()
@@ -1757,8 +1752,7 @@ impl SQLContext {
                 polars_bail!(SQLSyntax: "HAVING clause not valid outside of GROUP BY; found:\n{:?}", select_stmt.having);
             };
 
-            // Disambiguate SELECT-list output-name collisions now that any subqueries
-            // embedded in the projections have been resolved to real columns.
+            // Disambiguate SELECT-list output-name collisions.
             projections = disambiguate_output_names(
                 projections.into_iter().zip(explicit_aliases).collect(),
                 &schema,
@@ -1919,9 +1913,7 @@ impl SQLContext {
         Ok(lf)
     }
 
-    /// Returns each projection alongside whether it came from an explicit `AS` alias
-    /// (used later to disambiguate SELECT-list output-name collisions once any
-    /// subqueries embedded in the projections have been resolved).
+    /// Returns each projection alongside whether it came from an explicit `AS` alias.
     fn column_projections(
         &mut self,
         projection: &[SelectItem],
@@ -2069,10 +2061,8 @@ impl SQLContext {
             (lf, residual_exprs) =
                 self.rewrite_subquery_conjuncts(lf, expr, filter_mode, &schema)?;
 
-            // Any `[NOT] EXISTS` reachable in a residual conjunct (an OR
-            // chain, CASE, or a subquery shape the fast path above couldn't
-            // reach) is decorrelated to a boolean flag column here, and the
-            // conjunct rewritten to reference it.
+            // Decorrelate any `[NOT] EXISTS` left in a residual conjunct to a boolean
+            // flag column, rewriting the conjunct to reference it.
             let exists_schema = self.get_frame_schema(&mut lf)?;
             let mut bindings = SubqueryBindings::new();
             let mut lowered_residuals = Vec::with_capacity(residual_exprs.len());
@@ -2713,8 +2703,7 @@ impl SQLContext {
                 format!("group_by keys contained duplicate output name '{duplicate_name}'")
             })?;
 
-        // Disambiguate SELECT-list output-name collisions now that the GROUP BY
-        // keys themselves have been validated against the pre-aggregation schema.
+        // Disambiguate SELECT-list output-name collisions.
         let projections = disambiguate_output_names(
             projections
                 .into_iter()
@@ -2835,9 +2824,7 @@ impl SQLContext {
             reduce_correlated_cols_in_group_context(having_expr)
         });
 
-        // Scalar subqueries in HAVING are hconcat-broadcast onto the input frame
-        // and rewritten to `col(..).first()`, which evaluates to the scalar in
-        // the group context `having()` runs in.
+        // Resolve scalar subqueries in HAVING against the pre-aggregation frame.
         let (lf, having) = match having {
             Some(mut having_expr) => {
                 let (lf, _) =
@@ -3181,8 +3168,7 @@ fn get_using_cols(op: &JoinOperator) -> Option<impl Iterator<Item = String> + '_
     }
 }
 
-/// Prefix for the internal outer columns produced by correlated-subquery
-/// decorrelation, so they can be excluded from wildcard expansion.
+/// Prefix for the internal outer columns produced by correlated-subquery decorrelation.
 pub(crate) const CORRELATED_COL_PREFIX: &str = "__POLARS_CORR_";
 
 pub(crate) fn is_correlated_result_col(name: &str) -> bool {
