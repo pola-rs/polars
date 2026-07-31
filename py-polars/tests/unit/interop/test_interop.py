@@ -1621,10 +1621,19 @@ def test_from_arrow_capsule_24511() -> None:
     )
 
 
-def test_arrow_c_stream_binview_sliced_data_buffer_28612() -> None:
-    values = ["short", "a_string_longer_than_12"]
-    df = pl.DataFrame({"s": values})
-    tbl = pa.table(pl.DataFrame(df.to_arrow()))
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        (["short", "a_string_longer_than_12"], pl.String),
+        ([b"short", b"a_string_longer_than_12"], pl.Binary),
+    ],
+)
+def test_binview_sliced_buffer_arrow_export_28612(
+    values: list[Any], dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame({"c": values}, schema={"c": dtype})
+    df = pl.DataFrame(df.to_arrow())
 
-    assert tbl.schema.field("s").type == pa.string_view()
-    assert tbl.column("s").to_pylist() == values
+    assert df.to_series().to_list() == values
+    assert df.to_arrow().column("c").to_pylist() == values
+    assert pa.table(df).column("c").to_pylist() == values
