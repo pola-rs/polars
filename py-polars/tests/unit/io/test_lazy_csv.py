@@ -5,7 +5,7 @@ import tempfile
 import textwrap
 from collections import OrderedDict
 from pathlib import Path
-from typing import IO, TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -693,28 +693,33 @@ def test_scan_csv_new_columns_28343() -> None:
     )
 
 
-def test_scan_csv_infer_schema_files() -> None:
-    data = [
-        b"""\
-a
-1
-""",
-        b"""\
-a
-A
-""",
-    ]
+@pytest.mark.parametrize("lazy", [True, False])
+def test_scan_csv_infer_schema_files(lazy: bool) -> None:
+    def read(*a: Any, **kw: Any) -> pl.DataFrame:
+        return pl.scan_csv(*a, **kw).collect() if lazy else pl.read_csv(*a, **kw)
 
+    data = [b"a\n1", b"a\nA"]
     expect_df = pl.DataFrame({"a": ["1", "A"]})
 
-    assert_frame_equal(pl.scan_csv(data).collect(), expect_df)
-    assert_frame_equal(pl.scan_csv(data, infer_schema_files=2).collect(), expect_df)
+    assert_frame_equal(read(data), expect_df)
+    assert_frame_equal(read(data, infer_schema_files=2), expect_df)
 
     with pytest.raises(ComputeError, match="could not parse `A` as dtype `i64`"):
-        pl.scan_csv(data, infer_schema_files=1).collect()
+        read(data, infer_schema_files=1)
 
     with pytest.raises(ValueError, match="invalid zero value"):
-        pl.scan_csv(data, infer_schema_files=0)
+        read("non-existent", infer_schema_files=0)
+
+    # Check the default configuration
+    assert_frame_equal(
+        read(9 * [b"a\n1"] + [b"a\nA"]),
+        pl.DataFrame(
+            {"a": ["1", "1", "1", "1", "1", "1", "1", "1", "1", "A"]}, height=10
+        ),
+    )
+
+    with pytest.raises(ComputeError, match="could not parse `A` as dtype `i64`"):
+        read(10 * [b"a\n1"] + [b"a\nA"])
 
 
 def test_scan_csv_with_schema_respects_schema_column_order_11723() -> None:
