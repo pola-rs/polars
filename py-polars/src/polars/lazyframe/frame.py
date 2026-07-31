@@ -7563,6 +7563,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Using this function can have a negative effect on query performance.
         This may, for instance, block predicate pushdown optimization.
 
+        Using this function on a non-deterministic input can cause the index to have
+        a non-deterministic relationship to the other columns. To avoid this, ensure
+        that the input is deterministic, or collect immediately after adding the index.
+
         Notes
         -----
         The resulting column does not have any special properties. It is a regular
@@ -7647,6 +7651,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         This can have a negative effect on query performance.
         This may, for instance, block predicate pushdown optimization.
+
+        Using this function on a non-deterministic input can cause the index to have
+        a non-deterministic relationship to the other columns. To avoid this, ensure
+        that the input is deterministic, or collect immediately after adding the index.
 
         Examples
         --------
