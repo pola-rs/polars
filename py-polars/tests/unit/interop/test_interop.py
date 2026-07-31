@@ -1568,11 +1568,11 @@ def test_sliced_struct_arrow_export_19612() -> None:
 
 def test_from_arrow_capsule_24511() -> None:
     assert_series_equal(
-        pl.from_arrow(PyCapsuleStreamHolder(pl.DataFrame({"x": 1}))),
+        pl.from_arrow(PyCapsuleStreamHolder(pl.DataFrame({"x": 1}))),  # type: ignore[arg-type]
         pl.Series([{"x": 1}]),
     )
 
     assert_series_equal(
-        pl.from_arrow(PyCapsuleArrayHolder(pl.Series([{"x": 1}]).to_arrow())),
+        pl.from_arrow(PyCapsuleArrayHolder(pl.Series([{"x": 1}]).to_arrow())),  # type: ignore[arg-type]
         pl.Series([{"x": 1}]),
     )
