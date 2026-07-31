@@ -2437,6 +2437,11 @@ class Series:
         """
         Get the median of this Series.
 
+        Notes
+        -----
+        NaN values are ordered after all other floating-point values. They are not treated
+        as nulls, so call ``drop_nans`` first when NaN values should be excluded.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -2467,6 +2472,11 @@ class Series:
             Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
+
+        Notes
+        -----
+        NaN values are ordered after all other floating-point values. They are not treated
+        as nulls, so call ``drop_nans`` first when NaN values should be excluded.
 
         Returns
         -------
