@@ -958,6 +958,7 @@ impl LazyFrame {
                 run_parallel: true,
                 duplicate_check: true,
                 should_broadcast: true,
+                maintain_dataframe_height: false,
             },
         )
     }
@@ -970,6 +971,7 @@ impl LazyFrame {
                 run_parallel: false,
                 duplicate_check: true,
                 should_broadcast: true,
+                maintain_dataframe_height: false,
             },
         )
     }
@@ -1413,6 +1415,7 @@ impl LazyFrame {
                     run_parallel: false,
                     duplicate_check: true,
                     should_broadcast: true,
+                    maintain_dataframe_height: false,
                 },
             )
             .build();
@@ -1441,6 +1444,7 @@ impl LazyFrame {
                 run_parallel: true,
                 duplicate_check: true,
                 should_broadcast: true,
+                maintain_dataframe_height: false,
             },
         )
     }
@@ -1454,6 +1458,7 @@ impl LazyFrame {
                 run_parallel: false,
                 duplicate_check: true,
                 should_broadcast: true,
+                maintain_dataframe_height: false,
             },
         )
     }

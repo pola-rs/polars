@@ -211,6 +211,7 @@ impl<'a, 'arena> NodeVisitor for ProjectionPushdownVisitor<'a, 'arena> {
                             run_parallel: false,
                             duplicate_check: false,
                             should_broadcast: true,
+                            maintain_dataframe_height: false,
                         },
                     },
                 );
@@ -1121,6 +1122,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                                     run_parallel: false,
                                     duplicate_check: false,
                                     should_broadcast: false,
+                                    maintain_dataframe_height: false,
                                 },
                             )
                             .node();
@@ -1426,6 +1428,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                                 run_parallel: false,
                                 duplicate_check: false,
                                 should_broadcast: false,
+                                maintain_dataframe_height: false,
                             },
                         });
 
