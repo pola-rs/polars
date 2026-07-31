@@ -9,7 +9,9 @@ use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
-use polars_utils::{format_pl_smallstr, unique_column_name};
+use polars_utils::format_pl_smallstr;
+#[cfg(feature = "semi_anti_join")]
+use polars_utils::unique_column_name;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
     Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
@@ -1588,6 +1590,7 @@ impl SQLContext {
         (lf, subquery_names) = self.process_subqueries(
             lf,
             projections_with_flags.iter_mut().map(|(e, _)| e).collect(),
+            SubqueryShape::Scalar,
         )?;
         schema = self.get_frame_schema(&mut lf)?;
 
@@ -1597,15 +1600,22 @@ impl SQLContext {
         // on every execution. Give it the name Polars uses for any other unnamed scalar
         // expression; `disambiguate_output_names` handles the resulting collisions the
         // same way it does for `SELECT 1+1, 2+2`.
-        for (expr, is_explicit_alias) in projections_with_flags.iter_mut() {
-            if *is_explicit_alias {
-                continue;
-            }
-            let is_bare_placeholder = expr
-                .to_field(&schema)
-                .is_ok_and(|f| subquery_names.contains(&f.name));
-            if is_bare_placeholder {
-                *expr = expr.clone().alias(PlSmallStr::from_static("literal"));
+        //
+        // Note this tests the *output name* rather than the expression shape, so it also
+        // catches a projection that merely derives its name from the placeholder, as
+        // `(SELECT ...) + 1` does. `to_field` is full schema resolution, so it only runs
+        // when the query actually had a subquery.
+        if !subquery_names.is_empty() {
+            for (expr, is_explicit_alias) in projections_with_flags.iter_mut() {
+                if *is_explicit_alias {
+                    continue;
+                }
+                let is_placeholder_name = expr
+                    .to_field(&schema)
+                    .is_ok_and(|f| subquery_names.contains(&f.name));
+                if is_placeholder_name {
+                    *expr = expr.clone().alias(PlSmallStr::from_static("literal"));
+                }
             }
         }
 
@@ -2088,7 +2098,8 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            (lf, _) = self.process_subqueries(lf, vec![&mut filter_expression])?;
+            (lf, _) =
+                self.process_subqueries(lf, vec![&mut filter_expression], SubqueryShape::Scalar)?;
             lf = match filter_mode {
                 FilterMode::KeepTrue => lf.filter(filter_expression),
                 FilterMode::RemoveTrue => lf.remove(filter_expression),
@@ -2290,7 +2301,8 @@ impl SQLContext {
                 filter_expression = all_horizontal([filter_expression])?;
             }
             let subquery_names;
-            (lf, subquery_names) = self.process_subqueries(lf, vec![&mut filter_expression])?;
+            (lf, subquery_names) =
+                self.process_subqueries(lf, vec![&mut filter_expression], SubqueryShape::Scalar)?;
             lf = lf.filter(filter_expression);
             // Unlike the WHERE/HAVING uses of `process_subqueries`, QUALIFY runs after the
             // final projection, so nothing downstream would drop the hconcat placeholders.
@@ -2301,10 +2313,13 @@ impl SQLContext {
 
     /// Resolve `Expr::SubPlan` nodes in `exprs` into columns of `lf`, returning the updated
     /// frame together with the set of placeholder column names the subqueries were bound to.
+    ///
+    /// `shape` selects how the placeholder is referenced; see [`SubqueryShape`].
     fn process_subqueries(
         &mut self,
         lf: LazyFrame,
         exprs: Vec<&mut Expr>,
+        shape: SubqueryShape,
     ) -> PolarsResult<(LazyFrame, PlHashSet<PlSmallStr>)> {
         let mut subplans = vec![];
         let mut subplan_names = PlHashSet::new();
@@ -2326,7 +2341,11 @@ impl SQLContext {
 
                     subplans.push(lf);
                     subplan_names.insert(names[0].0.clone());
-                    Ok(Expr::Column(names[0].0.clone()).first())
+                    let placeholder = Expr::Column(names[0].0.clone());
+                    Ok(match shape {
+                        SubqueryShape::Scalar => placeholder.first(),
+                        SubqueryShape::Broadcast => placeholder,
+                    })
                 } else {
                     Ok(e)
                 }
@@ -2672,11 +2691,8 @@ impl SQLContext {
         // drop them again after sorting, since `process_order_by` is also called at the
         // tail of the set-op paths where no projection follows to remove them.
         let subquery_names;
-        (lf, subquery_names) = self.process_subqueries(lf, by.iter_mut().collect())?;
-        let by: Vec<Expr> = by
-            .into_iter()
-            .map(|e| broadcast_resolved_subqueries(e, &subquery_names))
-            .collect();
+        (lf, subquery_names) =
+            self.process_subqueries(lf, by.iter_mut().collect(), SubqueryShape::Broadcast)?;
 
         let sorted = lf.sort_by_exprs(
             &by,
@@ -2711,18 +2727,11 @@ impl SQLContext {
             &schema_before,
         )?;
 
-        // A decorrelated correlated-subquery result is a per-input-row column, which the
-        // aggregation below would otherwise reject as not participating in the GROUP BY.
-        // The correlation is on a grouping column, so the value is constant within the
-        // group and reduces to `col(..).first()` -- the same treatment HAVING gets below.
+        // The aggregation below would otherwise reject the decorrelated columns as not
+        // participating in the GROUP BY.
         let projections: Vec<Expr> = projections
             .into_iter()
-            .map(|p| {
-                p.map_expr(|e| match &e {
-                    Expr::Column(name) if is_correlated_result_col(name) => e.clone().first(),
-                    _ => e,
-                })
-            })
+            .map(reduce_correlated_cols_in_group_context)
             .collect();
 
         // Note: remove the `group_by` keys as Polars adds those implicitly.
@@ -2823,19 +2832,13 @@ impl SQLContext {
 
         // Note: HAVING is evaluated in the group context by `group_by().having(...)`,
         // so any reference to a SELECT alias is resolved to the aggregate it names.
-        //
-        // A decorrelated correlated-subquery result is a per-input-row column, which
-        // in that context would evaluate to a list per group; the correlation is on a
-        // grouping column, so the value is constant within the group and reduces to
-        // `col(..).first()` -- the same shape `process_subqueries` produces below for
-        // uncorrelated scalar subqueries.
         let having = having.map(|having_expr| {
-            having_expr.map_expr(|e| match &e {
-                Expr::Column(name) if is_correlated_result_col(name) => e.clone().first(),
+            let having_expr = having_expr.map_expr(|e| match &e {
                 Expr::Column(name) => resolve_select_alias(name, &projections, &schema_before)
                     .map_or(e, |resolved| strip_outer_alias(&resolved)),
                 _ => e,
-            })
+            });
+            reduce_correlated_cols_in_group_context(having_expr)
         });
 
         // Scalar subqueries in HAVING are hconcat-broadcast onto the input frame
@@ -2843,7 +2846,8 @@ impl SQLContext {
         // the group context `having()` runs in.
         let (lf, having) = match having {
             Some(mut having_expr) => {
-                let (lf, _) = self.process_subqueries(lf, vec![&mut having_expr])?;
+                let (lf, _) =
+                    self.process_subqueries(lf, vec![&mut having_expr], SubqueryShape::Scalar)?;
                 (lf, Some(having_expr))
             },
             None => (lf, None),
@@ -3243,19 +3247,29 @@ fn strip_outer_alias(expr: &Expr) -> Expr {
     }
 }
 
-/// Match the `col(<placeholder>).first()` shape `process_subqueries` rewrites a resolved
-/// scalar subquery to, returning the placeholder column name.
-fn resolved_subquery_column<'a>(
-    expr: &'a Expr,
-    subquery_names: &PlHashSet<PlSmallStr>,
-) -> Option<&'a PlSmallStr> {
-    match expr {
-        Expr::Agg(AggExpr::First(inner)) => match inner.as_ref() {
-            Expr::Column(name) if subquery_names.contains(name) => Some(name),
-            _ => None,
-        },
-        _ => None,
-    }
+/// Reduce decorrelated correlated-subquery columns to their per-group value.
+///
+/// Such a column holds one value per *input row*, so in the group context that
+/// `group_by().agg(..)` / `having(..)` evaluate in it would become a list per group. The
+/// correlation is on a grouping column, so the value is constant within the group and
+/// `col(..).first()` is that value -- the same shape `process_subqueries` gives an
+/// uncorrelated scalar subquery.
+fn reduce_correlated_cols_in_group_context(expr: Expr) -> Expr {
+    expr.map_expr(|e| match e {
+        Expr::Column(name) if is_correlated_result_col(&name) => Expr::Column(name).first(),
+        e => e,
+    })
+}
+
+/// How a resolved subquery placeholder column should be referenced.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SubqueryShape {
+    /// `col(<placeholder>).first()` -- a scalar, for filter and aggregation contexts.
+    Scalar,
+    /// `col(<placeholder>)` -- the hconcat already broadcast the value across every row,
+    /// so the bare column is that same value at the frame's height. Sorting needs this;
+    /// `.first()` would yield a length-1 series where a full-height one is required.
+    Broadcast,
 }
 
 /// Replace every resolved scalar subquery in `expr` with a scalar literal.
@@ -3266,29 +3280,13 @@ fn resolved_subquery_column<'a>(
 /// surrounding expression be classified on its own terms. The result is only ever
 /// inspected for its shape, never evaluated.
 fn without_resolved_subqueries(expr: &Expr, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
-    if subquery_names.is_empty() {
-        return expr.clone();
-    }
-    expr.clone()
-        .map_expr(|e| match resolved_subquery_column(&e, subquery_names) {
-            Some(_) => lit(1i32),
-            None => e,
-        })
-}
-
-/// Rewrite every resolved scalar subquery in `expr` to the placeholder column itself.
-///
-/// `process_subqueries` reduces the broadcast placeholder with `.first()`, which is right
-/// in a filter or aggregation context but yields a length-1 series where a full-height one
-/// is required (sorting). The hconcat already broadcast the value across every row, so the
-/// bare column is the same value at the frame's height.
-fn broadcast_resolved_subqueries(expr: Expr, subquery_names: &PlHashSet<PlSmallStr>) -> Expr {
-    if subquery_names.is_empty() {
-        return expr;
-    }
-    expr.map_expr(|e| match resolved_subquery_column(&e, subquery_names) {
-        Some(name) => col(name.clone()),
-        None => e,
+    expr.clone().map_expr(|e| {
+        let is_placeholder = matches!(
+            &e,
+            Expr::Agg(AggExpr::First(inner))
+                if matches!(inner.as_ref(), Expr::Column(n) if subquery_names.contains(n))
+        );
+        if is_placeholder { lit(1i32) } else { e }
     })
 }
 

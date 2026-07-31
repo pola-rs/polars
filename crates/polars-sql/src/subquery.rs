@@ -16,13 +16,13 @@ use polars_utils::{format_pl_smallstr, unique_column_name};
 use sqlparser::ast::Distinct;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, GroupByExpr, Ident, Query, Select,
-    SelectItem, SetExpr, TableWithJoins, UnaryOperator as SQLUnaryOperator, Visit, VisitMut,
-    Visitor, VisitorMut,
+    SelectItem, SetExpr, TableWithJoins, UnaryOperator as SQLUnaryOperator, VisitMut, VisitorMut,
 };
 
 use crate::SQLContext;
 use crate::context::{CORRELATED_COL_PREFIX, FilterMode, get_table_name};
 use crate::sql_expr::parse_sql_expr;
+use crate::sql_visitors::expr_contains_subquery;
 
 impl SQLContext {
     // Entry point: offer each WHERE conjunct to the rewrite, returning the
@@ -460,35 +460,31 @@ impl SQLContext {
         expr: &'a SQLExpr,
         scope: LowerScope,
     ) -> PolarsResult<(LazyFrame, Cow<'a, SQLExpr>)> {
-        // Cheap pre-check: the vast majority of expressions contain no subquery
-        // at all, and those must not pay for a clone.
-        if !expr_has_lowerable_subquery(expr, scope) {
+        // Cheap pre-check: the vast majority of expressions contain no subquery at
+        // all, and those must not pay for the clone the mutable visit requires.
+        // A subquery this scope won't claim only costs a wasted clone and walk.
+        if !expr_contains_subquery(expr) {
             return Ok((lf, Cow::Borrowed(expr)));
         }
         let mut rewritten = expr.clone();
         let mut lowering = CorrelatedLowering {
             ctx: self,
-            lf: Some(lf),
+            lf,
             outer_schema,
             scope,
             bindings: Vec::new(),
             query_depth: 0,
-            changed: false,
         };
-        // UFCS: `Visit` is also in scope for the read-only pre-check above.
         if let ControlFlow::Break(e) = VisitMut::visit(&mut rewritten, &mut lowering) {
             return Err(e);
         }
-        let CorrelatedLowering { lf, changed, .. } = lowering;
-        let lf = lf.expect("lowering frame is only taken transiently");
-        Ok((
-            lf,
-            if changed {
-                Cow::Owned(rewritten)
-            } else {
-                Cow::Borrowed(expr)
-            },
-        ))
+        // A binding is recorded for exactly the subqueries that were substituted.
+        let rewritten = if lowering.bindings.is_empty() {
+            Cow::Borrowed(expr)
+        } else {
+            Cow::Owned(rewritten)
+        };
+        Ok((lowering.lf, rewritten))
     }
 
     // Attempt the decorrelation of a single scalar aggregate subquery:
@@ -1057,39 +1053,6 @@ pub(crate) enum LowerScope {
     ScalarAndExists,
 }
 
-/// True if `expr` contains a node this scope would attempt to lower, ignoring
-/// anything nested inside a subquery (which is lowered as a unit, if at all).
-/// Lets the common no-subquery case skip cloning the expression.
-fn expr_has_lowerable_subquery(expr: &SQLExpr, scope: LowerScope) -> bool {
-    struct Finder {
-        scope: LowerScope,
-        query_depth: usize,
-    }
-    impl Visitor for Finder {
-        type Break = ();
-        fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
-            self.query_depth += 1;
-            ControlFlow::Continue(())
-        }
-        fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
-            self.query_depth -= 1;
-            ControlFlow::Continue(())
-        }
-        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
-            if self.query_depth == 0 && lowerable_kind(expr, self.scope) {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            }
-        }
-    }
-    expr.visit(&mut Finder {
-        scope,
-        query_depth: 0,
-    })
-    .is_break()
-}
-
 fn lowerable_kind(expr: &SQLExpr, scope: LowerScope) -> bool {
     match expr {
         SQLExpr::Subquery(_) => true,
@@ -1107,9 +1070,7 @@ fn lowerable_kind(expr: &SQLExpr, scope: LowerScope) -> bool {
 /// candidates to lower against the *outer* schema.
 struct CorrelatedLowering<'a> {
     ctx: &'a mut SQLContext,
-    /// Taken and put back around each lowering, which consumes and rebuilds the
-    /// frame. Only ever `None` for the duration of a single lowering call.
-    lf: Option<LazyFrame>,
+    lf: LazyFrame,
     outer_schema: &'a Schema,
     scope: LowerScope,
     /// Subqueries already lowered in this pass, so that two occurrences of the
@@ -1119,7 +1080,6 @@ struct CorrelatedLowering<'a> {
     /// subquery but a boolean flag for `EXISTS`, so the two must not share.
     bindings: Vec<(Query, bool, PlSmallStr)>,
     query_depth: usize,
-    changed: bool,
 }
 
 impl CorrelatedLowering<'_> {
@@ -1133,28 +1093,26 @@ impl CorrelatedLowering<'_> {
         {
             return Ok(Some(name.clone()));
         }
-        let lf = self
-            .lf
-            .take()
-            .expect("frame is available between lowerings");
+        // The frame is cloned rather than moved so it survives a declined lowering.
         let lowered = if exists {
-            self.ctx
-                .try_decorrelate_exists_subquery(lf.clone(), self.outer_schema, subquery)?
+            self.ctx.try_decorrelate_exists_subquery(
+                self.lf.clone(),
+                self.outer_schema,
+                subquery,
+            )?
         } else {
-            self.ctx
-                .try_decorrelate_scalar_subquery(lf.clone(), self.outer_schema, subquery)?
+            self.ctx.try_decorrelate_scalar_subquery(
+                self.lf.clone(),
+                self.outer_schema,
+                subquery,
+            )?
         };
-        match lowered {
-            Some((new_lf, name)) => {
-                self.lf = Some(new_lf);
-                self.bindings.push((subquery.clone(), exists, name.clone()));
-                Ok(Some(name))
-            },
-            None => {
-                self.lf = Some(lf);
-                Ok(None)
-            },
-        }
+        let Some((new_lf, name)) = lowered else {
+            return Ok(None);
+        };
+        self.lf = new_lf;
+        self.bindings.push((subquery.clone(), exists, name.clone()));
+        Ok(Some(name))
     }
 }
 
@@ -1199,7 +1157,6 @@ impl VisitorMut for CorrelatedLowering<'_> {
         } else {
             resolved
         };
-        self.changed = true;
         ControlFlow::Continue(())
     }
 }

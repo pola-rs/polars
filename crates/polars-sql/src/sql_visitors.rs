@@ -6,7 +6,9 @@
 use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
-use sqlparser::ast::{Expr as SQLExpr, ObjectName, Query, SetExpr, Visit, Visitor as SQLVisitor};
+use sqlparser::ast::{
+    Expr as SQLExpr, ObjectName, Query, SetExpr, Visit, Visitor as SQLVisitor, visit_expressions,
+};
 use sqlparser::keywords::ALL_KEYWORDS;
 
 // ---------------------------------------------------------------------------
@@ -292,31 +294,19 @@ pub(crate) fn expr_references_any_column(expr: &SQLExpr) -> bool {
     expr.visit(&mut ColumnRefFinder).is_break()
 }
 
-// ---------------------------------------------------------------------------
-// SubqueryFinder
-// ---------------------------------------------------------------------------
-
-/// Visitor that checks if a SQL expression contains a subquery in any form.
-struct SubqueryFinder;
-
-impl SQLVisitor for SubqueryFinder {
-    type Break = ();
-
-    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+/// Check if a SQL expression contains a subquery. A subquery references no column of its
+/// own, so `expr_references_any_column` alone would misclassify `(SELECT ...) > 0` as a
+/// constant expression.
+pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
+    visit_expressions(expr, |e| {
         if matches!(
-            expr,
+            e,
             SQLExpr::Subquery(_) | SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. }
         ) {
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())
         }
-    }
-}
-
-/// Check if a SQL expression contains a subquery. A subquery references no column of its
-/// own, so `expr_references_any_column` alone would misclassify `(SELECT ...) > 0` as a
-/// constant expression.
-pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
-    expr.visit(&mut SubqueryFinder).is_break()
+    })
+    .is_break()
 }
