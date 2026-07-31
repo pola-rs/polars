@@ -85,6 +85,8 @@ class ArrayNameSpace:
         Series with one row is broadcast against other Series.
         A Python sequence or one-dimensional NumPy array is treated as a one-row
         query and cast to this Series' data type.
+        Explicit expression and Series operands retain their data type and must
+        already match.
         Products containing an inner null are ignored. An outer null row produces
         a null.
 

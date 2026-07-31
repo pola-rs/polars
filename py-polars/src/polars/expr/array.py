@@ -361,18 +361,10 @@ class ExprArrayNameSpace:
             is_raw_vector = False
 
         other_pyexpr = parse_into_expression(cast("IntoExpr", other))
-        if is_raw_vector:
-            is_literal_expr = False
-        else:
-            from polars.expr.expr import Expr
-
-            is_literal_expr = isinstance(other, Expr) and other.meta.is_literal(
-                allow_aliasing=True
-            )
         return wrap_expr(
             self._pyexpr.arr_dot(
                 other_pyexpr,
-                cast_to_lhs_dtype=is_raw_vector or is_literal_expr,
+                cast_to_lhs_dtype=is_raw_vector,
             )
         )
 
