@@ -1020,15 +1020,12 @@ def test_cast_int_to_categorical_deprecated(dtype: PolarsDataType) -> None:
         pl.Enum(["cat0", "cat1", "cat2"]),
     ],
 )
-def test_cast_categorical_to_int_deprecated(dtype: PolarsDataType) -> None:
+def test_cast_categorical_to_int_unsupported(dtype: PolarsDataType) -> None:
     _dummy = pl.Series("a", ["cat0", "cat1", "cat2"], dtype=dtype)
 
-    msg = rf"casting from {re.escape(str(dtype.base_type()))}\(\S+\) to UInt32 is deprecated."
-    with pytest.deprecated_call(match=msg):
-        actual = pl.Series("a", ["cat2", "cat0", "cat1"], dtype=dtype).cast(pl.UInt32)
-
-    expected = pl.Series("a", [2, 0, 1], dtype=pl.UInt32)
-    assert_series_equal(actual, expected)
+    msg = "^cannot cast categorical types to UInt32."
+    with pytest.raises(ComputeError, match=msg):
+        pl.Series("a", ["cat2", "cat0", "cat1"], dtype=dtype).cast(pl.UInt32)
 
 
 def test_lit_unknown_dtype_consistency_24431() -> None:
