@@ -989,6 +989,9 @@ def test_arr_contains() -> None:
     "expr",
     [
         pl.col("a").arr.contains("z"),
+        pl.col("a").arr.dot(
+            pl.lit([1.0], dtype=pl.Array(pl.Float64, 1)),
+        ),
         pl.col("a").arr.explode(empty_as_null=True),
         pl.col("a").arr.sum(),
         pl.col("a").arr.to_list(),
