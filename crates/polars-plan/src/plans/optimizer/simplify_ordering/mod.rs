@@ -410,7 +410,9 @@ impl SimplifyIRNodeOrder<'_> {
 
                 let out_edge_key = *out_edges.first().unwrap();
 
-                if !options.maintain_order || get_edge!(out_edge_key).is_unordered() {
+                if !options.maintain_order
+                    || (get_edge!(out_edge_key).is_unordered() && options.slice.is_none())
+                {
                     options.maintain_order = false;
                     *get_edge_mut!(out_edge_key) = Edge::Unordered;
                     for k in in_edges.iter() {
