@@ -23,7 +23,7 @@ from tests.unit.conftest import time_func
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import JoinStrategy, PolarsDataType
+    from polars._typing import JoinStrategy, MaintainOrderJoin, PolarsDataType
 
 
 def test_semi_anti_join() -> None:
@@ -4452,3 +4452,45 @@ def test_join_nested_key_nulls_not_equal_28584(
     assert left.join(right, on="k", how="full", nulls_equal=True).height == 2
     assert left.join(right, on="k", how="semi", nulls_equal=True).height == 2
     assert left.join(right, on="k", how="anti", nulls_equal=True).height == 0
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full", "semi", "anti"])
+@pytest.mark.parametrize(
+    "maintain_order", ["left", "right", "left_right", "right_left"]
+)
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [(0, 1), (0, 3), (1, 2), (2, 4), (0, 100), (3, 10), (-1, 1), (-3, 2), (-100, 3)],
+)
+def test_join_slice_pushdown_maintain_order_matrix_28551(
+    how: JoinStrategy,
+    maintain_order: MaintainOrderJoin,
+    offset: int,
+    length: int,
+) -> None:
+    lf1 = pl.LazyFrame({"a": [2, 5, 1, 3], "v": [20, 50, 10, 30]})  # left-only key: 5
+    lf2 = pl.LazyFrame({"a": [3, 1, 4, 2], "w": [300, 100, 400, 200]})  # right-only: 4
+
+    q = lf1.join(lf2, on="a", how=how, maintain_order=maintain_order).slice(
+        offset, length
+    )
+    expected = q.collect(
+        optimizations=pl.QueryOptFlags().update(slice_pushdown=False),
+    )
+    result = q.collect()
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(("offset", "length"), [(0, 2), (0, 4), (1, 2), (2, 5)])
+def test_full_join_slice_pushdown_no_maintain_order_28551(
+    offset: int, length: int
+) -> None:
+    lf1 = pl.LazyFrame({"a": [1, 2, 3, 4]})
+    lf2 = pl.LazyFrame({"a": [4, 3, 2, 1]})
+
+    q = lf1.join(lf2, on="a", how="full").slice(offset, length)
+    result = q.collect()
+
+    # We should never push the slice left or right (or both), otherwise some rows will
+    # not match
+    assert result.null_count().sum_horizontal().item() == 0
