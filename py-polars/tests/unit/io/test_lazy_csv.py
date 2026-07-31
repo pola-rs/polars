@@ -714,7 +714,8 @@ def test_scan_csv_infer_schema_files(lazy: bool) -> None:
     assert_frame_equal(
         read(9 * [b"a\n1"] + [b"a\nA"]),
         pl.DataFrame(
-            {"a": ["1", "1", "1", "1", "1", "1", "1", "1", "1", "A"]}, height=10
+            {"a": ["1", "1", "1", "1", "1", "1", "1", "1", "1", "A"]},
+            height=10,
         ),
     )
 
