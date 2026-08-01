@@ -642,7 +642,10 @@ class Expr:
         """
         Return whether any of the values in the column are `True`.
 
-        Only works on columns of data type :class:`Boolean`.
+        Boolean columns are accepted as-is. Numeric columns are cast to
+        :class:`Boolean` first (``0`` / ``0.0`` become ``False``; other values
+        become ``True``). String columns are not supported.
+        :meth:`Series.any` still requires a Boolean dtype.
 
         Parameters
         ----------
@@ -697,7 +700,10 @@ class Expr:
         """
         Return whether all values in the column are `True`.
 
-        Only works on columns of data type :class:`Boolean`.
+        Boolean columns are accepted as-is. Numeric columns are cast to
+        :class:`Boolean` first (``0`` / ``0.0`` become ``False``; other values
+        become ``True``). String columns are not supported.
+        :meth:`Series.all` still requires a Boolean dtype.
 
         .. note::
             This method is not to be confused with the function :func:`polars.all`,

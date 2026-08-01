@@ -34,6 +34,11 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
     .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
+    Non-boolean numeric inputs are cast to :class:`Boolean` before the operation
+    (``0`` / ``0.0`` become ``False``; other values become ``True``). String columns
+    are not supported. This differs from :meth:`~polars.Series.all`, which requires a
+    Boolean dtype.
+
     Examples
     --------
     >>> df = pl.DataFrame(
@@ -79,6 +84,11 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
     .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
+    Non-boolean numeric inputs are cast to :class:`Boolean` before the operation
+    (``0`` / ``0.0`` become ``False``; other values become ``True``). String columns
+    are not supported. This differs from :meth:`~polars.Series.any`, which requires a
+    Boolean dtype.
+
     Examples
     --------
     >>> df = pl.DataFrame(
@@ -102,7 +112,22 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ false ┆ null  ┆ y   ┆ null  │
     │ null  ┆ null  ┆ z   ┆ null  │
     └───────┴───────┴─────┴───────┘
-    """
+    
+
+    Numeric columns are cast to Boolean (``0`` is ``False``, non-zero is ``True``):
+
+    >>> df = pl.DataFrame({"a": [False, True], "b": [0, 2]})
+    >>> df.select(pl.any_horizontal("a", "b"))
+    shape: (2, 1)
+    ┌───────┐
+    │ a     │
+    │ ---   │
+    │ bool  │
+    ╞═══════╡
+    │ false │
+    │ true  │
+    └───────┘
+"""
     pyexprs = parse_into_list_of_expressions(*exprs)
     return wrap_expr(plr.any_horizontal(pyexprs))
 
