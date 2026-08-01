@@ -1302,11 +1302,7 @@ def test_csv_line_batch_byte_budget_multifile_compressed_tail(
             for row_idx in range(rows_per_file):
                 f.write(f"{value},{file_idx},{row_idx}\n")
 
-    result = (
-        pl.scan_csv(tmp_path / "part-*.csv.gz")
-        .tail(3)
-        .collect(engine="streaming")
-    )
+    result = pl.scan_csv(tmp_path / "part-*.csv.gz").tail(3).collect(engine="streaming")
 
     assert result["file"].to_list() == [2, 2, 2]
     assert result["row"].to_list() == [157, 158, 159]
