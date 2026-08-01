@@ -1143,6 +1143,97 @@ def test_fallback_chrono_parser(chunk_override: None) -> None:
     assert df.null_count().row(0) == (0, 0)
 
 
+def test_csv_datetime_fallback_contract(chunk_override: None, tmp_path: Path) -> None:
+    data = """\
+a
+NULL
+2020-01-01 01:02:03
+2020-01-02 01:02:03.1
+2020-01-03T01:02:03.123
+2020-01-04T010203.123456
+invalid
+2020/01/05 01:02
+"""
+    path = tmp_path / "datetime-fallback.csv"
+    path.write_text(data)
+
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [
+                    None,
+                    datetime(2020, 1, 1, 1, 2, 3),
+                    datetime(2020, 1, 2, 1, 2, 3, 100_000),
+                    datetime(2020, 1, 3, 1, 2, 3, 123_000),
+                    datetime(2020, 1, 4, 1, 2, 3, 123_456),
+                    None,
+                    datetime(2020, 1, 5, 1, 2),
+                ],
+                dtype=pl.Datetime("us"),
+            )
+        }
+    )
+
+    assert_frame_equal(
+        pl.read_csv(
+            path,
+            schema_overrides={"a": pl.Datetime("us")},
+            null_values="NULL",
+            ignore_errors=True,
+        ),
+        expected,
+    )
+    assert_frame_equal(
+        pl.scan_csv(
+            path,
+            schema_overrides={"a": pl.Datetime("us")},
+            null_values="NULL",
+            ignore_errors=True,
+        ).collect(),
+        expected,
+    )
+
+    with pytest.raises(ComputeError):
+        pl.read_csv(
+            path,
+            schema_overrides={"a": pl.Datetime("us")},
+            null_values="NULL",
+        )
+
+
+def test_csv_datetime_fallback_independent_of_execution_chunks(
+    chunk_override: None,
+) -> None:
+    values = [
+        "2020-01-01 01:02:03",
+        "2020-01-02 01:02:03.1",
+        "2020-01-03T01:02:03.123",
+        "2020/01/04 01:02",
+    ]
+    expected_values = [
+        datetime(2020, 1, 1, 1, 2, 3),
+        datetime(2020, 1, 2, 1, 2, 3, 100_000),
+        datetime(2020, 1, 3, 1, 2, 3, 123_000),
+        datetime(2020, 1, 4, 1, 2),
+    ]
+    repeats = 1_024
+    data = "a\n" + "\n".join(values * repeats)
+    expected = pl.Series(
+        "a",
+        expected_values * repeats,
+        dtype=pl.Datetime("us"),
+    ).to_frame()
+
+    for n_threads, batch_size in [(1, 64), (2, 1_024)]:
+        result = pl.read_csv(
+            data.encode(),
+            schema_overrides={"a": pl.Datetime("us")},
+            n_threads=n_threads,
+            batch_size=batch_size,
+        )
+        assert_frame_equal(result, expected)
+
+
 def test_tz_aware_try_parse_dates(chunk_override: None) -> None:
     data = (
         "a,b,c,d\n"
@@ -1195,6 +1286,35 @@ a
                     "2020-01-03T00:00:00.132547698",
                 ]
             ).str.to_datetime(time_unit=time_unit)
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_csv_mixed_datetime_formats_respect_time_unit(
+    chunk_override: None, time_unit: TimeUnit
+) -> None:
+    data = """\
+a
+2020-01-01
+2020-01-02 03:04
+2020-01-03T04:05:06
+"""
+    result = pl.read_csv(
+        io.StringIO(data),
+        schema_overrides={"a": pl.Datetime(time_unit)},
+    )
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [
+                    datetime(2020, 1, 1),
+                    datetime(2020, 1, 2, 3, 4),
+                    datetime(2020, 1, 3, 4, 5, 6),
+                ],
+                dtype=pl.Datetime(time_unit),
+            )
         }
     )
     assert_frame_equal(result, expected)
