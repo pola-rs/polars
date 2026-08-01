@@ -28,6 +28,7 @@ impl PipelineBudget {
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn count_limit(&self) -> usize {
         self.count_limit
     }
@@ -37,10 +38,10 @@ impl PipelineBudget {
         self.kbytes_limit
     }
 
-    /// Acquire permit for a fetch of `n_bytes`.
+    /// Acquire a permit for an input item of `n_bytes`.
     ///
     /// Acquisition order is kbytes-first, then count, so that the count_in_use
-    /// value is meaningful. All pipeline paths (parquet, IPC) must acquire
+    /// value is meaningful. All pipeline paths must acquire
     /// through this method so the order can never diverge.
     ///
     /// The requested capacity is cap'ped to avoid deadlock, at the expense of
@@ -96,4 +97,24 @@ impl PipelineBudget {
 pub(crate) struct PipelinePermit {
     _count: OwnedSemaphorePermit,
     _kbytes: OwnedSemaphorePermit,
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::runtime::ASYNC;
+
+    use super::PipelineBudget;
+
+    #[test]
+    fn oversized_request_serializes_and_releases_capacity() {
+        let budget = PipelineBudget::new(2, 4);
+
+        let permit = ASYNC.block_on(budget.acquire(16 * 1024));
+        assert_eq!(budget.count.available_permits(), 1);
+        assert_eq!(budget.kbytes.available_permits(), 0);
+
+        drop(permit);
+        assert_eq!(budget.count.available_permits(), 2);
+        assert_eq!(budget.kbytes.available_permits(), 4);
+    }
 }

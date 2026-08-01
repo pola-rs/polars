@@ -33,12 +33,12 @@ use polars_utils::slice_enum::Slice;
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
 use super::shared::chunk_data_fetch::ChunkDataFetcher;
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::morsel::SourceToken;
 use crate::nodes::TaskPriority;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::multi_scan::reader_interface::Projection;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
+use crate::nodes::io_sources::shared::pipeline_budget::PipelineBudget;
 use crate::utils::tokio_handle_ext;
 
 /// Read all rows in the chunk
@@ -46,6 +46,9 @@ const NO_SLICE: (usize, usize) = (0, usize::MAX);
 /// This is used if we finish the slice but still need a row count. It signals to the workers to
 /// go into line-counting mode where they can skip parsing the chunks.
 const SLICE_ENDED: (usize, usize) = (usize::MAX, 0);
+/// One queued line batch per decoder keeps CSV input residency bounded while
+/// preserving producer/decoder overlap for every projected dtype.
+pub(super) const LINE_BATCH_DISTRIBUTOR_BUFFER_SIZE: usize = 1;
 
 struct CsvFileReader {
     scan_source: ScanSource,
@@ -54,6 +57,7 @@ struct CsvFileReader {
     verbose: bool,
     pub byte_source_builder: DynByteSourceBuilder,
     pub chunk_prefetch_sync: ChunkPrefetchSync,
+    pub line_batch_budget: PipelineBudget,
     pub init_data: Option<InitializedState>,
     pub io_metrics: OptIOMetrics,
 }
@@ -288,8 +292,9 @@ impl FileReader for CsvFileReader {
             tokio::sync::oneshot::channel::<PolarsResult<Arc<ChunkReader>>>();
         let chunk_reader_shared = chunk_reader_rx.shared();
         let (line_batch_tx, line_batch_receivers) =
-            distributor_channel(num_pipelines, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+            distributor_channel(num_pipelines, LINE_BATCH_DISTRIBUTOR_BUFFER_SIZE);
         let (morsel_senders, rx) = FileReaderOutputSend::new_parallel(num_pipelines);
+        let line_batch_budget = self.line_batch_budget.clone();
 
         // Task: Pre-read and infer schema.
         // Because StreamBufReader uses `blocking_recv`, this runs on tokio's elastic blocking pool.
@@ -379,6 +384,7 @@ impl FileReader for CsvFileReader {
                             reader,
                             line_counter,
                             line_batch_tx,
+                            line_batch_budget,
                             pre_slice,
                             needs_full_row_count,
                             use_async_prefetch,
@@ -418,6 +424,7 @@ impl FileReader for CsvFileReader {
                         slice,
                         row_offset,
                         morsel_seq,
+                        input_permit,
                     }) = line_batch_rx.recv().await
                     {
                         let (offset, len) = match slice {
@@ -425,12 +432,15 @@ impl FileReader for CsvFileReader {
                             v => v,
                         };
 
-                        let (df, n_rows_in_chunk) = chunk_reader.read_chunk(
-                            &mem_slice,
-                            n_lines,
-                            (offset, len),
-                            row_offset,
-                        )?;
+                        let read_result =
+                            chunk_reader.read_chunk(&mem_slice, n_lines, (offset, len), row_offset);
+
+                        // Decoded output owns its buffers. Release source admission
+                        // before awaiting downstream capacity.
+                        drop(mem_slice);
+                        drop(input_permit);
+
+                        let (df, n_rows_in_chunk) = read_result?;
 
                         n_rows_processed = n_rows_processed.saturating_add(n_rows_in_chunk);
 
@@ -459,6 +469,7 @@ impl FileReader for CsvFileReader {
                             slice,
                             row_offset: _,
                             morsel_seq: _,
+                            input_permit: _,
                         }) = line_batch_rx.recv().await
                         {
                             assert_eq!(slice, SLICE_ENDED);

@@ -1234,6 +1234,62 @@ def test_csv_datetime_fallback_independent_of_execution_chunks(
         assert_frame_equal(result, expected)
 
 
+def test_csv_line_batch_byte_budget_multifile_and_slice(
+    chunk_override: None, tmp_path: Path
+) -> None:
+    value = "x" * 4_096
+    rows_per_file = 160
+    for file_idx in range(2):
+        path = tmp_path / f"part-{file_idx}.csv"
+        path.write_text("value,file\n" + f"{value},{file_idx}\n" * rows_per_file)
+
+    scan = pl.scan_csv(tmp_path / "part-*.csv")
+    result = scan.select(
+        pl.len().alias("n_rows"),
+        pl.col("value").str.len_bytes().sum().alias("n_value_bytes"),
+    ).collect(engine="streaming")
+    expected = pl.DataFrame(
+        {
+            "n_rows": [2 * rows_per_file],
+            "n_value_bytes": [2 * rows_per_file * len(value)],
+        },
+        schema={"n_rows": pl.UInt32, "n_value_bytes": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
+
+    projected = scan.select("value").collect(engine="streaming")
+    assert projected.height == 2 * rows_per_file
+    assert projected["value"].str.len_bytes().unique().item() == len(value)
+
+    sliced = scan.head(3).collect(engine="streaming")
+    assert sliced.height == 3
+    assert sliced["value"].str.len_bytes().to_list() == [len(value)] * 3
+
+
+def test_csv_line_batch_byte_budget_compressed(
+    chunk_override: None, tmp_path: Path
+) -> None:
+    value = "y" * 4_096
+    n_rows = 320
+    path = tmp_path / "budgeted.csv.gz"
+    with gzip.open(path, mode="wt") as f:
+        f.write("value\n" + f"{value}\n" * n_rows)
+
+    result = (
+        pl.scan_csv(path)
+        .select(
+            pl.len().alias("n_rows"),
+            pl.col("value").str.len_bytes().sum().alias("n_value_bytes"),
+        )
+        .collect(engine="streaming")
+    )
+    expected = pl.DataFrame(
+        {"n_rows": [n_rows], "n_value_bytes": [n_rows * len(value)]},
+        schema={"n_rows": pl.UInt32, "n_value_bytes": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_tz_aware_try_parse_dates(chunk_override: None) -> None:
     data = (
         "a,b,c,d\n"
