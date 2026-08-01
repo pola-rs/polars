@@ -1290,6 +1290,49 @@ def test_csv_line_batch_byte_budget_compressed(
     assert_frame_equal(result, expected)
 
 
+def test_csv_line_batch_byte_budget_multifile_compressed_tail(
+    chunk_override: None, tmp_path: Path
+) -> None:
+    value = "z" * 4_096
+    rows_per_file = 160
+    for file_idx in range(3):
+        path = tmp_path / f"part-{file_idx}.csv.gz"
+        with gzip.open(path, mode="wt") as f:
+            f.write("value,file,row\n")
+            for row_idx in range(rows_per_file):
+                f.write(f"{value},{file_idx},{row_idx}\n")
+
+    result = (
+        pl.scan_csv(tmp_path / "part-*.csv.gz")
+        .tail(3)
+        .collect(engine="streaming")
+    )
+
+    assert result["file"].to_list() == [2, 2, 2]
+    assert result["row"].to_list() == [157, 158, 159]
+    assert result["value"].str.len_bytes().to_list() == [len(value)] * 3
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+def test_csv_line_batch_byte_budget_wide_row(
+    chunk_override: None, tmp_path: Path, compressed: bool
+) -> None:
+    value = "w" * (2 * 1024 * 1024 + 17)
+    path = tmp_path / ("wide.csv.gz" if compressed else "wide.csv")
+    data = f"value,row\n{value},0\nshort,1\n"
+
+    if compressed:
+        with gzip.open(path, mode="wt") as f:
+            f.write(data)
+    else:
+        path.write_text(data)
+
+    result = pl.scan_csv(path).collect(engine="streaming")
+
+    assert result["row"].to_list() == [0, 1]
+    assert result["value"].str.len_bytes().to_list() == [len(value), 5]
+
+
 def test_tz_aware_try_parse_dates(chunk_override: None) -> None:
     data = (
         "a,b,c,d\n"
