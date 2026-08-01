@@ -112,7 +112,7 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ false ┆ null  ┆ y   ┆ null  │
     │ null  ┆ null  ┆ z   ┆ null  │
     └───────┴───────┴─────┴───────┘
-    
+
 
     Numeric columns are cast to Boolean (``0`` is ``False``, non-zero is ``True``):
 
@@ -127,7 +127,7 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     │ false │
     │ true  │
     └───────┘
-"""
+    """
     pyexprs = parse_into_list_of_expressions(*exprs)
     return wrap_expr(plr.any_horizontal(pyexprs))
 
