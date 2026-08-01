@@ -23,7 +23,7 @@ polars-ffi = { workspace = true }
 polars-plan = { workspace = true, features = ["allow_unused"] }
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = { version = "2", features = ["full", "extra-traits"] }
+syn = { version = "3", features = ["full", "extra-traits"] }
 
 [dev-dependencies]
 polars-python = { workspace = true, features = ["full"] }
