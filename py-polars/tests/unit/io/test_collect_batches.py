@@ -112,7 +112,7 @@ print("OK", end="")
 
 
 @pytest.mark.slow
-def test_collect_batches_arrow_c_stream_python_dataset_28583() -> None:
+def test_collect_batches_arrow_c_stream_python_dataset_28628() -> None:
     # Resolving a `PythonDataset` scan (`scan_delta` / `scan_iceberg`) calls back into
     # Python from another thread, so `__arrow_c_stream__` must not hold the GIL while
     # it resolves the schema. Run in a subprocess: on regression this deadlocks.
