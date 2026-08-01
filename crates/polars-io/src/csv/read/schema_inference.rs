@@ -94,12 +94,25 @@ fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec
 
     let mut deduplicated_headers = Vec::with_capacity(headers.len());
     let mut header_names = PlHashMap::with_capacity(headers.len());
+    let mut used_names = PlIndexSet::with_capacity(headers.len());
 
     for name in &headers {
         let count = header_names.entry(name.as_ref()).or_insert(0usize);
         if *count != 0 {
-            deduplicated_headers.push(format_pl_smallstr!("{}_duplicated_{}", name, *count - 1))
+            // Generate a unique name, bumping the suffix if the generated name
+            // collides with an existing or previously generated one.
+            let mut suffix = *count - 1;
+            let unique_name = loop {
+                let candidate = format_pl_smallstr!("{}_duplicated_{}", name, suffix);
+                if !used_names.contains(&candidate) {
+                    break candidate;
+                }
+                suffix += 1;
+            };
+            used_names.insert(unique_name.clone());
+            deduplicated_headers.push(unique_name)
         } else {
+            used_names.insert(PlSmallStr::from_str(name));
             deduplicated_headers.push(PlSmallStr::from_str(name))
         }
         *count += 1;
@@ -387,5 +400,18 @@ mod tests {
         possibilities.insert(DataType::Int64);
         possibilities.insert(DataType::Int128);
         assert_eq!(finish_infer_field_schema(&possibilities), DataType::Int128);
+    }
+
+    #[test]
+    fn test_infer_headers_deduplicates() {
+        let parse_options = CsvParseOptions::default();
+        assert_eq!(
+            infer_headers(b"a,a_duplicated_0,a", &parse_options),
+            vec![
+                PlSmallStr::from_str("a"),
+                PlSmallStr::from_str("a_duplicated_0"),
+                PlSmallStr::from_str("a_duplicated_1"),
+            ],
+        );
     }
 }
