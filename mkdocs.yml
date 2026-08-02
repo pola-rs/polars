@@ -85,6 +85,9 @@ nav:
       - Migrating:
         - user-guide/migration/pandas.md
         - user-guide/migration/spark.md
+      - Cookbook:
+        - user-guide/cookbook/index.md
+        - user-guide/cookbook/trapz.md
       - Misc:
         - user-guide/ecosystem.md
         - user-guide/misc/multiprocessing.md
