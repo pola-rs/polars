@@ -446,6 +446,17 @@ def median(*columns: str) -> Expr:
 
     This function is syntactic sugar for `pl.col(columns).median()`.
 
+    Notes
+    -----
+    NaN values are regarded as larger than any finite number (and equal to one
+    another). As a result, ``NaN`` values are treated as the largest values when
+    computing the median, which can lead to surprising results.
+
+    For example, the median of ``[1.0, 2.0, NaN, NaN, NaN, 6.0, 7.0]`` is ``7.0``,
+    not ``4.0``. To exclude ``NaN`` values from the calculation, use
+    :func:`Expr.drop_nans`. To also exclude null values, use :func:`Expr.drop_nulls`
+    first.
+
     Parameters
     ----------
     columns
@@ -1906,6 +1917,17 @@ def quantile(
 ) -> Expr:
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.
+
+    Notes
+    -----
+    NaN values are regarded as larger than any finite number (and equal to one
+    another). As a result, ``NaN`` values are treated as the largest values when
+    computing quantiles, which can lead to surprising results.
+
+    For example, the median of ``[1.0, 2.0, NaN, NaN, NaN, 6.0, 7.0]`` is ``7.0``,
+    not ``4.0``. To exclude ``NaN`` values from the calculation, use
+    :func:`Expr.drop_nans`. To also exclude null values, use :func:`Expr.drop_nulls`
+    first.
 
     Parameters
     ----------

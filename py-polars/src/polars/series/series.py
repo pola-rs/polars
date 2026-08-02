@@ -2437,11 +2437,26 @@ class Series:
         """
         Get the median of this Series.
 
+        Notes
+        -----
+        NaN values are regarded as larger than any finite number (and equal to one
+        another). As a result, ``NaN`` values are treated as the largest values when
+        computing the median, which can lead to surprising results.
+
+        For example, the median of ``[1.0, 2.0, NaN, NaN, NaN, 6.0, 7.0]`` is ``7.0``,
+        not ``4.0``. To exclude ``NaN`` values from the calculation, use
+        :func:`drop_nans`. To also exclude null values, use :func:`drop_nulls` first.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.median()
         2.0
+        >>> s = pl.Series([1.0, 2.0, float("nan"), float("nan"), float("nan"), 6.0, 7.0])
+        >>> s.median()
+        7.0
+        >>> s.drop_nans().median()
+        4.0
         """
         return self._s.median()
 
@@ -2460,6 +2475,16 @@ class Series:
     ) -> float | None | list_[float] | list_[None]:
         """
         Get the quantile value of this Series.
+
+        Notes
+        -----
+        NaN values are regarded as larger than any finite number (and equal to one
+        another). As a result, ``NaN`` values are treated as the largest values when
+        computing quantiles, which can lead to surprising results.
+
+        For example, the median of ``[1.0, 2.0, NaN, NaN, NaN, 6.0, 7.0]`` is ``7.0``,
+        not ``4.0``. To exclude ``NaN`` values from the calculation, use
+        :func:`drop_nans`. To also exclude null values, use :func:`drop_nulls` first.
 
         Parameters
         ----------
