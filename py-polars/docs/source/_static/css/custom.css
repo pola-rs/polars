@@ -38,11 +38,53 @@ html[data-theme="dark"] {
  */
 html {
     --pst-sidebar-primary-width: min(28rem, 33%);
+    /* Covers left-of-scrollbar + scrollbar + a few px past the right edge */
+    --pst-sidebar-resize-gutter: 32px;
 }
 
 /* add subtle gradients to sidebar and card elements */
 div.bd-sidebar-primary {
     background-image: linear-gradient(90deg, var(--pst-gradient-sidebar-left) 0%, var(--pst-gradient-sidebar-right) 100%);
+}
+
+/*
+ * Shared resize-handle styles (desktop gutter + mobile open drawer).
+ * !important: theme button rules otherwise force cursor: pointer.
+ */
+.bd-sidebar-resize-handle {
+    appearance: none;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    cursor: col-resize !important;
+    margin: 0;
+    opacity: 0;
+    outline: none !important;
+    padding: 0;
+    touch-action: none;
+    user-select: none;
+    z-index: 1100;
+}
+
+.bd-sidebar-resize-handle:hover,
+.bd-sidebar-resize-handle:focus,
+.bd-sidebar-resize-handle:focus-visible,
+.bd-sidebar-resize-handle:active,
+body.bd-sidebar-resizing .bd-sidebar-resize-handle {
+    background: transparent !important;
+    cursor: col-resize !important;
+    opacity: 0;
+}
+
+body.bd-sidebar-resizing,
+body.bd-sidebar-resizing * {
+    cursor: col-resize !important;
+    user-select: none;
+}
+
+body.bd-sidebar-resizing iframe,
+body.bd-sidebar-resizing .bd-main {
+    pointer-events: none;
 }
 
 /* Desktop / tablet landscape: sidebar sits beside the article */
@@ -53,62 +95,120 @@ div.bd-sidebar-primary {
         position: sticky;
     }
 
-    /*
-     * Fixed overlay pinned to the scrollbar gutter via JS.
-     * Must sit above the native scrollbar so hover/drag work there.
-     * No visible chrome — only cursor: col-resize.
-     * !important: theme button rules otherwise force cursor: pointer.
-     */
     .bd-sidebar-resize-handle {
-        appearance: none;
-        background: transparent !important;
-        border: 0 !important;
-        box-shadow: none !important;
-        cursor: col-resize !important;
-        margin: 0;
-        opacity: 0;
-        outline: none !important;
-        padding: 0;
         position: fixed;
-        touch-action: none;
-        user-select: none;
-        z-index: 1100;
-    }
-
-    .bd-sidebar-resize-handle:hover,
-    .bd-sidebar-resize-handle:focus,
-    .bd-sidebar-resize-handle:focus-visible,
-    .bd-sidebar-resize-handle:active,
-    body.bd-sidebar-resizing .bd-sidebar-resize-handle {
-        background: transparent !important;
-        cursor: col-resize !important;
-        opacity: 0;
-    }
-
-    body.bd-sidebar-resizing,
-    body.bd-sidebar-resizing * {
-        cursor: col-resize !important;
-        user-select: none;
-    }
-
-    body.bd-sidebar-resizing iframe,
-    body.bd-sidebar-resizing .bd-main {
-        pointer-events: none;
     }
 }
 
 /*
- * Mobile / narrow viewports: keep the theme's off-canvas drawer.
- * Reaffirm drawer sizing so the wider desktop width never leaks through.
- * Hide the resize bridge — dragging a drawer width isn't useful here.
+ * Mobile / narrow viewports:
+ * PyData moves sidebar contents into #pst-primary-sidebar-modal. Use hamburger
+ * to open; X / outside click to close. Resize hit-area matches desktop
+ * (invisible strip + col-resize cursor over the scrollbar gutter).
+ * Ref: https://github.com/pola-rs/polars/issues/22580
  */
 @media (max-width: 959.98px) {
-    div.bd-sidebar-primary {
-        width: 75%;
-        max-width: 350px;
+    html {
+        --pst-sidebar-mobile-drawer-width: min(75vw, 350px);
+        --pst-sidebar-resize-gutter: 32px;
     }
 
-    .bd-sidebar-resize-handle {
+    .bd-header button.primary-toggle {
+        display: flex !important;
+        margin-right: 0.75rem;
+    }
+
+    /*
+     * The theme restores .bd-sidebar-primary as a full-viewport off-canvas
+     * panel on close (top:0 / height:100vh), which causes the height jump.
+     * Keep that shell inert — the real drawer is #pst-primary-sidebar-modal.
+     */
+    #pst-primary-sidebar,
+    div.bd-sidebar-primary {
+        border: 0 !important;
+        height: 0 !important;
+        left: 0 !important;
+        margin: 0 !important;
+        max-height: 0 !important;
+        max-width: 0 !important;
+        overflow: hidden !important;
+        padding: 0 !important;
+        pointer-events: none !important;
+        position: fixed !important;
+        top: 0 !important;
+        visibility: hidden !important;
+        width: 0 !important;
+        z-index: -1 !important;
+    }
+
+    /*
+     * Anchor dialog geometry even without [open], and disable Bootstrap's
+     * dialog translate transition that fights our header-aligned drawer.
+     */
+    #pst-primary-sidebar-modal {
+        top: var(--pst-header-offset, var(--pst-header-height)) !important;
+        height: calc(100dvh - var(--pst-header-offset, var(--pst-header-height))) !important;
+        max-height: calc(100dvh - var(--pst-header-offset, var(--pst-header-height))) !important;
+        margin: 0 !important;
+        transform: none !important;
+        transition: none !important;
+        position: fixed;
+    }
+
+    #pst-primary-sidebar-modal[open] {
+        width: var(--pst-sidebar-mobile-drawer-width) !important;
+        max-width: 90vw !important;
+        overflow: auto;
+        visibility: visible !important;
+        z-index: 1055;
+    }
+
+    #pst-primary-sidebar-modal[open]::backdrop {
+        background-color: rgb(0 0 0 / 0.5);
+        cursor: pointer;
+        pointer-events: auto;
+    }
+
+    /*
+     * Same as desktop: invisible hit-area over scrollbar gutter.
+     * Cursor becomes col-resize; no visible grip chrome.
+     */
+    #pst-primary-sidebar-modal[open] > .bd-sidebar-resize-handle {
+        background: transparent !important;
+        border: 0 !important;
+        bottom: 0 !important;
+        cursor: col-resize !important;
+        display: block !important;
+        height: auto !important;
+        opacity: 0 !important;
+        position: absolute !important;
+        right: -4px !important;
+        top: 0 !important;
+        width: var(--pst-sidebar-resize-gutter) !important;
+        z-index: 30;
+    }
+
+    .bd-sidebar-mobile-close {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        color: var(--pst-color-text-muted);
+        cursor: pointer;
+        display: inline-flex;
+        font-size: 1.25rem;
+        justify-content: center;
+        margin: 0.5rem 0.5rem 0.5rem auto;
+        padding: 0.35rem;
+    }
+
+    .bd-sidebar-mobile-close:hover,
+    .bd-sidebar-mobile-close:focus-visible {
+        color: var(--pst-color-primary);
+    }
+}
+
+@media (min-width: 960px) {
+    .bd-sidebar-mobile-close {
         display: none !important;
     }
 }
