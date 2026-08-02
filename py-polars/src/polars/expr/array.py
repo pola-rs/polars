@@ -295,7 +295,8 @@ class ExprArrayNameSpace:
             Array expression or query vector to compute dot product with.
             A Python sequence or one-dimensional NumPy array is treated as a
             one-row query and cast to the data type of the input expression.
-            Expression inputs must have matching Array data types.
+            A one-row Series is broadcast and retains its data type.
+            Expression and Series inputs must have matching Array data types.
 
         Notes
         -----
