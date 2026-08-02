@@ -137,6 +137,7 @@ if switcher_version != "dev" and int(switcher_version) >= 1:
 
 html_js_files = [
     "js/announcement-dismiss.js",
+    "js/sidebar-resize.js",
     (
         "https://plausible.io/js/script.js",
         {"data-domain": "docs.pola.rs,combined.pola.rs", "defer": "defer"},
