@@ -1868,6 +1868,34 @@ def test_delta_length_byte_array_prefiltering(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df.filter(expr))
 
 
+def test_delta_binary_packed_prefilter_multi_page_28536() -> None:
+    rows = 10
+    ts = [None if i == 1 else i for i in range(rows)]
+    ticker = ["WANTED" if i in {1, 6, 9} else "OTHER" for i in range(rows)]
+
+    f = io.BytesIO()
+    pq.write_table(
+        pa.table({"ts": pa.array(ts, pa.int64()), "ticker": pa.array(ticker)}),
+        f,
+        compression="none",
+        column_encoding={"ts": "DELTA_BINARY_PACKED"},
+        use_dictionary=["ticker"],
+        data_page_size=1,
+        write_batch_size=5,
+    )
+
+    f.seek(0)
+    result = (
+        pl.scan_parquet(f, parallel="prefiltered")
+        .filter(pl.col("ticker") == "WANTED")
+        .select("ts")
+        .collect()
+    )
+    assert_frame_equal(
+        result, pl.DataFrame({"ts": [None, 6, 9]}, schema={"ts": pl.Int64})
+    )
+
+
 @given(
     df=dataframes(
         min_size=0,
@@ -4436,3 +4464,28 @@ def test_parquet_prefilter_fixed_size_binary_27781() -> None:
         pl.scan_parquet(f).filter(pl.col("market") == val).collect(),
         pl.DataFrame(table),
     )
+
+
+def test_parquet_writes_field_id(tmp_path: Path) -> None:
+    lf = pl.LazyFrame(
+        {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": ["x", "y", "z"]},
+        schema={"a": pl.Int32, "b": pl.Enum(["a", "b", "c"]), "c": pl.Categorical},
+    )
+
+    schema = lf.collect_schema().to_arrow()
+    schema = pa.schema(
+        [
+            schema.field(i).with_metadata({"PARQUET:field_id": str(i + 1)})
+            for i in range(len(schema))
+        ]
+    )
+
+    path = tmp_path / "test.parquet"
+    lf.sink_parquet(path, arrow_schema=schema)
+
+    written_schema = pq.read_schema(path)
+    field_ids = [
+        written_schema.field(i).metadata[b"PARQUET:field_id"]
+        for i in range(len(written_schema))
+    ]
+    assert field_ids == [b"1", b"2", b"3"]

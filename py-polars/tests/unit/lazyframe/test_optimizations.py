@@ -1025,14 +1025,29 @@ def test_slice_pushdown_joins_27199() -> None:
     assert plan.index("SLICE") > plan.index("RIGHT PLAN")
     assert q.collect().height == 1
 
-    # Full join, push to both
+    # Full join, no ordering: we can not push the slice
     q = lhs.join(rhs, on="a", how="full").head(1)
+    plan = q.explain()
+
+    assert "SLICE" not in plan
+    assert q.collect().height == 1
+
+    # Full join, left ordering: we can push to left
+    q = lhs.join(rhs, on="a", how="full", maintain_order="left").head(1)
     plan = q.explain()
 
     i = plan.index("RIGHT PLAN ON")
     assert plan[:i].index("SLICE") > plan[:i].index("LEFT PLAN")
-    assert plan[i:].index("SLICE") > plan[i:].index("RIGHT PLAN")
+    assert "SLICE" not in plan[i:]
+    assert q.collect().height == 1
 
+    # Same as above, but mirrored
+    q = lhs.join(rhs, on="a", how="full", maintain_order="right").head(1)
+    plan = q.explain()
+
+    i = plan.index("RIGHT PLAN ON")
+    assert "SLICE" not in plan[:i]
+    assert plan[i:].index("SLICE") > plan[i:].index("RIGHT PLAN")
     assert q.collect().height == 1
 
 

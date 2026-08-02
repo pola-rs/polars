@@ -790,57 +790,22 @@ impl OptimizationRule for TypeCoercionRule {
             },
             #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
             AExpr::Function {
-                function:
-                    ref function @ IRFunctionExpr::TemporalExpr(IRTemporalFunction::Duration(_)),
-                ref input,
-                options,
-            } => {
-                let no_cast_needed = input.iter().all(|expr| {
-                    let (_, dtype) = get_aexpr_and_type(expr_arena, expr.node(), schema).unwrap();
-                    matches!(dtype, DataType::Int64 | DataType::Float64)
-                });
-                if no_cast_needed {
-                    return Ok(None);
-                }
-
-                let function = function.clone();
-                let input = input.clone().into_iter().enumerate().map(|(i, expr)| {
-                    let mut expr = expr.to_owned();
-                    let (_, dtype) = get_aexpr_and_type(expr_arena, expr.node(), schema).unwrap();
-                    Ok(match &dtype {
-                        DataType::Int64 | DataType::Float64 => expr,
-                        dt if dt.is_integer() => {
-                            cast_expr_ir(
-                                &mut expr,
-                                &dtype,
-                                &DataType::Int64,
-                                expr_arena,
-                                CastOptions::Strict,
-                            )?;
-                            expr
-                        },
-                        dt if dt.is_float() => {
-                            cast_expr_ir(
-                                &mut expr,
-                                &dtype,
-                                &DataType::Float64,
-                                expr_arena,
-                                CastOptions::Strict,
-                            )?;
-                            expr
-                        },
-                        dt => {
-                            polars_bail!(InvalidOperation: "expected integer or float dtype, (got {dt}) in input {i} of duration")
-                        },
-                    })
-                }).try_collect()?;
-
-                Some(AExpr::Function {
-                    function,
-                    input,
-                    options,
-                })
-            },
+                function: IRFunctionExpr::TemporalExpr(IRTemporalFunction::Duration(_)),
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, dtype| match dtype {
+                    DataType::Int64 | DataType::Float64 => Ok(None),
+                    dt if dt.is_integer() => Ok(Some(DataType::Int64)),
+                    dt if dt.is_float() => Ok(Some(DataType::Float64)),
+                    dt => polars_bail!(
+                        InvalidOperation: "expected integer or float dtype, (got {dt}) in input {i} of duration"
+                    ),
+                },
+            )?,
             #[cfg(feature = "business")]
             AExpr::Function {
                 function: IRFunctionExpr::Business(ref business_fn),
@@ -992,38 +957,31 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             #[cfg(feature = "string_pad")]
             AExpr::Function {
                 function:
-                    ref function @ IRFunctionExpr::StringExpr(
+                    IRFunctionExpr::StringExpr(
                         IRStringFunction::PadStart { .. }
                         | IRStringFunction::PadEnd { .. }
                         | IRStringFunction::ZFill,
                     ),
-                ref input,
-                options,
-            } => {
-                let (_, length_type) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, _| Ok((i == 1).then_some(DataType::UInt64)), // length
+            )?,
 
-                if length_type == DataType::UInt64 {
-                    None
-                } else {
-                    let function = function.clone();
-                    let mut input = input.clone();
-                    cast_expr_ir(
-                        &mut input[1],
-                        &length_type,
-                        &DataType::UInt64,
-                        expr_arena,
-                        CastOptions::Strict,
-                    )?;
-
-                    Some(AExpr::Function {
-                        function,
-                        input,
-                        options,
-                    })
-                }
-            },
-
+            #[cfg(all(feature = "strings", feature = "concat_str"))]
+            AExpr::Function {
+                function: IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal { .. }),
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::NonStrict,
+                |_, dtype| Ok((!dtype.is_string()).then_some(DataType::String)),
+            )?,
             #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
                 function:
@@ -1178,75 +1136,33 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             },
             #[cfg(feature = "range")]
             AExpr::Function {
-                function:
-                    ref function @ IRFunctionExpr::Range(IRRangeFunction::IntRanges { dtype: _ }),
-                ref input,
-                options,
-            } => {
-                let (_, type_start) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
-                let (_, type_end) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
-                let (_, type_step) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
-
-                polars_ensure!(type_start.is_numeric() || type_start.is_null(), InvalidOperation: "`start` must be numeric for `int_ranges`, got {}", type_start);
-                polars_ensure!(type_end.is_numeric() || type_end.is_null(), InvalidOperation: "`end` must be numeric for `int_ranges`, got {}", type_end);
-                polars_ensure!(type_step.is_numeric() || type_step.is_null(), InvalidOperation: "`step` must be numeric for `int_ranges`, got {}", type_step);
-
-                if [&type_start, &type_end, &type_step]
-                    .into_iter()
-                    .all(|dtype| dtype == &DataType::Int64)
-                {
-                    return Ok(None);
-                }
-
-                let function = function.clone();
-                let mut input = input.clone();
-                for (i, dtype) in [type_start, type_end, type_step].into_iter().enumerate() {
-                    cast_expr_ir(
-                        &mut input[i],
-                        &dtype,
-                        &DataType::Int64,
-                        expr_arena,
-                        CastOptions::Strict,
-                    )?;
-                }
-
-                Some(AExpr::Function {
-                    function,
-                    input,
-                    options,
-                })
-            },
+                function: IRFunctionExpr::Range(IRRangeFunction::IntRanges { .. }),
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, dtype| {
+                    let name = ["start", "end", "step"][i];
+                    polars_ensure!(
+                        dtype.is_numeric() || dtype.is_null(),
+                        InvalidOperation: "`{name}` must be numeric for `int_ranges`, got {dtype}"
+                    );
+                    Ok(Some(DataType::Int64))
+                },
+            )?,
             #[cfg(feature = "moment")]
             AExpr::Function {
-                function: ref function @ (IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..)),
-                ref input,
-                options,
-            } => {
-                let (_, type_input) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
-
-                if matches!(type_input, DataType::Float64) {
-                    return Ok(None);
-                }
-
-                let function = function.clone();
-                let mut input = input.clone();
-                cast_expr_ir(
-                    &mut input[0],
-                    &type_input,
-                    &DataType::Float64,
-                    expr_arena,
-                    CastOptions::Strict,
-                )?;
-                Some(AExpr::Function {
-                    function,
-                    input,
-                    options,
-                })
-            },
+                function: IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..),
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, _| Ok((i == 0).then_some(DataType::Float64)),
+            )?,
             #[cfg(all(feature = "range", feature = "dtype-date"))]
             AExpr::Function {
                 function:
@@ -1573,6 +1489,54 @@ fn cast_expr_ir(
     e.set_dtype(to_dtype.clone());
 
     Ok(())
+}
+
+fn coerce_function_inputs(
+    node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &Schema,
+    cast_options: CastOptions,
+    target_dtype: impl Fn(usize, &DataType) -> PolarsResult<Option<DataType>>,
+) -> PolarsResult<Option<AExpr>> {
+    let AExpr::Function {
+        function,
+        input,
+        options,
+    } = expr_arena.get(node)
+    else {
+        return Ok(None);
+    };
+
+    let mut needs_cast = false;
+    for (i, e) in input.iter().enumerate() {
+        let from = try_get_dtype(expr_arena, e.node(), schema)?;
+        if target_dtype(i, &from)?.is_some_and(|to| to != from) {
+            needs_cast = true;
+            break;
+        }
+    }
+    if !needs_cast {
+        return Ok(None);
+    }
+
+    let function = function.clone();
+    let options = *options;
+    let mut input = input.to_vec();
+
+    for (i, e) in input.iter_mut().enumerate() {
+        let from = try_get_dtype(expr_arena, e.node(), schema)?;
+        if let Some(to) = target_dtype(i, &from)?
+            && to != from
+        {
+            cast_expr_ir(e, &from, &to, expr_arena, cast_options)?;
+        }
+    }
+
+    Ok(Some(AExpr::Function {
+        function,
+        input,
+        options,
+    }))
 }
 
 fn check_cast(from: &DataType, to: &DataType) -> PolarsResult<()> {

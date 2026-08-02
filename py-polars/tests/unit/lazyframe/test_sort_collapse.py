@@ -107,6 +107,19 @@ def test_sort_node_prune_hint_multiple() -> None:
     assert 'SORT BY [maintain_order: true] [col("a"), col("b")]' in q.explain()
 
 
+def test_reverse_sortedness_nulls_last_28558() -> None:
+    q = (
+        pl.LazyFrame({"a": [1, 2, 3, None, None]})
+        .sort("a", nulls_last=True)
+        .reverse()
+        .sort("a", descending=True, nulls_last=True)
+    )
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [3, 2, 1, None, None]}),
+    )
+
+
 @pytest.mark.parametrize("idx_descending", [False, True])
 @pytest.mark.parametrize("output_descending", [False, True])
 def test_sort_node_collapse_gather_28491(
@@ -124,3 +137,23 @@ def test_sort_node_collapse_gather_28491(
 
     values = [3, 2, 1] if output_descending else [1, 2, 3]
     assert_frame_equal(q.collect(), pl.DataFrame({"a": values}))
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        ([2, 10, 100], ["10", "100", "2"]),
+        ([2.0, 10.0, 100.0], ["10.0", "100.0", "2.0"]),
+    ],
+)
+def test_concat_str_numeric_input_clears_sortedness(
+    data: list[int] | list[float], expected: list[str]
+) -> None:
+    frame_level = (
+        pl.LazyFrame({"a": data}).sort("a").select(pl.concat_str("a")).sort("a")
+    )
+    expr_level = (
+        pl.LazyFrame({"a": data}).select(pl.concat_str(pl.col("a").sort())).sort("a")
+    )
+    for lf in (frame_level, expr_level):
+        assert_frame_equal(lf.collect(), pl.DataFrame({"a": expected}))
