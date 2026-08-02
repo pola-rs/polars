@@ -4,10 +4,14 @@ document.addEventListener("DOMContentLoaded", function () {
     return;
   }
 
-  const storageKey = "pst_sidebar_primary_width";
+  // Separate prefs so desktop and mobile widths do not overwrite each other.
+  const desktopStorageKey = "pst_sidebar_primary_width";
+  const mobileStorageKey = "pst_sidebar_mobile_drawer_width";
   const minWidthPx = 200;
-  // Left-of-scroll + scrollbar + right-of-scroll (same coverage desktop/mobile).
-  const gutterWidthPx = 32;
+  // Desktop: cover scrollbar gutter. Mobile: narrower so horizontal scroll
+  // (and edge swipes) are less likely to be stolen by the resize handle.
+  const desktopGutterPx = 24;
+  const mobileGutterPx = 16;
   const gutterOverhangPx = 4;
   const desktopQuery = window.matchMedia("(min-width: 960px)");
 
@@ -23,6 +27,20 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function isDesktop() {
     return desktopQuery.matches;
+  }
+
+  function storageKey() {
+    return isDesktop() ? desktopStorageKey : mobileStorageKey;
+  }
+
+  function widthVar() {
+    return isDesktop()
+      ? "--pst-sidebar-primary-width"
+      : "--pst-sidebar-mobile-drawer-width";
+  }
+
+  function gutterWidthPx() {
+    return isDesktop() ? desktopGutterPx : mobileGutterPx;
   }
 
   function getResizeTarget() {
@@ -51,21 +69,11 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
     const clamped = clampWidth(widthPx);
-    if (isDesktop()) {
-      document.documentElement.style.setProperty(
-        "--pst-sidebar-primary-width",
-        `${clamped}px`,
-      );
-    } else {
-      document.documentElement.style.setProperty(
-        "--pst-sidebar-mobile-drawer-width",
-        `${clamped}px`,
-      );
-    }
+    document.documentElement.style.setProperty(widthVar(), `${clamped}px`);
     if (persist) {
-      localStorage.setItem(storageKey, String(clamped));
+      localStorage.setItem(storageKey(), String(clamped));
     }
-    syncHandlePosition();
+    scheduleSync();
   }
 
   function syncHandlePosition() {
@@ -84,16 +92,13 @@ document.addEventListener("DOMContentLoaded", function () {
       if (handle.parentElement !== modal) {
         modal.appendChild(handle);
       }
-      // Match desktop: no visible grip, cursor-only affordance.
-      handle.innerHTML = "";
-      delete handle.dataset.mobileGrip;
       handle.hidden = false;
       handle.style.position = "absolute";
       handle.style.top = "0";
       handle.style.bottom = "0";
       handle.style.right = `-${gutterOverhangPx}px`;
       handle.style.left = "auto";
-      handle.style.width = `${gutterWidthPx}px`;
+      handle.style.width = `${gutterWidthPx()}px`;
       handle.style.height = "auto";
       return;
     }
@@ -101,8 +106,6 @@ document.addEventListener("DOMContentLoaded", function () {
     if (handle.parentElement !== document.body) {
       document.body.appendChild(handle);
     }
-    handle.innerHTML = "";
-    delete handle.dataset.mobileGrip;
 
     const rect = target.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) {
@@ -110,42 +113,49 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
 
+    const gutter = gutterWidthPx();
     handle.hidden = false;
     handle.style.position = "fixed";
     handle.style.top = `${rect.top}px`;
     // Overhang a few px past the right edge so "right of scroll" is included.
-    handle.style.left = `${rect.right - gutterWidthPx + gutterOverhangPx}px`;
+    handle.style.left = `${rect.right - gutter + gutterOverhangPx}px`;
     handle.style.right = "auto";
     handle.style.bottom = "auto";
-    handle.style.width = `${gutterWidthPx}px`;
+    handle.style.width = `${gutter}px`;
     handle.style.height = `${rect.height}px`;
   }
 
   function restoreWidth() {
-    const saved = localStorage.getItem(storageKey);
+    const saved = localStorage.getItem(storageKey());
     if (!saved) {
-      syncHandlePosition();
+      scheduleSync();
       return;
     }
     const widthPx = Number.parseFloat(saved);
     if (!Number.isFinite(widthPx)) {
-      syncHandlePosition();
+      scheduleSync();
       return;
     }
     // Apply even before open on mobile so the next open uses the saved width.
-    const clamped = clampWidth(widthPx);
-    if (isDesktop()) {
-      document.documentElement.style.setProperty(
-        "--pst-sidebar-primary-width",
-        `${clamped}px`,
-      );
-    } else {
-      document.documentElement.style.setProperty(
-        "--pst-sidebar-mobile-drawer-width",
-        `${clamped}px`,
-      );
+    document.documentElement.style.setProperty(
+      widthVar(),
+      `${clampWidth(widthPx)}px`,
+    );
+    scheduleSync();
+  }
+
+  // Coalesce scroll/resize/observer work into one rAF tick.
+  let syncScheduled = false;
+  function scheduleSync() {
+    if (syncScheduled) {
+      return;
     }
-    syncHandlePosition();
+    syncScheduled = true;
+    requestAnimationFrame(function () {
+      syncScheduled = false;
+      syncHeaderOffset();
+      syncHandlePosition();
+    });
   }
 
   let dragging = false;
@@ -191,51 +201,42 @@ document.addEventListener("DOMContentLoaded", function () {
     window.addEventListener("pointercancel", stopDragging);
   });
 
+  // Reset only the active viewport preference (desktop vs mobile).
   handle.addEventListener("dblclick", function () {
-    localStorage.removeItem(storageKey);
-    document.documentElement.style.removeProperty("--pst-sidebar-primary-width");
-    document.documentElement.style.removeProperty(
-      "--pst-sidebar-mobile-drawer-width",
-    );
-    syncHandlePosition();
+    localStorage.removeItem(storageKey());
+    document.documentElement.style.removeProperty(widthVar());
+    scheduleSync();
   });
 
-  window.addEventListener("resize", syncHandlePosition);
-  window.addEventListener("scroll", syncHandlePosition, true);
+  window.addEventListener("resize", scheduleSync);
+  window.addEventListener("scroll", scheduleSync, { capture: true, passive: true });
   if (typeof ResizeObserver !== "undefined") {
-    new ResizeObserver(syncHandlePosition).observe(sidebar);
+    new ResizeObserver(scheduleSync).observe(sidebar);
     if (modal) {
-      new ResizeObserver(syncHandlePosition).observe(modal);
+      new ResizeObserver(scheduleSync).observe(modal);
+    }
+    const header = document.querySelector(".bd-header");
+    if (header) {
+      new ResizeObserver(scheduleSync).observe(header);
     }
   }
 
   restoreWidth();
-  syncHandlePosition();
+  scheduleSync();
   desktopQuery.addEventListener("change", function () {
     restoreWidth();
-    syncHandlePosition();
+    scheduleSync();
   });
 
   function closeMobileDrawer() {
-    if (isDesktop()) {
+    if (isDesktop() || !modal?.open) {
       return;
     }
-    if (modal && modal.open && typeof modal.close === "function") {
+    // Prefer the dialog API — the theme already wires Escape + outside-click
+    // (click on dialog outside its content box) to modal.close().
+    if (typeof modal.close === "function") {
       modal.close();
-      return;
     }
-    primaryToggle?.click();
-  }
-
-  function afterDrawerToggle() {
-    requestAnimationFrame(function () {
-      syncHeaderOffset();
-      syncHandlePosition();
-    });
-    setTimeout(function () {
-      syncHeaderOffset();
-      syncHandlePosition();
-    }, 50);
   }
 
   function syncHeaderOffset() {
@@ -256,57 +257,30 @@ document.addEventListener("DOMContentLoaded", function () {
       modal.style.margin = "0";
     }
   }
-  window.addEventListener("resize", syncHeaderOffset);
-  window.addEventListener("scroll", syncHeaderOffset, true);
-  if (typeof ResizeObserver !== "undefined") {
-    const header = document.querySelector(".bd-header");
-    if (header) {
-      new ResizeObserver(syncHeaderOffset).observe(header);
-    }
-  }
-  syncHeaderOffset();
-  desktopQuery.addEventListener("change", syncHeaderOffset);
-  modal?.addEventListener("close", function () {
-    syncHeaderOffset();
-    syncHandlePosition();
-  });
-  primaryToggle?.addEventListener("click", afterDrawerToggle);
 
+  // Theme already closes on outside click / Escape; we only sync layout after.
+  modal?.addEventListener("close", scheduleSync);
+  modal?.addEventListener("cancel", scheduleSync);
+  primaryToggle?.addEventListener("click", function () {
+    // Theme opens via showModal(); sync after the dialog is shown.
+    requestAnimationFrame(scheduleSync);
+    setTimeout(scheduleSync, 50);
+  });
+
+  // Mobile-only close control (hidden on desktop via CSS). Match
+  // announcement-dismiss.js: createElement + appendChild for the icon.
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "bd-sidebar-mobile-close";
   closeBtn.setAttribute("aria-label", "Close navigation sidebar");
-  closeBtn.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+  const closeIcon = document.createElement("i");
+  closeIcon.className = "fa-solid fa-xmark";
+  closeIcon.setAttribute("aria-hidden", "true");
+  closeBtn.appendChild(closeIcon);
   sidebar.prepend(closeBtn);
   closeBtn.addEventListener("click", function (event) {
     event.preventDefault();
     event.stopPropagation();
     closeMobileDrawer();
-    afterDrawerToggle();
   });
-
-  // Close when clicking outside the drawer (dimmed backdrop, header, page).
-  document.addEventListener(
-    "pointerdown",
-    function (event) {
-      if (isDesktop() || !modal?.open || dragging) {
-        return;
-      }
-      const target = event.target;
-      if (!(target instanceof Element)) {
-        return;
-      }
-      // Clicks on drawer content / resize handle should not close.
-      if (modal.contains(target) && target !== modal) {
-        return;
-      }
-      // Let the hamburger handle its own toggle.
-      if (primaryToggle && primaryToggle.contains(target)) {
-        return;
-      }
-      closeMobileDrawer();
-      afterDrawerToggle();
-    },
-    true,
-  );
 });
