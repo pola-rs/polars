@@ -94,14 +94,25 @@ fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec
 
     let mut deduplicated_headers = Vec::with_capacity(headers.len());
     let mut header_names = PlHashMap::with_capacity(headers.len());
+    let mut used_names = PlHashSet::with_capacity(headers.len());
 
     for name in &headers {
         let count = header_names.entry(name.as_ref()).or_insert(0usize);
-        if *count != 0 {
-            deduplicated_headers.push(format_pl_smallstr!("{}_duplicated_{}", name, *count - 1))
+        let mut candidate = if *count == 0 {
+            PlSmallStr::from_str(name)
         } else {
-            deduplicated_headers.push(PlSmallStr::from_str(name))
+            format_pl_smallstr!("{}_duplicated_{}", name, *count - 1)
+        };
+        // The generated name can collide with a name that already exists in the
+        // header (e.g. the file itself contains a literal "a_duplicated_0" column
+        // next to a repeated "a" column), so keep bumping the counter until the
+        // candidate is actually unique.
+        while used_names.contains(&candidate) {
+            *count += 1;
+            candidate = format_pl_smallstr!("{}_duplicated_{}", name, *count - 1);
         }
+        used_names.insert(candidate.clone());
+        deduplicated_headers.push(candidate);
         *count += 1;
     }
 
@@ -387,5 +398,46 @@ mod tests {
         possibilities.insert(DataType::Int64);
         possibilities.insert(DataType::Int128);
         assert_eq!(finish_infer_field_schema(&possibilities), DataType::Int128);
+    }
+
+    #[test]
+    fn test_infer_headers_dedup_collides_with_existing_literal_name() {
+        // "a" repeats, so the second occurrence is renamed to "a_duplicated_0" -
+        // but the header already contains a literal column named "a_duplicated_0",
+        // so the generated name must keep bumping until it's actually unique
+        // instead of silently colliding with it (polars-io#28310).
+        let parse_options = CsvParseOptions::default();
+        let headers = infer_headers(b"a,a_duplicated_0,a", &parse_options);
+        assert_eq!(
+            headers,
+            vec![
+                PlSmallStr::from_static("a"),
+                PlSmallStr::from_static("a_duplicated_0"),
+                PlSmallStr::from_static("a_duplicated_1"),
+            ]
+        );
+        // Every generated name must be unique - this is really the property the
+        // fix is about, the exact suffix chosen matters less than never colliding.
+        let mut seen = PlHashSet::new();
+        for name in &headers {
+            assert!(seen.insert(name.clone()), "duplicate header name: {name}");
+        }
+    }
+
+    #[test]
+    fn test_infer_headers_dedup_no_collision_case() {
+        // Sanity check the common case is unaffected: two genuinely repeated
+        // names still get sequential suffixes with no literal collision involved.
+        let parse_options = CsvParseOptions::default();
+        let headers = infer_headers(b"a,b,a,a", &parse_options);
+        assert_eq!(
+            headers,
+            vec![
+                PlSmallStr::from_static("a"),
+                PlSmallStr::from_static("b"),
+                PlSmallStr::from_static("a_duplicated_0"),
+                PlSmallStr::from_static("a_duplicated_1"),
+            ]
+        );
     }
 }
