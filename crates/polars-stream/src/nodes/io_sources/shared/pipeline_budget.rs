@@ -101,6 +101,9 @@ pub(crate) struct PipelinePermit {
 
 #[cfg(test)]
 mod tests {
+    use std::future::{Future, poll_fn};
+    use std::task::Poll;
+
     use polars_core::runtime::ASYNC;
 
     use super::PipelineBudget;
@@ -109,12 +112,26 @@ mod tests {
     fn oversized_request_serializes_and_releases_capacity() {
         let budget = PipelineBudget::new(2, 4);
 
-        let permit = ASYNC.block_on(budget.acquire(16 * 1024));
-        assert_eq!(budget.count.available_permits(), 1);
-        assert_eq!(budget.kbytes.available_permits(), 0);
+        ASYNC.block_on(async {
+            let oversized = budget.acquire(16 * 1024).await;
+            assert_eq!(budget.count.available_permits(), 1);
+            assert_eq!(budget.kbytes.available_permits(), 0);
 
-        drop(permit);
-        assert_eq!(budget.count.available_permits(), 2);
-        assert_eq!(budget.kbytes.available_permits(), 4);
+            let mut next = Box::pin(budget.acquire(1024));
+            // Poll once to observe blocking without a timing-based timeout.
+            let next_is_pending =
+                poll_fn(|cx| Poll::Ready(next.as_mut().poll(cx).is_pending())).await;
+            assert!(next_is_pending);
+            assert_eq!(budget.count.available_permits(), 1);
+
+            drop(oversized);
+            let next = next.await;
+            assert_eq!(budget.count.available_permits(), 1);
+            assert_eq!(budget.kbytes.available_permits(), 3);
+
+            drop(next);
+            assert_eq!(budget.count.available_permits(), 2);
+            assert_eq!(budget.kbytes.available_permits(), 4);
+        });
     }
 }
