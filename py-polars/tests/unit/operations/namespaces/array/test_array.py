@@ -138,6 +138,37 @@ def test_arr_dot_expr_broadcast() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        pytest.param([10.0, 20.0], id="list"),
+        pytest.param(
+            pl.Series(
+                "query",
+                [[10.0, 20.0]],
+                dtype=pl.Array(pl.Float32, 2),
+            ),
+            id="one-row-series",
+        ),
+    ],
+)
+def test_arr_dot_query_vector_streaming(query: Any) -> None:
+    df = pl.DataFrame(
+        {"embedding": [[1.0, 2.0], [3.0, 4.0]]},
+        schema={"embedding": pl.Array(pl.Float32, 2)},
+    )
+    q = df.lazy().select(score=pl.col("embedding").arr.dot(query))
+    expected = pl.DataFrame({"score": [50.0, 110.0]}, schema={"score": pl.Float32})
+
+    assert_frame_equal(q.collect(engine="streaming"), expected)
+    physical_plan = q.show_graph(
+        engine="streaming",
+        plan_stage="physical",
+        raw_output=True,
+    )
+    assert "columnar-function" not in physical_plan
+
+
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
 def test_arr_dot_query_vector(dtype: pl.DataType) -> None:
     embedding = pl.Series(
@@ -192,6 +223,11 @@ def test_arr_dot_literal_expr_preserves_dtype() -> None:
 
     for other in (
         pl.lit(rhs),
+        pl.Series(
+            "query",
+            [[10.0, 20.0]],
+            dtype=pl.Array(pl.Float32, 2),
+        ),
         pl.lit([10.0, 20.0], dtype=pl.Array(pl.Float32, 2)),
     ):
         with pytest.raises(pl.exceptions.SchemaError, match="matching inner dtypes"):
