@@ -398,7 +398,7 @@ impl AimdState {
         self.shared.set_last_max(max);
     }
 
-    /// The success_rate is the best (conservative) estimate for the back-end rate-limit.
+    /// The success_rate is the observed 'goodput' signal.
     // kdn TODO TEST & TUNE: harden signal extraction
     fn update_success_rate(&mut self, successes: u64, elapsed_s: f64) {
         // Too short to be statistically meaningful (also guards div-by-zero).
@@ -501,8 +501,7 @@ impl AdaptiveRateController {
     fn on_congestion(&self) {
         self.signal.resp_throttled.fetch_add(1, Relaxed);
 
-        //kdn TODO TEST & TUNE
-        // either maybe_settle() here, or have a ticker for settling
+        self.maybe_settle();
 
         // Lock-free fast-path (1): advisory refractory pre-check, avoid Mutex storm.
         let now_ns = self.now_ns();
@@ -533,8 +532,6 @@ impl AdaptiveRateController {
 
         // Activate new rate and update state.
         state.set_rate((anchor * beta).max(self.config.floor_rate));
-        state.set_last_max(Some(anchor));
-
         state.last_cut_time = Some(now);
         self.signal.last_cut_ns.store(now_ns, Relaxed);
 
@@ -562,14 +559,6 @@ impl AdaptiveRateController {
         self.signal.resp_succeeded.fetch_add(1, Relaxed);
 
         self.maybe_settle();
-
-        // // Lock-free fast path when settlement is not due.
-        // let now_ns = self.now_ns();
-        // if now_ns < self.signal.window_end_ns.load(Relaxed) {
-        //     return;
-        // }
-
-        // self.settle_lazy_tick();
     }
 
     fn on_other(&self) {
@@ -621,15 +610,18 @@ impl AdaptiveRateController {
         let util_bound = win_admitted as f64 >= SATURATION_THRESHOLD * state.rate() * elapsed_s;
 
         // Update signal, if any.
-        let observed = win_succeeded + win_throttled;
-        let throttle_ratio = if observed > 0 {
-            win_throttled as f64 / observed as f64
-        } else {
-            0.0
-        };
+        state.update_success_rate(win_succeeded, elapsed_s);
 
-        if util_bound && win_succeeded > 0 && throttle_ratio < MAX_SAMPLE_THROTTLE_RATIO {
-            state.update_success_rate(win_succeeded, elapsed_s);
+        // Goodput is a always a lower bound on capacity, so an observation may always 
+        // increase. It may only decrease when the system was pressure-tested (i.e., demand saturated).
+        if let Some(observed) = state.success_rate {
+            let pressure_tested =
+                win_admitted as f64 / elapsed_s >= state.last_max().unwrap_or(0.0);
+            let new_max = match state.last_max() {
+                Some(prev) if !pressure_tested => prev.max(observed),
+                _ => observed,
+            };
+            state.set_last_max(Some(new_max.max(self.config.floor_rate)));
         }
 
         // Evaluate and apply rate rate and regime changes.
@@ -667,7 +659,7 @@ impl AdaptiveRateController {
                     },
                     Regime::Recover { .. } => {
                         // No-op, rate changes were handled in `on_congestion`
-                        "hold (aftermath)"
+                        "hold (recover)"
                     },
                     Regime::Track { anchor } => {
                         // Below anchor + backlogged/saturated -> fast reclaim up to our known-good ceiling
