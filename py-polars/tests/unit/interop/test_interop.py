@@ -1592,23 +1592,14 @@ def test_sliced_nested_arrow_export_28583(
 
 
 def test_from_arrow_capsule_24511() -> None:
-    # 2.0: Remove FutureWarning and change expected values to be struct-type Series.
-    with pytest.warns(FutureWarning):
-        out = pl.from_arrow(PyCapsuleStreamHolder(pl.DataFrame({"x": 1})))
-
-    assert isinstance(out, pl.DataFrame)
-    assert_frame_equal(
-        out,
-        pl.DataFrame({"x": 1}),
+    assert_series_equal(
+        pl.from_arrow(PyCapsuleStreamHolder(pl.DataFrame({"x": 1}))),  # type: ignore[arg-type]
+        pl.Series([{"x": 1}]),
     )
 
-    with pytest.warns(FutureWarning):
-        out = pl.from_arrow(PyCapsuleArrayHolder(pl.Series([{"x": 1}]).to_arrow()))
-
-    assert isinstance(out, pl.DataFrame)
-    assert_frame_equal(
-        out,
-        pl.DataFrame({"x": 1}),
+    assert_series_equal(
+        pl.from_arrow(PyCapsuleArrayHolder(pl.Series([{"x": 1}]).to_arrow())),  # type: ignore[arg-type]
+        pl.Series([{"x": 1}]),
     )
 
 
