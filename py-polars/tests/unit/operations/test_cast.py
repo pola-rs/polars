@@ -1000,16 +1000,16 @@ def test_cast_to_list_not_supported() -> None:
 
 
 @pytest.mark.parametrize(
-    "dtype",
+    ("dtype", "to"),
     [
-        pl.Categorical(pl.Categories.random(physical=pl.UInt32)),
-        pl.Enum(["cat0", "cat1", "cat2"]),
+        (pl.Categorical(pl.Categories.random(physical=pl.UInt32)), "cat"),
+        (pl.Enum(["cat0", "cat1", "cat2"]), "enum"),
     ],
 )
-def test_cast_int_to_categorical_deprecated(dtype: PolarsDataType) -> None:
+def test_cast_int_to_categorical_deprecated(dtype: PolarsDataType, to: str) -> None:
     _dummy = pl.Series("a", ["cat0", "cat1", "cat2"], dtype=dtype)
 
-    msg = r"casting from u32 to enum is not supported"
+    msg = rf"casting from u32 to {to} is not supported"
     with pytest.raises(match=msg):
         pl.Series("a", [2, 0, 1], dtype=pl.UInt32).cast(dtype)
 
