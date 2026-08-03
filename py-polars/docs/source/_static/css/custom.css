@@ -24,18 +24,7 @@ html[data-theme="dark"] {
     --pst-color-border: #444444;
 }
 
-/*
- * Primary sidebar width — defined at the root so every docs page inherits it.
- *
- * Default theme width is a flat 25%, which forces long API names to wrap while
- * leaving unused space in the article column. Use a fluid width capped in rem
- * so mid-size monitors keep enough room for content, and large screens get a
- * wider index without growing unboundedly.
- *
- * Below 960px the pydata-sphinx-theme collapses the sidebar into
- * #pst-primary-sidebar-modal; mobile drawer width is a separate variable.
- * Ref: https://github.com/pola-rs/polars/issues/22580
- */
+/* Fluid primary sidebar width (theme default is a flat 25%). See #22580. */
 html {
     --pst-sidebar-primary-width: min(28rem, 33%);
     --pst-sidebar-resize-gutter: 24px;
@@ -46,12 +35,7 @@ div.bd-sidebar-primary {
     background-image: linear-gradient(90deg, var(--pst-gradient-sidebar-left) 0%, var(--pst-gradient-sidebar-right) 100%);
 }
 
-/*
- * Shared resize-handle styles (desktop gutter + mobile open drawer).
- * Include :not(:disabled) so we beat theme
- * `[type=button]:not(:disabled){cursor:pointer}` on specificity without
- * !important.
- */
+/* :not(:disabled) beats theme button cursor rules without !important */
 button.bd-sidebar-resize-handle:not(:disabled) {
     appearance: none;
     background: transparent;
@@ -62,7 +46,6 @@ button.bd-sidebar-resize-handle:not(:disabled) {
     opacity: 0;
     outline: none;
     padding: 0;
-    /* Handle owns the drag; page content keeps normal touch scrolling. */
     touch-action: none;
     user-select: none;
     z-index: 1100;
@@ -76,7 +59,6 @@ body.bd-sidebar-resizing button.bd-sidebar-resize-handle:not(:disabled) {
     opacity: 0;
 }
 
-/* Keyboard focus must remain visible (do not blanket-suppress outlines). */
 button.bd-sidebar-resize-handle:not(:disabled):focus-visible {
     background: transparent;
     box-shadow: inset 0 0 0 2px var(--pst-color-primary);
@@ -85,10 +67,7 @@ button.bd-sidebar-resize-handle:not(:disabled):focus-visible {
     outline: none;
 }
 
-/*
- * !important: during drag, theme/component cursor rules on descendants would
- * otherwise win over a bare universal selector.
- */
+/* !important: theme cursor rules on descendants otherwise win during drag */
 body.bd-sidebar-resizing,
 body.bd-sidebar-resizing * {
     cursor: col-resize !important;
@@ -100,7 +79,6 @@ body.bd-sidebar-resizing .bd-main {
     pointer-events: none;
 }
 
-/* Desktop / tablet landscape: sidebar sits beside the article */
 @media (min-width: 960px) {
     div.bd-sidebar-primary {
         flex: 0 0 auto;
@@ -112,20 +90,12 @@ body.bd-sidebar-resizing .bd-main {
         position: fixed;
     }
 
-    /* Close control is mobile-only; keep it out of the desktop DOM tree UX. */
     .bd-sidebar-mobile-close {
         display: none;
     }
 }
 
-/*
- * Mobile / narrow viewports:
- * Prefer the theme's dialog drawer (#pst-primary-sidebar-modal): hamburger
- * opens, Escape / outside-click (theme) and our X close it. We only (1) keep
- * the parked #pst-primary-sidebar shell inert (avoids left rail + height
- * flash), (2) pin the dialog under the header, and (3) optional resize.
- * Ref: https://github.com/pola-rs/polars/issues/22580
- */
+/* Mobile: theme drawer is #pst-primary-sidebar-modal; park the off-canvas shell. */
 @media (max-width: 959.98px) {
     html {
         --pst-sidebar-mobile-drawer-width: min(75vw, 350px);
@@ -136,12 +106,7 @@ body.bd-sidebar-resizing .bd-main {
         margin-right: 0.75rem;
     }
 
-    /*
-     * Theme parks .bd-sidebar-primary as a full-viewport off-canvas panel
-     * (height:100vh / width:75%). The live drawer is the dialog; keep this
-     * shell fully inert. ID + element+class beat theme .bd-sidebar-primary
-     * without !important.
-     */
+    /* Keep parked sidebar inert so it doesn't flash beside the dialog */
     #pst-primary-sidebar,
     div.bd-sidebar-primary {
         border: 0;
@@ -160,18 +125,14 @@ body.bd-sidebar-resizing .bd-main {
         z-index: -1;
     }
 
-    /*
-     * Anchor dialog under the header. ID selectors beat the .bd-sidebar-primary
-     * class the theme copies onto the dialog while open. Remaining !important
-     * values only fight UA <dialog> centering (margin:auto / translate).
-     */
+    /* Pin under header; !important fights UA <dialog> margin/translate centering */
     #pst-primary-sidebar-modal {
         height: calc(100dvh - var(--pst-header-offset, var(--pst-header-height)));
-        margin: 0 !important; /* UA dialog centers with auto margins */
+        margin: 0 !important;
         max-height: calc(100dvh - var(--pst-header-offset, var(--pst-header-height)));
         position: fixed;
         top: var(--pst-header-offset, var(--pst-header-height));
-        transform: none !important; /* Bootstrap/UA dialog translate */
+        transform: none !important;
         transition: none;
     }
 
@@ -188,7 +149,6 @@ body.bd-sidebar-resizing .bd-main {
         cursor: pointer;
     }
 
-    /* Invisible edge hit-area; same affordance as desktop (cursor only). */
     #pst-primary-sidebar-modal[open] > button.bd-sidebar-resize-handle:not(:disabled) {
         background: transparent;
         border: 0;

@@ -4,12 +4,10 @@ document.addEventListener("DOMContentLoaded", function () {
     return;
   }
 
-  // Separate prefs so desktop and mobile widths do not overwrite each other.
+  // Separate desktop/mobile prefs so they do not overwrite each other.
   const desktopStorageKey = "pst_sidebar_primary_width";
   const mobileStorageKey = "pst_sidebar_mobile_drawer_width";
   const minWidthPx = 200;
-  // Desktop: cover scrollbar gutter. Mobile: narrower so horizontal scroll
-  // (and edge swipes) are less likely to be stolen by the resize handle.
   const desktopGutterPx = 24;
   const mobileGutterPx = 16;
   const gutterOverhangPx = 4;
@@ -54,7 +52,6 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   function maxWidthPx() {
-    // Desktop: keep article readable. Mobile drawer: allow a wider panel.
     const ratio = isDesktop() ? 0.5 : 0.9;
     return Math.floor(window.innerWidth * ratio);
   }
@@ -86,8 +83,7 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
 
-    // Dialogs live in the top layer — the handle must be inside the modal on
-    // mobile or it cannot receive pointer events over the drawer.
+    // Handle must live inside the dialog (top layer) to receive pointer events.
     if (!isDesktop() && modal && modal.open) {
       if (handle.parentElement !== modal) {
         modal.appendChild(handle);
@@ -117,7 +113,6 @@ document.addEventListener("DOMContentLoaded", function () {
     handle.hidden = false;
     handle.style.position = "fixed";
     handle.style.top = `${rect.top}px`;
-    // Overhang a few px past the right edge so "right of scroll" is included.
     handle.style.left = `${rect.right - gutter + gutterOverhangPx}px`;
     handle.style.right = "auto";
     handle.style.bottom = "auto";
@@ -136,7 +131,6 @@ document.addEventListener("DOMContentLoaded", function () {
       scheduleSync();
       return;
     }
-    // Apply even before open on mobile so the next open uses the saved width.
     document.documentElement.style.setProperty(
       widthVar(),
       `${clampWidth(widthPx)}px`,
@@ -144,7 +138,6 @@ document.addEventListener("DOMContentLoaded", function () {
     scheduleSync();
   }
 
-  // Coalesce scroll/resize/observer work into one rAF tick.
   let syncScheduled = false;
   function scheduleSync() {
     if (syncScheduled) {
@@ -201,7 +194,6 @@ document.addEventListener("DOMContentLoaded", function () {
     window.addEventListener("pointercancel", stopDragging);
   });
 
-  // Reset only the active viewport preference (desktop vs mobile).
   handle.addEventListener("dblclick", function () {
     localStorage.removeItem(storageKey());
     document.documentElement.style.removeProperty(widthVar());
@@ -232,8 +224,6 @@ document.addEventListener("DOMContentLoaded", function () {
     if (isDesktop() || !modal?.open) {
       return;
     }
-    // Prefer the dialog API — the theme already wires Escape + outside-click
-    // (click on dialog outside its content box) to modal.close().
     if (typeof modal.close === "function") {
       modal.close();
     }
@@ -246,8 +236,7 @@ document.addEventListener("DOMContentLoaded", function () {
       "--pst-header-offset",
       `${offset}px`,
     );
-    // Inline-lock modal geometry so close can't flash full-screen height when
-    // the [open] attribute drops before the dialog is fully hidden.
+    // Lock geometry while open so close doesn't flash full-screen height.
     if (modal && !isDesktop()) {
       modal.style.top = `${offset}px`;
       modal.style.height = `calc(100dvh - ${offset}px)`;
@@ -258,17 +247,13 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  // Theme already closes on outside click / Escape; we only sync layout after.
   modal?.addEventListener("close", scheduleSync);
   modal?.addEventListener("cancel", scheduleSync);
   primaryToggle?.addEventListener("click", function () {
-    // Theme opens via showModal(); sync after the dialog is shown.
     requestAnimationFrame(scheduleSync);
     setTimeout(scheduleSync, 50);
   });
 
-  // Mobile-only close control (hidden on desktop via CSS). Match
-  // announcement-dismiss.js: createElement + appendChild for the icon.
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "bd-sidebar-mobile-close";
