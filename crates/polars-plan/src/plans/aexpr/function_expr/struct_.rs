@@ -63,7 +63,7 @@ impl IRStructFunction {
                     let fields = fields.iter().filter(|fld| !names_set.contains(fld.name())).cloned().collect();
                     Ok(DataType::Struct(fields))
                 },
-                _ => polars_bail!(op = "drop_fields", got = dt, expected = "Struct"),
+                _ => polars_bail!(op = "struct.drop", got = dt, expected = "Struct"),
             }),
             PrefixFields(prefix) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
@@ -132,8 +132,8 @@ impl Display for IRStructFunction {
         match self {
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
             RenameFields(names) => write!(f, "struct.rename_fields({names:?})"),
-            DropFields(names, false) => write!(f, "struct.drop_fields({names:?}, strict=False)"),
-            DropFields(names, true) => write!(f, "struct.drop_fields({names:?})"),
+            DropFields(names, false) => write!(f, "struct.drop({names:?}, strict=False)"),
+            DropFields(names, true) => write!(f, "struct.drop({names:?})"),
             PrefixFields(_) => write!(f, "name.prefix_fields"),
             SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]

@@ -43,25 +43,21 @@ def test_rename_fields() -> None:
     assert s.struct.fields == ["a", "b"]
 
 
-def test_drop_fields() -> None:
+def test_drop() -> None:
     df = pl.DataFrame({"int": [1, 2], "str": ["a", "b"], "bool": [True, None]})
-    s = df.to_struct("my_struct").struct.drop_fields(["str"])
+    s = df.to_struct("my_struct").struct.drop(["str"])
     assert s.struct.fields == ["int", "bool"]
 
 
-def test_drop_fields_strict() -> None:
+def test_drop_strict() -> None:
     df = pl.DataFrame({"int": [1, 2], "str": ["a", "b"], "bool": [True, None]})
     with pytest.raises(StructFieldNotFoundError):
-        df.to_struct("my_struct").struct.drop_fields(
-            ["str", "nonexistent"], strict=True
-        )
+        df.to_struct("my_struct").struct.drop(["str", "nonexistent"], strict=True)
 
 
-def test_drop_fields_non_strict() -> None:
+def test_drop_non_strict() -> None:
     df = pl.DataFrame({"int": [1, 2], "str": ["a", "b"], "bool": [True, None]})
-    s = df.to_struct("my_struct").struct.drop_fields(
-        ["str", "nonexistent"], strict=False
-    )
+    s = df.to_struct("my_struct").struct.drop(["str", "nonexistent"], strict=False)
     assert s.struct.fields == ["int", "bool"]
 
 

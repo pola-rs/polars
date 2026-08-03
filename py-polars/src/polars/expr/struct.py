@@ -294,7 +294,7 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.struct_rename_fields(names))
 
-    def drop_fields(self, names: Sequence[str], *, strict: bool = True) -> Expr:
+    def drop(self, names: Sequence[str], *, strict: bool = True) -> Expr:
         """
         Drop one or more fields from the struct.
 
@@ -316,7 +316,7 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
         ...         "ccc": [True, None],
         ...     }
         ... ).select(pl.struct("aaa", "bbb", "ccc").alias("struct_col"))
-        >>> df.select(pl.col("struct_col").struct.drop_fields(["aaa"]))
+        >>> df.select(pl.col("struct_col").struct.drop(["aaa"]))
         shape: (2, 1)
         ┌─────────────┐
         │ struct_col  │
@@ -327,7 +327,7 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
         │ {"cd",null} │
         └─────────────┘
         """
-        return wrap_expr(self._pyexpr.struct_drop_fields(names, strict))
+        return wrap_expr(self._pyexpr.struct_drop(names, strict))
 
     def json_encode(self) -> Expr:
         """

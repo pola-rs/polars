@@ -78,17 +78,18 @@ impl StructNameSpace {
             )))
     }
 
-    pub fn drop_fields<I, S>(self, names: I, strict: bool) -> Expr
+    /// Drop the given fields from the [`StructChunked`].
+    pub fn drop<I, S>(self, names: I, strict: bool) -> Expr
     where
         I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        self._drop_fields_impl(names.into_iter().map(|x| x.into()).collect(), strict)
+        self._drop_impl(names.into_iter().map(|x| x.into()).collect(), strict)
     }
 
-    fn _drop_fields_impl(self, names: Arc<[PlSmallStr]>, strict: bool) -> Expr {
+    fn _drop_impl(self, names: Arc<[PlSmallStr]>, strict: bool) -> Expr {
         self.0
-            .map_unary(FunctionExpr::StructExpr(StructFunction::DropFields(
+            .map_unary(FunctionExpr::StructExpr(StructFunction::Drop(
                 names, strict,
             )))
     }
