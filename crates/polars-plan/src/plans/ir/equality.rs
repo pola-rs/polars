@@ -429,10 +429,18 @@ impl IR {
             },
             IR::UnoptimizedDispatch {
                 inputs: _,
-                arg_map: _,
-                operation: _,
+                arg_map: l_arg_map,
+                operation: l_operation,
             } => {
-                todo!("Implement PartialEq for UnoptimizedOperation and ArgMap");
+                let IR::UnoptimizedDispatch {
+                    inputs: _,
+                    arg_map: r_arg_map,
+                    operation: r_operation,
+                } = other
+                else {
+                    return false;
+                };
+                l_operation == r_operation && l_arg_map == r_arg_map
             },
             IR::Invalid => unreachable!("cannot compare `IR::Invalid`"),
         }
