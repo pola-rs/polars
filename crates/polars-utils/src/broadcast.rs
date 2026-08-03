@@ -57,7 +57,7 @@ pub fn broadcast_len(iter: impl IntoIterator<Item = impl BroadcastLength>) -> Po
             let broadcast_info = fmt_opt_name(broadcast_val._column_name());
             polars_bail!(
                 ShapeMismatch:
-                "error while computing broadcast size, found incompatible lengths {len}{our_info} and {broadcast_len}{broadcast_info}"
+                "can't compute broadcast length, found incompatible lengths {len}{our_info} and {broadcast_len}{broadcast_info}"
             )
         }
     }

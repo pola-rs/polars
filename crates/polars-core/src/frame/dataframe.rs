@@ -210,7 +210,7 @@ impl DataFrame {
             Ok(Cow::Owned(self.new_from_index(0, height)))
         } else {
             polars_bail!(
-                ShapeMismatch: "error while broadcasting DataFrame, found incompatible heights {len} and {height}",
+                ShapeMismatch: "can't broadcast DataFrame of height {len} to height {height}",
             );
         }
     }
