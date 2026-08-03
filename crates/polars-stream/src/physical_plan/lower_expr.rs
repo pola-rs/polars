@@ -2642,7 +2642,9 @@ fn lower_exprs_with_ctx(
                         format_str = Some(fmt_str.to_string());
                     },
                     AExpr::Function { function, .. } => {
-                        func = function_expr_to_udf(function.clone()).into_inner();
+                        // The streaming engine parallelizes across morsels, so a
+                        // plugin should not also thread internally.
+                        func = function_expr_to_udf(function.clone(), false).into_inner();
                         format_str = Some(function.to_string());
                     },
                     _ => unreachable!(),
