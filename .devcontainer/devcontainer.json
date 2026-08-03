@@ -1,0 +1,59 @@
+{
+  "name": "Polars Development",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.shell.linux": "/bin/bash",
+        "python.defaultInterpreterPath": "/usr/local/python",
+        "python.analysis.typeCheckingMode": "standard",
+        "editor.formatOnSaveMode": "file",
+        "rust-analyzer.checkOnSave.command": "clippy",
+        "rust-analyzer.cargo.features": [
+          "all"
+        ],
+        "ruff.importStrategy": "fromEnvironment",
+        "editor.formatOnSave": true,
+        "editor.trimAutoWhitespace": true,
+        "mypy-type-checker.cwd": "${workspaceFolder}/py-polars",
+        "mypy-type-checker.importStrategy": "fromEnvironment",
+        "[python]": {
+          "diffEditor.ignoreTrimWhitespace": false,
+          "editor.formatOnType": true,
+          "editor.wordBasedSuggestions": "off",
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        },
+        "[dockerfile]": {
+          "editor.defaultFormatter": "ms-azuretools.vscode-docker"
+        },
+        "prettier.enable": true,
+        "[json]": {
+          "editor.quickSuggestions": {
+            "strings": true
+          },
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        }
+      },
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.mypy-type-checker",
+        "ms-azuretools.vscode-docker",
+        "charliermarsh.ruff",
+        "ms-vscode.makefile-tools",
+        "vscode.json-language-features",
+        "vadimcn.vscode-lldb",
+        "fill-labs.dependi",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  },
+  "forwardPorts": [],
+  "remoteUser": "root"
+}
