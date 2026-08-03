@@ -12366,7 +12366,7 @@ class DataFrame:
         │ 4   ┆ 8   │
         └─────┴─────┘
         """
-        return self.select(F.col("*").gather_every(n, offset))
+        return self.lazy().gather_every(n, offset).collect()
 
     def hash_rows(
         self,
