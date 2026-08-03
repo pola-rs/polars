@@ -4,6 +4,7 @@ use arity::unary_elementwise_values;
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use num_traits::{AsPrimitive, Bounded, One, Zero};
+use polars_compute::sum::WrappingAdd;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};
@@ -29,9 +30,9 @@ where
 
 fn det_sum<T>(state: &mut T, v: Option<T>) -> Option<T>
 where
-    T: Copy + AddAssign,
+    T: Copy + WrappingAdd,
 {
-    *state += v?;
+    *state = state.wrapping_add(&v?);
     Some(*state)
 }
 
@@ -202,6 +203,7 @@ fn cum_sum_numeric<T>(
 ) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: WrappingAdd,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
 {
     let init = init.unwrap_or(T::Native::zero());
@@ -347,6 +349,22 @@ pub fn cum_sum_with_init(
 /// first cast to `Int64` to prevent overflow issues.
 pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
     cum_sum_with_init(s, reverse, &AnyValue::Null)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cum_sum_wraps_integer_overflow() {
+        let values = Int64Chunked::from_slice("values".into(), &[i64::MAX, 1]);
+        let result = cum_sum_numeric(&values, false, None);
+
+        assert_eq!(
+            result.into_no_null_iter().collect::<Vec<_>>(),
+            [i64::MAX, i64::MIN]
+        );
+    }
 }
 
 pub fn cum_min_with_init(
