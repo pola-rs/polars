@@ -7,7 +7,6 @@ use super::*;
 pub enum IRStructFunction {
     FieldByName(PlSmallStr),
     RenameFields(Arc<[PlSmallStr]>),
-    DropFields(Arc<[PlSmallStr]>, bool),
     PrefixFields(PlSmallStr),
     SuffixFields(PlSmallStr),
     #[cfg(feature = "json")]
@@ -49,21 +48,6 @@ impl IRStructFunction {
                         .map(|name| Field::new(name.clone(), dt.clone()))
                         .collect(),
                 ),
-            }),
-            DropFields(names, strict) => mapper.try_map_dtype(|dt| match dt{
-                DataType::Struct(fields)=> {
-                    // Use PlIndexSets to prevent quadratic behavior
-                    if *strict {
-                        let fields_set = PlIndexSet::from_iter(fields.iter().map(|fld| fld.name()));
-                        for name in names.iter() {
-                            polars_ensure!(fields_set.contains(name), StructFieldNotFound: "{name}");
-                        }
-                    }
-                    let names_set = PlIndexSet::from_iter(names.iter());
-                    let fields = fields.iter().filter(|fld| !names_set.contains(fld.name())).cloned().collect();
-                    Ok(DataType::Struct(fields))
-                },
-                _ => polars_bail!(op = "drop_fields", got = dt, expected = "Struct"),
             }),
             PrefixFields(prefix) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
@@ -116,7 +100,7 @@ impl IRStructFunction {
             S::FieldByName(_) => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
-            S::RenameFields(_) | S::DropFields(..) | S::PrefixFields(_) | S::SuffixFields(_) => {
+            S::RenameFields(_) | S::PrefixFields(_) | S::SuffixFields(_) => {
                 FunctionOptions::elementwise()
             },
             #[cfg(feature = "json")]
@@ -132,8 +116,6 @@ impl Display for IRStructFunction {
         match self {
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
             RenameFields(names) => write!(f, "struct.rename_fields({names:?})"),
-            DropFields(names, false) => write!(f, "struct.drop_fields({names:?}, strict=False)"),
-            DropFields(names, true) => write!(f, "struct.drop_fields({names:?})"),
             PrefixFields(_) => write!(f, "name.prefix_fields"),
             SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]

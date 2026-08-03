@@ -87,9 +87,10 @@ impl StructNameSpace {
     }
 
     fn _drop_fields_impl(self, names: Arc<[PlSmallStr]>, strict: bool) -> Expr {
+        let selector = Selector::Wildcard - Selector::ByName { names, strict };
         self.0
-            .map_unary(FunctionExpr::StructExpr(StructFunction::DropFields(
-                names, strict,
+            .map_unary(FunctionExpr::StructExpr(StructFunction::SelectFields(
+                selector,
             )))
     }
 
