@@ -44,7 +44,6 @@ if TYPE_CHECKING:
     from tests.unit.conftest import MemoryUsage
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_round_trip(df: pl.DataFrame) -> None:
     f = io.BytesIO()
     df.write_parquet(f)
@@ -52,7 +51,6 @@ def test_round_trip(df: pl.DataFrame) -> None:
     assert_frame_equal(pl.read_parquet(f), df)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_scan_round_trip(df: pl.DataFrame) -> None:
     f = io.BytesIO()
     df.write_parquet(f)
@@ -132,7 +130,6 @@ def test_to_from_buffer(
 
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 @pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: chunking
 def test_read_parquet_respects_rechunk_16416(
     use_pyarrow: bool, rechunk_and_expected_chunks: tuple[bool, int]
@@ -828,7 +825,6 @@ def test_parquet_string_rle_encoding() -> None:
     )
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_sliced_dict_with_nulls_14904() -> None:
     df = (
         pl.DataFrame({"x": [None, None]})
@@ -2566,7 +2562,6 @@ def test_dict_masked(
     )
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_categorical_sliced_20017() -> None:
     f = io.BytesIO()
     df = (
@@ -2742,7 +2737,6 @@ def test_parquet_unsupported_dictionary_to_pl_17945() -> None:
     )
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_parquet_cast_to_cat() -> None:
     t = pa.table(
         {
