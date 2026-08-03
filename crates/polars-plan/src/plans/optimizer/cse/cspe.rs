@@ -115,7 +115,7 @@ fn shallow_hasher<'a>(
 ) -> u64 {
     let mut hasher = DefaultHasher::new();
 
-    IRHashWrap::new(node, lp_arena, expr_arena, true).hash(&mut hasher);
+    IRHashWrap::new(node, lp_arena, expr_arena).hash(&mut hasher);
     for &child_id in child_ids {
         hasher.write_u32(child_id.0);
     }
