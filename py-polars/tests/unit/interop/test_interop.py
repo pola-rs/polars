@@ -1619,3 +1619,56 @@ def test_from_arrow_capsule_24511() -> None:
         out,
         pl.DataFrame({"x": 1}),
     )
+
+
+@pytest.mark.parametrize(
+    ("values", "dtype"),
+    [
+        (["short", "a_string_longer_than_12"], pl.String),
+        ([b"short", b"a_string_longer_than_12"], pl.Binary),
+    ],
+)
+def test_binview_sliced_buffer_arrow_export_28612(
+    values: list[Any], dtype: pl.DataType
+) -> None:
+    df = pl.DataFrame({"c": values}, schema={"c": dtype})
+    df = pl.DataFrame(df.to_arrow())
+
+    assert df.to_series().to_list() == values
+    assert df.to_arrow().column("c").to_pylist() == values
+    assert pa.table(df).column("c").to_pylist() == values
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        [["a"], ["b"]],
+        [["x" * 13]],
+        [[["a"]]],
+        [[1], [2]],
+    ],
+)
+def test_series_from_arrow_large_list_child_cast_28626(values: list[Any]) -> None:
+    s = pl.Series("c", values)
+    assert pl.Series("c", s.to_arrow()).to_list() == values
+    assert (
+        pl.DataFrame(pl.DataFrame({"c": s}).to_arrow()).to_series().to_list() == values
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "fast_explode", "exploded"),
+    [
+        ([["a", "b"], ["c"]], True, ["a", "b", "c"]),
+        ([["a"], [], ["b"]], False, ["a", None, "b"]),
+        ([["a"], None, ["b"]], False, ["a", None, "b"]),
+    ],
+)
+def test_series_from_arrow_large_list_keeps_fast_explode_28626(
+    values: list[Any], fast_explode: bool, exploded: list[Any]
+) -> None:
+    imported = pl.Series("c", pl.Series("c", values).to_arrow())
+
+    assert imported.to_list() == values
+    assert imported.flags["FAST_EXPLODE"] is fast_explode
+    assert imported.explode(empty_as_null=True, keep_nulls=True).to_list() == exploded
