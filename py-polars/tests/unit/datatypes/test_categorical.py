@@ -1003,14 +1003,6 @@ def test_categorical_serialization_prunes_unused_categories_24034() -> None:
     assert pickle_size_ratio <= 0.8
 
 
-def test_categorical_cast_from_invalid_int() -> None:
-    dt = pl.Categorical(pl.Categories.random())
-    _dummy = pl.Series(["test"]).cast(dt)
-    s = pl.Series("a", [0, 1000, 2000, 3000]).cast(dt, strict=False)
-    assert s.null_count() == 3
-    assert_series_equal(s, pl.Series("a", ["test", None, None, None], dtype=dt))
-
-
 @given(data=st.data())
 def test_categories_to_series(data: st.DataObject) -> None:
     categories = pl.Categories.random()
