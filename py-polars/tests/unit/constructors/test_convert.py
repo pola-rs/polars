@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, NoDataError
+from polars.exceptions import ComputeError, NoDataError, SchemaError
 
 
 def test_from_records_schema_inference() -> None:
@@ -43,9 +43,7 @@ def test_from_dicts_empty() -> None:
 def test_from_dicts_all_cols_6716() -> None:
     dicts: list[dict[str, Any]] = [{"a": None} for _ in range(20)] + [{"a": "crash"}]
 
-    with pytest.raises(
-        ComputeError, match="make sure that all rows have the same schema"
-    ):
+    with pytest.raises((ComputeError, SchemaError)):
         pl.from_dicts(dicts, infer_schema_length=20)
     assert pl.from_dicts(dicts, infer_schema_length=None).dtypes == [pl.String]
 

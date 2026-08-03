@@ -755,6 +755,7 @@ def test_scan_delta_nanosecond_timestamp_nested(tmp_path: Path) -> None:
             ]
         },
         schema={"c1": pl.Struct({"timestamp": pl.Datetime("ns", time_zone=None)})},
+        strict=False,
     )
 
     root = tmp_path / "delta"

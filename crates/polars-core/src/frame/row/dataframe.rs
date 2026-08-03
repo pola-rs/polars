@@ -43,6 +43,52 @@ impl DataFrame {
         Self::from_rows_iter_and_schema(rows.iter(), schema)
     }
 
+    /// Like [`Self::from_rows_and_schema`] but rejects values that do not match
+    /// the schema dtype. If `strict_columns` is given, only columns marked `true`
+    /// are validated; the rest are coerced.
+    pub fn from_rows_and_schema_strict(
+        rows: &[Row],
+        schema: &Schema,
+        strict_columns: Option<&[bool]>,
+    ) -> PolarsResult<Self> {
+        let n_cols = schema.len();
+        if let Some(sc) = strict_columns {
+            polars_ensure!(
+                sc.len() == n_cols,
+                ShapeMismatch:
+                "length of `strict_columns` ({}) does not match the schema width ({})",
+                sc.len(),
+                n_cols,
+            );
+        }
+
+        let n_rows = rows.len();
+        let mut columns: Vec<Vec<AnyValue>> = Vec::with_capacity(n_cols);
+        for _ in 0..n_cols {
+            columns.push(Vec::with_capacity(n_rows));
+        }
+        for row in rows {
+            for (i, col) in columns.iter_mut().enumerate() {
+                let val = row.0.get(i).cloned().unwrap_or(AnyValue::Null);
+                col.push(val);
+            }
+        }
+
+        let v: Vec<Column> = schema
+            .iter()
+            .enumerate()
+            .map(|(i, (name, dtype))| {
+                // Null columns must always be strict to avoid silently dropping values.
+                let strict = dtype == &DataType::Null || strict_columns.is_none_or(|cols| cols[i]);
+                let s =
+                    Series::from_any_values_and_dtype(name.clone(), &columns[i], dtype, strict)?;
+                Ok(s.into_column())
+            })
+            .collect::<PolarsResult<_>>()?;
+
+        DataFrame::new(n_rows, v)
+    }
+
     /// Create a new [`DataFrame`] from an iterator over rows.
     ///
     /// This should only be used when you have row wise data, as this is a lot slower
@@ -149,5 +195,65 @@ impl DataFrame {
             !has_nulls, ComputeError: "unable to infer row types because of null values"
         );
         Self::from_rows_and_schema(rows, &schema)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strict_row_construction_rejects_mismatch() {
+        let schema = Schema::from_iter([Field::new("a".into(), DataType::Int64)]);
+        let rows = vec![Row(vec![AnyValue::Float64(1.5)])];
+        assert!(DataFrame::from_rows_and_schema_strict(&rows, &schema, None).is_err());
+    }
+
+    #[test]
+    fn test_strict_row_construction_accepts_match() {
+        let schema = Schema::from_iter([Field::new("a".into(), DataType::Int64)]);
+        let rows = vec![Row(vec![AnyValue::Int64(1)])];
+        assert!(DataFrame::from_rows_and_schema_strict(&rows, &schema, None).is_ok());
+    }
+
+    #[test]
+    fn test_strict_row_per_column_strictness() {
+        let schema = Schema::from_iter([
+            Field::new("a".into(), DataType::Float64),
+            Field::new("b".into(), DataType::Float64),
+        ]);
+        let rows = vec![Row(vec![AnyValue::Int64(1), AnyValue::Int64(1)])];
+
+        assert!(DataFrame::from_rows_and_schema_strict(&rows, &schema, None).is_err());
+        let df =
+            DataFrame::from_rows_and_schema_strict(&rows, &schema, Some(&[false, false])).unwrap();
+        assert_eq!(df.column("a").unwrap().dtype(), &DataType::Float64);
+        assert!(
+            DataFrame::from_rows_and_schema_strict(&rows, &schema, Some(&[false, true])).is_err()
+        );
+        assert!(DataFrame::from_rows_and_schema_strict(&rows, &schema, Some(&[false])).is_err());
+    }
+
+    #[test]
+    fn test_strict_row_short_rows_padded_with_null() {
+        let schema = Schema::from_iter([
+            Field::new("a".into(), DataType::Int64),
+            Field::new("b".into(), DataType::Int64),
+        ]);
+        let rows = vec![Row(vec![AnyValue::Int64(1)])];
+        let df =
+            DataFrame::from_rows_and_schema_strict(&rows, &schema, Some(&[false, false])).unwrap();
+        assert_eq!(df.height(), 1);
+        assert_eq!(df.width(), 2);
+        assert!(df.column("b").unwrap().get(0).unwrap().is_null());
+    }
+
+    #[test]
+    fn test_strict_row_empty_rows() {
+        let schema = Schema::from_iter([Field::new("a".into(), DataType::Int64)]);
+        let rows: Vec<Row> = vec![];
+        let df = DataFrame::from_rows_and_schema_strict(&rows, &schema, Some(&[true])).unwrap();
+        assert_eq!(df.height(), 0);
+        assert_eq!(df.width(), 1);
     }
 }

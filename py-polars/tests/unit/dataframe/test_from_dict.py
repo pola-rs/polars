@@ -252,6 +252,7 @@ def test_from_dict_cast_logical_type(dtype: pl.DataType, data: Any) -> None:
             }
         ],
         schema=schema,
+        strict=False,
     )
 
     assert_frame_equal(df_from_dicts, df)
