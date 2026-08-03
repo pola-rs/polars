@@ -351,22 +351,6 @@ pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
     cum_sum_with_init(s, reverse, &AnyValue::Null)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn cum_sum_wraps_integer_overflow() {
-        let values = Int64Chunked::from_slice("values".into(), &[i64::MAX, 1]);
-        let result = cum_sum_numeric(&values, false, None);
-
-        assert_eq!(
-            result.into_no_null_iter().collect::<Vec<_>>(),
-            [i64::MAX, i64::MIN]
-        );
-    }
-}
-
 pub fn cum_min_with_init(
     s: &Series,
     reverse: bool,
@@ -492,4 +476,20 @@ fn cum_count_no_nulls(name: PlSmallStr, len: usize, reverse: bool, init: IdxSize
     let mut ca = ca.into_inner();
     ca.rename(name);
     ca.into_series()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cum_sum_wraps_integer_overflow() {
+        let values = Int64Chunked::from_slice("values".into(), &[i64::MAX, 1]);
+        let result = cum_sum_numeric(&values, false, None);
+
+        assert_eq!(
+            result.into_no_null_iter().collect::<Vec<_>>(),
+            [i64::MAX, i64::MIN]
+        );
+    }
 }
