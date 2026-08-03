@@ -46,7 +46,7 @@ impl<'a> IRBuilder<'a> {
         conversion_optimizer.fill_scratch(b.lp_arena.get(b.root).exprs(), b.expr_arena);
         conversion_optimizer
             .optimize_exprs(b.expr_arena, b.lp_arena, b.root, false)
-            .map_err(|e| e.context(format!("optimizing '{ir_name}' failed").into()))?;
+            .with_context(|| format!("optimizing '{ir_name}' failed"))?;
 
         Ok(b)
     }
