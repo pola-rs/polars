@@ -363,7 +363,7 @@ impl Series {
             Ok(Cow::Owned(self.new_from_index(0, length)))
         } else {
             polars_bail!(
-                ShapeMismatch: "error while broadcasting Series '{}', found incompatible lengths {len} and {length}",
+                ShapeMismatch: "can't broadcast Series '{}' of length {len} to length {length}",
                 self.name()
             );
         }
