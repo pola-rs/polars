@@ -161,7 +161,7 @@ impl MetadataPerSource {
     /// Re-index to the sources surviving a filter.
     ///
     /// `surviving` yields ascending pre-filter source indices.
-    fn gather(&self, surviving: impl Iterator<Item = usize>) -> Self {
+    fn gather_full(&self, surviving: impl Iterator<Item = usize>) -> Self {
         match self {
             // A sampled subset is not worth renumbering across a filter;
             // per-source estimates re-derive from the byte sizes.
@@ -172,6 +172,54 @@ impl MetadataPerSource {
                     Self::Unresolved
                 } else {
                     Self::Full(gathered.into())
+                }
+            },
+        }
+    }
+
+    pub fn gather_first(&self) -> Self {
+        match self {
+            Self::Partial(p) => {
+                let (Some(i), Some(md)) = (p.indices.first(), p.metadata.first()) else {
+                    return Self::Unresolved;
+                };
+
+                Self::Partial(Arc::new(PartialMetadata {
+                    indices: vec![*i],
+                    metadata: vec![md.clone()],
+                }))
+            },
+            _ => self.gather_partial(std::iter::once(1)),
+        }
+    }
+
+    // This assumes the source list does not change.
+    fn gather_partial(&self, surviving: impl Iterator<Item = usize>) -> Self {
+        match self {
+            Self::Unresolved => Self::Unresolved,
+            Self::Full(s) => Self::new(surviving.map(|i| (i, s[i].clone())), s.len()),
+            Self::Partial(p) => {
+                // Both `p.indices` and `surviving` are ascending; merge-intersect them,
+                // keeping the original (unrenumbered) indices of the matches.
+                let mut resolved = p.indices.iter().copied().zip(p.metadata.iter()).peekable();
+                let mut indices = Vec::new();
+                let mut metadata = Vec::new();
+                for idx in surviving {
+                    while resolved.peek().is_some_and(|&(i, _)| i < idx) {
+                        resolved.next();
+                    }
+                    if let Some(&(i, m)) = resolved.peek() {
+                        if i == idx {
+                            indices.push(i);
+                            metadata.push(m.clone());
+                            resolved.next();
+                        }
+                    }
+                }
+                if indices.is_empty() {
+                    Self::Unresolved
+                } else {
+                    Self::Partial(Arc::new(PartialMetadata { indices, metadata }))
                 }
             },
         }
@@ -310,7 +358,7 @@ impl FileScanIR {
                 metadata_per_source,
                 bytes_per_source,
             } => {
-                *metadata_per_source = metadata_per_source.gather(surviving_indices.clone());
+                *metadata_per_source = metadata_per_source.gather_full(surviving_indices.clone());
                 if let Some(slice) = bytes_per_source {
                     *slice = surviving_indices.map(|i| slice[i]).collect();
                 }
