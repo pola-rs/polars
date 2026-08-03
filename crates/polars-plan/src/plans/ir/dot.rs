@@ -336,6 +336,8 @@ impl<'a> IRDotDisplay<'a> {
                 input_right,
                 key,
                 maintain_order,
+                descending,
+                nulls_last,
             } => {
                 recurse!(*input_left);
                 recurse!(*input_right);
@@ -348,7 +350,7 @@ impl<'a> IRDotDisplay<'a> {
                 write_label(f, id, |f| {
                     write!(
                         f,
-                        "MERGE_SORTED[maintain_order: {maintain_order}] ON [{key}]",
+                        "MERGE_SORTED[maintain_order: {maintain_order}, descending: {descending}, nulls_last: {nulls_last}] ON [{key}]",
                     )
                 })?;
             },
