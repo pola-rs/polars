@@ -872,8 +872,11 @@ fn infer_schema(
 
     if let Some(dtypes) = options.dtype_overwrite.as_deref() {
         polars_ensure!(
-            dtypes.len() <= inferred_schema.len(),
-            InvalidOperation: "The number of schema overrides must be less than or equal to the number of fields"
+            dtypes.len() == inferred_schema.len(),
+            SchemaMismatch:
+            "The number of dtypes in schema override must be equal to the number \
+            of fields in the file ({} != {}).",
+            dtypes.len(), inferred_schema.len()
         );
         for (i, dtype) in dtypes.iter().enumerate() {
             inferred_schema.set_dtype_at_index(i, dtype.clone());
