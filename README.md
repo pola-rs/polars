@@ -32,52 +32,60 @@
   -
   <a href="https://pola-rs.github.io/r-polars/index.html">R</a>
   |
-  <b>StackOverflow</b>:
-  <a href="https://stackoverflow.com/questions/tagged/python-polars">Python</a>
+  <b>Agents</b>:
+  <a href="https://github.com/polars-inc/skills/tree/main/polars">Skill</a>
   -
-  <a href="https://stackoverflow.com/questions/tagged/rust-polars">Rust</a>
-  -
-  <a href="https://stackoverflow.com/questions/tagged/nodejs-polars">Node.js</a>
-  -
-  <a href="https://stackoverflow.com/questions/tagged/r-polars">R</a>
+  <a href="https://docs.pola.rs/user-guide/misc/polars_llms/">MCP</a>
   |
   <a href="https://docs.pola.rs/">User guide</a>
   |
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
 </p>
 
-## Polars: Extremely fast Query Engine for DataFrames, written in Rust
+## Polars: Extremely fast Query Engine for DataFrames
 
-Polars is an analytical query engine written for DataFrames. It is designed to be fast, easy to use
-and expressive. Key features are:
+Polars is an analytical query engine for DataFrames, written in Rust. It is designed to be fast,
+easy to use and expressive. Key features are:
 
-- Lazy | Eager execution
-- Streaming (larger-than-RAM datasets)
-- Query optimization
-- Multi-threaded
-- Written in Rust
-- SIMD
-- Powerful expression API
-- Front end in Python | Rust | NodeJS | R | SQL
-- [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html)
+- **Fast**: written from the ground up in Rust with multi-threaded, vectorized (SIMD) execution
+- **Lazy & eager execution**: with query optimization out of the box
+- **Larger-than-RAM**: the streaming engine processes datasets that don't fit in memory
+- **Expressive API**: compose complex queries with powerful expressions
+- **Extensible**: extend Polars natively with custom code through
+  [I/O and Expression plugins](https://docs.pola.rs/user-guide/plugins/)
+- **Multi-language**: bindings for Python, Rust, Node.js, R, and SQL
+- **GPU support**: optionally accelerate queries on NVIDIA GPUs
+- **Interoperable**: uses the
+  [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) for zero-copy
+  data sharing
 
 To learn more, read the [user guide](https://docs.pola.rs/).
 
-## Performance 🚀🚀
+## Polars in action
 
-### Blazingly fast
+Queries are composed from expressions. This lazy query gets optimized out of the box and runs in
+parallel across all available cores:
 
-Polars is very fast. In fact, it is one of the best performing solutions available. See the
-[PDS-H benchmarks](https://www.pola.rs/benchmarks.html) results.
+```python
+import polars as pl
 
-### Lightweight
+df = (
+    pl.scan_parquet("orders.parquet")
+    .filter(pl.col("status") == "shipped")
+    .group_by("customer_id")
+    .agg(
+        pl.col("amount").sum().alias("total"),
+        pl.len().alias("n_orders"),
+    )
+    .sort("total", descending=True)
+    .collect()
+)
+```
 
-Polars is also very lightweight. It comes with zero required dependencies, and this shows in the
-import times:
+## Performance
 
-- polars: 70ms
-- numpy: 104ms
-- pandas: 520ms
+Polars is very fast. In fact, it is one of the best performing Dataframe solutions available. See
+the [PDS-H benchmarks](https://www.pola.rs/benchmarks.html) results.
 
 ### Handles larger-than-RAM data
 
@@ -86,7 +94,7 @@ If you have data that does not fit into memory, Polars' query engine is able to 
 you might be able to process your 250GB dataset on your laptop. Collect with
 `collect(engine='streaming')` to run the query streaming.
 
-## Setup
+## Installation
 
 ### Python
 
@@ -99,24 +107,11 @@ pip install polars
 See the [User Guide](https://docs.pola.rs/user-guide/installation/#feature-flags) for more details
 on optional dependencies
 
-To see the current Polars version and a full list of its optional dependencies, run:
+<details>
+<summary><b>Compile Polars from source</b></summary>
 
-```python
-pl.show_versions()
-```
-
-## Contributing
-
-Want to contribute? Read our [contributing guide](https://docs.pola.rs/development/contributing/).
-
-## Managed/Distributed Polars
-
-Do you want a managed solution or scale out to distributed clusters? Consider our
-[offering](https://cloud.pola.rs/) and help the project!
-
-## Python: compile Polars from source
-
-If you want a bleeding edge release or maximal performance you should compile Polars from source.
+If you want a bleeding edge release you should compile Polars from source. Advanced users can also
+compile for maximum performance for their architecture.
 
 This can be done by going through the following steps in sequence:
 
@@ -140,22 +135,27 @@ Note that the Rust crate implementing the Python bindings is called `py-polars` 
 the wrapped Rust crate `polars` itself. However, both the Python package and the Python module are
 named `polars`, so you can `pip install polars` and `import polars`.
 
-## Using custom Rust functions in Python
+</details>
 
-Extending Polars with UDFs compiled in Rust is easy. We expose PyO3 extensions for `DataFrame` and
-`Series` data structures. See more in https://github.com/pola-rs/polars/tree/main/pyo3-polars.
+Check the [Installation guide](https://docs.pola.rs/user-guide/installation/) for more advanced
+installations. For example when you expect more than 2^32 (~4.2 billion) rows, run on an old CPU
+(e.g. dating from before 2011), or on an `x86-64` build of Python on Apple Silicon under Rosetta.
 
-## Going big...
+## Contributing
 
-Do you expect more than 2^32 (~4.2 billion) rows? Compile Polars with the `bigidx` feature flag or,
-for Python users, install `pip install polars[rt64]`.
+Want to contribute? Read our [contributing guide](https://docs.pola.rs/development/contributing/)
+and check the issue tracker for accepted issues.
 
-Don't use this unless you hit the row boundary as the default build of Polars is faster and consumes
-less memory.
+Contributors new to the codebase can look for the `good first issue` label to get familiar with the
+project.
 
-## Legacy
+You can [join the Polars Discord server](https://discord.gg/4UfP5cfBE7) for any help along the way.
 
-Do you want Polars to run on an old CPU (e.g. dating from before 2011), or on an `x86-64` build of
-Python on Apple Silicon under Rosetta? Install `pip install polars[rtcompat]`. This version of
-Polars is compiled without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target
-features.
+## Distributed Polars
+
+Running into hardware limitations executing your queries? Read how you can
+[horizontally scale your Polars query on a cluster](https://docs.pola.rs/polars-cloud/).
+
+## License
+
+Polars is licensed under the [MIT License](LICENSE) (SPDX: `MIT`).

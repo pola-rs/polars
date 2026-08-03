@@ -13,7 +13,6 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::_boost_hash_combine;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
-use polars_utils::vec::CapacityByFactor;
 
 use crate::constants::CSE_REPLACED;
 use crate::plans::aexpr::is_inherently_nondeterministic_top_level;
@@ -847,7 +846,7 @@ impl CommonSubExprOptimizer {
         }
 
         if has_sub_expr {
-            let mut new_expr = Vec::with_capacity_by_factor(expr.len(), 1.3);
+            let mut new_expr = Vec::with_capacity((expr.len() as f64 * 1.3) as usize);
 
             // Then rewrite the expressions that have a cse count > 1.
             for (e, offset) in expr.iter().zip(id_array_offsets.iter()) {

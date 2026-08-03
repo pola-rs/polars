@@ -1451,7 +1451,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         raw_output: Literal[True],
         figsize: tuple[float, float] = ...,
         engine: EngineType = ...,
-        plan_stage: PlanStage = ...,
+        plan_stage: PlanStage | None = ...,
         optimizations: QueryOptFlags = ...,
     ) -> str: ...
 
@@ -1504,7 +1504,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,  # noqa: ARG002
         collapse_joins: bool = True,  # noqa: ARG002
         engine: EngineType = "auto",
-        plan_stage: PlanStage = "ir",
+        plan_stage: PlanStage | None = None,
         _check_order: bool = True,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> str | None:
@@ -1617,13 +1617,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
         >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
-        ... ).show_graph()  # doctest: +SKIP
+        ... ).show_graph(plan_stage="ir")  # doctest: +SKIP
         """
         engine = _select_engine(engine)
 
         optimizations = optimizations.__copy__()
         optimizations._pyoptflags.streaming = engine == "streaming"
         _ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
+
+        if plan_stage is None:
+            warnings.warn(
+                "The default value of `plan_stage` will change from 'ir' to 'physical' in Polars 2.0. "
+                'Explicitly set `plan_stage="ir"` to suppress this warning.',
+                category=FutureWarning,
+                stacklevel=find_stacklevel(),
+            )
+            plan_stage = "ir"
 
         if plan_stage == "ir":
             dot = _ldf.to_dot(optimized)

@@ -1133,6 +1133,7 @@ def scan_csv(
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema: bool = True,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    infer_schema_files: int = (1 << 64) - 1,
     n_rows: int | None = None,
     encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
@@ -1232,11 +1233,18 @@ def scan_csv(
         When `False`, the schema is not inferred and will be `pl.String` if not
         specified in `schema` or `schema_overrides`.
     infer_schema_length
-        The maximum number of rows to scan for schema inference.
+        The maximum number of rows to scan for schema inference. This applies
+        individually to each file included according to `infer_schema_files`.
         If set to `None`, the full data will be scanned into memory
         **(this is slow)**.
         Alternatively set `infer_schema=False` to read all columns as
         `pl.String`.
+    infer_schema_files
+        How many files to use when inferring schema.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     n_rows
         Stop reading from CSV file after reading `n_rows`.
     encoding : {'utf8', 'utf8-lossy'}
@@ -1450,6 +1458,7 @@ def scan_csv(
         new_columns=new_columns,
         with_column_names=with_column_names,
         infer_schema_length=infer_schema_length,
+        infer_schema_files=infer_schema_files,
         n_rows=n_rows,
         low_memory=low_memory,
         rechunk=rechunk,
@@ -1496,6 +1505,7 @@ def _scan_csv_impl(
     new_columns: Sequence[str] | None = None,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    infer_schema_files: int = (1 << 64) - 1,
     n_rows: int | None = None,
     encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
@@ -1558,6 +1568,7 @@ def _scan_csv_impl(
         null_values=processed_null_values,
         empty_string_is_null=empty_string_is_null,
         infer_schema_length=infer_schema_length,
+        infer_schema_files=infer_schema_files,
         new_columns=new_columns,
         with_schema_modify=with_column_names,
         rechunk=rechunk,
