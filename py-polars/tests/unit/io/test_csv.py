@@ -18,7 +18,12 @@ import zstandard
 
 import polars as pl
 from polars._utils.various import normalize_filepath
-from polars.exceptions import ComputeError, InvalidOperationError, NoDataError
+from polars.exceptions import (
+    ComputeError,
+    DuplicateError,
+    InvalidOperationError,
+    NoDataError,
+)
 from polars.io.csv import BatchedCsvReader
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.conftest import PlMonkeyPatch
@@ -3219,3 +3224,23 @@ def test_read_csv_missing_utf8_is_empty_string_deprecated() -> None:
         match=r"`missing_utf8_is_empty_string` for `read_csv` is deprecated",
     ):
         pl.read_csv(b"a,b\n1,2", missing_utf8_is_empty_string=True)  # type: ignore[call-arg]
+
+
+def test_read_csv_name_deduplication_conflict_28310() -> None:
+    err_msg = "de-duplication of occurrence #2 of column name 'a' failed; the name 'a_duplicated_0' also exists in the file."
+
+    q = pl.scan_csv(b"""\
+a,a,a_duplicated_0
+1,2,3
+""")
+
+    with pytest.raises(DuplicateError, match=err_msg):
+        q.collect()
+
+    q = pl.scan_csv(b"""\
+a,a_duplicated_0,a
+1,2,3
+""")
+
+    with pytest.raises(DuplicateError, match=err_msg):
+        q.collect()
