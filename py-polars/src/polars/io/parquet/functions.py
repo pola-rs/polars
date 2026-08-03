@@ -21,6 +21,7 @@ from polars._utils.wrap import wrap_ldf
 from polars.convert import from_arrow
 from polars.io._utils import (
     get_sources,
+    parse_row_index_args,
     prepare_file_arg,
 )
 from polars.io.cloud.credential_provider._builder import (
@@ -208,6 +209,10 @@ def read_parquet(
     with `LazyFrame` s.
 
     """
+    row_index = parse_row_index_args(row_index_name, row_index_offset)
+    del row_index_name
+    del row_index_offset
+
     if schema is not None:
         msg = "the `schema` parameter of `read_parquet` is considered unstable."
         issue_unstable_warning(msg)
@@ -215,6 +220,14 @@ def read_parquet(
     if hive_schema is not None:
         msg = "the `hive_schema` parameter of `read_parquet` is considered unstable."
         issue_unstable_warning(msg)
+
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on read_parquet() will be removed. "
+            "Consider calling "
+            "df.rechunk() on the result.",
+            version="1.43.2",
+        )
 
     # Dispatch to pyarrow if requested
     if use_pyarrow:
@@ -234,7 +247,7 @@ def read_parquet(
             )
             raise TypeError(msg)
 
-        return _read_parquet_with_pyarrow(
+        df = _read_parquet_with_pyarrow(
             source,
             columns=columns,
             storage_options=storage_options,
@@ -243,20 +256,16 @@ def read_parquet(
             rechunk=rechunk or False,
         )
 
-    if rechunk is not None:
-        issue_deprecation_warning(
-            "`rechunk` parameter on read_parquet() will be removed. "
-            "Consider calling "
-            "df.rechunk() on the result.",
-            version="1.43.2",
-        )
+        if row_index is not None:
+            name, offset = row_index
+            df = df.with_row_index(name, offset)
+
+        return df
 
     # For other inputs, defer to `scan_parquet`
     lf = scan_parquet(
         source,
         n_rows=n_rows,
-        row_index_name=row_index_name,
-        row_index_offset=row_index_offset,
         parallel=parallel,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
@@ -278,6 +287,10 @@ def read_parquet(
             lf = lf.select(F.nth(columns))
         else:
             lf = lf.select(columns)
+
+    if row_index is not None:
+        name, offset = row_index
+        lf = lf.with_row_index(name, offset)
 
     ret = lf._collect_eager()
 

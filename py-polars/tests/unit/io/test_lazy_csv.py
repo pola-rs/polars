@@ -5,7 +5,7 @@ import tempfile
 import textwrap
 from collections import OrderedDict
 from pathlib import Path
-from typing import IO, TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -13,7 +13,6 @@ import pytest
 import polars as pl
 from polars.exceptions import (
     ComputeError,
-    InvalidOperationError,
     SchemaError,
 )
 from polars.testing import assert_frame_equal
@@ -211,27 +210,6 @@ def test_scan_csv_headers_but_no_data_13770() -> None:
     assert df.schema == schema
 
 
-def test_scan_csv_schema_overrides_dtype_list_17813() -> None:
-    csv_data = textwrap.dedent(
-        """\
-        a,b,c,d,e
-        1,2,3,4,5
-        6,7,8,9,10
-        """
-    )
-    csv = io.StringIO(csv_data)
-
-    df = pl.scan_csv(csv, schema_overrides=4 * [pl.String]).collect()
-
-    assert df.dtypes == [pl.String, pl.String, pl.String, pl.String, pl.Int64]
-
-    # Recreate StringIO because the first scan consumes the stream.
-    csv = io.StringIO(csv_data)
-    df = pl.scan_csv(csv, schema_overrides=[pl.Int64()]).collect()
-
-    assert df.dtypes == [pl.Int64, pl.Int64, pl.Int64, pl.Int64, pl.Int64]
-
-
 @pytest.mark.write_disk
 def test_scan_csv_schema_overrides_dtype_list_file_info_cache(
     tmp_path: Path,
@@ -239,10 +217,10 @@ def test_scan_csv_schema_overrides_dtype_list_file_info_cache(
     path = tmp_path / "data.csv"
     path.write_text("a,b\n1,2\n3,4\n")
 
-    strings = pl.scan_csv(path, schema_overrides=[pl.String]).select(
+    strings = pl.scan_csv(path, schema_overrides=[pl.String, pl.Int64]).select(
         pl.col("a").alias("a_string")
     )
-    floats = pl.scan_csv(path, schema_overrides=[pl.Float64]).select(
+    floats = pl.scan_csv(path, schema_overrides=[pl.Float64, pl.Int64]).select(
         pl.col("a").alias("a_float")
     )
 
@@ -263,8 +241,8 @@ def test_scan_csv_invalid_schema_overrides_length() -> None:
     )
 
     with pytest.raises(
-        InvalidOperationError,
-        match="The number of schema overrides must be less than or equal to the number of fields",
+        SchemaError,
+        match="The number of dtypes in schema override must be equal to the number of fields",
     ):
         pl.scan_csv(csv, schema_overrides=[pl.Int64, pl.String, pl.Boolean]).collect()
 
@@ -712,28 +690,34 @@ def test_scan_csv_new_columns_28343() -> None:
     )
 
 
-def test_scan_csv_infer_schema_files() -> None:
-    data = [
-        b"""\
-a
-1
-""",
-        b"""\
-a
-A
-""",
-    ]
+@pytest.mark.parametrize("lazy", [True, False])
+def test_scan_csv_infer_schema_files(lazy: bool) -> None:
+    def read(*a: Any, **kw: Any) -> pl.DataFrame:
+        return pl.scan_csv(*a, **kw).collect() if lazy else pl.read_csv(*a, **kw)
 
+    data = [b"a\n1", b"a\nA"]
     expect_df = pl.DataFrame({"a": ["1", "A"]})
 
-    assert_frame_equal(pl.scan_csv(data).collect(), expect_df)
-    assert_frame_equal(pl.scan_csv(data, infer_schema_files=2).collect(), expect_df)
+    assert_frame_equal(read(data), expect_df)
+    assert_frame_equal(read(data, infer_schema_files=2), expect_df)
 
     with pytest.raises(ComputeError, match="could not parse `A` as dtype `i64`"):
-        pl.scan_csv(data, infer_schema_files=1).collect()
+        read(data, infer_schema_files=1)
 
     with pytest.raises(ValueError, match="invalid zero value"):
-        pl.scan_csv(data, infer_schema_files=0)
+        read("non-existent", infer_schema_files=0)
+
+    # Check the default configuration
+    assert_frame_equal(
+        read(9 * [b"a\n1"] + [b"a\nA"]),
+        pl.DataFrame(
+            {"a": ["1", "1", "1", "1", "1", "1", "1", "1", "1", "A"]},
+            height=10,
+        ),
+    )
+
+    with pytest.raises(ComputeError, match="could not parse `A` as dtype `i64`"):
+        read(10 * [b"a\n1"] + [b"a\nA"])
 
 
 def test_scan_csv_with_schema_respects_schema_column_order_11723() -> None:
