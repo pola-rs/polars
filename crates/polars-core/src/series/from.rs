@@ -580,25 +580,24 @@ impl Series {
         dtype: &DataType,
         strict: bool,
     ) -> PolarsResult<Series> {
+        use std::borrow::Cow;
+
         let phys = dtype.cat_physical()?;
         let phys_dtype = DataType::from(phys);
+
+        let mut casted = Cow::Borrowed(cats);
         if cats.dtype() != &phys_dtype {
-            polars_bail!(
-                SchemaMismatch:
-                "cannot convert column of type {} to {} with physical type {}; \
-                column dtype must match the enum/categorical's physical type",
-                cats.dtype(), dtype, phys_dtype
-            )
+            casted = Cow::Owned(cats.cast(&phys_dtype)?);
         }
 
         let out = with_match_categorical_physical_type!(phys, |$C| {
             // SAFETY: we are guarded by the type system.
             type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
-            let ca: &PhysCa = cats.as_ref().as_ref();
+            let ca: &PhysCa = casted.as_ref().as_ref().as_ref();
             CategoricalChunked::<$C>::from_cats_and_dtype(ca.clone(), dtype.clone()).into_series()
         });
 
-        if strict && out.null_count() != cats.null_count() {
+        if strict && out.null_count() != casted.null_count() {
             polars_bail!(
                 ComputeError:
                 "found invalid category value when converting from physical to {dtype}",
