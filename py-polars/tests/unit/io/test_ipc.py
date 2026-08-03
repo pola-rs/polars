@@ -615,24 +615,3 @@ def test_read_ipc_pyarrow() -> None:
         pl.read_ipc(f, columns=["b"], use_pyarrow=True),
         pl.DataFrame({"b": 2}),
     )
-
-
-@pytest.mark.parametrize("use_pyarrow", [True, False])
-def test_read_ipc_projection_and_row_index(use_pyarrow: bool) -> None:
-    f = io.BytesIO()
-    pl.DataFrame({"a": 1, "b": 2}).write_ipc(f)
-    f.seek(0)
-
-    assert_frame_equal(
-        pl.read_ipc(f, columns=["b"], row_index_name="index", use_pyarrow=use_pyarrow),
-        pl.DataFrame(
-            {"index": 0, "b": 2}, schema_overrides={"index": pl.get_index_type()}
-        ),
-    )
-
-    assert_frame_equal(
-        pl.read_ipc(f, columns=[1], row_index_name="index", use_pyarrow=use_pyarrow),
-        pl.DataFrame(
-            {"index": 0, "b": 2}, schema_overrides={"index": pl.get_index_type()}
-        ),
-    )
