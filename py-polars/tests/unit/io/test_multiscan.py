@@ -1234,7 +1234,7 @@ def test_hive_join_rewrite_semi_join(tmp_path: Path) -> None:
         .slice(0, 1)
         # Collapse the two results into the same value so that we don't have to care
         # about the order of the result.
-        .with_columns(foo=pl.col("foo") % 10)
+        .with_columns(foo=pl.col("foo") % 10, x=pl.col("x") % 10)
     )
     plan = q.explain()
 
