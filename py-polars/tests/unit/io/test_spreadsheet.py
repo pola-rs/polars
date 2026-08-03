@@ -828,9 +828,14 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
             ({}, True)
             if write_params.get("include_header", True)
             else (
-                {"new_columns": ["dtm", "str", "val"]}
-                if engine == "xlsx2csv"
-                else {"column_names": ["dtm", "str", "val"]},
+                {
+                    "new_columns" if engine == "xlsx2csv" else "column_names": [
+                        "dtm",
+                        "str",
+                        "val",
+                        "_",
+                    ],
+                },
                 False,
             )
         )
@@ -844,13 +849,17 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
         _wb = df.write_excel(workbook=xls, worksheet="data", **write_params)
 
         # ...and read it back again:
-        xldf = pl.read_excel(
-            xls,
-            sheet_name="data",
-            engine=engine,
-            read_options=read_options,
-            has_header=has_header,
-        )[:3].select(df.columns[:3])
+        xldf = (
+            pl.read_excel(
+                xls,
+                sheet_name="data",
+                engine=engine,
+                read_options=read_options,
+                has_header=has_header,
+            )
+            .head(3)
+            .select("dtm", "str", "val")
+        )
 
         if engine == "xlsx2csv":
             xldf = xldf.with_columns(pl.col("dtm").str.strptime(pl.Date, fmt_strptime))
@@ -1336,7 +1345,6 @@ def test_excel_mixed_calamine_float_data(io_files_path: Path) -> None:
 
 
 @pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch, _read_spreadsheet_xlsx2csv needs to be changed not to call `_reorder_columns` on the df
 def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
         {

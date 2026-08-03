@@ -25,7 +25,6 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.conftest import PlMonkeyPatch
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -33,6 +32,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     from polars._typing import CsvQuoteStyle, TimeUnit
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -149,8 +149,7 @@ def test_infer_schema_false(chunk_override: None, read_fn: str) -> None:
     assert df.dtypes == [pl.String, pl.String, pl.String]
 
 
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_csv_null_values(chunk_override: None) -> None:
+def test_csv_null_values() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c
@@ -407,8 +406,7 @@ def test_datetime_parsing_default_formats(chunk_override: None) -> None:
     assert df.dtypes == [pl.Datetime, pl.Datetime, pl.Datetime]
 
 
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_partial_schema_overrides(chunk_override: None) -> None:
+def test_partial_schema_overrides_forbid() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c
@@ -417,12 +415,37 @@ def test_partial_schema_overrides(chunk_override: None) -> None:
         """
     )
     f = io.StringIO(csv)
-    df = pl.read_csv(f, schema_overrides=[pl.String])
-    assert df.dtypes == [pl.String, pl.Int64, pl.Int64]
+
+    with pytest.raises(
+        SchemaError,
+        match="number of dtypes in schema override must be equal",
+    ):
+        pl.read_csv(f, schema_overrides=[pl.String])
 
 
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_schema_overrides_with_column_name_selection(chunk_override: None) -> None:
+def test_schema_overrides_with_column_name_selection() -> None:
+    csv = textwrap.dedent(
+        """\
+        a,b,c,d
+        1,2,3,4
+        1,2,3,4
+        """
+    )
+    df = pl.read_csv(
+        io.StringIO(csv),
+        columns=["c", "b", "d"],
+        schema_overrides=[pl.Int32, pl.String, pl.Int64, pl.Int64],
+    )
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {"c": [3, 3], "b": ["2", "2"], "d": [4, 4]},
+            schema={"c": pl.Int64, "b": pl.String, "d": pl.Int64},
+        ),
+    )
+
+
+def test_schema_overrides_with_column_idx_selection() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c,d
@@ -431,29 +454,26 @@ def test_schema_overrides_with_column_name_selection(chunk_override: None) -> No
         """
     )
     f = io.StringIO(csv)
-    df = pl.read_csv(f, columns=["c", "b", "d"], schema_overrides=[pl.Int32, pl.String])
-    assert df.dtypes == [pl.String, pl.Int32, pl.Int64]
-
-
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_schema_overrides_with_column_idx_selection(chunk_override: None) -> None:
-    csv = textwrap.dedent(
-        """\
-        a,b,c,d
-        1,2,3,4
-        1,2,3,4
-        """
+    df = pl.read_csv(
+        f,
+        columns=[2, 1, 3],
+        schema_overrides=[pl.Int32, pl.Int8, pl.String, pl.String],
     )
-    f = io.StringIO(csv)
-    df = pl.read_csv(f, columns=[2, 1, 3], schema_overrides=[pl.Int32, pl.String])
-    # Columns without an explicit dtype set will get pl.String if dtypes is a list
-    # if the column selection is done with column indices instead of column names.
-    assert df.dtypes == [pl.String, pl.Int32, pl.String]
-    # Projections are sorted.
-    assert df.columns == ["b", "c", "d"]
+    # Projections in requested order.
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {"c": ["3", "3"], "b": [2, 2], "d": ["4", "4"]},
+            schema={
+                "c": pl.String,
+                "b": pl.Int8,
+                "d": pl.String,
+            },
+        ),
+    )
 
 
-def test_partial_column_rename(chunk_override: None) -> None:
+def test_partial_column_rename() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c
@@ -464,7 +484,7 @@ def test_partial_column_rename(chunk_override: None) -> None:
     f = io.StringIO(csv)
     for use in [True, False]:
         f.seek(0)
-        df = pl.read_csv(f, new_columns=["foo"], use_pyarrow=use)
+        df = pl.read_csv(f, new_columns=["foo", "b", "c"], use_pyarrow=use)
         assert df.columns == ["foo", "b", "c"]
 
 
@@ -488,8 +508,6 @@ def test_read_csv_columns_argument(
     assert df.columns == col_out
 
 
-@pytest.mark.may_fail_cloud  # read->scan_csv dispatch
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_read_csv_buffer_ownership(chunk_override: None) -> None:
     bts = b"\xf0\x9f\x98\x80,5.55,333\n\xf0\x9f\x98\x86,-5.0,666"
     buf = io.BytesIO(bts)
@@ -505,9 +523,8 @@ def test_read_csv_buffer_ownership(chunk_override: None) -> None:
     assert buf.read() == bts
 
 
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 @pytest.mark.write_disk
-def test_read_csv_encoding(chunk_override: None, tmp_path: Path) -> None:
+def test_read_csv_encoding(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     bts = (
@@ -536,7 +553,6 @@ def test_read_csv_encoding(chunk_override: None, tmp_path: Path) -> None:
             )
 
 
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 @pytest.mark.write_disk
 def test_read_csv_encoding_lossy(chunk_override: None, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -566,8 +582,7 @@ def test_read_csv_encoding_lossy(chunk_override: None, tmp_path: Path) -> None:
         )
 
 
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_column_rename_and_schema_overrides(chunk_override: None) -> None:
+def test_column_rename_and_schema_overrides() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c
@@ -584,13 +599,16 @@ def test_column_rename_and_schema_overrides(chunk_override: None) -> None:
     assert df.dtypes == [pl.String, pl.Int64, pl.Float32]
 
     f = io.StringIO(csv)
-    df = pl.read_csv(
-        f,
-        columns=["a", "c"],
-        new_columns=["A", "C"],
-        schema_overrides={"A": pl.String, "C": pl.Float32},
-    )
-    assert df.dtypes == [pl.String, pl.Float32]
+
+    with pytest.raises(
+        SchemaError, match=r"new_columns.*does not match number of columns in file"
+    ):
+        pl.read_csv(
+            f,
+            columns=["a", "c"],
+            new_columns=["A", "C"],
+            schema_overrides={"A": pl.String, "C": pl.Float32},
+        )
 
     csv = textwrap.dedent(
         """\
@@ -955,17 +973,10 @@ def test_csv_date_dtype_ignore_errors(chunk_override: None) -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_csv_globbing(chunk_override: None, io_files_path: Path) -> None:
+def test_csv_globbing(io_files_path: Path) -> None:
     path = io_files_path / "foods*.csv"
     df = pl.read_csv(path)
     assert df.shape == (135, 4)
-
-    with PlMonkeyPatch.context() as mp:
-        mp.setenv("POLARS_FORCE_ASYNC", "0")
-
-        with pytest.raises(ValueError):
-            _ = pl.read_csv(path, columns=[0, 1])
 
     df = pl.read_csv(path, columns=["category", "sugars_g"])
     assert df.shape == (135, 2)
@@ -983,19 +994,11 @@ def test_csv_globbing(chunk_override: None, io_files_path: Path) -> None:
     assert df.dtypes == list(dtypes.values())
 
 
-@pytest.mark.parametrize("auto_streaming", ["0", "1"])
-def test_csv_globbing_schema_overrides_by_position(
-    chunk_override: None,
-    io_files_path: Path,
-    plmonkeypatch: PlMonkeyPatch,
-    auto_streaming: str,
-) -> None:
-    plmonkeypatch.setenv("POLARS_AUTO_STREAMING", auto_streaming)
-    plmonkeypatch.setenv("POLARS_FORCE_STREAMING", "0")
-    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
-
+def test_csv_globbing_schema_overrides_by_position(io_files_path: Path) -> None:
     path = io_files_path / "foods*.csv"
-    df = pl.read_csv(path, schema_overrides=[pl.String, pl.Float64, pl.String])
+    df = pl.read_csv(
+        path, schema_overrides=[pl.String, pl.Float64, pl.String, pl.Int64]
+    )
 
     assert df.shape == (135, 4)
     assert df.dtypes == [pl.String, pl.Float64, pl.String, pl.Int64]
@@ -2075,7 +2078,7 @@ def test_read_csv_invalid_schema_overrides(chunk_override: None) -> None:
         pl.read_csv(f, schema_overrides={pl.Int64, pl.String})  # type: ignore[arg-type]
 
 
-def test_read_csv_invalid_schema_overrides_length(chunk_override: None) -> None:
+def test_read_csv_invalid_schema_overrides_length() -> None:
     csv = textwrap.dedent(
         """\
         a,b
@@ -2087,8 +2090,8 @@ def test_read_csv_invalid_schema_overrides_length(chunk_override: None) -> None:
     f = io.StringIO(csv)
 
     with pytest.raises(
-        InvalidOperationError,
-        match="The number of schema overrides must be less than or equal to the number of fields",
+        SchemaError,
+        match=r"The number of dtypes in schema override must be equal to the number of fields in the file \(3 != 2\)",
     ):
         pl.read_csv(f, schema_overrides=[pl.Int64, pl.String, pl.Boolean])
 
@@ -2220,22 +2223,6 @@ def test_read_csv_decimal_type_decimal_comma_24414(chunk_override: None) -> None
     assert_frame_equal(out_dot, out)
 
 
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_fsspec_not_available(chunk_override: None) -> None:
-    with PlMonkeyPatch.context() as mp:
-        mp.setenv("POLARS_FORCE_ASYNC", "0")
-        mp.setattr("polars.io._utils._FSSPEC_AVAILABLE", False)
-
-        with pytest.raises(
-            ImportError, match=r"`fsspec` is required for `storage_options` argument"
-        ):
-            pl.read_csv(
-                "s3://foods/cabbage.csv",
-                storage_options={"key": "key", "secret": "secret"},
-            )
-
-
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_read_csv_dtypes_deprecated(chunk_override: None) -> None:
     csv = textwrap.dedent(
         """\
@@ -2302,17 +2289,12 @@ def test_write_csv_raise_on_non_utf8_17328(
             df_no_lists.write_csv((tmp_path / "dangling.csv").open("w", encoding="gbk"))
 
 
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-@pytest.mark.write_disk
-def test_write_csv_appending_17543(chunk_override: None, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
+def test_write_csv_appending_17543() -> None:
+    f = io.BytesIO()
     df = pl.DataFrame({"col": ["value"]})
-    with (tmp_path / "append.csv").open("w") as f:
-        f.write("# test\n")
-        df.write_csv(f)
-    with (tmp_path / "append.csv").open("r") as f:
-        assert f.readline() == "# test\n"
-        assert pl.read_csv(f).equals(df)
+    f.write(b"# test\n")
+    df.write_csv(f)
+    pl.read_csv(f, skip_lines=1).equals(df)
 
 
 def test_write_csv_passing_params_18825(chunk_override: None) -> None:
@@ -2410,7 +2392,6 @@ def test_csv_try_parse_dates_leading_zero_8_digits_22167(chunk_override: None) -
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_csv_read_time_schema_overrides(chunk_override: None) -> None:
     df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
 
@@ -3192,3 +3173,10 @@ def test_read_csv_default_raise_if_empty(
             read_csv(b"", has_header=has_header, schema=schema, raise_if_empty=False),
             pl.DataFrame(schema=schema),
         )
+
+
+def test_read_csv_use_pyarrow_multiple_sources_unsupported() -> None:
+    pl.read_csv(b"a\n1", use_pyarrow=True)
+
+    with pytest.raises(TypeError):
+        pl.read_csv([b"a\n1"], use_pyarrow=True)
