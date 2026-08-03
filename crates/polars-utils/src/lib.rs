@@ -2,7 +2,7 @@
     all(target_arch = "aarch64", feature = "nightly"),
     feature(stdarch_aarch64_prefetch)
 )]
-#![cfg_attr(feature = "nightly", feature(core_intrinsics))] // For algebraic ops, select_unpredictable.
+#![cfg_attr(feature = "nightly", feature(float_algebraic))]
 #![cfg_attr(feature = "nightly", allow(internal_features))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 pub mod abs_diff;
@@ -43,7 +43,6 @@ pub mod priority;
 pub mod range;
 pub mod regex_cache;
 pub mod relaxed_cell;
-pub mod reuse_vec;
 pub mod row_counter;
 pub mod select;
 pub mod slice;
