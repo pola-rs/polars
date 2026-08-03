@@ -91,6 +91,7 @@ from polars.datatypes import (
     parse_into_datatype_expr,
     parse_into_dtype,
 )
+from polars.datatypes.classes import Struct
 from polars.datatypes.group import DataTypeGroup
 from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.lazyframe.engine_config import _eager_engine, _select_engine
@@ -7357,7 +7358,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 8   │
         └─────┴─────┘
         """
-        return self.select(F.col("*").gather_every(n, offset))
+        return (
+            self.with_columns(
+                F.lit({}, dtype=Struct({})).alias("__POLARS_INTERNAL_HEIGHT_COLUMN")
+            )
+            .select(F.col("*").gather_every(n, offset))
+            .drop("__POLARS_INTERNAL_HEIGHT_COLUMN")
+        )
 
     def fill_null(
         self,
