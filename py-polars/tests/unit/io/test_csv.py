@@ -2289,12 +2289,16 @@ def test_write_csv_raise_on_non_utf8_17328(
             df_no_lists.write_csv((tmp_path / "dangling.csv").open("w", encoding="gbk"))
 
 
-def test_write_csv_appending_17543() -> None:
-    f = io.BytesIO()
+@pytest.mark.write_disk
+def test_write_csv_appending_17543(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
     df = pl.DataFrame({"col": ["value"]})
-    f.write(b"# test\n")
-    df.write_csv(f)
-    pl.read_csv(f, skip_lines=1).equals(df)
+    with (tmp_path / "append.csv").open("w") as f:
+        f.write("# test\n")
+        df.write_csv(f)
+    with (tmp_path / "append.csv").open("r") as f:
+        assert f.readline() == "# test\n"
+        assert pl.read_csv(f).equals(df)
 
 
 def test_write_csv_passing_params_18825(chunk_override: None) -> None:
@@ -3180,3 +3184,17 @@ def test_read_csv_use_pyarrow_multiple_sources_unsupported() -> None:
 
     with pytest.raises(TypeError):
         pl.read_csv([b"a\n1"], use_pyarrow=True)
+
+
+def test_read_csv_from_file_offset() -> None:
+    f = io.StringIO("""\
+A|B|C|D
+1,2,3,4
+""")
+
+    headers = [str.lower(x) for x in f.readline().strip().split("|")]
+
+    assert_frame_equal(
+        pl.scan_csv(f, has_header=False, new_columns=headers).collect(),
+        pl.DataFrame({"a": 1, "b": 2, "c": 3, "d": 4}),
+    )
