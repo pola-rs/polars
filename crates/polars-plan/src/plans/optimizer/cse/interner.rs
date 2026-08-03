@@ -7,7 +7,7 @@ use polars_utils::arena::Node;
 /// Compare and hash nodes at the top level, assumed to be O(1)
 /// These operations should not descend into child/input nodes
 pub trait ShallowNodeOps {
-    fn shallow_hash(&self, node: Node) -> u64;
+    fn shallow_hash<H: Hasher>(&self, node: Node, state: &mut H);
     fn shallow_eq(&self, a: Node, b: Node) -> bool;
 }
 
@@ -102,7 +102,7 @@ fn combined_hash<T>(
     ops: &impl ShallowNodeOps,
 ) -> u64 {
     let mut hasher = DefaultHasher::new();
-    hasher.write_u64(ops.shallow_hash(node));
+    ops.shallow_hash(node, &mut hasher);
     for child_id in child_ids {
         hasher.write_u32(child_id.as_u32());
     }

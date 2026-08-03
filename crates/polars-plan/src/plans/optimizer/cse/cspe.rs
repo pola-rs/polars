@@ -1,4 +1,4 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::Hasher;
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
@@ -106,12 +106,8 @@ struct IrShallowOps<'a> {
 }
 
 impl ShallowNodeOps for IrShallowOps<'_> {
-    fn shallow_hash(&self, node: Node) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.lp_arena
-            .get(node)
-            .shallow_hash(&mut hasher, self.expr_cmp);
-        hasher.finish()
+    fn shallow_hash<H: Hasher>(&self, node: Node, state: &mut H) {
+        self.lp_arena.get(node).shallow_hash(state, self.expr_cmp);
     }
 
     fn shallow_eq(&self, a: Node, b: Node) -> bool {
