@@ -399,7 +399,16 @@ def test_gather_group_by_lit(maintain_order: bool) -> None:
         )
         .group_by("a", maintain_order=maintain_order)
         .agg(pl.lit([1]).gather([0, 0, 0])),
-        pl.DataFrame({"a": [1, 2, 3], "literal": [[[1], [1], [1]]] * 3}),
+        pl.DataFrame(
+            {
+                "a": [1, 2, 3],
+                "literal": pl.Series(
+                    "literal",
+                    [[[1], [1], [1]]] * 3,
+                    dtype=pl.List(pl.List(pl.Int32)),
+                ),
+            }
+        ),
         check_row_order=maintain_order,
     )
 
