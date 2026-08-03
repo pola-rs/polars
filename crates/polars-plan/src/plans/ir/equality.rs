@@ -8,7 +8,7 @@ use crate::plans::{AExpr, ExprIR};
 use crate::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
 
 pub trait ExpressionComparator {
-    fn equals(&mut self, lhs: &ExprIR, rhs: &ExprIR, expr_arena: &Arena<AExpr>) -> bool;
+    fn equals(&self, lhs: &ExprIR, rhs: &ExprIR, expr_arena: &Arena<AExpr>) -> bool;
 }
 
 impl IR {
@@ -16,7 +16,7 @@ impl IR {
         lhs: T,
         rhs: T,
         expr_arena: &Arena<AExpr>,
-        cmp: &mut impl ExpressionComparator,
+        cmp: &impl ExpressionComparator,
     ) -> bool
     where
         T: IntoIterator<Item = &'a ExprIR>,
@@ -32,7 +32,7 @@ impl IR {
         &self,
         other: &Self,
         expr_arena: &Arena<AExpr>,
-        expression_cmp: &mut impl ExpressionComparator,
+        expression_cmp: &impl ExpressionComparator,
     ) -> bool {
         if std::mem::discriminant(self) != std::mem::discriminant(other) {
             return false;

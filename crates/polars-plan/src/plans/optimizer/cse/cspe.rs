@@ -11,7 +11,7 @@ use polars_utils::unique_id::UniqueId;
 use crate::plans::aexpr::traverse_and_hash_aexpr;
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::visitor::hash::IRHashWrap;
-use crate::plans::{AExpr, ExprIR, ExpressionComparator, IR};
+use crate::plans::{AExpr, ArenaLpIter, ExprIR, ExpressionComparator, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::tree_traversal::{PersistInputEdgeIdxs, TreeTraversalImpl};
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
@@ -28,6 +28,10 @@ pub fn common_subplan_elimination(
     let mut persisted_input_edge_idxs = vec![usize::MAX]; // For tree traversal
     let mut deduplication_map = HashTable::default();
     let mut id_map = PlIndexMap::new();
+    
+    // Hash all exprs in advance, so that later comparison is immutable
+    let expr_cmp = HashExpressionCmp::new(root, ir_arena, expr_arena);
+    
     let mut storage = IRTraversalStorage { arena: ir_arena };
 
     TreeTraversalImpl {
@@ -42,7 +46,7 @@ pub fn common_subplan_elimination(
             deduplication_map: &mut deduplication_map,
             id_map: &mut id_map,
             expr_arena,
-            expr_cmp: HashExpressionCmp::new(),
+            expr_cmp,
         },
     }
     .traverse_rec(root, 0, false)
@@ -150,25 +154,28 @@ impl Hasher for Blake3Hasher {
 }
 
 struct HashExpressionCmp {
-    expr_hash_cache: PlIndexMap<Node, [u8; 32]>,
+    expr_hashes: PlIndexMap<Node, [u8; 32]>,
 }
 
 impl HashExpressionCmp {
-    fn new() -> Self {
-        Self {
-            expr_hash_cache: PlIndexMap::new(),
+    fn new(root: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Self {
+        let mut expr_hashes = PlIndexMap::new();
+        for (_, ir) in lp_arena.iter(root) {
+            for e in ir.exprs() {
+                expr_hashes.entry(e.node()).or_insert_with(|| {
+                    let mut hasher = Blake3Hasher::new();
+                    traverse_and_hash_aexpr(e.node(), expr_arena, &mut hasher);
+                    hasher.finalize()
+                });
+            }
         }
+        Self { expr_hashes }
     }
 
-    fn expr_hash(&mut self, expr: &ExprIR, expr_arena: &Arena<AExpr>) -> [u8; 32] {
-        let tree_hash = *self.expr_hash_cache.entry(expr.node()).or_insert_with(|| {
-            let mut hasher = Blake3Hasher::new();
-            traverse_and_hash_aexpr(expr.node(), expr_arena, &mut hasher);
-            hasher.finalize()
-        });
-
-        // Multiple ExprIRs can reference the same Node, but have different names.
-        // The alias is included in the IRHashWrap hasher, so we need to include it here as well.
+    // Multiple ExprIRs can reference the same Node, but have different names.
+    // The alias is included in the IRHashWrap hasher, so we need to include it here as well.
+    fn hash_with_alias(&self, expr: &ExprIR) -> [u8; 32] {
+        let tree_hash = self.expr_hashes[&expr.node()];
         match expr.get_alias() {
             None => tree_hash,
             Some(alias) => {
@@ -182,8 +189,8 @@ impl HashExpressionCmp {
 }
 
 impl ExpressionComparator for HashExpressionCmp {
-    fn equals(&mut self, lhs: &ExprIR, rhs: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
-        self.expr_hash(lhs, expr_arena) == self.expr_hash(rhs, expr_arena)
+    fn equals(&self, lhs: &ExprIR, rhs: &ExprIR, _expr_arena: &Arena<AExpr>) -> bool {
+        self.hash_with_alias(lhs) == self.hash_with_alias(rhs)
     }
 }
 
@@ -192,7 +199,7 @@ fn shallow_eq<'a>(
     rhs: Node,
     lp_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
-    expr_cmp: &mut HashExpressionCmp,
+    expr_cmp: &HashExpressionCmp,
 ) -> bool {
     let lhs = lp_arena.get(lhs);
     let rhs = lp_arena.get(rhs);
@@ -206,7 +213,7 @@ fn get_deduplication_id<'a>(
     child_ids: Vec<DeduplicationId>,
     lp_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
-    expr_cmp: &mut HashExpressionCmp,
+    expr_cmp: &HashExpressionCmp,
 ) -> DeduplicationId {
     let shallow_hash = shallow_hasher(node, &child_ids, lp_arena, expr_arena);
 
@@ -269,7 +276,7 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
             child_ids,
             storage.arena,
             self.expr_arena,
-            &mut self.expr_cmp,
+            &self.expr_cmp,
         );
 
         use indexmap::map::Entry;
