@@ -335,8 +335,12 @@ impl PySeries {
             },
         };
 
-        let out = s.strict_cast(&dtype).map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        let out = if dtype.is_categorical() || dtype.is_enum() {
+            Series::from_cats_and_dtype(&s, &dtype, true)
+        } else {
+            s.strict_cast(&dtype)
+        };
+        Ok(out.map_err(PyPolarsErr::from)?.into())
     }
 }
 

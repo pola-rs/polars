@@ -14,6 +14,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import (
+    ComputeError,
     InvalidOperationError,
     SchemaError,
 )
@@ -236,21 +237,28 @@ def test_casting_to_an_enum_from_enum_nonstrict() -> None:
     assert_series_equal(s2, expected)
 
 
-def test_casting_to_an_enum_from_integer() -> None:
+@pytest.mark.parametrize("num_dtype", INTEGER_DTYPES)
+def test_convert_to_an_enum_from_numeric(num_dtype: pl.DataType) -> None:
     dtype = pl.Enum(["a", "b", "c"])
     expected = pl.Series([None, "b", "a", "c"], dtype=dtype)
-    s = pl.Series([None, 1, 0, 2], dtype=pl.UInt32)
-    s_enum = s.cast(dtype)
+    s = pl.Series([None, 1, 0, 2], dtype=num_dtype)
+    with pytest.raises(ComputeError, match=r"casting from .* to enum is not supported"):
+        s.cast(dtype)
+
+    s_enum = s.cat.to(dtype)
     assert s_enum.dtype == dtype
     assert s_enum.null_count() == 1
     assert_series_equal(s_enum, expected)
 
 
-def test_casting_to_an_enum_oob_from_integer() -> None:
+def test_convert_to_an_enum_oob_from_integer() -> None:
     dtype = pl.Enum(["a", "b", "c"])
     s = pl.Series([None, 1, 0, 5], dtype=pl.UInt32)
-    with pytest.raises(InvalidOperationError, match=("values: \\[5\\]")):
-        s.cast(dtype)
+    with pytest.raises(
+        ComputeError,
+        match=(r"found invalid category value when converting from physical to enum"),
+    ):
+        s.cat.to(dtype)
 
 
 def test_casting_to_an_enum_from_categorical_nonexistent() -> None:
@@ -504,27 +512,13 @@ def test_enum_categories_series_zero_copy() -> None:
     assert result_dtype == dtype
 
 
-@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
-def test_enum_cast_from_other_integer_dtype(dtype: pl.DataType) -> None:
-    enum_dtype = pl.Enum(["a", "b", "c", "d"])
-    series = pl.Series([1, 2, 3, 3, 2, 1], dtype=dtype)
-    series.cast(enum_dtype)
-
-
-def test_enum_cast_from_other_integer_dtype_oob() -> None:
+def test_enum_from_other_integer_dtype_oob() -> None:
     enum_dtype = pl.Enum(["a", "b", "c", "d"])
     series = pl.Series([-1, 2, 3, 3, 2, 1], dtype=pl.Int8)
-    with pytest.raises(
-        InvalidOperationError, match="conversion from `i8` to `enum` failed in column"
-    ):
-        series.cast(enum_dtype)
+    series.cat.to(enum_dtype)
 
     series = pl.Series([2**34, 2, 3, 3, 2, 1], dtype=pl.UInt64)
-    with pytest.raises(
-        InvalidOperationError,
-        match="conversion from `u64` to `enum` failed in column",
-    ):
-        series.cast(enum_dtype)
+    series.cat.to(enum_dtype)
 
 
 def test_enum_cse_eq() -> None:
@@ -567,14 +561,6 @@ def test_category_comparison_subset() -> None:
     assert out["dt1"].dtype == pl.Enum(["a"])
     assert out["dt2"].dtype == pl.Enum(["a", "b"])
     assert out["dt1"].dtype != out["dt2"].dtype
-
-
-@pytest.mark.parametrize("dt", INTEGER_DTYPES)
-def test_integer_cast_to_enum_15738(dt: pl.DataType) -> None:
-    s = pl.Series([0, 1, 2], dtype=dt).cast(pl.Enum(["a", "b", "c"]))
-    assert s.to_list() == ["a", "b", "c"]
-    expected_s = pl.Series(["a", "b", "c"], dtype=pl.Enum(["a", "b", "c"]))
-    assert_series_equal(s, expected_s)
 
 
 def test_enum_19269() -> None:
