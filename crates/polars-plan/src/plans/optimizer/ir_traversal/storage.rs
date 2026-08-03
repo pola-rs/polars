@@ -7,20 +7,11 @@ use crate::traversal::tree_traversal::GetNodeInputs;
 
 pub struct IRTraversalStorage<'a> {
     pub arena: &'a mut Arena<IR>,
-    pub skip_subtree: fn(&IR) -> bool,
-}
-
-impl IRTraversalStorage<'_> {
-    pub fn skip_subtree(&self, ir: &IR) -> bool {
-        (self.skip_subtree)(ir)
-    }
 }
 
 impl GetNodeInputs<Node> for IRTraversalStorage<'_> {
     fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
-        if !self.skip_subtree(self.get(key)) {
-            self.arena.get_node_inputs(key, push_fn)
-        }
+        self.arena.get_node_inputs(key, push_fn)
     }
 }
 

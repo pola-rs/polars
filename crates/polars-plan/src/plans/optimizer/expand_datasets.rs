@@ -181,10 +181,7 @@ pub(super) fn expand_datasets(
         ),
         &mut vec![],
         &mut vec![],
-        IRTraversalStorage {
-            arena: ir_arena,
-            skip_subtree: |_| false,
-        },
+        IRTraversalStorage { arena: ir_arena },
     ) {
         ControlFlow::Continue(()) => {},
         ControlFlow::Break(err) => return Err(err),

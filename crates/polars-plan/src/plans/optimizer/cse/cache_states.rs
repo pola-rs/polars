@@ -207,10 +207,7 @@ pub(crate) fn set_cache_states(
         ),
         &mut vec![],
         &mut vec![],
-        IRTraversalStorage {
-            arena: lp_arena,
-            skip_subtree: |_| false,
-        },
+        IRTraversalStorage { arena: lp_arena },
     )
     .continue_value()
     .unwrap();
