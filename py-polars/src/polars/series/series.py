@@ -2437,6 +2437,13 @@ class Series:
         """
         Get the median of this Series.
 
+        Notes
+        -----
+        Null values are ignored. `NaN` values are ordered as greater than
+        any other float value, so they are treated as the largest elements
+        and can make the result unintuitive when the data contains `NaN`.
+        Use `drop_nans` first to exclude them.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -2472,6 +2479,13 @@ class Series:
         -------
         float | None | list[float] | list[None]
             A single quantile value if a float is provided, or a list of quantile values if a list is provided.
+
+        Notes
+        -----
+        Null values are ignored. `NaN` values are ordered as greater than
+        any other float value, so they are treated as the largest elements
+        and can make the result unintuitive when the data contains `NaN`.
+        Use `drop_nans` first to exclude them.
 
         Examples
         --------

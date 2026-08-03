@@ -3609,6 +3609,13 @@ class Expr:
         """
         Get median value using linear interpolation.
 
+        Notes
+        -----
+        Null values are ignored. `NaN` values are ordered as greater than
+        any other float value, so they are treated as the largest elements
+        and can make the result unintuitive when the data contains `NaN`.
+        Use `drop_nans` first to exclude them.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
@@ -4445,6 +4452,13 @@ class Expr:
             - If a list of floats, returns a list of f64 values per row (one value per quantile).
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
+
+        Notes
+        -----
+        Null values are ignored. `NaN` values are ordered as greater than
+        any other float value, so they are treated as the largest elements
+        and can make the result unintuitive when the data contains `NaN`.
+        Use `drop_nans` first to exclude them.
 
         Examples
         --------
