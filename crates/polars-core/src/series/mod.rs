@@ -39,6 +39,7 @@ pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
 use polars_error::feature_gated;
+use polars_utils::broadcast::BroadcastLength;
 use polars_utils::float::IsFloat;
 pub use series_trait::{IsSorted, *};
 
@@ -348,6 +349,37 @@ impl Series {
         } else {
             self._get_inner_mut().extend(other)?;
         }
+        Ok(self)
+    }
+
+    /// Returns a series with the given length.
+    ///
+    /// Errors if this series' length is not 1 and also not equal to the requested length.
+    pub fn broadcast_to(&self, length: usize) -> PolarsResult<Cow<'_, Self>> {
+        let len = self.len();
+        if len == length {
+            Ok(Cow::Borrowed(self))
+        } else if len == 1 {
+            Ok(Cow::Owned(self.new_from_index(0, length)))
+        } else {
+            polars_bail!(
+                ShapeMismatch: "error while broadcasting Series '{}', found incompatible lengths {len} and {length}",
+                self.name()
+            );
+        }
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_in_place_to(&mut self, length: usize) -> PolarsResult<()> {
+        if let Cow::Owned(new) = self.broadcast_to(length)? {
+            *self = new;
+        }
+        Ok(())
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_owned_to(mut self, length: usize) -> PolarsResult<Self> {
+        self.broadcast_in_place_to(length)?;
         Ok(self)
     }
 
@@ -1121,6 +1153,16 @@ impl<T: PolarsPhysicalType> AsMut<ChunkedArray<T>> for dyn SeriesTrait + '_ {
         // @NOTE: SeriesTrait `as_any` returns a std::any::Any for the underlying ChunkedArray /
         // Logical (so not the SeriesWrap).
         self.as_any_mut().downcast_mut::<ChunkedArray<T>>().unwrap()
+    }
+}
+
+impl BroadcastLength for Series {
+    fn _broadcast_len(&self) -> usize {
+        self.len()
+    }
+
+    fn _column_name(&self) -> Option<&str> {
+        Some(self.name())
     }
 }
 
