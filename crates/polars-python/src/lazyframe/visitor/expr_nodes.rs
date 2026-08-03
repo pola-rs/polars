@@ -1412,6 +1412,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         names.iter().map(|s| s.as_str()).collect_vec(),
                     )
                         .into_py_any(py),
+                    IRStructFunction::DropFields(names, strict) => (
+                        PyStructFunction::DropFields,
+                        names.iter().map(|s| s.as_str()).collect_vec(),
+                        strict,
+                    )
+                        .into_py_any(py),
                     IRStructFunction::PrefixFields(prefix) => {
                         (PyStructFunction::PrefixFields, prefix.as_str()).into_py_any(py)
                     },
