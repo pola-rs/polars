@@ -306,11 +306,7 @@ pub enum PartitionStrategyIR {
 
 #[cfg(feature = "cse")]
 impl PartitionStrategyIR {
-    pub(crate) fn shallow_hash<H: Hasher>(
-        &self,
-        state: &mut H,
-        expr_hash: &impl ExpressionHasher,
-    ) {
+    pub(crate) fn shallow_hash<H: Hasher>(&self, state: &mut H, expr_hash: &impl ExpressionHasher) {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::Keyed {
@@ -332,11 +328,7 @@ impl PartitionStrategyIR {
 
 impl SinkTypeIR {
     #[cfg(feature = "cse")]
-    pub(crate) fn shallow_hash<H: Hasher>(
-        &self,
-        state: &mut H,
-        expr_hash: &impl ExpressionHasher,
-    ) {
+    pub(crate) fn shallow_hash<H: Hasher>(&self, state: &mut H, expr_hash: &impl ExpressionHasher) {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::Memory => {},
@@ -447,11 +439,7 @@ impl PartitionedSinkOptionsIR {
     }
 
     #[cfg(feature = "cse")]
-    pub(crate) fn shallow_hash<H: Hasher>(
-        &self,
-        state: &mut H,
-        expr_hash: &impl ExpressionHasher,
-    ) {
+    pub(crate) fn shallow_hash<H: Hasher>(&self, state: &mut H, expr_hash: &impl ExpressionHasher) {
         let PartitionedSinkOptionsIR {
             base_path,
             file_path_provider,

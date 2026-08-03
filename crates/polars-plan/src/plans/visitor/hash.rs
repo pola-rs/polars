@@ -26,16 +26,6 @@ pub(crate) struct IRHashWrap<'a> {
     expr_arena: &'a Arena<AExpr>,
 }
 
-impl<'a> IRHashWrap<'a> {
-    pub(crate) fn new(node: Node, lp_arena: &'a Arena<IR>, expr_arena: &'a Arena<AExpr>) -> Self {
-        Self {
-            node,
-            lp_arena,
-            expr_arena,
-        }
-    }
-}
-
 struct TraverseAndHashExpr<'a> {
     expr_arena: &'a Arena<AExpr>,
 }

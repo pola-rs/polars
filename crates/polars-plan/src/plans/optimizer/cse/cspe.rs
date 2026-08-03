@@ -1,4 +1,4 @@
-use std::hash::Hasher;
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
@@ -8,7 +8,6 @@ use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
 use super::interner::{DeduplicationId, Interner, ShallowNodeOps};
-use crate::plans::aexpr::traverse_and_hash_aexpr;
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::{AExpr, ArenaLpIter, ExprIR, ExpressionComparator, ExpressionHasher, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
@@ -27,8 +26,8 @@ pub fn common_subplan_elimination(
     let mut persisted_input_edge_idxs = vec![usize::MAX]; // For tree traversal
     let mut id_map = PlIndexMap::new();
 
-    // Hash all exprs in advance, so that later comparison is immutable
-    let expr_cmp = HashExpressionCmp::new(root, ir_arena, expr_arena);
+    // Intern all exprs in advance, so that later comparison is immutable
+    let expr_cmp = InternedExprCmp::new(root, ir_arena, expr_arena);
 
     let mut storage = IRTraversalStorage { arena: ir_arena };
 
@@ -96,13 +95,12 @@ struct IDGeneratorVisitor<'map, 'arena> {
     interner: Interner<IR>,
     id_map: &'map mut PlIndexMap<DeduplicationId<IR>, IDState>,
     expr_arena: &'arena Arena<AExpr>,
-    expr_cmp: HashExpressionCmp,
+    expr_cmp: InternedExprCmp,
 }
 
 struct IrShallowOps<'a> {
     lp_arena: &'a Arena<IR>,
-    expr_arena: &'a Arena<AExpr>,
-    expr_cmp: &'a HashExpressionCmp,
+    expr_cmp: &'a InternedExprCmp,
 }
 
 impl ShallowNodeOps for IrShallowOps<'_> {
@@ -111,84 +109,83 @@ impl ShallowNodeOps for IrShallowOps<'_> {
     }
 
     fn shallow_eq(&self, a: Node, b: Node) -> bool {
-        self.lp_arena.get(a).is_ir_equal_shallow(
-            self.lp_arena.get(b),
-            self.expr_arena,
-            self.expr_cmp,
-        )
+        self.lp_arena
+            .get(a)
+            .is_ir_equal_shallow(self.lp_arena.get(b), self.expr_cmp)
     }
 }
 
-struct Blake3Hasher {
-    hasher: blake3::Hasher,
+struct AExprShallowOps<'a> {
+    expr_arena: &'a Arena<AExpr>,
 }
 
-impl Blake3Hasher {
-    fn new() -> Self {
-        Self {
-            hasher: blake3::Hasher::new(),
-        }
+impl ShallowNodeOps for AExprShallowOps<'_> {
+    fn shallow_hash<H: Hasher>(&self, node: Node, state: &mut H) {
+        self.expr_arena.get(node).hash(state);
     }
 
-    fn finalize(self) -> [u8; 32] {
-        self.hasher.finalize().into()
-    }
-}
-
-impl Hasher for Blake3Hasher {
-    fn finish(&self) -> u64 {
-        0
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        self.hasher.update(bytes);
+    fn shallow_eq(&self, a: Node, b: Node) -> bool {
+        self.expr_arena
+            .get(a)
+            .is_expr_equal_shallow(self.expr_arena.get(b))
     }
 }
 
-struct HashExpressionCmp {
-    expr_hashes: PlIndexMap<Node, [u8; 32]>,
+struct InternedExprCmp {
+    expr_ids: PlIndexMap<Node, DeduplicationId<AExpr>>,
 }
 
-impl HashExpressionCmp {
+impl InternedExprCmp {
+    /// Precompute deduplication ids for all expressions reachable from the root plan node.
+    /// We can not reuse `TreeWalker` because we need to call `AExpr::children_rev` instead of
+    /// `AExpr::inputs_rev` that is used in `impl TreeWalker for AexprNode`. This allows us to
+    /// distinguish between `list.eval(elem*2)` and `list.eval(elem*3)`
     fn new(root: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Self {
-        let mut expr_hashes = PlIndexMap::new();
+        let mut interner = Interner::new();
+        let mut expr_ids = PlIndexMap::new();
+        let ops = AExprShallowOps { expr_arena };
+
+        let mut children = Vec::new();
+        let mut stack: Vec<(Node, bool)> = Vec::new();
+
         for (_, ir) in lp_arena.iter(root) {
             for e in ir.exprs() {
-                expr_hashes.entry(e.node()).or_insert_with(|| {
-                    let mut hasher = Blake3Hasher::new();
-                    traverse_and_hash_aexpr(e.node(), expr_arena, &mut hasher);
-                    hasher.finalize()
-                });
+                stack.push((e.node(), false));
+                while let Some((node, post)) = stack.pop() {
+                    if expr_ids.contains_key(&node) {
+                        continue;
+                    }
+                    if post {
+                        children.clear();
+                        expr_arena.get(node).children_rev(&mut children);
+                        let child_ids = children.iter().map(|c| expr_ids[c]).collect();
+                        let id = interner.get_or_assign(node, child_ids, &ops);
+                        expr_ids.insert(node, id);
+                    } else {
+                        stack.push((node, true));
+                        children.clear();
+                        expr_arena.get(node).children_rev(&mut children);
+                        stack.extend(children.iter().map(|&c| (c, false)));
+                    }
+                }
             }
         }
-        Self { expr_hashes }
-    }
 
-    // Multiple ExprIRs can reference the same Node, but have different names.
-    // The alias is included in the IRHashWrap hasher, so we need to include it here as well.
-    fn hash_with_alias(&self, expr: &ExprIR) -> [u8; 32] {
-        let tree_hash = self.expr_hashes[&expr.node()];
-        match expr.get_alias() {
-            None => tree_hash,
-            Some(alias) => {
-                let mut hasher = Blake3Hasher::new();
-                hasher.write(&tree_hash);
-                hasher.write(alias.as_bytes());
-                hasher.finalize()
-            },
-        }
+        Self { expr_ids }
     }
 }
 
-impl ExpressionComparator for HashExpressionCmp {
-    fn equals(&self, lhs: &ExprIR, rhs: &ExprIR, _expr_arena: &Arena<AExpr>) -> bool {
-        self.hash_with_alias(lhs) == self.hash_with_alias(rhs)
+impl ExpressionComparator for InternedExprCmp {
+    fn equals(&self, lhs: &ExprIR, rhs: &ExprIR) -> bool {
+        self.expr_ids[&lhs.node()] == self.expr_ids[&rhs.node()]
+            && lhs.output_name_inner() == rhs.output_name_inner()
     }
 }
 
-impl ExpressionHasher for HashExpressionCmp {
+impl ExpressionHasher for InternedExprCmp {
     fn hash_expr<H: Hasher>(&self, expr: &ExprIR, state: &mut H) {
-        state.write(&self.hash_with_alias(expr));
+        self.expr_ids[&expr.node()].hash(state);
+        expr.output_name_inner().hash(state);
     }
 }
 
@@ -229,7 +226,6 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
 
         let ops = IrShallowOps {
             lp_arena: &*storage.arena,
-            expr_arena: self.expr_arena,
             expr_cmp: &self.expr_cmp,
         };
         let id = self.interner.get_or_assign(key, child_ids, &ops);
