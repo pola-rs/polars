@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, SchemaError
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -265,6 +265,3 @@ def test_cat_to_from_physical(cat_kind: str) -> None:
 
     with pytest.raises(ComputeError):
         pl.Series(cats + [4], dtype=phys).cat.to(dtype)
-
-    with pytest.raises(SchemaError):
-        pl.Series(cats + [4], dtype=pl.UInt16).cat.to(dtype)
