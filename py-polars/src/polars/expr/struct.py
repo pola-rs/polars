@@ -316,7 +316,7 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
         ...         "ccc": [True, None],
         ...     }
         ... ).select(pl.struct("aaa", "bbb", "ccc").alias("struct_col"))
-        >>> df.struct.drop_fields(["aaa"])
+        >>> df.select(pl.col("struct_col").struct.drop_fields(["aaa"]))
         shape: (2, 1)
         ┌─────────────┐
         │ struct_col  │
