@@ -98,8 +98,6 @@ const SATURATION_THRESHOLD: f64 = 0.8;
 const SUCCESS_SMOOTH: f64 = 0.8;
 // Decay multiplier towards init on idle, per tick.
 const IDLE_DECAY: f64 = 0.9;
-// Threshold above which throttling renders the signal flawed.
-const MAX_SAMPLE_THROTTLE_RATIO: f64 = 0.5;
 
 // Wake-latency tick. Bounds how long a parked waiter oversleeps past its
 // arithmetic due-time; does NOT affect pacing accuracy.
@@ -366,7 +364,7 @@ struct AimdState {
     // Exponentially weighted moving average (EWMA) of the success rate.
     success_rate: Option<f64>,
     // Start of window, where window is the interval between 2 ticks.
-    window_start: Instant,
+    window_start: Option<Instant>,
     // Last cut time.
     last_cut_time: Option<Instant>,
 
@@ -399,7 +397,6 @@ impl AimdState {
     }
 
     /// The success_rate is the observed 'goodput' signal.
-    // kdn TODO TEST & TUNE: harden signal extraction
     fn update_success_rate(&mut self, successes: u64, elapsed_s: f64) {
         // Too short to be statistically meaningful (also guards div-by-zero).
         if elapsed_s < 0.5 * TICK_INTERVAL.as_secs_f64() {
@@ -413,7 +410,6 @@ impl AimdState {
         let success_rate = successes as f64 / elapsed_s;
         self.success_rate = Some(match self.success_rate {
             None => success_rate,
-            //kdn TODO TEST & TUNE: asymmetric alpha
             Some(rate) => SUCCESS_SMOOTH * success_rate + (1.0 - SUCCESS_SMOOTH) * rate,
         });
     }
@@ -464,7 +460,7 @@ impl AdaptiveRateController {
         let pacer = Pacer::start(token_bucket, config.max_wait);
 
         let signal = PacerSignal {
-            window_end_ns: AtomicU64::new(TICK_INTERVAL.as_nanos() as u64),
+            window_end_ns: AtomicU64::new(u64::MAX),
             last_cut_ns: AtomicU64::new(0),
             resp_succeeded: AtomicU64::new(0),
             resp_throttled: AtomicU64::new(0),
@@ -474,7 +470,7 @@ impl AdaptiveRateController {
             regime,
             shared,
             success_rate: None,
-            window_start: epoch,
+            window_start: None,
             last_cut_time: None,
             prev_admitted: 0,
             prev_denied: 0,
@@ -498,9 +494,24 @@ impl AdaptiveRateController {
         self.epoch.elapsed().as_nanos() as u64
     }
 
+    #[inline]
+    fn mark_first_traffic(&self) {
+        // The window origin is FIRST TRAFFIC, not construction: the pipeline
+        // takes an unknown time to spin up, and a window that spans the idle
+        // prologue measures emptiness (4 successes / 533ms at cold start).
+        if self.signal.window_end_ns.load(Relaxed) == u64::MAX {
+            let now_ns = self.now_ns();
+            self.signal
+                .window_end_ns
+                .store(now_ns + TICK_INTERVAL.as_nanos() as u64, Relaxed);
+            self.state.lock().unwrap().window_start = Some(Instant::now());
+        }
+    }
+
     fn on_congestion(&self) {
         self.signal.resp_throttled.fetch_add(1, Relaxed);
 
+        self.mark_first_traffic();
         self.maybe_settle();
 
         // Lock-free fast-path (1): advisory refractory pre-check, avoid Mutex storm.
@@ -558,10 +569,12 @@ impl AdaptiveRateController {
     fn on_success(&self) {
         self.signal.resp_succeeded.fetch_add(1, Relaxed);
 
+        self.mark_first_traffic();
         self.maybe_settle();
     }
 
     fn on_other(&self) {
+        self.mark_first_traffic();
         self.maybe_settle();
     }
 
@@ -581,7 +594,7 @@ impl AdaptiveRateController {
         let now_ns = self.now_ns();
 
         // Another success event may have settled while we waited on the lock.
-        let elapsed = now.duration_since(state.window_start);
+        let elapsed = now.duration_since(state.window_start.unwrap());
         let ticks = (elapsed.as_secs_f64() / TICK_INTERVAL.as_secs_f64()).floor();
         if ticks < 1.0 {
             return;
@@ -612,7 +625,7 @@ impl AdaptiveRateController {
         // Update signal, if any.
         state.update_success_rate(win_succeeded, elapsed_s);
 
-        // Goodput is a always a lower bound on capacity, so an observation may always 
+        // Goodput is a always a lower bound on capacity, so an observation may always
         // increase. It may only decrease when the system was pressure-tested (i.e., demand saturated).
         if let Some(observed) = state.success_rate {
             let pressure_tested =
@@ -690,12 +703,11 @@ impl AdaptiveRateController {
         };
 
         // Update state.
-        state.window_start = now;
+        state.window_start = Some(now);
         self.signal
             .window_end_ns
             .store(now_ns + TICK_INTERVAL.as_nanos() as u64, Relaxed);
 
-        //kdn TODO: normalize to per-second depending on the settle strategy.
         // Logging.
         if *LOG_RATE_LIMIT {
             eprintln!(
@@ -931,7 +943,6 @@ impl PacedHttpConnector {
 
 impl HttpConnector for PacedHttpConnector {
     fn connect(&self, options: &ClientOptions) -> object_store::Result<HttpClient> {
-        //kdn TODO check handle Options inc dns_resolver after rebase
         let client = self.inner.connect(options)?;
         Ok(HttpClient::new(PacedHttpService {
             inner: client,
