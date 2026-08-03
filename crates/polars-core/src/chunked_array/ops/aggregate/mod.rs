@@ -559,7 +559,7 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T>
 where
     ChunkedArray<T::PolarsPhysical>: ChunkAgg<T::Native>,
 {
-    fn min_categorical(&self) -> Option<CatSize> {
+    pub fn min_categorical(&self) -> Option<CatSize> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
@@ -578,7 +578,7 @@ where
         }
     }
 
-    fn max_categorical(&self) -> Option<CatSize> {
+    pub fn max_categorical(&self) -> Option<CatSize> {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }

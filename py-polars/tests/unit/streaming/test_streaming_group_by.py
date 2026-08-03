@@ -196,6 +196,17 @@ def test_streaming_group_by_sorted_fast_path() -> None:
         assert_frame_equal(results[0], results[1])
 
 
+def test_streaming_group_by_slice_out_of_bounds_28554() -> None:
+    q = (
+        pl.LazyFrame({"k": [1], "a": [1]})
+        .group_by("k")
+        .agg(s=pl.col("a").sum())
+        .slice(2, 1)
+    )
+
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
+
+
 @pytest.fixture(scope="module")
 def random_integers() -> pl.Series:
     np.random.seed(1)

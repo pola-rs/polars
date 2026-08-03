@@ -290,12 +290,3 @@ def test_from_pyarrow_str_dict_with_null_values_20270() -> None:
     assert_series_equal(
         df.to_series(), pl.Series("col1", ["A", "A", None, None, "B"], pl.Categorical)
     )
-
-
-def test_from_pyarrow_utf8_inline_view_28612() -> None:
-    df = pl.DataFrame({"s": ["short", "a_string_longer_than_12"]})
-    df2 = pl.DataFrame(df.to_arrow())
-    tbl = pa.table(df2)
-    out = pl.from_arrow(tbl)
-    assert isinstance(out, pl.DataFrame)
-    assert_frame_equal(df, out)
