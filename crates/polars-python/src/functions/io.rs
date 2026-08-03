@@ -70,7 +70,8 @@ pub fn read_parquet_metadata(
                 })
                 .map_err(PyPolarsErr::from)?
             } else {
-                let file = polars_utils::open_file(p.as_std_path()).map_err(PyPolarsErr::from)?;
+                let file =
+                    polars_utils::io::open_file(p.as_std_path()).map_err(PyPolarsErr::from)?;
                 read_metadata(&mut BufReader::new(file)).map_err(PyPolarsErr::from)?
             }
         },

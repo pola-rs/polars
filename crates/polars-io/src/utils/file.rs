@@ -6,8 +6,8 @@ use std::sync::Arc;
 #[cfg(feature = "cloud")]
 pub use async_writable::{AsyncDynWritable, AsyncWritable};
 use polars_error::{PolarsResult, feature_gated, polars_err};
-use polars_utils::create_file;
 use polars_utils::file::close_file;
+use polars_utils::io::create_file;
 use polars_utils::mmap::ensure_not_mapped;
 use polars_utils::pl_path::{PlRefPath, format_file_uri};
 
@@ -94,7 +94,7 @@ impl Writable {
             let path = resolve_homedir(path.as_std_path());
             create_file(&path)?;
 
-            Self::Local(polars_utils::open_file_write(&path)?)
+            Self::Local(polars_utils::io::open_file_write(&path)?)
         })
     }
 

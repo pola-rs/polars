@@ -641,7 +641,7 @@ pub(super) async fn ipc_file_info(
                 })
             } else {
                 arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
-                    polars_utils::open_file(path.as_std_path())?,
+                    polars_utils::io::open_file(path.as_std_path())?,
                 ))?
             }
         },
