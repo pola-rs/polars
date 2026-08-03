@@ -1,8 +1,16 @@
 use std::sync::Arc;
 
-use crate::plans::FunctionIR;
 #[cfg(feature = "python")]
 use crate::plans::OpaquePythonUdf;
+use crate::plans::{FunctionIR, UdfSchema};
+
+fn opt_udf_schema_ptr_eq(a: &Option<Arc<dyn UdfSchema>>, b: &Option<Arc<dyn UdfSchema>>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+        _ => false,
+    }
+}
 
 impl PartialEq for FunctionIR {
     // Mirrors `impl Hash for FunctionIR`
@@ -32,45 +40,55 @@ impl PartialEq for FunctionIR {
             #[cfg(feature = "python")]
             F::OpaquePython(OpaquePythonUdf {
                 function: l_function,
-                schema: _,
-                predicate_pd: _,
-                projection_pd: _,
-                streamable: _,
-                validate_output: _,
+                schema: l_schema,
+                predicate_pd: l_predicate_pd,
+                projection_pd: l_projection_pd,
+                streamable: l_streamable,
+                validate_output: l_validate_output,
             }) => {
                 let F::OpaquePython(OpaquePythonUdf {
                     function: r_function,
-                    schema: _,
-                    predicate_pd: _,
-                    projection_pd: _,
-                    streamable: _,
-                    validate_output: _,
+                    schema: r_schema,
+                    predicate_pd: r_predicate_pd,
+                    projection_pd: r_projection_pd,
+                    streamable: r_streamable,
+                    validate_output: r_validate_output,
                 }) = other
                 else {
                     return false;
                 };
+
                 l_function.0.as_ptr() == r_function.0.as_ptr()
+                    && l_schema == r_schema
+                    && l_predicate_pd == r_predicate_pd
+                    && l_projection_pd == r_projection_pd
+                    && l_streamable == r_streamable
+                    && l_validate_output == r_validate_output
             },
             F::Opaque {
                 function: l_function,
-                schema: _,
-                predicate_pd: _,
-                projection_pd: _,
-                streamable: _,
+                schema: l_schema,
+                predicate_pd: l_predicate_pd,
+                projection_pd: l_projection_pd,
+                streamable: l_streamable,
                 fmt_str: _,
             } => {
                 let F::Opaque {
                     function: r_function,
-                    schema: _,
-                    predicate_pd: _,
-                    projection_pd: _,
-                    streamable: _,
+                    schema: r_schema,
+                    predicate_pd: r_predicate_pd,
+                    projection_pd: r_projection_pd,
+                    streamable: r_streamable,
                     fmt_str: _,
                 } = other
                 else {
                     return false;
                 };
                 Arc::ptr_eq(l_function, r_function)
+                    && opt_udf_schema_ptr_eq(l_schema, r_schema)
+                    && l_predicate_pd == r_predicate_pd
+                    && l_projection_pd == r_projection_pd
+                    && l_streamable == r_streamable
             },
             F::FastCount {
                 sources: l_sources,

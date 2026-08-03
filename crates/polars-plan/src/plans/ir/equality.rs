@@ -5,7 +5,7 @@ use polars_utils::arena::Arena;
 use super::IR;
 use crate::plans::{AExpr, ExprIR};
 #[cfg(feature = "python")]
-use crate::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
+use crate::plans::{PythonOptions, PythonPredicate};
 
 pub trait ExpressionComparator {
     fn equals(&mut self, lhs: &ExprIR, rhs: &ExprIR, expr_arena: &Arena<AExpr>) -> bool;
@@ -89,16 +89,11 @@ impl IR {
                 let predicate_eq = (std::mem::discriminant(l_predicate)
                     == std::mem::discriminant(r_predicate))
                     && match l_predicate {
-                        PP::PyArrow(ArrowPredicate {
-                            predicate: l_predicate,
-                            pyarrow_predicate: _,
-                            has_residual: _,
-                        }) => {
-                            let PP::PyArrow(r_inner) = r_predicate else {
-                                return false;
-                            };
-                            expr_eq!(l_predicate, &r_inner.predicate)
-                        },
+                        // The PyArrow predicate is never returned by `IR::exprs()` so it will not
+                        // be interned, leading to a potential panic if we invoke `expression_cmp`
+                        // with it. In practice this is not an issue because it only gets introduced
+                        // during physical planning, but it is safest to just treat as unequal.
+                        PP::PyArrow(_) => false,
                         PP::Polars(l_expr) => {
                             let PP::Polars(r_expr) = r_predicate else {
                                 return false;
