@@ -21,7 +21,6 @@ mod arithmetic;
 pub mod builder;
 mod chunks;
 pub use chunks::chunk_df_for_writing;
-mod broadcast;
 pub mod column;
 mod dataframe;
 mod filter;

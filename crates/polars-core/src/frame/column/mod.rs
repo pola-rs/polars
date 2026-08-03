@@ -6,6 +6,7 @@ use num_traits::{Num, NumCast};
 use polars_compute::rolling::QuantileMethod;
 use polars_error::PolarsResult;
 use polars_utils::aliases::PlSeedableRandomStateQuality;
+use polars_utils::broadcast::BroadcastLength;
 use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
 pub use scalar::ScalarColumn;
@@ -520,6 +521,37 @@ impl Column {
             },
             Column::Scalar(s) => s.resize(length).into(),
         }
+    }
+
+    /// Returns a column with the given length.
+    ///
+    /// Errors if this column's length is not 1 and also not equal to the requested length.
+    pub fn broadcast_to(&self, length: usize) -> PolarsResult<Cow<'_, Self>> {
+        let len = self.len();
+        if len == length {
+            Ok(Cow::Borrowed(self))
+        } else if len == 1 {
+            Ok(Cow::Owned(self.new_from_index(0, length)))
+        } else {
+            polars_bail!(
+                ShapeMismatch: "error while broadcasting Series '{}', found incompatible lengths {len} and {length}",
+                self.name()
+            );
+        }
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_in_place_to(&mut self, length: usize) -> PolarsResult<()> {
+        if let Cow::Owned(new) = self.broadcast_to(length)? {
+            *self = new;
+        }
+        Ok(())
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_owned_to(mut self, length: usize) -> PolarsResult<Self> {
+        self.broadcast_in_place_to(length)?;
+        Ok(self)
     }
 
     #[inline]
@@ -1927,6 +1959,16 @@ impl IntoColumn for Column {
     #[inline(always)]
     fn into_column(self) -> Column {
         self
+    }
+}
+
+impl BroadcastLength for Column {
+    fn _broadcast_len(&self) -> usize {
+        self.len()
+    }
+
+    fn _column_name(&self) -> Option<&str> {
+        Some(self.name())
     }
 }
 
