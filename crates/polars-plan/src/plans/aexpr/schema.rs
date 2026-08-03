@@ -639,6 +639,10 @@ fn get_arithmetic_field(
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
                     Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
                 },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale_left), r) | (r, Decimal(_, scale_left)) if r.is_integer() => {
+                    Decimal(DEC128_MAX_PREC, *scale_left)
+                },
                 (left, right) => try_get_supertype(left, right)?,
             }
         },

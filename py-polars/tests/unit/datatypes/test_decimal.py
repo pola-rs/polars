@@ -641,6 +641,18 @@ def test_decimal_arithmetic_schema() -> None:
     assert q1.collect_schema() == q1.collect().schema
 
 
+def test_decimal_arithmetic_schema_int_column_28654() -> None:
+    lf = pl.LazyFrame(
+        {
+            "dec": pl.Series([D("1.50")], dtype=pl.Decimal(10, 2)),
+            "i8": pl.Series([2], dtype=pl.Int8),
+        }
+    )
+    q = lf.select((pl.col("dec") + pl.col("i8")).alias("o"))
+    assert q.collect_schema() == q.collect().schema
+    assert q.collect_schema() == {"o": pl.Decimal(38, 2)}
+
+
 def test_decimal_arithmetic_schema_float_20369() -> None:
     s = pl.Series("x", [1.0], dtype=pl.Decimal(15, 6))
     assert_series_equal((s - 1.0), pl.Series("x", [0.0]))
