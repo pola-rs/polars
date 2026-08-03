@@ -542,20 +542,27 @@ def from_arrow(
     ]
     """  # noqa: W505
     if is_pycapsule(data) and not _check_for_pyarrow(data):
-        # 2.0: Remove warning and return a Series.
-        issue_warning(
-            "from_arrow(<ArrowStreamExportable>) will return a Series instead of "
-            "a DataFrame in 2.0. To avoid this warning, pass the ArrowStreamExportable "
-            "to either `pl.DataFrame` or `pl.Series` instead based on your desired "
-            "output type.",
-            FutureWarning,
+        unsupported_parameter = (
+            "schema"
+            if schema is not None
+            else "schema_overrides"
+            if schema_overrides is not None
+            else None
         )
-        return pycapsule_to_frame(
-            data,
-            schema=schema,
-            schema_overrides=schema_overrides,
-            rechunk=rechunk,
-        )
+
+        if unsupported_parameter:
+            msg = (
+                f"`{unsupported_parameter}` parameter has no effect when using "
+                "`from_arrow(<ArrowStreamExportable>)`"
+            )
+            raise TypeError(msg)
+
+        ret = pl.Series(data)
+
+        if rechunk:
+            ret = ret.rechunk()
+
+        return ret
 
     elif isinstance(data, (pa.Table, pa.RecordBatch)):
         return wrap_df(
