@@ -856,7 +856,6 @@ class PyLazyFrame:
         skip_rows: int,
         skip_lines: int,
         n_rows: int | None,
-        cache: bool,
         overwrite_dtype: Sequence[tuple[str, Any]] | None,
         overwrite_dtype_slice: Sequence[DataType] | None,
         low_memory: bool,
