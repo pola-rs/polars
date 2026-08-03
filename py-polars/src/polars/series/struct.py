@@ -101,7 +101,7 @@ class StructNameSpace(_NamespaceSuggestMixin):
         ['c', 'd']
         """
 
-    def drop_fields(self, names: Sequence[str], strict: bool) -> Series:
+    def drop_fields(self, names: Sequence[str], *, strict: bool = True) -> Series:
         """
         Drop one or more fields from the struct.
 
@@ -109,6 +109,9 @@ class StructNameSpace(_NamespaceSuggestMixin):
         ----------
         names
             Names of the fields to drop.
+        strict
+            If True, raise an error if any of the specified fields do not exist in the
+            struct.
 
         Examples
         --------

@@ -294,7 +294,7 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.struct_rename_fields(names))
 
-    def drop_fields(self, names: Sequence[str], strict=True) -> Expr:
+    def drop_fields(self, names: Sequence[str], *, strict: bool = True) -> Expr:
         """
         Drop one or more fields from the struct.
 
@@ -302,6 +302,10 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
         ----------
         names
             Names of the fields to drop.
+        strict
+            If True, raise an error if any of the specified fields do not exist in the
+            struct.
+
 
         Examples
         --------
