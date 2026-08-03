@@ -9,7 +9,7 @@ use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::aliases::PlHashSet;
 use polars_utils::relaxed_cell::RelaxedCell;
-use polars_utils::reuse_vec::reuse_vec;
+use polars_utils::vec::reuse_vec;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 use tokio::task::JoinHandle;
 

@@ -2,7 +2,7 @@ use arrow::array::{GenericBinaryArray, PrimitiveArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::offset::{Offset, Offsets, OffsetsBuffer};
 use polars_buffer::Buffer;
-use polars_utils::vec::{CapacityByFactor, PushUnchecked};
+use polars_utils::vec::PushUnchecked;
 
 use super::Index;
 
@@ -50,7 +50,7 @@ pub(super) unsafe fn take_no_validity_unchecked<O: Offset, I: Index>(
 ) -> (OffsetsBuffer<O>, Buffer<u8>, Option<Bitmap>) {
     let values_len = offsets.last().to_usize();
     let fraction_estimate = indices.len() as f64 / offsets.len() as f64 + 0.3;
-    let mut buffer = Vec::<u8>::with_capacity_by_factor(values_len, fraction_estimate);
+    let mut buffer = Vec::with_capacity((values_len as f64 * fraction_estimate) as usize);
 
     let lengths = indices.iter().map(|index| index.to_usize()).map(|index| {
         let (start, end) = offsets.start_end_unchecked(index);
