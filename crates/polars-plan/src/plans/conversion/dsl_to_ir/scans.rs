@@ -1220,7 +1220,7 @@ this scan to succeed with an empty DataFrame.",
                             // Cache pressure: drop the pre-decoded footers so
                             // we don't blow memory. Streaming readers fall
                             // back to fetching footers at scan time.
-                            metadata_per_source = Unresolved;
+                            metadata_per_source = metadata_per_source.gather_first();
                         }
 
                         PolarsResult::Ok((
