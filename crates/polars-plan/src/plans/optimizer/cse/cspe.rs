@@ -42,8 +42,8 @@ pub fn common_subplan_elimination(
         visitor: &mut IDGeneratorVisitor {
             interner: Interner::new(),
             id_map: &mut id_map,
-            expr_arena,
             expr_cmp,
+            phantom: PhantomData,
         },
     }
     .traverse_rec(root, 0, false)
@@ -94,8 +94,8 @@ impl Default for IDState {
 struct IDGeneratorVisitor<'map, 'arena> {
     interner: Interner<IR>,
     id_map: &'map mut PlIndexMap<DeduplicationId<IR>, IDState>,
-    expr_arena: &'arena Arena<AExpr>,
     expr_cmp: InternedExprCmp,
+    phantom: PhantomData<&'arena ()>,
 }
 
 struct IrShallowOps<'a> {
