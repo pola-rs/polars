@@ -1647,3 +1647,43 @@ def test_scan_slice_filter_pushdown_22790() -> None:
     assert plan.index("SLICE") > plan.index("SCAN")
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [7, 8]}))
+
+
+@pytest.mark.parametrize(
+    "format",
+    [
+        "csv",
+        "ipc",
+        "parquet",
+        "ndjson",
+    ],
+)
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+def test_read_projection_and_row_index(format: str, use_pyarrow: bool) -> None:
+    f = io.BytesIO()
+    getattr(pl.DataFrame({"a": 1, "b": 2}), f"write_{format}")(f)
+    f.seek(0)
+
+    read = getattr(pl, f"read_{format}")
+
+    if format == "ndjson":
+        with pytest.raises(TypeError, match="unexpected keyword argument 'columns'"):
+            read(f, columns=...)
+
+        return
+
+    assert_frame_equal(
+        read(f, columns=["b"], row_index_name="index", use_pyarrow=use_pyarrow),
+        pl.DataFrame(
+            {"index": 0, "b": 2}, schema_overrides={"index": pl.get_index_type()}
+        ),
+    )
+
+    f.seek(0)
+
+    assert_frame_equal(
+        read(f, columns=[1], row_index_name="index", use_pyarrow=use_pyarrow),
+        pl.DataFrame(
+            {"index": 0, "b": 2}, schema_overrides={"index": pl.get_index_type()}
+        ),
+    )
