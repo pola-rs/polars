@@ -43,7 +43,6 @@ pub mod priority;
 pub mod range;
 pub mod regex_cache;
 pub mod relaxed_cell;
-pub mod reuse_vec;
 pub mod row_counter;
 pub mod select;
 pub mod slice;
