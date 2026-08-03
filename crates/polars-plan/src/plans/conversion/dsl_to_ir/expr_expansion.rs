@@ -4,6 +4,7 @@ use super::*;
 use crate::constants::{
     POLARS_ELEMENT, POLARS_STRUCTFIELDS, get_pl_element_name, get_pl_structfields_name,
 };
+use crate::utils::expr_output_name;
 
 pub fn prepare_projection(
     exprs: Vec<Expr>,
@@ -45,18 +46,94 @@ pub fn rewrite_projections(
     schema: &Schema,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Vec<Expr>> {
+    // Check if any expression contains `Selector::Remaining`.
+    // If so, we need to track output columns as we expand.
+    let has_remaining = exprs.iter().any(expr_contains_remaining);
+
+    if !has_remaining {
+        // Fast path: no Remaining selector, expand normally
+        let mut result = Vec::with_capacity(exprs.len() + schema.len());
+        for expr in &exprs {
+            expand_expression(
+                expr,
+                ignored_selector_columns,
+                schema,
+                &mut result,
+                opt_flags,
+            )?;
+        }
+        return Ok(result);
+    }
+
+    // When Remaining is present, we accumulate output column names as we expand.
+    // Each Remaining selector excludes columns from ALL other expressions.
+    // To achieve this, we first collect all non-Remaining output names,
+    // then expand each expression with those names added to ignored_columns.
+    let mut all_output_names = PlHashSet::default();
+
+    // First, collect output names from all non-Remaining expressions
+    for expr in &exprs {
+        if !expr_contains_remaining(expr) {
+            let mut expanded = Vec::new();
+            expand_expression(
+                expr,
+                ignored_selector_columns,
+                schema,
+                &mut expanded,
+                opt_flags,
+            )?;
+            for e in &expanded {
+                if let Ok(name) = expr_output_name(e) {
+                    all_output_names.insert(name);
+                }
+            }
+        }
+    }
+
+    // Now expand all expressions, adding collected names to ignored_columns for Remaining
+    let mut ignored_with_outputs = ignored_selector_columns.clone();
+    ignored_with_outputs.extend(all_output_names);
+
     let mut result = Vec::with_capacity(exprs.len() + schema.len());
     for expr in &exprs {
-        expand_expression(
-            expr,
-            ignored_selector_columns,
-            schema,
-            &mut result,
-            opt_flags,
-        )?;
+        if expr_contains_remaining(expr) {
+            // Expand with all output names excluded
+            expand_expression(expr, &ignored_with_outputs, schema, &mut result, opt_flags)?;
+        } else {
+            // Expand normally
+            expand_expression(
+                expr,
+                ignored_selector_columns,
+                schema,
+                &mut result,
+                opt_flags,
+            )?;
+        }
     }
 
     Ok(result)
+}
+
+/// Check if an expression contains `Selector::Remaining` (including nested in selector combinations).
+fn expr_contains_remaining(expr: &Expr) -> bool {
+    expr.into_iter().any(|e| match e {
+        Expr::Selector(selector) => selector_contains_remaining(selector),
+        _ => false,
+    })
+}
+
+/// Check if a selector contains `Remaining` (recursively for combinations).
+fn selector_contains_remaining(selector: &Selector) -> bool {
+    match selector {
+        Selector::Remaining => true,
+        Selector::Union(lhs, rhs)
+        | Selector::Difference(lhs, rhs)
+        | Selector::ExclusiveOr(lhs, rhs)
+        | Selector::Intersect(lhs, rhs) => {
+            selector_contains_remaining(lhs) || selector_contains_remaining(rhs)
+        },
+        _ => false,
+    }
 }
 
 fn toggle_cse_for_structs(opt_flags: &mut OptFlags) {

@@ -1158,3 +1158,128 @@ def test_multiline_colname_matches() -> None:
         cs.contains(prefix).alias("contains"),
     )
     assert res.columns == ["starts_with", "ends_with", "contains"]
+
+
+def test_selector_remaining_12067() -> None:
+    """Test cs.remaining() selector that selects columns not explicitly named."""
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+
+    # Basic case: one explicit column, remaining selects the rest
+    result = df.select(pl.col("a") * 10, cs.remaining())
+    assert result.columns == ["a", "b", "c"]
+    assert result["a"].to_list() == [10, 20, 30]
+    assert result["b"].to_list() == [4, 5, 6]
+    assert result["c"].to_list() == [7, 8, 9]
+
+    # Expression using multiple columns - only output name is excluded
+    result = df.select(pl.col("a") + pl.col("b"), cs.remaining())
+    assert result.columns == ["a", "b", "c"]
+    assert result["a"].to_list() == [5, 7, 9]  # a + b
+    assert result["b"].to_list() == [4, 5, 6]
+    assert result["c"].to_list() == [7, 8, 9]
+
+    # with_columns preserves original columns
+    result = df.with_columns(pl.col("a").alias("d"), cs.remaining().cast(pl.Float64))
+    assert result.columns == ["a", "b", "c", "d"]
+    assert result["b"].dtype == pl.Float64
+    assert result["c"].dtype == pl.Float64
+    assert result["d"].to_list() == [1, 2, 3]
+
+    # No explicit columns: remaining selects all
+    result = df.select(cs.remaining())
+    assert result.columns == ["a", "b", "c"]
+
+
+def test_selector_remaining_with_selector_combination() -> None:
+    """Test cs.remaining() combined with other selectors."""
+    df = pl.DataFrame(
+        {
+            "int_a": [1, 2],
+            "int_b": [3, 4],
+            "str_c": ["x", "y"],
+            "float_d": [1.0, 2.0],
+        },
+        schema_overrides={"int_a": pl.Int32, "int_b": pl.Int32, "float_d": pl.Float32},
+    )
+
+    # Use selector with remaining
+    result = df.select(cs.integer().cast(pl.Int64), cs.remaining())
+    assert result.columns == ["int_a", "int_b", "str_c", "float_d"]
+    assert result["int_a"].dtype == pl.Int64
+    assert result["int_b"].dtype == pl.Int64
+    assert result["str_c"].dtype == pl.String
+    assert result["float_d"].dtype == pl.Float32
+
+
+def test_selector_remaining_with_contains_no_duplicate() -> None:
+    """Test cs.remaining() correctly excludes columns selected by cs.contains()."""
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+
+    # This should not raise a DuplicateError - remaining should exclude
+    # columns selected by cs.contains("a") and explicitly named "b"
+    result = df.select(cs.contains("a") * 10, cs.remaining(), "b")
+    assert result.columns == ["a", "c", "b"]
+    assert result["a"].to_list() == [10, 20, 30]
+    assert result["c"].to_list() == [7, 8, 9]
+    assert result["b"].to_list() == [4, 5, 6]
+
+
+def test_selector_remaining_first_excludes_output_names() -> None:
+    """Test cs.remaining() excludes output names, not referenced columns."""
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+
+    # remaining() comes first, followed by expression using a and b
+    # The expression outputs column "a", so remaining should select "b" and "c"
+    result = df.select(cs.remaining(), pl.col("a") + pl.col("b"))
+    assert result.columns == ["b", "c", "a"]
+    assert result["b"].to_list() == [4, 5, 6]
+    assert result["c"].to_list() == [7, 8, 9]
+    assert result["a"].to_list() == [5, 7, 9]  # a + b
+
+
+def test_selector_remaining_with_selector_arithmetic() -> None:
+    """Test cs.remaining() works with selector arithmetic."""
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [3, 4],
+            "c": [5, 6],
+            "group": ["x", "y"],
+        }
+    )
+
+    # remaining() - cs.string() should exclude 'a' (explicit) and string columns
+    result = df.select(pl.col("a"), cs.remaining() - cs.string())
+    assert result.columns == ["a", "b", "c"]
+
+    # remaining() & cs.numeric() should exclude 'a' and keep only numeric remaining
+    result = df.select(pl.col("a"), cs.remaining() & cs.numeric())
+    assert result.columns == ["a", "b", "c"]
+
+    # remaining() | cs.string() should exclude 'a', include remaining + string
+    result = df.select(pl.col("a"), cs.remaining() | cs.string())
+    assert result.columns == ["a", "b", "c", "group"]
+
+
+def test_selector_remaining_in_group_by_agg() -> None:
+    """Test cs.remaining() works correctly in group_by().agg() context."""
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4],
+            "b": [4, 5, 6, 7],
+            "c": [7, 8, 9, 10],
+            "group": ["x", "x", "y", "y"],
+        }
+    )
+
+    # remaining() in agg should exclude group key AND explicitly aggregated columns
+    result = df.group_by("group").agg(pl.col("a").sum(), cs.remaining().sum())
+
+    # Should have group + a + remaining (b, c)
+    assert set(result.columns) == {"group", "a", "b", "c"}
+
+    # Verify values are correct sums
+    result_sorted = result.sort("group")
+    assert result_sorted["a"].to_list() == [3, 7]  # x: 1+2, y: 3+4
+    assert result_sorted["b"].to_list() == [9, 13]  # x: 4+5, y: 6+7
+    assert result_sorted["c"].to_list() == [15, 19]  # x: 7+8, y: 9+10
