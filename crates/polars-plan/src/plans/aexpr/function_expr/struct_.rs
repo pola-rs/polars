@@ -30,24 +30,16 @@ impl IRStructFunction {
                     polars_bail!(StructFieldNotFound: "{name}");
                 }
             }),
-            RenameFields(names) => mapper.map_dtype(|dt| match dt {
+            RenameFields(names) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
                     let fields = fields
                         .iter()
                         .zip(names.as_ref())
                         .map(|(fld, name)| Field::new(name.clone(), fld.dtype().clone()))
                         .collect();
-                    DataType::Struct(fields)
+                    Ok(DataType::Struct(fields))
                 },
-                // The types will be incorrect, but its better than nothing
-                // we can get an incorrect type with python lambdas, because we only know return type when running
-                // the query
-                dt => DataType::Struct(
-                    names
-                        .iter()
-                        .map(|name| Field::new(name.clone(), dt.clone()))
-                        .collect(),
-                ),
+                _ => polars_bail!(op = "rename_fields", got = dt, expected = "Struct"),
             }),
             PrefixFields(prefix) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
