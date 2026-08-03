@@ -71,10 +71,25 @@ impl StructNameSpace {
         self._rename_fields_impl(names.into_iter().map(|x| x.into()).collect())
     }
 
-    pub fn _rename_fields_impl(self, names: Arc<[PlSmallStr]>) -> Expr {
+    fn _rename_fields_impl(self, names: Arc<[PlSmallStr]>) -> Expr {
         self.0
             .map_unary(FunctionExpr::StructExpr(StructFunction::RenameFields(
                 names,
+            )))
+    }
+
+    pub fn drop_fields<I, S>(self, names: I, strict: bool) -> Expr
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<PlSmallStr>,
+    {
+        self._drop_fields_impl(names.into_iter().map(|x| x.into()).collect(), strict)
+    }
+
+    fn _drop_fields_impl(self, names: Arc<[PlSmallStr]>, strict: bool) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::StructExpr(StructFunction::DropFields(
+                names, strict,
             )))
     }
 

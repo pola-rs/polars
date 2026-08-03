@@ -6,7 +6,11 @@ from collections import OrderedDict
 import pytest
 
 import polars as pl
-from polars.exceptions import ColumnNotFoundError, InvalidOperationError
+from polars.exceptions import (
+    ColumnNotFoundError,
+    InvalidOperationError,
+    StructFieldNotFoundError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -37,6 +41,28 @@ def test_rename_fields() -> None:
     df = pl.DataFrame({"int": [1, 2], "str": ["a", "b"], "bool": [True, None]})
     s = df.to_struct("my_struct").struct.rename_fields(["a", "b"])
     assert s.struct.fields == ["a", "b"]
+
+
+def test_drop_fields() -> None:
+    df = pl.DataFrame({"int": [1, 2], "str": ["a", "b"], "bool": [True, None]})
+    s = df.to_struct("my_struct").struct.drop_fields(["str"])
+    assert s.struct.fields == ["int", "bool"]
+
+
+def test_drop_fields_strict() -> None:
+    df = pl.DataFrame({"int": [1, 2], "str": ["a", "b"], "bool": [True, None]})
+    with pytest.raises(StructFieldNotFoundError):
+        df.to_struct("my_struct").struct.drop_fields(
+            ["str", "nonexistent"], strict=True
+        )
+
+
+def test_drop_fields_non_strict() -> None:
+    df = pl.DataFrame({"int": [1, 2], "str": ["a", "b"], "bool": [True, None]})
+    s = df.to_struct("my_struct").struct.drop_fields(
+        ["str", "nonexistent"], strict=False
+    )
+    assert s.struct.fields == ["int", "bool"]
 
 
 def test_struct_json_encode() -> None:

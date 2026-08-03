@@ -288,6 +288,7 @@ impl PyTemporalFunction {
 pub enum PyStructFunction {
     FieldByName,
     RenameFields,
+    DropFields,
     PrefixFields,
     SuffixFields,
     JsonEncode,
@@ -1407,6 +1408,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     IRStructFunction::RenameFields(names) => {
                         (PyStructFunction::RenameFields, names[0].as_str()).into_py_any(py)
+                    },
+                    IRStructFunction::DropFields(names, strict) => {
+                        // TODO: [amber] is this [0] index incorrect?
+                        (PyStructFunction::DropFields, names[0].as_str(), strict).into_py_any(py)
                     },
                     IRStructFunction::PrefixFields(prefix) => {
                         (PyStructFunction::PrefixFields, prefix.as_str()).into_py_any(py)

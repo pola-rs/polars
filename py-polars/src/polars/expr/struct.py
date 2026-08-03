@@ -294,6 +294,37 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.struct_rename_fields(names))
 
+    def drop_fields(self, names: Sequence[str], strict=True) -> Expr:
+        """
+        Drop one or more fields from the struct.
+
+        Parameters
+        ----------
+        names
+            Names of the fields to drop.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "aaa": [1, 2],
+        ...         "bbb": ["ab", "cd"],
+        ...         "ccc": [True, None],
+        ...     }
+        ... ).select(pl.struct("aaa", "bbb", "ccc").alias("struct_col"))
+        >>> df.struct.drop_fields(["aaa"])
+        shape: (2, 1)
+        ┌─────────────┐
+        │ struct_col  │
+        │ ---         │
+        │ struct[2]   │
+        ╞═════════════╡
+        │ {"ab",true} │
+        │ {"cd",null} │
+        └─────────────┘
+        """
+        return wrap_expr(self._pyexpr.struct_drop_fields(names, strict))
+
     def json_encode(self) -> Expr:
         """
         Convert this struct to a string column with json values.

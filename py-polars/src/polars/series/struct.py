@@ -101,6 +101,27 @@ class StructNameSpace(_NamespaceSuggestMixin):
         ['c', 'd']
         """
 
+    def drop_fields(self, names: Sequence[str], strict: bool) -> Series:
+        """
+        Drop one or more fields from the struct.
+
+        Parameters
+        ----------
+        names
+            Names of the fields to drop.
+
+        Examples
+        --------
+        >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+        >>> s.struct.drop_fields(["a"])
+        shape: (2,)
+        Series: 'a' [struct[1]]
+        [
+            {"b":2}
+            {"b":4}
+        ]
+        """
+
     @property
     def schema(self) -> Schema:
         """
