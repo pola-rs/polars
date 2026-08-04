@@ -672,6 +672,7 @@ impl OptimizationRule for TypeCoercionRule {
                 if dtype.is_float() {
                     return Ok(None);
                 }
+                polars_ensure!(!dtype.is_struct(), opq = ewm, dtype);
 
                 let new_function = match ewm_variant {
                     IRFunctionExpr::EwmMean { .. } => IRFunctionExpr::EwmMean {
