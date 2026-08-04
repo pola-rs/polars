@@ -659,6 +659,10 @@ impl PredicatePushDown {
             },
             #[cfg(feature = "python")]
             PythonScan { mut options } => {
+                // The predicate is handed to Python as a DSL expression, but dynamic
+                // predicates have no DSL representation.
+                remove_dynamic_pred_minterms(&mut acc_predicates, expr_arena);
+
                 if let Some(predicate) =
                     combine_predicates(acc_predicates.into_values(), expr_arena)
                 {
