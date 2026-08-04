@@ -123,15 +123,7 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
         storage: &mut Self::Storage,
         edges: &mut dyn NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue> {
-        let child_ids = edges
-            .inputs()
-            .iter()
-            .map(|&i| *self.id_map.get_index(i).unwrap().0)
-            .collect();
-
-        let id = self
-            .canonical_ir_map
-            .get_or_assign(key, child_ids, storage.arena);
+        let id = self.canonical_ir_map.resolve(key, storage.arena);
 
         use indexmap::map::Entry;
 
