@@ -11,6 +11,7 @@ mod correlation;
 pub(crate) mod horizontal;
 #[cfg(any(feature = "range", feature = "arg_where"))]
 mod index;
+mod ntile;
 #[cfg(feature = "range")]
 mod range;
 mod repeat;
@@ -35,6 +36,7 @@ pub use horizontal::{
 pub use horizontal::{cum_fold_exprs, cum_reduce_exprs};
 #[cfg(any(feature = "range", feature = "arg_where"))]
 pub use index::*;
+pub use ntile::ntile;
 #[cfg(all(
     feature = "range",
     any(feature = "dtype-date", feature = "dtype-datetime")

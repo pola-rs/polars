@@ -1870,6 +1870,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 } => ("arg_max", descending, nulls_last).into_py_any(py),
                 IRFunctionExpr::Product => ("product",).into_py_any(py),
                 IRFunctionExpr::Repeat => ("repeat",).into_py_any(py),
+                IRFunctionExpr::NTile { n } => ("ntile", n.get()).into_py_any(py),
                 IRFunctionExpr::Rank { options, seed } => {
                     let method = match options.method {
                         RankMethod::Average => "average",

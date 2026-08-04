@@ -12,7 +12,7 @@ use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::RoundMode;
 use polars_plan::dsl::functions::{
     as_struct, coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal,
-    min_horizontal, when,
+    min_horizontal, ntile, when,
 };
 use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
 use polars_plan::prelude::StrptimeOptions;
@@ -790,6 +790,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     #[cfg(feature = "rank")]
     DenseRank,
+    /// SQL 'ntile' window function.
+    /// Splits an ordered window partition into `n` buckets, numbered from 1 to `n`.
+    /// ```sql
+    /// SELECT NTILE(4) OVER (ORDER BY col1) FROM df;
+    /// SELECT NTILE(4) OVER (PARTITION BY col1 ORDER BY col2) FROM df;
+    /// ```
+    NTile,
 
     // ----
     // Column selection
@@ -881,6 +888,7 @@ impl PolarsSQLFunctions {
             "quantile_disc",
             "min",
             "mod",
+            "ntile",
             "nullif",
             "octet_length",
             "pi",
@@ -1077,6 +1085,7 @@ impl PolarsSQLFunctions {
             "last_value" => Self::LastValue,
             "lag" => Self::Lag,
             "lead" => Self::Lead,
+            "ntile" => Self::NTile,
             #[cfg(feature = "rank")]
             "rank" => Self::Rank,
             "row_number" => Self::RowNumber,
@@ -1790,6 +1799,22 @@ impl SQLFunctionVisitor<'_> {
                 // note: SQL is 1-indexed
                 let row_num_expr = int_range(lit(0i64), len(), 1, DataType::UInt32) + lit(1u32);
                 self.apply_window_spec(row_num_expr, &self.func.over)
+            },
+            NTile => {
+                let args = extract_args(function)?;
+                let [FunctionArgExpr::Expr(n_expr)] = args.as_slice() else {
+                    polars_bail!(SQLSyntax: "NTILE expects exactly 1 argument (found {})", args.len())
+                };
+                let n = match parse_sql_expr(n_expr, self.ctx, self.active_schema)? {
+                    Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n > 0 => n,
+                    other => {
+                        polars_bail!(SQLSyntax: "NTILE expects a positive integer (found {:?})", other)
+                    },
+                };
+                let n = u32::try_from(n)
+                    .map_err(|_| polars_err!(SQLSyntax: "NTILE bucket count {} is too large", n))?;
+
+                self.apply_window_spec(ntile(n)?, &self.func.over)
             },
 
             // ----
