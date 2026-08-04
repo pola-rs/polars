@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use polars_utils::itertools::Itertools;
+
 use super::IR;
 use crate::plans::ExprIR;
 #[cfg(feature = "python")]
@@ -17,7 +19,7 @@ impl IR {
     {
         let lhs = lhs.into_iter();
         let rhs = rhs.into_iter();
-        lhs.len() == rhs.len() && lhs.zip(rhs).all(|(l, r)| cmp.equals(l, r))
+        lhs.eq_by_(rhs, |l, r| cmp.equals(l, r))
     }
 
     /// Compares two IR nodes at the top level, applying a custom comparator to compare child expressions
