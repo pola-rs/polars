@@ -21,6 +21,7 @@ use polars_plan::prelude::{
 };
 use polars_time::prelude::RollingGroupOptions;
 use polars_time::{ClosedWindow, Duration, DynamicGroupOptions};
+use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
@@ -288,6 +289,7 @@ impl PyTemporalFunction {
 pub enum PyStructFunction {
     FieldByName,
     RenameFields,
+    DropFields,
     PrefixFields,
     SuffixFields,
     JsonEncode,
@@ -1405,9 +1407,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRStructFunction::FieldByName(name) => {
                         (PyStructFunction::FieldByName, name.as_str()).into_py_any(py)
                     },
-                    IRStructFunction::RenameFields(names) => {
-                        (PyStructFunction::RenameFields, names[0].as_str()).into_py_any(py)
-                    },
+                    IRStructFunction::RenameFields(names) => (
+                        PyStructFunction::RenameFields,
+                        names.iter().map(|s| s.as_str()).collect_vec(),
+                    )
+                        .into_py_any(py),
+                    IRStructFunction::DropFields(names, strict) => (
+                        PyStructFunction::DropFields,
+                        names.iter().map(|s| s.as_str()).collect_vec(),
+                        strict,
+                    )
+                        .into_py_any(py),
                     IRStructFunction::PrefixFields(prefix) => {
                         (PyStructFunction::PrefixFields, prefix.as_str()).into_py_any(py)
                     },
