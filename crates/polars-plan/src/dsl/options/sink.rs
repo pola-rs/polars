@@ -22,6 +22,8 @@ use super::FileWriteFormat;
 use crate::dsl::file_provider::FileProviderType;
 use crate::dsl::iceberg_sink_state::IcebergSinkState;
 use crate::dsl::{AExpr, Expr, SpecialEq};
+#[cfg(feature = "cse")]
+use crate::plans::ExpressionHasher;
 use crate::plans::{ExprIR, ToFieldContext};
 use crate::prelude::PlanCallback;
 
@@ -304,7 +306,7 @@ pub enum PartitionStrategyIR {
 
 #[cfg(feature = "cse")]
 impl PartitionStrategyIR {
-    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
+    pub(crate) fn shallow_hash<H: Hasher>(&self, state: &mut H, expr_hash: &impl ExpressionHasher) {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::Keyed {
@@ -313,7 +315,7 @@ impl PartitionStrategyIR {
                 keys_pre_grouped,
             } => {
                 for k in keys {
-                    k.traverse_and_hash(expr_arena, state);
+                    expr_hash.hash_expr(k, state);
                 }
 
                 include_keys.hash(state);
@@ -326,13 +328,13 @@ impl PartitionStrategyIR {
 
 impl SinkTypeIR {
     #[cfg(feature = "cse")]
-    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
+    pub(crate) fn shallow_hash<H: Hasher>(&self, state: &mut H, expr_hash: &impl ExpressionHasher) {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::Memory => {},
             Self::Callback(f) => f.hash(state),
             Self::File(options) => options.hash(state),
-            Self::Partitioned(options) => options.traverse_and_hash(expr_arena, state),
+            Self::Partitioned(options) => options.shallow_hash(state, expr_hash),
         }
     }
 }
@@ -437,7 +439,7 @@ impl PartitionedSinkOptionsIR {
     }
 
     #[cfg(feature = "cse")]
-    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
+    pub(crate) fn shallow_hash<H: Hasher>(&self, state: &mut H, expr_hash: &impl ExpressionHasher) {
         let PartitionedSinkOptionsIR {
             base_path,
             file_path_provider,
@@ -450,7 +452,7 @@ impl PartitionedSinkOptionsIR {
 
         base_path.hash(state);
         file_path_provider.hash(state);
-        partition_strategy.traverse_and_hash(expr_arena, state);
+        partition_strategy.shallow_hash(state, expr_hash);
         file_format.hash(state);
         unified_sink_args.hash(state);
         max_rows_per_file.hash(state);

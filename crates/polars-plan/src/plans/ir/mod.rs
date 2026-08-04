@@ -1,6 +1,8 @@
 mod dot;
 mod equality;
 mod format;
+#[cfg(feature = "cse")]
+mod hash;
 pub mod inputs;
 mod schema;
 pub(crate) mod tree_format;
@@ -12,6 +14,8 @@ use std::fmt;
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use equality::ExpressionComparator;
 pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursive};
+#[cfg(feature = "cse")]
+pub use hash::ExpressionHasher;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unique_id::UniqueId;

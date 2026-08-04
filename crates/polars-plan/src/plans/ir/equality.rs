@@ -1,39 +1,30 @@
 use std::sync::Arc;
 
-use polars_utils::arena::Arena;
-use polars_utils::itertools::Itertools;
-
 use super::IR;
-use crate::plans::{AExpr, ExprIR};
+use crate::plans::ExprIR;
 #[cfg(feature = "python")]
 use crate::plans::{PythonOptions, PythonPredicate};
 
 pub trait ExpressionComparator {
-    fn equals(&mut self, lhs: &ExprIR, rhs: &ExprIR, expr_arena: &Arena<AExpr>) -> bool;
+    fn equals(&self, lhs: &ExprIR, rhs: &ExprIR) -> bool;
 }
 
 impl IR {
-    fn expr_iter_eq<'a, T>(
-        lhs: T,
-        rhs: T,
-        expr_arena: &Arena<AExpr>,
-        cmp: &mut impl ExpressionComparator,
-    ) -> bool
+    fn expr_iter_eq<'a, T>(lhs: T, rhs: T, cmp: &impl ExpressionComparator) -> bool
     where
         T: IntoIterator<Item = &'a ExprIR>,
         T::IntoIter: ExactSizeIterator,
     {
         let lhs = lhs.into_iter();
         let rhs = rhs.into_iter();
-        lhs.eq_by_(rhs, |l, r| cmp.equals(l, r, expr_arena))
+        lhs.len() == rhs.len() && lhs.zip(rhs).all(|(l, r)| cmp.equals(l, r))
     }
 
     /// Compares two IR nodes at the top level, applying a custom comparator to compare child expressions
     pub fn is_ir_equal_shallow(
         &self,
         other: &Self,
-        expr_arena: &Arena<AExpr>,
-        expression_cmp: &mut impl ExpressionComparator,
+        expression_cmp: &impl ExpressionComparator,
     ) -> bool {
         if std::mem::discriminant(self) != std::mem::discriminant(other) {
             return false;
@@ -41,13 +32,13 @@ impl IR {
 
         macro_rules! expr_eq {
             ($lhs:expr, $rhs:expr) => {
-                expression_cmp.equals($lhs, $rhs, expr_arena)
+                expression_cmp.equals($lhs, $rhs)
             };
         }
 
         macro_rules! expr_iter_eq {
             ($lhs:expr, $rhs:expr) => {
-                Self::expr_iter_eq($lhs, $rhs, expr_arena, expression_cmp)
+                Self::expr_iter_eq($lhs, $rhs, expression_cmp)
             };
         }
 

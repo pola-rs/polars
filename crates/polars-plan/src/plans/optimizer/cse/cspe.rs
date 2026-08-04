@@ -1,17 +1,16 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::Hasher;
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
-use hashbrown::HashTable;
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
+use super::interner::{DeduplicationId, Interner, ShallowNodeOps};
 use crate::plans::aexpr::traverse_and_hash_aexpr;
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
-use crate::plans::visitor::hash::IRHashWrap;
-use crate::plans::{AExpr, ExprIR, ExpressionComparator, IR};
+use crate::plans::{AExpr, ArenaLpIter, ExprIR, ExpressionComparator, ExpressionHasher, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::tree_traversal::{PersistInputEdgeIdxs, TreeTraversalImpl};
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
@@ -26,8 +25,11 @@ pub fn common_subplan_elimination(
     let mut visit_stack = ScratchVec::default();
     let mut edges = vec![usize::MAX]; // Indices into `id_map`
     let mut persisted_input_edge_idxs = vec![usize::MAX]; // For tree traversal
-    let mut deduplication_map = HashTable::default();
     let mut id_map = PlIndexMap::new();
+
+    // Hash all exprs in advance, so that later comparison is immutable
+    let expr_cmp = HashExpressionCmp::new(root, ir_arena, expr_arena);
+
     let mut storage = IRTraversalStorage { arena: ir_arena };
 
     TreeTraversalImpl {
@@ -39,10 +41,10 @@ pub fn common_subplan_elimination(
         )),
         graph_visit_order_fn: None,
         visitor: &mut IDGeneratorVisitor {
-            deduplication_map: &mut deduplication_map,
+            interner: Interner::new(),
             id_map: &mut id_map,
-            expr_arena,
-            expr_cmp: HashExpressionCmp::new(),
+            phantom: PhantomData,
+            expr_cmp,
         },
     }
     .traverse_rec(root, 0, false)
@@ -90,37 +92,28 @@ impl Default for IDState {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
-#[repr(transparent)]
-struct DeduplicationId(u32);
-
-struct DeduplicationEntry {
-    representative: Node,
-    child_ids: Vec<DeduplicationId>,
-    id: DeduplicationId,
-}
-
 struct IDGeneratorVisitor<'map, 'arena> {
-    deduplication_map: &'map mut HashTable<DeduplicationEntry>,
-    id_map: &'map mut PlIndexMap<DeduplicationId, IDState>,
-    expr_arena: &'arena Arena<AExpr>,
+    interner: Interner<IR>,
+    id_map: &'map mut PlIndexMap<DeduplicationId<IR>, IDState>,
+    phantom: PhantomData<&'arena ()>,
     expr_cmp: HashExpressionCmp,
 }
 
-fn shallow_hasher<'a>(
-    node: Node,
-    child_ids: &[DeduplicationId],
+struct IrShallowOps<'a> {
     lp_arena: &'a Arena<IR>,
-    expr_arena: &'a Arena<AExpr>,
-) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    expr_cmp: &'a HashExpressionCmp,
+}
 
-    IRHashWrap::new(node, lp_arena, expr_arena, true).hash(&mut hasher);
-    for &child_id in child_ids {
-        hasher.write_u32(child_id.0);
+impl ShallowNodeOps for IrShallowOps<'_> {
+    fn shallow_hash<H: Hasher>(&self, node: Node, state: &mut H) {
+        self.lp_arena.get(node).shallow_hash(state, self.expr_cmp);
     }
 
-    hasher.finish()
+    fn shallow_eq(&self, a: Node, b: Node) -> bool {
+        self.lp_arena
+            .get(a)
+            .is_ir_equal_shallow(self.lp_arena.get(b), self.expr_cmp)
+    }
 }
 
 struct Blake3Hasher {
@@ -150,25 +143,28 @@ impl Hasher for Blake3Hasher {
 }
 
 struct HashExpressionCmp {
-    expr_hash_cache: PlIndexMap<Node, [u8; 32]>,
+    expr_hashes: PlIndexMap<Node, [u8; 32]>,
 }
 
 impl HashExpressionCmp {
-    fn new() -> Self {
-        Self {
-            expr_hash_cache: PlIndexMap::new(),
+    fn new(root: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Self {
+        let mut expr_hashes = PlIndexMap::new();
+        for (_, ir) in lp_arena.iter(root) {
+            for e in ir.exprs() {
+                expr_hashes.entry(e.node()).or_insert_with(|| {
+                    let mut hasher = Blake3Hasher::new();
+                    traverse_and_hash_aexpr(e.node(), expr_arena, &mut hasher);
+                    hasher.finalize()
+                });
+            }
         }
+        Self { expr_hashes }
     }
 
-    fn expr_hash(&mut self, expr: &ExprIR, expr_arena: &Arena<AExpr>) -> [u8; 32] {
-        let tree_hash = *self.expr_hash_cache.entry(expr.node()).or_insert_with(|| {
-            let mut hasher = Blake3Hasher::new();
-            traverse_and_hash_aexpr(expr.node(), expr_arena, &mut hasher);
-            hasher.finalize()
-        });
-
-        // Multiple ExprIRs can reference the same Node, but have different names.
-        // The alias is included in the IRHashWrap hasher, so we need to include it here as well.
+    // Multiple ExprIRs can reference the same Node, but have different names.
+    // The alias is included in the IRHashWrap hasher, so we need to include it here as well.
+    fn hash_with_alias(&self, expr: &ExprIR) -> [u8; 32] {
+        let tree_hash = self.expr_hashes[&expr.node()];
         match expr.get_alias() {
             None => tree_hash,
             Some(alias) => {
@@ -182,51 +178,15 @@ impl HashExpressionCmp {
 }
 
 impl ExpressionComparator for HashExpressionCmp {
-    fn equals(&mut self, lhs: &ExprIR, rhs: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
-        self.expr_hash(lhs, expr_arena) == self.expr_hash(rhs, expr_arena)
+    fn equals(&self, lhs: &ExprIR, rhs: &ExprIR) -> bool {
+        self.hash_with_alias(lhs) == self.hash_with_alias(rhs)
     }
 }
 
-fn shallow_eq<'a>(
-    lhs: Node,
-    rhs: Node,
-    lp_arena: &'a Arena<IR>,
-    expr_arena: &'a Arena<AExpr>,
-    expr_cmp: &mut HashExpressionCmp,
-) -> bool {
-    let lhs = lp_arena.get(lhs);
-    let rhs = lp_arena.get(rhs);
-
-    lhs.is_ir_equal_shallow(rhs, expr_arena, expr_cmp)
-}
-
-fn get_deduplication_id<'a>(
-    deduplication_map: &'a mut HashTable<DeduplicationEntry>,
-    node: Node,
-    child_ids: Vec<DeduplicationId>,
-    lp_arena: &'a Arena<IR>,
-    expr_arena: &'a Arena<AExpr>,
-    expr_cmp: &mut HashExpressionCmp,
-) -> DeduplicationId {
-    let shallow_hash = shallow_hasher(node, &child_ids, lp_arena, expr_arena);
-
-    let next_id: DeduplicationId = DeduplicationId(1 + deduplication_map.len() as u32);
-    deduplication_map
-        .entry(
-            shallow_hash,
-            |other| {
-                shallow_eq(node, other.representative, lp_arena, expr_arena, expr_cmp)
-                    && child_ids == other.child_ids
-            },
-            |other| shallow_hasher(other.representative, &other.child_ids, lp_arena, expr_arena),
-        )
-        .or_insert(DeduplicationEntry {
-            representative: node,
-            child_ids,
-            id: next_id,
-        })
-        .get()
-        .id
+impl ExpressionHasher for HashExpressionCmp {
+    fn hash_expr<H: Hasher>(&self, expr: &ExprIR, state: &mut H) {
+        state.write(&self.hash_with_alias(expr));
+    }
 }
 
 impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
@@ -263,14 +223,12 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
             .iter()
             .map(|&i| *self.id_map.get_index(i).unwrap().0)
             .collect();
-        let id = get_deduplication_id(
-            self.deduplication_map,
-            key,
-            child_ids,
-            storage.arena,
-            self.expr_arena,
-            &mut self.expr_cmp,
-        );
+
+        let ops = IrShallowOps {
+            lp_arena: &*storage.arena,
+            expr_cmp: &self.expr_cmp,
+        };
+        let id = self.interner.get_or_assign(key, child_ids, &ops);
 
         use indexmap::map::Entry;
 
@@ -303,7 +261,7 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
 }
 
 struct InsertCachesVisitor<'a, 'arena> {
-    id_map: &'a mut PlIndexMap<DeduplicationId, IDState>,
+    id_map: &'a mut PlIndexMap<DeduplicationId<IR>, IDState>,
     inserted_cache: &'a mut bool,
     insert_nested_caches: bool,
     phantom: PhantomData<&'arena ()>,

@@ -1,6 +1,7 @@
 mod cache_states;
 mod csee;
 pub mod cspe;
+mod interner;
 
 pub(crate) use cache_states::set_cache_states;
 pub(super) use csee::CommonSubExprOptimizer;
