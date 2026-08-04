@@ -233,18 +233,13 @@ impl ChunkZip<StructType> for StructChunked {
         if mask.length == 1 {
             // pl.when(None) <=> pl.when(False)
             let is_true = mask.get(0).unwrap_or(false);
-            return Ok(if is_true && self.length == 1 {
-                self.new_from_index(0, length)
-            } else if is_true {
-                self.clone()
-            } else if other.length == 1 {
-                let mut s = other.new_from_index(0, length);
-                s.rename(self.name().clone());
-                s
+            return Ok(if is_true {
+                self.broadcast_to(length)?.into_owned()
             } else {
-                let mut s = other.clone();
-                s.rename(self.name().clone());
-                s
+                other
+                    .broadcast_to(length)?
+                    .into_owned()
+                    .with_name(self.name().clone())
             });
         }
 
@@ -256,14 +251,8 @@ impl ChunkZip<StructType> for StructChunked {
         let needs_broadcast =
             if_true.chunks().len() > 1 || if_false.chunks().len() > 1 || mask.chunks().len() > 1;
         if needs_broadcast && length > 1 {
-            if self.length == 1 {
-                let broadcasted = self.new_from_index(0, length);
-                if_true = Cow::Owned(broadcasted);
-            }
-            if other.length == 1 {
-                let broadcasted = other.new_from_index(0, length);
-                if_false = Cow::Owned(broadcasted);
-            }
+            if_true = self.broadcast_to(length)?;
+            if_false = other.broadcast_to(length)?;
         }
 
         let if_true = if_true.as_ref();

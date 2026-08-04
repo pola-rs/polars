@@ -924,15 +924,7 @@ impl DataFrame {
             unsafe { self.set_height(column.len()) };
         }
 
-        if column.len() != self.height() && column.len() == 1 {
-            column = column.new_from_index(0, self.height());
-        }
-
-        polars_ensure!(
-            column.len() == self.height(),
-            ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
-            column.len(), self.height(),
-        );
+        column.broadcast_in_place_to(self.height())?;
 
         if let Some(i) = self.get_column_index(column.name()) {
             *unsafe { self.columns_mut() }.get_mut(i).unwrap() = column
@@ -983,16 +975,7 @@ impl DataFrame {
             unsafe { self.set_height(column.len()) };
         }
 
-        if column.len() != self.height() && column.len() == 1 {
-            column = column.new_from_index(0, self.height());
-        }
-
-        polars_ensure!(
-            column.len() == self.height(),
-            ShapeMismatch:
-            "unable to add a column of length {} to a DataFrame of height {}",
-            column.len(), self.height(),
-        );
+        column.broadcast_in_place_to(self.height())?;
 
         let i = output_schema
             .index_of(column.name())
@@ -1797,20 +1780,10 @@ impl DataFrame {
             )
         })?;
 
-        let mut new_col = f(col).into_column();
-
-        if new_col.len() != df_height && new_col.len() == 1 {
-            new_col = new_col.new_from_index(0, df_height);
-        }
-
-        polars_ensure!(
-            new_col.len() == df_height,
-            ShapeMismatch:
-            "apply_at_idx: resulting Series has length {} while the DataFrame has height {}",
-            new_col.len(), df_height
-        );
-
-        new_col = new_col.with_name(col.name().clone());
+        let new_col = f(col)
+            .into_column()
+            .with_name(col.name().clone())
+            .broadcast_owned_to(df_height)?;
         let col_before = std::mem::replace(col, new_col);
 
         if col.dtype() == col_before.dtype() {
