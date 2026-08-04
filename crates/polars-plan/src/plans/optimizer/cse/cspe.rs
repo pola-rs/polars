@@ -1,4 +1,3 @@
-use std::hash::Hasher;
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
@@ -7,10 +6,9 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
-use super::interner::{DeduplicationId, Interner, ShallowNodeOps};
-use crate::plans::aexpr::traverse_and_hash_aexpr;
+use super::canonical_ir::{CanonicalIRId, CanonicalIRMap};
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
-use crate::plans::{AExpr, ArenaLpIter, ExprIR, ExpressionComparator, ExpressionHasher, IR};
+use crate::plans::{AExpr, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::tree_traversal::{PersistInputEdgeIdxs, TreeTraversalImpl};
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
@@ -27,8 +25,7 @@ pub fn common_subplan_elimination(
     let mut persisted_input_edge_idxs = vec![usize::MAX]; // For tree traversal
     let mut id_map = PlIndexMap::new();
 
-    // Hash all exprs in advance, so that later comparison is immutable
-    let expr_cmp = HashExpressionCmp::new(root, ir_arena, expr_arena);
+    let canonical_ir_map = CanonicalIRMap::new(root, ir_arena, expr_arena);
 
     let mut storage = IRTraversalStorage { arena: ir_arena };
 
@@ -41,10 +38,9 @@ pub fn common_subplan_elimination(
         )),
         graph_visit_order_fn: None,
         visitor: &mut IDGeneratorVisitor {
-            interner: Interner::new(),
+            canonical_ir_map,
             id_map: &mut id_map,
             phantom: PhantomData,
-            expr_cmp,
         },
     }
     .traverse_rec(root, 0, false)
@@ -93,100 +89,9 @@ impl Default for IDState {
 }
 
 struct IDGeneratorVisitor<'map, 'arena> {
-    interner: Interner<IR>,
-    id_map: &'map mut PlIndexMap<DeduplicationId<IR>, IDState>,
+    canonical_ir_map: CanonicalIRMap,
+    id_map: &'map mut PlIndexMap<CanonicalIRId, IDState>,
     phantom: PhantomData<&'arena ()>,
-    expr_cmp: HashExpressionCmp,
-}
-
-struct IrShallowOps<'a> {
-    lp_arena: &'a Arena<IR>,
-    expr_cmp: &'a HashExpressionCmp,
-}
-
-impl ShallowNodeOps for IrShallowOps<'_> {
-    fn shallow_hash<H: Hasher>(&self, node: Node, state: &mut H) {
-        self.lp_arena.get(node).shallow_hash(state, self.expr_cmp);
-    }
-
-    fn shallow_eq(&self, a: Node, b: Node) -> bool {
-        self.lp_arena
-            .get(a)
-            .is_ir_equal_shallow(self.lp_arena.get(b), self.expr_cmp)
-    }
-}
-
-struct Blake3Hasher {
-    hasher: blake3::Hasher,
-}
-
-impl Blake3Hasher {
-    fn new() -> Self {
-        Self {
-            hasher: blake3::Hasher::new(),
-        }
-    }
-
-    fn finalize(self) -> [u8; 32] {
-        self.hasher.finalize().into()
-    }
-}
-
-impl Hasher for Blake3Hasher {
-    fn finish(&self) -> u64 {
-        0
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        self.hasher.update(bytes);
-    }
-}
-
-struct HashExpressionCmp {
-    expr_hashes: PlIndexMap<Node, [u8; 32]>,
-}
-
-impl HashExpressionCmp {
-    fn new(root: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Self {
-        let mut expr_hashes = PlIndexMap::new();
-        for (_, ir) in lp_arena.iter(root) {
-            for e in ir.exprs() {
-                expr_hashes.entry(e.node()).or_insert_with(|| {
-                    let mut hasher = Blake3Hasher::new();
-                    traverse_and_hash_aexpr(e.node(), expr_arena, &mut hasher);
-                    hasher.finalize()
-                });
-            }
-        }
-        Self { expr_hashes }
-    }
-
-    // Multiple ExprIRs can reference the same Node, but have different names.
-    // The alias is included in the IRHashWrap hasher, so we need to include it here as well.
-    fn hash_with_alias(&self, expr: &ExprIR) -> [u8; 32] {
-        let tree_hash = self.expr_hashes[&expr.node()];
-        match expr.get_alias() {
-            None => tree_hash,
-            Some(alias) => {
-                let mut hasher = Blake3Hasher::new();
-                hasher.write(&tree_hash);
-                hasher.write(alias.as_bytes());
-                hasher.finalize()
-            },
-        }
-    }
-}
-
-impl ExpressionComparator for HashExpressionCmp {
-    fn equals(&self, lhs: &ExprIR, rhs: &ExprIR) -> bool {
-        self.hash_with_alias(lhs) == self.hash_with_alias(rhs)
-    }
-}
-
-impl ExpressionHasher for HashExpressionCmp {
-    fn hash_expr<H: Hasher>(&self, expr: &ExprIR, state: &mut H) {
-        state.write(&self.hash_with_alias(expr));
-    }
 }
 
 impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
@@ -224,11 +129,9 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
             .map(|&i| *self.id_map.get_index(i).unwrap().0)
             .collect();
 
-        let ops = IrShallowOps {
-            lp_arena: &*storage.arena,
-            expr_cmp: &self.expr_cmp,
-        };
-        let id = self.interner.get_or_assign(key, child_ids, &ops);
+        let id = self
+            .canonical_ir_map
+            .get_or_assign(key, child_ids, storage.arena);
 
         use indexmap::map::Entry;
 
@@ -261,7 +164,7 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
 }
 
 struct InsertCachesVisitor<'a, 'arena> {
-    id_map: &'a mut PlIndexMap<DeduplicationId<IR>, IDState>,
+    id_map: &'a mut PlIndexMap<CanonicalIRId, IDState>,
     inserted_cache: &'a mut bool,
     insert_nested_caches: bool,
     phantom: PhantomData<&'arena ()>,
