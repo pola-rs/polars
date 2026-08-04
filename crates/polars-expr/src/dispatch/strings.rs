@@ -11,6 +11,7 @@ use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRStringFunction;
 use polars_time::prelude::StringMethods;
+use polars_utils::broadcast::broadcast_len;
 #[cfg(feature = "regex")]
 use regex::{NoExpand, escape};
 
@@ -788,24 +789,10 @@ pub(super) fn to_integer(
         .map(|ok| ok.into_column())
 }
 
-fn _ensure_lengths(s: &[Column]) -> bool {
-    // Calculate the post-broadcast length and ensure everything is consistent.
-    let len = s
-        .iter()
-        .map(|series| series.len())
-        .filter(|l| *l != 1)
-        .max()
-        .unwrap_or(1);
-    s.iter()
-        .all(|series| series.len() == 1 || series.len() == len)
-}
-
 fn _check_same_length(s: &[Column], fn_name: &str) -> Result<(), PolarsError> {
-    polars_ensure!(
-        _ensure_lengths(s),
-        ShapeMismatch: "all series in `str.{}()` should have equal or unit length",
-        fn_name
-    );
+    broadcast_len(s.iter()).with_context(|| {
+        format!("all series in `str.{fn_name}()` should have equal or unit length")
+    })?;
     Ok(())
 }
 

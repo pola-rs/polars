@@ -486,13 +486,8 @@ impl PhysicalExpr for WindowExpr {
 
         // broadcast if required
         for col in group_by_columns.iter_mut() {
-            if col.len() != df.height() {
-                polars_ensure!(
-                    col.len() == 1,
-                    ShapeMismatch: "columns used as `partition_by` must have the same length as the DataFrame"
-                );
-                *col = col.new_from_index(0, df.height())
-            }
+            col.broadcast_in_place_to(df.height())
+                .context("partition_by")?;
         }
 
         let gb = GroupBy::new(df, group_by_columns.clone(), groups, Some(apply_columns));
@@ -676,24 +671,16 @@ impl PhysicalExpr for WindowExpr {
             .group_by
             .iter()
             .map(|e| {
-                let mut e = e.evaluate(df, state)?;
-                if e.len() == 1 {
-                    e = e.new_from_index(0, length_preserving_height);
-                }
-                // Sanity check: Length Preserving.
-                assert_eq!(e.len(), length_preserving_height,);
-                Ok(e)
+                e.evaluate(df, state)?
+                    .broadcast_owned_to(length_preserving_height)
             })
             .collect::<PolarsResult<Vec<_>>>()?;
         let order_by = match &self.order_by {
             None => None,
             Some((e, options)) => {
-                let mut e = e.evaluate(df, state)?;
-                if e.len() == 1 {
-                    e = e.new_from_index(0, length_preserving_height);
-                }
-                // Sanity check: Length Preserving.
-                assert_eq!(e.len(), length_preserving_height);
+                let e = e
+                    .evaluate(df, state)?
+                    .broadcast_owned_to(length_preserving_height)?;
                 let arr: Option<PrimitiveArray<IdxSize>> = if needs_remap_to_rows {
                     feature_gated!("rank", {
                         // Performance: precompute the rank here, so we can avoid dispatching per group
