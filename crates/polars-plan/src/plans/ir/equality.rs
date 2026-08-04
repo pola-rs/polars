@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_utils::arena::Arena;
+use polars_utils::itertools::Itertools;
 
 use super::IR;
 use crate::plans::{AExpr, ExprIR};
@@ -24,7 +25,7 @@ impl IR {
     {
         let lhs = lhs.into_iter();
         let rhs = rhs.into_iter();
-        lhs.len() == rhs.len() && lhs.zip(rhs).all(|(l, r)| cmp.equals(l, r, expr_arena))
+        lhs.eq_by_(rhs, |l, r| cmp.equals(l, r, expr_arena))
     }
 
     /// Compares two IR nodes at the top level, applying a custom comparator to compare child expressions
@@ -79,11 +80,8 @@ impl IR {
                     is_pure: r_is_pure,
                 } = r_options;
 
-                let scan_fn_eq = (l_scan_fn.is_some() == r_scan_fn.is_some())
-                    && l_scan_fn
-                        .as_ref()
-                        .map(|l| l.0.as_ptr() == r_scan_fn.as_ref().unwrap().0.as_ptr())
-                        .unwrap_or(true);
+                let scan_fn_eq = l_scan_fn.as_ref().map(|l| l.0.as_ptr())
+                    == r_scan_fn.as_ref().map(|r| r.0.as_ptr());
 
                 use PythonPredicate as PP;
                 let predicate_eq = (std::mem::discriminant(l_predicate)

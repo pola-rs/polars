@@ -102,7 +102,7 @@ impl fmt::Display for UnoptimizedOperation {
 pub type InputIdx = usize;
 pub type ColumnIdx = usize;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct FunctionArgMap {
     /// Mapping from function args to input columns

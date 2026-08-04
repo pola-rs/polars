@@ -116,12 +116,9 @@ impl Hash for FunctionIR {
                 // There is no meaningful structural hash for a `dyn DataFrameUdf`; use the `Arc`
                 // allocation address as its identity, matching `PartialEq` (`Arc::ptr_eq`).
                 (Arc::as_ptr(function) as *const () as usize).hash(state);
-                match schema {
-                    Some(schema) => {
-                        true.hash(state);
-                        (Arc::as_ptr(schema) as *const () as usize).hash(state);
-                    },
-                    None => false.hash(state),
+                std::mem::discriminant(schema).hash(state);
+                if let Some(schema) = schema {
+                    (Arc::as_ptr(schema) as *const () as usize).hash(state);
                 }
                 predicate_pd.hash(state);
                 projection_pd.hash(state);
