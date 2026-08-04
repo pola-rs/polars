@@ -1930,3 +1930,59 @@ def test_with_fields_optimize_expr_fused_multiply_add_27233() -> None:
         strict=True,
     )
     assert_frame_equal(out.unnest("s"), expected)
+
+
+def test_with_fields_agglist_in_over_unary_28674() -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": ["a", "a", "b", "a", "b", "b"],
+            "x": [1, 2, 10, 3, 20, 30],
+        }
+    )
+
+    s = pl.struct(v=pl.col("x").cum_sum())
+    ext = s.struct.with_fields(pl.field("v").abs().alias("abs"))
+
+    out = lf.select("g", ext.over("g")).collect()
+
+    ref = pl.struct(s.struct.field("v"), s.struct.field("v").abs().alias("abs"))
+    expected = lf.select("g", ref.over("g")).collect()
+
+    assert_frame_equal(out, expected)
+
+
+def test_with_fields_agglist_in_over_binary_28674() -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": ["a", "a", "b", "a", "b", "b"],
+            "x": [1, 2, 10, 3, 20, 30],
+        }
+    )
+
+    s = pl.struct(v=pl.col("x").cum_sum())
+    ext = s.struct.with_fields((pl.field("v") * 2).alias("double"))
+
+    out = lf.select("g", ext.over("g")).collect()
+
+    ref = pl.struct(s.struct.field("v"), (s.struct.field("v") * 2).alias("double"))
+    expected = lf.select("g", ref.over("g")).collect()
+
+    assert_frame_equal(out, expected)
+
+
+def test_struct_with_fields_agglist_nulls_28674() -> None:
+
+    lf = pl.LazyFrame({"g": ["a", "b", "a", "b"], "x": [1, None, None, 20]})
+    s = pl.struct(v=pl.col("x").cum_sum())
+    ext = s.struct.with_fields(pl.field("v").abs().alias("abs"))
+
+    out = lf.select("g", ext.over("g").alias("m")).collect().unnest("m")
+    expected = pl.DataFrame(
+        {
+            "g": ["a", "b", "a", "b"],
+            "v": [1, None, None, 20],
+            "abs": [1, None, None, 20],
+        }
+    )
+
+    assert_frame_equal(out, expected)
