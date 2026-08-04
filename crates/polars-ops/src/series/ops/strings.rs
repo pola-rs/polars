@@ -5,7 +5,7 @@ use arrow::array::{Array, Utf8ViewArrayBuilder};
 use arrow::datatypes::ArrowDataType;
 use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;
-use polars_error::{PolarsContext, PolarsResult, polars_ensure};
+use polars_error::{PolarsContext, PolarsResult};
 use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
