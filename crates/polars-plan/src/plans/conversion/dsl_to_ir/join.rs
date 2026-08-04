@@ -48,12 +48,12 @@ pub fn resolve_join(
     }
 
     let owned = Arc::unwrap_or_clone;
-    let mut input_left = input_left.map_right(Ok).right_or_else(|input| {
-        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join left)))
-    })?;
-    let mut input_right = input_right.map_right(Ok).right_or_else(|input| {
-        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join right)))
-    })?;
+    let mut input_left = input_left
+        .map_right(Ok)
+        .right_or_else(|input| to_alp_impl(owned(input), ctxt).context(failed_here!(join left)))?;
+    let mut input_right = input_right
+        .map_right(Ok)
+        .right_or_else(|input| to_alp_impl(owned(input), ctxt).context(failed_here!(join right)))?;
 
     let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
     let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
@@ -153,12 +153,12 @@ pub fn resolve_join(
         .fill_scratch(&left_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
         .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_left, true)
-        .map_err(|e| e.context("'join' failed".into()))?;
+        .context("'join' failed")?;
     ctxt.conversion_optimizer
         .fill_scratch(&right_on, ctxt.expr_arena);
     ctxt.conversion_optimizer
         .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, input_right, true)
-        .map_err(|e| e.context("'join' failed".into()))?;
+        .context("'join' failed")?;
 
     // Re-evaluate because of mutable borrows earlier.
     let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
@@ -380,7 +380,7 @@ pub fn resolve_join(
         &options,
         ctxt.expr_arena,
     )
-    .map_err(|e| e.context(failed_here!(join schema resolving)))?;
+    .context(failed_here!(join schema resolving))?;
 
     if key_cols_coalesced {
         input_left = if as_with_columns_l.is_empty() {
@@ -464,10 +464,10 @@ fn resolve_join_where(
         ctxt.opt_flags.set(OptFlags::PREDICATE_PUSHDOWN, true);
     }
     check_join_keys(&predicates)?;
-    let input_left = to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt)
-        .map_err(|e| e.context(failed_here!(join left)))?;
-    let input_right = to_alp_impl(Arc::unwrap_or_clone(input_right), ctxt)
-        .map_err(|e| e.context(failed_here!(join left)))?;
+    let input_left =
+        to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt).context(failed_here!(join left))?;
+    let input_right =
+        to_alp_impl(Arc::unwrap_or_clone(input_right), ctxt).context(failed_here!(join left))?;
 
     let schema_left = ctxt
         .lp_arena
@@ -532,7 +532,7 @@ fn resolve_join_where(
 
     ctxt.conversion_optimizer
         .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, last_node, false)
-        .map_err(|e| e.context("'join_where' failed".into()))?;
+        .context("'join_where' failed")?;
 
     Ok((last_node, join_node))
 }
