@@ -1675,3 +1675,32 @@ def test_cse_single_scalar_does_not_broadcast_28407() -> None:
     q = pl.LazyFrame({"a": [1, 2, 3]}).select((e + e).alias("o"))
 
     assert_frame_equal(q.collect(), pl.DataFrame({"o": 10}, schema={"o": pl.Int32}))
+
+
+def test_cse_groupby_agg_scalar_28653() -> None:
+    # Shared scalar literal aggregation should not be broadcast/imploded
+    # incorrectly by CSE when reused across multiple `.agg()` outputs.
+    lf = pl.LazyFrame({"g": [1, 1, 2]})
+    e = pl.lit(-1.5).abs()
+    q = lf.group_by("g", maintain_order=True).agg(a=e, b=e)
+
+    expected = pl.DataFrame({"g": [1, 2], "a": [1.5, 1.5], "b": [1.5, 1.5]})
+    assert_frame_equal(q.collect(), expected)
+    # Cross-check against the unoptimized baseline directly, not just a
+    # hardcoded expectation.
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
+
+
+def test_cse_groupby_agg_non_scalar_still_shared_28653() -> None:
+    # Regression guard: the 28653 fix must not disable CSE sharing for
+    # genuine non-scalar shared subexpressions in a group_by/agg context.
+
+    lf = pl.LazyFrame({"g": [1, 1, 2], "x": [10, 20, 30]})
+    shared = pl.col("x") * 2
+    q = lf.group_by("g", maintain_order=True).agg(a=shared.sum(), b=shared.mean())
+
+    assert "WITH_COLUMNS" in q.explain()
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags.none()),
+    )
