@@ -59,7 +59,7 @@ fn cast_rhs(
             s.broadcast_in_place_to(length)?;
         } else {
             polars_ensure!(
-                s.len() == length,
+                s.len() == length || s.len() == 1,
                 ShapeMismatch: "series length {} does not match expected length of {}",
                 s.len(), length
             );
