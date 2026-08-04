@@ -4344,7 +4344,7 @@ def test_read_parquet_legacy_nested_maps_27159(io_files_path: Path) -> None:
                     }
                 ],
                 [{"key": "b", "value": [{"key": 1, "value": True}]}],
-                [{"key": "c", "value": []}],
+                [{"key": "c", "value": None}],
                 [{"key": "d", "value": []}],
                 [{"key": "e", "value": [{"key": 1, "value": True}]}],
                 [

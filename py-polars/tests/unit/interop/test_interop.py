@@ -401,6 +401,12 @@ def test_from_pyarrow_map() -> None:
     }
 
 
+def test_from_pyarrow_map_preserves_nulls_28652() -> None:
+    pa_map = pa.array([[], None, [("k", 1)]], type=pa.map_(pa.string(), pa.int64()))
+    result = pl.Series(pa_map)
+    assert result.to_list() == [[], None, [{"key": "k", "value": 1}]]
+
+
 def test_from_fixed_size_binary_list() -> None:
     val = [[b"63A0B1C66575DD5708E1EB2B"]]
     arrow_array = pa.array(val, type=pa.list_(pa.binary(24)))
