@@ -12,6 +12,7 @@ The following methods are available under the `Series.struct` attribute.
     Series.struct.field
     Series.struct.json_encode
     Series.struct.rename_fields
+    Series.struct.drop
     Series.struct.unnest
 
 .. autosummary::

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use polars_buffer::Buffer;
 use polars_core::prelude::PlHashMap;
 use polars_error::{PolarsResult, feature_gated};
-use polars_utils::_limit_path_len_io_err;
+use polars_utils::io::_limit_path_len_io_err;
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
 
