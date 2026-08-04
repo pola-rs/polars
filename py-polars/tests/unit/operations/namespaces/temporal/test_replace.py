@@ -362,6 +362,26 @@ def test_replace_unequal_length_22018() -> None:
         )
 
 
+def test_replace_multi_chunk_with_nulls_28432() -> None:
+    s = pl.concat(
+        [pl.Series([datetime(2024, 1, 1)]), pl.Series([None], dtype=pl.Datetime("us"))],
+        rechunk=False,
+    )
+    assert s.n_chunks() > 1
+    result = s.dt.replace(year=2025)
+    expected = pl.Series([datetime(2025, 1, 1), None], dtype=pl.Datetime("us"))
+    assert_series_equal(result, expected)
+
+    d = pl.concat(
+        [pl.Series([date(2024, 1, 1)]), pl.Series([None], dtype=pl.Date)],
+        rechunk=False,
+    )
+    assert d.n_chunks() > 1
+    result_date = d.dt.replace(year=2025)
+    expected_date = pl.Series([date(2025, 1, 1), None], dtype=pl.Date)
+    assert_series_equal(result_date, expected_date)
+
+
 def test_replace_broadcast_self() -> None:
     df = pl.DataFrame(
         {

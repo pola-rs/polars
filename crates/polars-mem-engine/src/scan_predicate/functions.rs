@@ -9,9 +9,7 @@ use polars_core::schema::Schema;
 use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::default_values::{
-    DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
-};
+use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     Operator, PredicateFileSkip, ScanSources, TableStatistics, UnifiedScanArgs,
@@ -23,6 +21,7 @@ use polars_plan::plans::predicates::{
 };
 use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, MintermIter};
 use polars_plan::utils::aexpr_to_leaf_names_iter;
+use polars_utils::aliases::PlIndexMapHashable;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
@@ -410,7 +409,7 @@ pub fn apply_scan_predicate_to_scan_ir(
         *predicate_file_skip_applied = Some(predicate_file_skip);
 
         if skip_files_mask.num_skipped_files() > 0 {
-            filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter())
+            filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter(), false)
         }
     }
 
@@ -424,7 +423,7 @@ pub fn apply_scan_predicate_to_scan_ir(
 ///
 /// # Panics
 /// Panics if `scan_ir` is not `IR::Scan`.
-pub fn filter_scan_ir<I>(scan_ir: &mut IR, selected_path_indices: I)
+pub fn filter_scan_ir<I>(scan_ir: &mut IR, selected_path_indices: I, allow_pre_slice: bool)
 where
     I: Iterator<Item = usize> + Clone,
 {
@@ -470,9 +469,8 @@ where
         projection: _,
         column_mapping: _,
         default_values,
-        // Ensure these are None.
-        row_index: None,
-        pre_slice: None,
+        row_index,
+        pre_slice,
         cast_columns_policy: _,
         missing_columns_policy: _,
         extra_columns_policy: _,
@@ -480,10 +478,15 @@ where
         deletion_files,
         table_statistics,
         row_count,
-    } = unified_scan_args.as_mut()
-    else {
-        panic!("{unified_scan_args:?}")
-    };
+    } = unified_scan_args.as_mut();
+
+    // Ensure these are None.
+    assert!(row_index.is_none(), "{unified_scan_args:?}");
+    // In cloud this is allowed.
+    assert!(
+        pre_slice.is_none() | allow_pre_slice,
+        "{unified_scan_args:?}"
+    );
 
     // Reconcile pre-decoded state with the filter: clear what's stale,
     // gather what survives.
@@ -557,11 +560,18 @@ where
 
     *default_values = default_values.as_ref().map(|x| match x {
         DefaultFieldValues::Iceberg(v) => {
-            let mut out = PlIndexMap::with_capacity(v.len());
-            let mut gather_indices = PlHashMap::with_capacity(v.len());
+            let IcebergDefaultFieldValues {
+                identity_transformed_partition_fields,
+                initial_defaults,
+            } = v.as_ref();
 
-            for (k, v) in v.iter() {
-                out.insert(
+            let mut new_identity_transformed_partition_fields =
+                PlIndexMap::with_capacity(identity_transformed_partition_fields.len());
+            let mut gather_indices =
+                PlHashMap::with_capacity(identity_transformed_partition_fields.len());
+
+            for (k, v) in identity_transformed_partition_fields.iter() {
+                new_identity_transformed_partition_fields.insert(
                     *k,
                     v.as_ref().map_err(Clone::clone).map(|partition_values| {
                         if !gather_indices.contains_key(&partition_values.len()) {
@@ -586,7 +596,12 @@ where
                 );
             }
 
-            DefaultFieldValues::Iceberg(Arc::new(IcebergIdentityTransformedPartitionFields(out)))
+            DefaultFieldValues::Iceberg(Arc::new(IcebergDefaultFieldValues {
+                identity_transformed_partition_fields: PlIndexMapHashable(
+                    new_identity_transformed_partition_fields,
+                ),
+                initial_defaults: initial_defaults.clone(),
+            }))
         },
     });
 }

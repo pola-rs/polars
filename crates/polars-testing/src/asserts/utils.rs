@@ -716,8 +716,9 @@ fn assert_schema_equal_impl(
 ) -> PolarsResult<()> {
     let mut one_sided_names: Vec<&PlSmallStr> = vec![];
     let mut column_name_order_mismatch = false;
-    let mut dtype_mismatch = false;
 
+    let mut differing_left: Vec<(&PlSmallStr, &DataType)> = vec![];
+    let mut differing_right: Vec<(&PlSmallStr, &DataType)> = vec![];
     for (l_idx, (l_name, l_dtype)) in left_schema.iter().enumerate() {
         let Some((r_idx, _, r_dtype)) = right_schema.get_full(l_name) else {
             one_sided_names.reserve_exact(left_schema.len() - l_idx);
@@ -730,7 +731,8 @@ fn assert_schema_equal_impl(
         }
 
         if check_dtypes && l_dtype != r_dtype {
-            dtype_mismatch = true;
+            differing_left.push((l_name, l_dtype));
+            differing_right.push((l_name, r_dtype));
         }
     }
 
@@ -778,12 +780,12 @@ fn assert_schema_equal_impl(
         )
     }
 
-    if check_dtypes && dtype_mismatch {
+    if check_dtypes && !differing_left.is_empty() {
         polars_bail!(
             assertion_error = context,
-            "dtypes do not match",
-            left_schema.values_display(),
-            right_schema.values_display()
+            "dtypes do not match, differences only",
+            format!("{:?}", differing_left),
+            format!("{:?}", differing_right)
         )
     }
 

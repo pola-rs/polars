@@ -146,6 +146,20 @@ def test_concat_invalid_schema_err_20355() -> None:
         pl.concat([lf1, lf2]).collect(engine="streaming")
 
 
+def test_concat_ordered_union_slice_done_28272() -> None:
+    # An ordered-union (vertical `concat`) feeding a downstream that finishes early.
+    # This created a panic because it left a pipe stranded in a non-Done state.
+    lf = pl.DataFrame({"x": [0, 1, 2, 3]}, schema={"x": pl.Int64}).lazy()
+    lf = pl.concat([lf, lf], rechunk=False)
+    lf = pl.concat([lf, lf], rechunk=False)
+    lf = lf.unique(subset="x", keep="first", maintain_order=True)
+    lf = lf.slice(0, 2)
+    assert_frame_equal(
+        lf.collect(engine="streaming"),
+        pl.DataFrame({"x": [0, 1]}, schema={"x": pl.Int64}),
+    )
+
+
 def test_concat_df() -> None:
     df1 = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
     df2 = pl.concat([df1, df1], rechunk=True)

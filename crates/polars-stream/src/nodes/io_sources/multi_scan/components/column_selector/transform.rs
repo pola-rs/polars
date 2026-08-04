@@ -38,8 +38,9 @@ impl ColumnTransform {
 
         let out = match self {
             TF::Cast { dtype, options } => {
-                // Recursion currently does not propagate NULLs across nesting levels.
-                debug_assert!(!matches!(options, CastOptions::Strict));
+                // note: strict casts are only sound for non-nested dtypes here;
+                // recursion currently does not propagate NULLs across nesting levels
+                debug_assert!(!matches!(options, CastOptions::Strict) || !dtype.is_nested());
 
                 input.cast_with_options(dtype, *options)?
             },

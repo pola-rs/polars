@@ -177,6 +177,18 @@ def test_union_drops_maintain_order() -> None:
     assert "UNION[maintain_order: false]" in explain
 
 
+def test_sliced_union_keeps_maintain_order_28566() -> None:
+    lf1 = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
+    lf2 = pl.LazyFrame({"a": [5, 6, 7, 8, 9]})
+
+    lf = pl.concat([lf1, lf2]).slice(3, 4).select(pl.col("a").sum())
+
+    assert "SLICED UNION[maintain_order: true]" in lf.explain()
+
+    expected = pl.DataFrame({"a": [18]})
+    assert_frame_equal(lf.collect(), expected)
+
+
 @pytest.mark.parametrize("n_frames", [4, 5])
 def test_merge_sorted_deep_chain_to_union(n_frames: int) -> None:
     lfs = [pl.LazyFrame({"a": [i], "b": [i]}) for i in range(n_frames)]
@@ -764,7 +776,7 @@ def test_order_simplify_exprs() -> None:
         rev=(pl.col("a").sort() + 1).sort().sort(descending=True),
     )
     plan = q.explain()
-    assert '(col("a")) + (1)].sort(desc).alias' in plan
+    assert '(col("a") + 1).sort(desc).alias' in plan
 
     assert_frame_equal(
         q.collect(),

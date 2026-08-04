@@ -455,6 +455,31 @@ def test_assert_schema_equal_dtypes_mismatch() -> None:
         assert_schema_equal(df1_schema, df2_schema, check_column_order=False)
 
 
+def test_assert_frame_equal_dtypes_mismatch_filtered() -> None:
+    df1 = pl.DataFrame(
+        {"c0": [1, 2], "c1": [3, 4], "c2": [5, 6]},
+        schema={"c0": pl.Int64, "c1": pl.Int64, "c2": pl.Int64},
+    )
+    df2 = pl.DataFrame(
+        {"c2": [5, 6], "c1": [3, 4], "c0": [1, 2]},
+        schema={"c2": pl.Int64, "c1": pl.Float64, "c0": pl.Int64},
+    )
+
+    with pytest.raises(AssertionError, match="dtypes do not match") as exc_info:
+        assert_frame_equal(df1, df2, check_column_order=False)
+
+    msg = str(exc_info.value)
+
+    payload = msg.split("dtypes do not match", 1)[1]
+
+    assert '"c1"' in payload
+    assert "Int64" in payload
+    assert "Float64" in payload
+
+    assert "c0" not in payload
+    assert "c2" not in payload
+
+
 def test_tracebackhide(testdir: pytest.Testdir) -> None:
     testdir.makefile(
         ".py",
@@ -509,7 +534,10 @@ def test_frame_schema_fail():
     )
     assert "AssertionError: DataFrames are equal" in stdout
     assert "AssertionError: inputs are different (unexpected input types)" in stdout
-    assert "AssertionError: DataFrames are different (dtypes do not match)" in stdout
+    assert (
+        "AssertionError: DataFrames are different (dtypes do not match, differences only)"
+        in stdout
+    )
 
 
 def test_dtype_check_for_assert_frame_26507() -> None:

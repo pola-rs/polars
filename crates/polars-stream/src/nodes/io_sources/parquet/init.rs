@@ -239,7 +239,11 @@ impl ParquetReadImpl {
 
                 if disable_morsel_split {
                     if morsel_sender
-                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .send_morsel(Morsel::new_unregistered(
+                            df,
+                            morsel_seq,
+                            source_token.clone(),
+                        ))
                         .await
                         .is_err()
                     {
@@ -281,7 +285,11 @@ impl ParquetReadImpl {
                     last_morsel_pipelines,
                 ) {
                     if morsel_sender
-                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .send_morsel(Morsel::new_unregistered(
+                            df,
+                            morsel_seq,
+                            source_token.clone(),
+                        ))
                         .await
                         .is_err()
                     {

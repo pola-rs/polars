@@ -59,7 +59,7 @@ impl SortedGroupBy {
         let column = df.column(key).unwrap();
         rle_lengths(column, idxs).unwrap();
 
-        let windows_offset = windows_slice.0 as usize;
+        let windows_offset = (windows_slice.0 as usize).min(idxs.len());
         let windows_length = (windows_slice.1 as usize).min(idxs.len() - windows_offset);
 
         let df_offset = idxs[..windows_offset].iter().sum::<IdxSize>();
@@ -165,7 +165,11 @@ impl ComputeNode for SortedGroupBy {
                 .await?;
 
                 _ = send
-                    .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                    .send(Morsel::new_unregistered(
+                        df,
+                        self.seq.successor(),
+                        SourceToken::new(),
+                    ))
                     .await;
 
                 Ok(())
@@ -217,7 +221,8 @@ impl ComputeNode for SortedGroupBy {
             while let Ok(morsel) = recv.recv().await
                 && self.slice.is_none_or(|(_, l)| l > 0)
             {
-                let (df, seq, source_token, wait_token) = morsel.into_inner();
+                let (sf, seq, source_token, wait_token) = morsel.into_inner();
+                let df = sf.into_df().await;
                 self.seq = seq;
                 drop(wait_token);
 
@@ -276,7 +281,7 @@ impl ComputeNode for SortedGroupBy {
 
                 if distributor
                     .send((
-                        Morsel::new(df, seq, source_token),
+                        Morsel::new_unregistered(df, seq, source_token),
                         (windows_offset, windows_length),
                     ))
                     .await

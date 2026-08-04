@@ -45,6 +45,26 @@ pub(crate) fn is_scan(plan: &IR) -> bool {
     matches!(plan, IR::Scan { .. } | IR::DataFrameScan { .. })
 }
 
+/// Deep-clones the `IR` subtree rooted at `node` into fresh arena nodes.
+pub(crate) fn deep_clone_ir(root: Node, ir_arena: &mut Arena<IR>) -> Node {
+    let mut stack: Vec<Node> = vec![root];
+    let mut order: Vec<Node> = vec![];
+    while let Some(node) = stack.pop() {
+        order.push(node);
+        stack.extend(ir_arena.get(node).inputs());
+    }
+
+    let mut results: Vec<Node> = Vec::with_capacity(order.len());
+    for node in order.into_iter().rev() {
+        let ir = ir_arena.get(node).clone();
+        let n_children = ir.inputs().count();
+        let new_children = results.split_off(results.len() - n_children);
+        results.push(ir_arena.add(ir.with_inputs(new_children)));
+    }
+
+    results.pop().unwrap()
+}
+
 /// A projection that only takes a column or a column + alias.
 #[cfg(feature = "meta")]
 pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr>) -> bool {

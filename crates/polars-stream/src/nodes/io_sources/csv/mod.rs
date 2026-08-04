@@ -179,7 +179,7 @@ impl FileReader for CsvFileReader {
                 },
         } = args
         else {
-            panic!("unsupported args: {:?}", &args)
+            panic!("unsupported args: {:?}", args)
         };
 
         assert!(row_index.is_none()); // Handled outside the reader for now.
@@ -355,7 +355,7 @@ impl FileReader for CsvFileReader {
                         chunk_size: {:?}",
                         projection.len(),
                         used_schema.len(),
-                        &pre_slice,
+                        pre_slice,
                         use_async_prefetch,
                         concurrency_strategy,
                         chunk_size
@@ -438,7 +438,7 @@ impl FileReader for CsvFileReader {
                             break;
                         }
 
-                        let morsel = Morsel::new(df, morsel_seq, source_token.clone());
+                        let morsel = Morsel::new_unregistered(df, morsel_seq, source_token.clone());
                         if morsel_tx.send_morsel(morsel).await.is_err() {
                             break;
                         }

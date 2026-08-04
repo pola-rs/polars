@@ -4,18 +4,24 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use edge::Edge;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, PlHashMap, ScratchIndexMap, ScratchIndexSet};
+use polars_core::prelude::{Column, DataType, ScratchIndexMap, ScratchIndexSet};
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_ops::frame::{JoinCoalesce, JoinType};
+#[allow(clippy::disallowed_types)]
+use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools as _;
+use polars_utils::itertools::iters_eq::iters_eq;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
+use polars_utils::unique_id::UniqueId;
 
-use crate::dsl::{FileScanIR, JoinTypeOptionsIR, PredicateFileSkip};
+use crate::constants::get_len_name;
+use crate::dsl::{FileScanIR, JoinTypeOptionsIR, PredicateFileSkip, UnionOptions};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::optimizer::projection_pushdown::edge::{
@@ -23,8 +29,8 @@ use crate::plans::optimizer::projection_pushdown::edge::{
 };
 use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::{
-    AExpr, ArenaExprIter, ExprIR, ExprOrigin, FunctionIR, IR, IRAggExpr, IRBuilder, IRFunctionExpr,
-    OutputName, det_join_schema,
+    AExpr, ArenaExprIter, ArenaLpIter, ExprIR, ExprOrigin, FunctionIR, IR, IRAggExpr, IRBuilder,
+    IRFunctionExpr, OutputName, det_join_schema,
 };
 use crate::prelude::{DistinctOptionsIR, ProjectionOptions};
 use crate::traversal::edge_provider::NodeEdgesProvider;
@@ -32,7 +38,7 @@ use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
 
 pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
-    let schema_cache = &mut PlHashMap::default();
+    let schema_cache = &mut Default::default();
 
     // Put a simple projection on top so that the root node has a valid ParentKeyAndPort to point to.
     let root_ir = ir_arena.take(root);
@@ -46,6 +52,9 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
         },
     );
 
+    #[allow(clippy::disallowed_types)]
+    let mut cache_inputs = PlHashMap::default();
+
     ir_graph_traversal(
         optimize_root,
         &mut ProjectionPushdownVisitor {
@@ -58,6 +67,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
             names_set_scratch3: &mut ScratchIndexSet::default(),
             names_vec_scratch: &mut ScratchVec::default(),
             rename_map: &mut ScratchIndexMap::default(),
+            cache_inputs: &mut cache_inputs,
             default_edge: Edge::new(
                 Projection::All,
                 None,
@@ -81,10 +91,27 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
     };
 
     ir_arena.swap(root, input);
+
+    // Ensure cache nodes for an ID all point to same input Node.
+    let cache_nodes = Vec::from_iter(
+        ir_arena
+            .iter(root)
+            .filter_map(|(node, ir)| matches!(ir, IR::Cache { .. }).then_some(node)),
+    );
+
+    for node in cache_nodes {
+        let IR::Cache { input, id } = ir_arena.get_mut(node) else {
+            unreachable!()
+        };
+        if let Some(optimized_cache) = cache_inputs.get(id) {
+            *input = *optimized_cache;
+        }
+    }
 }
 
 pub struct ProjectionPushdownVisitor<'a, 'arena> {
     expr_arena: &'arena mut Arena<AExpr>,
+    #[allow(clippy::disallowed_types)] // We don't iterate over cache.
     schema_cache: &'a mut PlHashMap<Node, Arc<Schema>>,
     ae_nodes_scratch: &'a mut ScratchVec<Node>,
     ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
@@ -93,6 +120,8 @@ pub struct ProjectionPushdownVisitor<'a, 'arena> {
     names_set_scratch3: &'a mut ScratchIndexSet<PlSmallStr>,
     names_vec_scratch: &'a mut ScratchVec<PlSmallStr>,
     rename_map: &'a mut ScratchIndexMap<PlSmallStr, PlSmallStr>,
+    #[allow(clippy::disallowed_types)] // We don't iterate over cache.
+    cache_inputs: &'a mut PlHashMap<UniqueId, Node>,
     default_edge: Edge,
     maintain_errors: bool,
 }
@@ -191,6 +220,10 @@ impl<'a, 'arena> NodeVisitor for ProjectionPushdownVisitor<'a, 'arena> {
                 );
             },
 
+            IR::Cache { input, id } => {
+                self.cache_inputs.insert(*id, *input);
+            },
+
             _ => {},
         }
 
@@ -276,6 +309,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
             }};
         }
 
+        #[allow(clippy::disallowed_types)] // We don't iterate over cache.
         fn pushdown_with_added_names(
             key: Node,
             edges: &mut dyn NodeEdgesProvider<<ProjectionPushdownVisitor as NodeVisitor>::Edge>,
@@ -1241,15 +1275,94 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 pushdown_with_added_names!(len_before_added_names)
             },
 
-            ir @ IR::Union { .. } | ir @ IR::Slice { .. } | ir @ IR::Sort { .. } => {
+            IR::Union {
+                inputs,
+                options:
+                    UnionOptions {
+                        slice: _,
+                        rows: _,
+                        parallel: _,
+                        from_partitioned_ds: _,
+                        flattened_by_opt: _,
+                        rechunk,
+                        maintain_order,
+                    },
+            } => {
+                // concat(a, b, ..).select(len())
+                //   -> concat(a.select(len()), b.select(len()), ..).select(col('len').cast(UInt128).sum().cast(IDX_DTYPE))
+                if out_edge.projection() == Projection::Len && !inputs.is_empty() {
+                    *rechunk = false;
+                    *maintain_order = false;
+                    let len_schema =
+                        Arc::new(Schema::from_iter([(get_len_name(), DataType::IDX_DTYPE)]));
+
+                    let new_inputs: Vec<Node> = mem::take(inputs)
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, node)| {
+                            let node = storage.add(IR::Select {
+                                input: node,
+                                expr: vec![ExprIR::new(
+                                    self.expr_arena.add(AExpr::Len),
+                                    OutputName::Alias(get_len_name()),
+                                )],
+                                schema: Arc::clone(&len_schema),
+                                options: ProjectionOptions::default(),
+                            });
+
+                            let edge = &mut edges.inputs()[i];
+
+                            *edge.parent_key_and_port_mut() = ParentKeyAndPort { node, idx: 0 };
+                            *edge.projection_mut() = Projection::Len;
+
+                            node
+                        })
+                        .collect();
+
+                    let IR::Union { inputs, .. } = storage.get_mut(key) else {
+                        unreachable!()
+                    };
+                    *inputs = new_inputs;
+
+                    let sum_to_len = {
+                        let mut e = AExpr::Column(get_len_name());
+                        e = AExpr::Cast {
+                            expr: self.expr_arena.add(e),
+                            dtype: DataType::UInt128,
+                            options: CastOptions::Overflowing,
+                        };
+                        e = AExpr::Agg(IRAggExpr::Sum(self.expr_arena.add(e)));
+                        e = AExpr::Cast {
+                            expr: self.expr_arena.add(e),
+                            dtype: DataType::IDX_DTYPE,
+                            options: CastOptions::Strict,
+                        };
+                        self.expr_arena.add(e)
+                    };
+
+                    extract_select_len_expr(
+                        storage.get_mut(edges.outputs()[0].parent_key_and_port().node),
+                        self.expr_arena,
+                    )
+                    .unwrap()
+                    .set_node(sum_to_len);
+
+                    reuse_names_alloc(edges);
+                    return;
+                }
+
                 let (projected_names, _) = projected_names_subset_or_return!();
                 let len_before_added_names = projected_names.len();
+                pushdown_with_added_names!(len_before_added_names)
+            },
 
+            ir @ IR::Slice { .. } | ir @ IR::Sort { .. } => {
+                let (projected_names, _) = projected_names_subset_or_return!();
+                let len_before_added_names = projected_names.len();
                 for e in ir.exprs() {
                     projected_names
                         .extend(aexpr_to_leaf_names_iter(e.node(), self.expr_arena).cloned())
                 }
-
                 pushdown_with_added_names!(len_before_added_names)
             },
 
@@ -1257,7 +1370,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
             IR::MergeSorted { key, .. } => {
                 let (projected_names, _) = projected_names_subset_or_return!();
                 let len_before_added_names = projected_names.len();
-                projected_names.insert(key.clone());
+                for key in key.iter() {
+                    projected_names.insert(key.clone());
+                }
                 pushdown_with_added_names!(len_before_added_names)
             },
 
@@ -2038,21 +2153,6 @@ fn compute_simple_projection_schema(
         let dtype = input_schema.get(name).unwrap().clone();
         (name.clone(), dtype)
     })))
-}
-
-/// Returns true if both iterators have the same length, and the items at each
-/// index are equal.
-fn iters_eq<L, R, T, U>(left: L, right: R) -> bool
-where
-    L: IntoIterator<Item = T>,
-    R: IntoIterator<Item = U>,
-    T: PartialEq<U>,
-    L::IntoIter: ExactSizeIterator,
-    R::IntoIter: ExactSizeIterator,
-{
-    let left = left.into_iter();
-    let right = right.into_iter();
-    left.len() == right.len() && left.zip(right).all(|(l, r)| l == r)
 }
 
 fn set_scan_projection(scan_ir: &mut IR, projection_schema: Arc<Schema>) {

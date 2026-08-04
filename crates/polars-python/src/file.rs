@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use polars::io::mmap::MmapBytesReader;
 use polars::prelude::PlRefPath;
-use polars::prelude::file::{Writeable, WriteableTrait};
+use polars::prelude::file::{Writable, WritableTrait};
 use polars_buffer::{Buffer, SharedStorage};
 use polars_error::polars_err;
 use polars_utils::create_file;
@@ -31,7 +31,7 @@ pub(crate) struct PyFileLikeObject {
     has_flush: bool,
 }
 
-impl WriteableTrait for PyFileLikeObject {
+impl WritableTrait for PyFileLikeObject {
     fn close(&mut self) -> io::Result<()> {
         Ok(())
     }
@@ -295,10 +295,10 @@ impl EitherRustPythonFile {
         }
     }
 
-    pub(crate) fn into_writeable(self) -> Writeable {
+    pub(crate) fn into_writable(self) -> Writable {
         match self {
-            Self::Py(f) => Writeable::Dyn(Box::new(f)),
-            Self::Rust(f) => Writeable::Local(f),
+            Self::Py(f) => Writable::Dyn(Box::new(f)),
+            Self::Rust(f) => Writable::Local(f),
         }
     }
 }

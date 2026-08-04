@@ -67,11 +67,11 @@ class PolarsColumn(Column):
             If the data type of the column is not categorical.
         """
         dtype = self._col.dtype
-        if dtype == Categorical:
-            categories = self._col.cat.get_categories()
+        if isinstance(dtype, Categorical):
+            categories = self._col.unique().drop_nulls().cast(String)
             is_ordered = False
-        elif dtype == Enum:
-            categories = dtype.categories  # type: ignore[attr-defined]
+        elif isinstance(dtype, Enum):
+            categories = dtype.categories
             is_ordered = True
         else:
             msg = "`describe_categorical` only works on categorical columns"

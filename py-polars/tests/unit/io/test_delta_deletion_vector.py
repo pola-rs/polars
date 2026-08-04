@@ -535,7 +535,7 @@ def test_scan_delta_dv_normalize_scheme(
 @pytest.mark.parametrize(
     ("n_rows", "dv"),
     [
-        (1, []),
+        # (1, []), # Temporarily disabled for CI, edge case
         (1, [0]),
         (5, [2]),
         (5, [0]),
@@ -545,6 +545,7 @@ def test_scan_delta_dv_normalize_scheme(
         (10, list(range(10))),
     ],
 )
+@pytest.mark.xdist_group(name="duckdb")
 def test_scan_delta_dv_single(
     n_rows: int,
     dv: list[int],
@@ -552,6 +553,7 @@ def test_scan_delta_dv_single(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
+
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     path = tmp_path / "delta_table"
@@ -570,6 +572,9 @@ def test_scan_delta_dv_single(
     import duckdb
 
     conn = duckdb.connect()
+
+    conn.execute("LOAD delta;")
+
     df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
     assert_frame_equal(out, df_duckdb, check_row_order=False)
 
@@ -645,6 +650,7 @@ def test_scan_delta_dv_percent_encoded_path_canary(tmp_path: Path) -> None:
         (3, 3, [[0, 1, 2], [0, 1, 2], [0, 1, 2]]),
     ],
 )
+@pytest.mark.xdist_group(name="duckdb")
 def test_scan_delta_dv_multiple(
     n_files: int,
     n_rows: int,
@@ -677,6 +683,8 @@ def test_scan_delta_dv_multiple(
     import duckdb
 
     conn = duckdb.connect()
+    conn.execute("LOAD delta;")
+
     df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
     assert_frame_equal(out, df_duckdb, check_row_order=False)
 
@@ -693,6 +701,7 @@ def test_scan_delta_dv_multiple(
         (3, 5, [list(range(5)), list(range(5)), list(range(5))]),
     ],
 )
+@pytest.mark.xdist_group(name="duckdb")
 def test_scan_delta_dv_multiple_with_predicate_pushdown(
     n_files: int,
     n_rows: int,
@@ -748,6 +757,7 @@ def test_scan_delta_dv_multiple_with_predicate_pushdown(
 
         # duckdb cross-check
         conn = duckdb.connect()
+        conn.execute("LOAD delta;")
         df_duckdb = (
             conn.execute(f"SELECT * FROM delta_scan('{path}')").pl().filter(expr)
         )

@@ -4,14 +4,13 @@ use futures::FutureExt;
 use polars_async::executor;
 use polars_async::primitives::connector;
 use polars_error::PolarsResult;
-use polars_io::utils::file::Writeable;
+use polars_io::utils::file::Writable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
-use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
-use crate::nodes::io_sinks::components::size::TakeableRowsProvider;
+use crate::nodes::io_sinks::components::size::TargetSinkMorselSize;
 use crate::utils::tokio_handle_ext;
 
 pub const IPC_RW_RECORD_BATCH_FLAGS_KEY: PlSmallStr =
@@ -21,7 +20,7 @@ pub trait FileWriterStarter: Send + Sync + 'static {
     fn writer_name(&self) -> &str;
 
     /// Hints to the sender how morsels should be sized.
-    fn takeable_rows_provider(&self) -> TakeableRowsProvider;
+    fn target_sink_morsel_size(&self) -> TargetSinkMorselSize;
 
     fn start_file_writer(
         &self,
@@ -32,13 +31,13 @@ pub trait FileWriterStarter: Send + Sync + 'static {
 }
 
 pub struct FileOpenTaskHandle {
-    handle: tokio_handle_ext::AbortOnDropHandle<PolarsResult<Writeable>>,
+    handle: tokio_handle_ext::AbortOnDropHandle<PolarsResult<Writable>>,
     sync_on_close: SyncOnCloseType,
 }
 
 impl FileOpenTaskHandle {
     pub fn new(
-        handle: tokio_handle_ext::AbortOnDropHandle<PolarsResult<Writeable>>,
+        handle: tokio_handle_ext::AbortOnDropHandle<PolarsResult<Writable>>,
         sync_on_close: SyncOnCloseType,
     ) -> Self {
         Self {
@@ -49,7 +48,7 @@ impl FileOpenTaskHandle {
 }
 
 impl std::future::Future for FileOpenTaskHandle {
-    type Output = PolarsResult<(Writeable, SyncOnCloseType)>;
+    type Output = PolarsResult<(Writable, SyncOnCloseType)>;
 
     fn poll(
         mut self: std::pin::Pin<&mut Self>,
@@ -58,38 +57,32 @@ impl std::future::Future for FileOpenTaskHandle {
         use std::task::Poll;
 
         let file: Result<_, tokio::task::JoinError> = futures::ready!(self.handle.poll_unpin(cx));
-        let file: PolarsResult<Writeable> = file.unwrap();
+        let file: PolarsResult<Writable> = file.unwrap();
 
         Poll::Ready(file.map(|file| (file, self.sync_on_close)))
     }
 }
 
 /// Load ideal morsel size configuration from environment variables.
-pub(super) fn ideal_sink_morsel_size_env() -> (Option<IdxSize>, Option<u64>) {
+pub(super) fn ideal_sink_morsel_size_env() -> (Option<NonZeroIdxSize>, Option<NonZeroU64>) {
     let num_rows = std::env::var("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS")
         .map(|x| {
-            x.parse::<NonZeroIdxSize>()
-                .ok()
-                .unwrap_or_else(|| {
-                    panic!("invalid value for POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS: {x}")
-                })
-                .get()
+            x.parse::<NonZeroIdxSize>().ok().unwrap_or_else(|| {
+                panic!("invalid value for POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS: {x}")
+            })
         })
         .ok();
 
     let num_bytes = std::env::var("POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES")
         .map(|x| {
-            x.parse::<NonZeroU64>()
-                .ok()
-                .unwrap_or_else(|| {
-                    panic!("invalid value for POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES: {x}")
-                })
-                .get()
+            x.parse::<NonZeroU64>().ok().unwrap_or_else(|| {
+                panic!("invalid value for POLARS_IDEAL_SINK_MORSEL_SIZE_BYTES: {x}")
+            })
         })
         .ok();
 
     (
         num_rows,
-        num_bytes.or(num_rows.is_some().then_some(u64::MAX)),
+        num_bytes.or(num_rows.is_some().then_some(NonZeroU64::MAX)),
     )
 }

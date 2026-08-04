@@ -35,7 +35,10 @@ pub fn decompress_zstd(_input_buf: &[u8], _output_buf: &mut [u8]) -> PolarsResul
 
 #[cfg(feature = "io_ipc_compression")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_compression")))]
-pub fn compress_lz4(input_buf: &[u8], output_buf: &mut Vec<u8>) -> PolarsResult<()> {
+pub fn compress_lz4(
+    input_buf: &[u8],
+    output_buf: &mut (impl std::io::Write + ?Sized),
+) -> PolarsResult<()> {
     use std::io::Write;
 
     let mut encoder = lz4::EncoderBuilder::new()
@@ -49,7 +52,7 @@ pub fn compress_lz4(input_buf: &[u8], output_buf: &mut Vec<u8>) -> PolarsResult<
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_compression")))]
 pub fn compress_zstd(
     input_buf: &[u8],
-    output_buf: &mut Vec<u8>,
+    output_buf: &mut (impl std::io::Write + ?Sized),
     level: ZstdLevel,
 ) -> PolarsResult<()> {
     zstd::stream::copy_encode(input_buf, output_buf, level.compression_level())
@@ -57,14 +60,21 @@ pub fn compress_zstd(
 }
 
 #[cfg(not(feature = "io_ipc_compression"))]
-pub fn compress_lz4(_input_buf: &[u8], _output_buf: &[u8]) -> PolarsResult<()> {
+pub fn compress_lz4(
+    _input_buf: &[u8],
+    _output_buf: &mut (impl std::io::Write + ?Sized),
+) -> PolarsResult<()> {
     panic!(
         "The crate was compiled without IPC compression. Use `io_ipc_compression` to write compressed IPC."
     )
 }
 
 #[cfg(not(feature = "io_ipc_compression"))]
-pub fn compress_zstd(_input_buf: &[u8], _output_buf: &[u8], _level: ZstdLevel) -> PolarsResult<()> {
+pub fn compress_zstd(
+    _input_buf: &[u8],
+    _output_buf: &mut (impl std::io::Write + ?Sized),
+    _level: ZstdLevel,
+) -> PolarsResult<()> {
     panic!(
         "The crate was compiled without IPC compression. Use `io_ipc_compression` to write compressed IPC."
     )

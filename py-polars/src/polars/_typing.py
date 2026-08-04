@@ -208,7 +208,7 @@ ColumnMapping: TypeAlias = tuple[
     Any,
 ]
 DefaultFieldValues: TypeAlias = tuple[
-    Literal["iceberg"], dict[int, Union["Series", str]]
+    Literal["iceberg"], tuple[dict[int, Union["Series", str]], dict[int, "Series"]]
 ]
 DeletionFiles: TypeAlias = (
     tuple[Literal["iceberg-position-delete"], dict[int, list[str]]]
@@ -224,6 +224,9 @@ JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 Label: TypeAlias = Literal["left", "right", "datapoint"]
 MaintainOrderJoin: TypeAlias = Literal[
     "none", "left", "right", "left_right", "right_left"
+]
+JoinBuildSide: TypeAlias = Literal[
+    "auto", "prefer_left", "prefer_right", "force_left", "force_right"
 ]
 NdjsonCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 NonExistent: TypeAlias = Literal["raise", "null"]

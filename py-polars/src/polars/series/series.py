@@ -5926,6 +5926,12 @@ class Series:
         """
         Compute the element-wise value for the sine.
 
+        Notes
+        -----
+        Input values are interpreted as radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
+
         Examples
         --------
         >>> import math
@@ -5943,6 +5949,12 @@ class Series:
     def cos(self) -> Series:
         """
         Compute the element-wise value for the cosine.
+
+        Notes
+        -----
+        Input values are interpreted as radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
 
         Examples
         --------
@@ -5962,6 +5974,12 @@ class Series:
         """
         Compute the element-wise value for the tangent.
 
+        Notes
+        -----
+        Input values are interpreted as radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
+
         Examples
         --------
         >>> import math
@@ -5979,6 +5997,12 @@ class Series:
     def cot(self) -> Series:
         """
         Compute the element-wise value for the cotangent.
+
+        Notes
+        -----
+        Input values are interpreted as radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
 
         Examples
         --------
@@ -5998,6 +6022,12 @@ class Series:
         """
         Compute the element-wise value for the inverse sine.
 
+        Notes
+        -----
+        The returned value is in radians.
+        To convert from radians to degrees,
+        call :meth:`.degrees() <polars.Series.degrees>`.
+
         Examples
         --------
         >>> s = pl.Series("a", [1.0, 0.0, -1.0])
@@ -6015,6 +6045,12 @@ class Series:
         """
         Compute the element-wise value for the inverse cosine.
 
+        Notes
+        -----
+        The returned value is in radians.
+        To convert from radians to degrees,
+        call :meth:`.degrees() <polars.Series.degrees>`.
+
         Examples
         --------
         >>> s = pl.Series("a", [1.0, 0.0, -1.0])
@@ -6031,6 +6067,12 @@ class Series:
     def arctan(self) -> Series:
         """
         Compute the element-wise value for the inverse tangent.
+
+        Notes
+        -----
+        The returned value is in radians.
+        To convert from radians to degrees,
+        call :meth:`.degrees() <polars.Series.degrees>`.
 
         Examples
         --------
@@ -8167,7 +8209,7 @@ class Series:
         *,
         fraction: float | None = None,
         with_replacement: bool = False,
-        shuffle: bool = False,
+        shuffle: bool | None = None,
         seed: int | None = None,
     ) -> Series:
         """
@@ -8183,7 +8225,12 @@ class Series:
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Determines the order of the sampled values.
+            If True, sampled values are explicitly shuffled.
+            If False, the relative order of the sampled values is preserved.
+            (i.e. they appear in the same order as the original Series).
+            If None (default), no ordering guarantee; uses the most performant
+            algorithm.
         seed
             Seed for the random number generator. If set to None (default), a
             random seed is generated for each sample operation.
@@ -8191,7 +8238,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
-        >>> s.sample(2, seed=0)  # doctest: +IGNORE_RESULT
+        >>> s.sample(2, shuffle=False, seed=0)  # doctest: +IGNORE_RESULT
         shape: (2,)
         Series: 'a' [i64]
         [
@@ -9026,6 +9073,53 @@ class Series:
         ]
         """  # noqa: W505
 
+    def degrees(self) -> Series:
+        """
+        Convert from radians to degrees.
+
+        Examples
+        --------
+        >>> import math
+        >>> s = pl.Series("a", [x * math.pi for x in range(-4, 5)])
+        >>> s.degrees()
+        shape: (9,)
+        Series: 'a' [f64]
+        [
+            -720.0
+            -540.0
+            -360.0
+            -180.0
+            0.0
+            180.0
+            360.0
+            540.0
+            720.0
+        ]
+        """
+
+    def radians(self) -> Series:
+        """
+        Convert from degrees to radians.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [-720, -540, -360, -180, 0, 180, 360, 540, 720])
+        >>> s.radians()
+        shape: (9,)
+        Series: 'a' [f64]
+        [
+            -12.566371
+            -9.424778
+            -6.283185
+            -3.141593
+            0.0
+            3.141593
+            6.283185
+            9.424778
+            12.566371
+        ]
+        """
+
     def reshape(self, dimensions: tuple[int, ...]) -> Series:
         """
         Reshape this Series to a flat Series or an Array Series.
@@ -9184,6 +9278,63 @@ class Series:
         ]
         """
 
+    @unstable()
+    def ewm_sum(
+        self,
+        *,
+        com: float | None = None,
+        span: float | None = None,
+        half_life: float | None = None,
+        alpha: float | None = None,
+        min_samples: int = 1,
+        ignore_nulls: bool = False,
+    ) -> Series:
+        r"""
+        Compute exponentially-weighted moving sum.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        com
+            Specify decay in terms of center of mass, :math:`\gamma`, with
+
+                .. math::
+                    \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
+        span
+            Specify decay in terms of span, :math:`\theta`, with
+
+                .. math::
+                    \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
+        half_life
+            Specify decay in terms of half-life, :math:`\tau`, with
+
+                .. math::
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \tau } \right\} \;
+                    \forall \; \tau > 0
+        alpha
+            Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
+        min_samples
+            Minimum number of observations in window required to have a value
+            (otherwise result is null).
+        ignore_nulls
+            Ignore missing values when calculating weights.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.ewm_sum(alpha=0.5)
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.0
+            2.5
+            4.25
+        ]
+        """
+
     def ewm_mean_by(
         self,
         by: IntoExpr,
@@ -9269,6 +9420,62 @@ class Series:
         ]
         """
 
+    @unstable()
+    def ewm_sum_by(
+        self,
+        by: IntoExpr,
+        *,
+        half_life: str_ | timedelta,
+    ) -> Series:
+        r"""
+        Compute time-based exponentially weighted moving sum.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
+        :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMS is calculated as
+
+            .. math::
+
+                y_0 &= x_0
+
+                \lambda_i &= \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
+
+                y_i &= x_i + \lambda_i y_{i-1}; \quad i > 0
+
+        where :math:`\tau` is the `half_life`.
+
+        Parameters
+        ----------
+        by
+            Times to calculate the sum by. Should be ``DateTime``, ``Date``, ``UInt64``,
+            ``UInt32``, ``Int64``, or ``Int32`` data type.
+        half_life
+            Unit over which observation decays to half its value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "values": [1, 2, 3, 4, 5],
+        ...         "times": [0, 1, 2, 5, 6],
+        ...     }
+        ... )
+        >>> df["values"].ewm_sum_by(df["times"], half_life="1i")
+        shape: (5,)
+        Series: 'values' [f64]
+        [
+            1.0
+            2.5
+            4.25
+            4.53125
+            7.265625
+        ]
+        """
+
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_std(
         self,
@@ -9351,7 +9558,7 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-            0.0
+            null
             0.707107
             0.963624
         ]
@@ -9439,7 +9646,7 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-            0.0
+            null
             0.5
             0.928571
         ]

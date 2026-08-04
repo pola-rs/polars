@@ -4,7 +4,7 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.42.1";
+pub static PYPOLARS_VERSION: &str = "1.43.2";
 
 // We allow multiple features to be set simultaneously so checking with all-features
 // is possible. In the case multiple are set or none at all, we set the repr to "unknown".
@@ -35,6 +35,7 @@ use crate::dataframe::PyDataFrame;
 use crate::expr::PyExpr;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
+use crate::io::arrow_c_stream::PyArrowCStreamReader;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
 use crate::lazyframe::{PyLazyFrame, PyOptFlags};
@@ -90,6 +91,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<Function>().unwrap();
     m.add_class::<Slice>().unwrap();
     m.add_class::<Len>().unwrap();
+    m.add_class::<Explode>().unwrap();
     m.add_class::<Window>().unwrap();
     m.add_class::<Rolling>().unwrap();
     m.add_class::<PyOperator>().unwrap();
@@ -97,7 +99,11 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyBooleanFunction>().unwrap();
     m.add_class::<PyTemporalFunction>().unwrap();
     m.add_class::<PyStructFunction>().unwrap();
+    m.add_class::<PyListFunction>().unwrap();
+    m.add_class::<PyArrayFunction>().unwrap();
     m.add_class::<PyRollingFunction>().unwrap();
+    m.add_class::<PyRollingFunctionBy>().unwrap();
+    m.add_class::<PyEwmFunction>().unwrap();
     // Options
     m.add_class::<PyWindowMapping>().unwrap();
     m.add_class::<PyRollingGroupOptions>().unwrap();
@@ -121,6 +127,7 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
     m.add_class::<PyCategories>().unwrap();
+    m.add_class::<PyArrowCStreamReader>().unwrap();
 
     // Submodules
     // LogicalPlan objects
@@ -206,6 +213,7 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_list))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::as_list)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_str))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::len)).unwrap();

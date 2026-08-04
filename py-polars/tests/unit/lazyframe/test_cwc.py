@@ -16,7 +16,7 @@ def test_basic_cwc() -> None:
     )
 
     assert (
-        """[[(col("a")) * (2)].alias("b"), [(col("a")) * (3)].alias("c"), [(col("a")) * (4)].alias("d")]"""
+        """[(col("a") * 2).alias("b"), (col("a") * 3).alias("c"), (col("a") * 4).alias("d")]"""
         in df.explain()
     )
 
@@ -31,9 +31,9 @@ def test_disable_cwc() -> None:
 
     explain = df.explain(optimizations=pl.QueryOptFlags(cluster_with_columns=False))
 
-    assert """[[(col("a")) * (2)].alias("b")]""" in explain
-    assert """[[(col("a")) * (3)].alias("c")]""" in explain
-    assert """[[(col("a")) * (4)].alias("d")]""" in explain
+    assert """[(col("a") * 2).alias("b")]""" in explain
+    assert """[(col("a") * 3).alias("c")]""" in explain
+    assert """[(col("a") * 4).alias("d")]""" in explain
 
 
 def test_refuse_with_deps() -> None:
@@ -46,9 +46,9 @@ def test_refuse_with_deps() -> None:
 
     explain = df.explain()
 
-    assert """[[(col("a")) * (2)].alias("b")]""" in explain
-    assert """[[(col("b")) * (3)].alias("c")]""" in explain
-    assert """[[(col("c")) * (4)].alias("d")]""" in explain
+    assert """[(col("a") * 2).alias("b")]""" in explain
+    assert """[(col("b") * 3).alias("c")]""" in explain
+    assert """[(col("c") * 4).alias("d")]""" in explain
 
 
 def test_partial_deps() -> None:
@@ -65,11 +65,9 @@ def test_partial_deps() -> None:
 
     explain = df.explain()
 
+    assert """[(col("b") * 4).alias("d"), (col("b") * 6).alias("f")]""" in explain
     assert (
-        """[[(col("b")) * (4)].alias("d"), [(col("b")) * (6)].alias("f")]""" in explain
-    )
-    assert (
-        """[[(col("a")) * (2)].alias("b"), [(col("a")) * (3)].alias("c"), [(col("a")) * (5)].alias("e")]"""
+        """[(col("a") * 2).alias("b"), (col("a") * 3).alias("c"), (col("a") * 5).alias("e")]"""
         in explain
     )
 
@@ -101,12 +99,10 @@ def test_swap_remove() -> None:
     )
 
     assert (
-        """[[(col("b")) * (6)].alias("f"), [(col("b")) * (4)].alias("d"), [(col("b")) * (5)].alias("e")]"""
+        """[(col("b") * 6).alias("f"), (col("b") * 4).alias("d"), (col("b") * 5).alias("e")]"""
         in explain
     )
-    assert (
-        """[[(col("a")) * (2)].alias("b"), [(col("a")) * (3)].alias("c")]""" in explain
-    )
+    assert """[(col("a") * 2).alias("b"), (col("a") * 3).alias("c")]""" in explain
     assert """simple π""" in explain
 
 
@@ -131,8 +127,8 @@ def test_try_remove_simple_project() -> None:
 
     plan = q.explain()
 
-    assert """[[(col("a")) * (2)].alias("b"), [(col("a")) * (4)].alias("d")]""" in plan
-    assert """[[(col("b")) * (3)].alias("c")]""" in plan
+    assert """[(col("a") * 2).alias("b"), (col("a") * 4).alias("d")]""" in plan
+    assert """[(col("b") * 3).alias("c")]""" in plan
     assert """simple π""" not in plan
 
     q = (
@@ -155,8 +151,8 @@ def test_try_remove_simple_project() -> None:
 
     plan = q.explain()
 
-    assert """[[(col("a")) * (2)].alias("b"), [(col("a")) * (4)].alias("d")]""" in plan
-    assert """[[(col("b")) * (3)].alias("c")]""" in plan
+    assert """[(col("a") * 2).alias("b"), (col("a") * 4).alias("d")]""" in plan
+    assert """[(col("b") * 3).alias("c")]""" in plan
     assert """simple π""" in plan
 
 
@@ -169,9 +165,7 @@ def test_cwc_with_internal_aliases() -> None:
 
     explain = df.explain()
 
-    assert (
-        """[[(col("a")) == (2)].alias("c"), [(col("b")) * (3)].alias("d")]""" in explain
-    )
+    assert """[(col("a") == 2).alias("c"), (col("b") * 3).alias("d")]""" in explain
 
 
 def test_read_of_pushed_column_16436() -> None:

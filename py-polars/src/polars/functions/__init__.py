@@ -19,6 +19,7 @@ from polars.functions.as_datatype import (
     concat_str,
     duration,
     format,
+    list,
     struct,
 )
 from polars.functions.as_datatype import date_ as date
@@ -141,6 +142,7 @@ __all__ = [
     "concat_arr",
     "concat_list",
     "concat_str",
+    "list",
     "corr",
     "count",
     "cov",

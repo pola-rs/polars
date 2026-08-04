@@ -208,6 +208,7 @@ pub(crate) fn unspecialized_decode<T: Default>(
         },
         (Some(Filter::Range(_)), _) => unreachable!(),
         (Some(Filter::Mask(mut mask)), None) => {
+            let num_rows = mask.set_bits();
             target.reserve(num_rows);
 
             while !mask.is_empty() {

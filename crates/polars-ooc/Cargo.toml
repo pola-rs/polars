@@ -15,6 +15,7 @@ libc = { workspace = true }
 polars-async = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
+polars-error = { workspace = true }
 polars-io = { workspace = true, features = ["ipc"] }
 polars-utils = { workspace = true, features = ["sysinfo"] }
 rand = { workspace = true }

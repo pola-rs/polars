@@ -1,4 +1,7 @@
 #[cfg(feature = "csv")]
+use std::num::NonZeroUsize;
+
+#[cfg(feature = "csv")]
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
@@ -94,6 +97,12 @@ impl LazyCsvReader {
         self
     }
 
+    #[must_use]
+    pub fn with_infer_schema_files(mut self, infer_schema_files: NonZeroUsize) -> Self {
+        self.read_options.infer_schema_files = infer_schema_files;
+        self
+    }
+
     /// Continue with next batch when a ParserError is encountered.
     #[must_use]
     pub fn with_ignore_errors(mut self, ignore: bool) -> Self {
@@ -124,11 +133,27 @@ impl LazyCsvReader {
         self
     }
 
+    #[must_use]
+    pub fn with_column_names_overwrite(
+        mut self,
+        column_names_overwrite: Buffer<PlSmallStr>,
+    ) -> Self {
+        self.read_options.column_names_overwrite = Some(column_names_overwrite);
+        self
+    }
+
     /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
     /// of the total schema.
     #[must_use]
     pub fn with_dtype_overwrite(mut self, schema: Option<SchemaRef>) -> Self {
         self.read_options.schema_overwrite = schema;
+        self
+    }
+
+    /// Overwrite dtypes by position.
+    #[must_use]
+    pub fn with_dtype_overwrite_by_position(mut self, dtypes: Option<Arc<Vec<DataType>>>) -> Self {
+        self.read_options.dtype_overwrite = dtypes;
         self
     }
 

@@ -89,7 +89,7 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
 pub(super) fn sample_n(
     s: &[Column],
     with_replacement: bool,
-    shuffle: bool,
+    shuffle: Option<bool>,
     seed: Option<u64>,
 ) -> PolarsResult<Column> {
     let list = s[0].list()?;
@@ -102,7 +102,7 @@ pub(super) fn sample_n(
 pub(super) fn sample_fraction(
     s: &[Column],
     with_replacement: bool,
-    shuffle: bool,
+    shuffle: Option<bool>,
     seed: Option<u64>,
 ) -> PolarsResult<Column> {
     let list = s[0].list()?;
@@ -248,9 +248,9 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
     .clone();
 
     if first_ca.len() == 1 && !other.is_empty() {
-        let max_len = other.iter().map(|s| s.len()).max().unwrap();
-        if max_len != 1 {
-            first_ca = first_ca.new_from_index(0, max_len)
+        let broadcast_len = other.iter().map(|s| s.len()).filter(|l| *l != 1).max();
+        if let Some(l) = broadcast_len {
+            first_ca = first_ca.new_from_index(0, l)
         }
     }
 

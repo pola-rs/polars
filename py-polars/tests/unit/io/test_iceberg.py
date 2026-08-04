@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import io
 import itertools
+import json
 import os
 import pickle
 import sys
@@ -1125,6 +1126,41 @@ def test_scan_iceberg_extra_struct_fields(tmp_path: Path) -> None:
             },
             schema={"a": pl.Struct({"a": pl.Int32})},
         ),
+    )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_filter_on_struct_field_28476(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "order_id", StringType()),
+            NestedField(
+                2,
+                "order_details",
+                StructType(NestedField(3, "qid", StringType())),
+            ),
+        ),
+    )
+    df = pl.DataFrame(
+        {
+            "order_id": ["a", "b", "c"],
+            "order_details": [{"qid": "X1"}, {"qid": "X2"}, {"qid": "X3"}],
+        },
+        schema={
+            "order_id": pl.String,
+            "order_details": pl.Struct({"qid": pl.String}),
+        },
+    )
+    df.write_iceberg(tbl, mode="append")
+
+    q = pl.scan_iceberg(tbl).filter(pl.col("order_details").struct.field("qid") == "X2")
+    expected = df.slice(1, 1)
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+        expected,
     )
 
 
@@ -2808,3 +2844,62 @@ def test_convert_iceberg_storage_options_dot_filtering() -> None:
     assert "dfs.replication" not in result
     assert "write.parquet.compression" not in result
     assert "other.foo" not in result
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_v3_field_initial_default(tmp_path: Path) -> None:
+    table, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "height_provider", IntegerType()))
+    )
+
+    pl.LazyFrame(
+        {"height_provider": 1},
+        schema={"height_provider": pl.Int32},
+    ).sink_iceberg(table, mode="append")
+
+    md_path = Path(
+        table.metadata_location.removeprefix("file:")
+        # Windows //C:/... -> C:/...
+        .removeprefix("//")
+    )
+    md_object = json.loads(md_path.read_text())
+
+    md_object["format-version"] = 3
+    md_object["schemas"][-1]["fields"] += [
+{ "id": 102, "name": "BooleanType", "required": False, "type": "boolean", "initial-default": True },
+{ "id": 103, "name": "IntegerType", "required": False, "type": "int", "initial-default": 1 },
+{ "id": 104, "name": "LongType", "required": False, "type": "long", "initial-default": 1 },
+{ "id": 105, "name": "FloatType", "required": False, "type": "float", "initial-default": 1.0 },
+{ "id": 106, "name": "DoubleType", "required": False, "type": "double", "initial-default": 1.0 },
+{ "id": 107, "name": "DateType", "required": False, "type": "date", "initial-default": "2025-01-01" },
+{ "id": 108, "name": "TimeType", "required": False, "type": "time", "initial-default": "11:30:00" },
+{ "id": 109, "name": "TimestampType", "required": False, "type": "timestamp", "initial-default": "2025-01-01T00:00:00" },
+{ "id": 110, "name": "TimestamptzType", "required": False, "type": "timestamptz", "initial-default": "2025-01-01T00:00:00+00:00" },
+{ "id": 111, "name": "StringType", "required": False, "type": "string", "initial-default": "A" },
+{ "id": 112, "name": "BinaryType", "required": False, "type": "binary", "initial-default": "41" },
+{ "id": 113, "name": "DecimalType", "required": False, "type": "decimal(18, 2)", "initial-default": "1.00" },
+{ "id": 114, "name": "FixedType", "required": False, "type": "fixed[1]", "initial-default": "41" },
+{ "id": 115, "name": "UUIDType", "required": False, "type": "uuid", "initial-default": "30303030-3131-3131-3030-303031313131" }
+]  # fmt: skip
+
+    md_path.write_text(json.dumps(md_object))
+    table = catalog.load_table(table.name())
+    expect = _TableDataAllTypes.new().polars_df
+
+    assert_frame_equal(
+        pl.scan_iceberg(table).collect(),
+        expect,
+    )
+
+
+def test_scan_iceberg_self_join_28465(tmp_path: Path) -> None:
+    table, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "x", LongType()))
+    )
+
+    pl.DataFrame({"x": 1}).write_iceberg(table, mode="append")
+
+    lf = pl.scan_iceberg(table)
+    q = lf.join(lf, on="x")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 1}))

@@ -46,8 +46,11 @@ pub fn materialize_left_join_from_series(
 ) -> PolarsResult<(DataFrame, DataFrame)> {
     let mut s_left = s_left.clone();
     // Eagerly limit left if possible.
-    if let Some((offset, len)) = args.slice {
-        if offset == 0 {
+    if let Some((0, len)) = args.slice {
+        if !matches!(
+            args.maintain_order,
+            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
+        ) {
             left = left.slice(0, len);
             s_left = s_left.slice(0, len);
         }
@@ -85,7 +88,7 @@ pub fn materialize_left_join_from_series(
     } else {
         right.drop(s_right.name()).unwrap()
     };
-    try_raise_keyboard_interrupt();
+    try_raise_polars_abort();
 
     #[cfg(feature = "chunked_ids")]
     match (left_idx, right_idx) {

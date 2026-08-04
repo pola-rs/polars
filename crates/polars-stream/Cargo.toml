@@ -151,6 +151,7 @@ top_k = ["polars-expr/top_k", "polars-plan/top_k"]
 cum_agg = ["polars-expr/cum_agg", "polars-plan/cum_agg", "polars-ops/cum_agg"]
 log = ["polars-expr/log", "polars-plan/log", "polars-ops/log"]
 is_first_distinct = ["polars-core/is_first_distinct", "polars-expr/is_first_distinct", "polars-plan/is_first_distinct"]
+temporal = ["polars-core/temporal", "polars-plan/temporal", "polars-expr/temporal"]
 
 # We need to specify default features here to match workspace defaults.
 # Otherwise we get warnings with cargo check/clippy.

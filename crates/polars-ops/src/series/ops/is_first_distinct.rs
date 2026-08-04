@@ -5,7 +5,8 @@ use arrow::bitmap::MutableBitmap;
 use arrow::legacy::bit_util::*;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::series::BitRepr;
+use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 fn is_first_distinct_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
@@ -127,11 +128,22 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_first_distinct(&s);
         },
-        dt if dt.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+        dt if dt.is_float() => {
+            with_match_physical_float_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_first_distinct_numeric(ca)
             })
+        },
+        dt if dt.is_primitive_numeric() => {
+            use BitRepr as B;
+            match s.bit_repr().unwrap() {
+                B::U8(ca) => is_first_distinct_numeric(&ca),
+                B::U16(ca) => is_first_distinct_numeric(&ca),
+                B::U32(ca) => is_first_distinct_numeric(&ca),
+                B::U64(ca) => is_first_distinct_numeric(&ca),
+                #[cfg(feature = "dtype-u128")]
+                B::U128(ca) => is_first_distinct_numeric(&ca),
+            }
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_first_distinct_struct(&s),

@@ -23,6 +23,8 @@ import polars as pl
 from polars._utils.various import parse_version
 from polars.exceptions import DuplicateError, UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
+from polars.io.database._cursor_proxies import OracleCursorProxy
+from polars.io.database._executor import ConnectionExecutor
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.io.database.conftest import create_sqlite_engine
 
@@ -953,6 +955,102 @@ def test_read_database_mocked(
     assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
 
 
+class MockOracleConnection:
+    """Mock `python-oracledb` Connection (Arrow `fetch_df_*` on the connection)."""
+
+    def __init__(self, test_data: pa.Table, *, batched: bool) -> None:
+        self.__class__.__module__ = "oracledb"
+        self._test_data = test_data
+        self._batched = batched
+        self.called: list[str] = []
+
+    def close(self) -> None:
+        pass
+
+    def cursor(self, *args: Any, **kwargs: Any) -> Any:
+        # a real oracledb Connection is DB-API compliant and exposes `cursor()`
+        msg = "Arrow path should not fall through to Cursor"
+        raise AssertionError(msg)
+
+    def fetch_df_all(self, statement: str, *args: Any, **kwargs: Any) -> pa.Table:
+        self.called.append("fetch_df_all")
+        return self._test_data
+
+    def fetch_df_batches(
+        self, statement: str, size: int, *args: Any, **kwargs: Any
+    ) -> Any:
+        self.called.append("fetch_df_batches")
+        return iter((self._test_data,))
+
+
+@pytest.mark.parametrize(
+    ("batch_size", "iter_batches", "expected_method"),
+    [
+        (None, False, "fetch_df_all"),
+        (2, True, "fetch_df_batches"),
+    ],
+)
+def test_read_database_oracledb_arrow(
+    batch_size: int | None,
+    iter_batches: bool,
+    expected_method: str,
+) -> None:
+    pytest.importorskip("oracledb")
+
+    arrow_table = pa.table({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+    mc = MockOracleConnection(arrow_table, batched=iter_batches)
+
+    res = pl.read_database(
+        query="SELECT id, name FROM test_data",
+        connection=mc,
+        iter_batches=iter_batches,
+        batch_size=batch_size,
+    )
+    if iter_batches:
+        assert isinstance(res, GeneratorType)
+        res = pl.concat(list(res))
+
+    res = cast("pl.DataFrame", res)
+    assert expected_method in mc.called
+    assert res.columns == ["id", "name"]
+    assert res.height == 3
+
+
+def test_read_database_oracledb_engine_no_arrow_fallthrough() -> None:
+    class MockRawConnection:
+        """oracledb < 3.0 raw connection: no Arrow `fetch_df_*` methods."""
+
+    class MockEngine:
+        driver = "oracledb"
+
+        def raw_connection(self) -> Any:
+            class PooledConnection:
+                driver_connection = MockRawConnection()
+
+            return PooledConnection()
+
+    class MockSAConnection:
+        engine = MockEngine()
+
+    # bypass __init__ (which would itself call `_normalise_cursor`) so we can
+    # drive the seam in isolation with `driver_name` pinned to "sqlalchemy"
+    executor = ConnectionExecutor.__new__(ConnectionExecutor)
+    executor.driver_name = "sqlalchemy"
+    executor.can_close_cursor = False
+
+    fake_conn = MockSAConnection()
+    result = executor._normalise_cursor(fake_conn)
+
+    # the arrow fast-path should NOT have been taken...
+    assert not isinstance(result, OracleCursorProxy)
+    assert executor.driver_name == "sqlalchemy"
+    assert executor.can_close_cursor is False
+
+    # ...and we should fall through to the generic path,
+    # returning the connection unchanged
+    assert cast("Any", result) is fake_conn
+
+
 @pytest.mark.parametrize(
     (
         "read_method",
@@ -1198,10 +1296,10 @@ def test_sqlalchemy_row_init(sqlite_engine: Engine) -> None:
             assert_series_equal(expected_series, s)
 
 
-@patch("polars.io.database._utils.from_arrow")
+@patch("polars.DataFrame")
 @patch("polars.io.database._utils.import_optional")
 def test_read_database_uri_pre_execution_query_success(
-    import_mock: Mock, from_arrow_mock: Mock
+    import_mock: Mock, DataFrame_mock: Mock
 ) -> None:
     cx_mock = Mock()
     cx_mock.__version__ = "0.4.2"
@@ -1245,10 +1343,10 @@ def test_read_database_uri_pre_execution_not_supported_exception(
         )
 
 
-@patch("polars.io.database._utils.from_arrow")
+@patch("polars.DataFrame")
 @patch("polars.io.database._utils.import_optional")
 def test_read_database_uri_pre_execution_query_not_supported_success(
-    import_mock: Mock, from_arrow_mock: Mock
+    import_mock: Mock, DataFrame_mock: Mock
 ) -> None:
     cx_mock = Mock()
     cx_mock.__version__ = "0.4.0"

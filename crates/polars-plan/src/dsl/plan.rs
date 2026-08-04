@@ -174,7 +174,7 @@ pub enum DslPlan {
     MergeSorted {
         input_left: Arc<DslPlan>,
         input_right: Arc<DslPlan>,
-        key: PlSmallStr,
+        key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
     IR {
