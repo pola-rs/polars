@@ -3048,7 +3048,12 @@ def test_group_by_arg_max_boolean_26978() -> None:
             "val": [False, False, True, True, True],
         }
     )
-    check_result(df.group_by("group").agg(pl.col("val").arg_max()))
+    check_result(
+        df.with_row_index()
+        .group_by("group")
+        .agg(pl.col("val"), pl.col("index").max_by("val"))
+        .explode("val", empty_as_null=False)
+    )
     check_result(df.with_columns(pl.row_index().max_by("val").over("group")))
 
 
