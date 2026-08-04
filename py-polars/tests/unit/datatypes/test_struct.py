@@ -1994,3 +1994,25 @@ def test_struct_with_fields_agglist_nulls_28674() -> None:
     )
 
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        lambda x: x.sqrt(),
+        lambda x: x.cbrt(),
+        lambda x: x.pct_change(),
+        lambda x: x.ewm_mean(alpha=0.5),
+        lambda x: x.ewm_std(alpha=0.5),
+        lambda x: x.ewm_var(alpha=0.5),
+        lambda x: x.ewm_sum(alpha=0.5),
+    ],
+    ids=["sqrt", "cbrt", "pct_change", "ewm_mean", "ewm_std", "ewm_var", "ewm_sum"],
+)
+def test_numeric_op_on_struct_raises_28563(op: Any) -> None:
+    with pytest.raises(InvalidOperationError):
+        op(pl.Series("a", [{"x": 1}]))
+
+    lf = pl.LazyFrame({"meta": [{"id": 1}, {"id": 2}]})
+    with pytest.raises(InvalidOperationError):
+        lf.select(op(pl.col("meta"))).collect()
