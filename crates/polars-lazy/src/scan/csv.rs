@@ -323,7 +323,7 @@ impl LazyCsvReader {
                     polars_bail!(ComputeError: "no paths specified for this reader");
                 };
 
-                let file = polars_utils::open_file(path.as_std_path())?;
+                let file = polars_utils::io::open_file(path.as_std_path())?;
                 let mmap = MMapSemaphore::new_from_file(&file)?;
                 infer_schema(Buffer::from_owner(mmap))?
             },

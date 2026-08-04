@@ -34,7 +34,7 @@ impl TreeWalker for Expr {
         f: &mut F,
         _arena: &mut Self::Arena,
     ) -> PolarsResult<Self> {
-        use polars_utils::functions::try_arc_map as am;
+        use polars_utils::arc::try_arc_map as am;
         let mut f = |expr| f(expr, &mut ());
         use AggExpr::*;
         use Expr::*;

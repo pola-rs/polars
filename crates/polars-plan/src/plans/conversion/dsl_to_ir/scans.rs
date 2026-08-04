@@ -641,7 +641,7 @@ pub(super) async fn ipc_file_info(
                 })
             } else {
                 arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
-                    polars_utils::open_file(path.as_std_path())?,
+                    polars_utils::io::open_file(path.as_std_path())?,
                 ))?
             }
         },
@@ -1232,7 +1232,7 @@ this scan to succeed with an empty DataFrame.",
                             },
                         ))
                     }
-                    .map_err(|e| e.context(failed_here!(parquet scan)))?
+                    .context(failed_here!(parquet scan))?
                 }
             },
             #[cfg(feature = "ipc")]
@@ -1266,7 +1266,7 @@ this scan to succeed with an empty DataFrame.",
                     },
                 ))
             }
-            .map_err(|e| e.context(failed_here!(ipc scan)))?,
+            .context(failed_here!(ipc scan))?,
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { mut options } => {
                 let mut file_info = if let Some(schema) = options.schema.clone() {
@@ -1303,7 +1303,7 @@ this scan to succeed with an empty DataFrame.",
 
                 PolarsResult::Ok((file_info, FileScanIR::Csv { options }))
             }
-            .map_err(|e| e.context(failed_here!(csv scan)))?,
+            .context(failed_here!(csv scan))?,
             #[cfg(feature = "json")]
             FileScanDsl::NDJson { options } => {
                 let mut file_info = if let Some(schema) = options.schema.clone() {
@@ -1339,7 +1339,7 @@ this scan to succeed with an empty DataFrame.",
 
                 PolarsResult::Ok((file_info, FileScanIR::NDJson { options }))
             }
-            .map_err(|e| e.context(failed_here!(ndjson scan)))?,
+            .context(failed_here!(ndjson scan))?,
             #[cfg(feature = "python")]
             FileScanDsl::PythonDataset { dataset_object } => async {
                 use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
@@ -1376,7 +1376,7 @@ this scan to succeed with an empty DataFrame.",
                 ))
             }
             .await
-            .map_err(|e| e.context(failed_here!(python dataset scan)))?,
+            .context(failed_here!(python dataset scan))?,
             #[cfg(feature = "scan_lines")]
             FileScanDsl::Lines { name } => {
                 let schema = Arc::new(Schema::from_iter([(name.clone(), DataType::String)]));
