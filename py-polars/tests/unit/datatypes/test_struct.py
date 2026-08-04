@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import operator
+import re
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import TYPE_CHECKING, Any
@@ -1102,6 +1103,17 @@ def test_struct_null_zip() -> None:
     )
 
 
+def test_rename_fields_len_mismatch_deprecated() -> None:
+    s = pl.Series("s", [{"a": 1, "b": 2}])
+    s.struct.rename_fields(["x"])  # Should not warn
+
+    msg = "struct.rename_fields() argument has a different number of fields than the struct it operates on"
+    with pytest.warns(DeprecationWarning, match=re.escape(f"{msg} (1 vs 2)")):
+        s.struct.rename_fields(["x"])
+    with pytest.warns(DeprecationWarning, match=re.escape(f"{msg} (3 vs 2)")):
+        s.struct.rename_fields(["x", "y", "z"])
+
+
 @pytest.mark.may_fail_cloud  # reason: ZFS
 @pytest.mark.parametrize("size", [0, 1, 2, 5, 9, 13, 42])
 def test_zfs_construction(size: int) -> None:
@@ -1185,11 +1197,7 @@ def test_zfs_struct_fns() -> None:
     a = pl.Series("a", [{}], pl.Struct([]))
 
     assert a.struct.fields == []
-
-    # @TODO: This should really throw an error as per #19132
-    assert a.struct.rename_fields(["a"]).struct.unnest().shape == (1, 0)
     assert a.struct.rename_fields([]).struct.unnest().shape == (1, 0)
-
     assert_series_equal(a.struct.json_encode(), pl.Series("a", ["{}"], pl.String))
 
 
