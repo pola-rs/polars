@@ -40,7 +40,7 @@ impl Hash for IRHashWrap<'_> {
     // This hashes the variant, not the whole plan
     fn hash<H: Hasher>(&self, state: &mut H) {
         let alp = self.lp_arena.get(self.node);
-        alp.shallow_hash(
+        alp.hash_excluding_inputs(
             state,
             &TraverseAndHashExpr {
                 expr_arena: self.expr_arena,

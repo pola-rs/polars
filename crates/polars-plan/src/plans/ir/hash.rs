@@ -13,7 +13,11 @@ pub trait ExpressionHasher {
 impl IR {
     /// Hash the contents of the enum, without descending into child IR nodes.
     /// The user can choose how to hash the referenced ExprIR nodes by providing `expr_hash`
-    pub(crate) fn shallow_hash<H: Hasher>(&self, state: &mut H, expr_hash: &impl ExpressionHasher) {
+    pub(crate) fn hash_excluding_inputs<H: Hasher>(
+        &self,
+        state: &mut H,
+        expr_hash: &impl ExpressionHasher,
+    ) {
         let hash_exprs = |exprs: &[ExprIR], state: &mut H| {
             for e in exprs {
                 expr_hash.hash_expr(e, state);

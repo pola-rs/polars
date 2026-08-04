@@ -173,7 +173,9 @@ fn combined_hash(
     expr_cmp: &HashExpressionCmp,
 ) -> u64 {
     let mut hasher = DefaultHasher::new();
-    lp_arena.get(node).shallow_hash(&mut hasher, expr_cmp);
+    lp_arena
+        .get(node)
+        .hash_excluding_inputs(&mut hasher, expr_cmp);
     for child_id in child_ids {
         hasher.write_u32(child_id.as_u32());
     }
