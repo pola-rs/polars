@@ -3,6 +3,8 @@ use std::borrow::Cow;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
 use polars_compute::if_then_else::{IfThenElseKernel, if_then_else_validity};
+use polars_error::PolarsContext;
+use polars_utils::broadcast::broadcast_len;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
@@ -22,12 +24,8 @@ where
 {
     let src = if mask { if_true } else { if_false };
     let other = if mask { if_false } else { if_true };
-    let ret = match (src.len(), other.len()) {
-        (a, b) if a == b => src.clone(),
-        (_, 1) => src.clone(),
-        (1, other_len) => src.new_from_index(0, other_len),
-        _ => polars_bail!(ShapeMismatch: SHAPE_MISMATCH_STR),
-    };
+    let len = broadcast_len([src.len(), other.len()]).context(SHAPE_MISMATCH_STR)?;
+    let ret = src.broadcast_to(len)?.into_owned();
     Ok(ret.with_name(if_true.name().clone()))
 }
 

@@ -173,7 +173,7 @@ impl DataFrame {
 
     /// Infers height as the first non-unit length column or 1 if not found.
     pub fn new_infer_broadcast(columns: Vec<Column>) -> PolarsResult<Self> {
-        let height = broadcast_len(columns.iter().map(|c| c.len()))?;
+        let height = broadcast_len(columns.iter())?;
         DataFrame::new_with_broadcast(height, columns)
     }
 
@@ -195,7 +195,7 @@ impl DataFrame {
     /// # Safety
     /// [`Column`]s must have unique names.
     pub unsafe fn new_unchecked_infer_broadcast(columns: Vec<Column>) -> PolarsResult<Self> {
-        let height = broadcast_len(columns.iter().map(|c| c.len()))?;
+        let height = broadcast_len(columns.iter())?;
         DataFrame::new_unchecked_with_broadcast(height, columns)
     }
 
