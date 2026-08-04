@@ -39,7 +39,7 @@ impl IRStructFunction {
                         } else {
                             ""
                         };
-                        polars_bail!(SchemaMismatch: "struct.rename_fields() argument has a different number of fields\
+                        polars_bail!(SchemaMismatch: "struct.rename_fields() argument has a different number of fields \
                         than the struct it operates on ({} vs {}).{hint_addition}", names.len(), fields.len());
                     }
                     let fields = fields

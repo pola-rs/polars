@@ -13,7 +13,12 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError, DuplicateError, InvalidOperationError
+from polars.exceptions import (
+    ComputeError,
+    DuplicateError,
+    InvalidOperationError,
+    SchemaError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -1093,14 +1098,13 @@ def test_struct_null_zip() -> None:
     )
 
 
-def test_rename_fields_len_mismatch_deprecated() -> None:
+def test_rename_fields_len_mismatch_error() -> None:
     s = pl.Series("s", [{"a": 1, "b": 2}])
-    s.struct.rename_fields(["x"])  # Should not warn
 
     msg = "struct.rename_fields() argument has a different number of fields than the struct it operates on"
-    with pytest.warns(DeprecationWarning, match=re.escape(f"{msg} (1 vs 2)")):
+    with pytest.raises(SchemaError, match=re.escape(f"{msg} (1 vs 2).")):
         s.struct.rename_fields(["x"])
-    with pytest.warns(DeprecationWarning, match=re.escape(f"{msg} (3 vs 2)")):
+    with pytest.raises(SchemaError, match=re.escape(f"{msg} (3 vs 2).")):
         s.struct.rename_fields(["x", "y", "z"])
 
 
