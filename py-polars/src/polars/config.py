@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Final, Literal, TypedDict, get_args
 
 from polars._dependencies import json
 from polars._typing import EngineType
-from polars._utils.deprecation import deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
 from polars.lazyframe.engine_config import GPUEngine
@@ -27,10 +26,6 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Self, Unpack
 
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 __all__ = ["Config"]
 
@@ -99,7 +94,6 @@ class ConfigParameters(TypedDict, total=False):
     """Parameters supported by the polars Config."""
 
     ascii_tables: bool | None
-    auto_structify: bool | None
     decimal_separator: str | None
     thousands_separator: str | bool | None
     float_precision: int | None
@@ -124,7 +118,6 @@ class ConfigParameters(TypedDict, total=False):
     expr_depth_warning: int
 
     set_ascii_tables: bool | None
-    set_auto_structify: bool | None
     set_decimal_separator: str | None
     set_thousands_separator: str | bool | None
     set_float_precision: int | None
@@ -526,39 +519,6 @@ class Config(contextlib.ContextDecorator):
             fmt = "ASCII_FULL_CONDENSED" if active else "UTF8_FULL_CONDENSED"
             os.environ["POLARS_FMT_TABLE_FORMATTING"] = fmt
         plr.config_reload_env_var("POLARS_FMT_TABLE_FORMATTING")
-        return cls
-
-    @classmethod
-    @deprecated("deprecated since version 1.32.0")
-    def set_auto_structify(cls, active: bool | None = False) -> type[Config]:
-        """
-        Allow multi-output expressions to be automatically turned into Structs.
-
-        .. note::
-            Deprecated since 1.32.0.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
-        >>> with pl.Config(set_auto_structify=True):  # doctest: +SKIP
-        ...     out = df.select(pl.all())
-        >>> out  # doctest: +SKIP
-        shape: (3, 1)
-        ┌───────────┐
-        │ v         │
-        │ ---       │
-        │ struct[2] │
-        ╞═══════════╡
-        │ {1,4}     │
-        │ {2,5}     │
-        │ {3,6}     │
-        └───────────┘
-        """
-        if active is None:
-            os.environ.pop("POLARS_AUTO_STRUCTIFY", None)
-        else:
-            os.environ["POLARS_AUTO_STRUCTIFY"] = str(int(active))
-        plr.config_reload_env_var("POLARS_AUTO_STRUCTIFY")
         return cls
 
     @classmethod
