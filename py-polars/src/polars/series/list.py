@@ -653,7 +653,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
 
     def arg_min(self) -> Series:
         """
-        Retrieve the index of the minimal value in every sublist.
+        Retrieve an index of a minimal value in every sublist.
 
         When multiple values are equal to the minimum, this function may arbitrarily
         return the index of any of the minimum values. In this case, the returned index
@@ -679,7 +679,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
 
     def arg_max(self) -> Series:
         """
-        Retrieve the index of the maximum value in every sublist.
+        Retrieve an index of a maximum value in every sublist.
 
         When multiple values are equal to the maximum, this function may arbitrarily
         return the index of any of the maximum values. In this case, the returned index

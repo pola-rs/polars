@@ -66,7 +66,7 @@ impl ArrayNameSpace {
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Sort(options)))
     }
 
-    /// Retrieve the index of the minimal value in every sub-array.
+    /// Retrieve an index of a minimal value in every sub-array.
     ///
     /// In the case of a tie, this may return the index of any of the minimum values.
     pub fn arg_min(self) -> Expr {
