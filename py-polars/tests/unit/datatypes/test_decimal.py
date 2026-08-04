@@ -946,9 +946,12 @@ def test_decimal_sum_widens_precision_27576(
     assert_frame_equal(out, expected)
 
 
-def test_decimal_sum_overflow_28585() -> None:
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_decimal_sum_overflow_28585(
+    engine: Literal["streaming", "in-memory"],
+) -> None:
     s = pl.Series("d", [D(10**38 - 1)] * 2, dtype=pl.Decimal(38, 0))
     with pytest.raises(ComputeError, match="overflow in decimal addition in sum"):
         s.sum()
     with pytest.raises(ComputeError, match="overflow in decimal addition in sum"):
-        s.to_frame().select(pl.col("d").sum())
+        s.to_frame().lazy().select(pl.col("d").sum()).collect(engine=engine)
