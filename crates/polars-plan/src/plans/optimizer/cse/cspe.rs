@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
@@ -7,7 +6,6 @@ use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
 use super::canonical_ir::{CanonicalIRId, CanonicalIRMap};
-use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::{AExpr, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::tree_traversal::{PersistInputEdgeIdxs, TreeTraversalImpl};
@@ -27,10 +25,8 @@ pub fn common_subplan_elimination(
 
     let canonical_ir_map = CanonicalIRMap::new(root, ir_arena, expr_arena);
 
-    let mut storage = IRTraversalStorage { arena: ir_arena };
-
     TreeTraversalImpl {
-        storage: &mut storage,
+        storage: ir_arena,
         visit_stack: visit_stack.get(),
         edges: &mut edges,
         persist_input_edge_idxs: Some(&mut PersistInputEdgeIdxs::Build(
@@ -40,7 +36,6 @@ pub fn common_subplan_elimination(
         visitor: &mut IDGeneratorVisitor {
             canonical_ir_map,
             id_map: &mut id_map,
-            phantom: PhantomData,
         },
     }
     .traverse_rec(root, 0, false)
@@ -50,7 +45,7 @@ pub fn common_subplan_elimination(
     let mut inserted_cache = false;
 
     TreeTraversalImpl {
-        storage: &mut storage,
+        storage: ir_arena,
         visit_stack: visit_stack.get(),
         edges: &mut edges,
         persist_input_edge_idxs: Some(&mut PersistInputEdgeIdxs::Use(
@@ -61,7 +56,6 @@ pub fn common_subplan_elimination(
             id_map: &mut id_map,
             inserted_cache: &mut inserted_cache,
             insert_nested_caches,
-            phantom: PhantomData,
         },
     }
     .traverse_rec(root, 0, false)
@@ -88,15 +82,14 @@ impl Default for IDState {
     }
 }
 
-struct IDGeneratorVisitor<'map, 'arena> {
+struct IDGeneratorVisitor<'map> {
     canonical_ir_map: CanonicalIRMap,
     id_map: &'map mut PlIndexMap<CanonicalIRId, IDState>,
-    phantom: PhantomData<&'arena ()>,
 }
 
-impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
+impl NodeVisitor for IDGeneratorVisitor<'_> {
     type Key = Node;
-    type Storage = IRTraversalStorage<'arena>;
+    type Storage = Arena<IR>;
     type Edge = usize;
     type BreakValue = ();
 
@@ -123,7 +116,7 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
         storage: &mut Self::Storage,
         edges: &mut dyn NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue> {
-        let id = self.canonical_ir_map.resolve(key, storage.arena);
+        let id = self.canonical_ir_map.resolve(key, storage);
 
         use indexmap::map::Entry;
 
@@ -155,16 +148,15 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
     }
 }
 
-struct InsertCachesVisitor<'a, 'arena> {
+struct InsertCachesVisitor<'a> {
     id_map: &'a mut PlIndexMap<CanonicalIRId, IDState>,
     inserted_cache: &'a mut bool,
     insert_nested_caches: bool,
-    phantom: PhantomData<&'arena ()>,
 }
 
-impl<'a, 'arena> NodeVisitor for InsertCachesVisitor<'a, 'arena> {
+impl NodeVisitor for InsertCachesVisitor<'_> {
     type Key = Node;
-    type Storage = IRTraversalStorage<'arena>;
+    type Storage = Arena<IR>;
     type Edge = usize;
     type BreakValue = ();
 
