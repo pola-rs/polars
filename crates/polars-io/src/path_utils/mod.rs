@@ -281,7 +281,7 @@ async fn expand_path_cloud(
         }
     };
 
-    use polars_utils::_limit_path_len_io_err;
+    use polars_utils::io::_limit_path_len_io_err;
 
     use crate::cloud::object_path_from_str;
     let path_str = path.as_str();
