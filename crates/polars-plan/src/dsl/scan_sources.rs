@@ -418,7 +418,7 @@ impl ScanSourceRef<'_> {
                             .unwrap(),
                     )?
                 } else {
-                    polars_utils::open_file(path.as_std_path())?
+                    polars_utils::io::open_file(path.as_std_path())?
                 };
 
                 Ok(Buffer::from_owner(MMapSemaphore::new_from_file(&file)?))
@@ -445,7 +445,7 @@ impl ScanSourceRef<'_> {
     fn to_buffer_async(&self, run_async: bool) -> PolarsResult<Buffer<u8>> {
         match self {
             ScanSourceRef::Path(path) => {
-                let file = polars_utils::open_file(path.as_std_path())?;
+                let file = polars_utils::io::open_file(path.as_std_path())?;
                 Ok(Buffer::from_owner(MMapSemaphore::new_from_file(&file)?))
             },
             ScanSourceRef::File(file) => {
@@ -481,7 +481,7 @@ impl ScanSourceRef<'_> {
                         cache_entries.unwrap()[index].try_open_check_latest()?
                     })
                 } else {
-                    polars_utils::open_file(path.as_std_path())?
+                    polars_utils::io::open_file(path.as_std_path())?
                 };
 
                 Ok(Buffer::from_owner(MMapSemaphore::new_from_file(&file)?))
