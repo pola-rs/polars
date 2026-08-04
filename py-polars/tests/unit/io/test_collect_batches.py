@@ -109,3 +109,47 @@ print("OK", end="")
     )
 
     assert out == b"OK"
+
+
+@pytest.mark.slow
+def test_collect_batches_arrow_c_stream_python_dataset_28628() -> None:
+    # Resolving a `PythonDataset` scan (`scan_delta` / `scan_iceberg`) calls back into
+    # Python from another thread, so `__arrow_c_stream__` must not hold the GIL while
+    # it resolves the schema. Run in a subprocess: on regression this deadlocks.
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import polars as pl
+import pyarrow as pa
+from polars._plr import PyLazyFrame
+from polars._utils.wrap import wrap_ldf
+
+SCHEMA = pa.schema([pa.field("id", pa.int64())])
+BATCH = pa.record_batch([pa.array(range(1000), type=pa.int64())], schema=SCHEMA)
+
+
+class DatasetObject:
+    def schema(self):
+        return SCHEMA
+
+    def to_dataset_scan(self, **kwargs):
+        def impl(*args, **kw):
+            return iter([pl.from_arrow(BATCH)]), False
+
+        lf = pl.LazyFrame._scan_python_function(SCHEMA, impl, pyarrow=True, is_pure=True)
+        return lf, "v1"
+
+
+lf = wrap_ldf(PyLazyFrame.new_from_dataset_object(DatasetObject()))
+reader = pa.RecordBatchReader.from_stream(lf.collect_batches(engine="streaming"))
+assert reader.read_all().num_rows == 1000
+
+print("OK", end="")
+""",
+        ],
+        timeout=30,
+    )
+
+    assert out == b"OK"

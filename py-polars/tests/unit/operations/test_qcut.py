@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
-from polars.exceptions import DuplicateError
+from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 inf = float("inf")
@@ -154,3 +154,91 @@ def test_qcut_nan_input_values() -> None:
         dtype=pl.Categorical,
     )
     assert_series_equal(result, expected, categorical_as_str=True)
+
+
+def test_qcut_full_nan() -> None:
+    # Regression: all-NaN used to panic (all-null check used the pre-NaN-drop series).
+    s = pl.Series("a", [float("nan"), float("nan")])
+
+    result = s.qcut([0.25, 0.50])
+
+    expected = pl.Series("a", [None, None], dtype=pl.Categorical)
+    assert_series_equal(result, expected, categorical_as_str=True)
+
+
+def test_qcut_inf_breakpoint_raises() -> None:
+    # Regression: inf gives a NaN breakpoint that used to panic; now raises.
+    s = pl.Series("a", [float("inf"), float("-inf")])
+    with pytest.raises(ComputeError):
+        s.qcut([0.3, 0.6])
+
+
+def test_qcut_full_nan_include_breaks() -> None:
+    # include_breaks must return the Struct dtype even on all-NaN input.
+    s = pl.Series("a", [float("nan"), float("nan")])
+
+    result = s.qcut([0.25, 0.50], include_breaks=True)
+
+    expected = pl.Series(
+        "a",
+        [{"breakpoint": None, "category": None}] * 2,
+        dtype=pl.Struct({"breakpoint": pl.Float64, "category": pl.Categorical}),
+    )
+    assert_series_equal(result, expected, categorical_as_str=True)
+
+
+def test_qcut_nan_and_inf_mixed() -> None:
+    # NaN dropped, infinities remain, so the breakpoint is NaN -> raises.
+    s = pl.Series("a", [float("nan"), float("inf"), float("-inf")])
+    with pytest.raises(ComputeError):
+        s.qcut([0.5])
+
+
+def test_qcut_empty_include_breaks_27284() -> None:
+    empty = pl.Series("x", [], dtype=pl.Float64)
+
+    result = empty.qcut(3, include_breaks=True)
+
+    expected = pl.Series(
+        "x", [], dtype=pl.Struct({"breakpoint": pl.Float64, "category": pl.Categorical})
+    )
+    assert_series_equal(result, expected, categorical_as_str=True)
+
+
+def test_qcut_empty_include_breaks_lazy_27284() -> None:
+    lf = pl.LazyFrame({"x": pl.Series([], dtype=pl.Float64)})
+
+    result = lf.select(
+        pl.col("x").qcut(3, include_breaks=True).struct.field("breakpoint")
+    ).collect()
+
+    assert_frame_equal(result, pl.DataFrame(schema={"breakpoint": pl.Float64}))
+
+
+def test_qcut_full_null_include_breaks_27284() -> None:
+    s = pl.Series("x", [None, None, None], dtype=pl.Float64)
+
+    result = s.qcut([0.25, 0.50], include_breaks=True)
+
+    expected = pl.Series(
+        "x",
+        [{"breakpoint": None, "category": None}] * 3,
+        dtype=pl.Struct({"breakpoint": pl.Float64, "category": pl.Categorical}),
+    )
+    assert_series_equal(result, expected, categorical_as_str=True)
+
+
+def test_qcut_full_null_include_breaks_lazy_unnest_27284() -> None:
+    # Regression: lazy unnest of an all-null include_breaks result used to panic.
+    lf = pl.LazyFrame({"a": [None, None]})
+
+    result = lf.select(
+        pl.col("a").cast(pl.Float64).qcut([0.25, 0.5], include_breaks=True).alias("q")
+    ).unnest("q")
+
+    out = result.collect()
+    expected = pl.DataFrame(
+        {"breakpoint": [None, None], "category": [None, None]},
+        schema={"breakpoint": pl.Float64, "category": pl.Categorical},
+    )
+    assert_frame_equal(out, expected, categorical_as_str=True)

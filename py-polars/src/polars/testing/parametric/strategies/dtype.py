@@ -41,6 +41,7 @@ from polars.datatypes import (
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
+    from typing import Final
 
     from hypothesis.strategies import DrawFn, SearchStrategy
 
@@ -48,7 +49,7 @@ if TYPE_CHECKING:
     from polars.datatypes import DataTypeClass
 
 # A simple test extension type for parametric tests.
-TestExtension = Extension(
+TestExtension: Final[Extension] = Extension(
     name="testing.parametric_test_extension",
     storage=Int32(),
     metadata="A parametric test extension type",

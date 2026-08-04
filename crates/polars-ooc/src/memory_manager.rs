@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock, RwLock, Weak};
+use std::sync::{Arc, LazyLock, RwLock};
 
 use polars_async::ASYNC;
 use polars_async::executor::TaskPriority;
@@ -14,9 +14,9 @@ const EXPLORE_BEYOND_BEST_SCORE_THRESHOLD: f64 = 20.0;
 
 const MAX_PARALLEL_SPILL_TASKS: usize = 64;
 
+use crate::WeakSpillContext;
 use crate::spill_context::UNEXPLORED_SCORE;
-use crate::spill_token::TrySpillError;
-use crate::{DynSpillToken, SpillContext};
+use crate::spill_token::{DynSpillToken, TrySpillError};
 
 static MEMORY_MANAGER: LazyLock<MemoryManager> = LazyLock::new(MemoryManager::new);
 
@@ -26,7 +26,7 @@ pub fn memory_manager() -> &'static MemoryManager {
 }
 
 pub struct MemoryManager {
-    contexts: RwLock<Vec<Weak<dyn SpillContext>>>,
+    contexts: RwLock<Vec<WeakSpillContext>>,
     finding_spill_lock: AsyncMutex<()>,
     spill_semaphore: Arc<AsyncSemaphore>,
     est_spill_in_progress: AtomicU64,
@@ -50,13 +50,12 @@ impl MemoryManager {
 
     fn clean_contexts(&self) {
         if let Ok(mut ctxs) = self.contexts.try_write() {
-            ctxs.retain(|ctx| ctx.strong_count() > 0);
+            ctxs.retain(|ctx| !ctx.is_dead());
         }
     }
 
-    pub fn register_ctx<C: SpillContext>(&self, ctx: &Arc<C>) {
-        let weak = Arc::downgrade(ctx);
-        self.contexts.write().unwrap().push(weak);
+    pub(crate) fn register_ctx(&self, ctx: WeakSpillContext) {
+        self.contexts.write().unwrap().push(ctx);
     }
 
     #[inline(always)]
@@ -88,15 +87,17 @@ impl MemoryManager {
             };
 
             let successful_spill = Arc::new(WithDrop::new(
-                (AtomicBool::new(false), ctx.stats().clone()),
-                |(success, stats)| {
+                (AtomicBool::new(false), ctx.clone()),
+                move |(success, weak_ctx)| {
                     if !success.load(Ordering::Relaxed) {
-                        stats.finish_exploration_event(false);
+                        if let Some(strong) = weak_ctx.upgrade() {
+                            strong.stats().finish_exploration_event(false);
+                        }
                     }
                 },
             ));
 
-            for (spillable, id, sz) in spillables {
+            for (spillable, reg_id, sz) in spillables {
                 let permit = self.spill_semaphore.clone().acquire_owned().await.unwrap();
 
                 let successful_spill = successful_spill.clone();
@@ -104,18 +105,20 @@ impl MemoryManager {
 
                 polars_async::executor::spawn(TaskPriority::High, async move {
                     // Spill, or reinsert if a failure.
-                    match spillable.try_spill(ctx.stats(), Arc::downgrade(&ctx), id) {
+                    match spillable.try_spill(ctx.clone(), reg_id) {
                         Ok(spill_success) => {
                             if spill_success.await {
                                 if !successful_spill.0.swap(true, Ordering::Relaxed) {
-                                    ctx.stats().finish_exploration_event(true);
+                                    if let Some(strong) = ctx.upgrade() {
+                                        strong.stats().finish_exploration_event(true);
+                                    }
                                 }
                             } else {
-                                ctx.reinsert(&spillable, id);
+                                ctx.0.reinsert(&spillable, reg_id, ctx.1);
                             }
                         },
                         Err(TrySpillError::Pinned) => {
-                            ctx.reinsert(&spillable, id);
+                            ctx.0.reinsert(&spillable, reg_id, ctx.1);
                         },
                         Err(TrySpillError::AlreadySpilled) => {},
                     }
@@ -134,10 +137,7 @@ impl MemoryManager {
     #[cold]
     async fn find_spillables(
         &self,
-    ) -> Option<(
-        Arc<dyn SpillContext>,
-        Vec<(Arc<dyn DynSpillToken>, u64, usize)>,
-    )> {
+    ) -> Option<(WeakSpillContext, Vec<(Arc<dyn DynSpillToken>, u32, usize)>)> {
         // TODO: don't block here under a certain memory threshold.
         let finding_spill_guard = self.finding_spill_lock.lock().await;
 
@@ -146,16 +146,16 @@ impl MemoryManager {
         let mut has_dead_context = false;
         let mut live_contexts = Vec::new();
         let mut rng = rand::rng();
-        for weak_ctx in contexts.iter() {
-            let Some(ctx) = weak_ctx.upgrade() else {
+        for ctx in contexts.iter() {
+            if ctx.is_dead() {
                 has_dead_context = true;
                 continue;
             };
 
             // Thompson sampling.
-            let score_sample = ctx.stats().sample_score(&mut rng);
+            let score_sample = ctx.0.stats().sample_score(&mut rng);
             assert!(!score_sample.is_nan());
-            live_contexts.push((ctx, score_sample));
+            live_contexts.push((ctx.clone(), score_sample));
         }
         drop(contexts);
 
@@ -177,26 +177,29 @@ impl MemoryManager {
                 break;
             }
 
-            ctx.stats().start_exploration_event();
+            let Some(strong) = ctx.upgrade() else {
+                continue;
+            };
+            strong.stats().start_exploration_event();
 
             let mut total_est_spill = 0;
             let mut candidates = Vec::new();
-            for (cand, id) in ctx.pop() {
+            for (cand, reg_id) in ctx.0.pop() {
                 if cand.can_spill()
                     && let Some(sz) = cand.estimate_byte_size()
                     && sz as u64 >= min_spill
                 {
                     total_est_spill += sz as u64;
-                    candidates.push((cand, id, sz));
+                    candidates.push((cand, reg_id, sz));
                 } else {
                     if !cand.is_spilled_or_dropped() {
-                        ctx.reinsert(&cand, id);
+                        ctx.0.reinsert(&cand, reg_id, ctx.1);
                     }
                 }
             }
 
             if candidates.is_empty() {
-                ctx.stats().finish_exploration_event(false);
+                strong.stats().finish_exploration_event(false);
             } else {
                 // Increment the spill-in-progress to avoid eager over-spilling.
                 self.est_spill_in_progress

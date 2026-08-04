@@ -34,7 +34,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -93,7 +93,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -119,7 +119,7 @@ jobs:
   check-features:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -142,10 +142,13 @@ jobs:
       - name: Run cargo hack
         run: cargo hack check -p polars --each-feature --no-dev-deps && cargo check -p polars-stream
 
+      - name: Test pyo3-polars and bigidx
+        run: cargo check -p pyo3-polars --no-default-features --features pyo3-polars/derive,polars/bigidx
+
   check-dsl-schema:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Free some disk space (remove unused packages)
         uses: jlumbroso/free-disk-space@v1.3.1

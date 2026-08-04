@@ -13,6 +13,8 @@ use polars_io::utils::compression::{ByteSourceReader, CompressedReader, Supporte
 use polars_io::utils::stream_buf_reader::ReaderSource;
 
 use super::*;
+#[cfg(feature = "parquet")]
+use crate::dsl::MetadataPerSource::Unresolved;
 
 pub(super) async fn dsl_to_ir(
     sources: ScanSources,
@@ -20,10 +22,11 @@ pub(super) async fn dsl_to_ir(
     scan_type: Box<FileScanDsl>,
     cached_ir: Arc<Mutex<Option<IR>>>,
     cache_file_info: SourcesToFileInfo,
+    #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<LazyLock<PyScanResolveThreadPool>>,
     verbose: bool,
 ) -> PolarsResult<()> {
-    // Note that the first metadata can still end up being `None` later if the files were
-    // filtered from predicate pushdown.
+    // Note that resolved footer metadata can still be re-indexed or dropped
+    // later if the files were filtered from predicate pushdown.
     // Check and drop the lock in its own scope
     let is_not_cached = {
         let cached_ir_guard = cached_ir.lock().unwrap();
@@ -50,18 +53,22 @@ pub(super) async fn dsl_to_ir(
 
         let sources_before_expansion = &sources;
 
+        let mut bytes_per_source: Option<Arc<[u64]>> = None;
         let sources = match &*scan_type {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { .. } => {
-                sources
+                let (sources, bytes) = sources
                     .expand_paths_with_hive_update(unified_scan_args)
-                    .await?
+                    .await?;
+                bytes_per_source = bytes;
+                sources
             },
             #[cfg(feature = "ipc")]
             FileScanDsl::Ipc { .. } => {
                 sources
                     .expand_paths_with_hive_update(unified_scan_args)
                     .await?
+                    .0
             },
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { .. } => sources.expand_paths(unified_scan_args).await?,
@@ -87,7 +94,10 @@ pub(super) async fn dsl_to_ir(
                     &scan_type,
                     &sources,
                     sources_before_expansion,
+                    bytes_per_source,
                     unified_scan_args,
+                    #[cfg(feature = "python")]
+                    py_scan_resolve_threadpool,
                     verbose,
                 )
                 .await?
@@ -241,122 +251,316 @@ fn prepare_schemas(
 pub(super) async fn parquet_file_info(
     sources: &ScanSources,
     row_index: Option<&RowIndex>,
+    // Per-source byte sizes from path expansion, aligned with `sources`.
+    bytes_per_source: Option<&[u64]>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
-) -> PolarsResult<(
-    FileInfo,
-    Option<FileMetadataRef>,
-    Option<Arc<[FileMetadataRef]>>,
-)> {
+) -> PolarsResult<(FileInfo, MetadataPerSource)> {
     use futures::stream::{FuturesOrdered, FuturesUnordered, StreamExt};
     use polars_core::error::feature_gated;
 
     let n_sources = sources.len();
     let first_scan_source = sources.iter().next().expect("at least one source");
 
-    // First file: schema + num_rows + full metadata. Schema comes from
-    // file 0 only (no cross-file schema evolution).
-    let (reader_schema, first_num_rows, first_metadata) = {
+    // File 0: schema + num_rows + full metadata (schema comes from file 0 only;
+    // no cross-file schema evolution). Built as a future so it runs concurrently
+    // with the other-source reads below. File 0's schema is not borrowed by the
+    // other-source reads, so they are independent and share a single concurrency
+    // wave.
+    let first_fut = async move {
         if first_scan_source.is_cloud_url() {
             let first_path = first_scan_source.as_path().unwrap();
             feature_gated!("cloud", {
                 let mut reader =
                     ParquetObjectStore::from_uri(first_path.clone(), cloud_options, None).await?;
-
-                (
+                PolarsResult::Ok((
                     reader.schema().await?,
                     reader.num_rows().await?,
                     reader.get_metadata().await?.clone(),
-                )
+                ))
             })
         } else {
             let memslice = first_scan_source.to_memslice()?;
             let mut reader = ParquetReader::new(Cursor::new(memslice));
-            (
+            PolarsResult::Ok((
                 reader.schema()?,
                 reader.num_rows()?,
                 reader.get_metadata()?.clone(),
-            )
+            ))
         }
     };
 
-    let schema =
-        prepare_output_schema(Schema::from_arrow_schema(reader_schema.as_ref()), row_index)?;
-
     // Resolve metadata for sources past the first, dispatched by
     // `POLARS_RESOLVE_METADATA_LEVEL`:
-    // - `None`: extrapolate `first_num_rows * n_sources`.
-    // - `RowCounts` (OSS default): per-source thrift field 3 only.
-    // - `Full` (cloud default): per-source footer, populates
-    //   `metadata_per_source` for the distributed scheduler.
+    // - `None`: extrapolate `first_num_rows * n_sources`, no extra reads.
+    // - `RowCounts`: per-source thrift field 3 only, exact total.
+    // - `Sampled`: read one concurrency wave of full footers and extrapolate.
+    // - `Full`: read every footer, exact total.
+    //
+    // Every multi-source arm reads file 0 concurrently with the other sources
+    // via `try_join`, so the schema read does not cost an extra serial round
+    // trip; a file-0 error short-circuits and cancels the other reads.
+    // Per-scan size resolution. `reader_schema` always comes from file 0;
+    // only the size fields vary by mode. File 0's footer is always retained
+    // in `metadata_per_source`.
+    struct Resolution {
+        reader_schema: ArrowSchemaRef,
+        metadata_per_source: MetadataPerSource,
+        known_size: Option<usize>,
+        estimated_size: usize,
+    }
+
     let mode = polars_config::config().resolve_metadata_level();
-    let (metadata_per_source, known_size, estimated_size) = if n_sources == 1 {
-        (None, Some(first_num_rows), first_num_rows)
+    let resolved = if n_sources == 1 {
+        // Only file 0, so its count is exact and there is nothing to join.
+        let (reader_schema, first_num_rows, first_metadata) = first_fut.await?;
+        Resolution {
+            reader_schema,
+            metadata_per_source: MetadataPerSource::new([(0, first_metadata)], 1),
+            known_size: Some(first_num_rows),
+            estimated_size: first_num_rows,
+        }
     } else {
         use polars_config::ResolveMode;
+
+        // The strided footer sample; `Some` only when it does not already
+        // span every source (a spanning wave routes through the `Full` arm).
+        let partial_sample = matches!(mode, ResolveMode::Sampled)
+            .then(|| {
+                // Default cap: the IO concurrency budget floored at
+                // `SAMPLE_FLOOR`. An explicit limit is authoritative, even
+                // below the floor.
+                let limit = polars_config::config().resolve_sample_limit().map_or_else(
+                    || (polars_io::pl_async::get_concurrency_limit() as usize).max(SAMPLE_FLOOR),
+                    |o| o as usize,
+                );
+                sample_size(n_sources, limit)
+            })
+            .filter(|&k| k != n_sources)
+            .map(|k| sampled_source_indices(n_sources, k));
+
         match mode {
-            ResolveMode::None => (None, None, first_num_rows * n_sources),
+            ResolveMode::None => {
+                // No other-source reads; extrapolate from file 0 alone.
+                let (reader_schema, first_num_rows, first_metadata) = first_fut.await?;
+                Resolution {
+                    reader_schema,
+                    metadata_per_source: MetadataPerSource::new([(0, first_metadata)], n_sources),
+                    known_size: None,
+                    estimated_size: first_num_rows.saturating_mul(n_sources),
+                }
+            },
             ResolveMode::RowCounts => {
-                let mut futures =
-                    (1..n_sources)
+                // Every other file's row count (thrift field 3 only), read
+                // concurrently with file 0.
+                let rest_fut = async move {
+                    let mut futures = (1..n_sources)
                         .map(|i| async move {
                             read_parquet_num_rows(sources.at(i), cloud_options).await
                         })
                         .collect::<FuturesUnordered<_>>();
 
-                // Best-effort: a file that fails to decode at plan time (e.g.
-                // an invalid file in a hive partition not yet pruned) simply
-                // contributes 0 to the estimate. If execution needs the file
-                // it will error then; if predicate pushdown prunes it first,
-                // it never matters.
-                let mut total: usize = first_num_rows;
-                while let Some(res) = futures.next().await {
-                    if let Ok(n) = res {
-                        total = total.saturating_add(n as usize);
+                    // Best-effort: a file that fails to decode at plan time
+                    // (e.g. an invalid file in a hive partition not yet pruned)
+                    // simply contributes 0. If execution needs the file it
+                    // errors then; if predicate pushdown prunes it first, it
+                    // never matters.
+                    let mut total = 0usize;
+                    while let Some(res) = futures.next().await {
+                        if let Ok(n) = res {
+                            total = total.saturating_add(n as usize);
+                        }
                     }
+                    PolarsResult::Ok(total)
+                };
+                let ((reader_schema, first_num_rows, first_metadata), others) =
+                    futures::future::try_join(first_fut, rest_fut).await?;
+                let total = first_num_rows.saturating_add(others);
+                Resolution {
+                    reader_schema,
+                    metadata_per_source: MetadataPerSource::new([(0, first_metadata)], n_sources),
+                    known_size: Some(total),
+                    estimated_size: total,
                 }
-                (None, Some(total), total)
             },
-            ResolveMode::Full => {
-                // Each file decoded with its own schema: per-file schemas
-                // may differ in columns, dtypes, or column order.
-                let mut futures = (1..n_sources)
-                    .map(|i| read_parquet_metadata(sources.at(i), cloud_options))
-                    .collect::<FuturesOrdered<_>>();
-
-                // Push slot 0 (satisfying the `metadata_per_source[0] ==
-                // first_metadata` invariant), then push each future result.
-                // Best-effort: on error push `first_metadata.clone()`; the
-                // cloud scheduler re-fetches if it needs accurate row_groups
-                // for that file.
-                let mut per_file: Vec<FileMetadataRef> = Vec::with_capacity(n_sources);
-                per_file.push(first_metadata.clone());
-                let mut total: usize = first_num_rows;
-                while let Some(file_result) = futures.next().await {
-                    match file_result {
-                        Ok(m) => {
-                            total = total.saturating_add(m.num_rows);
-                            per_file.push(m);
+            // Partial `Sampled`: read the sample's footers, retain them, and
+            // extrapolate the total (byte-weighted when sizes are known, else
+            // the per-file mean).
+            ResolveMode::Sampled if let Some(ref sample) = partial_sample => {
+                let known_sizes = bytes_per_source.inspect(|b| {
+                    debug_assert_eq!(b.len(), n_sources);
+                    debug_assert!(b.iter().all(|&size| size > 0));
+                });
+                let rest_fut = async move {
+                    let mut futures = sample
+                        .iter()
+                        .map(|&i| async move {
+                            (
+                                i,
+                                read_parquet_metadata(sources.at(i), cloud_options)
+                                    .await
+                                    .ok(),
+                            )
+                        })
+                        .collect::<FuturesUnordered<_>>();
+                    let mut pairs: Vec<(usize, FileMetadataRef)> = Vec::with_capacity(sample.len());
+                    let mut rows = 0usize;
+                    while let Some((i, meta)) = futures.next().await {
+                        if let Some(m) = meta {
+                            rows = rows.saturating_add(m.num_rows);
+                            pairs.push((i, m));
+                        }
+                    }
+                    PolarsResult::Ok((pairs, rows))
+                };
+                let ((reader_schema, first_num_rows, first_metadata), (mut pairs, other_rows)) =
+                    futures::future::try_join(first_fut, rest_fut).await?;
+                // file 0 is always read.
+                pairs.push((0, first_metadata));
+                let sampled_rows = first_num_rows.saturating_add(other_rows);
+                let n_read = pairs.len();
+                let byte_estimate = known_sizes.and_then(|bytes| {
+                    // A file is fixed overhead plus data pages, so raw size
+                    // ratios overstate rows on small files. Learn
+                    // rows-per-data-byte and mean overhead from the sample,
+                    // then estimate the unread files from their listed sizes.
+                    let mut sampled_data: u128 = 0;
+                    let mut sampled_overhead: u128 = 0;
+                    for (i, m) in &pairs {
+                        let size = bytes[*i] as u128;
+                        // Clamp so a malformed footer cannot underflow the
+                        // overhead.
+                        let data = m
+                            .row_groups
+                            .iter()
+                            .map(|rg| rg.compressed_size() as u128)
+                            .sum::<u128>()
+                            .min(size);
+                        sampled_data += data;
+                        sampled_overhead += size - data;
+                    }
+                    // Unresolved covers unsampled and failed reads alike.
+                    let total_bytes = bytes.iter().map(|&b| b as u128).sum::<u128>();
+                    let unresolved_bytes = total_bytes - (sampled_data + sampled_overhead);
+                    // A 0-row sample has no density to learn from; fall back.
+                    (sampled_data > 0).then(|| {
+                        let mean_overhead = sampled_overhead / n_read as u128;
+                        let unresolved_files = (n_sources - n_read) as u128;
+                        let unresolved_data =
+                            unresolved_bytes.saturating_sub(mean_overhead * unresolved_files);
+                        (sampled_rows as u128
+                            + unresolved_data * sampled_rows as u128 / sampled_data)
+                            as usize
+                    })
+                });
+                let byte_weighted = byte_estimate.is_some();
+                let estimated = byte_estimate.unwrap_or_else(|| {
+                    // `n_read` is always >= 1 (file 0), so the division is safe.
+                    ((sampled_rows as u128 * n_sources as u128) / n_read as u128) as usize
+                });
+                if verbose() {
+                    eprintln!(
+                        "parquet sampled resolve: read {n_read} / {n_sources} footers, \
+                         estimated rows: {estimated} ({})",
+                        if byte_weighted {
+                            "byte-weighted"
+                        } else {
+                            "count-based"
                         },
-                        Err(_) => per_file.push(first_metadata.clone()),
+                    );
+                }
+                Resolution {
+                    reader_schema,
+                    metadata_per_source: MetadataPerSource::new(pairs, n_sources),
+                    known_size: None,
+                    estimated_size: estimated,
+                }
+            },
+            // `Full`, or `Sampled` whose wave already spans every source:
+            // read and retain every footer.
+            ResolveMode::Full | ResolveMode::Sampled => {
+                // Each file decoded with its own schema: per-file schemas may
+                // differ in columns, dtypes, or column order. Read concurrently
+                // with file 0; `None` marks a file that failed to decode.
+                let rest_fut = async move {
+                    let mut futures = (1..n_sources)
+                        .map(|i| read_parquet_metadata(sources.at(i), cloud_options))
+                        .collect::<FuturesOrdered<_>>();
+                    let mut rest: Vec<Option<FileMetadataRef>> = Vec::with_capacity(n_sources - 1);
+                    while let Some(file_result) = futures.next().await {
+                        rest.push(file_result.ok());
+                    }
+                    PolarsResult::Ok(rest)
+                };
+                let ((reader_schema, first_num_rows, first_metadata), rest) =
+                    futures::future::try_join(first_fut, rest_fut).await?;
+
+                // Source 0 is always read; a failed read is simply absent.
+                let mut entries: Vec<(usize, FileMetadataRef)> = Vec::with_capacity(n_sources);
+                entries.push((0, first_metadata));
+                let mut total: usize = first_num_rows;
+                for (i, slot) in rest.into_iter().enumerate() {
+                    if let Some(m) = slot {
+                        total = total.saturating_add(m.num_rows);
+                        entries.push((i + 1, m));
                     }
                 }
-                let dense: Arc<[FileMetadataRef]> = per_file.into();
-                (Some(dense), Some(total), total)
+                let metadata_per_source = MetadataPerSource::new(entries, n_sources);
+                // Exact only when every footer resolved.
+                let known =
+                    matches!(metadata_per_source, MetadataPerSource::Full(_)).then_some(total);
+                Resolution {
+                    reader_schema,
+                    metadata_per_source,
+                    known_size: known,
+                    estimated_size: total,
+                }
             },
         }
     };
 
+    let schema = prepare_output_schema(
+        Schema::from_arrow_schema(resolved.reader_schema.as_ref()),
+        row_index,
+    )?;
+
     let file_info = FileInfo::new(
         schema,
-        Some(Either::Left(reader_schema)),
-        (known_size, estimated_size),
+        Some(Either::Left(resolved.reader_schema)),
+        (resolved.known_size, resolved.estimated_size),
     );
 
-    Ok((file_info, Some(first_metadata), metadata_per_source))
+    Ok((file_info, resolved.metadata_per_source))
 }
 
-/// Fetch one source's full footer. Used by [`parquet_file_info`] in
-/// `Full` resolve mode.
+/// Minimum sample so a scan still extrapolates from enough files; below this,
+/// two-mode datasets can miss a mode entirely and misestimate badly.
+#[cfg(feature = "parquet")]
+const SAMPLE_FLOOR: usize = 16;
+
+/// Footer-wave size (incl. file 0) for [`ResolveMode::Sampled`]: `sqrt(n)`,
+/// floored at `SAMPLE_FLOOR`, capped at `limit`, never above the file count.
+#[cfg(feature = "parquet")]
+fn sample_size(n_sources: usize, limit: usize) -> usize {
+    // `limit` last so it stays a hard ceiling.
+    ((n_sources as f64).sqrt().ceil() as usize)
+        .max(SAMPLE_FLOOR)
+        .min(limit.max(1))
+        .min(n_sources)
+}
+
+/// Evenly-strided sample of `k - 1` indices in `1..n_sources` (file 0 is
+/// read separately).
+#[cfg(feature = "parquet")]
+fn sampled_source_indices(n_sources: usize, k: usize) -> Vec<usize> {
+    if k <= 1 {
+        return Vec::new();
+    }
+    let extra = k - 1;
+    let span = n_sources - 1;
+    (0..extra).map(|j| 1 + (j * span) / extra).collect()
+}
+
+/// Fetch one source's full footer for [`parquet_file_info`].
 #[cfg(feature = "parquet")]
 async fn read_parquet_metadata(
     source: ScanSourceRef<'_>,
@@ -484,6 +688,8 @@ pub async fn csv_file_info(
     let run_async =
         sources.is_cloud_url() || (sources.is_paths() && polars_config::config().force_async());
 
+    let infer_schema_files = csv_options.infer_schema_files;
+
     let cache_entries = {
         if run_async {
             let sources = sources.clone();
@@ -492,7 +698,7 @@ pub async fn csv_file_info(
             feature_gated!("cloud", {
                 Some(
                     polars_io::file_cache::init_entries_from_uri_list(
-                        (0..sources.len())
+                        (0..usize::min(sources.len(), infer_schema_files.get()))
                             .map(move |i| sources.as_paths().unwrap().get(i).unwrap().clone()),
                         cloud_options,
                     )
@@ -704,7 +910,7 @@ pub async fn csv_file_info(
     let si_results = RAYON.join(
         || infer_schema_func(0),
         || {
-            (1..sources.len())
+            (1..usize::min(sources.len(), infer_schema_files.get()))
                 .into_par_iter()
                 .map(infer_schema_func)
                 .reduce(|| Ok(Default::default()), merge_func)
@@ -921,12 +1127,13 @@ enum CachedSourceKey {
         paths: Buffer<PlRefPath>,
         schema: Option<SchemaRef>,
         schema_overwrite: Option<SchemaRef>,
+        dtype_overwrite: Option<Arc<Vec<DataType>>>,
     },
 }
 
 #[derive(Default, Clone)]
 pub(super) struct SourcesToFileInfo {
-    inner: Arc<RwLock<PlHashMap<CachedSourceKey, (FileInfo, FileScanIR)>>>,
+    inner: Arc<RwLock<PlIndexMap<CachedSourceKey, (FileInfo, FileScanIR)>>>,
 }
 
 impl SourcesToFileInfo {
@@ -935,7 +1142,12 @@ impl SourcesToFileInfo {
         scan_type: FileScanDsl,
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
+        // Per-source byte sizes from path expansion, aligned with `sources`.
+        bytes_per_source: Option<Arc<[u64]>>,
         unified_scan_args: &mut UnifiedScanArgs,
+        #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
+            LazyLock<PyScanResolveThreadPool>,
+        >,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
         let require_first_source = |failed_operation_name: &'static str, hint: &'static str| {
             sources.first_or_empty_expand_err(
@@ -959,7 +1171,8 @@ impl SourcesToFileInfo {
             FileScanDsl::Parquet { options } => {
                 if let Some(schema) = &options.schema {
                     // We were passed a schema, we don't have to call `parquet_file_info`,
-                    // but this does mean we don't have `row_estimation` and `first_metadata`.
+                    // but this does mean we don't have `row_estimation` or any
+                    // resolved footer metadata.
 
                     (
                         FileInfo {
@@ -971,9 +1184,8 @@ impl SourcesToFileInfo {
                         },
                         FileScanIR::Parquet {
                             options,
-                            // Schema was passed in; no footer was resolved.
-                            first_metadata: None,
-                            metadata_per_source: None,
+                            metadata_per_source: Unresolved,
+                            bytes_per_source: bytes_per_source.clone(),
                         },
                     )
                 } else {
@@ -992,32 +1204,31 @@ this scan to succeed with an empty DataFrame.",
                             )
                         }
 
-                        let (mut file_info, mut first_metadata, mut metadata_per_source) =
-                            scans::parquet_file_info(
-                                sources,
-                                unified_scan_args.row_index.as_ref(),
-                                cloud_options,
-                            )
-                            .await?;
+                        let (mut file_info, mut metadata_per_source) = scans::parquet_file_info(
+                            sources,
+                            unified_scan_args.row_index.as_ref(),
+                            bytes_per_source.as_deref(),
+                            cloud_options,
+                        )
+                        .await?;
 
                         if let Some(exact_row_estimation) = exact_row_estimation {
                             file_info.row_estimation = exact_row_estimation;
                         }
 
                         if self.inner.read().unwrap().len() > max_metadata_scan_cached() {
-                            // Cache pressure: drop both pre-decoded slots so
+                            // Cache pressure: drop the pre-decoded footers so
                             // we don't blow memory. Streaming readers fall
                             // back to fetching footers at scan time.
-                            first_metadata = None;
-                            metadata_per_source = None;
+                            metadata_per_source = metadata_per_source.gather_first();
                         }
 
                         PolarsResult::Ok((
                             file_info,
                             FileScanIR::Parquet {
                                 options,
-                                first_metadata,
                                 metadata_per_source,
+                                bytes_per_source,
                             },
                         ))
                     }
@@ -1130,12 +1341,22 @@ this scan to succeed with an empty DataFrame.",
             }
             .map_err(|e| e.context(failed_here!(ndjson scan)))?,
             #[cfg(feature = "python")]
-            FileScanDsl::PythonDataset { dataset_object } => (|| {
+            FileScanDsl::PythonDataset { dataset_object } => async {
+                use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
+
                 if crate::dsl::DATASET_PROVIDER_VTABLE.get().is_none() {
                     polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
-                }
+                };
 
-                let mut schema = dataset_object.schema()?;
+                let mut schema =
+                    {
+                        let dataset_object = Arc::clone(&dataset_object);
+                        AbortOnDropHandle(ASYNC.spawn_blocking(move || {
+                            dataset_object.schema(&py_scan_resolve_threadpool)
+                        }))
+                        .await
+                        .unwrap()?
+                    };
                 let reader_schema = schema.clone();
 
                 if let Some(row_index) = &unified_scan_args.row_index {
@@ -1153,7 +1374,8 @@ this scan to succeed with an empty DataFrame.",
                         cached_ir: Default::default(),
                     },
                 ))
-            })()
+            }
+            .await
             .map_err(|e| e.context(failed_here!(python dataset scan)))?,
             #[cfg(feature = "scan_lines")]
             FileScanDsl::Lines { name } => {
@@ -1194,12 +1416,17 @@ this scan to succeed with an empty DataFrame.",
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn get_or_insert(
         &self,
         scan_type: &FileScanDsl,
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
+        bytes_per_source: Option<Arc<[u64]>>,
         unified_scan_args: &mut UnifiedScanArgs,
+        #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
+            LazyLock<PyScanResolveThreadPool>,
+        >,
         verbose: bool,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
         // Only cache non-empty paths. Others are directly parsed.
@@ -1212,7 +1439,10 @@ this scan to succeed with an empty DataFrame.",
                         scan_type.clone(),
                         sources,
                         sources_before_expansion,
+                        bytes_per_source,
                         unified_scan_args,
+                        #[cfg(feature = "python")]
+                        py_scan_resolve_threadpool,
                     )
                     .await;
             },
@@ -1247,6 +1477,7 @@ this scan to succeed with an empty DataFrame.",
                     paths: paths.clone(),
                     schema: options.schema.clone(),
                     schema_overwrite: options.schema_overwrite.clone(),
+                    dtype_overwrite: options.dtype_overwrite.clone(),
                 };
                 let guard = self.inner.read().unwrap();
                 let v = guard.get(&key);
@@ -1258,6 +1489,7 @@ this scan to succeed with an empty DataFrame.",
                     paths: paths.clone(),
                     schema: options.schema.clone(),
                     schema_overwrite: options.schema_overwrite.clone(),
+                    dtype_overwrite: None,
                 };
                 let guard = self.inner.read().unwrap();
                 let v = guard.get(&key);
@@ -1269,7 +1501,10 @@ this scan to succeed with an empty DataFrame.",
                         scan_type.clone(),
                         sources,
                         sources_before_expansion,
+                        bytes_per_source,
                         unified_scan_args,
+                        #[cfg(feature = "python")]
+                        py_scan_resolve_threadpool,
                     )
                     .await;
             },
@@ -1286,7 +1521,10 @@ this scan to succeed with an empty DataFrame.",
                     scan_type.clone(),
                     sources,
                     sources_before_expansion,
+                    bytes_per_source,
                     unified_scan_args,
+                    #[cfg(feature = "python")]
+                    py_scan_resolve_threadpool,
                 )
                 .await?;
             self.inner.write().unwrap().insert(k, v.clone());

@@ -178,7 +178,8 @@ impl ComputeNode for StrptimeInferNode {
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
                         if infer_slot.is_none() {
-                            let ca = morsel.df().columns()[0].str()?;
+                            let df = morsel.df().await;
+                            let ca = df.columns()[0].str()?;
                             if let Some(idx) = ca.first_non_null() {
                                 *infer_slot =
                                     FormatInfer::try_new(ca.get(idx).unwrap(), dtype, options)?;
@@ -190,19 +191,23 @@ impl ComputeNode for StrptimeInferNode {
                             morsel.source_token().stop();
                         }
 
-                        let morsel = morsel.try_map(|df| {
-                            let cols = df.columns();
-                            if let Some(ref mut infer) = *infer_slot {
-                                infer
-                                    .apply(&cols[0], &ambiguous, options.strict)
-                                    .map(Column::into_frame)
-                            } else {
-                                Ok(
-                                    Column::full_null(cols[0].name().clone(), cols[0].len(), dtype)
-                                        .into_frame(),
-                                )
-                            }
-                        })?;
+                        let morsel = morsel
+                            .try_map(|df| {
+                                let cols = df.columns();
+                                if let Some(ref mut infer) = *infer_slot {
+                                    infer
+                                        .apply(&cols[0], &ambiguous, options.strict)
+                                        .map(Column::into_frame)
+                                } else {
+                                    Ok(Column::full_null(
+                                        cols[0].name().clone(),
+                                        cols[0].len(),
+                                        dtype,
+                                    )
+                                    .into_frame())
+                                }
+                            })
+                            .await?;
                         if send.send(morsel).await.is_err() {
                             break;
                         }
@@ -220,12 +225,14 @@ impl ComputeNode for StrptimeInferNode {
                     let mut infer = self.infer.clone().unwrap();
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         while let Ok(morsel) = recv.recv().await {
-                            let morsel = morsel.try_map(|df| {
-                                let cols = df.columns();
-                                infer
-                                    .apply(&cols[0], &ambiguous, strict)
-                                    .map(Column::into_frame)
-                            })?;
+                            let morsel = morsel
+                                .try_map(|df| {
+                                    let cols = df.columns();
+                                    infer
+                                        .apply(&cols[0], &ambiguous, strict)
+                                        .map(Column::into_frame)
+                                })
+                                .await?;
                             if send.send(morsel).await.is_err() {
                                 break;
                             }

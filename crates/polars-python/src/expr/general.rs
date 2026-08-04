@@ -805,7 +805,13 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (n, with_replacement, shuffle, seed))]
-    fn sample_n(&self, n: Self, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
+    fn sample_n(
+        &self,
+        n: Self,
+        with_replacement: bool,
+        shuffle: Option<bool>,
+        seed: Option<u64>,
+    ) -> Self {
         self.inner
             .clone()
             .sample_n(n.inner, with_replacement, shuffle, seed)
@@ -817,7 +823,7 @@ impl PyExpr {
         &self,
         frac: Self,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Self {
         self.inner
@@ -836,6 +842,16 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
+    fn ewm_sum(&self, alpha: f64, min_periods: usize, ignore_nulls: bool) -> Self {
+        let options = EWMOptions {
+            alpha,
+            bias: false,
+            min_periods,
+            ignore_nulls,
+            ..Default::default()
+        };
+        self.inner.clone().ewm_sum(options).into()
+    }
     fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> PyResult<Self> {
         let half_life = Duration::try_parse(half_life).map_err(PyPolarsErr::from)?;
         Ok(self
@@ -843,6 +859,10 @@ impl PyExpr {
             .clone()
             .ewm_mean_by(times.inner, half_life)
             .into())
+    }
+    fn ewm_sum_by(&self, times: PyExpr, half_life: &str) -> PyResult<Self> {
+        let half_life = Duration::try_parse(half_life).map_err(PyPolarsErr::from)?;
+        Ok(self.inner.clone().ewm_sum_by(times.inner, half_life).into())
     }
 
     fn ewm_std(

@@ -4,8 +4,9 @@ use std::hash::Hash;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::*;
+use polars_core::series::BitRepr;
 use polars_core::utils::NoNull;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 fn unique_counts_helper<I, J>(items: I) -> IdxCa
@@ -42,12 +43,24 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
     }
 
     match s.dtype().to_physical() {
-        dt if dt.is_primitive_numeric() => {
+        dt if dt.is_float() => {
             let s_physical = s.to_physical_repr();
-            with_match_physical_numeric_polars_type!(s_physical.dtype(), |$T| {
+            with_match_physical_float_polars_type!(s_physical.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s_physical.as_ref().as_ref().as_ref();
                 Ok(unique_counts_helper(ca.iter()).into_series())
             })
+        },
+        dt if dt.is_primitive_numeric() => {
+            let s_physical = s.to_physical_repr();
+            use BitRepr as B;
+            match s_physical.bit_repr().unwrap() {
+                B::U8(ca) => Ok(unique_counts_helper(ca.iter()).into_series()),
+                B::U16(ca) => Ok(unique_counts_helper(ca.iter()).into_series()),
+                B::U32(ca) => Ok(unique_counts_helper(ca.iter()).into_series()),
+                B::U64(ca) => Ok(unique_counts_helper(ca.iter()).into_series()),
+                #[cfg(feature = "dtype-u128")]
+                B::U128(ca) => Ok(unique_counts_helper(ca.iter()).into_series()),
+            }
         },
         DataType::Null => unreachable!("handled before"),
         DataType::BinaryOffset => {

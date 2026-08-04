@@ -3,6 +3,7 @@
 # (installable via `make requirements-all`)
 # -------------------------------------------------------
 duckdb
+filelock
 torch
 jax[cpu]
 pyiceberg>=0.7.1

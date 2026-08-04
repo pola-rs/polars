@@ -181,7 +181,7 @@ impl FileReader for NDJsonFileReader {
             cast_columns_policy: _,
         } = args
         else {
-            panic!("unsupported args: {:?}", &args)
+            panic!("unsupported args: {:?}", args)
         };
 
         let is_empty_slice = pre_slice.as_ref().is_some_and(|x| x.len() == 0);
@@ -251,8 +251,8 @@ impl FileReader for NDJsonFileReader {
                 concurrency_strategy: {:?}, \
                 chunk_size: {:?}",
                 schema.len(),
-                &global_slice,
-                &row_index,
+                global_slice,
+                row_index,
                 is_negative_slice,
                 use_async_prefetch,
                 self.byte_source_builder.concurrency_strategy(),

@@ -219,7 +219,7 @@ pub fn encode_chunk_amortized(
     Ok(encoded_dictionaries)
 }
 
-fn serialize_compression(
+pub(crate) fn serialize_compression(
     compression: Option<Compression>,
 ) -> Option<Box<arrow_format::ipc::BodyCompression>> {
     if let Some(compression) = compression {

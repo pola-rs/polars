@@ -1596,6 +1596,17 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
+impl From<CategoricalPhysical> for DataType {
+    fn from(phys: CategoricalPhysical) -> DataType {
+        match phys {
+            CategoricalPhysical::U8 => DataType::UInt8,
+            CategoricalPhysical::U16 => DataType::UInt16,
+            CategoricalPhysical::U32 => DataType::UInt32,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import gzip
 import io
-import os
 import sys
 import textwrap
 import warnings
@@ -19,7 +18,12 @@ import zstandard
 
 import polars as pl
 from polars._utils.various import normalize_filepath
-from polars.exceptions import ComputeError, InvalidOperationError, NoDataError
+from polars.exceptions import (
+    ComputeError,
+    DuplicateError,
+    InvalidOperationError,
+    NoDataError,
+)
 from polars.io.csv import BatchedCsvReader
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.conftest import PlMonkeyPatch
@@ -196,8 +200,8 @@ def test_csv_null_values(chunk_override: None) -> None:
     assert df.rows() == [(None, "b", "c"), ("a", None, "c"), (None, "b", None)]
 
 
-def test_csv_missing_utf8_is_empty_string(chunk_override: None) -> None:
-    # validate 'missing_utf8_is_empty_string' for missing fields that are...
+def test_csv_missing_is_empty_string(chunk_override: None) -> None:
+    # validate 'empty_string_is_null=False' for missing fields that are...
     # >> ...leading
     # >> ...trailing (both EOL & EOF)
     # >> ...in lines that have missing fields
@@ -216,7 +220,7 @@ def test_csv_missing_utf8_is_empty_string(chunk_override: None) -> None:
     df = pl.read_csv(
         f,
         null_values={"a": "na", "b": r"\N"},
-        missing_utf8_is_empty_string=True,
+        empty_string_is_null=False,
     )
     # ┌──────┬──────┬─────┐
     # │ a    ┆ b    ┆ c   │
@@ -257,7 +261,7 @@ def test_csv_missing_utf8_is_empty_string(chunk_override: None) -> None:
     df = pl.read_csv(
         f,
         null_values=["na", r"\N"],
-        missing_utf8_is_empty_string=True,
+        empty_string_is_null=False,
     )
     # ┌──────┬──────┬─────┬──────┬──────┬──────┬─────┐
     # │ a    ┆ b    ┆ c   ┆ d    ┆ e    ┆ f    ┆ g   │
@@ -968,14 +972,6 @@ def test_csv_globbing(chunk_override: None, io_files_path: Path) -> None:
     assert df.row(-1) == ("seafood", 1)
     assert df.row(0) == ("vegetables", 2)
 
-    with PlMonkeyPatch.context() as mp:
-        mp.setenv("POLARS_FORCE_ASYNC", "0")
-
-        with pytest.raises(ValueError):
-            _ = pl.read_csv(
-                path, schema_overrides=[pl.String, pl.Int64, pl.Int64, pl.Int64]
-            )
-
     dtypes = {
         "category": pl.String,
         "calories": pl.Int32,
@@ -985,6 +981,24 @@ def test_csv_globbing(chunk_override: None, io_files_path: Path) -> None:
 
     df = pl.read_csv(path, schema_overrides=dtypes)
     assert df.dtypes == list(dtypes.values())
+
+
+@pytest.mark.parametrize("auto_streaming", ["0", "1"])
+def test_csv_globbing_schema_overrides_by_position(
+    chunk_override: None,
+    io_files_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    auto_streaming: str,
+) -> None:
+    plmonkeypatch.setenv("POLARS_AUTO_STREAMING", auto_streaming)
+    plmonkeypatch.setenv("POLARS_FORCE_STREAMING", "0")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
+
+    path = io_files_path / "foods*.csv"
+    df = pl.read_csv(path, schema_overrides=[pl.String, pl.Float64, pl.String])
+
+    assert df.shape == (135, 4)
+    assert df.dtypes == [pl.String, pl.Float64, pl.String, pl.Int64]
 
 
 def test_csv_schema_offset(chunk_override: None, foods_file_path: Path) -> None:
@@ -1300,12 +1314,12 @@ def test_skip_new_line_embedded_lines(chunk_override: None) -> None:
 4,5,6,"Test A",\n
 7,8,,"Test B \n",\n"""
 
-    for empty_string, missing_value in ((True, ""), (False, None)):
+    for empty_string_is_null, missing_value in ((False, ""), (True, None)):
         df = pl.read_csv(
             csv.encode(),
             skip_rows_after_header=1,
             infer_schema_length=0,
-            missing_utf8_is_empty_string=empty_string,
+            empty_string_is_null=empty_string_is_null,
         )
         assert df.to_dict(as_series=False) == {
             "a": ["4", "7"],
@@ -1511,10 +1525,10 @@ def test_skip_rows_different_field_len(chunk_override: None) -> None:
         """
         )
     )
-    for empty_string, missing_value in ((True, ""), (False, None)):
+    for empty_string_is_null, missing_value in ((False, ""), (True, None)):
         csv.seek(0)
         assert pl.read_csv(
-            csv, skip_rows_after_header=2, missing_utf8_is_empty_string=empty_string
+            csv, skip_rows_after_header=2, empty_string_is_null=empty_string_is_null
         ).to_dict(as_series=False) == {
             "a": [3, 4],
             "b": ["B", missing_value],
@@ -2143,15 +2157,10 @@ def test_read_csv_invalid_schema_overrides_length(chunk_override: None) -> None:
     )
     f = io.StringIO(csv)
 
-    # streaming dispatches read_csv -> _scan_csv_impl which does not accept a list
-    if os.getenv("POLARS_AUTO_STREAMING", os.getenv("POLARS_FORCE_STREAMING")) == "1":
-        err = TypeError
-        match = "expected 'schema_overrides' dict, found 'list'"
-    else:
-        err = InvalidOperationError  # type: ignore[assignment]
-        match = "The number of schema overrides must be less than or equal to the number of fields"
-
-    with pytest.raises(err, match=match):
+    with pytest.raises(
+        InvalidOperationError,
+        match="The number of schema overrides must be less than or equal to the number of fields",
+    ):
         pl.read_csv(f, schema_overrides=[pl.Int64, pl.String, pl.Boolean])
 
 
@@ -3207,3 +3216,31 @@ def test_read_csv_mixed_i128_float_infers_float64_27654(chunk_override: None) ->
     csv_data = b"value\n12345678901234567890\n1.5"
     df = pl.read_csv(csv_data)
     assert df.schema["value"] == pl.Float64
+
+
+def test_read_csv_missing_utf8_is_empty_string_deprecated() -> None:
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"`missing_utf8_is_empty_string` for `read_csv` is deprecated",
+    ):
+        pl.read_csv(b"a,b\n1,2", missing_utf8_is_empty_string=True)  # type: ignore[call-arg]
+
+
+def test_read_csv_name_deduplication_conflict_28310() -> None:
+    err_msg = "de-duplication of occurrence #2 of column name 'a' failed; the name 'a_duplicated_0' also exists in the file."
+
+    q = pl.scan_csv(b"""\
+a,a,a_duplicated_0
+1,2,3
+""")
+
+    with pytest.raises(DuplicateError, match=err_msg):
+        q.collect()
+
+    q = pl.scan_csv(b"""\
+a,a_duplicated_0,a
+1,2,3
+""")
+
+    with pytest.raises(DuplicateError, match=err_msg):
+        q.collect()

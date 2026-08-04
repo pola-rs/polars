@@ -514,6 +514,9 @@ impl Add for &Series {
             (DataType::Array(..), _) | (_, DataType::Array(..)) => {
                 fixed_size_list::NumericFixedSizeListOp::add().execute(self, rhs)
             },
+            (l_dtype, r_dtype) if l_dtype.is_temporal() != r_dtype.is_temporal() => {
+                polars_bail!(opq = add, l_dtype, r_dtype)
+            },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;
                 lhs.add_to(rhs.as_ref())
@@ -538,6 +541,9 @@ impl Sub for &Series {
             #[cfg(feature = "dtype-array")]
             (DataType::Array(..), _) | (_, DataType::Array(..)) => {
                 fixed_size_list::NumericFixedSizeListOp::sub().execute(self, rhs)
+            },
+            (l_dtype, r_dtype) if l_dtype.is_temporal() != r_dtype.is_temporal() => {
+                polars_bail!(opq = sub, l_dtype, r_dtype)
             },
             _ => {
                 let (lhs, rhs) = coerce_lhs_rhs(self, rhs)?;

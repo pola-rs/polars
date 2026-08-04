@@ -59,7 +59,7 @@ jobs:
           fi
 
       # Chooses the manually given commit if manually triggered.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.git_commit || github.event.client_payload.sha }}
 

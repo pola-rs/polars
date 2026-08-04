@@ -28,7 +28,7 @@ pub fn init_polars_schema_from_arrow_c_schema(
         return Err(PyValueError::new_err(format!(
             "__arrow_c_schema__ of object passed to pl.Schema did not return struct dtype: \
             object: {}, dtype: {:?}",
-            schema_object, &field.dtype
+            schema_object, field.dtype
         )));
     };
 

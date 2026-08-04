@@ -2070,24 +2070,16 @@ def test_extension() -> None:
     rc = sys.getrefcount(foos[0])
     assert rc == base_count
 
+    # Aggregating objects into a list raises, as nested objects
+    # are not supported
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 1
 
-    out = df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 2
-    s = out["a"].list.explode(empty_as_null=False)
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 3
-    del s
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 2
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
+        df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
 
-    assert out["a"].list.explode(empty_as_null=False).to_list() == foos
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 2
-    del out
+    # The failed query must not leak references
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 1
     del df
@@ -3379,3 +3371,18 @@ def test_transpose_mixed_list_and_non_list_columns_no_panic_26538() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.transpose()
+
+
+# shuffle=True and shuffle=None both rely on rand::seq::index::sample's
+# unspecified order, so they produce the same behavior here
+@pytest.mark.parametrize("shuffle", [False, None, True])
+def test_df_sample_reworked_shuffle_23557(shuffle: bool | None) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3, 4]})
+
+    result = df.sample(n=2, shuffle=shuffle, seed=0)["x"].to_list()
+
+    if shuffle is False:
+        assert result == [1, 2]
+    else:
+        assert len(result) == 2
+        assert set(result).issubset({1, 2, 3, 4})

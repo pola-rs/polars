@@ -15,7 +15,10 @@ q1 = (
 import base64
 
 q1.show_graph(
-    optimized=False, show=False, output_path="docs/assets/images/query_plan.png"
+    plan_stage="ir",
+    optimized=False,
+    show=False,
+    output_path="docs/assets/images/query_plan.png",
 )
 with open("docs/assets/images/query_plan.png", "rb") as f:
     png = base64.b64encode(f.read()).decode()
@@ -24,7 +27,7 @@ with open("docs/assets/images/query_plan.png", "rb") as f:
 
 """
 # --8<-- [start:showplan]
-q1.show_graph(optimized=False)
+q1.show_graph(plan_stage="ir", optimized=False)
 # --8<-- [end:showplan]
 """
 
@@ -33,7 +36,11 @@ q1.explain(optimized=False)
 # --8<-- [end:describe]
 
 # --8<-- [start:createplan2]
-q1.show_graph(show=False, output_path="docs/assets/images/query_plan_optimized.png")
+q1.show_graph(
+    plan_stage="ir",
+    show=False,
+    output_path="docs/assets/images/query_plan_optimized.png",
+)
 with open("docs/assets/images/query_plan_optimized.png", "rb") as f:
     png = base64.b64encode(f.read()).decode()
     print(f'<img src="data:image/png;base64, {png}"/>')
@@ -41,7 +48,7 @@ with open("docs/assets/images/query_plan_optimized.png", "rb") as f:
 
 """
 # --8<-- [start:show]
-q1.show_graph()
+q1.show_graph(plan_stage="ir")
 # --8<-- [end:show]
 """
 

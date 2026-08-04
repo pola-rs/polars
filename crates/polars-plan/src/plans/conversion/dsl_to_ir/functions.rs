@@ -110,6 +110,8 @@ pub(super) fn convert_functions(
                 C::EndsWith(v) => IC::EndsWith(v),
                 #[cfg(feature = "strings")]
                 C::Slice(s, e) => IC::Slice(s, e),
+                C::To(dt, strict) => IC::To(dt.into_datatype(ctx.schema)?, strict),
+                C::Physical => IC::Physical,
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -842,6 +844,7 @@ pub(super) fn convert_functions(
         },
         #[cfg(feature = "round_series")]
         F::Clip { has_min, has_max } => I::Clip { has_min, has_max },
+        F::AsList => I::AsList,
         #[cfg(feature = "dtype-struct")]
         F::AsStruct => I::AsStruct,
         #[cfg(feature = "top_k")]
@@ -1054,6 +1057,10 @@ pub(super) fn convert_functions(
         F::EwmMean { options } => I::EwmMean { options },
         #[cfg(feature = "ewma_by")]
         F::EwmMeanBy { half_life } => I::EwmMeanBy { half_life },
+        #[cfg(feature = "ewma")]
+        F::EwmSum { options } => I::EwmSum { options },
+        #[cfg(feature = "ewma_by")]
+        F::EwmSumBy { half_life } => I::EwmSumBy { half_life },
         #[cfg(feature = "ewma")]
         F::EwmStd { options } => I::EwmStd { options },
         #[cfg(feature = "ewma")]

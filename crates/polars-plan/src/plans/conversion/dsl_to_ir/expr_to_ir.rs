@@ -540,7 +540,7 @@ pub(super) fn to_aexpr_impl(
 
             let mut eval_ir = Vec::with_capacity(evaluation.len());
 
-            let mut field_names = PlHashSet::new();
+            let mut field_names = PlIndexSet::new();
             for e in evaluation {
                 let mut eval_ctx = ExprToIRContext {
                     with_fields: Some(struct_schema.clone()),

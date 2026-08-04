@@ -195,6 +195,63 @@ class TestWriteDatabase:
 
         close_connections(conn)
 
+    def test_write_database_append_existing_table_no_create(
+        self,
+        engine: DbWriteEngine,
+        uri_connection: bool,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Appending to an existing table shouldn't require CREATE (ref: #27886)."""
+        if engine != "adbc":
+            pytest.skip("mode selection only applies to the 'adbc' engine")
+
+        adbc_driver_manager = pytest.importorskip("adbc_driver_manager")
+        if parse_version(getattr(adbc_driver_manager, "__version__", "0.0")) < (0, 7):
+            pytest.skip("adbc-driver-manager < 0.7.0 always uses 'append' mode")
+
+        import adbc_driver_manager.dbapi as adbc_dbapi
+
+        # record the ingest mode used for each write, so we can assert that appending
+        # to an *existing* table uses plain 'append' (INSERT only) rather than
+        # 'create_append' (which additionally requires CREATE TABLE privileges)
+        ingest_modes: list[str | None] = []
+        original_ingest = adbc_dbapi.Cursor.adbc_ingest
+
+        def _record_mode(self: Any, *args: Any, **kwargs: Any) -> Any:
+            ingest_modes.append(kwargs.get("mode"))
+            return original_ingest(self, *args, **kwargs)
+
+        monkeypatch.setattr(adbc_dbapi.Cursor, "adbc_ingest", _record_mode)
+
+        df = pl.DataFrame({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+        tmp_path.mkdir(exist_ok=True)
+        test_db_uri = (
+            f"sqlite:///{tmp_path}/test_append_existing_{int(uri_connection)}.db"
+        )
+        table_name = "test_append_existing"
+        conn = self._get_connection(test_db_uri, engine, uri_connection)
+
+        # first append creates the missing table...
+        df.write_database(
+            table_name=table_name,
+            connection=conn,
+            if_table_exists="append",
+            engine=engine,
+        )
+        # ...second append targets the now-created table
+        df.write_database(
+            table_name=table_name,
+            connection=conn,
+            if_table_exists="append",
+            engine=engine,
+        )
+        assert ingest_modes == ["create_append", "append"]
+
+        result = _read_via_uri(f"SELECT * FROM {table_name}", test_db_uri)
+        assert_frame_equal(result, pl.concat([df, df]))
+        close_connections(conn)
+
     def test_write_database_create_quoted_tablename(
         self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
     ) -> None:

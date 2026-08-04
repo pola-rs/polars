@@ -35,7 +35,7 @@ impl Executor for SinkExecutor {
         let df = self.input.execute(state)?;
 
         let profile_name = if state.has_node_timer() {
-            Cow::Owned(format!(".sink_{}()", &self.name))
+            Cow::Owned(format!(".sink_{}()", self.name))
         } else {
             Cow::Borrowed("")
         };

@@ -826,7 +826,7 @@ def test_when_then_simplification() -> None:
         ).explain()
     )
     assert (
-        """(col("a")) * (2)"""
+        """col("a") * 2"""
         in (
             lf.select(pl.when(False).then(pl.col("a")).otherwise(pl.col("a") * 2))
         ).explain()

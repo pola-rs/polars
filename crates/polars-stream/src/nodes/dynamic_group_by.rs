@@ -355,7 +355,11 @@ impl ComputeNode for DynamicGroupBy {
                     .await?;
 
                     _ = send
-                        .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                        .send(Morsel::new_unregistered(
+                            df,
+                            self.seq.successor(),
+                            SourceToken::new(),
+                        ))
                         .await;
                 }
 
@@ -427,7 +431,8 @@ impl ComputeNode for DynamicGroupBy {
             while let Ok(morsel) = recv.recv().await
                 && self.slice_length > 0
             {
-                let (df, seq, source_token, wait_token) = morsel.into_inner();
+                let (sf, seq, source_token, wait_token) = morsel.into_inner();
+                let df = sf.into_df().await;
                 self.seq = seq;
                 drop(wait_token);
 
@@ -462,7 +467,7 @@ impl ComputeNode for DynamicGroupBy {
                 if let Some((windows, lower_bound, upper_bound, df)) = self.next_windows(false)? {
                     if distributor
                         .send((
-                            Morsel::new(df, seq, source_token),
+                            Morsel::new_unregistered(df, seq, source_token),
                             windows,
                             lower_bound,
                             upper_bound,

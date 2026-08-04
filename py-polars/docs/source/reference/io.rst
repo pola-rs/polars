@@ -140,13 +140,14 @@ Parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
 
-PyArrow Datasets
+Arrow Datasets
 ~~~~~~~~~~~~~~~~
 Connect to pyarrow datasets.
 
 .. autosummary::
    :toctree: api/
 
+   scan_arrow_c_stream
    scan_pyarrow_dataset
 
 Cloud Credentials

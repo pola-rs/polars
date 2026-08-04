@@ -190,7 +190,7 @@ impl FileReader for BatchFnReader {
                 },
         } = args
         else {
-            panic!("unsupported args: {:?}", &args)
+            panic!("unsupported args: {:?}", args)
         };
 
         let execution_state = self.execution_state().clone();
@@ -245,7 +245,11 @@ impl FileReader for BatchFnReader {
                 n_rows_seen = n_rows_seen.saturating_add(df.height());
 
                 if morsel_sender
-                    .send_morsel(Morsel::new(df, MorselSeq::new(seq), source_token.clone()))
+                    .send_morsel(Morsel::new_unregistered(
+                        df,
+                        MorselSeq::new(seq),
+                        source_token.clone(),
+                    ))
                     .await
                     .is_err()
                 {

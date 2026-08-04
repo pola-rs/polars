@@ -26,12 +26,12 @@ use std::time::{Duration, Instant};
 pub use admission::{InFlightBudget, InFlightPermit, InFlightStats};
 use crossbeam_queue::ArrayQueue;
 pub use model::Model;
+use polars_core::runtime::ASYNC;
 use polars_utils::relaxed_cell::RelaxedCell;
 pub use regime::{Regime, RegimeState};
 
 // Number of samples in the queue, which gets drained on every tick.
 // At 50k requests per second and 100 ms tick window, we need 5k.
-// kdn TODO TEST & TUNE: Refactor to a run-time config-based value.
 const SAMPLE_QUEUE_CAPACITY: usize = 8192;
 
 use crate::cloud::concurrency_config::get_random_access_chunk_size;
@@ -203,7 +203,7 @@ impl ConcurrencyController {
                 config.control_interval.as_millis()
             );
         }
-        tokio::spawn(async move {
+        ASYNC.spawn(async move {
             let mut model = Model::new(config.window);
             let mut regime = Regime::new(Instant::now());
 

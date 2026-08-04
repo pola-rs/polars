@@ -2,12 +2,12 @@ mod builder;
 mod determinism;
 mod equality;
 mod evaluate;
+pub(crate) mod filter_constraint;
 mod function_expr;
 mod hash;
 mod minterm_iter;
 pub(crate) mod or_factoring;
 pub mod predicates;
-pub(crate) mod range_merge;
 mod scalar;
 mod schema;
 mod traverse;
@@ -91,33 +91,6 @@ impl Hash for IRAggExpr {
                 include_nulls,
             } => include_nulls.hash(state),
             _ => {},
-        }
-    }
-}
-
-impl IRAggExpr {
-    pub(super) fn equal_nodes(&self, other: &IRAggExpr) -> bool {
-        use IRAggExpr::*;
-        match (self, other) {
-            (
-                Min {
-                    propagate_nans: l, ..
-                },
-                Min {
-                    propagate_nans: r, ..
-                },
-            ) => l == r,
-            (
-                Max {
-                    propagate_nans: l, ..
-                },
-                Max {
-                    propagate_nans: r, ..
-                },
-            ) => l == r,
-            (Std(_, l), Std(_, r)) => l == r,
-            (Var(_, l), Var(_, r)) => l == r,
-            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
         }
     }
 }

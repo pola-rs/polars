@@ -13,7 +13,8 @@ parametric tests, benchmark tests, and doctests.
 
 Note that this test suite is indirectly responsible for testing Rust Polars as well. The Rust test
 suite is kept small to reduce compilation times. A lot of the Rust functionality is tested here
-instead.
+instead. If you add tests, prefer adding tests here. _Only_ add Rust tests if the functionality
+cannot be tested using the Python API.
 
 ## Unit tests
 

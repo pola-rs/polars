@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
@@ -157,7 +158,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
         *,
         fraction: float | IntoExprColumn | None = None,
         with_replacement: bool = False,
-        shuffle: bool = False,
+        shuffle: bool | None = None,
         seed: int | None = None,
     ) -> Series:
         """
@@ -173,7 +174,12 @@ class ListNameSpace(_NamespaceSuggestMixin):
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Determines the order of the sampled values.
+            If True, sampled values are explicitly shuffled.
+            If False, the relative order of the sampled values is preserved.
+            (i.e. they appear in the same order as the original input list).
+            If None (default), no ordering guarantee; uses the most performant
+            algorithm.
         seed
             Seed for the random number generator. If set to None (default), a
             random seed is generated for each sample operation.
@@ -181,7 +187,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
         Examples
         --------
         >>> s = pl.Series("values", [[1, 2, 3], [4, 5]])
-        >>> s.list.sample(n=pl.Series("n", [2, 1]), seed=1)
+        >>> s.list.sample(n=pl.Series("n", [2, 1]), shuffle=False, seed=1)
         shape: (2,)
         Series: 'values' [list[i64]]
         [
@@ -858,7 +864,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
-        >>> s.list.explode()
+        >>> s.list.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [
@@ -985,6 +991,11 @@ class ListNameSpace(_NamespaceSuggestMixin):
                 .select_seq(F.col(s.name).list.to_struct(fields=fields))
                 .to_series()
             )
+
+        issue_deprecation_warning(
+            "list.to_struct() without a list of field names is deprecated. Please "
+            "pass a list of field names."
+        )
 
         return wrap_s(self._s.list_to_struct(n_field_strategy, fields))
 

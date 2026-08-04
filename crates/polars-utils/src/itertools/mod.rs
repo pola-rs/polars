@@ -4,6 +4,7 @@ use std::fmt::Write;
 use crate::IdxSize;
 
 pub mod enumerate_idx;
+pub mod iters_eq;
 pub mod zip_eq;
 
 pub use enumerate_idx::EnumerateIdx;

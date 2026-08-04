@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_core::prelude::{PlHashSet, PlIndexMap};
+use polars_core::prelude::{PlIndexMap, PlIndexSet};
 use polars_utils::aliases::InitHashMaps;
 use polars_utils::arena::{Arena, Node};
 
@@ -15,10 +15,10 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
 
     // key: output_name, value: (expr, is_original)
     let mut input_name_to_expr_map: PlIndexMap<PlSmallStr, (ExprIR, bool)> = PlIndexMap::new();
-    let mut input_names_accessed_by_non_candidates: PlHashSet<PlSmallStr> = PlHashSet::new();
+    let mut input_names_accessed_by_non_candidates: PlIndexSet<PlSmallStr> = PlIndexSet::new();
     let mut push_candidate_idxs: Vec<usize> = vec![];
     let mut new_current_exprs: Vec<ExprIR> = vec![];
-    let mut visited_caches = PlHashSet::new();
+    let mut visited_caches = PlIndexSet::new();
 
     while let Some(current_node) = ir_stack.pop() {
         let current_ir = lp_arena.get(current_node);
