@@ -272,11 +272,15 @@ impl Expr {
     }
 
     /// Get the index value that has the minimum value.
+    ///
+    /// In the case of a tie, this may return the index of any of the minimum values.
     pub fn arg_min(self) -> Self {
         self.map_unary(FunctionExpr::ArgMin)
     }
 
     /// Get the index value that has the maximum value.
+    ///
+    /// In the case of a tie, this may return the index of any of the maximum values.
     pub fn arg_max(self) -> Self {
         self.map_unary(FunctionExpr::ArgMax)
     }

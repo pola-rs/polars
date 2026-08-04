@@ -2646,6 +2646,10 @@ class Expr:
         """
         Get the index of the maximal value.
 
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -2668,6 +2672,10 @@ class Expr:
     def arg_min(self) -> Expr:
         """
         Get the index of the minimal value.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Examples
         --------

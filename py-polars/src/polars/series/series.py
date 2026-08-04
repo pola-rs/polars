@@ -3913,6 +3913,10 @@ class Series:
         """
         Get the index of the minimal value.
 
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
         Returns
         -------
         int
@@ -3928,6 +3932,10 @@ class Series:
     def arg_max(self) -> int | None:
         """
         Get the index of the maximal value.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------
