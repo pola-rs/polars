@@ -3026,37 +3026,30 @@ def test_group_by_agg_get_oob_error_26747() -> None:
 
 
 def test_group_by_arg_max_boolean_26978() -> None:
-    # https://github.com/pola-rs/polars/issues/26978
+    def check_result(result: pl.DataFrame) -> None:
+        # max_by doesn't guarantee which tied row is returned, so extract the
+        # actual value and verify it is one of the valid True-indices (2, 3, 4).
+        idx_val = result["index"][0]
+        assert idx_val in {2, 3, 4}
+        assert_frame_equal(
+            result,
+            pl.DataFrame(
+                {
+                    "group": ["A", "A", "A", "A", "A"],
+                    "val": [False, False, True, True, True],
+                    "index": pl.Series([idx_val] * 5, dtype=pl.get_index_type()),
+                }
+            ),
+        )
+
     df = pl.DataFrame(
         {
             "group": ["A"] * 5,
             "val": [False, False, True, True, True],
         }
     )
-
-    result = df.group_by("group").agg(pl.col("val").arg_max())
-    assert_frame_equal(
-        result,
-        pl.DataFrame(
-            {"group": ["A"], "val": pl.Series([2], dtype=pl.get_index_type())}
-        ),
-    )
-
-    result = df.with_columns(pl.row_index().max_by("val").over("group"))
-    # max_by doesn't guarantee which tied row is returned, so extract the
-    # actual value and verify it is one of the valid True-indices (2, 3, 4).
-    idx_val = result["index"][0]
-    assert idx_val in {2, 3, 4}
-    assert_frame_equal(
-        result,
-        pl.DataFrame(
-            {
-                "group": ["A", "A", "A", "A", "A"],
-                "val": [False, False, True, True, True],
-                "index": pl.Series([idx_val] * 5, dtype=pl.get_index_type()),
-            }
-        ),
-    )
+    check_result(df.group_by("group").agg(pl.col("val").arg_max()))
+    check_result(df.with_columns(pl.row_index().max_by("val").over("group")))
 
 
 def test_structify_keyword_27147() -> None:
