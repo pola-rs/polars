@@ -15,7 +15,6 @@ impl IR {
     fn expr_iter_eq<'a, T>(lhs: T, rhs: T, cmp: &impl ExpressionComparator) -> bool
     where
         T: IntoIterator<Item = &'a ExprIR>,
-        T::IntoIter: ExactSizeIterator,
     {
         let lhs = lhs.into_iter();
         let rhs = rhs.into_iter();
