@@ -59,6 +59,7 @@ from polars._utils.construction import (
 )
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
+    _expired_items,
     deprecate_renamed_parameter,
     deprecated,
     issue_deprecation_warning,
@@ -193,20 +194,28 @@ if TYPE_CHECKING:
     )
     from polars._utils.various import NoDefault
     from polars.config import TableFormatNames
-    from polars.interchange.dataframe import PolarsDataFrame
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.partition import PartitionBy
     from polars.ml.torch import PolarsDataset
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
     T = TypeVar("T")
     P = ParamSpec("P")
 
 
+@_expired_items(
+    (
+        "2.0",
+        "melt",
+        "use `DataFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+    ),
+    ("2.0", "__dataframe__", None),
+    (
+        "2.0",
+        "with_row_count",
+        "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
+    ),
+    ("2.0", "approx_unique", "use `select(pl.all().approx_n_unique())` instead."),
+)
 class DataFrame:
     """
     Two-dimensional data structure representing data as a table with rows and columns.
@@ -1031,62 +1040,6 @@ class DataFrame:
             arr = arr.__array__(dtype)
 
         return arr
-
-    @deprecated(
-        "Support for the dataframe interchange protocol is deprecated since version 1.40.0"
-    )
-    def __dataframe__(
-        self,
-        nan_as_null: bool = False,  # noqa: FBT001
-        allow_copy: bool = True,  # noqa: FBT001
-    ) -> PolarsDataFrame:
-        """
-        Convert to a dataframe object implementing the dataframe interchange protocol.
-
-        .. deprecated:: 1.40.0
-            Support for the Dataframe Interchange Protocol is deprecated.
-
-        Parameters
-        ----------
-        nan_as_null
-            Overwrite null values in the data with `NaN`.
-
-            .. warning::
-                This functionality has not been implemented and the parameter will be
-                removed in a future version.
-                Setting this to `True` will raise a `NotImplementedError`.
-        allow_copy
-            Allow memory to be copied to perform the conversion. If set to `False`,
-            causes conversions that are not zero-copy to fail.
-
-        Notes
-        -----
-        Details on the Python dataframe interchange protocol:
-        https://data-apis.org/dataframe-protocol/latest/index.html
-
-        Examples
-        --------
-        Convert a Polars DataFrame to a generic dataframe object and access some
-        properties.
-
-        >>> df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
-        >>> dfi = df.__dataframe__()  # doctest: +SKIP
-        >>> dfi.num_rows()  # doctest: +SKIP
-        2
-        >>> dfi.get_column(1).dtype  # doctest: +SKIP
-        (<DtypeKind.FLOAT: 2>, 64, 'g', '=')
-        """
-        if nan_as_null:
-            msg = (
-                "functionality for `nan_as_null` has not been implemented and the"
-                " parameter will be removed in a future version"
-                "\n\nUse the default `nan_as_null=False`."
-            )
-            raise NotImplementedError(msg)
-
-        from polars.interchange.dataframe import PolarsDataFrame
-
-        return PolarsDataFrame(self, allow_copy=allow_copy)
 
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""
@@ -7115,47 +7068,6 @@ class DataFrame:
             msg = f"`offset` input for `with_row_index` cannot be {issue}, got {offset}"
             raise ValueError(msg) from None
 
-    @deprecated(
-        "`DataFrame.with_row_count` is deprecated; use `with_row_index` instead."
-        " Note that the default column name has changed from 'row_nr' to 'index'."
-    )
-    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> DataFrame:
-        """
-        Add a column at index 0 that counts the rows.
-
-        .. deprecated:: 0.20.4
-            Use the :meth:`with_row_index` method instead.
-            Note that the default column name has changed from 'row_nr' to 'index'.
-
-        Parameters
-        ----------
-        name
-            Name of the column to add.
-        offset
-            Start the row count at this offset. Default = 0
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 3, 5],
-        ...         "b": [2, 4, 6],
-        ...     }
-        ... )
-        >>> df.with_row_count()  # doctest: +SKIP
-        shape: (3, 3)
-        ┌────────┬─────┬─────┐
-        │ row_nr ┆ a   ┆ b   │
-        │ ---    ┆ --- ┆ --- │
-        │ u32    ┆ i64 ┆ i64 │
-        ╞════════╪═════╪═════╡
-        │ 0      ┆ 1   ┆ 2   │
-        │ 1      ┆ 3   ┆ 4   │
-        │ 2      ┆ 5   ┆ 6   │
-        └────────┴─────┴─────┘
-        """
-        return self.with_row_index(name, offset)
-
     def group_by(
         self,
         *by: IntoExpr | Iterable[IntoExpr],
@@ -11507,43 +11419,6 @@ class DataFrame:
         )
         return 0 if df.is_empty() else df.row(0)[0]
 
-    @deprecated(
-        "`DataFrame.approx_n_unique` is deprecated; "
-        "use `select(pl.all().approx_n_unique())` instead."
-    )
-    def approx_n_unique(self) -> DataFrame:
-        """
-        Approximate count of unique values.
-
-        .. deprecated:: 0.20.11
-            Use the `select(pl.all().approx_n_unique())` method instead.
-
-        This is done using the HyperLogLog++ algorithm for cardinality estimation.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3, 4],
-        ...         "b": [1, 2, 1, 1],
-        ...     }
-        ... )
-        >>> df.approx_n_unique()  # doctest: +SKIP
-        shape: (1, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ u32 ┆ u32 │
-        ╞═════╪═════╡
-        │ 4   ┆ 2   │
-        └─────┴─────┘
-        """
-        from polars.lazyframe.opt_flags import QueryOptFlags
-
-        return (
-            self.lazy().approx_n_unique().collect(optimizations=QueryOptFlags._eager())
-        )
-
     def rechunk(self) -> DataFrame:
         """
         Rechunk the data in this DataFrame to a contiguous allocation.
@@ -12960,49 +12835,6 @@ class DataFrame:
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         return self.lazy().count().collect(optimizations=QueryOptFlags._eager())
-
-    @deprecated(
-        "`DataFrame.melt` is deprecated; use `DataFrame.unpivot` instead, with "
-        "`index` instead of `id_vars` and `on` instead of `value_vars`"
-    )
-    def melt(
-        self,
-        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        variable_name: str | None = None,
-        value_name: str | None = None,
-    ) -> DataFrame:
-        """
-        Unpivot a DataFrame from wide to long format.
-
-        Optionally leaves identifiers set.
-
-        This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars) while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis leaving just
-        two non-identifier columns, 'variable' and 'value'.
-
-        .. deprecated:: 1.0.0
-            Use the :meth:`.unpivot` method instead.
-
-        Parameters
-        ----------
-        id_vars
-            Column(s) or selector(s) to use as identifier variables.
-        value_vars
-            Column(s) or selector(s) to use as values variables; if `value_vars`
-            is empty all columns that are not in `id_vars` will be used.
-        variable_name
-            Name to give to the `variable` column. Defaults to "variable"
-        value_name
-            Name to give to the `value` column. Defaults to "value"
-        """
-        return self.unpivot(
-            index=id_vars,
-            on=value_vars,
-            variable_name=variable_name,
-            value_name=value_name,
-        )
 
     def show(
         self,
