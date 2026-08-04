@@ -480,6 +480,16 @@ fn create_physical_expr_inner(
             } else {
                 Vec::new()
             };
+
+            // The output dtype is the supertype of the arms, which normally is
+            // resolved by the zip. As the ternary may return an arm as-is we
+            // have to cast it to the output dtype ourselves.
+            let output_dtype = expr_arena
+                .get(expression)
+                .to_dtype(&ToFieldContext::new(expr_arena, schema))
+                .ok()
+                .filter(|dtype| !dtype.is_unknown());
+
             Ok(Arc::new(TernaryExpr::new(
                 predicate_phys,
                 truthy_phys,
@@ -489,6 +499,7 @@ fn create_physical_expr_inner(
                 is_scalar,
                 truthy_mask_columns,
                 falsy_mask_columns,
+                output_dtype,
             )))
         },
         AExpr::AnonymousAgg {

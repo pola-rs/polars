@@ -16,6 +16,9 @@ pub struct TernaryExpr {
     returns_scalar: bool,
     truthy_mask_columns: Vec<PlSmallStr>,
     falsy_mask_columns: Vec<PlSmallStr>,
+    // The dtype of this expression, which is the supertype of the arms and thus
+    // can differ from the dtype of an individual arm.
+    output_dtype: Option<DataType>,
 }
 
 impl TernaryExpr {
@@ -29,6 +32,7 @@ impl TernaryExpr {
         returns_scalar: bool,
         truthy_mask_columns: Vec<PlSmallStr>,
         falsy_mask_columns: Vec<PlSmallStr>,
+        output_dtype: Option<DataType>,
     ) -> Self {
         Self {
             predicate,
@@ -39,6 +43,15 @@ impl TernaryExpr {
             returns_scalar,
             truthy_mask_columns,
             falsy_mask_columns,
+            output_dtype,
+        }
+    }
+
+    /// Casts an arm we return directly to the output dtype of this expression.
+    fn cast_arm(&self, arm: Column) -> PolarsResult<Column> {
+        match &self.output_dtype {
+            Some(dtype) if arm.dtype() != dtype => arm.cast(dtype),
+            _ => Ok(arm),
         }
     }
 }
@@ -133,24 +146,24 @@ impl PhysicalExpr for TernaryExpr {
         if true_count == 0 {
             falsy = op_falsy()?;
             match (mask.len(), falsy.len()) {
-                (l, 1) if l != 1 => return Ok(falsy.new_from_index(0, l)),
-                (1, r) if r != 1 => return Ok(falsy),
+                (l, 1) if l != 1 => return self.cast_arm(falsy.new_from_index(0, l)),
+                (1, r) if r != 1 => return self.cast_arm(falsy),
                 (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
                 (l, r) => {
                     polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height and falsy height in when/then/otherwise");
-                    return Ok(falsy);
+                    return self.cast_arm(falsy);
                 },
             }
             truthy = op_truthy()?;
         } else if false_count == 0 {
             truthy = op_truthy()?;
             match (mask.len(), truthy.len()) {
-                (l, 1) if l != 1 => return Ok(truthy.new_from_index(0, l)),
-                (1, r) if r != 1 => return Ok(truthy),
+                (l, 1) if l != 1 => return self.cast_arm(truthy.new_from_index(0, l)),
+                (1, r) if r != 1 => return self.cast_arm(truthy),
                 (1, 1) => {}, // Forced to evaluate truthy to resolve broadcast height.
                 (l, r) => {
                     polars_ensure!(l == r, ShapeMismatch: "mismatch between condition height and truthy height in when/then/otherwise");
-                    return Ok(truthy);
+                    return self.cast_arm(truthy);
                 },
             }
             falsy = op_falsy()?; // Forced to evaluate truthy to resolve broadcast height.
