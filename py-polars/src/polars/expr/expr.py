@@ -1517,7 +1517,7 @@ class Expr:
 
     @deprecated(
         "`Expr.rechunk()` is deprecated and will be removed in Polars 2.0. "
-        "Rechunking within a query is undefined. "
+        "Rechunking within a query is not well-defined. "
         "Use `df.rechunk()` after collecting the results instead."
     )
     def rechunk(self) -> Expr:
