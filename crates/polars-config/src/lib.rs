@@ -126,7 +126,6 @@ static KNOWN_OPTIONS: &[&str] = &[
     /*
     Not yet supported public options:
 
-        "POLARS_AUTO_STRUCTIFY"
         "POLARS_FMT_STR_LEN"
         "POLARS_FMT_MAX_COLS"
         "POLARS_FMT_TABLE_FORMATTING"
