@@ -16,18 +16,6 @@ use crate::scan_predicate::functions::create_scan_predicate;
 pub type StreamingExecutorBuilder =
     fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<Box<dyn Executor>>;
 
-fn can_split_single_chunk_projection(exprs: &[ExprIR], expr_arena: &Arena<AExpr>) -> bool {
-    exprs.iter().all(|expr| {
-        !has_aexpr(expr.node(), expr_arena, |ae| match ae {
-            // Eval work scales with inner values rather than input rows and can be zero-copy.
-            AExpr::Eval { .. } => true,
-            #[cfg(feature = "dtype-struct")]
-            AExpr::StructEval { .. } => true,
-            _ => false,
-        })
-    })
-}
-
 fn partitionable_gb(
     keys: &[ExprIR],
     aggs: &[ExprIR],
@@ -552,8 +540,6 @@ fn create_physical_plan_impl(
                 && !phys_expr.iter().all(|p| {
                     p.is_literal()
                 });
-            let allow_single_chunk_vertical_parallelism =
-                allow_vertical_parallelism && can_split_single_chunk_projection(&expr, expr_arena);
 
             Ok(Box::new(executors::ProjectionExec {
                 input,
@@ -564,7 +550,6 @@ fn create_physical_plan_impl(
                 schema: _schema,
                 options,
                 allow_vertical_parallelism,
-                allow_single_chunk_vertical_parallelism,
             }))
         },
         DataFrameScan {
@@ -823,8 +808,6 @@ fn create_physical_plan_impl(
                 && exprs
                     .iter()
                     .all(|e| is_elementwise_rec(e.node(), expr_arena));
-            let allow_single_chunk_vertical_parallelism =
-                allow_vertical_parallelism && can_split_single_chunk_projection(&exprs, expr_arena);
 
             let mut state =
                 ExpressionConversionState::new(RAYON.current_num_threads() > exprs.len());
@@ -843,7 +826,6 @@ fn create_physical_plan_impl(
                 output_schema,
                 options,
                 allow_vertical_parallelism,
-                allow_single_chunk_vertical_parallelism,
             }))
         },
         MapFunction {

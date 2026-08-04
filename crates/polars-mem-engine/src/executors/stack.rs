@@ -12,7 +12,6 @@ pub struct StackExec {
     pub(crate) options: ProjectionOptions,
     // Can run all operations elementwise
     pub(crate) allow_vertical_parallelism: bool,
-    pub(crate) allow_single_chunk_vertical_parallelism: bool,
 }
 
 impl StackExec {
@@ -22,26 +21,17 @@ impl StackExec {
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         let schema = &*self.output_schema;
-        let n_partitions = RAYON.current_num_threads();
-        let n_chunks = df.first_col_n_chunks();
-        let split_single_chunk = self.allow_single_chunk_vertical_parallelism
-            && n_chunks == 1
-            && should_split_vertically(df.height(), self.exprs.len(), n_partitions);
 
         // Vertical and horizontal parallelism.
         let df = if self.allow_vertical_parallelism
-            && (n_chunks > 1 || split_single_chunk)
+            && df.first_col_n_chunks() > 1
             && df.height() > 0
             && self.options.run_parallel
             // This condition is necessary because we violate the assumption that a DataFrame has columns equal to its
             // height in the in-memory engine's common subexpression elimination. We should fix this at some point.
             && df.columns().iter().all(|c| c.len() == df.height())
         {
-            let chunks = if n_chunks > 1 {
-                df.split_chunks().collect::<Vec<_>>()
-            } else {
-                df.split_chunks_by_n(n_partitions, true)
-            };
+            let chunks = df.split_chunks().collect::<Vec<_>>();
             let iter = chunks.into_par_iter().map(|mut df| {
                 let res = evaluate_physical_expressions(
                     &mut df,
