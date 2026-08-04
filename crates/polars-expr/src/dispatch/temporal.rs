@@ -160,9 +160,7 @@ pub(super) fn datetime(
     let nanosecond = (microsecond.cast(&DataType::Int32)? * 1_000).broadcast_owned_to(len)?;
     let nanosecond = nanosecond.i32()?;
 
-    let ambiguous = ambiguous
-        .cast(&DataType::String)?
-        .broadcast_owned_to(len)?;
+    let ambiguous = ambiguous.cast(&DataType::String)?.broadcast_owned_to(len)?;
     let ambiguous = ambiguous.str()?;
 
     let ca = DatetimeChunked::new_from_parts(

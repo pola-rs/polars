@@ -4,9 +4,9 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
 use polars_compute::rolling::QuantileMethod;
-use polars_error::PolarsResult;
+use polars_error::{PolarsContext, PolarsResult};
 use polars_utils::aliases::PlSeedableRandomStateQuality;
-use polars_utils::broadcast::BroadcastLength;
+use polars_utils::broadcast::{BroadcastLength, broadcast_len};
 use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
 pub use scalar::ScalarColumn;
@@ -1778,21 +1778,9 @@ impl Column {
         other: &Self,
         op: impl Fn(&Series, &Series) -> PolarsResult<Series>,
     ) -> PolarsResult<Column> {
-        fn output_length(a: &Column, b: &Column) -> PolarsResult<usize> {
-            match (a.len(), b.len()) {
-                // broadcasting
-                (1, o) | (o, 1) => Ok(o),
-                // equal
-                (a, b) if a == b => Ok(a),
-                // unequal
-                (a, b) => {
-                    polars_bail!(InvalidOperation: "cannot do a binary operation on columns of different lengths: got {} and {}", a, b)
-                },
-            }
-        }
-
         // Here we rely on the underlying broadcast operations.
-        let length = output_length(self, other)?;
+        let length = broadcast_len([self, other])
+            .context("cannot do a binary operation on columns of different lengths")?;
         match (self, other) {
             (Column::Series(lhs), Column::Series(rhs)) => op(lhs, rhs).map(Column::from),
             (Column::Series(lhs), Column::Scalar(rhs)) => {

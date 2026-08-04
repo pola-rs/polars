@@ -229,9 +229,8 @@ impl PhysicalExpr for SortByExpr {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let broadcast_length = broadcast_len(s_sort_by.iter()).context(
-                    "`sort_by` produced Series of differing lengths in `by`"
-                )?;
+                let broadcast_length = broadcast_len(s_sort_by.iter())
+                    .context("`sort_by` produced Series of differing lengths in `by`")?;
                 for (e, c) in self.by.iter().zip(s_sort_by.iter_mut()) {
                     if c.len() != broadcast_length {
                         polars_ensure!(
