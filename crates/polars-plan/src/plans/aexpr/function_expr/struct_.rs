@@ -35,7 +35,7 @@ impl IRStructFunction {
                 DataType::Struct(fields) => {
                     if names.len() != fields.len() {
                         let hint_addition = if fields.len() > names.len() {
-                            "\nHint: use struct.drop() to drop fields from the struct first."
+                            "\n\nHint: use struct.drop() to drop fields from the struct first."
                         } else {
                             ""
                         };
