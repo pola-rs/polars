@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from typing import Any, NoReturn
 
 
-def raise_item_removed_error(
+def raise_attribute_removed_error(
     obj: object, name: str, *, version: str = "2.0", hint: str | None = None
 ) -> NoReturn:
     """
