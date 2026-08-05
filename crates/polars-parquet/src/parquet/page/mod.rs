@@ -453,7 +453,7 @@ pub fn split_plain_buffer_values<T>(page: &DataPage) -> ParquetResult<&[u8]> {
     let expected_len = page
         .num_values()
         .checked_mul(std::mem::size_of::<T>())
-        .ok_or_else(|| ParquetError::WouldOverAllocate)?;
+        .ok_or(ParquetError::WouldOverAllocate)?;
 
     let bytes: &[u8] = split_buffer(page)?.values;
 
