@@ -626,9 +626,8 @@ impl DataFrame {
             .zip(other.columns())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(&*left, right)?;
-                left.append(right).map_err(|e| {
-                    e.context(format!("failed to vstack column '{}'", right.name()).into())
-                })?;
+                left.append(right)
+                    .with_context(|| format!("failed to vstack column '{}'", right.name()))?;
                 Ok(())
             })?;
 
@@ -659,9 +658,8 @@ impl DataFrame {
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(&*left, &right)?;
                 let right_name = right.name().clone();
-                left.append_owned(right).map_err(|e| {
-                    e.context(format!("failed to vstack column '{right_name}'").into())
-                })?;
+                left.append_owned(right)
+                    .with_context(|| format!("failed to vstack column '{right_name}'"))?;
                 Ok(())
             })?;
 
@@ -684,9 +682,7 @@ impl DataFrame {
             .zip(other.columns())
             .for_each(|(left, right)| {
                 left.append(right)
-                    .map_err(|e| {
-                        e.context(format!("failed to vstack column '{}'", right.name()).into())
-                    })
+                    .with_context(|| format!("failed to vstack column '{}'", right.name()))
                     .expect("should not fail");
             });
 
@@ -745,9 +741,8 @@ impl DataFrame {
             .zip(other.columns())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(&*left, right)?;
-                left.extend(right).map_err(|e| {
-                    e.context(format!("failed to extend column '{}'", right.name()).into())
-                })?;
+                left.extend(right)
+                    .with_context(|| format!("failed to extend column '{}'", right.name()))?;
                 Ok(())
             })?;
 

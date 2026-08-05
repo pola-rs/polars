@@ -391,6 +391,27 @@ impl PolarsError {
     }
 }
 
+pub trait PolarsContext<T> {
+    fn context(self, ctx: &'static str) -> PolarsResult<T>;
+
+    fn with_context<F>(self, f: F) -> PolarsResult<T>
+    where
+        F: FnOnce() -> String;
+}
+
+impl<T> PolarsContext<T> for PolarsResult<T> {
+    fn context(self, ctx: &'static str) -> PolarsResult<T> {
+        self.map_err(|e| e.context(ErrString::new_static(ctx)))
+    }
+
+    fn with_context<F>(self, f: F) -> PolarsResult<T>
+    where
+        F: FnOnce() -> String,
+    {
+        self.map_err(|e| e.context(f().into()))
+    }
+}
+
 pub fn map_err<E: Error>(error: E) -> PolarsError {
     PolarsError::ComputeError(format!("{error}").into())
 }
