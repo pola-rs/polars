@@ -4909,6 +4909,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Filter rows in the LazyFrame based on a predicate expression.
 
+        .. engine-support:: streaming, distributed
+
         The original order of the remaining rows is preserved.
 
         Rows where the filter predicate does not evaluate to True are discarded

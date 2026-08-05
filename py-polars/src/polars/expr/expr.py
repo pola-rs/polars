@@ -3567,6 +3567,8 @@ class Expr:
         """
         Get sum value.
 
+        .. engine-support:: streaming, distributed
+
         Notes
         -----
         * Dtypes in {Int8, UInt8, Int16, UInt16} are cast to

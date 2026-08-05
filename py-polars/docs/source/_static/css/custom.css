@@ -81,3 +81,37 @@ a:visited {
 pre {
     box-shadow: 0 .2rem .5rem var(--pst-color-shadow), 0 0 .0625rem var(--pst-color-shadow) !important;
 }
+
+/* engine-support badges, set via the `.. engine-support::` directive */
+.engine-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.5rem 0 1rem;
+}
+
+.engine-tag {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.4;
+    color: #ffffff;
+}
+
+.engine-tag--streaming {
+    background-color: #0075ff;
+}
+
+.engine-tag--distributed {
+    background-color: #8a4fff;
+}
+
+html[data-theme="dark"] .engine-tag--streaming {
+    background-color: #3d94ff;
+}
+
+html[data-theme="dark"] .engine-tag--distributed {
+    background-color: #a877ff;
+}
