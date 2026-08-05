@@ -889,6 +889,10 @@ fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNo
 
         let has_rename = columns.iter().any(|(k, v)| k != v);
 
+        if has_rename {
+            return;
+        }
+
         match input_node.kind_mut() {
             PhysNodeKind::Filter {
                 input: _,
