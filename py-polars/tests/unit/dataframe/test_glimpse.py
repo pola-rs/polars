@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ArgumentRemovedError
 
 TEST_DF = pl.DataFrame(
     {
