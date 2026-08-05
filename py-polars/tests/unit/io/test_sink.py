@@ -187,6 +187,22 @@ def test_sink_boolean_panic_25806(sink: Any, scan: Any) -> None:
     assert_frame_equal(scan(f).collect(), df)
 
 
+def test_sink_ipc_cloud_single_put(tmp_path: Path) -> None:
+    # 1. Create a small LazyFrame
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+
+    # 2. Define cloud file path (or file URI)
+    out_file = tmp_path / "test_out.ipc"
+    file_uri = format_file_uri(out_file)
+
+    # 3. Sink IPC payload
+    df.lazy().sink_ipc(file_uri)
+
+    # 4. Verify data integrity upon reading back
+    result = pl.read_ipc(out_file)
+    assert_frame_equal(result, df)
+
+
 def test_collect_all_lazy() -> None:
     with TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -645,7 +661,9 @@ def test_sink_upload_chunk_size_config(
     pl.LazyFrame({"x": 1}).sink_ipc(format_file_uri(tmp_path / "data.ipc"))
     capture = capfd.readouterr().err
 
-    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith("None")
+    assert (
+        capture[19 + capture.index("upload_chunk_size: ") :].lstrip().startswith("None")
+    )
 
     capfd.readouterr()
     with pytest.raises(OSError):
@@ -658,8 +676,10 @@ def test_sink_upload_chunk_size_config(
         )
     capture = capfd.readouterr().err
 
-    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
-        "Some(33554432)"
+    assert (
+        capture[19 + capture.index("upload_chunk_size: ") :]
+        .lstrip()
+        .startswith("Some(33554432)")
     )
 
     plmonkeypatch.setenv("POLARS_UPLOAD_CHUNK_SIZE", "13579")
@@ -668,8 +688,10 @@ def test_sink_upload_chunk_size_config(
     pl.LazyFrame({"x": 1}).sink_ipc(format_file_uri(tmp_path / "data.ipc"))
     capture = capfd.readouterr().err
 
-    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
-        "Some(13579)"
+    assert (
+        capture[19 + capture.index("upload_chunk_size: ") :]
+        .lstrip()
+        .startswith("Some(13579)")
     )
 
 
@@ -690,7 +712,9 @@ def test_sink_upload_chunk_size_config_partitioned(
     )
     capture = capfd.readouterr().err
 
-    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith("None")
+    assert (
+        capture[19 + capture.index("upload_chunk_size: ") :].lstrip().startswith("None")
+    )
 
     capfd.readouterr()
     with pytest.raises(OSError):
@@ -706,8 +730,10 @@ def test_sink_upload_chunk_size_config_partitioned(
         )
     capture = capfd.readouterr().err
 
-    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
-        "Some(6291456)"
+    assert (
+        capture[19 + capture.index("upload_chunk_size: ") :]
+        .lstrip()
+        .startswith("Some(6291456)")
     )
 
     plmonkeypatch.setenv("POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE", "13579")
@@ -721,8 +747,10 @@ def test_sink_upload_chunk_size_config_partitioned(
     )
     capture = capfd.readouterr().err
 
-    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
-        "Some(13579)"
+    assert (
+        capture[19 + capture.index("upload_chunk_size: ") :]
+        .lstrip()
+        .startswith("Some(13579)")
     )
 
 
