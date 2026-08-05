@@ -183,6 +183,7 @@ def test_sink_boolean_panic_25806(sink: Any, scan: Any) -> None:
 
     f = io.BytesIO()
     sink(df.lazy(), f)
+    f.seek(0)
 
     assert_frame_equal(scan(f).collect(), df)
 
@@ -488,6 +489,7 @@ def test_sink_predicate_pushdown_streaming_flag_27922() -> None:
 
     f = io.BytesIO()
     q.sink_ipc(f)
+    f.seek(0)
 
     assert_frame_equal(
         pl.scan_ipc(f).collect(),

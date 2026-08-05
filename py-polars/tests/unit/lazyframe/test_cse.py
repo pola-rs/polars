@@ -1579,6 +1579,7 @@ def test_projection_pushdown_cache_node_inputs_point_to_same_node_28367() -> Non
 def test_csee_height_mismatch_28364() -> None:
     buf = io.BytesIO()
     pl.LazyFrame({"x": [1, 2]}).sink_ipc(buf, record_batch_size=1)
+    buf.seek(0)
     df = pl.scan_ipc(buf)
     q1 = df.with_columns(z=pl.coalesce(pl.col.x.min(), pl.col.x.min()))
     out = df.join(q1, on="x").collect()

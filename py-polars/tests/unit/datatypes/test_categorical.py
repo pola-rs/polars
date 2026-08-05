@@ -871,9 +871,11 @@ def test_ipc_categorical_roundtrip() -> None:
     )
 
     lf.sink_ipc(f := io.BytesIO())
+    f.seek(0)
     assert_frame_equal(pl.scan_ipc(f), lf)
 
     lf.sink_parquet(f := io.BytesIO())
+    f.seek(0)
     assert_frame_equal(pl.scan_parquet(f), lf)
 
     assert_frame_equal(pickle.loads(pickle.dumps(lf)), lf)
