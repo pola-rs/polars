@@ -1687,9 +1687,7 @@ def test_cspe_distinct_parameterized_dtypes_28450() -> None:
             pl.col("value").cast(dtype, strict=False).is_not_null()
         ).select(pl.lit(name).alias("branch"), "value")
 
-    q = pl.concat(
-        [branch(enum_a, "group_a"), branch(enum_b, "group_b")]
-    ).sort("branch")
+    q = pl.concat([branch(enum_a, "group_a"), branch(enum_b, "group_b")]).sort("branch")
     result = q.collect()
 
     assert_frame_equal(
