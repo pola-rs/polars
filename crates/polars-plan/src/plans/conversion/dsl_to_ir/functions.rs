@@ -397,7 +397,6 @@ pub(super) fn convert_functions(
                 T::OrdinalDay => IT::OrdinalDay,
                 T::Time => IT::Time,
                 T::Date => IT::Date,
-                T::Datetime => IT::Datetime,
                 #[cfg(feature = "dtype-duration")]
                 T::Duration(time_unit) => IT::Duration(time_unit),
                 T::Hour => IT::Hour,
@@ -422,7 +421,6 @@ pub(super) fn convert_functions(
                 T::TotalNanoseconds { fractional } => IT::TotalNanoseconds { fractional },
                 T::ToString(v) => IT::ToString(v),
                 T::CastTimeUnit(time_unit) => IT::CastTimeUnit(time_unit),
-                T::WithTimeUnit(time_unit) => IT::WithTimeUnit(time_unit),
                 #[cfg(feature = "timezones")]
                 T::ConvertTimeZone(time_zone) => IT::ConvertTimeZone(time_zone),
                 T::TimeStamp(time_unit) => IT::TimeStamp(time_unit),
