@@ -49,7 +49,15 @@ class EngineSupportDirective(Directive):  # noqa: D101
                 f'<span class="engine-tag engine-tag--{engine}">{label}</span>'
             )
 
-        html = f'<div class="engine-tags">{"".join(badges)}</div>'
+        if not badges:
+            return []
+
+        html = (
+            '<div class="engine-tags">'
+            '<span class="engine-tags-label">engine:</span>'
+            f'{"".join(badges)}'
+            "</div>"
+        )
         return [nodes.raw("", html, format="html")]
 
 
