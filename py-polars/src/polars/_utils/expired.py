@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import TypeVar
-
-    T = TypeVar("T")
+    from typing import Any, NoReturn
 
 
 def raise_expired_error(
-    obj: T, name: str, *, version: str = "2.0", hint: str | None = None
+    obj: object, name: str, *, version: str = "2.0", hint: str | None = None
 ) -> NoReturn:
     """
     Raise an `AttributeError` for a removed attribute.
@@ -30,7 +28,7 @@ def raise_expired_error(
     raise AttributeError(msg, name=name, obj=obj)
 
 
-def expired_fallthrough(obj: T, name: str) -> Any:
+def expired_fallthrough(obj: object, superclass: object, name: str) -> Any:
     """
     Raise an `AttributeError` for a non-existent attribute.
 
@@ -38,11 +36,13 @@ def expired_fallthrough(obj: T, name: str) -> Any:
     ----------
     obj
         The object on which the attribute was accessed.
+    superclass
+        The superclass of the object used to attempt to access the attribute.
     name
         The name of the non-existent attribute.
     """
-    if fallback := getattr(super(obj.__class__, obj), "__getattr__", None) is not None:
-        return fallback(name)
+    if (super_getattr := getattr(superclass, "__getattr__", None)) is not None:
+        return super_getattr(name)
     else:
         msg = f"{type(obj).__name__!r} object has no attribute {name!r}"
         raise AttributeError(msg, name=name, obj=obj)

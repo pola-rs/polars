@@ -13273,7 +13273,7 @@ class DataFrame:
                 hint = "use `select(pl.all().approx_n_unique())` instead."
                 return raise_expired_error(self, name, hint=hint)
             case _:
-                return expired_fallthrough(self, name)
+                return expired_fallthrough(self, super(), name)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

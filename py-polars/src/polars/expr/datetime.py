@@ -2573,4 +2573,4 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
                 )
                 return raise_expired_error(self, name, hint=hint)
             case _:
-                return expired_fallthrough(self, name)
+                return expired_fallthrough(self, super(), name)

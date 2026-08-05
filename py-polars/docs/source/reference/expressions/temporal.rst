@@ -54,5 +54,4 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.truncate
     Expr.dt.week
     Expr.dt.weekday
-    Expr.dt.with_time_unit
     Expr.dt.year
