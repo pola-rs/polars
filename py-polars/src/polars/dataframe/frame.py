@@ -66,6 +66,7 @@ from polars._utils.deprecation import (
 from polars._utils.expired import (
     getattr_fallback,
     raise_for_removed_attributes,
+    removed_renamed_parameter,
 )
 from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse import parse_into_expression
@@ -1747,7 +1748,9 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_renamed_parameter(
+        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    )
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
@@ -4080,7 +4083,9 @@ class DataFrame:
         compat_level: CompatLevel | None = None,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_renamed_parameter(
+        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    )
     def write_ipc_stream(
         self,
         file: str | Path | IO[bytes] | None,
@@ -5742,7 +5747,9 @@ class DataFrame:
         return_type: Literal["frame", "self"],
     ) -> DataFrame: ...
 
-    @deprecate_renamed_parameter("return_as_string", "return_type", version="1.35.0")
+    @removed_renamed_parameter(
+        "return_as_string", "return_type", deprecated_in="1.35.0", removed_in="2.0"
+    )
     def glimpse(
         self,
         *,
