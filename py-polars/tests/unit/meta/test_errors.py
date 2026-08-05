@@ -15,6 +15,7 @@ from polars.exceptions import (
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
+    ItemRemovedError,
     OutOfBoundsError,
     SchemaError,
     SchemaFieldNotFoundError,
@@ -796,6 +797,20 @@ def test_str_namespace_typo_suggests() -> None:
 def test_dt_namespace_typo_suggests() -> None:
     with pytest.raises(AttributeError, match="Did you mean: 'hour'"):
         pl.col("a").dt.houur()  # type: ignore[attr-defined]
+
+
+def test_series_dt_namespace_typo_suggests() -> None:
+    s = pl.Series([date(2022, 1, 1)])
+    with pytest.raises(AttributeError, match="Did you mean: 'hour'"):
+        s.dt.houur()  # type: ignore[attr-defined]
+
+
+def test_series_dt_namespace_removed_item() -> None:
+    s = pl.Series([date(2022, 1, 1)])
+    with pytest.raises(
+        ItemRemovedError, match=r"use `dt\.replace_time_zone\(None\)` instead"
+    ):
+        s.dt.datetime()  # type: ignore[attr-defined]
 
 
 def test_list_namespace_typo_suggests() -> None:

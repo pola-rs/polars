@@ -57,5 +57,4 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.truncate
     Series.dt.week
     Series.dt.weekday
-    Series.dt.with_time_unit
     Series.dt.year

@@ -15,6 +15,7 @@ Errors
     ComputeError
     DuplicateError
     InvalidOperationError
+    ItemRemovedError
     ModuleUpgradeRequiredError
     NoDataError
     NoRowsReturnedError

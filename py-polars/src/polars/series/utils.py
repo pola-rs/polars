@@ -9,6 +9,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.wrap import wrap_s
 from polars.datatypes import dtype_to_ffiname
+from polars.exceptions import ItemRemovedError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -58,9 +59,37 @@ def expr_dispatch(cls: type[T]) -> type[T]:
 
     # Forward any __getattr__ calls to the Expr namespace's too.
     if (namespace, "__getattr__", ("self", "name")) in expr_lookup:
-        cls.__getattr__ = call_expr(cls.__getattr__)  # type: ignore[attr-defined]
+        cls.__getattr__ = _forward_getattr(cls, namespace)  # type: ignore[attr-defined]
 
     return cls
+
+
+def _forward_getattr(
+    cls: type[Any], namespace: str | None
+) -> Callable[[Any, str], Any]:
+    """
+    Forward failed attribute lookups to the matching Expr namespace.
+
+    Ensures that errors for (e.g.) removed methods are also raised on the Series
+    side. Names that the Expr namespace does not recognise fall back to the
+    class' own `__getattr__`.
+    """
+    original_getattr = cls.__getattr__
+
+    def __getattr__(self: Any, name: str) -> Any:
+        # note: a dummy Expr suffices; we only want the namespace's __getattr__
+        expr: Any = pl.Expr()
+        expr._pyexpr = None
+        if namespace is not None:
+            expr = getattr(expr, namespace)
+        try:
+            return expr.__getattr__(name)
+        except ItemRemovedError:
+            raise
+        except AttributeError:
+            return original_getattr(self, name)
+
+    return __getattr__
 
 
 def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str, ...]]]:
