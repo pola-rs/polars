@@ -95,6 +95,51 @@ where
     Some(ExprIR::from_node(out, expr_arena))
 }
 
+/// Removes the min-terms containing a dynamic predicate from every accumulated predicate,
+/// dropping the entries that end up empty.
+///
+/// Dynamic predicates are pruning hints - the operator that inserted them still applies the
+/// actual semantics - so removing them only widens the predicate. Note that min-term
+/// granularity matters here: a dynamic predicate is keyed on the column it filters, so it can
+/// share a bucket with a user predicate on that same column.
+#[cfg(feature = "python")]
+pub(super) fn remove_dynamic_pred_minterms(
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
+    expr_arena: &mut Arena<AExpr>,
+) {
+    fn contains_dynamic_pred(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+        has_aexpr(node, expr_arena, |e| {
+            matches!(
+                e,
+                AExpr::Function {
+                    function: IRFunctionExpr::DynamicPred { .. },
+                    ..
+                }
+            )
+        })
+    }
+
+    acc_predicates.retain(|_, predicate| {
+        if !contains_dynamic_pred(predicate.node(), expr_arena) {
+            return true;
+        }
+
+        let min_terms = MintermIter::new(predicate.node(), expr_arena)
+            .filter(|node| !contains_dynamic_pred(*node, expr_arena))
+            .collect::<UnitVec<_>>();
+
+        let Some(node) = min_terms
+            .into_iter()
+            .reduce(|left, right| combine_by_and(left, right, expr_arena))
+        else {
+            return false;
+        };
+
+        predicate.set_node(node);
+        true
+    });
+}
+
 /// Evaluates a condition on the column name inputs of every predicate, where if
 /// the condition evaluates to true on any column name the predicate is
 /// transferred to local.
