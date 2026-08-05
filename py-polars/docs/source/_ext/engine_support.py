@@ -16,6 +16,7 @@ from docutils import nodes
 from docutils.parsers.rst import Directive
 
 ENGINE_LABELS = {
+    "in-memory": "In Memory",
     "streaming": "Streaming",
     "partially-streaming": "Partially Streaming",
     "distributed": "Distributed",
