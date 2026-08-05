@@ -271,7 +271,7 @@ impl IR {
                 };
                 expr_iter_eq!(l_left_on, r_left_on)
                     && expr_iter_eq!(l_right_on, r_right_on)
-                    && l_options == r_options
+                    && l_options.shallow_eq(r_options, expression_cmp)
             },
             IR::Gather {
                 input: _,
@@ -379,10 +379,7 @@ impl IR {
                 else {
                     return false;
                 };
-                // Note that SinkTypeIR -> PartitionedSinkOptionsIR -> PartitionStrategyIR
-                // contains a Vec<ExprIR> that we do not compare deeply. In this case we might not
-                // detect that two `Sink` nodes are actually equivalent.
-                l_payload == r_payload
+                l_payload.shallow_eq(r_payload, expression_cmp)
             },
             IR::SinkMultiple { inputs: _ } => {
                 // `inputs` are traversal inputs, compared via child ids. Nothing else here.

@@ -38,7 +38,9 @@ use strum_macros::IntoStaticStr;
 
 use super::Expr;
 use crate::dsl::Selector;
-use crate::plans::ExprIR;
+#[cfg(feature = "cse")]
+use crate::plans::ExpressionHasher;
+use crate::plans::{ExprIR, ExpressionComparator};
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -101,6 +103,43 @@ impl Hash for JoinTypeOptionsIR {
 }
 
 impl JoinTypeOptionsIR {
+    pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
+        if std::mem::discriminant(self) != std::mem::discriminant(other) {
+            return false;
+        }
+
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin(lhs) => {
+                let Self::IEJoin(rhs) = other else {
+                    return false;
+                };
+                lhs == rhs
+            },
+            Self::CrossAndFilter { predicate: lhs } => {
+                #[allow(irrefutable_let_patterns)]
+                let Self::CrossAndFilter { predicate: rhs } = other else {
+                    return false;
+                };
+                expr_cmp.equals(lhs, rhs)
+            },
+        }
+    }
+
+    #[cfg(feature = "cse")]
+    pub(crate) fn shallow_hash<H: std::hash::Hasher>(
+        &self,
+        state: &mut H,
+        expr_hash: &impl ExpressionHasher,
+    ) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin(options) => options.hash(state),
+            Self::CrossAndFilter { predicate } => expr_hash.hash_expr(predicate, state),
+        }
+    }
+
     pub fn compile<C: FnOnce(&ExprIR) -> PolarsResult<Arc<dyn CrossJoinFilter>>>(
         self,
         plan: C,
@@ -125,6 +164,62 @@ pub struct JoinOptionsIR {
     pub force_parallel: bool,
     pub args: JoinArgs,
     pub options: Option<JoinTypeOptionsIR>,
+}
+
+impl JoinOptionsIR {
+    pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
+        if std::mem::discriminant(&self.options) != std::mem::discriminant(&other.options) {
+            return false;
+        }
+
+        let Self {
+            allow_parallel: l_allow_parallel,
+            force_parallel: l_force_parallel,
+            args: l_args,
+            options: l_options,
+        } = self;
+        let Self {
+            allow_parallel: r_allow_parallel,
+            force_parallel: r_force_parallel,
+            args: r_args,
+            options: r_options,
+        } = other;
+
+        l_allow_parallel == r_allow_parallel
+            && l_force_parallel == r_force_parallel
+            && l_args == r_args
+            && match l_options {
+                None => true,
+                Some(lhs) => {
+                    let Some(rhs) = r_options else {
+                        return false;
+                    };
+                    lhs.shallow_eq(rhs, expr_cmp)
+                },
+            }
+    }
+
+    #[cfg(feature = "cse")]
+    pub(crate) fn shallow_hash<H: std::hash::Hasher>(
+        &self,
+        state: &mut H,
+        expr_hash: &impl ExpressionHasher,
+    ) {
+        let Self {
+            allow_parallel,
+            force_parallel,
+            args,
+            options,
+        } = self;
+
+        allow_parallel.hash(state);
+        force_parallel.hash(state);
+        args.hash(state);
+        std::mem::discriminant(options).hash(state);
+        if let Some(options) = options {
+            options.shallow_hash(state, expr_hash);
+        }
+    }
 }
 
 impl From<JoinOptions> for JoinOptionsIR {
