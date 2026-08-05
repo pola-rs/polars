@@ -4,7 +4,7 @@ import inspect
 from functools import wraps
 from typing import TYPE_CHECKING, TypeVar
 
-from polars.exceptions import AttributeRemovedError
+from polars.exceptions import ArgumentRemovedError, AttributeRemovedError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -121,10 +121,10 @@ def _removed_keyword_argument(
                 f" `{old_name!r}` {deprecated_and}has been removed in version {removed_version},"
                 f" use `{new_name!r}` instead"
             )
-            raise TypeError(msg)
+            raise ArgumentRemovedError(msg)
 
         msg = (
             f"the argument `{old_name}` for `{func_name}` {deprecated_and}has been removed in {removed_version}. "
             f"It was renamed to `{new_name}`."
         )
-        raise TypeError(msg)
+        raise ArgumentRemovedError(msg)
