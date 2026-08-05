@@ -1,5 +1,4 @@
 use std::hash::{DefaultHasher, Hasher};
-use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
 use hashbrown::HashTable;
@@ -7,7 +6,7 @@ use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 
 use super::canonical_expr::CanonicalExprMap;
-use crate::plans::{AExpr, ArenaLpIter, IR};
+use crate::plans::{AExpr, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::tree_traversal::tree_traversal;
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
@@ -38,28 +37,21 @@ pub struct CanonicalIRMap {
 }
 
 impl CanonicalIRMap {
-    pub fn new(root: Node, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Self {
-        // Resolve all expressions in advance so that IR comparison can stay immutable.
-        let mut expr_cmp = CanonicalExprMap::new();
-        for (_, ir) in lp_arena.iter(root) {
-            for expr in ir.exprs() {
-                expr_cmp.resolve(expr.node(), expr_arena);
-            }
-        }
-
+    pub fn new() -> Self {
         Self {
             deduplication_map: HashTable::new(),
             cache: PlIndexMap::new(),
-            expr_cmp,
+            expr_cmp: CanonicalExprMap::new(),
         }
     }
 
     /// Returns the id of `node`, resolving its children recursively
-    pub fn resolve(&mut self, node: Node, lp_arena: &Arena<IR>) -> CanonicalIRId {
-        if let Some(id) = self.cache.get(&node) {
-            return *id;
-        }
-
+    pub fn resolve(
+        &mut self,
+        node: Node,
+        lp_arena: &Arena<IR>,
+        expr_arena: &Arena<AExpr>,
+    ) -> CanonicalIRId {
         tree_traversal(
             node,
             &mut &*lp_arena,
@@ -67,7 +59,7 @@ impl CanonicalIRMap {
             &mut Vec::new(),
             &mut ResolveVisitor {
                 map: self,
-                phantom: PhantomData,
+                expr_arena,
             },
         )
         .continue_value()
@@ -79,18 +71,29 @@ impl CanonicalIRMap {
     fn resolve_single(
         &mut self,
         node: Node,
-        child_ids: Vec<CanonicalIRId>,
+        child_ids: impl IntoIterator<Item = CanonicalIRId>,
         lp_arena: &Arena<IR>,
+        expr_arena: &Arena<AExpr>,
     ) -> CanonicalIRId {
+        if let Some(id) = self.cache.get(&node) {
+            return *id;
+        }
+
+        let child_ids = child_ids.into_iter().collect::<Vec<_>>();
+
+        for expr in lp_arena.get(node).exprs() {
+            self.expr_cmp.resolve(expr.node(), expr_arena);
+        }
+
         let Self {
             deduplication_map,
-            cache: _,
+            cache,
             expr_cmp,
         } = self;
 
         let hash = combined_hash(node, &child_ids, lp_arena, expr_cmp);
         let next_id = CanonicalIRId(1 + deduplication_map.len() as u32);
-        deduplication_map
+        let id = deduplication_map
             .entry(
                 hash,
                 |other| {
@@ -107,13 +110,22 @@ impl CanonicalIRMap {
                 id: next_id,
             })
             .get()
-            .id
+            .id;
+
+        cache.insert(node, id);
+        id
+    }
+}
+
+impl Default for CanonicalIRMap {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 struct ResolveVisitor<'a, 'arena> {
     map: &'a mut CanonicalIRMap,
-    phantom: PhantomData<&'arena Arena<IR>>,
+    expr_arena: &'arena Arena<AExpr>,
 }
 
 impl<'arena> NodeVisitor for ResolveVisitor<'_, 'arena> {
@@ -150,20 +162,12 @@ impl<'arena> NodeVisitor for ResolveVisitor<'_, 'arena> {
         storage: &mut Self::Storage,
         edges: &mut dyn NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue> {
-        let id = match self.map.cache.get(&key) {
-            Some(id) => *id,
-            None => {
-                let child_ids = edges
-                    .inputs()
-                    .iter()
-                    .map(|id| id.expect("input was not resolved"))
-                    .collect();
+        let inputs = edges.inputs();
+        let child_ids = inputs.iter().map(|id| id.expect("input was not resolved"));
 
-                let id = self.map.resolve_single(key, child_ids, storage);
-                self.map.cache.insert(key, id);
-                id
-            },
-        };
+        let id = self
+            .map
+            .resolve_single(key, child_ids, storage, self.expr_arena);
 
         edges.outputs()[0] = Some(id);
 

@@ -5,7 +5,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
-use super::canonical_ir::{CanonicalIRId, CanonicalIRMap};
+use super::{CanonicalIRId, CanonicalIRMap};
 use crate::plans::{AExpr, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::tree_traversal::{PersistInputEdgeIdxs, TreeTraversalImpl};
@@ -23,7 +23,7 @@ pub fn common_subplan_elimination(
     let mut persisted_input_edge_idxs = vec![usize::MAX]; // For tree traversal
     let mut id_map = PlIndexMap::new();
 
-    let canonical_ir_map = CanonicalIRMap::new(root, ir_arena, expr_arena);
+    let canonical_ir_map = CanonicalIRMap::new();
 
     TreeTraversalImpl {
         storage: ir_arena,
@@ -36,6 +36,7 @@ pub fn common_subplan_elimination(
         visitor: &mut IDGeneratorVisitor {
             canonical_ir_map,
             id_map: &mut id_map,
+            expr_arena,
         },
     }
     .traverse_rec(root, 0, false)
@@ -82,12 +83,13 @@ impl Default for IDState {
     }
 }
 
-struct IDGeneratorVisitor<'map> {
+struct IDGeneratorVisitor<'map, 'expr> {
     canonical_ir_map: CanonicalIRMap,
     id_map: &'map mut PlIndexMap<CanonicalIRId, IDState>,
+    expr_arena: &'expr Arena<AExpr>,
 }
 
-impl NodeVisitor for IDGeneratorVisitor<'_> {
+impl NodeVisitor for IDGeneratorVisitor<'_, '_> {
     type Key = Node;
     type Storage = Arena<IR>;
     type Edge = usize;
@@ -116,7 +118,7 @@ impl NodeVisitor for IDGeneratorVisitor<'_> {
         storage: &mut Self::Storage,
         edges: &mut dyn NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue> {
-        let id = self.canonical_ir_map.resolve(key, storage);
+        let id = self.canonical_ir_map.resolve(key, storage, self.expr_arena);
 
         use indexmap::map::Entry;
 
