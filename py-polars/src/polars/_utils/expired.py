@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars.exceptions import ItemRemovedError
+
 if TYPE_CHECKING:
     from typing import Any, NoReturn
 
 
-def raise_expired_error(
+def raise_item_removed_error(
     obj: object, name: str, *, version: str = "2.0", hint: str | None = None
 ) -> NoReturn:
     """
@@ -25,10 +27,10 @@ def raise_expired_error(
     """
     msg = f"`{name}` was removed in version {version}"
     msg = f"{msg}." if hint is None else f"{msg}; {hint}"
-    raise AttributeError(msg, name=name, obj=obj)
+    raise ItemRemovedError(msg, name=name, obj=obj)
 
 
-def expired_fallthrough(obj: object, superclass: object, name: str) -> Any:
+def getattr_fallback(obj: object, superclass: object, name: str) -> Any:
     """
     Raise an `AttributeError` for a non-existent attribute.
 

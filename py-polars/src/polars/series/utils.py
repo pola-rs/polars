@@ -55,6 +55,11 @@ def expr_dispatch(cls: type[T]) -> type[T]:
                 # that the series implementation has an empty function body
                 if (namespace, name, args) in expr_lookup and _is_empty_method(attr):
                     setattr(cls, name, call_expr(attr))
+
+    # Forward any __getattr__ calls to the Expr namespace's too.
+    if (namespace, "__getattr__", ("self", "name")) in expr_lookup:
+        cls.__getattr__ = call_expr(cls.__getattr__)  # type: ignore[attr-defined]
+
     return cls
 
 
@@ -70,7 +75,7 @@ def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str,
 
     lookup = set()
     for name in dir(expr):
-        if not name.startswith("_"):
+        if not name.startswith("_") or name == "__getattr__":
             try:
                 m = getattr(expr, name)
             except AttributeError:  # may raise for @property methods

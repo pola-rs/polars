@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.expired import expired_fallthrough, raise_expired_error
+from polars._utils.expired import getattr_fallback, raise_item_removed_error
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin, qualified_type_name
@@ -2565,9 +2565,9 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         match name:
             case "datetime":
                 hint = "use `dt.replace_time_zone(None)` instead."
-                return raise_expired_error(self, name, hint=hint)
+                return raise_item_removed_error(self, name, hint=hint)
             case "with_time_unit":
                 hint = "instead, first cast to `Int64` and then cast to the desired data type."
-                return raise_expired_error(self, name, hint=hint)
+                return raise_item_removed_error(self, name, hint=hint)
             case _:
-                return expired_fallthrough(self, super(), name)
+                return getattr_fallback(self, super(), name)

@@ -63,7 +63,7 @@ from polars._utils.deprecation import (
     deprecated,
     issue_deprecation_warning,
 )
-from polars._utils.expired import expired_fallthrough, raise_expired_error
+from polars._utils.expired import getattr_fallback, raise_item_removed_error
 from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse import parse_into_expression
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
@@ -13327,15 +13327,15 @@ class DataFrame:
         match name:
             case "melt":
                 hint = "use `DataFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`"
-                return raise_expired_error(self, name, hint=hint)
+                return raise_item_removed_error(self, name, hint=hint)
             case "with_row_count":
                 hint = "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'."
-                return raise_expired_error(self, name, hint=hint)
+                return raise_item_removed_error(self, name, hint=hint)
             case "approx_n_unique":
                 hint = "use `select(pl.all().approx_n_unique())` instead."
-                return raise_expired_error(self, name, hint=hint)
+                return raise_item_removed_error(self, name, hint=hint)
             case _:
-                return expired_fallthrough(self, super(), name)
+                return getattr_fallback(self, super(), name)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

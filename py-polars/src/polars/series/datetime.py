@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecated
-from polars._utils.expired import expired_fallthrough, raise_expired_error
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
