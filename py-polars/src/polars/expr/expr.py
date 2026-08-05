@@ -1515,6 +1515,11 @@ class Expr:
         other_pyexpr = parse_into_expression(other)
         return wrap_expr(self._pyexpr.append(other_pyexpr, upcast))
 
+    @deprecated(
+        "`Expr.rechunk()` is deprecated and will be removed in Polars 2.0. "
+        "Rechunking within a query is not well-defined. "
+        "Use `df.rechunk()` after collecting the results instead."
+    )
     def rechunk(self) -> Expr:
         """
         Create a single chunk of memory for this Series.

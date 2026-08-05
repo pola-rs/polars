@@ -151,7 +151,7 @@ html_theme_options = {
         },
         {
             "name": "Polars Cloud API reference",
-            "url": "https://docs.cloud.pola.rs/reference/index.html",
+            "url": "https://docs.cloud.pola.rs/api/python/stable/reference/index.html",
         },
     ],
     "icon_links": [

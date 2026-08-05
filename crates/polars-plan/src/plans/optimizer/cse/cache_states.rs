@@ -9,7 +9,6 @@ use polars_utils::unique_id::UniqueId;
 use crate::dsl::Expr;
 use crate::plans::deep_copy::deep_copy_ir_delete_caches;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
-use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::visitor::AexprNode;
 use crate::plans::{AExpr, ExprIR, IR, PredicatePushDown};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
@@ -178,7 +177,7 @@ pub(crate) fn set_cache_states(
         root,
         &mut FnVisitors::new(
             || streaming,
-            |key, storage: &mut IRTraversalStorage<'_>, edges| {
+            |key, storage: &mut Arena<IR>, edges| {
                 let streaming = streaming || edges.outputs().iter().any(|x| *x);
 
                 match storage.get(key) {
@@ -207,10 +206,7 @@ pub(crate) fn set_cache_states(
         ),
         &mut vec![],
         &mut vec![],
-        IRTraversalStorage {
-            arena: lp_arena,
-            skip_subtree: |_| false,
-        },
+        lp_arena,
     )
     .continue_value()
     .unwrap();
