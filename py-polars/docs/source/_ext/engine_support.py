@@ -17,7 +17,10 @@ from docutils.parsers.rst import Directive
 
 ENGINE_LABELS = {
     "streaming": "Streaming",
+    "partially-streaming": "Partially Streaming",
     "distributed": "Distributed",
+    "partially-distributed": "Partially Distributed",
+    "gpu": "GPU",
 }
 
 
