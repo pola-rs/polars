@@ -2387,12 +2387,7 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
     )
 
 
-@given(
-    df=dataframes(
-        min_size=1,
-        include_cols=[column(name="key", dtype=pl.UInt8, allow_null=False)],
-    ),
-)
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("expr", "check_order", "returns_scalar", "length_preserving", "is_window"),
     [
@@ -2469,6 +2464,12 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
             False,
         ),
     ],
+)
+@given(
+    df=dataframes(
+        min_size=1,
+        include_cols=[column(name="key", dtype=pl.UInt8, allow_null=False)],
+    ),
 )
 def test_grouped_agg_parametric(
     df: pl.DataFrame,
