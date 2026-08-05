@@ -1450,7 +1450,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     IRTemporalFunction::Time => (PyTemporalFunction::Time,).into_py_any(py),
                     IRTemporalFunction::Date => (PyTemporalFunction::Date,).into_py_any(py),
-                    IRTemporalFunction::Datetime => (PyTemporalFunction::Datetime,).into_py_any(py),
                     IRTemporalFunction::Duration(time_unit) => {
                         (PyTemporalFunction::Duration, Wrap(*time_unit)).into_py_any(py)
                     },
@@ -1495,9 +1494,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     IRTemporalFunction::CastTimeUnit(time_unit) => {
                         (PyTemporalFunction::CastTimeUnit, Wrap(*time_unit)).into_py_any(py)
-                    },
-                    IRTemporalFunction::WithTimeUnit(time_unit) => {
-                        (PyTemporalFunction::WithTimeUnit, Wrap(*time_unit)).into_py_any(py)
                     },
                     #[cfg(feature = "timezones")]
                     IRTemporalFunction::ConvertTimeZone(time_zone) => {
