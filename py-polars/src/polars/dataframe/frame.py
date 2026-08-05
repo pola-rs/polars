@@ -13331,7 +13331,7 @@ class DataFrame:
             case "with_row_count":
                 hint = "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'."
                 return raise_expired_error(self, name, hint=hint)
-            case "approx_unique":
+            case "approx_n_unique":
                 hint = "use `select(pl.all().approx_n_unique())` instead."
                 return raise_expired_error(self, name, hint=hint)
             case _:

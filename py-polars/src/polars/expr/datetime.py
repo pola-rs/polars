@@ -2564,13 +2564,10 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     def __getattr__(self, name: str) -> Any:
         match name:
             case "datetime":
-                hint = "`dt.datetime` is deprecated; use `dt.replace_time_zone(None)` instead."
+                hint = "use `dt.replace_time_zone(None)` instead."
                 return raise_expired_error(self, name, hint=hint)
             case "with_time_unit":
-                hint = (
-                    "`dt.with_time_unit` is deprecated; instead, first cast "
-                    "to `Int64` and then cast to the desired data type."
-                )
+                hint = "instead, first cast to `Int64` and then cast to the desired data type."
                 return raise_expired_error(self, name, hint=hint)
             case _:
                 return expired_fallthrough(self, super(), name)
