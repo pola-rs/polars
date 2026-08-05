@@ -397,49 +397,6 @@ def identify_deprecations(*types: DeprecationType) -> dict[str, list[str]]:
     }
 
 
-def _expired_items(
-    *items: tuple[str, str, str | None],
-) -> Callable[[type[T]], type[T]]:
-    """
-    Class decorator giving removed attributes a helpful `AttributeError`.
-
-    Use as follows:
-
-        @_expired_items(("2.0", "melt", "use `unpivot` instead"))
-        class MyClass: ...
-
-    Parameters
-    ----------
-    items
-        `(version, name, message)` tuples, where `version` is the version in which
-        the attribute was removed and `message` hints at what to use instead.
-    """
-    removed = {name: (version, message) for version, name, message in items}
-
-    def decorate(cls: type[T]) -> type[T]:
-        original_getattr = getattr(cls, "__getattr__", None)
-
-        def __getattr__(self: T, name: str) -> Any:
-            if (item := removed.get(name)) is not None:
-                version, hint = item
-                msg = f"`{type(self).__name__}.{name}` was removed in version {version}"
-                msg = f"{msg}." if hint is None else f"{msg}; {hint}"
-                raise AttributeError(msg, name=name, obj=self)
-            if original_getattr is not None:
-                return original_getattr(self, name)
-            msg = f"{type(self).__name__!r} object has no attribute {name!r}"
-            raise AttributeError(msg, name=name, obj=self)
-
-        cls.__getattr__ = (  # type: ignore[attr-defined]
-            wraps(original_getattr)(__getattr__)
-            if original_getattr is not None
-            else __getattr__
-        )
-        return cls
-
-    return decorate
-
-
 __all__ = [
     "deprecate_nonkeyword_arguments",
     "deprecate_parameter_as_multi_positional",

@@ -59,11 +59,10 @@ from polars._utils.construction import (
 )
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
-    _expired_items,
     deprecate_renamed_parameter,
-    deprecated,
     issue_deprecation_warning,
 )
+from polars._utils.expired import expired_error, expired_fallthrough
 from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse import parse_into_expression
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
@@ -121,7 +120,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import (
         Callable,
         Collection,
@@ -202,20 +200,6 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
-@_expired_items(
-    (
-        "2.0",
-        "melt",
-        "use `DataFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
-    ),
-    ("2.0", "__dataframe__", None),
-    (
-        "2.0",
-        "with_row_count",
-        "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
-    ),
-    ("2.0", "approx_unique", "use `select(pl.all().approx_n_unique())` instead."),
-)
 class DataFrame:
     """
     Two-dimensional data structure representing data as a table with rows and columns.
@@ -13274,6 +13258,22 @@ class DataFrame:
                 nulls_last=nulls_last,
             )
         ).to_series()
+
+    def __getattr__(self, name: str) -> AttributeError:
+        match name:
+            case "melt":
+                hint = "use `DataFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`"
+                raise expired_error(self, name, hint=hint)
+            case "__dataframe__":
+                raise expired_error(self, name)
+            case "with_row_count":
+                hint = "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'."
+                raise expired_error(self, name, hint=hint)
+            case "approx_unique":
+                hint = "use `select(pl.all().approx_n_unique())` instead."
+                raise expired_error(self, name, hint=hint)
+            case _:
+                raise expired_fallthrough(self, name)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
