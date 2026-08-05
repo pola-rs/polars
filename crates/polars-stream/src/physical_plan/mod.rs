@@ -889,6 +889,7 @@ fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNo
 
         let has_rename = columns.iter().any(|(k, v)| k != v);
 
+        // TODO: Figure out why `input_schema.try_project` fails below with e.g. "\"_POLARS_TMP_7253\" not found"
         if has_rename {
             return;
         }
