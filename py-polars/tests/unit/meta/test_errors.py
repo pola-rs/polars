@@ -12,6 +12,7 @@ import pytest
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
 from polars.exceptions import (
+    AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
@@ -796,6 +797,20 @@ def test_str_namespace_typo_suggests() -> None:
 def test_dt_namespace_typo_suggests() -> None:
     with pytest.raises(AttributeError, match="Did you mean: 'hour'"):
         pl.col("a").dt.houur()  # type: ignore[attr-defined]
+
+
+def test_series_dt_namespace_typo_suggests() -> None:
+    s = pl.Series([date(2022, 1, 1)])
+    with pytest.raises(AttributeError, match="Did you mean: 'hour'"):
+        s.dt.houur()  # type: ignore[attr-defined]
+
+
+def test_series_dt_namespace_removed_item() -> None:
+    s = pl.Series([date(2022, 1, 1)])
+    with pytest.raises(
+        AttributeRemovedError, match=r"use `dt\.replace_time_zone\(None\)` instead"
+    ):
+        s.dt.datetime()  # type: ignore[attr-defined]
 
 
 def test_list_namespace_typo_suggests() -> None:
