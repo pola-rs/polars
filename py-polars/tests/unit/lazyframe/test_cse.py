@@ -1675,3 +1675,27 @@ def test_cse_single_scalar_does_not_broadcast_28407() -> None:
     q = pl.LazyFrame({"a": [1, 2, 3]}).select((e + e).alias("o"))
 
     assert_frame_equal(q.collect(), pl.DataFrame({"o": 10}, schema={"o": pl.Int32}))
+
+
+def test_cse_opaque_python_distinct_config_not_merged() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+
+    calls = 0
+
+    def f(df: pl.DataFrame) -> pl.DataFrame:
+        nonlocal calls
+        calls += 1
+        return df
+
+    def count_udf_calls(validate_a: bool, validate_b: bool) -> int:
+        nonlocal calls
+        calls = 0
+        a = lf.map_batches(f, validate_output_schema=validate_a)
+        b = lf.map_batches(f, validate_output_schema=validate_b)
+        pl.concat([a, b]).collect()
+        return calls
+
+    assert count_udf_calls(True, True) == 1
+    # This proves that we must consider the various attributes when deduplicating Python
+    # UDFs, because they can have an observable effect
+    assert count_udf_calls(False, True) == 2

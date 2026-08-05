@@ -1,5 +1,3 @@
-use std::hash::{Hash, Hasher};
-use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
@@ -7,8 +5,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
-use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
-use crate::plans::visitor::hash::IRHashWrap;
+use super::canonical_ir::{CanonicalIRId, CanonicalIRMap};
 use crate::plans::{AExpr, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::tree_traversal::{PersistInputEdgeIdxs, TreeTraversalImpl};
@@ -25,22 +22,11 @@ pub fn common_subplan_elimination(
     let mut edges = vec![usize::MAX]; // Indices into `id_map`
     let mut persisted_input_edge_idxs = vec![usize::MAX]; // For tree traversal
     let mut id_map = PlIndexMap::new();
-    let mut storage = IRTraversalStorage {
-        arena: ir_arena,
-        skip_subtree: |ir| {
-            match ir {
-                // Don't visit all the files in a `scan *` operation.
-                // Put an arbitrary limit to 20 files now.
-                IR::Union {
-                    options, inputs, ..
-                } => options.from_partitioned_ds && inputs.len() > 20,
-                _ => false,
-            }
-        },
-    };
+
+    let canonical_ir_map = CanonicalIRMap::new(root, ir_arena, expr_arena);
 
     TreeTraversalImpl {
-        storage: &mut storage,
+        storage: ir_arena,
         visit_stack: visit_stack.get(),
         edges: &mut edges,
         persist_input_edge_idxs: Some(&mut PersistInputEdgeIdxs::Build(
@@ -48,8 +34,8 @@ pub fn common_subplan_elimination(
         )),
         graph_visit_order_fn: None,
         visitor: &mut IDGeneratorVisitor {
+            canonical_ir_map,
             id_map: &mut id_map,
-            expr_arena,
         },
     }
     .traverse_rec(root, 0, false)
@@ -59,7 +45,7 @@ pub fn common_subplan_elimination(
     let mut inserted_cache = false;
 
     TreeTraversalImpl {
-        storage: &mut storage,
+        storage: ir_arena,
         visit_stack: visit_stack.get(),
         edges: &mut edges,
         persist_input_edge_idxs: Some(&mut PersistInputEdgeIdxs::Use(
@@ -70,7 +56,6 @@ pub fn common_subplan_elimination(
             id_map: &mut id_map,
             inserted_cache: &mut inserted_cache,
             insert_nested_caches,
-            phantom: PhantomData,
         },
     }
     .traverse_rec(root, 0, false)
@@ -78,32 +63,6 @@ pub fn common_subplan_elimination(
     .unwrap();
 
     inserted_cache
-}
-
-struct Blake3Hasher {
-    hasher: blake3::Hasher,
-}
-
-impl Blake3Hasher {
-    fn new() -> Self {
-        Self {
-            hasher: blake3::Hasher::new(),
-        }
-    }
-
-    fn finalize(self) -> [u8; 32] {
-        self.hasher.finalize().into()
-    }
-}
-
-impl Hasher for Blake3Hasher {
-    fn finish(&self) -> u64 {
-        0
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        self.hasher.update(bytes);
-    }
 }
 
 #[derive(Debug)]
@@ -123,15 +82,15 @@ impl Default for IDState {
     }
 }
 
-struct IDGeneratorVisitor<'map, 'arena> {
-    id_map: &'map mut PlIndexMap<[u8; 32], IDState>,
-    expr_arena: &'arena Arena<AExpr>,
+struct IDGeneratorVisitor<'map> {
+    canonical_ir_map: CanonicalIRMap,
+    id_map: &'map mut PlIndexMap<CanonicalIRId, IDState>,
 }
 
-impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
+impl NodeVisitor for IDGeneratorVisitor<'_> {
     type Key = Node;
+    type Storage = Arena<IR>;
     type Edge = usize;
-    type Storage = IRTraversalStorage<'arena>;
     type BreakValue = ();
 
     fn default_edge(
@@ -157,26 +116,7 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
         storage: &mut Self::Storage,
         edges: &mut dyn NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue> {
-        let ir = storage.get(key);
-
-        let mut hasher = Blake3Hasher::new();
-
-        hasher.write_usize(if storage.skip_subtree(ir) {
-            // Subtree nodes were not pushed for traversal due to e.g. too many
-            // union input nodes. We hash the memory address of this &IR instead.
-            ir as *const IR as usize
-        } else {
-            0
-        });
-
-        IRHashWrap::new(key, storage, self.expr_arena, true).hash(&mut hasher);
-
-        for entry_idx in edges.inputs().iter().copied() {
-            let input_hash: &[u8; 32] = self.id_map.get_index(entry_idx).unwrap().0;
-            hasher.write(input_hash);
-        }
-
-        let id: [u8; 32] = hasher.finalize();
+        let id = self.canonical_ir_map.resolve(key, storage);
 
         use indexmap::map::Entry;
 
@@ -208,17 +148,16 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
     }
 }
 
-struct InsertCachesVisitor<'a, 'arena> {
-    id_map: &'a mut PlIndexMap<[u8; 32], IDState>,
+struct InsertCachesVisitor<'a> {
+    id_map: &'a mut PlIndexMap<CanonicalIRId, IDState>,
     inserted_cache: &'a mut bool,
     insert_nested_caches: bool,
-    phantom: PhantomData<&'arena ()>,
 }
 
-impl<'a, 'arena> NodeVisitor for InsertCachesVisitor<'a, 'arena> {
+impl NodeVisitor for InsertCachesVisitor<'_> {
     type Key = Node;
+    type Storage = Arena<IR>;
     type Edge = usize;
-    type Storage = IRTraversalStorage<'arena>;
     type BreakValue = ();
 
     fn default_edge(
