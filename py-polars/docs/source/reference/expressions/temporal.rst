@@ -16,7 +16,6 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.combine
     Expr.dt.convert_time_zone
     Expr.dt.date
-    Expr.dt.datetime
     Expr.dt.day
     Expr.dt.days_in_month
     Expr.dt.dst_offset
