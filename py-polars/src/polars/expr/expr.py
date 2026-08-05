@@ -3622,6 +3622,16 @@ class Expr:
         """
         Get median value using linear interpolation.
 
+        Notes
+        -----
+        NaN values are regarded as larger than any finite number (and equal to one
+        another). As a result, ``NaN`` values are treated as the largest values when
+        computing the median, which can lead to surprising results.
+
+        For example, the median of ``[1.0, 2.0, NaN, NaN, NaN, 6.0, 7.0]`` is ``7.0``,
+        not ``4.0``. To exclude ``NaN`` values from the calculation, use
+        :func:`drop_nans`. To also exclude null values, use :func:`drop_nulls` first.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
@@ -4448,6 +4458,16 @@ class Expr:
     ) -> Expr:
         """
         Get quantile value.
+
+        Notes
+        -----
+        NaN values are regarded as larger than any finite number (and equal to one
+        another). As a result, ``NaN`` values are treated as the largest values when
+        computing quantiles, which can lead to surprising results.
+
+        For example, the median of ``[1.0, 2.0, NaN, NaN, NaN, 6.0, 7.0]`` is ``7.0``,
+        not ``4.0``. To exclude ``NaN`` values from the calculation, use
+        :func:`drop_nans`. To also exclude null values, use :func:`drop_nulls` first.
 
         Parameters
         ----------
