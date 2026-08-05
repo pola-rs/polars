@@ -52,6 +52,9 @@ def read_delta(
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
+
+        .. deprecated:: 1.43.2
+            Call rechunk on the returned DataFrame.
     storage_options
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
@@ -211,6 +214,9 @@ def scan_delta(
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
 
+        .. deprecated:: 1.43.2
+            Collect into a DataFrame first, then call rechunk on the returned DataFrame.
+
     Returns
     -------
     LazyFrame
@@ -329,7 +335,7 @@ def scan_delta(
         delta_table_options=delta_table_options,
         use_pyarrow=use_pyarrow,
         pyarrow_options=pyarrow_options,
-        rechunk=rechunk or False,
+        rechunk=rechunk,
     )
 
     return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))

@@ -55,7 +55,7 @@ def read_ipc(
     storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-    rechunk: bool = True,
+    rechunk: bool | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC (Feather v2) file.
@@ -98,6 +98,9 @@ def read_ipc(
         Only used if `row_index_name` is set.
     rechunk
         Make sure that all data is contiguous.
+
+        .. deprecated:: 1.43.2
+            Call rechunk on the returned DataFrame.
 
     Returns
     -------
@@ -158,6 +161,16 @@ def read_ipc(
             df = df.rechunk()
 
         return df
+
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on read_ipc() will be removed. "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            version="1.43.2",
+        )
+    else:
+        rechunk = False
 
     if use_pyarrow and n_rows and not memory_map:
         msg = "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
@@ -277,7 +290,7 @@ def read_ipc_stream(
     storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-    rechunk: bool = True,
+    rechunk: bool | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC record batch stream.
@@ -316,10 +329,23 @@ def read_ipc_stream(
     rechunk
         Make sure that all data is contiguous.
 
+        .. deprecated:: 1.43.2
+            Call rechunk on the returned DataFrame(s).
+
     Returns
     -------
     DataFrame
     """
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on read_ipc_stream() will be removed. "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            version="1.43.2",
+        )
+    else:
+        rechunk = False
+
     with prepare_file_arg(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
@@ -454,8 +480,8 @@ def scan_ipc(
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
 
-        .. deprecated:: 1.42.0
-            Collect into a DataFrame first, then call rechunk on the result.
+        .. deprecated:: 1.43.2
+            Collect into a DataFrame first, then call rechunk on the returned DataFrame.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -530,7 +556,7 @@ def scan_ipc(
             "`rechunk` parameter on scan_ipc() will be removed. "
             "Consider first collecting the scan to a DataFrame, then calling "
             "df.rechunk() on the result.",
-            version="1.42.0",
+            version="1.43.2",
         )
     else:
         rechunk = False

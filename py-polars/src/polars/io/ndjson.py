@@ -42,7 +42,7 @@ def read_ndjson(
     batch_size: int | None = 1024,
     n_rows: int | None = None,
     low_memory: bool = False,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     ignore_errors: bool = False,
@@ -86,6 +86,9 @@ def read_ndjson(
         Reduce memory pressure at the expense of performance.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
+
+        .. deprecated:: 1.43.2
+            Call rechunk on the returned DataFrame.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -261,8 +264,8 @@ def scan_ndjson(
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
 
-        .. deprecated:: 1.42.0
-            Collect into a DataFrame first, then call rechunk on the result.
+        .. deprecated:: 1.43.2
+            Collect into a DataFrame first, then call rechunk on the returned DataFrame.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -309,10 +312,10 @@ def scan_ndjson(
     """
     if rechunk is not None:
         issue_deprecation_warning(
-            "`rechunk` parameter on scan_parquet() will be removed. "
+            "`rechunk` parameter on read_ndjson()/scan_ndjson() will be removed. "
             "Consider first collecting the scan to a DataFrame, then calling "
             "df.rechunk() on the result.",
-            version="1.42.0",
+            version="1.43.2",
         )
     else:
         rechunk = False

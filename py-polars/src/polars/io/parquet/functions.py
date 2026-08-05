@@ -141,6 +141,9 @@ def read_parquet(
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
+
+        .. deprecated:: 1.43.2
+            Call rechunk on the returned DataFrame.
     low_memory
         Reduce memory pressure at the expense of performance.
     storage_options
@@ -579,8 +582,8 @@ def scan_parquet(
         In case of reading multiple files via a glob pattern rechunk the final DataFrame
         into contiguous memory chunks.
 
-        .. deprecated:: 1.42.0
-            Collect into a DataFrame first, then call rechunk on the result.
+        .. deprecated:: 1.43.2
+            Collect into a DataFrame first, then call rechunk on the returned DataFrame.
     low_memory
         Reduce memory pressure at the expense of performance.
     cache
@@ -673,7 +676,7 @@ def scan_parquet(
             "`rechunk` parameter on scan_parquet() will be removed. "
             "Consider first collecting the scan to a DataFrame, then calling "
             "df.rechunk() on the result.",
-            version="1.42.0",
+            version="1.43.2",
         )
     else:
         rechunk = False
