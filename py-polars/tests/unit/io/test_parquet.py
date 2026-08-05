@@ -3436,6 +3436,7 @@ def test_scan_parquet_skip_row_groups_with_cast(
     df = pl.select(x=value)
 
     df.write_parquet(f)
+    f.seek(0)
 
     q = pl.scan_parquet(
         f,
