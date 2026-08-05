@@ -4,12 +4,13 @@ import inspect
 from functools import wraps
 from typing import TYPE_CHECKING, TypeVar
 
-from polars._utils.various import IdentityFunction
 from polars.exceptions import AttributeRemovedError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import Any, ParamSpec
+
+    from polars._utils.various import IdentityFunction
 
     P = ParamSpec("P")
     T = TypeVar("T")
