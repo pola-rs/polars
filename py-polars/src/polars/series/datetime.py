@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars._utils.deprecation import deprecated
+from polars._utils.expired import expired_fallthrough, raise_expired_error
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
@@ -899,44 +900,6 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         Series: '' [date]
         [
                 2021-01-02
-        ]
-        """
-
-    @deprecated(
-        "`Series.dt.datetime` is deprecated; "
-        "use `Series.dt.replace_time_zone(None)` instead."
-    )
-    def datetime(self) -> Series:
-        """
-        Extract (local) datetime.
-
-        .. deprecated:: 0.20.4
-            Use `dt.replace_time_zone(None)` instead.
-
-        Applies to Datetime columns.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`Datetime`.
-
-        Examples
-        --------
-        >>> from datetime import datetime
-        >>> ser = pl.Series([datetime(2021, 1, 2, 5)]).dt.replace_time_zone(
-        ...     "Asia/Kathmandu"
-        ... )
-        >>> ser
-        shape: (1,)
-        Series: '' [datetime[μs, Asia/Kathmandu]]
-        [
-                2021-01-02 05:00:00 +0545
-        ]
-        >>> ser.dt.datetime()  # doctest: +SKIP
-        shape: (1,)
-        Series: '' [datetime[μs]]
-        [
-                2021-01-02 05:00:00
         ]
         """
 
@@ -2326,3 +2289,12 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
                 1800-01-02
         ]
         """
+
+    def __getattr__(self, name: str) -> Any:
+        match name:
+            case "datetime":
+                return raise_expired_error(
+                    self, name, hint="use `Series.dt.replace_time_zone(None)` instead."
+                )
+            case _:
+                return expired_fallthrough(self, super(), name)
