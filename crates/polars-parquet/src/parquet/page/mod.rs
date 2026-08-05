@@ -450,19 +450,12 @@ pub fn split_buffer(page: &DataPage) -> ParquetResult<EncodedSplitBuffer<'_>> {
 }
 
 pub fn split_plain_buffer_values<T>(page: &DataPage) -> ParquetResult<&[u8]> {
-    let expected_len = page
-        .num_values()
-        .checked_mul(std::mem::size_of::<T>())
-        .ok_or(ParquetError::WouldOverAllocate)?;
+    let num_values = page.num_values();
+    let mut bytes: &[u8] = split_buffer(page)?.values;
 
-    let bytes: &[u8] = split_buffer(page)?.values;
-
-    if bytes.len() < expected_len {
-        return Err(ParquetError::OutOfSpec(format!(
-            "expected {expected_len} bytes in page, found {}",
-            bytes.len()
-        )));
+    if bytes.len().div_ceil(std::mem::size_of::<T>()) > num_values {
+        bytes = &bytes[..num_values * std::mem::size_of::<T>()];
     }
 
-    Ok(&bytes[..expected_len])
+    Ok(bytes)
 }
