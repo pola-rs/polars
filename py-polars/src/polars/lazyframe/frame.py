@@ -8619,7 +8619,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         predicate_pushdown: bool = False,
         projection_pushdown: bool = False,
         slice_pushdown: bool = False,
-        no_optimizations: bool | None = None,
         schema: None | SchemaDict = None,
         validate_output_schema: bool = True,
         streamable: bool = False,
@@ -8641,11 +8640,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Allow projection pushdown optimization to pass this node.
         slice_pushdown
             Allow slice pushdown optimization to pass this node.
-        no_optimizations
-            .. deprecated:: 1.30.0
-                This parameter is deprecated and will be removed in a future version.
-                The `_pushdown` parameters now default to `False`, so this parameter
-                is no longer needed.
         schema
             Output schema of the function, if set to `None` we assume that the schema
             will remain unchanged by the applied function.
@@ -8703,13 +8697,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ -2      ┆ 199998 │
         └─────────┴────────┘
         """
-        if no_optimizations is not None:
-            issue_deprecation_warning(
-                "the `no_optimizations` parameter for `LazyFrame.map_batches` is deprecated."
-                " The `_pushdown` parameters now default to `False`, so this parameter is no longer needed.",
-                version="1.39.3",
-            )
-
         return self._from_pyldf(
             self._ldf.map_batches(
                 function,
