@@ -11,11 +11,11 @@ Errors
     :nosignatures:
 
     PolarsError
+    AttributeRemovedError
     ColumnNotFoundError
     ComputeError
     DuplicateError
     InvalidOperationError
-    ItemRemovedError
     ModuleUpgradeRequiredError
     NoDataError
     NoRowsReturnedError

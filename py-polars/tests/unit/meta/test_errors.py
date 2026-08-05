@@ -12,10 +12,10 @@ import pytest
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
 from polars.exceptions import (
+    AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
-    ItemRemovedError,
     OutOfBoundsError,
     SchemaError,
     SchemaFieldNotFoundError,
@@ -808,7 +808,7 @@ def test_series_dt_namespace_typo_suggests() -> None:
 def test_series_dt_namespace_removed_item() -> None:
     s = pl.Series([date(2022, 1, 1)])
     with pytest.raises(
-        ItemRemovedError, match=r"use `dt\.replace_time_zone\(None\)` instead"
+        AttributeRemovedError, match=r"use `dt\.replace_time_zone\(None\)` instead"
     ):
         s.dt.datetime()  # type: ignore[attr-defined]
 

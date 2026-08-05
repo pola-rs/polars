@@ -9,7 +9,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.wrap import wrap_s
 from polars.datatypes import dtype_to_ffiname
-from polars.exceptions import ItemRemovedError
+from polars.exceptions import AttributeRemovedError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -84,7 +84,7 @@ def _forward_getattr(
             expr = getattr(expr, namespace)
         try:
             return expr.__getattr__(name)
-        except ItemRemovedError:
+        except AttributeRemovedError:
             raise
         except AttributeError:
             return original_getattr(self, name)

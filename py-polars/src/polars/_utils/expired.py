@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.exceptions import ItemRemovedError
+from polars.exceptions import AttributeRemovedError
 
 if TYPE_CHECKING:
     from typing import Any, NoReturn
@@ -27,7 +27,7 @@ def raise_item_removed_error(
     """
     msg = f"`{name}` was removed in version {version}"
     msg = f"{msg}." if hint is None else f"{msg}; {hint}"
-    raise ItemRemovedError(msg, name=name, obj=obj)
+    raise AttributeRemovedError(msg, name=name, obj=obj)
 
 
 def getattr_fallback(obj: object, superclass: object, name: str) -> Any:
