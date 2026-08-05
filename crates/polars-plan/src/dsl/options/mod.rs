@@ -104,24 +104,11 @@ impl Hash for JoinTypeOptionsIR {
 
 impl JoinTypeOptionsIR {
     pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
-        if std::mem::discriminant(self) != std::mem::discriminant(other) {
-            return false;
-        }
-
         match self {
             #[cfg(feature = "iejoin")]
-            Self::IEJoin(lhs) => {
-                let Self::IEJoin(rhs) = other else {
-                    return false;
-                };
-                lhs == rhs
-            },
+            Self::IEJoin(lhs) => matches!(other, Self::IEJoin(rhs) if lhs == rhs),
             Self::CrossAndFilter { predicate: lhs } => {
-                #[allow(irrefutable_let_patterns)]
-                let Self::CrossAndFilter { predicate: rhs } = other else {
-                    return false;
-                };
-                expr_cmp.equals(lhs, rhs)
+                matches!(other, Self::CrossAndFilter { predicate: rhs } if expr_cmp.equals(lhs, rhs))
             },
         }
     }
@@ -168,34 +155,20 @@ pub struct JoinOptionsIR {
 
 impl JoinOptionsIR {
     pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
-        if std::mem::discriminant(&self.options) != std::mem::discriminant(&other.options) {
-            return false;
-        }
-
         let Self {
-            allow_parallel: l_allow_parallel,
-            force_parallel: l_force_parallel,
-            args: l_args,
-            options: l_options,
+            allow_parallel,
+            force_parallel,
+            args,
+            options,
         } = self;
-        let Self {
-            allow_parallel: r_allow_parallel,
-            force_parallel: r_force_parallel,
-            args: r_args,
-            options: r_options,
-        } = other;
 
-        l_allow_parallel == r_allow_parallel
-            && l_force_parallel == r_force_parallel
-            && l_args == r_args
-            && match l_options {
-                None => true,
-                Some(lhs) => {
-                    let Some(rhs) = r_options else {
-                        return false;
-                    };
-                    lhs.shallow_eq(rhs, expr_cmp)
-                },
+        *allow_parallel == other.allow_parallel
+            && *force_parallel == other.force_parallel
+            && *args == other.args
+            && match (options, &other.options) {
+                (Some(lhs), Some(rhs)) => lhs.shallow_eq(rhs, expr_cmp),
+                (None, None) => true,
+                _ => false,
             }
     }
 

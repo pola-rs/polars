@@ -307,10 +307,6 @@ pub enum PartitionStrategyIR {
 
 impl PartitionStrategyIR {
     pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
-        if std::mem::discriminant(self) != std::mem::discriminant(other) {
-            return false;
-        }
-
         match self {
             Self::Keyed {
                 keys: l_keys,
@@ -332,7 +328,7 @@ impl PartitionStrategyIR {
                     && l_include_keys == r_include_keys
                     && l_keys_pre_grouped == r_keys_pre_grouped
             },
-            Self::FileSize => true,
+            Self::FileSize => matches!(other, Self::FileSize),
         }
     }
 }
@@ -361,30 +357,14 @@ impl PartitionStrategyIR {
 
 impl SinkTypeIR {
     pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
-        if std::mem::discriminant(self) != std::mem::discriminant(other) {
-            return false;
-        }
-
         match self {
-            Self::Memory => true,
-            Self::Callback(lhs) => {
-                let Self::Callback(rhs) = other else {
-                    return false;
-                };
-                lhs == rhs
-            },
-            Self::File(lhs) => {
-                let Self::File(rhs) = other else {
-                    return false;
-                };
-                lhs == rhs
-            },
-            Self::Partitioned(lhs) => {
-                let Self::Partitioned(rhs) = other else {
-                    return false;
-                };
-                lhs.shallow_eq(rhs, expr_cmp)
-            },
+            Self::Memory => matches!(other, Self::Memory),
+            Self::Callback(lhs) => matches!(other, Self::Callback(rhs)
+                if lhs == rhs),
+            Self::File(lhs) => matches!(other, Self::File(rhs)
+                if lhs == rhs),
+            Self::Partitioned(lhs) => matches!(other, Self::Partitioned(rhs)
+                if lhs.shallow_eq(rhs, expr_cmp)),
         }
     }
 
@@ -443,31 +423,22 @@ pub struct PartitionedSinkOptionsIR {
 impl PartitionedSinkOptionsIR {
     pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
         let Self {
-            base_path: l_base_path,
-            file_path_provider: l_file_path_provider,
-            partition_strategy: l_partition_strategy,
-            file_format: l_file_format,
-            unified_sink_args: l_unified_sink_args,
-            max_rows_per_file: l_max_rows_per_file,
-            approximate_bytes_per_file: l_approximate_bytes_per_file,
+            base_path,
+            file_path_provider,
+            partition_strategy,
+            file_format,
+            unified_sink_args,
+            max_rows_per_file,
+            approximate_bytes_per_file,
         } = self;
-        let Self {
-            base_path: r_base_path,
-            file_path_provider: r_file_path_provider,
-            partition_strategy: r_partition_strategy,
-            file_format: r_file_format,
-            unified_sink_args: r_unified_sink_args,
-            max_rows_per_file: r_max_rows_per_file,
-            approximate_bytes_per_file: r_approximate_bytes_per_file,
-        } = other;
 
-        l_base_path == r_base_path
-            && l_file_path_provider == r_file_path_provider
-            && l_partition_strategy.shallow_eq(&r_partition_strategy, expr_cmp)
-            && l_file_format == r_file_format
-            && l_unified_sink_args == r_unified_sink_args
-            && l_max_rows_per_file == r_max_rows_per_file
-            && l_approximate_bytes_per_file == r_approximate_bytes_per_file
+        *base_path == other.base_path
+            && *file_path_provider == other.file_path_provider
+            && partition_strategy.shallow_eq(&other.partition_strategy, expr_cmp)
+            && *file_format == other.file_format
+            && *unified_sink_args == other.unified_sink_args
+            && *max_rows_per_file == other.max_rows_per_file
+            && *approximate_bytes_per_file == other.approximate_bytes_per_file
     }
 
     pub fn cloud_scheme(&self) -> Option<CloudScheme> {
