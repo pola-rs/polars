@@ -1679,7 +1679,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                                 sources,
                                 scan_type,
                                 alias: Some(name),
-                                cloud_options: unified_scan_args.cloud_options,
+                                cloud_options: Box::new(unified_scan_args.cloud_options),
                             },
                         },
                     );
