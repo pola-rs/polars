@@ -334,9 +334,9 @@ class ExprCatNameSpace:
         """
         Convert to a categorical or enum `dtype`.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         The input must be of the physical type of the categorical or enum dtype.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------

@@ -315,10 +315,10 @@ class ExprBinaryNameSpace:
         r"""
         Interpret bytes as another type.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         Supported types are numerical or temporal dtypes, or an ``Array`` of
         these dtypes.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -506,12 +506,12 @@ class ExprBinaryNameSpace:
         r"""
         Get the byte value at the given index.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         For example, index `0` would return the first byte of every binary value
         and index `-1` would return the last byte of every binary value.
         The behavior if an index is out of bounds is determined by the argument
         `null_on_oob`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------

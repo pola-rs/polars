@@ -703,11 +703,11 @@ class ExprArrayNameSpace:
         """
         Get the value by index in the sub-arrays.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         So index `0` would return the first item of every sublist
         and index `-1` would return the last item of every sublist
         if an index is out of bounds, it will return a `None`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -795,9 +795,9 @@ class ExprArrayNameSpace:
         """
         Join all string items in a sub-array and place a separator between them.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         This errors if inner type of array `!= String`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
