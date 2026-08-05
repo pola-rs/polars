@@ -699,7 +699,6 @@ def _read_csv_impl(
             infer_schema_length=infer_schema_length,
             n_rows=n_rows,
             low_memory=low_memory,
-            rechunk=rechunk,
             skip_rows_after_header=skip_rows_after_header,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
@@ -709,16 +708,22 @@ def _read_csv_impl(
             decimal_comma=decimal_comma,
             glob=glob,
         )
+
         if columns is None:
-            return scan.collect()
+            ret = scan.collect()
         elif is_str_sequence(columns, allow_str=False):
-            return scan.select(columns).collect()
+            ret = scan.select(columns).collect()
         else:
             msg = (
                 "cannot use glob patterns and integer based projection as `columns` argument"
                 "\n\nUse columns: List[str]"
             )
             raise ValueError(msg)
+
+        if rechunk:
+            ret = ret.rechunk()
+
+        return ret
 
     projection, columns = parse_columns_arg(columns)
 

@@ -167,7 +167,7 @@ def read_ndjson(
 
     del credential_provider
 
-    return scan_ndjson(
+    ret = scan_ndjson(
         source,
         schema=schema,
         schema_overrides=schema_overrides,
@@ -175,7 +175,6 @@ def read_ndjson(
         batch_size=batch_size,
         n_rows=n_rows,
         low_memory=low_memory,
-        rechunk=rechunk,
         row_index_name=row_index_name,
         row_index_offset=row_index_offset,
         ignore_errors=ignore_errors,
@@ -185,6 +184,11 @@ def read_ndjson(
         credential_provider=credential_provider_builder,  # type: ignore[arg-type]
         file_cache_ttl=None,
     ).collect()
+
+    if rechunk:
+        ret = ret.rechunk()
+
+    return ret
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
