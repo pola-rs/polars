@@ -126,15 +126,6 @@ def test_dt_replace_time_zone_none(time_zone: str | None, time_unit: TimeUnit) -
     assert result.item() == expected
 
 
-def test_dt_datetime_deprecated() -> None:
-    s = pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone("Asia/Kathmandu")
-    with pytest.deprecated_call():
-        result = s.dt.datetime()
-    expected = datetime(2022, 1, 1, 23)
-    assert result.dtype == pl.Datetime(time_zone=None)
-    assert result.item() == expected
-
-
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
 def test_local_date_sortedness(time_zone: str | None) -> None:
     # singleton
