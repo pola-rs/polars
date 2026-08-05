@@ -738,7 +738,6 @@ pub(crate) struct CommonSubExprOptimizer {
     // Only supports element-wise CSEE
     // on SELECT/HSTACK
     element_wise_select_only: bool,
-
     nodes_scratch: ScratchVec<Node>,
     heights_scratch: ScratchVec<ExprProjectionHeight>,
 }
@@ -1108,28 +1107,42 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     input_schema.as_ref().as_ref(),
                     self.element_wise_select_only,
                 )? {
-                    let keys = keys.clone();
-                    let options = options.clone();
-                    let schema = schema.clone();
-                    let apply = apply.clone();
-                    let maintain_order = *maintain_order;
-                    let input = *input;
+                    let all_column_height = aggs.cse_exprs().iter().all(|agg| {
+                        matches!(
+                            aexpr_projection_height_rec(
+                                agg.node(),
+                                &arena.1,
+                                &mut self.nodes_scratch,
+                                &mut self.heights_scratch,
+                            ),
+                            ExprProjectionHeight::Column
+                        )
+                    });
 
-                    let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
-                        .with_columns(aggs.cse_exprs().to_vec(), Default::default())
-                        .build();
-                    let input = arena.0.add(lp);
+                    if all_column_height {
+                        let keys = keys.clone();
+                        let options = options.clone();
+                        let schema = schema.clone();
+                        let apply = apply.clone();
+                        let maintain_order = *maintain_order;
+                        let input = *input;
 
-                    let lp = IR::GroupBy {
-                        input,
-                        keys,
-                        aggs: aggs.default_exprs().to_vec(),
-                        options,
-                        schema,
-                        maintain_order,
-                        apply,
-                    };
-                    arena.0.replace(arena_idx, lp);
+                        let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
+                            .with_columns(aggs.cse_exprs().to_vec(), Default::default())
+                            .build();
+                        let input = arena.0.add(lp);
+
+                        let lp = IR::GroupBy {
+                            input,
+                            keys,
+                            aggs: aggs.default_exprs().to_vec(),
+                            options,
+                            schema,
+                            maintain_order,
+                            apply,
+                        };
+                        arena.0.replace(arena_idx, lp);
+                    }
                 }
             },
             _ => {},
