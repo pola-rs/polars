@@ -11,7 +11,6 @@ import pytest
 
 import polars as pl
 from polars.exceptions import (
-    ArgumentRemovedError,
     ColumnNotFoundError,
     ComputeError,
     DuplicateError,
