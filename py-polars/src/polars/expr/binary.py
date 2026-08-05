@@ -30,6 +30,8 @@ class ExprBinaryNameSpace:
         r"""
         Check if binaries in Series contain a binary substring.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         literal
@@ -77,6 +79,8 @@ class ExprBinaryNameSpace:
         r"""
         Check if string values end with a binary substring.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         suffix
@@ -123,6 +127,8 @@ class ExprBinaryNameSpace:
     def starts_with(self, prefix: IntoExpr) -> Expr:
         r"""
         Check if values start with a binary substring.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -173,6 +179,8 @@ class ExprBinaryNameSpace:
         r"""
         Decode values using the provided encoding.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         encoding : {'hex', 'base64'}
@@ -220,6 +228,8 @@ class ExprBinaryNameSpace:
         r"""
         Encode a value using the provided encoding.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         encoding : {'hex', 'base64'}
@@ -264,6 +274,8 @@ class ExprBinaryNameSpace:
         r"""
         Get the size of binary values in the given unit.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         unit : {'b', 'kb', 'mb', 'gb', 'tb'}
@@ -302,6 +314,8 @@ class ExprBinaryNameSpace:
     ) -> Expr:
         r"""
         Interpret bytes as another type.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Supported types are numerical or temporal dtypes, or an ``Array`` of
         these dtypes.
@@ -351,6 +365,8 @@ class ExprBinaryNameSpace:
         r"""
         Slice the binary values.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         offset
@@ -393,6 +409,8 @@ class ExprBinaryNameSpace:
     def head(self, n: int | IntoExpr = 5) -> Expr:
         r"""
         Take the first `n` bytes of the binary values.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -440,6 +458,8 @@ class ExprBinaryNameSpace:
         r"""
         Take the last `n` bytes of the binary values.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -485,6 +505,8 @@ class ExprBinaryNameSpace:
     def get(self, index: int | IntoExpr, *, null_on_oob: bool = False) -> Expr:
         r"""
         Get the byte value at the given index.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         For example, index `0` would return the first byte of every binary value
         and index `-1` would return the last byte of every binary value.
