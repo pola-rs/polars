@@ -417,18 +417,9 @@ def test_to_list() -> None:
 
 
 def test_rows() -> None:
-    s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    with pytest.deprecated_call(match=r"`dt\.with_time_unit` is deprecated"):
-        s1 = (
-            pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
-            .cast(pl.Datetime)
-            .dt.with_time_unit("ns")
-        )
-    df = pl.DataFrame([s0, s1])
-
+    df = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date).to_frame()
     rows = df.rows()
     assert rows[0][0] == date(2308, 4, 2)
-    assert rows[0][1] == datetime(1970, 1, 1, 0, 2, 3, 543000)
 
 
 @pytest.mark.parametrize(

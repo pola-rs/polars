@@ -591,7 +591,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::OrdinalDay => B::OrdinalDay,
                 IB::Time => B::Time,
                 IB::Date => B::Date,
-                IB::Datetime => B::Datetime,
                 #[cfg(feature = "dtype-duration")]
                 IB::Duration(time_unit) => B::Duration(time_unit),
                 IB::Hour => B::Hour,
@@ -616,7 +615,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::TotalNanoseconds { fractional } => B::TotalNanoseconds { fractional },
                 IB::ToString(v) => B::ToString(v),
                 IB::CastTimeUnit(time_unit) => B::CastTimeUnit(time_unit),
-                IB::WithTimeUnit(time_unit) => B::WithTimeUnit(time_unit),
                 #[cfg(feature = "timezones")]
                 IB::ConvertTimeZone(time_zone) => B::ConvertTimeZone(time_zone),
                 IB::TimeStamp(time_unit) => B::TimeStamp(time_unit),
