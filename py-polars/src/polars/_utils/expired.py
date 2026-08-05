@@ -5,12 +5,16 @@ from typing import TYPE_CHECKING
 from polars.exceptions import AttributeRemovedError
 
 if TYPE_CHECKING:
-    from typing import Any, NoReturn
+    from typing import Any
 
 
-def raise_attribute_removed_error(
-    obj: object, name: str, *, version: str = "2.0", hint: str | None = None
-) -> NoReturn:
+def raise_for_removed_attributes(
+    obj: object,
+    name: str,
+    attributes: dict[str, str | None],
+    *,
+    version: str,
+) -> None:
     """
     Raise an `AttributeError` for a removed attribute.
 
@@ -20,14 +24,16 @@ def raise_attribute_removed_error(
         The object from which the attribute was removed.
     name
         The name of the removed attribute.
+    attributes
+        A dictionary mapping removed attribute names to hints for replacement.
     version
         The version in which the attribute was removed.
-    hint
-        A hint at what to use instead of the removed attribute.
     """
-    msg = f"`{name}` was removed in version {version}"
-    msg = f"{msg}." if hint is None else f"{msg}; {hint}"
-    raise AttributeRemovedError(msg, name=name, obj=obj)
+    if name in attributes:
+        hint = attributes[name]
+        msg = f"`{name}` was removed in version {version}"
+        msg = f"{msg}." if hint is None else f"{msg}; {hint}"
+        raise AttributeRemovedError(msg, name=name, obj=obj)
 
 
 def getattr_fallback(obj: object, superclass: object, name: str) -> Any:

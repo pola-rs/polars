@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING, Any
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.expired import getattr_fallback, raise_attribute_removed_error
+from polars._utils.expired import (
+    getattr_fallback,
+    raise_for_removed_attributes,
+)
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin, qualified_type_name
@@ -2562,12 +2565,13 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         return wrap_expr(self._pyexpr.dt_dst_offset())
 
     def __getattr__(self, name: str) -> Any:
-        match name:
-            case "datetime":
-                hint = "use `dt.replace_time_zone(None)` instead."
-                return raise_attribute_removed_error(self, name, hint=hint)
-            case "with_time_unit":
-                hint = "instead, first cast to `Int64` and then cast to the desired data type."
-                return raise_attribute_removed_error(self, name, hint=hint)
-            case _:
-                return getattr_fallback(self, super(), name)
+        raise_for_removed_attributes(
+            self,
+            name,
+            {
+                "datetime": "use `dt.replace_time_zone(None)` instead.",
+                "with_time_unit": "instead, first cast to `Int64` and then cast to the desired data type.",
+            },
+            version="2.0",
+        )
+        return getattr_fallback(self, super(), name)
