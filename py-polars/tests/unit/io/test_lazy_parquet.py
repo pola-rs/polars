@@ -976,6 +976,7 @@ assert pl.thread_pool_size() == 1
 
 f = io.BytesIO()
 pl.DataFrame({"x": 1}).write_parquet(f)
+f.seek(0)
 
 q = (
     pl.scan_parquet(f)
@@ -1099,10 +1100,13 @@ def test_scan_parquet_prefilter_with_cast(
     )
 
     df.write_parquet(f, row_group_size=3)
+    f.seek(0)
 
     md = pq.read_metadata(f)
 
     assert [md.row_group(i).num_rows for i in range(md.num_row_groups)] == [3, 3]
+
+    f.seek(0)
 
     q = pl.scan_parquet(
         f,
@@ -1210,6 +1214,8 @@ def test_scan_parquet_filter_index_panic_23849(plmonkeypatch: PlMonkeyPatch) -> 
         pl.int_range(0, num_rows).alias(f"col_{i}") for i in range(num_cols)
     ).write_parquet(f)
 
+    f.seek(0)
+
     for parallel in ["auto", "columns", "row_groups", "prefiltered", "none"]:
         pl.scan_parquet(f, parallel=parallel).filter(  # type: ignore[arg-type]
             pl.col("col_0").ge(0) & pl.col("col_0").lt(num_rows + 1)
@@ -1310,9 +1316,13 @@ def test_sink_parquet_arrow_schema() -> None:
         pq.read_metadata(f).metadata[b"custom_footer_md_key"]
         == b"custom_footer_md_value"
     )
+
+    f.seek(0)
     assert (
         pl.read_parquet_metadata(f)["custom_footer_md_key"] == "custom_footer_md_value"
     )
+
+    f.seek(0)
     assert pa.ipc.read_schema(
         pa.BufferReader(base64.b64decode(pq.read_metadata(f).metadata[b"ARROW:schema"]))
     ).metadata == {b"custom_schema_md_key": b"custom_schema_md_value"}
@@ -1432,6 +1442,8 @@ def test_sink_parquet_arrow_schema_logical_types() -> None:
             ],
         ),
     )
+
+    f.seek(0)
 
     assert pl.scan_parquet(f).collect_schema() == {"categorical": categorical_dtype}
 
@@ -1665,6 +1677,8 @@ def test_sink_parquet_arrow_schema_fixed_size_binary() -> None:
 
     assert pq.read_schema(f) == arrow_schema
 
+    f.seek(0)
+
     assert_frame_equal(pl.scan_parquet(f).collect(), df)
 
 
@@ -1776,6 +1790,7 @@ def test_scan_parquet_temporal_lit_comparison_skip_batch_24095_25731(
 
     f = io.BytesIO()
     df.write_parquet(f, row_group_size=2)
+    f.seek(0)
 
     q = pl.scan_parquet(f).filter(
         pl.col("datetime[ns]") == pl.lit(datetime(2026, 1, 1))
@@ -1874,6 +1889,8 @@ def test_sink_parquet_pipe_with_schema_26777() -> None:
 
     assert q.collect().shape == (0, 0)
 
+    f.seek(0)
+
     assert_frame_equal(pl.scan_parquet(f).collect(), df)
 
 
@@ -1885,5 +1902,7 @@ def test_sink_parquet_lazy_and_collect() -> None:
     q = df.lazy().sink_parquet(f, lazy=True)
 
     assert q.collect().shape == (0, 0)
+
+    f.seek(0)
 
     assert_frame_equal(pl.scan_parquet(f).collect(), df)
