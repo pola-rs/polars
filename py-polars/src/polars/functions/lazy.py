@@ -2901,6 +2901,7 @@ def row_index(name: str = "index") -> pl.Expr:
     ).alias(name)
 
 
+@unstable()
 def ntile(n: int) -> Expr:
     """
     Split an ordered window partition into `n` buckets, numbered 1 to `n`.
