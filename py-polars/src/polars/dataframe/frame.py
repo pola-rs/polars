@@ -121,6 +121,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import (
         Callable,
         Collection,
@@ -201,7 +202,7 @@ if TYPE_CHECKING:
     if sys.version_info >= (3, 13):
         from warnings import deprecated
     else:
-        from typing_extensions import deprecated
+        from typing_extensions import deprecated  # noqa: TC004
 
     T = TypeVar("T")
     P = ParamSpec("P")

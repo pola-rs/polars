@@ -2293,8 +2293,7 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
     def __getattr__(self, name: str) -> Any:
         match name:
             case "datetime":
-                return raise_expired_error(
-                    self, name, hint="use `Series.dt.replace_time_zone(None)` instead."
-                )
+                hint = "use `Series.dt.replace_time_zone(None)` instead."
+                return raise_expired_error(self, name, hint=hint)
             case _:
                 return expired_fallthrough(self, super(), name)
