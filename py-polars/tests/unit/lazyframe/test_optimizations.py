@@ -1191,6 +1191,7 @@ def test_hconcat_projection_pushdown_lazy_schema_27818() -> None:
 
     f = io.BytesIO()
     q.sink_parquet(f)
+    f.seek(0)
 
     assert_frame_equal(
         pl.scan_parquet(f).collect(),
@@ -1286,6 +1287,7 @@ def test_predicate_pushdown_with_cse_sink_cross_filter_28287(
 
     f = io.BytesIO()
     lf.sink_parquet(f, engine=engine)  # type: ignore[call-overload]
+    f.seek(0)
     assert_frame_equal(pl.read_parquet(f), pl.DataFrame({"x": 2, "y": 20}))
 
 
