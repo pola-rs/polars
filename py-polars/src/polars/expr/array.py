@@ -598,7 +598,11 @@ class ExprArrayNameSpace:
 
     def arg_min(self) -> Expr:
         """
-        Retrieve the index of the minimal value in every sub-array.
+        Retrieve an index of a minimal value in every sub-array.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------
@@ -629,7 +633,11 @@ class ExprArrayNameSpace:
 
     def arg_max(self) -> Expr:
         """
-        Retrieve the index of the maximum value in every sub-array.
+        Retrieve an index of a maximum value in every sub-array.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------

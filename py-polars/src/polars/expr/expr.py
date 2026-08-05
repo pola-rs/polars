@@ -1515,6 +1515,11 @@ class Expr:
         other_pyexpr = parse_into_expression(other)
         return wrap_expr(self._pyexpr.append(other_pyexpr, upcast))
 
+    @deprecated(
+        "`Expr.rechunk()` is deprecated and will be removed in Polars 2.0. "
+        "Rechunking within a query is not well-defined. "
+        "Use `df.rechunk()` after collecting the results instead."
+    )
     def rechunk(self) -> Expr:
         """
         Create a single chunk of memory for this Series.
@@ -2644,7 +2649,11 @@ class Expr:
 
     def arg_max(self) -> Expr:
         """
-        Get the index of the maximal value.
+        Get an index of a maximal value.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Examples
         --------
@@ -2667,7 +2676,11 @@ class Expr:
 
     def arg_min(self) -> Expr:
         """
-        Get the index of the minimal value.
+        Get an index of a minimal value.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Examples
         --------

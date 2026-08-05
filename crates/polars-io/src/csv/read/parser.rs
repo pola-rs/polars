@@ -42,7 +42,7 @@ pub fn count_rows(
                 .try_open_assume_latest()?
         })
     } else {
-        polars_utils::open_file(path.as_std_path())?
+        polars_utils::io::open_file(path.as_std_path())?
     };
 
     let mmap = MMapSemaphore::new_from_file(&file).unwrap();

@@ -531,7 +531,7 @@ impl Series {
                         let arr = arr.as_any().downcast_ref::<MapArray>().unwrap();
                         let offsets: &OffsetsBuffer<i32> = arr.offsets();
 
-                        let validity = values.validity().cloned();
+                        let validity = arr.validity().cloned();
 
                         Box::from(ListArray::<i64>::new(
                             ListArray::<i64>::default_datatype(values.dtype().clone()),

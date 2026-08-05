@@ -428,7 +428,7 @@ pub trait ChunkSort<T: PolarsDataType> {
 
 pub type FillNullLimit = Option<IdxSize>;
 
-#[derive(Copy, Clone, Debug, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum FillNullStrategy {

@@ -2,6 +2,8 @@ use std::borrow::Cow;
 
 use arrow::array::PrimitiveArray;
 use num_traits::Zero;
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add};
 use polars_core::error::constants::LENGTH_LIMIT_MSG;
 use polars_core::prelude::sum_output_dtype;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -22,7 +24,7 @@ pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReducti
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(dtype, NumSumReducer::<Int128Type>(PhantomData))),
+        Decimal(_, _) => Box::new(VGR::new(dtype, DecimalSumReducer)),
         Duration(_) => Box::new(VGR::new(dtype, NumSumReducer::<Int64Type>(PhantomData))),
         Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
             DataType::Null,
@@ -98,6 +100,78 @@ where
         dtype: &DataType,
     ) -> PolarsResult<Series> {
         assert!(m.is_none());
+        let arr = Box::new(PrimitiveArray::from_vec(v));
+        Ok(unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![arr],
+                &sum_output_dtype(dtype),
+            )
+        })
+    }
+}
+
+/// Sums Decimal128 values with overflow checking. `i128::MIN` marks an
+/// overflowed group (it is never a valid decimal physical value), which
+/// raises a `ComputeError` on `finish()`.
+#[cfg(feature = "dtype-decimal")]
+const DECIMAL_SUM_OVERFLOW: i128 = i128::MIN;
+
+#[cfg(feature = "dtype-decimal")]
+#[derive(Clone)]
+struct DecimalSumReducer;
+
+#[cfg(feature = "dtype-decimal")]
+impl Reducer for DecimalSumReducer {
+    type Dtype = Int128Type;
+    type Value = i128;
+
+    #[inline(always)]
+    fn init(&self) -> Self::Value {
+        0
+    }
+
+    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
+        s.to_physical_repr()
+    }
+
+    #[inline(always)]
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+        *a = if *a == DECIMAL_SUM_OVERFLOW || *b == DECIMAL_SUM_OVERFLOW {
+            DECIMAL_SUM_OVERFLOW
+        } else {
+            dec128_add(*a, *b, DEC128_MAX_PREC).unwrap_or(DECIMAL_SUM_OVERFLOW)
+        };
+    }
+
+    #[inline(always)]
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<i128>, _seq_id: u64) {
+        if *a != DECIMAL_SUM_OVERFLOW {
+            *a = dec128_add(*a, b.unwrap_or(0), DEC128_MAX_PREC).unwrap_or(DECIMAL_SUM_OVERFLOW);
+        }
+    }
+
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
+        if *v != DECIMAL_SUM_OVERFLOW {
+            *v = ca
+                .iter()
+                .flatten()
+                .try_fold(*v, |acc, x| dec128_add(acc, x, DEC128_MAX_PREC))
+                .unwrap_or(DECIMAL_SUM_OVERFLOW);
+        }
+    }
+
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
+        assert!(m.is_none());
+        polars_ensure!(
+            !v.contains(&DECIMAL_SUM_OVERFLOW),
+            ComputeError: "overflow in decimal addition in sum"
+        );
         let arr = Box::new(PrimitiveArray::from_vec(v));
         Ok(unsafe {
             Series::from_chunks_and_dtype_unchecked(

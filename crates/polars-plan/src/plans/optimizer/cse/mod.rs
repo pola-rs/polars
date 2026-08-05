@@ -1,4 +1,5 @@
 mod cache_states;
+mod canonical_ir;
 mod csee;
 pub mod cspe;
 
