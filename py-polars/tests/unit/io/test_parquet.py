@@ -3251,6 +3251,34 @@ def test_filter_on_logical_dtype_22252() -> None:
     pl.scan_parquet(f).filter(pl.col.a.dt.weekday() == 6).collect()
 
 
+@pytest.mark.parametrize("parallel", ["prefiltered", "none"])
+@pytest.mark.parametrize("coerce_timestamps", ["ms", "us"])
+def test_filter_pyarrow_timestamp_seconds_28609(
+    parallel: ParallelStrategy,
+    coerce_timestamps: Literal["ms", "us"],
+) -> None:
+    f = io.BytesIO()
+    pq.write_table(
+        pa.table(
+            {
+                "ts": pa.array([datetime(2022, 1, 1)] * 5, type=pa.timestamp("s")),
+                "val": pa.array(range(5), type=pa.int64()),
+            }
+        ),
+        f,
+        coerce_timestamps=coerce_timestamps,
+    )
+
+    f.seek(0)
+    target = pl.read_parquet(f)["ts"][0]
+    f.seek(0)
+    result = (
+        pl.scan_parquet(f, parallel=parallel).filter(pl.col("ts") == target).collect()
+    )
+
+    assert result.height == 5
+
+
 def test_filter_nan_22289() -> None:
     f = io.BytesIO()
     pl.DataFrame(
