@@ -1126,6 +1126,7 @@ fn cast_to_dictionary<K: DictionaryKey>(
         ArrowDataType::Time64(_) => primitive_to_dictionary_dyn::<i64, K>(array, ordered),
         ArrowDataType::Timestamp(_, _) => primitive_to_dictionary_dyn::<i64, K>(array, ordered),
         ArrowDataType::Date32 => primitive_to_dictionary_dyn::<i32, K>(array, ordered),
+        ArrowDataType::Decimal(_, _) => primitive_to_dictionary_dyn::<i128, K>(array, ordered),
         _ => polars_bail!(ComputeError:
             "unsupported output type for dictionary packing: {dict_value_type:?}"
         ),

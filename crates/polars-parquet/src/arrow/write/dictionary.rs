@@ -1,5 +1,6 @@
 use arrow::array::{
-    Array, BinaryViewArray, DictionaryArray, DictionaryKey, PrimitiveArray, Utf8ViewArray,
+    Array, BinaryViewArray, DictionaryArray, DictionaryKey, FixedSizeBinaryArray, PrimitiveArray,
+    Utf8ViewArray,
 };
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::compute::aggregate::estimated_bytes_size;
@@ -7,6 +8,7 @@ use arrow::datatypes::{ArrowDataType, IntegerType, PhysicalType};
 use arrow::legacy::utils::CustomIterTools;
 use arrow::trusted_len::TrustMyLength;
 use arrow::types::NativeType;
+use num_traits::AsPrimitive;
 use polars_buffer::Buffer;
 use polars_compute::min_max::MinMaxKernel;
 use polars_error::{PolarsResult, polars_bail};
@@ -16,7 +18,9 @@ use super::binary::{
     build_statistics as binary_build_statistics, encode_plain as binary_encode_plain,
 };
 use super::fixed_size_binary::{
-    build_statistics as fixed_binary_build_statistics, encode_plain as fixed_binary_encode_plain,
+    build_statistics as fixed_binary_build_statistics,
+    build_statistics_decimal as fixed_binary_build_statistics_decimal,
+    encode_plain as fixed_binary_encode_plain,
 };
 use super::primitive::{
     build_statistics as primitive_build_statistics, encode_plain as primitive_encode_plain,
@@ -32,6 +36,7 @@ use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::page::{DictPage, Page};
 use crate::parquet::schema::types::PrimitiveType;
 use crate::parquet::statistics::ParquetStatistics;
+use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::write::DynIter;
 
 trait MinMaxThreshold {
@@ -430,26 +435,58 @@ fn serialize_keys_range<K: DictionaryKey>(
 macro_rules! dyn_prim {
     ($from:ty, $to:ty, $array:expr, $options:expr, $type_:expr) => {{
         let values = $array.values().as_any().downcast_ref().unwrap();
-
-        let buffer =
-            primitive_encode_plain::<$from, $to>(values, EncodeNullability::new(false), vec![]);
-
-        let stats: Option<ParquetStatistics> = if !$options.statistics.is_empty() {
-            let mut stats = primitive_build_statistics::<$from, $to>(
-                values,
-                $type_.clone(),
-                &$options.statistics,
-            );
-            stats.null_count = Some($array.null_count() as i64);
-            Some(stats.serialize())
-        } else {
-            None
-        };
-        (
-            DictPage::new(CowBuffer::Owned(buffer), values.len(), false),
-            stats,
-        )
+        primitive_dict_page::<$from, $to>(values, $array.null_count(), &$type_, $options)
     }};
+}
+
+fn primitive_dict_page<T, P>(
+    values: &PrimitiveArray<T>,
+    array_null_count: usize,
+    type_: &PrimitiveType,
+    options: WriteOptions,
+) -> (DictPage, Option<ParquetStatistics>)
+where
+    T: NativeType + AsPrimitive<P>,
+    P: ParquetNativeType,
+{
+    let buffer = primitive_encode_plain::<T, P>(values, EncodeNullability::new(false), vec![]);
+
+    let stats: Option<ParquetStatistics> = if !options.statistics.is_empty() {
+        let mut stats =
+            primitive_build_statistics::<T, P>(values, type_.clone(), &options.statistics);
+        stats.null_count = Some(array_null_count as i64);
+        Some(stats.serialize())
+    } else {
+        None
+    };
+    (
+        DictPage::new(CowBuffer::Owned(buffer), values.len(), false),
+        stats,
+    )
+}
+
+fn decimal_dict_page_integer<T>(
+    values: &PrimitiveArray<i128>,
+    dtype: ArrowDataType,
+    array_null_count: usize,
+    type_: &PrimitiveType,
+    options: WriteOptions,
+) -> (DictPage, Option<ParquetStatistics>)
+where
+    T: NativeType + ParquetNativeType + AsPrimitive<T>,
+    i128: AsPrimitive<T>,
+{
+    let values = PrimitiveArray::<T>::new(
+        dtype,
+        values
+            .values()
+            .iter()
+            .map(|x| (*x).as_())
+            .collect::<Vec<_>>()
+            .into(),
+        values.validity().cloned(),
+    );
+    primitive_dict_page::<T, T>(&values, array_null_count, type_, options)
 }
 
 pub fn array_to_pages<K: DictionaryKey>(
@@ -593,6 +630,64 @@ pub fn array_to_pages<K: DictionaryKey>(
                         DictPage::new(CowBuffer::Owned(buffer), array.len(), false),
                         stats,
                     )
+                },
+                ArrowDataType::Decimal(precision, _) => {
+                    let precision = *precision;
+                    let values = array
+                        .values()
+                        .as_any()
+                        .downcast_ref::<PrimitiveArray<i128>>()
+                        .unwrap();
+                    if precision <= 9 {
+                        decimal_dict_page_integer::<i32>(
+                            values,
+                            ArrowDataType::Int32,
+                            array.null_count(),
+                            &type_,
+                            options,
+                        )
+                    } else if precision <= 18 {
+                        decimal_dict_page_integer::<i64>(
+                            values,
+                            ArrowDataType::Int64,
+                            array.null_count(),
+                            &type_,
+                            options,
+                        )
+                    } else {
+                        let size = super::decimal_length_from_precision(precision);
+                        let stats = if options.has_statistics() {
+                            let stats = fixed_binary_build_statistics_decimal(
+                                values,
+                                type_.clone(),
+                                size,
+                                &options.statistics,
+                            );
+                            Some(stats.serialize())
+                        } else {
+                            None
+                        };
+                        let mut bytes = Vec::<u8>::with_capacity(size * values.len());
+                        values
+                            .values()
+                            .iter()
+                            .for_each(|x| bytes.extend_from_slice(&x.to_be_bytes()[16 - size..]));
+                        let values = FixedSizeBinaryArray::new(
+                            ArrowDataType::FixedSizeBinary(size),
+                            bytes.into(),
+                            values.validity().cloned(),
+                        );
+                        let mut buffer = vec![];
+                        fixed_binary_encode_plain(
+                            &values,
+                            EncodeNullability::Required,
+                            &mut buffer,
+                        );
+                        (
+                            DictPage::new(CowBuffer::Owned(buffer), values.len(), false),
+                            stats,
+                        )
+                    }
                 },
                 other => {
                     polars_bail!(
