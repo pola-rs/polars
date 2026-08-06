@@ -4,6 +4,7 @@ import importlib
 import importlib.util
 from typing import TYPE_CHECKING, Any
 
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.wrap import wrap_ldf
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.delta._dataset import DeltaDataset
@@ -146,6 +147,16 @@ def read_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... )  # doctest: +SKIP
     """
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on read_delta() will be removed. "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            version="1.43.2",
+        )
+    else:
+        rechunk = False
+
     df = scan_delta(
         source=source,
         version=version,
@@ -317,6 +328,14 @@ def scan_delta(
         credential_provider_builder = None
 
     del credential_provider
+
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on scan_delta() will be removed. "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            version="1.43.2",
+        )
 
     if table is not None and (
         table._storage_options is not None or storage_options is not None
