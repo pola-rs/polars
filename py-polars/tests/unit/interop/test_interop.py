@@ -1678,3 +1678,51 @@ def test_series_from_arrow_large_list_keeps_fast_explode_28626(
     assert imported.to_list() == values
     assert imported.flags["FAST_EXPLODE"] is fast_explode
     assert imported.explode(empty_as_null=True, keep_nulls=True).to_list() == exploded
+
+
+@pytest.mark.parametrize(
+    ("values", "fast_explode", "exploded"),
+    [
+        ([["a", "b"], ["c"]], True, ["a", "b", "c"]),
+        ([["a"], [], ["b"]], False, ["a", None, "b"]),
+        ([["a"], None, ["b"]], False, ["a", None, "b"]),
+    ],
+)
+@pytest.mark.parametrize("parallel", [False, True])
+def test_dataframe_from_arrow_large_list_keeps_fast_explode_28633(
+    values: list[Any], fast_explode: bool, exploded: list[Any], parallel: bool
+) -> None:
+    table = pl.DataFrame({"c": values}).to_arrow()
+    if parallel:
+        table = table.append_column(
+            "trigger_parallel", pa.array(["value"] * len(values), type=pa.string())
+        )
+
+    imported = cast("pl.DataFrame", pl.from_arrow(table))["c"]
+
+    assert imported.to_list() == values
+    assert imported.flags["FAST_EXPLODE"] is fast_explode
+    assert imported.explode(empty_as_null=True, keep_nulls=True).to_list() == exploded
+
+
+@pytest.mark.parametrize(
+    ("chunks", "fast_explode"),
+    [
+        ([[["a"]], [["b", "c"]]], True),
+        ([[["a"]], [[]]], False),
+        ([[["a"]], [None]], False),
+    ],
+)
+@pytest.mark.parametrize("rechunk", [False, True])
+def test_dataframe_from_arrow_chunked_large_list_keeps_fast_explode_28633(
+    chunks: list[list[list[str] | None]], fast_explode: bool, rechunk: bool
+) -> None:
+    dtype = pa.large_list(pa.string())
+    arrays = [pa.array(values, type=dtype) for values in chunks]
+    table = pa.table({"c": pa.chunked_array(arrays)})
+
+    imported = cast("pl.DataFrame", pl.from_arrow(table, rechunk=rechunk))["c"]
+
+    assert imported.to_list() == [value for chunk in chunks for value in chunk]
+    assert imported.n_chunks() == (1 if rechunk else len(chunks))
+    assert imported.flags["FAST_EXPLODE"] is fast_explode

@@ -14,7 +14,7 @@ use crate::PySeries;
 use crate::conversion::Wrap;
 use crate::conversion::any_value::py_object_to_any_value;
 use crate::error::PyPolarsErr;
-use crate::interop::arrow::to_rust::array_to_rust;
+use crate::interop::arrow::to_rust::{array_to_rust, can_fast_explode};
 use crate::prelude::ObjectValue;
 use crate::utils::EnterPolarsExt;
 
@@ -384,10 +384,7 @@ impl PySeries {
         let arr = array_to_rust(array)?;
 
         // Compute first. The physical conversion retains offsets so the flag remains valid.
-        let fast_explode = arr
-            .as_any()
-            .downcast_ref::<LargeListArray>()
-            .is_some_and(|a| a.offsets().as_slice().windows(2).all(|w| w[0] != w[1]));
+        let fast_explode = can_fast_explode(arr.as_ref());
 
         // Normal conversion handling nested types recursively.
         let mut series: Series = Series::try_new(name.into(), arr).map_err(PyPolarsErr::from)?;

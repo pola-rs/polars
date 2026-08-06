@@ -1,3 +1,4 @@
+use arrow::array::Array;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
@@ -49,6 +50,36 @@ pub fn array_to_rust(obj: &Bound<PyAny>) -> PyResult<ArrayRef> {
         let array = ffi::import_array_from_c(*array, field.dtype).map_err(PyPolarsErr::from)?;
         Ok(array)
     }
+}
+
+pub(crate) fn can_fast_explode(array: &dyn Array) -> bool {
+    array
+        .as_any()
+        .downcast_ref::<LargeListArray>()
+        .is_some_and(|a| a.offsets().as_slice().windows(2).all(|w| w[0] != w[1]))
+}
+
+fn series_from_arrow(field: &ArrowField, arr: ArrayRef) -> PolarsResult<Series> {
+    // Compute first. The physical conversion retains offsets so the flag remains valid.
+    let fast_explode = can_fast_explode(arr.as_ref());
+
+    // SAFETY: The array comes from a record batch with this field's schema.
+    let mut series = unsafe {
+        Series::_try_from_arrow_unchecked_with_md(
+            field.name.clone(),
+            vec![arr],
+            field.dtype(),
+            field.metadata.as_deref(),
+        )
+    }?;
+
+    if fast_explode && series.dtype().is_list() {
+        let mut ca = series.list()?.clone();
+        ca.set_fast_explode();
+        series = ca.into_series();
+    }
+
+    Ok(series)
 }
 
 pub fn to_rust_df(
@@ -137,16 +168,9 @@ pub fn to_rust_df(
                             .enumerate()
                             .map(|(i, arr)| {
                                 let (_, field) = schema.get_at_index(i).unwrap();
-                                let s = unsafe {
-                                    Series::_try_from_arrow_unchecked_with_md(
-                                        field.name.clone(),
-                                        vec![arr],
-                                        field.dtype(),
-                                        field.metadata.as_deref(),
-                                    )
-                                }
-                                .map_err(PyPolarsErr::from)?
-                                .into_column();
+                                let s = series_from_arrow(field, arr)
+                                    .map_err(PyPolarsErr::from)?
+                                    .into_column();
                                 Ok(s)
                             })
                             .collect::<PyResult<Vec<_>>>()
@@ -158,16 +182,9 @@ pub fn to_rust_df(
                     .enumerate()
                     .map(|(i, arr)| {
                         let (_, field) = schema.get_at_index(i).unwrap();
-                        let s = unsafe {
-                            Series::_try_from_arrow_unchecked_with_md(
-                                field.name.clone(),
-                                vec![arr],
-                                field.dtype(),
-                                field.metadata.as_deref(),
-                            )
-                        }
-                        .map_err(PyPolarsErr::from)?
-                        .into_column();
+                        let s = series_from_arrow(field, arr)
+                            .map_err(PyPolarsErr::from)?
+                            .into_column();
                         Ok(s)
                     })
                     .collect::<PyResult<Vec<_>>>()
