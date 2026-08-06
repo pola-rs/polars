@@ -1087,7 +1087,7 @@ def test_config_save_ignores_runtime_vars() -> None:
 
     def provider() -> Any: ...
 
-    engine = pl.GPUEngine(device=1)
+    engine = pl.RemoteEngine(scaling_mode="distributed", max_workers=2)
     pl.Config.set_engine_affinity(engine)
     pl.Config.set_default_credential_provider(provider)
 

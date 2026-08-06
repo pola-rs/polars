@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict, get_args
 
 from polars._dependencies import json
-from polars._typing import EngineType
+from polars._typing import EngineTypeName
 from polars._utils.deprecation import deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
 from polars.lazyframe.engine_config import (
     GPUEngine,
+    RemoteEngine,
     get_engine_affinity_override,
     set_engine_affinity_override,
 )
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
     from types import TracebackType
     from typing import TypeAlias
 
-    from polars._typing import Alignment, FloatFmt
+    from polars._typing import Alignment, EngineType, FloatFmt
     from polars.io.cloud.credential_provider._providers import (
         CredentialProviderFunction,
     )
@@ -1567,11 +1568,11 @@ class Config(contextlib.ContextDecorator):
             when calling `.collect()`. However, the query is not
             guaranteed to execute with the specified engine.
 
-            A :class:`~.GPUEngine` object may also be given, to make a
-            *configured* engine the default. Note that unlike the engine names,
-            which are stored in the `POLARS_ENGINE_AFFINITY` environment variable,
-            these are held in Python-level state and are not included in
-            :meth:`Config.save`.
+            A :class:`~.GPUEngine` or :class:`~.RemoteEngine` object may also be
+            given, to make a *configured* engine the default. Note that unlike the
+            engine names, which are stored in the `POLARS_ENGINE_AFFINITY`
+            environment variable, these are held in Python-level state and are not
+            included in :meth:`Config.save`.
 
         Examples
         --------
@@ -1603,20 +1604,22 @@ class Config(contextlib.ContextDecorator):
 
         Set a configured engine as the default:
 
-        >>> pl.Config.set_engine_affinity(pl.GPUEngine(device=1))  # doctest: +SKIP
+        >>> pl.Config.set_engine_affinity(
+        ...     pl.RemoteEngine(ctx, scaling_mode="distributed")
+        ... )  # doctest: +SKIP
 
         Raises
         ------
         ValueError: if engine is not recognised.
         """
-        if isinstance(engine, GPUEngine):
+        if isinstance(engine, (GPUEngine, RemoteEngine)):
             # cannot be represented as an environment variable; hold it Python-side
             os.environ.pop("POLARS_ENGINE_AFFINITY", None)
             set_engine_affinity_override(engine)
             plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
             return cls
 
-        supported_engines = get_args(get_args(EngineType)[0])
+        supported_engines = get_args(EngineTypeName)
         if engine not in {*supported_engines, None}:
             msg = "invalid engine"
             raise ValueError(msg)

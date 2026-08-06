@@ -68,3 +68,8 @@ def test_engine_affinity_object_is_selected(df: pl.LazyFrame) -> None:
 def test_engine_affinity_name_is_selected(df: pl.LazyFrame) -> None:
     with pl.Config(engine_affinity="streaming"):
         assert _select_engine("auto") == "streaming"
+
+
+def test_collect_local_ignores_object_affinity(df: pl.LazyFrame) -> None:
+    with pl.Config(engine_affinity=pl.RemoteEngine()):
+        assert df._collect_local().height == 3
