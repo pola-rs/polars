@@ -71,16 +71,10 @@ impl CanonicalIRMap {
     fn resolve_single(
         &mut self,
         node: Node,
-        child_ids: impl IntoIterator<Item = CanonicalIRId>,
+        child_ids: Vec<CanonicalIRId>,
         lp_arena: &Arena<IR>,
         expr_arena: &Arena<AExpr>,
     ) -> CanonicalIRId {
-        if let Some(id) = self.cache.get(&node) {
-            return *id;
-        }
-
-        let child_ids = child_ids.into_iter().collect::<Vec<_>>();
-
         for expr in lp_arena.get(node).exprs() {
             self.expr_cmp.resolve(expr.node(), expr_arena);
         }
@@ -146,13 +140,15 @@ impl<'arena> NodeVisitor for ResolveVisitor<'_, 'arena> {
         &mut self,
         key: Self::Key,
         _storage: &mut Self::Storage,
-        _edges: &mut dyn NodeEdgesProvider<Self::Edge>,
+        edges: &mut dyn NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue, SubtreeVisit> {
         // The inputs of an already resolved node do not have to be visited.
-        ControlFlow::Continue(if self.map.cache.contains_key(&key) {
-            SubtreeVisit::Skip
-        } else {
-            SubtreeVisit::Visit
+        ControlFlow::Continue(match self.map.cache.get(&key) {
+            Some(&id) => {
+                edges.outputs()[0] = Some(id);
+                SubtreeVisit::Skip
+            },
+            None => SubtreeVisit::Visit,
         })
     }
 
@@ -162,8 +158,16 @@ impl<'arena> NodeVisitor for ResolveVisitor<'_, 'arena> {
         storage: &mut Self::Storage,
         edges: &mut dyn NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue> {
-        let inputs = edges.inputs();
-        let child_ids = inputs.iter().map(|id| id.expect("input was not resolved"));
+        // `post_visit` is still called even with `SubtreeVisit::Skip`
+        if edges.outputs()[0].is_some() {
+            return ControlFlow::Continue(());
+        }
+
+        let child_ids = edges
+            .inputs()
+            .iter()
+            .map(|id| id.expect("input was not resolved"))
+            .collect();
 
         let id = self
             .map
