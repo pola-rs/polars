@@ -66,7 +66,7 @@ def read_parquet(
     schema: SchemaDict | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     low_memory: bool = False,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
