@@ -350,7 +350,7 @@ def _extract_delta_deletion_vectors(
             maintain_order="left",
         )
         .select(["selection_vector"])
-        .collect()
+        ._collect_local()
     )
 
     assert joined_df.height == len(requested_paths)

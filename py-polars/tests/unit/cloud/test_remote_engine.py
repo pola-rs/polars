@@ -68,6 +68,18 @@ class FakeLazyFrameRemote(FakeExecuteRemote):
         self._calls.append(("labels", labels))
         return self
 
+    def sink_csv(self, uri: Any, **kwargs: Any) -> FakeQuery:
+        if "maintain_order" in kwargs:
+            msg = "LazyFrameRemote.sink_csv does not accept maintain_order"
+            raise TypeError(msg)
+        return super().sink_csv(uri, **kwargs)
+
+    def sink_ipc(self, uri: Any, **kwargs: Any) -> FakeQuery:
+        if "maintain_order" in kwargs:
+            msg = "LazyFrameRemote.sink_ipc does not accept maintain_order"
+            raise TypeError(msg)
+        return super().sink_ipc(uri, **kwargs)
+
 
 @pytest.fixture
 def calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Any, ...]]:
@@ -135,8 +147,9 @@ def test_scaling_mode_single_node(
     calls: list[tuple[Any, ...]], lf: pl.LazyFrame
 ) -> None:
     lf.execute(engine=pl.RemoteEngine(scaling_mode="single-node"))
-    assert ("single_node",) in calls
-    assert calls[-1][:2] == ("single-node", "execute")
+    assert calls[0][2]["scaling_mode"] == "single-node"
+    assert not any(c[0] in ("distributed", "single_node") for c in calls)
+    assert calls[-1][:2] == ("auto", "execute")
 
 
 def test_single_node_rejects_distributed_options() -> None:
@@ -193,7 +206,9 @@ def test_sink_forwards_options(calls: list[tuple[Any, ...]], lf: pl.LazyFrame) -
         ("sink_parquet", {"sync_on_close": "data"}),
         ("sink_csv", {"compression": "gzip"}),
         ("sink_csv", {"check_extension": False}),
+        ("sink_csv", {"maintain_order": False}),
         ("sink_ipc", {"record_batch_size": 100}),
+        ("sink_ipc", {"maintain_order": False}),
     ],
 )
 def test_sink_rejects_unsupported_options(
@@ -241,11 +256,19 @@ def test_plan_methods_still_work(lf: pl.LazyFrame) -> None:
     assert lf.show_graph(engine=engine, plan_stage="ir", raw_output=True)
 
 
-def test_eager_operations_stay_local(lf: pl.LazyFrame) -> None:
+def test_eager_operations_stay_local(lf: pl.LazyFrame, tmp_path: Path) -> None:
     """`collect` is the primitive eager `DataFrame` ops are built on."""
+    parquet_path = tmp_path / "data.parquet"
+    ipc_path = tmp_path / "data.ipc"
+    pl.DataFrame({"a": [1]}).write_parquet(parquet_path)
+    pl.DataFrame({"a": [1]}).write_ipc(ipc_path)
+
     with pl.Config(engine_affinity=pl.RemoteEngine()):
         assert pl.DataFrame({"a": [1, 2]}).filter(pl.col("a") > 1).height == 1
         assert pl.read_csv(io.BytesIO(b"a,b\n1,2\n")).height == 1
+        assert pl.read_parquet(parquet_path).height == 1
+        assert pl.read_ipc(str(tmp_path / "*.ipc")).height == 1
+        assert pl.read_lines(b"one\ntwo\n").height == 2
         assert (
             pl.concat([pl.DataFrame({"a": [1]}), pl.DataFrame({"a": [2]})]).height == 2
         )
@@ -256,4 +279,5 @@ def test_eager_operations_stay_local(lf: pl.LazyFrame) -> None:
 def test_affinity_dispatches(calls: list[tuple[Any, ...]], lf: pl.LazyFrame) -> None:
     with pl.Config(engine_affinity=pl.RemoteEngine(scaling_mode="distributed")):
         lf.execute()
-    assert ("distributed", {}) in calls
+    assert calls[0][2]["scaling_mode"] == "distributed"
+    assert calls[-1][:2] == ("auto", "execute")

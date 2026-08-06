@@ -185,12 +185,9 @@ class RemoteEngine:
         if self.labels:
             remote = remote.labels(self.labels)
 
-        if self.scaling_mode == "single-node":
-            return remote.single_node()
-        elif self.scaling_mode == "distributed" or self.config:
+        if self.config:
             return remote.distributed(**self.config)
-        else:
-            return remote  # let `polars_cloud` resolve the scaling mode
+        return remote  # let `polars_cloud` resolve the scaling mode
 
     def _raise_unsupported(self, method: str) -> NoReturn:
         """Raise for an operation that the remote engine cannot run."""

@@ -112,7 +112,7 @@ def read_lines(
     │ world │
     └───────┘
     """
-    return scan_lines(
+    lf = scan_lines(
         source,
         name=name,
         n_rows=n_rows,
@@ -122,7 +122,8 @@ def read_lines(
         storage_options=storage_options,
         credential_provider=credential_provider,
         include_file_paths=include_file_paths,
-    ).collect()
+    )
+    return lf._collect_local()
 
 
 @unstable()

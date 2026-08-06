@@ -214,7 +214,7 @@ def _plan_engine(engine: EngineType) -> EngineType:
     """Reduce a remote engine to the engine its workers would prefer."""
     if not isinstance(engine, RemoteEngine):
         return engine
-    return get_engine_affinity() if engine.engine == "auto" else engine.engine
+    return engine.engine
 
 
 def _remote_sink(
@@ -3819,10 +3819,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     "retries": (retries, None),
                     "record_batch_size": (record_batch_size, None),
                     "_record_batch_statistics": (_record_batch_statistics, False),
+                    "maintain_order": (maintain_order, True),
                 },
                 compression=compression,
                 compat_level=compat_level,
-                maintain_order=maintain_order,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
                 optimizations=optimizations,
@@ -4204,6 +4204,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     "compression": (compression, "uncompressed"),
                     "compression_level": (compression_level, None),
                     "check_extension": (check_extension, True),
+                    "maintain_order": (maintain_order, True),
                 },
                 include_bom=include_bom,
                 include_header=include_header,
@@ -4219,7 +4220,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 decimal_comma=decimal_comma,
                 null_value=null_value,
                 quote_style=quote_style,
-                maintain_order=maintain_order,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
                 optimizations=optimizations,
