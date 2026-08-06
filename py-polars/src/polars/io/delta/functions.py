@@ -157,7 +157,7 @@ def read_delta(
     else:
         rechunk = False
 
-    df = scan_delta(
+    lf = scan_delta(
         source=source,
         version=version,
         storage_options=storage_options,
@@ -165,12 +165,17 @@ def read_delta(
         delta_table_options=delta_table_options,
         use_pyarrow=use_pyarrow,
         pyarrow_options=pyarrow_options,
-        rechunk=rechunk,
     )
 
     if columns is not None:
-        df = df.select(columns)
-    return df.collect()
+        lf = lf.select(columns)
+
+    ret = lf.collect()
+
+    if rechunk:
+        ret = ret.rechunk()
+
+    return ret
 
 
 def scan_delta(
