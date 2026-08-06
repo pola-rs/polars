@@ -98,7 +98,10 @@ from polars.datatypes import (
 from polars.datatypes.group import DataTypeGroup
 from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.interchange.protocol import CompatLevel
-from polars.lazyframe.engine_config import GPUEngine
+from polars.lazyframe.engine_config import (
+    GPUEngine,
+    get_engine_affinity_override,
+)
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
@@ -188,7 +191,11 @@ _COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
 
 
 def _select_engine(engine: EngineType) -> EngineType:
-    return get_engine_affinity() if engine == "auto" else engine
+    if engine != "auto":
+        return engine
+    # the env var that rust reads can only name an engine, never hold an object
+    override = get_engine_affinity_override()
+    return get_engine_affinity() if override is None else override
 
 
 def _to_sink_target(

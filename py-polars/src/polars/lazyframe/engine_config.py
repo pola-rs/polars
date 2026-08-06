@@ -59,3 +59,17 @@ class GPUEngine:
         # Avoids need for changes in cudf-polars
         kwargs["raise_on_fail"] = raise_on_fail
         self.config = kwargs
+
+
+_ENGINE_AFFINITY_OVERRIDE: GPUEngine | None = None
+
+
+def get_engine_affinity_override() -> GPUEngine | None:
+    """Return the object-valued default engine, if one is configured."""
+    return _ENGINE_AFFINITY_OVERRIDE
+
+
+def set_engine_affinity_override(engine: GPUEngine | None) -> None:
+    """Set (or clear, with `None`) the object-valued default engine."""
+    global _ENGINE_AFFINITY_OVERRIDE
+    _ENGINE_AFFINITY_OVERRIDE = engine
