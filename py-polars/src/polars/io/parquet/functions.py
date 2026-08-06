@@ -251,7 +251,7 @@ def read_parquet(
             storage_options=storage_options,
             pyarrow_options=pyarrow_options,
             memory_map=memory_map,
-            rechunk=rechunk,
+            rechunk=rechunk or False,
         )
 
     if allow_missing_columns is not None:
