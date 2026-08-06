@@ -313,7 +313,7 @@ def read_csv(
     if rechunk is not None:
         issue_deprecation_warning(
             "`rechunk` parameter on read_csv() will be removed. "
-            "Consider first collecting the scan to a DataFrame, then calling "
+            "Consider calling "
             "df.rechunk() on the result.",
             version="1.43.2",
         )

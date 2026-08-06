@@ -267,7 +267,7 @@ def read_parquet(
     if rechunk is not None:
         issue_deprecation_warning(
             "`rechunk` parameter on read_parquet() will be removed. "
-            "Consider first collecting the scan to a DataFrame, then calling "
+            "Consider calling "
             "df.rechunk() on the result.",
             version="1.43.2",
         )
