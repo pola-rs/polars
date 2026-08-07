@@ -134,7 +134,6 @@ impl IRFunctionExpr {
                     },
                 }
             },
-            Rechunk => mapper.with_same_dtype(),
             ShiftAndFill => mapper.with_same_dtype(),
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
