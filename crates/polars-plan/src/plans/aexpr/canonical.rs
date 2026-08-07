@@ -42,6 +42,17 @@ impl CanonicalExprMap {
         }
     }
 
+    /// Forgets all resolved expressions, retaining the allocated capacity.
+    ///
+    /// This must be called whenever nodes are rewritten in place in the expression arena the map was
+    /// populated from, as the cached ids no longer describe those nodes. Adding nodes to the arena is
+    /// fine. All previously returned [`CanonicalExprId`]s become meaningless.
+    pub fn clear(&mut self) {
+        self.deduplication_map.clear();
+        self.cache.clear();
+        self.representatives.clear();
+    }
+
     /// Returns the representative node for `id`: the first node of its structural equivalence
     /// class that was passed to [`Self::resolve`].
     pub fn representative(&self, id: CanonicalExprId) -> Node {
