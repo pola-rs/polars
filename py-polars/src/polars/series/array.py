@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.wrap import wrap_s
@@ -73,6 +73,57 @@ class ArrayNameSpace:
         [
             3
             7
+        ]
+        """
+
+    def dot(self, other: IntoExpr | Sequence[Any]) -> Series:
+        """
+        Compute row-wise dot product with another Array Series or query vector.
+
+        Both inputs must contain equal-width arrays with matching ``Float32`` or
+        ``Float64`` inner dtypes.
+        Series with one row is broadcast against other Series.
+        A Python sequence or one-dimensional NumPy array is treated as a one-row
+        query and cast to this Series' data type.
+        Explicit expression and Series operands retain their data type and must
+        already match.
+        Products containing an inner null are ignored. An outer null row produces
+        a null.
+
+        Notes
+        -----
+        Coordinates are paired strictly by position; no label alignment is
+        performed.
+
+        Coordinate pairs containing an inner null are skipped. If a non-null row
+        has no valid coordinate pairs, the result is ``0.0``. Similarity pipelines
+        should validate or fill inner nulls when zero must mean orthogonality.
+
+        Accumulation and output use the input floating-point data type. NaN and
+        infinity follow floating-point multiplication and addition semantics.
+        Results are not guaranteed to be bitwise identical to mathematically
+        equivalent expressions that use a different reduction path.
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [[1.0, 2.0], [3.0, 4.0]], dtype=pl.Array(pl.Float64, 2))
+        >>> b = pl.Series("b", [[5.0, 6.0], [7.0, 8.0]], dtype=pl.Array(pl.Float64, 2))
+        >>> a.arr.dot(b)
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            17.0
+            53.0
+        ]
+
+        A Python sequence can be used as a broadcast query.
+
+        >>> a.arr.dot([2.0, 3.0])
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            8.0
+            18.0
         ]
         """
 

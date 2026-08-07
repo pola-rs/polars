@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from polars import functions as F
+from polars._dependencies import _check_for_numpy
+from polars._dependencies import numpy as np
 from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import _Omitted
@@ -276,6 +278,96 @@ class ExprArrayNameSpace:
         └─────┘
         """
         return wrap_expr(self._pyexpr.arr_sum())
+
+    def dot(self, other: IntoExpr | Sequence[Any]) -> Expr:
+        """
+        Compute row-wise dot product with another Array expression.
+
+        Both inputs must contain equal-width arrays with matching ``Float32`` or
+        ``Float64`` inner dtypes.
+        Input with one row is broadcast against other input.
+        Products containing an inner null are ignored. An outer null row produces
+        a null.
+
+        Parameters
+        ----------
+        other
+            Array expression or query vector to compute dot product with.
+            A Python sequence or one-dimensional NumPy array is treated as a
+            one-row query and cast to the data type of the input expression.
+            A one-row Series is broadcast and retains its data type.
+            Expression and Series inputs must have matching Array data types.
+
+        Notes
+        -----
+        Coordinates are paired strictly by position; no label alignment is
+        performed.
+
+        Coordinate pairs containing an inner null are skipped. If a non-null row
+        has no valid coordinate pairs, the result is ``0.0``. Similarity pipelines
+        should validate or fill inner nulls when zero must mean orthogonality.
+
+        Accumulation and output use the input floating-point data type. NaN and
+        infinity follow floating-point multiplication and addition semantics.
+        Results are not guaranteed to be bitwise identical to mathematically
+        equivalent expressions that use a different reduction path.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1.0, 2.0], [3.0, 4.0]],
+        ...         "b": [[5.0, 6.0], [7.0, 8.0]],
+        ...     },
+        ...     schema={
+        ...         "a": pl.Array(pl.Float64, 2),
+        ...         "b": pl.Array(pl.Float64, 2),
+        ...     },
+        ... )
+        >>> df.select(pl.col("a").arr.dot("b"))
+        shape: (2, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 17.0 │
+        │ 53.0 │
+        └──────┘
+
+        A Python sequence can be used as a broadcast query.
+
+        >>> query = [2.0, 3.0]
+        >>> df.select(pl.col("a").arr.dot(query))
+        shape: (2, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 8.0  │
+        │ 18.0 │
+        └──────┘
+        """
+        if isinstance(other, Sequence) and not isinstance(other, (str, bytes)):
+            other = list(other)
+            is_raw_vector = True
+        elif _check_for_numpy(other) and isinstance(other, np.ndarray):
+            if other.ndim != 1:
+                msg = "arr.dot query vector must be one-dimensional"
+                raise ValueError(msg)
+            other = other.tolist()
+            is_raw_vector = True
+        else:
+            is_raw_vector = False
+
+        other_pyexpr = parse_into_expression(cast("IntoExpr", other))
+        return wrap_expr(
+            self._pyexpr.arr_dot(
+                other_pyexpr,
+                cast_to_lhs_dtype=is_raw_vector,
+            )
+        )
 
     def std(self, ddof: int = 1) -> Expr:
         """

@@ -13,6 +13,9 @@ pub enum ArrayFunction {
     Min,
     Max,
     Sum,
+    Dot {
+        cast_to_lhs_dtype: bool,
+    },
     ToList,
     Std(u8),
     Var(u8),
@@ -46,6 +49,7 @@ impl fmt::Display for ArrayFunction {
             Min => "min",
             Max => "max",
             Sum => "sum",
+            Dot { .. } => "dot",
             ToList => "to_list",
             Std(_) => "std",
             Var(_) => "var",
