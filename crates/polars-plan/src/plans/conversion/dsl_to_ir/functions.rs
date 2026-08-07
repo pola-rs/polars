@@ -803,7 +803,6 @@ pub(super) fn convert_functions(
                 options,
             }
         },
-        F::Rechunk => I::Rechunk,
         F::Append { upcast } => {
             if upcast {
                 let dtypes = [
