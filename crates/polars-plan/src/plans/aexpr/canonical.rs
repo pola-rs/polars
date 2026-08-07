@@ -4,7 +4,9 @@ use hashbrown::HashTable;
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 
-use crate::plans::{AExpr, ExprIR, ExpressionComparator, ExpressionHasher};
+#[cfg(feature = "cse")]
+use crate::plans::ExpressionHasher;
+use crate::plans::{AExpr, ExprIR, ExpressionComparator};
 
 /// Identifies an `AExpr` up to structural equality: two nodes get the same
 /// `CanonicalExprId` if and only if they represent the same expression.
@@ -136,6 +138,7 @@ impl ExpressionComparator for CanonicalExprMap {
     }
 }
 
+#[cfg(feature = "cse")]
 impl ExpressionHasher for CanonicalExprMap {
     fn hash_expr<H: Hasher>(&self, expr: &ExprIR, state: &mut H) {
         state.write_u32(self.get(expr.node()).as_u32());
