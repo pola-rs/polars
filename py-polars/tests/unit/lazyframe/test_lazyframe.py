@@ -1858,6 +1858,6 @@ def test_execute() -> None:
         ("approx_n_unique", "use `select(pl.all().approx_n_unique())` instead."),
     ],
 )
-def test_removed_items(name: str, match: str) -> None:
+def test_removed_methods(name: str, match: str) -> None:
     with pytest.raises(AttributeRemovedError, match=re.escape(match)):
         getattr(pl.LazyFrame, name)
