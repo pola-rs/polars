@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass
 from functools import wraps
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, NoReturn, TypeVar
 
 from polars.exceptions import ArgumentRemovedError, AttributeRemovedError
 
@@ -85,6 +85,15 @@ def getattr_fallback(obj: object, superclass: object, name: str) -> Any:
 def removed_parameters(
     *params: RemovedParameter | RenamedParameter,
 ) -> IdentityFunction:
+    """
+    Decorator to mark function parameters.
+
+    This decorator expects a number of `RemovedParameter` or `RenamedParameter`
+    instances that describe each of the removed parameters of the method.
+    """
+    assert len(params) == len({p.name for p in params}), (
+        "duplicate parameter in removed parameter list"
+    )
     params_dict = {p.name: p for p in params}
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
@@ -92,12 +101,10 @@ def removed_parameters(
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             for name in kwargs:
                 if name in params_dict:
-                    raise ArgumentRemovedError(
-                        _raise_removed_argument_error(
-                            params_dict[name],
-                            func_name=function.__qualname__,
-                            kwargs=kwargs,
-                        )
+                    _raise_removed_argument_error(
+                        params_dict[name],
+                        func_name=function.__qualname__,
+                        kwargs=kwargs,
                     )
             return function(*args, **kwargs)
 
@@ -112,34 +119,35 @@ def _raise_removed_argument_error(
     *,
     func_name: str,
     kwargs: dict[str, object],
-) -> str:
+) -> NoReturn:
     was_deprecated_and = (
-        f"was deprecated in version {param.deprecated_in} and "
+        f" was deprecated in version {param.deprecated_in} and"
         if param.deprecated_in is not None
         else ""
     )
     if isinstance(param, RenamedParameter):
         if param.name in kwargs and param.new_name in kwargs:
             msg = (
-                f"`{func_name!r}` received both `{param.name!r}` and `{param.new_name!r}` as arguments;"
-                f" `{param.name!r}` {was_deprecated_and}has been renamed to"
-                f" `{param.new_name!r}` in version {param.removed_in}."
+                f"{func_name!r} received both {param.name!r} and {param.new_name!r} as arguments;"
+                f" {param.name!r}{was_deprecated_and} has been renamed to"
+                f" {param.new_name!r} in version {param.removed_in}."
             )
             raise ArgumentRemovedError(msg)
         else:
             msg = (
-                f"the argument `{param.name!r}` for `{func_name!r}` {was_deprecated_and}"
-                f"has been renamed to `{param.new_name!r}` in {param.removed_in}."
+                f"the argument {param.name!r} for {func_name!r}{was_deprecated_and}"
+                f" has been removed in {param.removed_in}."
+                f" It was renamed to {param.new_name!r} in version {param.removed_in}."
             )
             msg = msg if param.hint is None else f"{msg} {param.hint}"
             raise ArgumentRemovedError(msg)
     elif isinstance(param, RemovedParameter):
         msg = (
-            f"the argument `{param.name!r}` for `{func_name!r}` {was_deprecated_and}"
-            f"has been removed in {param.removed_in}."
+            f"the argument {param.name!r} for {func_name!r}{was_deprecated_and}"
+            f" has been removed in version {param.removed_in}."
         )
         msg = msg if param.hint is None else f"{msg} {param.hint}"
         raise ArgumentRemovedError(msg)
     else:
-        msg = f"Unexpected parameter type: {type(param)}"
+        msg = f"Unexpected parameter type: {type(param)!r}"
         raise TypeError(msg)

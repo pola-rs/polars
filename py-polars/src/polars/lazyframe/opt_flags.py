@@ -9,15 +9,6 @@ from polars._utils.expired import RemovedParameter
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PyOptFlags
 
-from typing import TYPE_CHECKING, TypeVar
-
-if TYPE_CHECKING:
-    from typing import ParamSpec
-
-
-    P = ParamSpec("P")
-    T = TypeVar("T")
-
 
 class QueryOptFlags:
     """
@@ -305,9 +296,12 @@ _removed_opt_parameter = functools.partial(
     hint="use the `optimizations` parameter.",
 )
 
-"""List of removed old opt flags. To be passed to @removed_parameters()."""
+# List of removed old opt flags. To be passed to @removed_parameters().
 REMOVED_OLD_OPT_FLAGS = [
+    _removed_opt_parameter(name="no_optimization"),
+    _removed_opt_parameter(name="_eager"),
     _removed_opt_parameter(name="type_coercion"),
+    _removed_opt_parameter(name="_type_check"),
     _removed_opt_parameter(name="predicate_pushdown"),
     _removed_opt_parameter(name="projection_pushdown"),
     _removed_opt_parameter(name="simplify_expression"),
@@ -316,4 +310,5 @@ REMOVED_OLD_OPT_FLAGS = [
     _removed_opt_parameter(name="comm_subexpr_elim"),
     _removed_opt_parameter(name="cluster_with_columns"),
     _removed_opt_parameter(name="collapse_joins"),
+    _removed_opt_parameter(name="_check_order"),
 ]
