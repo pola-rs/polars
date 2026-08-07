@@ -64,6 +64,63 @@ def getattr_fallback(obj: object, superclass: object, name: str) -> Any:
         raise AttributeError(msg, name=name, obj=obj)
 
 
+def removed_parameter(
+    name: str,
+    *,
+    deprecated_in: str | None = None,
+    removed_in: str,
+    hint: str | None = None,
+) -> IdentityFunction:
+    """
+    Decorator to mark a function parameter as removed.
+
+    Use as follows:
+
+        @removed_parameter("old_name", removed_in="2.0", hint="Use `new` instead.")
+        def myfunc(): ...
+    """
+
+    def decorate(function: Callable[P, T]) -> Callable[P, T]:
+        @wraps(function)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            if name in kwargs:
+                raise ArgumentRemovedError(
+                    _removed_argument_message(
+                        name=name,
+                        func_name=function.__qualname__,
+                        deprecated_version=deprecated_in,
+                        removed_version=removed_in,
+                        hint=hint,
+                    )
+                )
+            return function(*args, **kwargs)
+
+        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
+        return wrapper
+
+    return decorate
+
+
+def _removed_argument_message(
+    *,
+    name: str,
+    func_name: str,
+    deprecated_version: str | None,
+    removed_version: str,
+    hint: str | None,
+) -> str:
+    deprecated_and = (
+        f"was deprecated in version {deprecated_version} and "
+        if deprecated_version is not None
+        else ""
+    )
+    msg = (
+        f"the argument `{name}` for `{func_name}` {deprecated_and}"
+        f"has been removed in {removed_version}."
+    )
+    return msg if hint is None else f"{msg} {hint}"
+
+
 def removed_renamed_parameter(
     old_name: str,
     new_name: str,

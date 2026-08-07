@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
 
 
 def test_lf_explain_format_tree() -> None:
@@ -32,8 +33,8 @@ def test_lf_explain_format_tree() -> None:
     assert result == expected
 
 
-def test_lf_explain_tree_format_deprecated() -> None:
+def test_lf_explain_tree_format_removed() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
 
-    with pytest.deprecated_call():
-        lf.explain(tree_format=True)
+    with pytest.raises(ArgumentRemovedError, match=r"`tree_format`"):
+        lf.explain(tree_format=True)  # type: ignore[call-arg]

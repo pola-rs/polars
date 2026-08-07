@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import contextlib
-from typing import cast
+import functools
 
 from polars._utils.deprecation import issue_deprecation_warning
+from polars._utils.expired import removed_parameter
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PyOptFlags
 
 import inspect
-from functools import wraps
 from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
@@ -302,62 +302,27 @@ except (ImportError, NameError) as _:
     DEFAULT_QUERY_OPT_FLAGS = ()  # type: ignore[assignment]
 
 
-def forward_old_opt_flags() -> IdentityFunction:
+def removed_old_opt_flags() -> IdentityFunction:
     """Decorator to mark to forward the old optimization flags."""
-
-    def helper(f: QueryOptFlags, field_name: str, value: bool) -> QueryOptFlags:  # noqa: FBT001
-        setattr(f, field_name, value)
-        return f
-
-    def helper_hidden(f: QueryOptFlags, field_name: str, value: bool) -> QueryOptFlags:  # noqa: FBT001
-        setattr(f._pyoptflags, field_name, value)
-        return f
-
-    def clear_optimizations(f: QueryOptFlags, value: bool) -> QueryOptFlags:  # noqa: FBT001
-        if value:
-            return QueryOptFlags.none()
-        else:
-            return f
-
-    def eager(f: QueryOptFlags, value: bool) -> QueryOptFlags:  # noqa: FBT001
-        if value:
-            return QueryOptFlags._eager()
-        else:
-            return f
-
-    OLD_OPT_PARAMETERS_MAPPING = {
-        "no_optimization": lambda f, v: clear_optimizations(f, v),
-        "_eager": lambda f, v: eager(f, v),
-        "type_coercion": lambda f, v: helper_hidden(f, "type_coercion", v),
-        "_type_check": lambda f, v: helper_hidden(f, "type_check", v),
-        "predicate_pushdown": lambda f, v: helper(f, "predicate_pushdown", v),
-        "projection_pushdown": lambda f, v: helper(f, "projection_pushdown", v),
-        "simplify_expression": lambda f, v: helper(f, "simplify_expression", v),
-        "slice_pushdown": lambda f, v: helper(f, "slice_pushdown", v),
-        "comm_subplan_elim": lambda f, v: helper(f, "comm_subplan_elim", v),
-        "comm_subexpr_elim": lambda f, v: helper(f, "comm_subexpr_elim", v),
-        "cluster_with_columns": lambda f, v: helper(f, "cluster_with_columns", v),
-        "collapse_joins": lambda f, v: helper(f, "collapse_joins", v),
-        "_check_order": lambda f, v: helper(f, "check_order_observe", v),
-    }
+    removed_parameter_decorator = functools.partial(
+        removed_parameter,
+        deprecated_in="1.30.0",
+        removed_in="2.0",
+        hint="use the `optimizations` parameter.",
+    )
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
-        @wraps(function)
+        @removed_parameter_decorator("type_coercion")
+        @removed_parameter_decorator("predicate_pushdown")
+        @removed_parameter_decorator("projection_pushdown")
+        @removed_parameter_decorator("simplify_expression")
+        @removed_parameter_decorator("slice_pushdown")
+        @removed_parameter_decorator("comm_subplan_elim")
+        @removed_parameter_decorator("comm_subexpr_elim")
+        @removed_parameter_decorator("cluster_with_columns")
+        @removed_parameter_decorator("collapse_joins")
+        @functools.wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            optflags = cast(
-                "QueryOptFlags", kwargs.get("optimizations", DEFAULT_QUERY_OPT_FLAGS)
-            )
-            optflags = optflags.__copy__()
-            for key in list(kwargs.keys()):
-                cb = OLD_OPT_PARAMETERS_MAPPING.get(key)
-                if cb is not None:
-                    from polars._warnings import issue_warning
-
-                    message = f"optimization flag `{key}` is deprecated. Please use `optimizations` parameter\n(Deprecated in version 1.30.0)"
-                    issue_warning(message, DeprecationWarning)
-                    optflags = cb(optflags, kwargs.pop(key))  # type: ignore[no-untyped-call,unused-ignore]
-
-            kwargs["optimizations"] = optflags
             return function(*args, **kwargs)
 
         wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
