@@ -218,6 +218,10 @@ class UnstableWarning(PolarsWarning):
     """Warning issued when unstable functionality is used."""
 
 
+class ArgumentRemovedError(TypeError):
+    """Exception raised when a function argument has been removed."""
+
+
 class AttributeRemovedError(AttributeError):
     """Exception raised when an attribute has been removed from a class."""
 
@@ -225,6 +229,7 @@ class AttributeRemovedError(AttributeError):
 __all__ = [
     # Errors
     "PolarsError",
+    "ArgumentRemovedError",
     "AttributeRemovedError",
     "ColumnNotFoundError",
     "ComputeError",

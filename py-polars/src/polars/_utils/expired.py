@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import inspect
+from functools import wraps
+from typing import TYPE_CHECKING, TypeVar
 
-from polars.exceptions import AttributeRemovedError
+from polars.exceptions import ArgumentRemovedError, AttributeRemovedError
 
 if TYPE_CHECKING:
-    from typing import Any
+    from collections.abc import Callable
+    from typing import Any, ParamSpec
+
+    from polars._utils.various import IdentityFunction
+
+    P = ParamSpec("P")
+    T = TypeVar("T")
 
 
 def raise_for_removed_attributes(
@@ -54,3 +62,69 @@ def getattr_fallback(obj: object, superclass: object, name: str) -> Any:
     else:
         msg = f"{type(obj).__name__!r} object has no attribute {name!r}"
         raise AttributeError(msg, name=name, obj=obj)
+
+
+def removed_renamed_parameter(
+    old_name: str,
+    new_name: str,
+    *,
+    deprecated_in: str | None = None,
+    removed_in: str,
+) -> IdentityFunction:
+    """
+    Decorator to mark a function parameter as removed due to being renamed.
+
+    Use as follows:
+
+        @removed_renamed_parameter("old_name", new_name="new_name")
+        def myfunc(new_name): ...
+    """
+
+    def decorate(function: Callable[P, T]) -> Callable[P, T]:
+        @wraps(function)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            _removed_keyword_argument(
+                old_name=old_name,
+                new_name=new_name,
+                kwargs=kwargs,
+                func_name=function.__qualname__,
+                deprecated_version=deprecated_in,
+                removed_version=removed_in,
+            )
+            return function(*args, **kwargs)
+
+        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
+        return wrapper
+
+    return decorate
+
+
+def _removed_keyword_argument(
+    *,
+    old_name: str,
+    new_name: str,
+    kwargs: dict[str, object],
+    func_name: str,
+    deprecated_version: str | None = None,
+    removed_version: str,
+) -> None:
+    """Rename a keyword argument of a function."""
+    if old_name in kwargs:
+        deprecated_and = (
+            f"was deprecated in version {deprecated_version} and "
+            if deprecated_version is not None
+            else ""
+        )
+        if new_name in kwargs:
+            msg = (
+                f"`{func_name!r}` received both `{old_name!r}` and `{new_name!r}` as arguments;"
+                f" `{old_name!r}` {deprecated_and}has been removed in version {removed_version},"
+                f" use `{new_name!r}` instead"
+            )
+            raise ArgumentRemovedError(msg)
+
+        msg = (
+            f"the argument `{old_name}` for `{func_name}` {deprecated_and}has been removed in {removed_version}. "
+            f"It was renamed to `{new_name}`."
+        )
+        raise ArgumentRemovedError(msg)
