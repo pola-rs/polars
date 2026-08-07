@@ -4516,6 +4516,7 @@ def test_parquet_prefilter_fixed_size_binary_27781() -> None:
     )
 
 
+@pytest.mark.write_disk
 def test_parquet_writes_field_id(tmp_path: Path) -> None:
     lf = pl.LazyFrame(
         {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": ["x", "y", "z"]},
@@ -4539,3 +4540,30 @@ def test_parquet_writes_field_id(tmp_path: Path) -> None:
         for i in range(len(written_schema))
     ]
     assert field_ids == [b"1", b"2", b"3"]
+
+
+@pytest.mark.parametrize("n", [8, 9, 10])
+@pytest.mark.write_disk
+def test_parquet_max_cached_scans_28661(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    n: int,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    frames = []
+    for i in range(n):
+        p = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"a": [i], "b": [float(i)]}).write_parquet(p)
+        frames.append(pl.scan_parquet(p))
+
+    capfd.readouterr()
+    pl.concat(frames).collect()
+
+    # Test becomes stale if the following raises. Unfortunately this
+    # only works when running the test in isolation.
+    err = capfd.readouterr().err
+    if "parquet max cached metadata scans:" in err:
+        assert "parquet max cached metadata scans: 8" in err, err
