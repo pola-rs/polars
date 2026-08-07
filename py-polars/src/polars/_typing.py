@@ -458,7 +458,6 @@ JSONEncoder = Callable[[Any], bytes] | Callable[[Any], str]
 DeprecationType: TypeAlias = Literal[
     "function",
     "renamed_parameter",
-    "streaming_parameter",
     "nonkeyword_arguments",
     "parameter_as_multi_positional",
 ]

@@ -11,10 +11,10 @@ from polars._dependencies import numpy as np
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
-    deprecate_streaming_parameter,
     deprecated,
     issue_deprecation_warning,
 )
+from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
@@ -26,7 +26,7 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 from polars.datatypes._parse import parse_into_datatype_expr
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
-    forward_old_opt_flags,
+    REMOVED_OLD_OPT_FLAGS,
 )
 from polars.meta.index_type import get_index_type
 
@@ -1987,16 +1987,6 @@ def arg_sort_by(
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
-    type_coercion: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = False,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
     lazy: Literal[False] = False,
@@ -2007,37 +1997,24 @@ def collect_all(
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
-    type_coercion: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = False,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
     lazy: Literal[True],
 ) -> LazyFrame: ...
 
 
-@deprecate_streaming_parameter()
-@forward_old_opt_flags()
+@removed_parameters(
+    RemovedParameter(
+        name="streaming",
+        deprecated_in="1.25.0",
+        removed_in="2.0",
+        hint='Use `engine="streaming"` instead.',
+    ),
+    *REMOVED_OLD_OPT_FLAGS,
+)
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
-    type_coercion: bool = True,  # noqa: ARG001
-    predicate_pushdown: bool = True,  # noqa: ARG001
-    projection_pushdown: bool = True,  # noqa: ARG001
-    simplify_expression: bool = True,  # noqa: ARG001
-    no_optimization: bool = False,  # noqa: ARG001
-    slice_pushdown: bool = True,  # noqa: ARG001
-    comm_subplan_elim: bool = True,  # noqa: ARG001
-    comm_subexpr_elim: bool = True,  # noqa: ARG001
-    cluster_with_columns: bool = True,  # noqa: ARG001
-    collapse_joins: bool = True,  # noqa: ARG001
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
     lazy: bool = False,
@@ -2054,56 +2031,6 @@ def collect_all(
     ----------
     lazy_frames
         A list of LazyFrames to collect.
-    type_coercion
-        Do type coercion optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    predicate_pushdown
-        Do predicate pushdown optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    projection_pushdown
-        Do projection pushdown optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    simplify_expression
-        Run simplify expressions optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    no_optimization
-        Turn off optimizations.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    slice_pushdown
-        Slice pushdown optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    comm_subplan_elim
-        Will try to cache branching subplans that occur on self-joins or unions.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    comm_subexpr_elim
-        Common subexpressions will be cached and reused.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    cluster_with_columns
-        Combine sequential independent calls to with_columns
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    collapse_joins
-        Collapse a join and filters into a faster join
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
     optimizations
         The optimization passes done during query optimization.
 
@@ -2191,7 +2118,14 @@ def collect_all_async(
 
 
 @unstable()
-@deprecate_streaming_parameter()
+@removed_parameters(
+    RemovedParameter(
+        name="streaming",
+        deprecated_in="1.25.0",
+        removed_in="2.0",
+        hint='Use `engine="streaming"` instead.',
+    )
+)
 def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
