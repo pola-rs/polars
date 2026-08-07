@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
+from polars._utils.deprecation import deprecate_nonkeyword_arguments
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import (
@@ -20,8 +21,6 @@ from polars.datatypes import Date, Datetime, Int64, Time, parse_into_datatype_ex
 from polars.exceptions import ChronoFormatWarning
 
 if TYPE_CHECKING:
-    import sys
-
     from polars import Expr
     from polars._typing import (
         Ambiguous,
@@ -35,11 +34,6 @@ if TYPE_CHECKING:
         UnicodeForm,
     )
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 class ExprStringNameSpace(_NamespaceSuggestMixin):
@@ -3026,62 +3020,6 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.str_join(delimiter, ignore_nulls=ignore_nulls))
 
-    @deprecated(
-        "`str.concat` is deprecated; use `str.join` instead. Note also that the "
-        "default `delimiter` for `str.join` is an empty string, not a hyphen."
-    )
-    def concat(
-        self, delimiter: str | None = None, *, ignore_nulls: bool = True
-    ) -> Expr:
-        """
-        Vertically concatenate the string values in the column to a single string value.
-
-        .. deprecated:: 1.0.0
-            Use :meth:`join` instead. Note that the default `delimiter` for :meth:`join`
-            is an empty string instead of a hyphen.
-
-        Parameters
-        ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
-        ignore_nulls
-            Ignore null values (default).
-            If set to `False`, null values will be propagated. This means that
-            if the column contains any null values, the output is null.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`String`.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"foo": [1, None, 2]})
-        >>> df.select(pl.col("foo").str.concat("-"))  # doctest: +SKIP
-        shape: (1, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ 1-2 │
-        └─────┘
-        >>> df.select(
-        ...     pl.col("foo").str.concat("-", ignore_nulls=False)
-        ... )  # doctest: +SKIP
-        shape: (1, 1)
-        ┌──────┐
-        │ foo  │
-        │ ---  │
-        │ str  │
-        ╞══════╡
-        │ null │
-        └──────┘
-        """
-        if delimiter is None:
-            delimiter = "-"
-        return self.join(delimiter, ignore_nulls=ignore_nulls)
-
     def escape_regex(self) -> Expr:
         r"""
         Returns string values with all regular expression meta characters escaped.
@@ -3144,6 +3082,20 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         └──────┴─────┴──────┘
         """  # noqa: RUF002
         return wrap_expr(self._pyexpr.str_normalize(form))
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "concat": "use `str.join` instead. Note also that the default "
+                    "`delimiter` for `str.join` is an empty string, not a hyphen."
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
 
 
 def _validate_format_argument(format: str | None) -> None:

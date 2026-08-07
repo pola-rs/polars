@@ -9,7 +9,6 @@ The following methods are available under the `Series.str` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
-    Series.str.concat
     Series.str.contains
     Series.str.contains_any
     Series.str.count_matches
