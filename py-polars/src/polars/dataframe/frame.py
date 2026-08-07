@@ -59,13 +59,13 @@ from polars._utils.construction import (
 )
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
     deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.expired import (
     getattr_fallback,
     raise_for_removed_attributes,
+    removed_renamed_parameter,
 )
 from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse import parse_into_expression
@@ -1748,7 +1748,9 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_renamed_parameter(
+        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    )
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
@@ -3950,7 +3952,9 @@ class DataFrame:
         retries: int | None = None,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_renamed_parameter(
+        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    )
     def write_ipc(
         self,
         file: str | Path | IO[bytes] | None,
@@ -4081,7 +4085,9 @@ class DataFrame:
         compat_level: CompatLevel | None = None,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_renamed_parameter(
+        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    )
     def write_ipc_stream(
         self,
         file: str | Path | IO[bytes] | None,
@@ -5743,7 +5749,9 @@ class DataFrame:
         return_type: Literal["frame", "self"],
     ) -> DataFrame: ...
 
-    @deprecate_renamed_parameter("return_as_string", "return_type", version="1.35.0")
+    @removed_renamed_parameter(
+        "return_as_string", "return_type", deprecated_in="1.35.0", removed_in="2.0"
+    )
     def glimpse(
         self,
         *,
@@ -6285,7 +6293,9 @@ class DataFrame:
             ctx.register(name=name, frame=self)
             return ctx.execute(query)
 
-    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
+    @removed_renamed_parameter(
+        "descending", "reverse", deprecated_in="1.0.0", removed_in="2.0"
+    )
     def top_k(
         self,
         k: int,
@@ -6370,7 +6380,9 @@ class DataFrame:
             ._collect_eager(optimizations=optimizations)
         )
 
-    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
+    @removed_renamed_parameter(
+        "descending", "reverse", deprecated_in="1.0.0", removed_in="2.0"
+    )
     def bottom_k(
         self,
         k: int,
@@ -7273,7 +7285,9 @@ class DataFrame:
             self, *by, **named_by, maintain_order=maintain_order, predicates=None
         )
 
-    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
+    @removed_renamed_parameter(
+        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    )
     def rolling(
         self,
         index_column: IntoExpr,
@@ -7431,7 +7445,9 @@ class DataFrame:
             predicates=None,
         )
 
-    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
+    @removed_renamed_parameter(
+        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    )
     def group_by_dynamic(
         self,
         index_column: IntoExpr,
@@ -7752,7 +7768,9 @@ class DataFrame:
             predicates=None,
         )
 
-    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
+    @removed_renamed_parameter(
+        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    )
     def upsample(
         self,
         time_column: str,
@@ -8214,7 +8232,9 @@ class DataFrame:
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    @deprecate_renamed_parameter("join_nulls", "nulls_equal", version="1.24")
+    @removed_renamed_parameter(
+        "join_nulls", "nulls_equal", deprecated_in="1.24", removed_in="2.0"
+    )
     def join(
         self,
         other: DataFrame,
@@ -9592,7 +9612,7 @@ class DataFrame:
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    @deprecate_renamed_parameter("columns", "on", version="1.0.0")
+    @removed_renamed_parameter("columns", "on", deprecated_in="1.0.0", removed_in="2.0")
     def pivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],

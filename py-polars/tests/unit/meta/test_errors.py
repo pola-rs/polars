@@ -12,6 +12,7 @@ import pytest
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
 from polars.exceptions import (
+    ArgumentRemovedError,
     AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
@@ -830,3 +831,12 @@ def test_dtype_mismatch_names_column_and_dtypes() -> None:
         match=r"arithmetic on dtypes i64 and str is not allowed \(lhs: column 'a', rhs: column 'b'\)",
     ):
         df.select(pl.col("a") + pl.col("b"))
+
+
+def test_join_nulls_argument_removed() -> None:
+    df = pl.DataFrame({"a": [1, None]})
+    with pytest.raises(
+        ArgumentRemovedError,
+        match=r"the argument `join_nulls` for `DataFrame.join` was deprecated in version 1.24 and has been removed in 2.0. It was renamed to `nulls_equal`",
+    ):
+        df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]
