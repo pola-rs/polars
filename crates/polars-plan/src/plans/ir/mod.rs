@@ -1,3 +1,4 @@
+mod canonical;
 mod dot;
 mod equality;
 mod format;
@@ -11,6 +12,7 @@ mod unoptimized;
 use std::borrow::Cow;
 use std::fmt;
 
+pub(crate) use canonical::{CanonicalIRId, CanonicalIRMap};
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use equality::ExpressionComparator;
 pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursive};
