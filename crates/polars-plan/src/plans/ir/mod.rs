@@ -1,3 +1,4 @@
+#[cfg(feature = "cse")]
 mod canonical;
 mod dot;
 mod equality;
@@ -12,6 +13,7 @@ mod unoptimized;
 use std::borrow::Cow;
 use std::fmt;
 
+#[cfg(feature = "cse")]
 pub(crate) use canonical::{CanonicalIRId, CanonicalIRMap};
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use equality::ExpressionComparator;
