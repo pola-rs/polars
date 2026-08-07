@@ -158,10 +158,6 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
     Ok(s.drop_nulls())
 }
 
-pub fn rechunk(s: &Column) -> PolarsResult<Column> {
-    Ok(s.rechunk())
-}
-
 pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
     assert!(s.len() == 2);
     let input = &s[0];

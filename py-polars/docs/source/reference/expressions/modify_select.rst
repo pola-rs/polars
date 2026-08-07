@@ -37,7 +37,6 @@ Manipulation/selection
     Expr.lower_bound
     Expr.pipe
     Expr.qcut
-    Expr.rechunk
     Expr.reinterpret
     Expr.repeat_by
     Expr.replace
