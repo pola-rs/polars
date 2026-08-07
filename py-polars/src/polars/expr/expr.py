@@ -26,7 +26,6 @@ from polars._dependencies import numpy as np
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
-    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.expired import (
@@ -120,11 +119,6 @@ if TYPE_CHECKING:
         from typing import Concatenate
 
         from typing_extensions import ParamSpec
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
     T = TypeVar("T")
     P = ParamSpec("P")
