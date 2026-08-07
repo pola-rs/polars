@@ -130,7 +130,7 @@ pub struct PartialMetadata {
 impl PartialMetadata {
     fn new(indices: Vec<usize>, metadata: Vec<FileMetadataRef>) -> Self {
         assert!(!indices.is_empty());
-        assert!(indices.len() == metadata.len());
+        assert_eq!(indices.len(), metadata.len());
         assert_eq!(indices.first().unwrap(), &0, "Partial must retain source 0");
 
         Self { indices, metadata }
