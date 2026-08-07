@@ -1,0 +1,6 @@
+﻿polars.Expr.peak\_min
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.peak_min

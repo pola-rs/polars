@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.select
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.select

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["parse_fixed_offset","parse_time_zone"],"struct":["TimeZone"]};

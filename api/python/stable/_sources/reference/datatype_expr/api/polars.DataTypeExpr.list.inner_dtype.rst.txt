@@ -1,0 +1,6 @@
+﻿polars.DataTypeExpr.list.inner_dtype
+====================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: DataTypeExpr.list.inner_dtype

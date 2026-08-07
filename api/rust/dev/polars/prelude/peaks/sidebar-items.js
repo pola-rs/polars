@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["peak_max_with_start_end","peak_min_max","peak_min_with_start_end"]};

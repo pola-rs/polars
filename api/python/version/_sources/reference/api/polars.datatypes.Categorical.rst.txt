@@ -1,0 +1,41 @@
+﻿polars.datatypes.Categorical
+============================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Categorical
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Categorical.__init__
+      ~Categorical.base_type
+      ~Categorical.from_python
+      ~Categorical.is_
+      ~Categorical.is_decimal
+      ~Categorical.is_float
+      ~Categorical.is_integer
+      ~Categorical.is_nested
+      ~Categorical.is_numeric
+      ~Categorical.is_object
+      ~Categorical.is_signed_integer
+      ~Categorical.is_temporal
+      ~Categorical.is_unsigned_integer
+      ~Categorical.to_python
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Categorical.ordering
+   
+   

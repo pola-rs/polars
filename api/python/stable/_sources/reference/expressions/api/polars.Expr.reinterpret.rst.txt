@@ -1,0 +1,6 @@
+﻿polars.Expr.reinterpret
+=======================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.reinterpret

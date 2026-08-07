@@ -1,0 +1,6 @@
+﻿polars.Expr.meta.is_regex_projection
+====================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.meta.is_regex_projection

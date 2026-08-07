@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.count
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.count

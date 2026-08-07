@@ -1,0 +1,6 @@
+﻿polars.DataTypeExpr.arr.width
+=============================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: DataTypeExpr.arr.width

@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.combine
+======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.combine

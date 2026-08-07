@@ -1,0 +1,6 @@
+﻿polars.DataFrame.\_\_array\_\_
+==============================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.__array__

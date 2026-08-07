@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_process_alive","total_memory"],"static":["MEMINFO"],"struct":["MemInfo"]};

@@ -1,0 +1,6 @@
+﻿polars.Expr.name.keep
+=====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.name.keep
