@@ -28,6 +28,7 @@ struct CanonicalExprEntry {
 pub struct CanonicalExprMap {
     deduplication_map: HashTable<CanonicalExprEntry>,
     cache: PlIndexMap<Node, CanonicalExprId>,
+    representatives: Vec<Node>,
 }
 
 impl CanonicalExprMap {
@@ -35,7 +36,16 @@ impl CanonicalExprMap {
         Self {
             deduplication_map: HashTable::new(),
             cache: PlIndexMap::new(),
+            representatives: Vec::new(),
         }
+    }
+
+    /// Returns a representative node for `id`.
+    pub fn representative(&self, id: CanonicalExprId) -> Node {
+        let index =
+            id.0.checked_sub(1)
+                .expect("canonical expression IDs start at one") as usize;
+        self.representatives[index]
     }
 
     /// Returns the id of `node`, resolving its children recursively.
@@ -79,7 +89,8 @@ impl CanonicalExprMap {
     ) -> CanonicalExprId {
         let hash = combined_hash(node, &child_ids, expr_arena);
         let next_id = CanonicalExprId(1 + self.deduplication_map.len() as u32);
-        self.deduplication_map
+        let id = self
+            .deduplication_map
             .entry(
                 hash,
                 |other| {
@@ -96,7 +107,12 @@ impl CanonicalExprMap {
                 id: next_id,
             })
             .get()
-            .id
+            .id;
+
+        if id == next_id {
+            self.representatives.push(node);
+        }
+        id
     }
 
     fn get(&self, node: Node) -> CanonicalExprId {
@@ -135,4 +151,100 @@ fn combined_hash(node: Node, child_ids: &[CanonicalExprId], expr_arena: &Arena<A
         hasher.write_u32(child_id.as_u32());
     }
     hasher.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::scalar::Scalar;
+
+    use super::*;
+    use crate::dsl::{EvalVariant, Operator};
+    use crate::plans::LiteralValue;
+    #[cfg(feature = "dtype-struct")]
+    use crate::plans::{ExprIR, OutputName};
+
+    fn add_literal(arena: &mut Arena<AExpr>, left: Node, value: i64) -> Node {
+        let right = arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(value))));
+        arena.add(AExpr::BinaryExpr {
+            left,
+            op: Operator::Plus,
+            right,
+        })
+    }
+
+    #[test]
+    fn resolves_structural_equivalence_and_representatives() {
+        let mut arena = Arena::new();
+
+        let left_a = arena.add(AExpr::Column("a".into()));
+        let left_b = arena.add(AExpr::Column("b".into()));
+        let left = arena.add(AExpr::BinaryExpr {
+            left: left_a,
+            op: Operator::Plus,
+            right: left_b,
+        });
+
+        let right_a = arena.add(AExpr::Column("a".into()));
+        let right_b = arena.add(AExpr::Column("b".into()));
+        let right = arena.add(AExpr::BinaryExpr {
+            left: right_a,
+            op: Operator::Plus,
+            right: right_b,
+        });
+
+        let different = arena.add(AExpr::BinaryExpr {
+            left: right_a,
+            op: Operator::Minus,
+            right: right_b,
+        });
+
+        let mut map = CanonicalExprMap::new();
+        let left_id = map.resolve(left, &arena);
+        assert_eq!(left_id, map.resolve(right, &arena));
+        assert_eq!(map.representative(left_id), left);
+        assert_ne!(left_id, map.resolve(different, &arena));
+    }
+
+    #[test]
+    fn includes_nested_evaluation_children() {
+        let mut arena = Arena::new();
+        let input = arena.add(AExpr::Column("values".into()));
+        let element = arena.add(AExpr::Element);
+        let add_one = add_literal(&mut arena, element, 1);
+        let add_two = add_literal(&mut arena, element, 2);
+
+        let first = arena.add(AExpr::Eval {
+            expr: input,
+            evaluation: add_one,
+            variant: EvalVariant::List,
+        });
+        let second = arena.add(AExpr::Eval {
+            expr: input,
+            evaluation: add_two,
+            variant: EvalVariant::List,
+        });
+
+        let mut map = CanonicalExprMap::new();
+        assert_ne!(map.resolve(first, &arena), map.resolve(second, &arena));
+
+        #[cfg(feature = "dtype-struct")]
+        {
+            let struct_input = arena.add(AExpr::Column("struct".into()));
+            let field = arena.add(AExpr::StructField("field".into()));
+            let add_one = add_literal(&mut arena, field, 1);
+            let add_two = add_literal(&mut arena, field, 2);
+            let output_name = OutputName::Alias("field".into());
+
+            let first = arena.add(AExpr::StructEval {
+                expr: struct_input,
+                evaluation: vec![ExprIR::new(add_one, output_name.clone())],
+            });
+            let second = arena.add(AExpr::StructEval {
+                expr: struct_input,
+                evaluation: vec![ExprIR::new(add_two, output_name)],
+            });
+
+            assert_ne!(map.resolve(first, &arena), map.resolve(second, &arena));
+        }
+    }
 }
