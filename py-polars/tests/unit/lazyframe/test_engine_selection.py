@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.lazyframe.frame import _plan_engine, _select_engine
+from polars.lazyframe.engine_config import _select_engine, _select_plan_engine
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -77,4 +77,4 @@ def test_collect_local_ignores_object_affinity(df: pl.LazyFrame) -> None:
 
 def test_remote_plan_engine_does_not_inherit_local_affinity() -> None:
     with pl.Config(engine_affinity="streaming"):
-        assert _plan_engine(pl.RemoteEngine()) == "auto"
+        assert _select_plan_engine(pl.RemoteEngine()) == "auto"

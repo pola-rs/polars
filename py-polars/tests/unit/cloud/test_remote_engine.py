@@ -6,6 +6,7 @@ These use a stub `polars_cloud` module so that they run without the real package
 
 from __future__ import annotations
 
+import inspect
 import io
 import sys
 from pathlib import Path
@@ -15,6 +16,7 @@ from typing import Any
 import pytest
 
 import polars as pl
+from polars.lazyframe.engine_config import _REMOTE_SINK_PARAMS
 
 
 class FakeQuery:
@@ -219,6 +221,19 @@ def test_sink_rejects_unsupported_options(
 ) -> None:
     with pytest.raises(ValueError, match="not supported by the remote engine"):
         getattr(lf, method)("s3://bucket/out/", engine=pl.RemoteEngine(), **kwargs)
+
+
+@pytest.mark.parametrize("method", list(_REMOTE_SINK_PARAMS))
+def test_sink_params_match_signature(method: str) -> None:
+    """Every argument of a remote-capable sink is either forwarded or rejected."""
+    spec = _REMOTE_SINK_PARAMS[method]
+    signature = inspect.signature(getattr(pl.LazyFrame, method)).parameters
+    arguments = set(signature) - {"self", "path", "engine"}
+
+    assert arguments == set(spec.forward) | set(spec.unsupported)
+    assert {name: signature[name].default for name in spec.unsupported} == dict(
+        spec.unsupported
+    )
 
 
 @pytest.mark.parametrize("path", [io.BytesIO(), Path("local/path")])

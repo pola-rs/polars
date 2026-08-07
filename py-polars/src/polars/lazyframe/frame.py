@@ -101,7 +101,11 @@ from polars.interchange.protocol import CompatLevel
 from polars.lazyframe.engine_config import (
     GPUEngine,
     RemoteEngine,
-    get_engine_affinity_override,
+    _default_local_engine,
+    _select_collect_engine,
+    _select_engine,
+    _select_local_engine,
+    _select_plan_engine,
 )
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
@@ -111,7 +115,7 @@ from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars._plr import PyLazyFrame, get_engine_affinity
+    from polars._plr import PyLazyFrame
 
 if TYPE_CHECKING:
     import sys
@@ -189,64 +193,6 @@ if TYPE_CHECKING:
 
 
 _COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
-
-
-def _select_engine(engine: EngineType) -> EngineType:
-    if engine != "auto":
-        return engine
-    # the env var that rust reads can only name an engine, never hold an object
-    override = get_engine_affinity_override()
-    return get_engine_affinity() if override is None else override
-
-
-def _local_engine() -> EngineType:
-    """
-    Return the local engine, ignoring any object-valued affinity.
-
-    Never returns `"auto"`, which would re-enter the affinity lookup; rust maps
-    `"auto"` to `"in-memory"` anyway.
-    """
-    engine = get_engine_affinity()
-    return "in-memory" if engine == "auto" else engine
-
-
-def _plan_engine(engine: EngineType) -> EngineType:
-    """Reduce a remote engine to the engine its workers would prefer."""
-    if not isinstance(engine, RemoteEngine):
-        return engine
-    return engine.engine
-
-
-def _remote_sink(
-    engine: RemoteEngine,
-    lf: LazyFrame,
-    method: str,
-    path: Any,
-    *,
-    unsupported: Mapping[str, tuple[Any, Any]],
-    **kwargs: Any,
-) -> None:
-    """
-    Run a `sink_*` method on Polars Cloud, blocking until the query completes.
-
-    `unsupported` maps arguments with no remote equivalent to `(value, default)`;
-    a non-default value for any of them is an error rather than a silent no-op.
-    """
-    from polars.io.partition import PartitionBy
-
-    if not isinstance(path, (str, PartitionBy)):
-        msg = (
-            f"the remote engine can only sink to a URI or a `PartitionBy`, got "
-            f"{qualified_type_name(path)!r}"
-        )
-        raise TypeError(msg)
-
-    for name, (value, default) in unsupported.items():
-        if value != default:
-            msg = f"`{name}` is not supported by the remote engine"
-            raise ValueError(msg)
-
-    getattr(engine._target(lf), method)(path, **kwargs).await_result()
 
 
 def _to_sink_target(
@@ -1483,7 +1429,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if tree_format:
                 format = "tree"
 
-        engine = _plan_engine(_select_engine(engine))
+        engine = _select_plan_engine(engine)
 
         if optimized:
             optimizations = optimizations.__copy__()
@@ -1677,7 +1623,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).show_graph(plan_stage="ir")  # doctest: +SKIP
         """
-        engine = _plan_engine(_select_engine(engine))
+        engine = _select_plan_engine(engine)
 
         optimizations = optimizations.__copy__()
         optimizations._pyoptflags.streaming = engine == "streaming"
@@ -2273,9 +2219,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ):
                 error_msg = f"profile() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
-        engine = _select_engine(engine)
-        if isinstance(engine, RemoteEngine):
-            engine._raise_unsupported("LazyFrame.profile")
+        engine = _select_local_engine(engine, "LazyFrame.profile")
 
         optimizations = optimizations.__copy__()
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
@@ -2337,7 +2281,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         For eager entry points built on `.lazy()...collect()`, which must never be
         redirected to a remote engine.
         """
-        return self.collect(engine=_local_engine(), **kwargs)
+        return self.collect(engine=_default_local_engine(), **kwargs)
 
     @unstable()
     def execute(
@@ -2438,7 +2382,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         engine = _select_engine(engine)
         if isinstance(engine, RemoteEngine):
-            return engine._target(self).execute(optimizations=optimizations)  # type: ignore[no-any-return]
+            return engine._execute(self, optimizations)
         df = self.collect(optimizations=optimizations, engine=engine)
         return SingleNodeQueryResult(df)
 
@@ -2684,14 +2628,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
 
-        engine = _select_engine(engine)
-
-        if isinstance(engine, RemoteEngine):
-            if optimizations._pyoptflags.eager:
-                # eager `DataFrame` ops are built on `collect`; keep them local
-                engine = _local_engine()
-            else:
-                engine._raise_unsupported("LazyFrame.collect")
+        engine = _select_collect_engine(engine, eager=optimizations._pyoptflags.eager)
 
         callback = _gpu_engine_callback(
             engine,
@@ -2831,9 +2768,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
-        engine = _select_engine(engine)
-        if isinstance(engine, RemoteEngine):
-            engine._raise_unsupported("LazyFrame.collect_async")
+        engine = _select_local_engine(engine, "LazyFrame.collect_async")
 
         if engine == "streaming":
             issue_unstable_warning("streaming mode is considered unstable.")
@@ -3130,30 +3065,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         engine = _select_engine(engine)
         if isinstance(engine, RemoteEngine):
-            _remote_sink(
-                engine,
-                self,
-                "sink_parquet",
-                path,
-                unsupported={
-                    "lazy": (lazy, False),
-                    "mkdir": (mkdir, False),
-                    "sync_on_close": (sync_on_close, None),
-                    "retries": (retries, None),
-                    "_sinked_paths_callback": (_sinked_paths_callback, None),
-                },
-                compression=compression,
-                compression_level=compression_level,
-                statistics=statistics,
-                row_group_size=row_group_size,
-                data_page_size=data_page_size,
-                maintain_order=maintain_order,
-                storage_options=storage_options,
-                credential_provider=credential_provider,
-                metadata=metadata,
-                arrow_schema=arrow_schema,
-                optimizations=optimizations,
-            )
+            engine._sink(self, "sink_parquet", locals())
             return None
 
         if metadata is not None:
@@ -3807,26 +3719,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         engine = _select_engine(engine)
         if isinstance(engine, RemoteEngine):
-            _remote_sink(
-                engine,
-                self,
-                "sink_ipc",
-                path,
-                unsupported={
-                    "lazy": (lazy, False),
-                    "mkdir": (mkdir, False),
-                    "sync_on_close": (sync_on_close, None),
-                    "retries": (retries, None),
-                    "record_batch_size": (record_batch_size, None),
-                    "_record_batch_statistics": (_record_batch_statistics, False),
-                    "maintain_order": (maintain_order, True),
-                },
-                compression=compression,
-                compat_level=compat_level,
-                storage_options=storage_options,
-                credential_provider=credential_provider,
-                optimizations=optimizations,
-            )
+            engine._sink(self, "sink_ipc", locals())
             return None
 
         from polars.io.cloud.credential_provider._builder import (
@@ -4191,39 +4084,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             null_value = None
         engine = _select_engine(engine)
         if isinstance(engine, RemoteEngine):
-            _remote_sink(
-                engine,
-                self,
-                "sink_csv",
-                path,
-                unsupported={
-                    "lazy": (lazy, False),
-                    "mkdir": (mkdir, False),
-                    "sync_on_close": (sync_on_close, None),
-                    "retries": (retries, None),
-                    "compression": (compression, "uncompressed"),
-                    "compression_level": (compression_level, None),
-                    "check_extension": (check_extension, True),
-                    "maintain_order": (maintain_order, True),
-                },
-                include_bom=include_bom,
-                include_header=include_header,
-                separator=separator,
-                line_terminator=line_terminator,
-                quote_char=quote_char,
-                batch_size=batch_size,
-                datetime_format=datetime_format,
-                date_format=date_format,
-                time_format=time_format,
-                float_scientific=float_scientific,
-                float_precision=float_precision,
-                decimal_comma=decimal_comma,
-                null_value=null_value,
-                quote_style=quote_style,
-                storage_options=storage_options,
-                credential_provider=credential_provider,
-                optimizations=optimizations,
-            )
+            engine._sink(self, "sink_csv", locals())
             return None
 
         from polars.io.cloud.credential_provider._builder import (
@@ -4485,9 +4346,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         PartitionBy
         """
-        engine = _select_engine(engine)
-        if isinstance(engine, RemoteEngine):
-            engine._raise_unsupported("LazyFrame.sink_ndjson")
+        engine = _select_local_engine(engine, "LazyFrame.sink_ndjson")
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
@@ -4621,9 +4480,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_batches(lambda df: print(df))  # doctest: +SKIP
         """
-        engine = _select_engine(engine)
-        if isinstance(engine, RemoteEngine):
-            engine._raise_unsupported("LazyFrame.sink_batches")
+        engine = _select_local_engine(engine, "LazyFrame.sink_batches")
 
         def _wrap(pydf: plr.PyDataFrame) -> bool:
             df = wrap_df(pydf)
@@ -4705,9 +4562,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
         """
-        engine = _select_engine(engine)
-        if isinstance(engine, RemoteEngine):
-            engine._raise_unsupported("LazyFrame.collect_batches")
+        engine = _select_local_engine(engine, "LazyFrame.collect_batches")
 
         if engine == "auto":
             engine = "streaming"

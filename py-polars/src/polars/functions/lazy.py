@@ -2191,12 +2191,9 @@ def collect_all(
         lf = LazyFrame._from_pyldf(ldf)
         return lf
 
-    from polars.lazyframe.engine_config import RemoteEngine
-    from polars.lazyframe.frame import _select_engine
+    from polars.lazyframe.engine_config import _select_local_engine
 
-    engine = _select_engine(engine)
-    if isinstance(engine, RemoteEngine):
-        engine._raise_unsupported("collect_all")
+    engine = _select_local_engine(engine, "collect_all")
     out = plr.collect_all(lfs, engine, optimizations._pyoptflags)
 
     # wrap the pydataframes into dataframe
@@ -2307,12 +2304,9 @@ def collect_all_async(
     ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
     lfs = [lf._ldf for lf in lazy_frames]
 
-    from polars.lazyframe.engine_config import RemoteEngine
-    from polars.lazyframe.frame import _select_engine
+    from polars.lazyframe.engine_config import _select_local_engine
 
-    engine = _select_engine(engine)
-    if isinstance(engine, RemoteEngine):
-        engine._raise_unsupported("collect_all_async")
+    engine = _select_local_engine(engine, "collect_all_async")
 
     plr.collect_all_with_callback(
         lfs, engine, optimizations._pyoptflags, result._callback_all

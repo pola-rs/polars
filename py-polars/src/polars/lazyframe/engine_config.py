@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import contextlib
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from polars._dependencies import import_optional
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars._plr import get_engine_affinity
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -11,8 +15,10 @@ if TYPE_CHECKING:
     import polars_cloud as pc
     from rmm.mr import DeviceMemoryResource  # type: ignore[import-not-found]
 
-    from polars._typing import EngineTypeName
+    from polars._typing import EngineType, EngineTypeName
     from polars.lazyframe.frame import LazyFrame
+    from polars.lazyframe.opt_flags import QueryOptFlags
+    from polars.lazyframe.query_result import QueryResult
 
 
 class GPUEngine:
@@ -189,6 +195,39 @@ class RemoteEngine:
             return remote.distributed(**self.config)
         return remote  # let `polars_cloud` resolve the scaling mode
 
+    def _execute(self, lf: LazyFrame, optimizations: QueryOptFlags) -> QueryResult:
+        """Start `lf` on Polars Cloud and return a handle to the running query."""
+        return self._target(lf).execute(optimizations=optimizations)  # type: ignore[no-any-return]
+
+    def _sink(self, lf: LazyFrame, method: str, params: Mapping[str, Any]) -> None:
+        """
+        Run a `LazyFrame.sink_*` method on Polars Cloud, blocking until it completes.
+
+        `params` is the calling method's `locals()`; which of its arguments are
+        forwarded and which have no remote equivalent is described by
+        `_REMOTE_SINK_PARAMS`.
+        """
+        from polars._utils.various import qualified_type_name
+        from polars.io.partition import PartitionBy
+
+        spec = _REMOTE_SINK_PARAMS[method]
+
+        path = params["path"]
+        if not isinstance(path, (str, PartitionBy)):
+            msg = (
+                "the remote engine can only sink to a URI or a `PartitionBy`, got "
+                f"{qualified_type_name(path)!r}"
+            )
+            raise TypeError(msg)
+
+        for name, default in spec.unsupported.items():
+            if params[name] != default:
+                msg = f"`{name}` is not supported by the remote engine"
+                raise ValueError(msg)
+
+        kwargs = {name: params[name] for name in spec.forward}
+        getattr(self._target(lf), method)(path, **kwargs).await_result()
+
     def _raise_unsupported(self, method: str) -> NoReturn:
         """Raise for an operation that the remote engine cannot run."""
         msg = (
@@ -198,6 +237,94 @@ class RemoteEngine:
             "Polars Cloud, or pass an explicit `engine=` to run it locally."
         )
         raise NotImplementedError(msg)
+
+
+class _RemoteSinkParams(NamedTuple):
+    """How the arguments of one `LazyFrame.sink_*` method map onto Polars Cloud."""
+
+    forward: tuple[str, ...]
+    """Arguments passed on to the `polars_cloud` sink method unchanged."""
+    unsupported: Mapping[str, Any]
+    """
+    Arguments with no remote equivalent, mapped to their local default. Passing
+    anything else is an error rather than a silent no-op.
+    """
+
+
+# Keep the defaults in sync with the signatures of the `LazyFrame.sink_*` methods.
+_REMOTE_SINK_PARAMS: Mapping[str, _RemoteSinkParams] = {
+    "sink_parquet": _RemoteSinkParams(
+        forward=(
+            "compression",
+            "compression_level",
+            "statistics",
+            "row_group_size",
+            "data_page_size",
+            "maintain_order",
+            "storage_options",
+            "credential_provider",
+            "metadata",
+            "arrow_schema",
+            "optimizations",
+        ),
+        unsupported={
+            "lazy": False,
+            "mkdir": False,
+            "sync_on_close": None,
+            "retries": None,
+            "_sinked_paths_callback": None,
+        },
+    ),
+    "sink_ipc": _RemoteSinkParams(
+        forward=(
+            "compression",
+            "compat_level",
+            "storage_options",
+            "credential_provider",
+            "optimizations",
+        ),
+        unsupported={
+            "lazy": False,
+            "mkdir": False,
+            "sync_on_close": None,
+            "retries": None,
+            "record_batch_size": None,
+            "_record_batch_statistics": False,
+            "maintain_order": True,
+        },
+    ),
+    "sink_csv": _RemoteSinkParams(
+        forward=(
+            "include_bom",
+            "include_header",
+            "separator",
+            "line_terminator",
+            "quote_char",
+            "batch_size",
+            "datetime_format",
+            "date_format",
+            "time_format",
+            "float_scientific",
+            "float_precision",
+            "decimal_comma",
+            "null_value",
+            "quote_style",
+            "storage_options",
+            "credential_provider",
+            "optimizations",
+        ),
+        unsupported={
+            "lazy": False,
+            "mkdir": False,
+            "sync_on_close": None,
+            "retries": None,
+            "compression": "uncompressed",
+            "compression_level": None,
+            "check_extension": True,
+            "maintain_order": True,
+        },
+    ),
+}
 
 
 _ENGINE_AFFINITY_OVERRIDE: GPUEngine | RemoteEngine | None = None
@@ -212,3 +339,55 @@ def set_engine_affinity_override(engine: GPUEngine | RemoteEngine | None) -> Non
     """Set (or clear, with `None`) the object-valued default engine."""
     global _ENGINE_AFFINITY_OVERRIDE
     _ENGINE_AFFINITY_OVERRIDE = engine
+
+
+def _select_engine(engine: EngineType) -> EngineType:
+    """Resolve `"auto"` to the engine affinity, which may be an engine object."""
+    if engine != "auto":
+        return engine
+    # the env var that rust reads can only name an engine, never hold an object
+    override = get_engine_affinity_override()
+    return get_engine_affinity() if override is None else override
+
+
+def _select_local_engine(engine: EngineType, method: str) -> EngineType:
+    """Resolve `engine` for a `method` that has no remote implementation."""
+    engine = _select_engine(engine)
+    if isinstance(engine, RemoteEngine):
+        engine._raise_unsupported(method)
+    return engine
+
+
+def _select_plan_engine(engine: EngineType) -> EngineType:
+    """Resolve `engine` for query plan rendering, which always happens locally."""
+    engine = _select_engine(engine)
+    if isinstance(engine, RemoteEngine):
+        # show the plan for the engine the remote workers would prefer
+        return engine.engine
+    return engine
+
+
+def _select_collect_engine(engine: EngineType, *, eager: bool) -> EngineType:
+    """
+    Resolve `engine` for `LazyFrame.collect`, which is local-only.
+
+    Eager `DataFrame` operations are built on `collect`, so an `eager` query keeps
+    running locally instead of raising when a remote engine is the default.
+    """
+    engine = _select_engine(engine)
+    if isinstance(engine, RemoteEngine):
+        if not eager:
+            engine._raise_unsupported("LazyFrame.collect")
+        return _default_local_engine()
+    return engine
+
+
+def _default_local_engine() -> EngineType:
+    """
+    Return the default local engine, ignoring any object-valued affinity.
+
+    Never returns `"auto"`, which would re-enter the affinity lookup; rust maps
+    `"auto"` to `"in-memory"` anyway.
+    """
+    engine = get_engine_affinity()
+    return "in-memory" if engine == "auto" else engine
