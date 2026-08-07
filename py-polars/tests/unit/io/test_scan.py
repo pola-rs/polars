@@ -696,7 +696,6 @@ def test_async_path_expansion_bracket_17629(tmp_path: Path) -> None:
     "method",
     ["parquet", "csv", "ipc", "ndjson"],
 )
-@pytest.mark.may_fail_auto_streaming  # unsupported negative slice offset -1 for CSV source
 def test_scan_in_memory(method: str) -> None:
     f = io.BytesIO()
     df = pl.DataFrame(

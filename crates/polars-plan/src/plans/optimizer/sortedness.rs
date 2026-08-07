@@ -68,7 +68,7 @@ impl IRPlanSorted {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Debug, Default, PartialEq, Clone, Copy, Hash)]
+#[derive(Debug, Default, PartialEq, Clone, Copy, Hash, Eq)]
 pub struct AExprSorted {
     /// If `Some(true)`, the expression is sorted in descending order.
     /// If `Some(false)`, the expression is sorted in ascending order.

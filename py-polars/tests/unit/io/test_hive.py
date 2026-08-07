@@ -903,7 +903,6 @@ def test_hive_write_dates(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 def test_hive_predicate_dates_14712(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any

@@ -107,6 +107,7 @@ doctest:  ## Check that documentation builds
 	cargo doc --no-deps --features=docs-selection -p polars
 	cargo doc --no-deps --all-features -p polars-sql
 
+# disable object-store CRC64NVME and DNS
 .PHONY: publish
 publish:  ## Publish Polars crates
 	cargo c  -p polars-error \

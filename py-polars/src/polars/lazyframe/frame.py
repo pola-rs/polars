@@ -925,6 +925,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Offers a structured way to apply a sequence of user-defined functions (UDFs).
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         function
@@ -1008,6 +1010,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This functionality is considered **unstable**. It may be changed at any
             point without it being considered a breaking change.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         function
@@ -1063,6 +1067,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Creates a summary of statistics for a LazyFrame, returning a DataFrame.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -1660,6 +1666,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Print the value that this node in the computation graph evaluates to and pass on
         the value.
 
+        .. engine-support:: in-memory
+
         Examples
         --------
         >>> lf = pl.LazyFrame({"foo": [1, 1, -2, 3]})
@@ -1690,6 +1698,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Sort the LazyFrame by the given columns.
+
+        .. engine-support:: in-memory, partially-distributed
 
         Parameters
         ----------
@@ -1803,6 +1813,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Execute a SQL query against the LazyFrame.
 
+        .. engine-support:: streaming
+
         .. versionadded:: 0.20.23
 
         .. warning::
@@ -1899,6 +1911,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         .. versionchanged:: 1.0.0
             The `descending` parameter was renamed `reverse`.
 
@@ -1976,6 +1990,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         the value of `reverse`. The output is not guaranteed to be in any
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.0.0
             The `descending` parameter was renamed `reverse`.
@@ -2883,6 +2899,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         This allows streaming results that are larger than RAM to be written to disk.
 
+        .. engine-support:: streaming, distributed
+
         Parameters
         ----------
         path
@@ -3169,6 +3187,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> deltalake.table.TableMerger | None:
         """
         Sink DataFrame as delta table.
+
+        .. engine-support:: streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3566,6 +3586,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         This allows streaming results that are larger than RAM to be written to disk.
 
+        .. engine-support:: streaming, distributed
+
         Parameters
         ----------
         path
@@ -3861,6 +3883,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Evaluate the query in streaming mode and write to a CSV file.
 
         This allows streaming results that are larger than RAM to be written to disk.
+
+        .. engine-support:: streaming, distributed
 
         Parameters
         ----------
@@ -4183,6 +4207,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         This allows streaming results that are larger than RAM to be written to disk.
 
+        .. engine-support:: streaming, distributed
+
         Parameters
         ----------
         path
@@ -4404,6 +4430,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         This allows streaming results that are larger than RAM in certain cases.
 
+        .. engine-support:: streaming, distributed
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
@@ -4489,6 +4517,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The query will always be fully executed unless `stop` is called, so you should
         call next until all chunks have been seen.
+
+        .. engine-support:: streaming
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -4626,6 +4656,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Cache the result once the execution of the physical plan hits this node.
 
         It is not recommended using this as the optimizer likely can do a better job.
+
+        .. engine-support:: in-memory, streaming, distributed
+
         """
         return self._from_pyldf(self._ldf.cache())
 
@@ -4644,6 +4677,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Cast LazyFrame column(s) to the specified dtype(s).
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -4741,6 +4776,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Returns a copy with an identical schema but no data.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -4790,6 +4827,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Create a copy of this LazyFrame.
 
         This is a cheap operation that does not copy data.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         See Also
         --------
@@ -4913,6 +4952,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Rows where the filter predicate does not evaluate to True are discarded
         (this includes rows where the predicate evaluates as `null`).
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5092,6 +5133,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Rows where the filter predicate does not evaluate to True are retained
         (this includes rows where the predicate evaluates as `null`).
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         predicates
@@ -5235,6 +5278,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Select columns from this LazyFrame.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         *exprs
@@ -5325,6 +5370,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         This will run all expression sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         *exprs
@@ -5351,6 +5398,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Start a group by operation.
 
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
+
         Parameters
         ----------
         *by
@@ -5360,7 +5409,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
             Setting this to `True` blocks the possibility
-            to run on the streaming engine.
+            to run partitioned.
         **named_by
             Additional columns to group by, specified as keyword arguments.
             The columns will be renamed to the keyword used.
@@ -5505,6 +5554,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
+
         .. versionchanged:: 0.20.14
             The `by` parameter was renamed `group_by`.
 
@@ -5617,6 +5668,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         where `start` is determined by `start_by`, `offset`, `every`, and the earliest
         datapoint. See the `start_by` argument description for details.
+
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
 
         .. warning::
             The index column must be sorted in ascending order. If `group_by` is passed, then
@@ -5968,6 +6021,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             nearest search.
 
         The default is "backward".
+
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
 
         Parameters
         ----------
@@ -6339,6 +6394,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Add a join operation to the Logical Plan.
 
+        .. engine-support:: in-memory, streaming, partially-distributed
+
         .. versionchanged:: 1.24
             The `join_nulls` parameter was renamed `nulls_equal`.
 
@@ -6649,6 +6706,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         are included in the result, and a row from either DataFrame may be included
         multiple times in the result.
 
+        .. engine-support:: in-memory, streaming, partially-distributed
+
         .. note::
             The row order of the input DataFrames is not preserved.
 
@@ -6752,6 +6811,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Selects rows from this LazyFrame at the given indices.
 
+        .. engine-support:: in-memory, streaming
+
         .. warning::
             This functionality is experimental. It may be
             changed at any point without it being considered a breaking change.
@@ -6827,6 +6888,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Add columns to this LazyFrame.
 
         Added columns will replace existing columns with the same name.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -6961,6 +7024,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         This will run all expression sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         *exprs
@@ -7057,6 +7122,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Remove columns from the DataFrame.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         *columns
@@ -7134,6 +7201,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Rename column names.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         mapping
@@ -7196,6 +7265,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Reverse the DataFrame.
 
+        .. engine-support:: in-memory, partially-streaming
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -7223,6 +7294,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Shift values by the given number of indices.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -7302,6 +7375,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Get a slice of this DataFrame.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         offset
@@ -7340,6 +7415,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Get the first `n` rows.
 
         Alias for :func:`LazyFrame.head`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7384,6 +7461,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Get the first `n` rows.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -7426,6 +7505,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def tail(self, n: int = 5) -> LazyFrame:
         """
         Get the last `n` rows.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7470,6 +7551,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Get the last row of the DataFrame.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -7493,6 +7576,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def first(self) -> LazyFrame:
         """
         Get the first row of the DataFrame.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -7550,6 +7635,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def with_row_index(self, name: str = "index", offset: int = 0) -> LazyFrame:
         """
         Add a row index as the first column in the LazyFrame.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7674,6 +7761,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Take every nth row in the LazyFrame and return as a new LazyFrame.
 
+        .. engine-support:: in-memory, streaming
+
         Parameters
         ----------
         n
@@ -7722,6 +7811,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Fill null values using the specified value or strategy.
+
+        .. engine-support:: in-memory, streaming, partially-distributed
 
         Parameters
         ----------
@@ -7856,6 +7947,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Fill floating point NaN values.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         value
@@ -7899,6 +7992,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their standard deviation value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         ddof
@@ -7938,6 +8033,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def var(self, ddof: int = 1) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their variance value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7979,6 +8076,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their maximum value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -8002,6 +8101,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def min(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their minimum value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -8027,6 +8128,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their sum value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -8050,6 +8153,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def mean(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their mean value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -8075,6 +8180,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their median value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -8098,6 +8205,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def null_count(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame as the sum of their null value count.
+
+        .. engine-support:: in-memory, streaming
 
         Examples
         --------
@@ -8127,6 +8236,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their quantile value.
+
+        .. engine-support:: in-memory, partially-streaming
 
         Parameters
         ----------
@@ -8165,6 +8276,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Explode the DataFrame to long format by exploding the given columns.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -8229,6 +8342,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         r"""
         Drop duplicate rows from this LazyFrame.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -8371,6 +8486,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The original order of the remaining rows is preserved.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         subset
@@ -8459,6 +8576,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Drop all rows that contain one or more null values.
 
         The original order of the remaining rows is preserved.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         See Also
         --------
@@ -8549,6 +8668,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
+
+        .. engine-support:: in-memory, partially-streaming
 
         Parameters
         ----------
@@ -8809,6 +8930,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         measured variables (on), are "unpivoted" to the row axis leaving just
         two non-identifier columns, 'variable' and 'value'.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         on
@@ -8895,6 +9018,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Apply a custom function.
 
         It is important that the function returns a Polars DataFrame.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -8993,6 +9118,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Nulls at the beginning and end of the series remain null.
 
+        .. engine-support:: in-memory, streaming
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -9030,6 +9157,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         struct column.
 
         If no columns are provided, all struct columns are unnested.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -9139,6 +9268,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The schemas of both LazyFrames must be equal.
 
+        .. engine-support:: in-memory, streaming
+
         Parameters
         ----------
         other
@@ -9244,6 +9375,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         This can speed up future operations.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         column
@@ -9294,6 +9427,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Update the values in this `LazyFrame` with the values in `other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -9523,6 +9658,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def count(self) -> LazyFrame:
         """
         Return the number of non-null elements for each column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
