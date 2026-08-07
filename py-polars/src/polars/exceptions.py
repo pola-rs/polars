@@ -158,11 +158,9 @@ class ChronoFormatWarning(PolarsWarning):
     """
     Warning issued when a chrono format string contains dubious patterns.
 
-    Polars uses Rust's chrono crate to convert between string data and temporal data.
-    The patterns used by chrono differ slightly from Python's built-in datetime module.
-    Refer to the `chrono strftime documentation
-    <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_ for the full
-    specification.
+    .. deprecated::
+        Polars no longer raises this warning. It is kept only for backwards
+        compatibility with code that imports or catches it.
     """
 
 

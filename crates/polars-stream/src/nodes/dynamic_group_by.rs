@@ -87,7 +87,7 @@ impl DynamicGroupBy {
 
         // @NOTE: This is a bit strange since it ignores errors, but it mirrors the in-memory
         // engine.
-        let tz = tz.and_then(|tz| tz.parse::<Tz>().ok());
+        let tz = tz.and_then(|tz| Tz::get(tz.as_str()).ok());
         let windower = GroupByDynamicWindower::new(
             period,
             offset,

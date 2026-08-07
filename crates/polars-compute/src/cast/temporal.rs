@@ -2,11 +2,11 @@ use arrow::array::{PrimitiveArray, Utf8ViewArray};
 use arrow::datatypes::{ArrowDataType, TimeUnit};
 pub use arrow::temporal_conversions::{
     EPOCH_DAYS_FROM_CE, MICROSECONDS, MICROSECONDS_IN_DAY, MILLISECONDS, MILLISECONDS_IN_DAY,
-    NANOSECONDS, NANOSECONDS_IN_DAY, SECONDS_IN_DAY,
+    NANOSECONDS, NANOSECONDS_IN_DAY, SECONDS_IN_DAY, utf8_to_timestamp_scalar,
 };
-use arrow::temporal_conversions::{parse_offset, parse_offset_tz};
-use chrono::format::{Parsed, StrftimeItems};
-use chrono::{Datelike, NaiveDate, NaiveTime, Timelike};
+use arrow::temporal_conversions::{date_to_date32_opt, parse_offset, parse_offset_tz};
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
+use jiff::tz::TimeZone;
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -20,7 +20,7 @@ pub const fn time_unit_multiple(unit: TimeUnit) -> i64 {
     }
 }
 
-fn chrono_tz_utf_to_timestamp(
+fn named_tz_utf_to_timestamp(
     array: &Utf8ViewArray,
     fmt: &str,
     time_zone: PlSmallStr,
@@ -32,11 +32,11 @@ fn chrono_tz_utf_to_timestamp(
     ))
 }
 
-fn utf8view_to_timestamp_impl<T: chrono::TimeZone>(
+fn utf8view_to_timestamp_impl(
     array: &Utf8ViewArray,
     fmt: &str,
     time_zone: PlSmallStr,
-    tz: T,
+    tz: TimeZone,
     time_unit: TimeUnit,
 ) -> PrimitiveArray<i64> {
     let iter = array
@@ -47,46 +47,15 @@ fn utf8view_to_timestamp_impl<T: chrono::TimeZone>(
         .to(ArrowDataType::Timestamp(time_unit, Some(time_zone)))
 }
 
-/// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp with timezone.
-///
-/// `tz` must be built from `timezone` (either via [`parse_offset`] or `chrono-tz`).
-/// Returns in scale `tz` of `TimeUnit`.
-#[inline]
-pub fn utf8_to_timestamp_scalar<T: chrono::TimeZone>(
-    value: &str,
-    fmt: &str,
-    tz: &T,
-    tu: &TimeUnit,
-) -> Option<i64> {
-    let mut parsed = Parsed::new();
-    let fmt = StrftimeItems::new(fmt);
-    let r = chrono::format::parse(&mut parsed, value, fmt).ok();
-    if r.is_some() {
-        parsed
-            .to_datetime()
-            .map(|x| x.naive_utc())
-            .map(|x| tz.from_utc_datetime(&x))
-            .map(|x| match tu {
-                TimeUnit::Second => x.timestamp(),
-                TimeUnit::Millisecond => x.timestamp_millis(),
-                TimeUnit::Microsecond => x.timestamp_micros(),
-                TimeUnit::Nanosecond => x.timestamp_nanos_opt().unwrap(),
-            })
-            .ok()
-    } else {
-        None
-    }
-}
-
 /// Parses a [`Utf8Array`] to a timeozone-aware timestamp, i.e. [`PrimitiveArray<i64>`] with type `Timestamp(Nanosecond, Some(timezone))`.
 ///
 /// # Implementation
 ///
 /// * parsed values with timezone other than `timezone` are converted to `timezone`.
-/// * parsed values without timezone are null. Use [`utf8_to_naive_timestamp`] to parse naive timezones.
+/// * parsed values without timezone are null.
 /// * Null elements remain null; non-parsable elements are null.
 ///
-/// The feature `"chrono-tz"` enables IANA and zoneinfo formats for `timezone`.
+/// The feature `"timezones"` enables IANA and zoneinfo formats for `timezone`.
 ///
 /// # Error
 ///
@@ -104,52 +73,37 @@ pub(crate) fn utf8view_to_timestamp(
             array, fmt, time_zone, tz, time_unit,
         ))
     } else {
-        chrono_tz_utf_to_timestamp(array, fmt, time_zone, time_unit)
+        named_tz_utf_to_timestamp(array, fmt, time_zone, time_unit)
     }
-}
-
-/// Parses a [`Utf8Array`] to naive timestamp, i.e.
-/// [`PrimitiveArray<i64>`] with type `Timestamp(Nanosecond, None)`.
-/// Timezones are ignored.
-/// Null elements remain null; non-parsable elements are set to null.
-pub(crate) fn utf8view_to_naive_timestamp(
-    array: &Utf8ViewArray,
-    fmt: &str,
-    time_unit: TimeUnit,
-) -> PrimitiveArray<i64> {
-    let iter = array
-        .iter()
-        .map(|x| x.and_then(|x| utf8_to_naive_timestamp_scalar(x, fmt, &time_unit)));
-
-    PrimitiveArray::from_trusted_len_iter(iter).to(ArrowDataType::Timestamp(time_unit, None))
 }
 
 /// Parses `value` to `Option<i64>` consistent with the Arrow's definition of timestamp without timezone.
 /// Returns in scale `tz` of `TimeUnit`.
 #[inline]
 pub fn utf8_to_naive_timestamp_scalar(value: &str, fmt: &str, tu: &TimeUnit) -> Option<i64> {
-    let fmt = StrftimeItems::new(fmt);
-    let mut parsed = Parsed::new();
-    chrono::format::parse(&mut parsed, value, fmt.clone()).ok();
-    parsed
-        .to_naive_datetime_with_offset(0)
-        .map(|x| match tu {
-            TimeUnit::Second => x.and_utc().timestamp(),
-            TimeUnit::Millisecond => x.and_utc().timestamp_millis(),
-            TimeUnit::Microsecond => x.and_utc().timestamp_micros(),
-            TimeUnit::Nanosecond => x.and_utc().timestamp_nanos_opt().unwrap(),
-        })
-        .ok()
+    // "%+" mirrors chrono's combined ISO 8601 / RFC 3339 format specifier,
+    // which jiff's strtime engine does not implement as a single specifier;
+    // fall back to jiff's native ISO 8601 datetime parser for this case.
+    let dt = if fmt == "%+" {
+        value.parse::<NaiveDateTime>().ok()?
+    } else {
+        NaiveDateTime::strptime(fmt, value).ok()?
+    };
+    let ts = TimeZone::UTC.to_timestamp(dt).ok()?;
+    Some(match tu {
+        TimeUnit::Second => ts.as_second(),
+        TimeUnit::Millisecond => ts.as_millisecond(),
+        TimeUnit::Microsecond => ts.as_microsecond(),
+        TimeUnit::Nanosecond => i64::try_from(ts.as_nanosecond()).ok()?,
+    })
 }
 
 /// Parses an ISO-8601 date (`YYYY-MM-DD`) into days since the Unix
 /// epoch; non-parsable values return `None`.
 #[inline]
 pub fn utf8_to_naive_date_scalar(value: &str) -> Option<i32> {
-    value
-        .parse::<NaiveDate>()
-        .ok()
-        .map(|d| d.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
+    let d = value.parse::<NaiveDate>().ok()?;
+    date_to_date32_opt(d)
 }
 
 /// Parses an ISO-8601 time (`HH:MM:SS[.fff]`) into elapsed time since
@@ -157,8 +111,8 @@ pub fn utf8_to_naive_date_scalar(value: &str) -> Option<i32> {
 #[inline]
 pub fn utf8_to_naive_time_scalar(value: &str, tu: TimeUnit) -> Option<i64> {
     value.parse::<NaiveTime>().ok().map(|t| {
-        let secs = t.num_seconds_from_midnight() as i64;
-        let nanos = t.nanosecond() as i64;
+        let secs = t.hour() as i64 * 3_600 + t.minute() as i64 * 60 + t.second() as i64;
+        let nanos = t.subsec_nanosecond() as i64;
         match tu {
             TimeUnit::Second => secs,
             TimeUnit::Millisecond => secs * MILLISECONDS + nanos / 1_000_000,

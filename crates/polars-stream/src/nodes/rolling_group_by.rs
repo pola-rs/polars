@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use chrono_tz::Tz;
+use jiff::tz::TimeZone as Tz;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::wait_group::WaitGroup;
@@ -81,7 +81,7 @@ impl RollingGroupBy {
 
         // @NOTE: This is a bit strange since it ignores errors, but it mirrors the in-memory
         // engine.
-        let tz = tz.and_then(|tz| tz.parse::<Tz>().ok());
+        let tz = tz.and_then(|tz| Tz::get(tz.as_str()).ok());
         let windower = RollingWindower::new(period, offset, closed, tu, tz);
 
         let (slice_offset, slice_length) = slice.unwrap_or((0, IdxSize::MAX));

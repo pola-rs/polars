@@ -423,14 +423,14 @@ fn test_lazy_query_9() -> PolarsResult<()> {
     feature = "dtype-duration"
 ))]
 fn test_lazy_query_10() {
-    use chrono::Duration as ChronoDuration;
-    let date = NaiveDate::from_ymd_opt(2021, 3, 5).unwrap();
+    use jiff::SignedDuration as ChronoDuration;
+    let date = NaiveDate::new(2021, 3, 5).unwrap();
     let x = DatetimeChunked::from_naive_datetime(
         "x".into(),
         [
-            NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 0, 0).unwrap()),
-            NaiveDateTime::new(date, NaiveTime::from_hms_opt(13, 0, 0).unwrap()),
-            NaiveDateTime::new(date, NaiveTime::from_hms_opt(14, 0, 0).unwrap()),
+            date.at(12, 0, 0, 0),
+            date.at(13, 0, 0, 0),
+            date.at(14, 0, 0, 0),
         ],
         TimeUnit::Nanoseconds,
     )
@@ -438,9 +438,9 @@ fn test_lazy_query_10() {
     let y = DatetimeChunked::from_naive_datetime(
         "y".into(),
         [
-            NaiveDateTime::new(date, NaiveTime::from_hms_opt(11, 0, 0).unwrap()),
-            NaiveDateTime::new(date, NaiveTime::from_hms_opt(11, 0, 0).unwrap()),
-            NaiveDateTime::new(date, NaiveTime::from_hms_opt(11, 0, 0).unwrap()),
+            date.at(11, 0, 0, 0),
+            date.at(11, 0, 0, 0),
+            date.at(11, 0, 0, 0),
         ],
         TimeUnit::Nanoseconds,
     )
@@ -454,9 +454,9 @@ fn test_lazy_query_10() {
     let z = DurationChunked::from_duration(
         "z".into(),
         [
-            ChronoDuration::try_hours(1).unwrap(),
-            ChronoDuration::try_hours(2).unwrap(),
-            ChronoDuration::try_hours(3).unwrap(),
+            ChronoDuration::from_hours(1),
+            ChronoDuration::from_hours(2),
+            ChronoDuration::from_hours(3),
         ],
         TimeUnit::Nanoseconds,
     )
@@ -465,9 +465,9 @@ fn test_lazy_query_10() {
     let x = DatetimeChunked::from_naive_datetime(
         "x".into(),
         [
-            NaiveDateTime::new(date, NaiveTime::from_hms_opt(2, 0, 0).unwrap()),
-            NaiveDateTime::new(date, NaiveTime::from_hms_opt(3, 0, 0).unwrap()),
-            NaiveDateTime::new(date, NaiveTime::from_hms_opt(4, 0, 0).unwrap()),
+            date.at(2, 0, 0, 0),
+            date.at(3, 0, 0, 0),
+            date.at(4, 0, 0, 0),
         ],
         TimeUnit::Milliseconds,
     )
@@ -475,9 +475,9 @@ fn test_lazy_query_10() {
     let y = DatetimeChunked::from_naive_datetime(
         "y".into(),
         [
-            NaiveDateTime::new(date, NaiveTime::from_hms_opt(1, 0, 0).unwrap()),
-            NaiveDateTime::new(date, NaiveTime::from_hms_opt(1, 0, 0).unwrap()),
-            NaiveDateTime::new(date, NaiveTime::from_hms_opt(1, 0, 0).unwrap()),
+            date.at(1, 0, 0, 0),
+            date.at(1, 0, 0, 0),
+            date.at(1, 0, 0, 0),
         ],
         TimeUnit::Nanoseconds,
     )
@@ -502,14 +502,14 @@ fn test_lazy_query_10() {
     feature = "dtype-datetime"
 ))]
 fn test_lazy_query_7() {
-    let date = NaiveDate::from_ymd_opt(2021, 3, 5).unwrap();
+    let date = NaiveDate::new(2021, 3, 5).unwrap();
     let dates = [
-        NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 0, 0).unwrap()),
-        NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 1, 0).unwrap()),
-        NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 2, 0).unwrap()),
-        NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 3, 0).unwrap()),
-        NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 4, 0).unwrap()),
-        NaiveDateTime::new(date, NaiveTime::from_hms_opt(12, 5, 0).unwrap()),
+        date.at(12, 0, 0, 0),
+        date.at(12, 1, 0, 0),
+        date.at(12, 2, 0, 0),
+        date.at(12, 3, 0, 0),
+        date.at(12, 4, 0, 0),
+        date.at(12, 5, 0, 0),
     ];
     let data = vec![Some(1.), Some(2.), Some(3.), Some(4.), None, None];
     let df = DataFrame::new_infer_height(vec![
@@ -523,10 +523,7 @@ fn test_lazy_query_7() {
         .lazy()
         .with_column(col("data").shift(lit(-1)).alias("output"))
         .with_column(col("output").shift(lit(2)).alias("shifted"))
-        .filter(col("date").gt(lit(NaiveDateTime::new(
-            date,
-            NaiveTime::from_hms_opt(12, 2, 0).unwrap(),
-        ))))
+        .filter(col("date").gt(lit(date.at(12, 2, 0, 0))))
         .collect()
         .unwrap();
     let a = out

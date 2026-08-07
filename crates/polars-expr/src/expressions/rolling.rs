@@ -105,7 +105,7 @@ impl PhysicalExpr for RollingExpr {
 
         // @NOTE: This is a bit strange since it ignores errors, but it mirrors the in-memory
         // engine.
-        let tz = time_zone.and_then(|tz| tz.parse::<chrono_tz::Tz>().ok());
+        let tz = time_zone.and_then(|tz| jiff::tz::TimeZone::get(tz.as_str()).ok());
 
         polars_ensure!(
             index_column_data.null_count() == 0,

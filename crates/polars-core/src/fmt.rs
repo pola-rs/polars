@@ -12,16 +12,14 @@ use std::{fmt, str};
     feature = "dtype-time"
 ))]
 use arrow::temporal_conversions::*;
-#[cfg(feature = "dtype-datetime")]
-use chrono::NaiveDateTime;
-#[cfg(feature = "timezones")]
-use chrono::TimeZone;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::modifiers::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
+#[cfg(feature = "dtype-datetime")]
+use jiff::civil::DateTime as NaiveDateTime;
 use num_traits::{Num, NumCast};
 use polars_error::feature_gated;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -983,6 +981,26 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     }
 }
 
+/// jiff's `Time`/`DateTime` `Display` always shows the minimal fractional
+/// representation (all trailing zeros stripped, by design - see
+/// <https://github.com/BurntSushi/jiff/pull/353>). chrono's `NaiveTime`/
+/// `NaiveDateTime` `Display` instead showed a fixed 3, 6, or 9 fractional
+/// digits - whichever is the smallest that represents the value exactly -
+/// so e.g. 500ms always printed as `.500`, never trimmed to `.5`. This
+/// computes that chrono-compatible precision (`None` if there's no
+/// fractional component at all).
+pub(crate) fn chrono_compat_subsec_precision(subsec_nanosecond: i32) -> Option<usize> {
+    if subsec_nanosecond == 0 {
+        None
+    } else if subsec_nanosecond % 1_000_000 == 0 {
+        Some(3)
+    } else if subsec_nanosecond % 1_000 == 0 {
+        Some(6)
+    } else {
+        Some(9)
+    }
+}
+
 #[cfg(feature = "dtype-datetime")]
 fn fmt_datetime(
     f: &mut Formatter<'_>,
@@ -990,13 +1008,24 @@ fn fmt_datetime(
     tu: TimeUnit,
     tz: Option<&self::datatypes::TimeZone>,
 ) -> fmt::Result {
-    let ndt = match tu {
-        TimeUnit::Nanoseconds => timestamp_ns_to_datetime(v),
-        TimeUnit::Microseconds => timestamp_us_to_datetime(v),
-        TimeUnit::Milliseconds => timestamp_ms_to_datetime(v),
+    // Formatting must never panic, even for a physically out-of-range value
+    // (e.g. one already flagged as invalid and being described in an error
+    // message) - degrade gracefully instead of unwrapping.
+    let Some(ndt) = (match tu {
+        TimeUnit::Nanoseconds => timestamp_ns_to_datetime_opt(v),
+        TimeUnit::Microseconds => timestamp_us_to_datetime_opt(v),
+        TimeUnit::Milliseconds => timestamp_ms_to_datetime_opt(v),
+    }) else {
+        return write!(f, "<out-of-range datetime>");
     };
     match tz {
-        None => std::fmt::Display::fmt(&ndt, f),
+        // jiff's `DateTime` Display uses an ISO 8601 "T" separator; match
+        // chrono's `NaiveDateTime` Display (space-separated) instead, since
+        // that's the shape downstream code/tests expect.
+        None => match chrono_compat_subsec_precision(ndt.subsec_nanosecond()) {
+            None => write!(f, "{} {}", ndt.date(), ndt.time()),
+            Some(prec) => write!(f, "{} {:.prec$}", ndt.date(), ndt.time(), prec = prec),
+        },
         Some(tz) => PlTzAware::new(ndt, tz).fmt(f),
     }
 }
@@ -1198,8 +1227,11 @@ impl Display for AnyValue<'_> {
             AnyValue::Duration(v, tu) => fmt_duration_string(f, *v, *tu),
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
-                let nt: chrono::NaiveTime = self.into();
-                write!(f, "{nt}")
+                let nt: jiff::civil::Time = self.into();
+                match chrono_compat_subsec_precision(nt.subsec_nanosecond()) {
+                    None => write!(f, "{nt}"),
+                    Some(prec) => write!(f, "{nt:.prec$}"),
+                }
             },
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(_, _)
@@ -1249,11 +1281,34 @@ impl Display for PlTzAware<'_> {
     #[allow(unused_variables)]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         #[cfg(feature = "timezones")]
-        match self.tz.parse::<chrono_tz::Tz>() {
+        match jiff::tz::TimeZone::get(self.tz) {
             Ok(tz) => {
-                let dt_utc = chrono::Utc.from_local_datetime(&self.ndt).unwrap();
-                let dt_tz_aware = dt_utc.with_timezone(&tz);
-                write!(f, "{dt_tz_aware}")
+                // Formatting must never panic, even for a physically
+                // out-of-range value (e.g. one already flagged as invalid
+                // and being described in an error message).
+                let Ok(ts) = jiff::tz::TimeZone::UTC.to_timestamp(self.ndt) else {
+                    return write!(f, "<out-of-range datetime>");
+                };
+                let abbreviation = tz.to_offset_info(ts).abbreviation().to_string();
+                let dt_tz_aware = ts.to_zoned(tz);
+                // Match chrono's `DateTime<Tz>` Display (space-separated,
+                // trailing tz abbreviation) rather than jiff's ISO 8601
+                // "T"-separated `[offset][iana-name]` style.
+                match chrono_compat_subsec_precision(dt_tz_aware.subsec_nanosecond()) {
+                    None => write!(
+                        f,
+                        "{} {} {abbreviation}",
+                        dt_tz_aware.date(),
+                        dt_tz_aware.time()
+                    ),
+                    Some(prec) => write!(
+                        f,
+                        "{} {:.prec$} {abbreviation}",
+                        dt_tz_aware.date(),
+                        dt_tz_aware.time(),
+                        prec = prec
+                    ),
+                }
             },
             Err(_) => write!(f, "invalid timezone"),
         }

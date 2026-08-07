@@ -25,8 +25,6 @@ async-trait = { workspace = true, optional = true }
 atoi_simd = { workspace = true, optional = true }
 blake3 = { workspace = true, optional = true }
 bytes = { workspace = true }
-chrono = { workspace = true, optional = true }
-chrono-tz = { workspace = true, optional = true }
 # kdn TODO CHECK
 crossbeam-queue = { workspace = true }
 fast-float2 = { workspace = true, optional = true }
@@ -36,6 +34,7 @@ futures = { workspace = true, optional = true }
 glob = { version = "0.3" }
 hashbrown = { workspace = true }
 itoa = { workspace = true, optional = true }
+jiff = { workspace = true, optional = true }
 memchr = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
@@ -66,7 +65,7 @@ home = "0.5.4"
 tempfile = "3"
 
 [features]
-catalog = ["cloud", "serde", "reqwest", "futures", "strum", "strum_macros", "chrono"]
+catalog = ["cloud", "serde", "reqwest", "futures", "strum", "strum_macros", "dep:jiff"]
 default = ["decompress"]
 # support for arrows json parsing
 json = [
@@ -109,13 +108,11 @@ dtype-datetime = [
   "polars-core/dtype-datetime",
   "polars-core/temporal",
   "polars-time/dtype-datetime",
-  "chrono",
+  "dep:jiff",
 ]
 timezones = [
-  "chrono-tz",
   "dtype-datetime",
   "arrow/timezones",
-  "polars-json?/chrono-tz",
   "polars-json?/timezones",
 ]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
@@ -143,7 +140,7 @@ cloud = [
   "reqwest",
   "http",
   "fastrand",
-  "chrono",
+  "dep:jiff",
 ]
 file_cache = ["async", "dep:blake3", "dep:fs4", "dep:parking_lot", "serde_json", "cloud"]
 aws = ["object_store/aws", "cloud", "reqwest"]

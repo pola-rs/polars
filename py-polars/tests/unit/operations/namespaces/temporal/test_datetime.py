@@ -1589,7 +1589,8 @@ def test_dt_extract_with_null_tz_aware_27862(method: str) -> None:
 def test_dt_extract_present_out_of_range_27862(method: str, tz: str | None) -> None:
     # A *present* (non-null) timestamp that is out of the representable datetime
     # range must yield null, not a garbage default value or a panic. Build it by
-    # casting a raw i64 that is far beyond chrono's range into a Datetime column.
+    # casting a raw i64 that is far beyond the representable range into a
+    # Datetime column.
     s = pl.Series([9_000_000_000_000_000_000], dtype=pl.Int64).cast(
         pl.Datetime("us", tz)
     )

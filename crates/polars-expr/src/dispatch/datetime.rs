@@ -319,7 +319,7 @@ pub(super) fn truncate(s: &[Column]) -> PolarsResult<Column> {
             #[cfg(feature = "timezones")]
             Some(tz) => time_series
                 .datetime()?
-                .truncate(tz.parse::<Tz>().ok().as_ref(), every)?
+                .truncate(Tz::get(tz.as_str()).ok().as_ref(), every)?
                 .into_column(),
             _ => time_series.datetime()?.truncate(None, every)?.into_column(),
         },
@@ -345,7 +345,7 @@ pub(super) fn month_start(s: &Column) -> PolarsResult<Column> {
             Some(tz) => s
                 .datetime()
                 .unwrap()
-                .month_start(tz.parse::<Tz>().ok().as_ref())?
+                .month_start(Tz::get(tz.as_str()).ok().as_ref())?
                 .into_column(),
             _ => s.datetime().unwrap().month_start(None)?.into_column(),
         },
@@ -362,7 +362,7 @@ pub(super) fn month_end(s: &Column) -> PolarsResult<Column> {
             Some(tz) => s
                 .datetime()
                 .unwrap()
-                .month_end(tz.parse::<Tz>().ok().as_ref())?
+                .month_end(Tz::get(tz.as_str()).ok().as_ref())?
                 .into_column(),
             _ => s.datetime().unwrap().month_end(None)?.into_column(),
         },
@@ -375,9 +375,7 @@ pub(super) fn month_end(s: &Column) -> PolarsResult<Column> {
 pub(super) fn base_utc_offset(s: &Column) -> PolarsResult<Column> {
     match s.dtype() {
         DataType::Datetime(time_unit, Some(tz)) => {
-            let tz = tz
-                .parse::<Tz>()
-                .expect("Time zone has already been validated");
+            let tz = Tz::get(tz.as_str()).expect("Time zone has already been validated");
             Ok(polars_time::base_utc_offset(s.datetime().unwrap(), time_unit, &tz).into_column())
         },
         dt => polars_bail!(
@@ -391,9 +389,7 @@ pub(super) fn base_utc_offset(s: &Column) -> PolarsResult<Column> {
 pub(super) fn dst_offset(s: &Column) -> PolarsResult<Column> {
     match s.dtype() {
         DataType::Datetime(time_unit, Some(tz)) => {
-            let tz = tz
-                .parse::<Tz>()
-                .expect("Time zone has already been validated");
+            let tz = Tz::get(tz.as_str()).expect("Time zone has already been validated");
             Ok(polars_time::dst_offset(s.datetime().unwrap(), time_unit, &tz).into_column())
         },
         dt => polars_bail!(
@@ -414,7 +410,7 @@ pub(super) fn round(s: &[Column]) -> PolarsResult<Column> {
             Some(tz) => time_series
                 .datetime()
                 .unwrap()
-                .round(every, tz.parse::<Tz>().ok().as_ref())?
+                .round(every, Tz::get(tz.as_str()).ok().as_ref())?
                 .into_column(),
             _ => time_series
                 .datetime()
