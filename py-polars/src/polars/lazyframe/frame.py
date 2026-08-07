@@ -1663,10 +1663,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Inspect a node in the computation graph.
 
-        .. engine-support:: in-memory
-
         Print the value that this node in the computation graph evaluates to and pass on
         the value.
+
+        .. engine-support:: in-memory
 
         Examples
         --------
@@ -5278,7 +5278,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Select columns from this LazyFrame.
 
-        .. engine-support:: streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5289,8 +5289,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **named_exprs
             Additional columns to select, specified as keyword arguments.
             The columns will be renamed to the keyword used.
-
-        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -5372,6 +5370,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         This will run all expression sequentially instead of in parallel.
         Use this when the work per expression is cheap.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         *exprs
@@ -5381,8 +5381,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **named_exprs
             Additional columns to select, specified as keyword arguments.
             The columns will be renamed to the keyword used.
-
-        .. engine-support:: in-memory, streaming, distributed
 
         See Also
         --------
@@ -5556,10 +5554,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
+
         .. versionchanged:: 0.20.14
             The `by` parameter was renamed `group_by`.
-
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
 
         Parameters
         ----------
@@ -5659,8 +5657,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Group based on a time value (or index value of type Int32, Int64).
 
-        .. engine-support:: streaming, partially-distributed
-
         Time windows are calculated and rows are assigned to windows. Different from a
         normal group by is that a row can be member of multiple groups.
         By default, the windows look like:
@@ -5673,14 +5669,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         where `start` is determined by `start_by`, `offset`, `every`, and the earliest
         datapoint. See the `start_by` argument description for details.
 
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
+
         .. warning::
             The index column must be sorted in ascending order. If `group_by` is passed, then
             the index column must be sorted in ascending order within each group.
 
         .. versionchanged:: 0.20.14
             The `by` parameter was renamed `group_by`.
-
-        .. engine-support:: in-memory, partially-streaming, partially-distributed
 
         Parameters
         ----------
@@ -6398,10 +6394,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Add a join operation to the Logical Plan.
 
+        .. engine-support:: in-memory, streaming, partially-distributed
+
         .. versionchanged:: 1.24
             The `join_nulls` parameter was renamed `nulls_equal`.
-
-        .. engine-support:: in-memory, streaming, partially-distributed
 
         Parameters
         ----------

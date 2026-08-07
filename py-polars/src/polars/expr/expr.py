@@ -594,8 +594,6 @@ class Expr:
         """
         Cast to physical representation of the logical dtype.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         - :func:`polars.datatypes.Date` -> :func:`polars.datatypes.Int32`
         - :func:`polars.datatypes.Datetime` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Time` -> :func:`polars.datatypes.Int64`
@@ -606,6 +604,8 @@ class Expr:
         - `Struct(fields)` -> `Array(physical of fields)`
 
         Other data types will be left unchanged.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Warnings
         --------
@@ -644,9 +644,9 @@ class Expr:
         """
         Return whether any of the values in the column are `True`.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         Only works on columns of data type :class:`Boolean`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -701,9 +701,9 @@ class Expr:
         """
         Return whether all values in the column are `True`.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         Only works on columns of data type :class:`Boolean`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. note::
             This method is not to be confused with the function :func:`polars.all`,
@@ -1124,10 +1124,10 @@ class Expr:
         """
         Method equivalent of bitwise "not" operator `~expr`.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         This has the effect of negating logical boolean expressions,
         but operates bitwise on integers.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -1627,9 +1627,9 @@ class Expr:
         """
         Drop all floating point NaN values.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         The original order of the remaining elements is preserved.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         See Also
         --------
@@ -1884,9 +1884,9 @@ class Expr:
         """
         Rounds down to the nearest integer value.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         Only works on floating point Series.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         See Also
         --------
@@ -1915,9 +1915,9 @@ class Expr:
         """
         Rounds up to the nearest integer value.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         Only works on floating point Series.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         See Also
         --------
@@ -3998,7 +3998,7 @@ class Expr:
         """
         Get the first value.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -4119,14 +4119,14 @@ class Expr:
         """
         Compute expressions over the given groups.
 
-        .. engine-support:: in-memory
-
         This expression is similar to performing a group by aggregation and joining the
         result back into the original DataFrame.
 
         The outcome is similar to how `window functions
         <https://www.postgresql.org/docs/current/tutorial-window.html>`_
         work in PostgreSQL.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -8608,10 +8608,10 @@ Consider using {self}.implode() instead"""
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. engine-support:: in-memory
+
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
-
-        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -8720,10 +8720,10 @@ Consider using {self}.implode() instead"""
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. engine-support:: in-memory
+
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
-
-        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -8833,10 +8833,10 @@ Consider using {self}.implode() instead"""
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. engine-support:: in-memory
+
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
-
-        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -8946,10 +8946,10 @@ Consider using {self}.implode() instead"""
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. engine-support:: in-memory
+
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
-
-        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -9060,10 +9060,10 @@ Consider using {self}.implode() instead"""
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. engine-support:: in-memory
+
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
-
-        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -9178,10 +9178,10 @@ Consider using {self}.implode() instead"""
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. engine-support:: in-memory
+
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
-
-        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -9294,10 +9294,10 @@ Consider using {self}.implode() instead"""
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. engine-support:: in-memory
+
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
-
-        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -9408,10 +9408,10 @@ Consider using {self}.implode() instead"""
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. engine-support:: in-memory
+
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
-
-        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -10139,8 +10139,6 @@ Consider using {self}.implode() instead"""
     def kurtosis(self, *, fisher: bool = True, bias: bool = True) -> Expr:
         """
         Compute the kurtosis (Fisher or Pearson) of a dataset.
-
-        .. engine-support:: streaming
 
         Kurtosis is the fourth central moment divided by the square of the
         variance. If Fisher's definition is used, then 3.0 is subtracted from
@@ -11381,10 +11379,10 @@ Consider using {self}.implode() instead"""
         r"""
         Compute exponentially-weighted moving standard deviation.
 
+        .. engine-support:: in-memory
+
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
-
-        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -11478,10 +11476,10 @@ Consider using {self}.implode() instead"""
         r"""
         Compute exponentially-weighted moving variance.
 
+        .. engine-support:: in-memory
+
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
-
-        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -11838,9 +11836,9 @@ Consider using {self}.implode() instead"""
         """
         Compute the natural logarithm of each element plus one.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         This computes `log(1 + x)` but is more numerically stable for `x` close to zero.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -11955,11 +11953,11 @@ Consider using {self}.implode() instead"""
         """
         Flags the expression as 'sorted'.
 
-        .. engine-support:: in-memory, streaming, distributed
-
         Enables downstream code to user fast paths for sorted arrays. It is
         recommended to also set whether `nulls_last` is `True` or `False`, as
         this enables many internal optimizations.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -12044,11 +12042,11 @@ Consider using {self}.implode() instead"""
         """
         Bin values into buckets and count their occurrences.
 
+        .. engine-support:: in-memory
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-
-        .. engine-support:: in-memory
 
         Parameters
         ----------
