@@ -1,13 +1,20 @@
-pub(crate) use polars_ops::prelude::*;
-#[cfg(feature = "temporal")]
-pub(crate) use polars_time::in_nanoseconds_window;
+// TODO: move these such that polars-plan does not depend on polars-ops or polars_time.
+pub(crate) use polars_ops::chunked_array::{SetOperation, UnicodeForm};
+pub(crate) use polars_ops::frame::{
+    IEJoinOptions, InequalityOperator, JoinArgs, JoinCoalesce, JoinType, MaintainOrderJoin,
+};
+pub(crate) use polars_ops::series::{
+    ClosedInterval, EWMOptions, InterpolationMethod, RankMethod, RankOptions, Roll, RoundMode,
+    SearchSortedSide,
+};
+pub(crate) use polars_time::chunkedarray::RollingOptionsDynamicWindow;
+pub(crate) use polars_time::{ClosedWindow, Duration, DynamicGroupOptions, RollingGroupOptions};
 #[cfg(any(
     feature = "temporal",
     feature = "dtype-duration",
     feature = "dtype-date",
     feature = "dtype-time"
 ))]
-pub(crate) use polars_time::prelude::*;
 pub use polars_utils::arena::{Arena, Node};
 
 pub use crate::callback::*;
