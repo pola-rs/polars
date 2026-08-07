@@ -758,8 +758,8 @@ def test_scan_delta_dv_multiple_with_predicate_pushdown(
 
         # duckdb cross-check
         conn = duckdb.connect()
-        conn.execute("LOAD delta;")
         conn.execute("INSTALL delta;")
+        conn.execute("LOAD delta;")
         df_duckdb = (
             conn.execute(f"SELECT * FROM delta_scan('{path}')").pl().filter(expr)
         )
