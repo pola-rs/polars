@@ -176,7 +176,7 @@ class _Meta(type):
                 cls,
                 name,
                 {
-                    "import_from_c": "use `_import_arrow_from_c` instead. "
+                    "_import_from_c": "use `_import_arrow_from_c` instead. "
                     "If you are using an extension, please compile it with the latest 'pyo3-polars'",
                 },
                 version="2.0",

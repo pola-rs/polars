@@ -2568,7 +2568,7 @@ def test_series_temporal_arithmetic_raises_19135(
 def test_removed_classmethods() -> None:
     match = "use `_import_arrow_from_c` instead. "
     with pytest.raises(AttributeRemovedError, match=re.escape(match)):
-        pl.Series._import_arrow_from_c
+        pl.Series._import_from_c()
 
 
 @pytest.mark.parametrize(
@@ -2582,4 +2582,4 @@ def test_removed_classmethods() -> None:
 )
 def test_removed_methods(name: str, match: str) -> None:
     with pytest.raises(AttributeRemovedError, match=re.escape(match)):
-        getattr(pl.Series, name)
+        getattr(pl.Series(), name)
