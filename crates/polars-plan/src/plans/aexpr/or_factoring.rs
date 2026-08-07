@@ -15,7 +15,7 @@
 
 use polars_utils::arena::{Arena, Node};
 
-use crate::plans::aexpr::AExpr;
+use crate::plans::aexpr::{AExpr, CanonicalExprMap};
 use crate::prelude::Operator;
 
 /// Walk the AExpr tree bottom-up, applying OR factoring at every OR node.
@@ -26,14 +26,15 @@ use crate::prelude::Operator;
 /// operands by case analysis.
 pub(crate) fn factor_or_in_aexpr(node: Node, expr_arena: &mut Arena<AExpr>) {
     // Iterative pre-order into a Vec, then iterate reversed so descendants
-    // are visited before ancestors. Matches `traverse_and_hash_aexpr` /
-    // `MintermIter`.
+    // are visited before ancestors. Matches `MintermIter`.
     let mut work = vec![node];
     let mut post_order = Vec::new();
     while let Some(n) = work.pop() {
         post_order.push(n);
         expr_arena.get(n).children_rev(&mut work);
     }
+
+    let mut canonical_exprs = CanonicalExprMap::new();
 
     for &n in post_order.iter().rev() {
         if matches!(
@@ -43,8 +44,10 @@ pub(crate) fn factor_or_in_aexpr(node: Node, expr_arena: &mut Arena<AExpr>) {
                 ..
             }
         ) {
-            if let Some(factored) = try_factor_or(n, expr_arena) {
+            if let Some(factored) = try_factor_or(n, &mut canonical_exprs, expr_arena) {
                 expr_arena.replace(n, factored);
+                // Invalidate because we modified a node in-place
+                canonical_exprs.clear();
             }
         }
     }
@@ -70,15 +73,15 @@ fn collect_or_branches(root: Node, expr_arena: &Arena<AExpr>, out: &mut Vec<Node
 
 /// Try OR factoring on a node known to be an OR. Returns the rewritten
 /// top-level `AExpr` on success.
-fn try_factor_or(or_node: Node, expr_arena: &mut Arena<AExpr>) -> Option<AExpr> {
-    use std::hash::{BuildHasher, Hasher};
-
-    use polars_utils::aliases::{InitHashMaps, PlFixedStateQuality, PlIndexMap};
+fn try_factor_or(
+    or_node: Node,
+    canonical_exprs: &mut CanonicalExprMap,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<AExpr> {
+    use polars_utils::aliases::{InitHashMaps, PlIndexMap};
     use polars_utils::scratch_vec::ScratchVec;
 
-    use crate::plans::aexpr::{
-        MintermIter, is_inherently_nondeterministic, traverse_and_hash_aexpr,
-    };
+    use crate::plans::aexpr::{CanonicalExprId, MintermIter, is_inherently_nondeterministic};
 
     let mut branches = Vec::new();
     collect_or_branches(or_node, expr_arena, &mut branches);
@@ -96,23 +99,22 @@ fn try_factor_or(or_node: Node, expr_arena: &mut Arena<AExpr>) -> Option<AExpr> 
     // OR is commutative, so the sorted branch order is semantically identical.
     branch_terms.sort_by_key(|terms| terms.len());
 
-    // Bucket each branch's conjuncts by structural hash so the cross-branch
-    // match is a hashmap lookup plus a final structural-equality check within
-    // the bucket, instead of a linear scan over every term. Drops the matching
-    // loop from O(T² × B × S) to O(T × B × S) for large fan-outs; one tree
-    // walk per conjunct for the hash, computed inline.
-    let hb = PlFixedStateQuality::with_seed(0);
-    let hash_of = |n: Node, arena: &Arena<AExpr>| -> u64 {
-        let mut h = hb.build_hasher();
-        traverse_and_hash_aexpr(n, arena, &mut h);
-        h.finish()
-    };
-    let buckets: Vec<PlIndexMap<u64, Vec<usize>>> = branch_terms
+    let branch_ids: Vec<Vec<CanonicalExprId>> = branch_terms
         .iter()
         .map(|terms| {
-            let mut m: PlIndexMap<u64, Vec<usize>> = PlIndexMap::with_capacity(terms.len());
-            for (i, &n) in terms.iter().enumerate() {
-                m.entry(hash_of(n, expr_arena)).or_default().push(i);
+            terms
+                .iter()
+                .map(|&term| canonical_exprs.resolve(term, expr_arena))
+                .collect()
+        })
+        .collect();
+    let buckets: Vec<PlIndexMap<CanonicalExprId, Vec<usize>>> = branch_ids
+        .iter()
+        .map(|ids| {
+            let mut m: PlIndexMap<CanonicalExprId, Vec<usize>> =
+                PlIndexMap::with_capacity(ids.len());
+            for (i, &id) in ids.iter().enumerate() {
+                m.entry(id).or_default().push(i);
             }
             m
         })
@@ -121,32 +123,24 @@ fn try_factor_or(or_node: Node, expr_arena: &mut Arena<AExpr>) -> Option<AExpr> 
     // `taken[b][i]` = "term i of branch b already claimed".
     let mut common = Vec::new();
     let mut taken: Vec<_> = branch_terms.iter().map(|t| vec![false; t.len()]).collect();
-    let (mut l_stack, mut r_stack) = (Vec::new(), Vec::new());
     let mut other_matches: ScratchVec<usize> = ScratchVec::default();
 
     for (cand_idx, &cand) in branch_terms[0].iter().enumerate() {
         // Skip inherently non-deterministic candidates: factoring them out of
         // `(A ∧ X) ∨ (A ∧ Y) → A ∧ (X ∨ Y)` would evaluate `A` once instead of
         // twice per row, which is unsound when the two evaluations could disagree.
+        // TODO: This should be computed by `CanonicalExprMap`
         if is_inherently_nondeterministic(cand, expr_arena) {
             continue;
         }
-        let cand_expr = expr_arena.get(cand);
-        let cand_hash = hash_of(cand, expr_arena);
+        let cand_id = branch_ids[0][cand_idx];
 
         let other_matches = other_matches.get();
         let all_matched = (1..branch_terms.len()).all(|b_idx| {
-            let Some(m) = buckets[b_idx].get(&cand_hash).and_then(|ixs| {
-                ixs.iter().copied().find(|&i| {
-                    !taken[b_idx][i]
-                        && cand_expr.is_expr_equal_to_amortized(
-                            expr_arena.get(branch_terms[b_idx][i]),
-                            expr_arena,
-                            &mut l_stack,
-                            &mut r_stack,
-                        )
-                })
-            }) else {
+            let Some(&m) = buckets[b_idx]
+                .get(&cand_id)
+                .and_then(|ixs| ixs.iter().find(|&i| !taken[b_idx][*i]))
+            else {
                 return false;
             };
             other_matches.push(m);

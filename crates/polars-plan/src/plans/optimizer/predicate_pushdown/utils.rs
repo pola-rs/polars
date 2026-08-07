@@ -4,9 +4,7 @@ use polars_utils::itertools::Itertools;
 use polars_utils::unitvec;
 
 use super::keys::*;
-use crate::plans::visitor::{
-    AExprArena, AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker,
-};
+use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
 use crate::prelude::*;
 fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
     arena.add(AExpr::BinaryExpr {
@@ -16,10 +14,11 @@ fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
     })
 }
 
-/// Inserts a predicate into the map, with some basic de-duplication.
+/// Inserts a predicate into the map, de-duplicating against what is already there.
 ///
 /// The map is keyed in a way that may cause some predicates to fall into the same bucket. In that
-/// case the predicate is AND'ed with the existing node in that bucket.
+/// case the predicate is AND'ed with the existing node in that bucket, skipping the min-terms that
+/// the existing node already contains.
 pub(super) fn insert_predicate_dedup(
     acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     predicate: &ExprIR,
@@ -27,34 +26,26 @@ pub(super) fn insert_predicate_dedup(
 ) {
     let name = predicate_to_key(predicate.node(), expr_arena);
 
-    let mut new_min_terms = unitvec![];
-
     acc_predicates
         .entry(name)
         .and_modify(|existing_predicate| {
-            let mut out_node = existing_predicate.node();
+            let mut canonical_exprs = CanonicalExprMap::new();
+            let existing_min_terms: PlIndexSet<CanonicalExprId> =
+                MintermIter::new(existing_predicate.node(), expr_arena)
+                    .map(|min_term| canonical_exprs.resolve(min_term, expr_arena))
+                    .collect();
 
-            new_min_terms.clear();
+            let mut new_min_terms: UnitVec<Node> = unitvec![];
             new_min_terms.extend(MintermIter::new(predicate.node(), expr_arena));
 
-            // Limit the number of existing min-terms that we check against so that we have linear-time performance.
-            // Without this limit the loop below will be quadratic. The side effect is that we may not perfectly
-            // identify duplicates when there are large amounts of filter expressions.
-            const CHECK_LIMIT: usize = 32;
-
-            'next_new_min_term: for new_predicate in new_min_terms {
-                let new_min_term_eq_wrap = AExprArena::new(new_predicate, expr_arena);
-
-                if MintermIter::new(existing_predicate.node(), expr_arena)
-                    .take(CHECK_LIMIT)
-                    .any(|existing_min_term| {
-                        new_min_term_eq_wrap == AExprArena::new(existing_min_term, expr_arena)
-                    })
-                {
-                    continue 'next_new_min_term;
+            let mut out_node = existing_predicate.node();
+            for new_min_term in new_min_terms {
+                let id = canonical_exprs.resolve(new_min_term, expr_arena);
+                if existing_min_terms.contains(&id) {
+                    continue;
                 }
 
-                out_node = combine_by_and(new_predicate, out_node, expr_arena);
+                out_node = combine_by_and(new_min_term, out_node, expr_arena);
             }
 
             existing_predicate.set_node(out_node)

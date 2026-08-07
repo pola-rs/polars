@@ -5,8 +5,7 @@ use hashbrown::HashTable;
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 
-use super::canonical_expr::CanonicalExprMap;
-use crate::plans::{AExpr, IR};
+use crate::plans::{AExpr, CanonicalExprMap, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::tree_traversal::tree_traversal;
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
