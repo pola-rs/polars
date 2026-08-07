@@ -15,6 +15,7 @@ use polars_io::utils::file::Writable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
+use polars_utils::itertools::Itertools;
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -22,7 +23,9 @@ use super::FileWriteFormat;
 use crate::dsl::file_provider::FileProviderType;
 use crate::dsl::iceberg_sink_state::IcebergSinkState;
 use crate::dsl::{AExpr, Expr, SpecialEq};
-use crate::plans::{ExprIR, ToFieldContext};
+#[cfg(feature = "cse")]
+use crate::plans::ExpressionHasher;
+use crate::plans::{ExprIR, ExpressionComparator, ToFieldContext};
 use crate::prelude::PlanCallback;
 
 type DynSinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Writable>>>>;
@@ -302,9 +305,37 @@ pub enum PartitionStrategyIR {
     FileSize,
 }
 
+impl PartitionStrategyIR {
+    pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
+        match self {
+            Self::Keyed {
+                keys: l_keys,
+                include_keys: l_include_keys,
+                keys_pre_grouped: l_keys_pre_grouped,
+            } => {
+                let Self::Keyed {
+                    keys: r_keys,
+                    include_keys: r_include_keys,
+                    keys_pre_grouped: r_keys_pre_grouped,
+                } = other
+                else {
+                    return false;
+                };
+
+                (l_keys
+                    .iter()
+                    .eq_by_(r_keys.iter(), |lhs, rhs| expr_cmp.equals(lhs, rhs)))
+                    && l_include_keys == r_include_keys
+                    && l_keys_pre_grouped == r_keys_pre_grouped
+            },
+            Self::FileSize => matches!(other, Self::FileSize),
+        }
+    }
+}
+
 #[cfg(feature = "cse")]
 impl PartitionStrategyIR {
-    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
+    pub(crate) fn shallow_hash<H: Hasher>(&self, state: &mut H, expr_hash: &impl ExpressionHasher) {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::Keyed {
@@ -313,7 +344,7 @@ impl PartitionStrategyIR {
                 keys_pre_grouped,
             } => {
                 for k in keys {
-                    k.traverse_and_hash(expr_arena, state);
+                    expr_hash.hash_expr(k, state);
                 }
 
                 include_keys.hash(state);
@@ -325,14 +356,26 @@ impl PartitionStrategyIR {
 }
 
 impl SinkTypeIR {
+    pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
+        match self {
+            Self::Memory => matches!(other, Self::Memory),
+            Self::Callback(lhs) => matches!(other, Self::Callback(rhs)
+                if lhs == rhs),
+            Self::File(lhs) => matches!(other, Self::File(rhs)
+                if lhs == rhs),
+            Self::Partitioned(lhs) => matches!(other, Self::Partitioned(rhs)
+                if lhs.shallow_eq(rhs, expr_cmp)),
+        }
+    }
+
     #[cfg(feature = "cse")]
-    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
+    pub(crate) fn shallow_hash<H: Hasher>(&self, state: &mut H, expr_hash: &impl ExpressionHasher) {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::Memory => {},
             Self::Callback(f) => f.hash(state),
             Self::File(options) => options.hash(state),
-            Self::Partitioned(options) => options.traverse_and_hash(expr_arena, state),
+            Self::Partitioned(options) => options.shallow_hash(state, expr_hash),
         }
     }
 }
@@ -378,6 +421,26 @@ pub struct PartitionedSinkOptionsIR {
 }
 
 impl PartitionedSinkOptionsIR {
+    pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
+        let Self {
+            base_path,
+            file_path_provider,
+            partition_strategy,
+            file_format,
+            unified_sink_args,
+            max_rows_per_file,
+            approximate_bytes_per_file,
+        } = self;
+
+        *base_path == other.base_path
+            && *file_path_provider == other.file_path_provider
+            && partition_strategy.shallow_eq(&other.partition_strategy, expr_cmp)
+            && *file_format == other.file_format
+            && *unified_sink_args == other.unified_sink_args
+            && *max_rows_per_file == other.max_rows_per_file
+            && *approximate_bytes_per_file == other.approximate_bytes_per_file
+    }
+
     pub fn cloud_scheme(&self) -> Option<CloudScheme> {
         CloudScheme::from_path(self.base_path.as_str())
     }
@@ -437,7 +500,7 @@ impl PartitionedSinkOptionsIR {
     }
 
     #[cfg(feature = "cse")]
-    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
+    pub(crate) fn shallow_hash<H: Hasher>(&self, state: &mut H, expr_hash: &impl ExpressionHasher) {
         let PartitionedSinkOptionsIR {
             base_path,
             file_path_provider,
@@ -450,7 +513,7 @@ impl PartitionedSinkOptionsIR {
 
         base_path.hash(state);
         file_path_provider.hash(state);
-        partition_strategy.traverse_and_hash(expr_arena, state);
+        partition_strategy.shallow_hash(state, expr_hash);
         file_format.hash(state);
         unified_sink_args.hash(state);
         max_rows_per_file.hash(state);
