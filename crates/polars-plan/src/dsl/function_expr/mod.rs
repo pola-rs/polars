@@ -141,7 +141,6 @@ pub enum FunctionExpr {
         function_by: RollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
-    Rechunk,
     Append {
         upcast: bool,
     },
@@ -492,7 +491,7 @@ impl Hash for FunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill | Rechunk | MinBy | MaxBy => {},
+            | ArgMax | Product | Shift | ShiftAndFill | MinBy | MaxBy => {},
             Append { upcast } => upcast.hash(state),
             ArgSort {
                 descending,
@@ -751,7 +750,6 @@ impl Display for FunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
-            Rechunk => "rechunk",
             Append { .. } => "upcast",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
