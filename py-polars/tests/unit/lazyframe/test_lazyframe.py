@@ -15,6 +15,7 @@ import polars as pl
 import polars.selectors as cs
 from polars import lit, when
 from polars.exceptions import (
+    AttributeRemovedError,
     InvalidOperationError,
     PerformanceWarning,
     PolarsInefficientMapWarning,
@@ -373,16 +374,6 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
     ldf.select(pl.col("a").cum_sum().inspect().alias("bar")).collect()
     res = capsys.readouterr()
     assert len(res.out) > 0
-
-
-@pytest.mark.may_fail_auto_streaming
-def test_fetch(fruits_cars: pl.DataFrame) -> None:
-    with pytest.warns(
-        DeprecationWarning,
-        match=r"use `LazyFrame\.collect` instead",
-    ):
-        res = fruits_cars.lazy().select("*").fetch(2)
-    assert_frame_equal(res, res[:2])
 
 
 def test_fold_filter() -> None:
@@ -1850,3 +1841,23 @@ def test_execute() -> None:
     assert pl.LazyFrame({"a": [1, 2, 3, 4]}).select(pl.col.a).execute().lazy().select(
         sum=pl.col.a.sum(), count=pl.len()
     ).collect().to_dict(as_series=False) == {"sum": [10], "count": [4]}
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        ("fetch", "use `collect` instead, in conjunction with a call to `head`."),
+        (
+            "melt",
+            "use `LazyFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+        ),
+        (
+            "with_row_count",
+            "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
+        ),
+        ("approx_n_unique", "use `select(pl.all().approx_n_unique())` instead."),
+    ],
+)
+def test_removed_items(name: str, match: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(pl.LazyFrame, name)
