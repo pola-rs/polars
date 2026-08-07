@@ -13,7 +13,7 @@ from polars._utils.deprecation import (
     deprecated,
     issue_deprecation_warning,
 )
-from polars._utils.expired import removed_parameter
+from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
@@ -26,7 +26,7 @@ from polars.datatypes._parse import parse_into_datatype_expr
 from polars.lazyframe.engine_config import _eager_engine, _select_engine
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
-    removed_old_opt_flags,
+    REMOVED_OLD_OPT_FLAGS,
 )
 from polars.meta.index_type import get_index_type
 
@@ -2014,13 +2014,15 @@ def collect_all(
 ) -> LazyFrame: ...
 
 
-@removed_parameter(
-    "streaming",
-    deprecated_in="1.25.0",
-    removed_in="2.0",
-    hint='Use `engine="streaming"` instead.',
+@removed_parameters(
+    RemovedParameter(
+        name="streaming",
+        deprecated_in="1.25.0",
+        removed_in="2.0",
+        hint='Use `engine="streaming"` instead.',
+    ),
+    *REMOVED_OLD_OPT_FLAGS,
 )
-@removed_old_opt_flags()
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
@@ -2120,11 +2122,13 @@ def collect_all_async(
 
 
 @unstable()
-@removed_parameter(
-    "streaming",
-    deprecated_in="1.25.0",
-    removed_in="2.0",
-    hint='Use `engine="streaming"` instead.',
+@removed_parameters(
+    RemovedParameter(
+        name="streaming",
+        deprecated_in="1.25.0",
+        removed_in="2.0",
+        hint='Use `engine="streaming"` instead.',
+    )
 )
 def collect_all_async(
     lazy_frames: Iterable[LazyFrame],

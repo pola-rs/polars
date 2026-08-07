@@ -4,19 +4,16 @@ import contextlib
 import functools
 
 from polars._utils.deprecation import issue_deprecation_warning
-from polars._utils.expired import removed_parameter
+from polars._utils.expired import RemovedParameter
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PyOptFlags
 
-import inspect
 from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from typing import ParamSpec
 
-    from polars._utils.various import IdentityFunction
 
     P = ParamSpec("P")
     T = TypeVar("T")
@@ -301,31 +298,22 @@ try:  # Module not available when building docs
 except (ImportError, NameError) as _:
     DEFAULT_QUERY_OPT_FLAGS = ()  # type: ignore[assignment]
 
+_removed_opt_parameter = functools.partial(
+    RemovedParameter,
+    deprecated_in="1.30.0",
+    removed_in="2.0",
+    hint="use the `optimizations` parameter.",
+)
 
-def removed_old_opt_flags() -> IdentityFunction:
-    """Decorator to mark to forward the old optimization flags."""
-    removed_parameter_decorator = functools.partial(
-        removed_parameter,
-        deprecated_in="1.30.0",
-        removed_in="2.0",
-        hint="use the `optimizations` parameter.",
-    )
-
-    def decorate(function: Callable[P, T]) -> Callable[P, T]:
-        @removed_parameter_decorator("type_coercion")
-        @removed_parameter_decorator("predicate_pushdown")
-        @removed_parameter_decorator("projection_pushdown")
-        @removed_parameter_decorator("simplify_expression")
-        @removed_parameter_decorator("slice_pushdown")
-        @removed_parameter_decorator("comm_subplan_elim")
-        @removed_parameter_decorator("comm_subexpr_elim")
-        @removed_parameter_decorator("cluster_with_columns")
-        @removed_parameter_decorator("collapse_joins")
-        @functools.wraps(function)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            return function(*args, **kwargs)
-
-        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
-        return wrapper
-
-    return decorate
+"""List of removed old opt flags. To be passed to @removed_parameters()."""
+REMOVED_OLD_OPT_FLAGS = [
+    _removed_opt_parameter(name="type_coercion"),
+    _removed_opt_parameter(name="predicate_pushdown"),
+    _removed_opt_parameter(name="projection_pushdown"),
+    _removed_opt_parameter(name="simplify_expression"),
+    _removed_opt_parameter(name="slice_pushdown"),
+    _removed_opt_parameter(name="comm_subplan_elim"),
+    _removed_opt_parameter(name="comm_subexpr_elim"),
+    _removed_opt_parameter(name="cluster_with_columns"),
+    _removed_opt_parameter(name="collapse_joins"),
+]

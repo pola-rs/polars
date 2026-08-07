@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from dataclasses import dataclass
 from functools import wraps
 from typing import TYPE_CHECKING, TypeVar
 
@@ -14,6 +15,23 @@ if TYPE_CHECKING:
 
     P = ParamSpec("P")
     T = TypeVar("T")
+
+
+@dataclass(frozen=True, kw_only=True)
+class RemovedParameter:
+    name: str
+    deprecated_in: str | None = None
+    removed_in: str
+    hint: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class RenamedParameter:
+    name: str
+    new_name: str
+    deprecated_in: str | None = None
+    removed_in: str
+    hint: str | None = None
 
 
 def raise_for_removed_attributes(
@@ -64,35 +82,23 @@ def getattr_fallback(obj: object, superclass: object, name: str) -> Any:
         raise AttributeError(msg, name=name, obj=obj)
 
 
-def removed_parameter(
-    name: str,
-    *,
-    deprecated_in: str | None = None,
-    removed_in: str,
-    hint: str | None = None,
+def removed_parameters(
+    *params: RemovedParameter | RenamedParameter,
 ) -> IdentityFunction:
-    """
-    Decorator to mark a function parameter as removed.
-
-    Use as follows:
-
-        @removed_parameter("old_name", removed_in="2.0", hint="Use `new` instead.")
-        def myfunc(): ...
-    """
+    params_dict = {p.name: p for p in params}
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            if name in kwargs:
-                raise ArgumentRemovedError(
-                    _removed_argument_message(
-                        name=name,
-                        func_name=function.__qualname__,
-                        deprecated_version=deprecated_in,
-                        removed_version=removed_in,
-                        hint=hint,
+            for name in kwargs:
+                if name in params_dict:
+                    raise ArgumentRemovedError(
+                        _raise_removed_argument_error(
+                            params_dict[name],
+                            func_name=function.__qualname__,
+                            kwargs=kwargs,
+                        )
                     )
-                )
             return function(*args, **kwargs)
 
         wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
@@ -101,87 +107,39 @@ def removed_parameter(
     return decorate
 
 
-def _removed_argument_message(
+def _raise_removed_argument_error(
+    param: RemovedParameter | RenamedParameter,
     *,
-    name: str,
     func_name: str,
-    deprecated_version: str | None,
-    removed_version: str,
-    hint: str | None,
+    kwargs: dict[str, object],
 ) -> str:
-    deprecated_and = (
-        f"was deprecated in version {deprecated_version} and "
-        if deprecated_version is not None
+    was_deprecated_and = (
+        f"was deprecated in version {param.deprecated_in} and "
+        if param.deprecated_in is not None
         else ""
     )
-    msg = (
-        f"the argument `{name}` for `{func_name}` {deprecated_and}"
-        f"has been removed in {removed_version}."
-    )
-    return msg if hint is None else f"{msg} {hint}"
-
-
-def removed_renamed_parameter(
-    old_name: str,
-    new_name: str,
-    *,
-    deprecated_in: str | None = None,
-    removed_in: str,
-) -> IdentityFunction:
-    """
-    Decorator to mark a function parameter as removed due to being renamed.
-
-    Use as follows:
-
-        @removed_renamed_parameter("old_name", new_name="new_name")
-        def myfunc(new_name): ...
-    """
-
-    def decorate(function: Callable[P, T]) -> Callable[P, T]:
-        @wraps(function)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            _removed_keyword_argument(
-                old_name=old_name,
-                new_name=new_name,
-                kwargs=kwargs,
-                func_name=function.__qualname__,
-                deprecated_version=deprecated_in,
-                removed_version=removed_in,
-            )
-            return function(*args, **kwargs)
-
-        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
-        return wrapper
-
-    return decorate
-
-
-def _removed_keyword_argument(
-    *,
-    old_name: str,
-    new_name: str,
-    kwargs: dict[str, object],
-    func_name: str,
-    deprecated_version: str | None = None,
-    removed_version: str,
-) -> None:
-    """Rename a keyword argument of a function."""
-    if old_name in kwargs:
-        deprecated_and = (
-            f"was deprecated in version {deprecated_version} and "
-            if deprecated_version is not None
-            else ""
-        )
-        if new_name in kwargs:
+    if isinstance(param, RenamedParameter):
+        if param.name in kwargs and param.new_name in kwargs:
             msg = (
-                f"`{func_name!r}` received both `{old_name!r}` and `{new_name!r}` as arguments;"
-                f" `{old_name!r}` {deprecated_and}has been removed in version {removed_version},"
-                f" use `{new_name!r}` instead"
+                f"`{func_name!r}` received both `{param.name!r}` and `{param.new_name!r}` as arguments;"
+                f" `{param.name!r}` {was_deprecated_and}has been renamed to"
+                f" `{param.new_name!r}` in version {param.removed_in}."
             )
             raise ArgumentRemovedError(msg)
-
+        else:
+            msg = (
+                f"the argument `{param.name!r}` for `{func_name!r}` {was_deprecated_and}"
+                f"has been renamed to `{param.new_name!r}` in {param.removed_in}."
+            )
+            msg = msg if param.hint is None else f"{msg} {param.hint}"
+            raise ArgumentRemovedError(msg)
+    elif isinstance(param, RemovedParameter):
         msg = (
-            f"the argument `{old_name}` for `{func_name}` {deprecated_and}has been removed in {removed_version}. "
-            f"It was renamed to `{new_name}`."
+            f"the argument `{param.name!r}` for `{func_name!r}` {was_deprecated_and}"
+            f"has been removed in {param.removed_in}."
         )
+        msg = msg if param.hint is None else f"{msg} {param.hint}"
         raise ArgumentRemovedError(msg)
+    else:
+        msg = f"Unexpected parameter type: {type(param)}"
+        raise TypeError(msg)
