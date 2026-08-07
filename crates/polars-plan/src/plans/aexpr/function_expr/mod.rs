@@ -154,7 +154,6 @@ pub enum IRFunctionExpr {
         function_by: IRRollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
-    Rechunk,
     ShiftAndFill,
     Shift,
     DropNans,
@@ -510,7 +509,7 @@ impl Hash for IRFunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill | Rechunk | MinBy | MaxBy => {},
+            | ArgMax | Product | Shift | ShiftAndFill | MinBy | MaxBy => {},
             ArgSort {
                 descending,
                 nulls_last,
@@ -773,7 +772,6 @@ impl Display for IRFunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
-            Rechunk => "rechunk",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
@@ -1085,7 +1083,6 @@ impl IRFunctionExpr {
             F::RollingExpr { .. } => FunctionOptions::length_preserving(),
             #[cfg(feature = "rolling_window_by")]
             F::RollingExprBy { .. } => FunctionOptions::length_preserving(),
-            F::Rechunk => FunctionOptions::length_preserving(),
             F::ShiftAndFill => FunctionOptions::length_preserving(),
             F::Shift => FunctionOptions::length_preserving(),
             F::DropNans => {

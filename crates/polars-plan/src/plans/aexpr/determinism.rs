@@ -129,7 +129,6 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::RollingExpr { function, .. } => is_inherently_nondeterministic_rolling_fn(function),
         #[cfg(feature = "rolling_window_by")]
         F::RollingExprBy { .. } => false,
-        F::Rechunk => false,
         F::ShiftAndFill => false,
         F::Shift => false,
         F::DropNans => false,
