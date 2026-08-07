@@ -40,7 +40,7 @@ from polars._utils.deprecation import (
     deprecated,
     issue_deprecation_warning,
 )
-from polars._utils.expired import removed_parameter, removed_renamed_parameter
+from polars._utils.expired import RemovedParameter, RenamedParameter, removed_parameters
 from polars._utils.parquet import wrap_parquet_metadata_callback
 from polars._utils.parse import (
     parse_into_expression,
@@ -100,10 +100,7 @@ from polars.interchange.protocol import CompatLevel
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
-from polars.lazyframe.opt_flags import (
-    DEFAULT_QUERY_OPT_FLAGS,
-    removed_old_opt_flags,
-)
+from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, REMOVED_OLD_OPT_FLAGS
 from polars.lazyframe.query_result import SingleNodeQueryResult
 from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
@@ -1281,65 +1278,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         df_summary.insert_column(0, pl.Series("statistic", metrics))
         return df_summary
 
-    @removed_parameter(
-        "type_coercion",
-        deprecated_in="1.30.0",
-        removed_in="2.0",
-        hint="use the `optimizations` parameter.",
-    )
-    @removed_parameter(
-        "predicate_pushdown",
-        deprecated_in="1.30.0",
-        removed_in="2.0",
-        hint="use the `optimizations` parameter.",
-    )
-    @removed_parameter(
-        "projection_pushdown",
-        deprecated_in="1.30.0",
-        removed_in="2.0",
-        hint="use the `optimizations` parameter.",
-    )
-    @removed_parameter(
-        "simplify_expression",
-        deprecated_in="1.30.0",
-        removed_in="2.0",
-        hint="use the `optimizations` parameter.",
-    )
-    @removed_parameter(
-        "comm_subplan_elim",
-        deprecated_in="1.30.0",
-        removed_in="2.0",
-        hint="use the `optimizations` parameter.",
-    )
-    @removed_parameter(
-        "comm_subexpr_elim",
-        deprecated_in="1.30.0",
-        removed_in="2.0",
-        hint="use the `optimizations` parameter.",
-    )
-    @removed_parameter(
-        "cluster_with_columns",
-        deprecated_in="1.30.0",
-        removed_in="2.0",
-        hint="use the `optimizations` parameter.",
-    )
-    @removed_parameter(
-        "collapse_joins",
-        deprecated_in="1.30.0",
-        removed_in="2.0",
-        hint="use the `optimizations` parameter.",
-    )
-    @removed_parameter(
-        "streaming",
-        deprecated_in="1.25.0",
-        removed_in="2.0",
-        hint='Use `engine="streaming"` instead.',
-    )
-    @removed_parameter(
-        "tree_format",
-        deprecated_in="0.20.30",
-        removed_in="2.0",
-        hint='Use `format="tree"` instead.',
+    @removed_parameters(
+        RemovedParameter(
+            name="streaming",
+            deprecated_in="1.25.0",
+            removed_in="2.0",
+            hint='Use `engine="streaming"` instead.',
+        ),
+        RemovedParameter(
+            name="tree_format",
+            deprecated_in="0.20.30",
+            removed_in="2.0",
+            hint='Use `format="tree"` instead.',
+        ),
+        *REMOVED_OLD_OPT_FLAGS,
     )
     def explain(
         self,
@@ -1468,13 +1420,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = ...,
     ) -> str | None: ...
 
-    @removed_parameter(
-        "streaming",
-        deprecated_in="1.25.0",
-        removed_in="2.0",
-        hint='Use `engine="streaming"` instead.',
+    @removed_parameters(
+        RemovedParameter(
+            name="streaming",
+            deprecated_in="1.25.0",
+            removed_in="2.0",
+            hint='Use `engine="streaming"` instead.',
+        ),
+        *REMOVED_OLD_OPT_FLAGS,
     )
-    @removed_old_opt_flags()
     def show_graph(
         self,
         *,
@@ -1810,8 +1764,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ctx.register(name=name, frame=self)
             return ctx.execute(query)
 
-    @removed_renamed_parameter(
-        "descending", "reverse", deprecated_in="1.0.0", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
     )
     def top_k(
         self,
@@ -1887,8 +1846,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         reverse = extend_bool(reverse, len(by), "reverse", "by")
         return self._from_pyldf(self._ldf.top_k(k, by=by, reverse=reverse))
 
-    @removed_renamed_parameter(
-        "descending", "reverse", deprecated_in="1.0.0", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
     )
     def bottom_k(
         self,
@@ -2082,13 +2046,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> DataFrame: ...
 
-    @removed_parameter(
-        "streaming",
-        deprecated_in="1.25.0",
-        removed_in="2.0",
-        hint='Use `engine="streaming"` instead.',
+    @removed_parameters(
+        RemovedParameter(
+            name="streaming",
+            deprecated_in="1.25.0",
+            removed_in="2.0",
+            hint='Use `engine="streaming"` instead.',
+        ),
+        *REMOVED_OLD_OPT_FLAGS,
     )
-    @removed_old_opt_flags()
     def collect(
         self,
         *,
@@ -2268,11 +2234,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> Awaitable[DataFrame]: ...
 
-    @removed_parameter(
-        "streaming",
-        deprecated_in="1.25.0",
-        removed_in="2.0",
-        hint='Use `engine="streaming"` instead.',
+    @removed_parameters(
+        RemovedParameter(
+            name="streaming",
+            deprecated_in="1.25.0",
+            removed_in="2.0",
+            hint='Use `engine="streaming"` instead.',
+        )
     )
     def collect_async(
         self,
@@ -2474,11 +2442,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         _sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
 
-    @removed_parameter(
-        "retries",
-        deprecated_in="1.37.1",
-        removed_in="2.0",
-        hint="Specify `max_retries` in `storage_options` instead.",
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
     )
     def sink_parquet(
         self,
@@ -3153,11 +3123,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         _record_batch_statistics: bool = False,
     ) -> LazyFrame: ...
 
-    @removed_parameter(
-        "retries",
-        deprecated_in="1.37.1",
-        removed_in="2.0",
-        hint="Specify `max_retries` in `storage_options` instead.",
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
     )
     def sink_ipc(
         self,
@@ -3428,11 +3400,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame: ...
 
-    @removed_parameter(
-        "retries",
-        deprecated_in="1.37.1",
-        removed_in="2.0",
-        hint="Specify `max_retries` in `storage_options` instead.",
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
     )
     def sink_csv(
         self,
@@ -3755,11 +3729,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame: ...
 
-    @removed_parameter(
-        "retries",
-        deprecated_in="1.37.1",
-        removed_in="2.0",
-        hint="Specify `max_retries` in `storage_options` instead.",
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
     )
     def sink_ndjson(
         self,
@@ -5040,8 +5016,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
-    @removed_renamed_parameter(
-        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="by",
+            new_name="group_by",
+            deprecated_in="0.20.14",
+            removed_in="2.0",
+        )
     )
     def rolling(
         self,
@@ -5181,8 +5162,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lgb = self._ldf.rolling(index_column_py, period, offset, closed, pyexprs_by)
         return LazyGroupBy(lgb)
 
-    @removed_renamed_parameter(
-        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="by",
+            new_name="group_by",
+            deprecated_in="0.20.14",
+            removed_in="2.0",
+        )
     )
     def group_by_dynamic(
         self,
@@ -5912,8 +5898,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    @removed_renamed_parameter(
-        "join_nulls", "nulls_equal", deprecated_in="1.24", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="join_nulls",
+            new_name="nulls_equal",
+            deprecated_in="1.24",
+            removed_in="2.0",
+        )
     )
     def join(
         self,
@@ -8392,7 +8383,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    @removed_parameter("streamable", deprecated_in="1.5.0", removed_in="2.0")
+    @removed_parameters(
+        RemovedParameter(name="streamable", deprecated_in="1.5.0", removed_in="2.0")
+    )
     def unpivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
@@ -9126,7 +9119,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         "`LazyFrame.melt` is deprecated; use `LazyFrame.unpivot` instead, with "
         "`index` instead of `id_vars` and `on` instead of `value_vars`"
     )
-    @removed_parameter("streamable", deprecated_in="1.5.0", removed_in="2.0")
+    @removed_parameters(
+        RemovedParameter(name="streamable", deprecated_in="1.5.0", removed_in="2.0")
+    )
     def melt(
         self,
         id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,

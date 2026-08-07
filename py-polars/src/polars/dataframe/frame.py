@@ -63,10 +63,11 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
     getattr_fallback,
     raise_for_removed_attributes,
-    removed_parameter,
-    removed_renamed_parameter,
+    removed_parameters,
 )
 from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse import parse_into_expression
@@ -1748,8 +1749,13 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    @removed_renamed_parameter(
-        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        )
     )
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Table:
         """
@@ -3065,11 +3071,13 @@ class DataFrame:
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
     ) -> None: ...
 
-    @removed_parameter(
-        "retries",
-        deprecated_in="1.37.1",
-        removed_in="2.0",
-        hint="Specify `max_retries` in `storage_options` instead.",
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
     )
     def write_csv(
         self,
@@ -3947,14 +3955,19 @@ class DataFrame:
         ) = "auto",
     ) -> None: ...
 
-    @removed_renamed_parameter(
-        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
-    )
-    @removed_parameter(
-        "retries",
-        deprecated_in="1.37.1",
-        removed_in="2.0",
-        hint="Specify `max_retries` in `storage_options` instead.",
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        ),
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        ),
     )
     def write_ipc(
         self,
@@ -4079,8 +4092,13 @@ class DataFrame:
         compat_level: CompatLevel | None = None,
     ) -> None: ...
 
-    @removed_renamed_parameter(
-        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        )
     )
     def write_ipc_stream(
         self,
@@ -4140,11 +4158,13 @@ class DataFrame:
         self._df.write_ipc_stream(file, compression, compat_level_py)
         return file if return_bytes else None  # type: ignore[return-value]
 
-    @removed_parameter(
-        "retries",
-        deprecated_in="1.37.1",
-        removed_in="2.0",
-        hint="Specify `max_retries` in `storage_options` instead.",
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
     )
     def write_parquet(
         self,
@@ -5742,8 +5762,13 @@ class DataFrame:
         return_type: Literal["frame", "self"],
     ) -> DataFrame: ...
 
-    @removed_renamed_parameter(
-        "return_as_string", "return_type", deprecated_in="1.35.0", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="return_as_string",
+            new_name="return_type",
+            deprecated_in="1.35.0",
+            removed_in="2.0",
+        )
     )
     def glimpse(
         self,
@@ -6286,8 +6311,13 @@ class DataFrame:
             ctx.register(name=name, frame=self)
             return ctx.execute(query)
 
-    @removed_renamed_parameter(
-        "descending", "reverse", deprecated_in="1.0.0", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
     )
     def top_k(
         self,
@@ -6374,8 +6404,13 @@ class DataFrame:
             .collect(optimizations=optimizations)
         )
 
-    @removed_renamed_parameter(
-        "descending", "reverse", deprecated_in="1.0.0", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
     )
     def bottom_k(
         self,
@@ -7276,8 +7311,10 @@ class DataFrame:
             self, *by, **named_by, maintain_order=maintain_order, predicates=None
         )
 
-    @removed_renamed_parameter(
-        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
     )
     def rolling(
         self,
@@ -7436,8 +7473,10 @@ class DataFrame:
             predicates=None,
         )
 
-    @removed_renamed_parameter(
-        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
     )
     def group_by_dynamic(
         self,
@@ -7759,8 +7798,10 @@ class DataFrame:
             predicates=None,
         )
 
-    @removed_renamed_parameter(
-        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
     )
     def upsample(
         self,
@@ -8218,8 +8259,13 @@ class DataFrame:
             .collect(optimizations=QueryOptFlags._eager())
         )
 
-    @removed_renamed_parameter(
-        "join_nulls", "nulls_equal", deprecated_in="1.24", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="join_nulls",
+            new_name="nulls_equal",
+            deprecated_in="1.24",
+            removed_in="2.0",
+        )
     )
     def join(
         self,
@@ -9565,7 +9611,11 @@ class DataFrame:
             .collect(optimizations=QueryOptFlags._eager())
         )
 
-    @removed_renamed_parameter("columns", "on", deprecated_in="1.0.0", removed_in="2.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="columns", new_name="on", deprecated_in="1.0.0", removed_in="2.0"
+        )
+    )
     def pivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
