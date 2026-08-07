@@ -7816,7 +7816,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Fill null values using the specified value or strategy.
 
-        .. engine-support:: in-memory, streaming, partially_distributed
+        .. engine-support:: in-memory, streaming, partially-distributed
 
         Parameters
         ----------
