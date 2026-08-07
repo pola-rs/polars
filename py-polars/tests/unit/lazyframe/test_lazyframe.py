@@ -1860,4 +1860,4 @@ def test_execute() -> None:
 )
 def test_removed_methods(name: str, match: str) -> None:
     with pytest.raises(AttributeRemovedError, match=re.escape(match)):
-        getattr(pl.LazyFrame, name)
+        getattr(pl.LazyFrame(), name)
