@@ -1677,6 +1677,29 @@ def test_cse_single_scalar_does_not_broadcast_28407() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"o": 10}, schema={"o": pl.Int32}))
 
 
+def test_cspe_distinct_parameterized_dtypes_28450() -> None:
+    enum_a = pl.Enum(["a"])
+    enum_b = pl.Enum(["b"])
+    base = pl.LazyFrame({"value": ["a", "b"]})
+
+    def branch(dtype: pl.DataType, name: str) -> pl.LazyFrame:
+        return base.filter(
+            pl.col("value").cast(dtype, strict=False).is_not_null()
+        ).select(pl.lit(name).alias("branch"), "value")
+
+    q = pl.concat([branch(enum_a, "group_a"), branch(enum_b, "group_b")]).sort("branch")
+    result = q.collect()
+
+    assert_frame_equal(
+        result,
+        pl.DataFrame({"branch": ["group_a", "group_b"], "value": ["a", "b"]}),
+    )
+    assert_frame_equal(
+        result,
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+
+
 def test_cse_opaque_python_distinct_config_not_merged() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]})
 
