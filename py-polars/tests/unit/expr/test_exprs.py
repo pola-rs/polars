@@ -253,6 +253,27 @@ def test_exp_log1p(dtype_in: PolarsDataType, dtype_out: PolarsDataType) -> None:
     assert result.collect_schema() == expected.schema
 
 
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("a", [[1, 2], [3]], dtype=pl.List(pl.Int64)),
+        pl.Series("a", [[1, 2], [3, 4]], dtype=pl.Array(pl.Int64, 2)),
+        pl.Series("a", [{"x": 1.0}], dtype=pl.Struct({"x": pl.Float64})),
+        pl.Series("a", ["x", "y"], dtype=pl.Categorical),
+        pl.Series("a", ["x"], dtype=pl.Enum(["x", "y"])),
+        pl.Series("a", [b"x"], dtype=pl.Binary),
+    ],
+)
+@pytest.mark.parametrize(
+    "op", [pl.col("a").log(2.0), pl.col("a").log1p(), pl.col("a").exp()]
+)
+def test_log_exp_non_numeric_input_raises(s: pl.Series, op: pl.Expr) -> None:
+    # non-numeric input used to reach an infallible cast in the kernel and crash
+    # (nested and categorical panic, Struct segfaults); it should raise instead
+    with pytest.raises(InvalidOperationError, match="not supported for dtype"):
+        s.to_frame().select(op)
+
+
 def test_dot_in_group_by() -> None:
     df = pl.DataFrame(
         {
