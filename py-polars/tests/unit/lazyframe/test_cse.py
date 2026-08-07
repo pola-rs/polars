@@ -1704,8 +1704,6 @@ def test_cspe_cache_removal_keeps_nested_caches(
     cache_ids = set(re.findall(r"CACHE\[id: ([0-9a-f-]+)\]", q.explain()))
     assert len(cache_ids) == 3
 
-    breakpoint()
-
     assert_frame_equal(
         q.collect(),
         q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
