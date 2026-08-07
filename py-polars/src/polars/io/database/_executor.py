@@ -317,6 +317,7 @@ class ConnectionExecutor:
                         schema_overrides=schema_overrides,
                         infer_schema_length=infer_schema_length,
                         orient="row",
+                        strict=False,
                     )
                     for rows in (
                         self._fetchmany_rows(

@@ -160,7 +160,14 @@ impl Series {
             DataType::Struct(fields) => any_values_to_struct(values, fields, strict)?,
             #[cfg(feature = "object")]
             DataType::Object(_) => any_values_to_object(values)?,
-            DataType::Null => Series::new_null(PlSmallStr::EMPTY, values.len()),
+            DataType::Null => {
+                if strict {
+                    if let Some(value) = values.iter().find(|value| !value.is_null()) {
+                        return Err(invalid_value_error(dtype, value));
+                    }
+                }
+                Series::new_null(PlSmallStr::EMPTY, values.len())
+            },
             dt => {
                 polars_bail!(
                     InvalidOperation:
@@ -604,7 +611,11 @@ fn any_values_to_categorical(
 
             if let Err(e) = ret {
                 if strict {
-                    return Err(e);
+                    return Err(if dtype.is_enum() {
+                        invalid_value_error(dtype, av)
+                    } else {
+                        e
+                    });
                 } else {
                     builder.append_null();
                 }

@@ -133,6 +133,7 @@ def test_df_describe_nested() -> None:
         schema=["statistic"] + df.columns,
         schema_overrides={"struct": pl.Float64, "list": pl.Float64},
         orient="row",
+        strict=False,
     )
     assert_frame_equal(result, expected)
 
