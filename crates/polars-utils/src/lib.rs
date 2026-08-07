@@ -2,6 +2,7 @@
     all(target_arch = "aarch64", feature = "nightly"),
     feature(stdarch_aarch64_prefetch)
 )]
+#![allow(stable_features)] // float_algebraic is stable in nightly but not on stable yet
 #![cfg_attr(feature = "nightly", feature(float_algebraic))]
 #![cfg_attr(feature = "nightly", allow(internal_features))]
 #![cfg_attr(docsrs, feature(doc_cfg))]

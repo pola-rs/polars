@@ -70,7 +70,7 @@ impl ParkGroup {
     pub fn new_worker(&self) -> ParkGroupWorker {
         self.inner
             .num_workers
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |w| w.checked_add(1))
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |w| w.checked_add(1))
             .expect("can't have more than 2^32 - 1 workers");
 
         ParkGroupWorker {
@@ -132,7 +132,7 @@ impl ParkGroupWorker {
         let _ = self
             .inner
             .state
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |state| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |state| {
                 debug_assert!(state & ACTIVE_RECRUITER_BIT != 0);
 
                 recruit_next = state_num_idle(state) > 0;
@@ -162,7 +162,7 @@ impl ParkAttempt<'_> {
     /// this park attempt is cancelled and immediately returns.
     pub fn park(mut self) {
         let state = &self.worker.inner.state;
-        let update = state.fetch_update(Ordering::Relaxed, Ordering::SeqCst, |state| {
+        let update = state.try_update(Ordering::Relaxed, Ordering::SeqCst, |state| {
             if state_version(state) != self.worker.version {
                 // We got notified of new work, cancel park.
                 None
@@ -196,7 +196,7 @@ impl ParkGroupInner {
         let mut should_unpark = false;
         let _ = self
             .state
-            .fetch_update(Ordering::Release, Ordering::SeqCst, |state| {
+            .try_update(Ordering::Release, Ordering::SeqCst, |state| {
                 should_unpark = state_num_idle(state) > 0 && state & ACTIVE_RECRUITER_BIT == 0;
                 if should_unpark {
                     Some(state - IDLE_UNIT + ACTIVE_RECRUITER_BIT)
