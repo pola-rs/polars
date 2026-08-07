@@ -44,7 +44,6 @@ if TYPE_CHECKING:
     from tests.unit.conftest import MemoryUsage
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_round_trip(df: pl.DataFrame) -> None:
     f = io.BytesIO()
     df.write_parquet(f)
@@ -52,7 +51,6 @@ def test_round_trip(df: pl.DataFrame) -> None:
     assert_frame_equal(pl.read_parquet(f), df)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_scan_round_trip(df: pl.DataFrame) -> None:
     f = io.BytesIO()
     df.write_parquet(f)
@@ -828,7 +826,6 @@ def test_parquet_string_rle_encoding() -> None:
     )
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_sliced_dict_with_nulls_14904() -> None:
     df = (
         pl.DataFrame({"x": [None, None]})
@@ -2566,7 +2563,6 @@ def test_dict_masked(
     )
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_categorical_sliced_20017() -> None:
     f = io.BytesIO()
     df = (
@@ -2742,7 +2738,6 @@ def test_parquet_unsupported_dictionary_to_pl_17945() -> None:
     )
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_parquet_cast_to_cat() -> None:
     t = pa.table(
         {
@@ -4516,6 +4511,7 @@ def test_parquet_prefilter_fixed_size_binary_27781() -> None:
     )
 
 
+@pytest.mark.write_disk
 def test_parquet_writes_field_id(tmp_path: Path) -> None:
     lf = pl.LazyFrame(
         {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": ["x", "y", "z"]},
@@ -4539,3 +4535,30 @@ def test_parquet_writes_field_id(tmp_path: Path) -> None:
         for i in range(len(written_schema))
     ]
     assert field_ids == [b"1", b"2", b"3"]
+
+
+@pytest.mark.parametrize("n", [8, 9, 10])
+@pytest.mark.write_disk
+def test_parquet_max_cached_scans_28661(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    n: int,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    frames = []
+    for i in range(n):
+        p = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"a": [i], "b": [float(i)]}).write_parquet(p)
+        frames.append(pl.scan_parquet(p))
+
+    capfd.readouterr()
+    pl.concat(frames).collect()
+
+    # Test becomes stale if the following raises. Unfortunately this
+    # only works when running the test in isolation.
+    err = capfd.readouterr().err
+    if "parquet max cached metadata scans:" in err:
+        assert "parquet max cached metadata scans: 8" in err, err

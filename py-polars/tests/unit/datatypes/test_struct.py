@@ -263,7 +263,6 @@ def test_from_dicts_struct() -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: eager construct
-@pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
     with pytest.warns(DeprecationWarning, match="to_struct"):
@@ -1230,7 +1229,6 @@ def test_zfs_row_encoding(size: int) -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: eager construct
-@pytest.mark.may_fail_auto_streaming
 def test_list_to_struct_19208() -> None:
     df = pl.DataFrame(
         {

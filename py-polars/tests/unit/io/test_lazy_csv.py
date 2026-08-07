@@ -84,7 +84,6 @@ def test_row_index(foods_file_path: Path) -> None:
 
 
 @pytest.mark.parametrize("file_name", ["foods1.csv", "foods*.csv"])
-@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_scan_csv_schema_overwrite_and_dtypes_overwrite(
     io_files_path: Path, file_name: str
 ) -> None:
@@ -110,7 +109,6 @@ def test_scan_csv_schema_overwrite_and_dtypes_overwrite(
 
 @pytest.mark.parametrize("file_name", ["foods1.csv", "foods*.csv"])
 @pytest.mark.parametrize("dtype", [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16])
-@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_scan_csv_schema_overwrite_and_small_dtypes_overwrite(
     io_files_path: Path, file_name: str, dtype: pl.DataType
 ) -> None:
@@ -130,7 +128,6 @@ def test_scan_csv_schema_overwrite_and_small_dtypes_overwrite(
 
 
 @pytest.mark.parametrize("file_name", ["foods1.csv", "foods*.csv"])
-@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_scan_csv_schema_new_columns_dtypes(
     io_files_path: Path, file_name: str
 ) -> None:
@@ -444,7 +441,6 @@ A,B,C
         ],
     ],
 )
-@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_file_list_schema_mismatch(
     tmp_path: Path, dfs: list[pl.DataFrame], streaming: bool
 ) -> None:
@@ -487,7 +483,6 @@ def test_scan_csv_missing_columns_insert() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("streaming", [True, False])
 def test_file_list_schema_supertype(tmp_path: Path, streaming: bool) -> None:
     tmp_path.mkdir(exist_ok=True)
