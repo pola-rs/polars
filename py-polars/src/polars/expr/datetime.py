@@ -1136,7 +1136,7 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
 
         Returns the month number starting from 1.
         The return value ranges from 1 to 12.
-        
+
         .. engine-support:: in-memory, streaming, distributed
 
         Returns

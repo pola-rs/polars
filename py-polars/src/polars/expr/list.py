@@ -1555,7 +1555,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def set_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
-        Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
+        Compute the SET DIFFERENCE between the elements in this list and the elements of `other.
+
         .. engine-support:: in-memory, streaming, distributed
 
         Parameters
