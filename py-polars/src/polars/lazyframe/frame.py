@@ -42,6 +42,10 @@ from polars._utils.deprecation import (
     deprecated,
     issue_deprecation_warning,
 )
+from polars._utils.expired import (
+    getattr_fallback,
+    raise_for_removed_attributes,
+)
 from polars._utils.parquet import wrap_parquet_metadata_callback
 from polars._utils.parse import (
     parse_into_expression,
@@ -4323,37 +4327,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return CollectBatches(inner)
 
-    @deprecated(
-        "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "
-        "instead, in conjunction with a call to `head`."
-    )
-    def fetch(
-        self,
-        n_rows: int = 500,
-        **kwargs: Any,
-    ) -> DataFrame:
-        """
-        Collect a small number of rows for debugging purposes.
-
-        .. deprecated:: 1.0
-            Use :meth:`collect` instead, in conjunction with a call to :meth:`head`.`
-
-        Notes
-        -----
-        This is similar to a :func:`collect` operation, but it overwrites the number of
-        rows read by *every* scan operation. Be aware that `fetch` does not guarantee
-        the final number of rows in the DataFrame. Filters, join operations and fewer
-        rows being available in the scanned data will all influence the final number
-        of rows (joins are especially susceptible to this, and may return no data
-        at all if `n_rows` is too small as the join keys may not be present).
-
-        Warnings
-        --------
-        This is strictly a utility function that can help to debug queries using a
-        smaller number of rows, and should *not* be used in production code.
-        """
-        return self.head(n_rows).collect(**kwargs)
-
     def lazy(self) -> LazyFrame:
         """
         Return lazy representation, i.e. itself.
@@ -7278,39 +7251,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.slice(0, 1)
 
-    @deprecated(
-        "`LazyFrame.approx_n_unique` is deprecated; "
-        "use `select(pl.all().approx_n_unique())` instead."
-    )
-    def approx_n_unique(self) -> LazyFrame:
-        """
-        Approximate count of unique values.
-
-        .. deprecated:: 0.20.11
-            Use `select(pl.all().approx_n_unique())` instead.
-
-        This is done using the HyperLogLog++ algorithm for cardinality estimation.
-
-        Examples
-        --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": [1, 2, 3, 4],
-        ...         "b": [1, 2, 1, 1],
-        ...     }
-        ... )
-        >>> lf.approx_n_unique().collect()  # doctest: +SKIP
-        shape: (1, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ u32 ┆ u32 │
-        ╞═════╪═════╡
-        │ 4   ┆ 2   │
-        └─────┴─────┘
-        """
-        return self.select(F.all().approx_n_unique())
-
     def with_row_index(self, name: str = "index", offset: int = 0) -> LazyFrame:
         """
         Add a row index as the first column in the LazyFrame.
@@ -7387,52 +7327,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue = "negative" if offset < 0 else "greater than the maximum index value"
             msg = f"`offset` input for `with_row_index` cannot be {issue}, got {offset}"
             raise ValueError(msg) from None
-
-    @deprecated(
-        "`LazyFrame.with_row_count` is deprecated; use `LazyFrame.with_row_index` instead."
-        " Note that the default column name has changed from 'row_nr' to 'index'."
-    )
-    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> LazyFrame:
-        """
-        Add a column at index 0 that counts the rows.
-
-        .. deprecated:: 0.20.4
-            Use the :meth:`with_row_index` method instead.
-            Note that the default column name has changed from 'row_nr' to 'index'.
-
-        Parameters
-        ----------
-        name
-            Name of the column to add.
-        offset
-            Start the row count at this offset.
-
-        Warnings
-        --------
-        This can have a negative effect on query performance.
-        This may, for instance, block predicate pushdown optimization.
-
-        Examples
-        --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": [1, 3, 5],
-        ...         "b": [2, 4, 6],
-        ...     }
-        ... )
-        >>> lf.with_row_count().collect()  # doctest: +SKIP
-        shape: (3, 3)
-        ┌────────┬─────┬─────┐
-        │ row_nr ┆ a   ┆ b   │
-        │ ---    ┆ --- ┆ --- │
-        │ u32    ┆ i64 ┆ i64 │
-        ╞════════╪═════╪═════╡
-        │ 0      ┆ 1   ┆ 2   │
-        │ 1      ┆ 3   ┆ 4   │
-        │ 2      ┆ 5   ┆ 6   │
-        └────────┴─────┴─────┘
-        """
-        return self.with_row_index(name, offset)
 
     def gather_every(self, n: int, offset: int = 0) -> LazyFrame:
         """
@@ -9293,56 +9187,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.count())
 
-    @deprecated(
-        "`LazyFrame.melt` is deprecated; use `LazyFrame.unpivot` instead, with "
-        "`index` instead of `id_vars` and `on` instead of `value_vars`"
-    )
-    def melt(
-        self,
-        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        variable_name: str | None = None,
-        value_name: str | None = None,
-        *,
-        streamable: bool = True,
-    ) -> LazyFrame:
-        """
-        Unpivot a DataFrame from wide to long format.
-
-        Optionally leaves identifiers set.
-
-        This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars) while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis leaving just
-        two non-identifier columns, 'variable' and 'value'.
-
-        .. deprecated:: 1.0.0
-            Use the :meth:`.unpivot` method instead.
-
-        Parameters
-        ----------
-        id_vars
-            Column(s) or selector(s) to use as identifier variables.
-        value_vars
-            Column(s) or selector(s) to use as values variables; if `value_vars`
-            is empty all columns that are not in `id_vars` will be used.
-        variable_name
-            Name to give to the `variable` column. Defaults to "variable"
-        value_name
-            Name to give to the `value` column. Defaults to "value"
-        streamable
-            Allow this node to run in the streaming engine.
-            If this runs in streaming, the output of the unpivot operation
-            will not have a stable ordering.
-        """
-        return self.unpivot(
-            index=id_vars,
-            on=value_vars,
-            variable_name=variable_name,
-            value_name=value_name,
-            streamable=streamable,
-        )
-
     @unstable()
     def remote(
         self,
@@ -9830,3 +9674,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             lf = lf.select(columns)
 
         return lf.collect()._to_metadata(stats=stats)
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "fetch": "use `collect` instead, in conjunction with a call to `head`.",
+                    "melt": "use `LazyFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+                    "with_row_count": "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
+                    "approx_n_unique": "use `select(pl.all().approx_n_unique())` instead.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
