@@ -858,6 +858,11 @@ def test_append_no_upcast_27345() -> None:
     ("name", "match"),
     [
         ("from_json", "use `Expr.deserialize` instead"),
+        (
+            "rechunk",
+            "rechunking within a query is not well-defined. "
+            "Use `df.rechunk()` after collecting the results instead.",
+        ),
         ("register_plugin", "use `polars.plugins.register_plugin_function` instead"),
         ("shrink_dtype", "use `Series.shrink_dtype` instead"),
         ("where", "use `filter` instead"),
