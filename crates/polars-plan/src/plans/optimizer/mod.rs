@@ -38,7 +38,7 @@ mod stack_opt;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
 #[cfg(feature = "cse")]
-pub use cse::NaiveExprMerger;
+pub use cse::{CanonicalExprId, CanonicalExprMap};
 use delay_rechunk::DelayRechunk;
 pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
