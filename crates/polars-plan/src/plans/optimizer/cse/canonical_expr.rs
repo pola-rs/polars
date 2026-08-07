@@ -40,7 +40,8 @@ impl CanonicalExprMap {
         }
     }
 
-    /// Returns a representative node for `id`.
+    /// Returns the representative node for `id`: the first node of its structural equivalence
+    /// class that was passed to [`Self::resolve`].
     pub fn representative(&self, id: CanonicalExprId) -> Node {
         let index =
             id.0.checked_sub(1)
