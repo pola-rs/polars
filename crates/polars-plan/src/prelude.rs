@@ -1,20 +1,28 @@
 // TODO: move these such that polars-plan does not depend on polars-ops or polars_time.
-pub(crate) use polars_ops::chunked_array::{SetOperation, UnicodeForm};
-pub(crate) use polars_ops::frame::{
-    IEJoinOptions, InequalityOperator, JoinArgs, JoinCoalesce, JoinType, MaintainOrderJoin,
-};
-pub(crate) use polars_ops::series::{
-    ClosedInterval, EWMOptions, InterpolationMethod, RankMethod, RankOptions, Roll, RoundMode,
-    SearchSortedSide,
-};
+#[cfg(feature = "list_sets")]
+pub(crate) use polars_ops::chunked_array::SetOperation;
+#[cfg(feature = "string_normalize")]
+pub(crate) use polars_ops::chunked_array::UnicodeForm;
+#[cfg(feature = "iejoin")]
+pub(crate) use polars_ops::frame::{IEJoinOptions, InequalityOperator};
+pub(crate) use polars_ops::frame::{JoinArgs, JoinCoalesce, JoinType, MaintainOrderJoin};
+#[cfg(feature = "business")]
+pub(crate) use polars_ops::series::Roll;
+#[cfg(feature = "ewma")]
+pub(crate) use polars_ops::series::EWMOptions;
+#[cfg(feature = "interpolate")]
+pub(crate) use polars_ops::series::InterpolationMethod;
+#[cfg(feature = "rank")]
+pub(crate) use polars_ops::series::{RankMethod, RankOptions};
+#[cfg(feature = "round_series")]
+pub(crate) use polars_ops::series::RoundMode;
+pub(crate) use polars_ops::series::{ClosedInterval, SearchSortedSide};
+#[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]
 pub(crate) use polars_time::chunkedarray::RollingOptionsDynamicWindow;
-pub(crate) use polars_time::{ClosedWindow, Duration, DynamicGroupOptions, RollingGroupOptions};
-#[cfg(any(
-    feature = "temporal",
-    feature = "dtype-duration",
-    feature = "dtype-date",
-    feature = "dtype-time"
-))]
+#[cfg(feature = "dynamic_group_by")]
+pub(crate) use polars_time::{DynamicGroupOptions, RollingGroupOptions};
+#[cfg(feature = "temporal")]
+pub(crate) use polars_time::{ClosedWindow, Duration};
 pub use polars_utils::arena::{Arena, Node};
 
 pub use crate::callback::*;
