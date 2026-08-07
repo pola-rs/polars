@@ -21,7 +21,7 @@ pub fn deserialize_iter<'a>(
     allow_extra_fields_in_struct: bool,
 ) -> PolarsResult<ArrayRef> {
     let mut arr: Vec<Box<dyn Array>> = Vec::new();
-    let mut buf = Vec::with_capacity(std::cmp::min(buf_size + count + 2, u32::MAX as usize));
+    let mut buf = Vec::with_capacity(std::cmp::min(buf_size + count * 7 + 2, u32::MAX as usize));
     buf.push(b'[');
 
     fn _deserializer(
@@ -32,6 +32,13 @@ pub fn deserialize_iter<'a>(
         let out = simd_json::to_borrowed_value(s)
             .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
         if let BorrowedValue::Array(rows) = out {
+            let rows = rows
+                .into_iter()
+                .map(|row| match row {
+                    BorrowedValue::Object(mut row) => row.remove("v").unwrap(),
+                    _ => unreachable!(),
+                })
+                .collect::<Vec<_>>();
             super::super::json::deserialize::_deserialize(
                 &rows,
                 dtype,
@@ -44,10 +51,11 @@ pub fn deserialize_iter<'a>(
     let mut row_iter = rows.peekable();
 
     while let Some(row) = row_iter.next() {
+        buf.extend_from_slice(br#"{"v":"#);
         buf.extend_from_slice(row.as_bytes());
-        buf.push(b',');
+        buf.extend_from_slice(b"},");
 
-        let next_row_length = row_iter.peek().map(|row| row.len()).unwrap_or(0);
+        let next_row_length = row_iter.peek().map(|row| row.len() + 6).unwrap_or(0);
         if buf.len() + next_row_length >= u32::MAX as usize {
             let _ = buf.pop();
             buf.push(b']');

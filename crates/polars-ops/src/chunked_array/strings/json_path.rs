@@ -250,6 +250,26 @@ mod tests {
     }
 
     #[test]
+    fn test_json_decode_rejects_invalid_rows() {
+        let scalar = Series::new("json".into(), ["1,2", "3"]);
+        assert!(
+            scalar
+                .str()
+                .unwrap()
+                .json_decode(Some(DataType::Int64), None)
+                .is_err()
+        );
+
+        let list = Series::new("json".into(), ["[1],[2", "3]"]);
+        assert!(
+            list.str()
+                .unwrap()
+                .json_decode(Some(DataType::List(Box::new(DataType::Int64))), None)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn test_json_path_select() {
         let s = Series::new(
             "json".into(),
