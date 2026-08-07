@@ -421,8 +421,24 @@ pub(super) fn strptime(
         },
         #[cfg(feature = "dtype-time")]
         DataType::Time => to_time(&s[0], options),
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(time_unit) => to_duration(&s[0], time_unit, options),
         dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
     }
+}
+
+#[cfg(feature = "dtype-duration")]
+fn to_duration(s: &Column, time_unit: TimeUnit, options: &StrptimeOptions) -> PolarsResult<Column> {
+    polars_ensure!(options.exact, InvalidOperation: "duration parsing does not support exact=False");
+    let fmt = options.format.as_deref().ok_or_else(
+        || polars_err!(InvalidOperation: "duration parsing requires an explicit format"),
+    )?;
+    let ca = s.str()?;
+    let out = ca.as_duration(fmt, time_unit)?.into_column();
+    if options.strict && ca.null_count() != out.null_count() {
+        handle_casting_failures(s.as_materialized_series(), out.as_materialized_series())?;
+    }
+    Ok(out)
 }
 
 #[cfg(feature = "dtype-struct")]
