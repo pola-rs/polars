@@ -126,17 +126,8 @@ def test_dt_replace_time_zone_none(time_zone: str | None, time_unit: TimeUnit) -
     assert result.item() == expected
 
 
-@pytest.mark.parametrize(
-    ("time_zone", "expected"),
-    [
-        # A time zone with offset changes may move the local date backwards while the
-        # underlying instants move forwards, so sortedness can't be preserved.
-        (None, True),
-        ("Asia/Kathmandu", False),
-        ("UTC", True),
-    ],
-)
-def test_local_date_sortedness(time_zone: str | None, expected: bool) -> None:
+@pytest.mark.parametrize("time_zone", [None, "UTC"])
+def test_local_date_sortedness(time_zone: str | None) -> None:
     # singleton - always sorted
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
     result = ser.dt.date()
@@ -147,7 +138,22 @@ def test_local_date_sortedness(time_zone: str | None, expected: bool) -> None:
         pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone(time_zone)
     ).sort()
     result = ser.dt.date()
-    assert result.flags["SORTED_ASC"] == expected
+    assert result.flags["SORTED_ASC"]
+    assert not result.flags["SORTED_DESC"]
+
+
+# The streaming engine derives sortedness from the values themselves, so it may report
+# this genuinely sorted result as sorted regardless of what the conversion claims.
+@pytest.mark.may_fail_auto_streaming
+def test_local_date_sortedness_tz_aware_is_conservative() -> None:
+    # A time zone with offset changes may move the local date backwards while the
+    # underlying instants move forwards, so sortedness can't be carried over.
+    ser = (
+        pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone("Asia/Kathmandu")
+    ).sort()
+    result = ser.dt.date()
+
+    assert not result.flags["SORTED_ASC"]
     assert not result.flags["SORTED_DESC"]
 
 
