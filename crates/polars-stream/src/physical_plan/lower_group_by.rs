@@ -769,6 +769,16 @@ pub fn try_build_streaming_group_by(
 
     let mut canonical_exprs = CanonicalExprMap::new();
 
+    // Resolve the original keys and aggregates before any lowering happens, because otherwise we
+    // might end up with a representative that is a generated column. This would break pre-select,
+    // that does not have access to these.
+    for key in keys {
+        canonical_exprs.resolve(key.node(), expr_arena);
+    }
+    for agg in aggs {
+        canonical_exprs.resolve(agg.node(), expr_arena);
+    }
+
     // Extract aggregates, input expressions for those aggregates and replace
     // with agg node output columns.
     let mut uniq_input_names = PlIndexMap::new();
