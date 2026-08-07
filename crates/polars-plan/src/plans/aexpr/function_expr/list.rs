@@ -16,7 +16,7 @@ pub enum IRListFunction {
     Sample {
         is_fraction: bool,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     },
     Slice,
@@ -44,15 +44,8 @@ pub enum IRListFunction {
         null_behavior: NullBehavior,
     },
     Sort(SortOptions),
-    Reverse,
-    Unique(bool),
-    NUnique,
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
-    #[cfg(feature = "list_any_all")]
-    Any,
-    #[cfg(feature = "list_any_all")]
-    All,
     Join(bool),
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
@@ -66,7 +59,8 @@ impl<'a> FieldsMapper<'a> {
         let dt = self.args()[0].dtype();
         polars_ensure!(
             dt.is_list(),
-            InvalidOperation: format!("expected List data type for list operation, got: {:?}", dt)
+            InvalidOperation:
+            "expected List data type for list operation, got: {dt:?}"
         );
         Ok(self)
     }
@@ -123,15 +117,9 @@ impl IRListFunction {
                 Ok(DataType::List(Box::new(inner_dt)))
             }),
             Sort(_) => mapper.ensure_is_list()?.with_same_dtype(),
-            Reverse => mapper.ensure_is_list()?.with_same_dtype(),
-            Unique(_) => mapper.ensure_is_list()?.with_same_dtype(),
             Length => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_sets")]
             SetOperation(_) => mapper.ensure_is_list()?.with_same_dtype(),
-            #[cfg(feature = "list_any_all")]
-            Any => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
-            #[cfg(feature = "list_any_all")]
-            All => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
             Join(_) => mapper.try_map_dtype(|dtype| {
                 let DataType::List(inner_dtype) = dtype else {
                     polars_bail!(
@@ -148,7 +136,6 @@ impl IRListFunction {
             ToArray(width) => mapper
                 .ensure_is_list()?
                 .try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
-            NUnique => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_to_struct")]
             ToStruct(names) => mapper.try_map_dtype(|dtype| {
                 let DataType::List(inner_dtype) = dtype else {
@@ -208,12 +195,7 @@ impl IRListFunction {
             | L::ArgMin
             | L::ArgMax
             | L::Sort(_)
-            | L::Reverse
-            | L::Unique(_)
-            | L::Join(_)
-            | L::NUnique => FunctionOptions::elementwise(),
-            #[cfg(feature = "list_any_all")]
-            L::Any | L::All => FunctionOptions::elementwise(),
+            | L::Join(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-array")]
             L::ToArray(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_to_struct")]
@@ -271,21 +253,8 @@ impl Display for IRListFunction {
             Diff { .. } => "diff",
             Length => "length",
             Sort(_) => "sort",
-            Reverse => "reverse",
-            Unique(is_stable) => {
-                if *is_stable {
-                    "unique_stable"
-                } else {
-                    "unique"
-                }
-            },
-            NUnique => "n_unique",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "list.{s}"),
-            #[cfg(feature = "list_any_all")]
-            Any => "any",
-            #[cfg(feature = "list_any_all")]
-            All => "all",
             Join(_) => "join",
             #[cfg(feature = "dtype-array")]
             ToArray(_) => "to_array",

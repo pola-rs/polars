@@ -4,7 +4,9 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.unstable import unstable
+from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -22,7 +24,7 @@ if TYPE_CHECKING:
 
 
 @expr_dispatch
-class ListNameSpace:
+class ListNameSpace(_NamespaceSuggestMixin):
     """Namespace for list related methods."""
 
     _accessor = "list"
@@ -30,18 +32,25 @@ class ListNameSpace:
     def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
-    def all(self) -> Series:
+    def all(self, *, ignore_nulls: bool = True) -> Series:
         """
         Evaluate whether all boolean values in a list are true.
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
-
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `True`.
 
         Examples
         --------
@@ -62,18 +71,25 @@ class ListNameSpace:
         ]
         """
 
-    def any(self) -> Series:
+    def any(self, *, ignore_nulls: bool = True) -> Series:
         """
         Evaluate whether any boolean value in a list is true.
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
-
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `False`.
 
         Examples
         --------
@@ -142,7 +158,7 @@ class ListNameSpace:
         *,
         fraction: float | IntoExprColumn | None = None,
         with_replacement: bool = False,
-        shuffle: bool = False,
+        shuffle: bool | None = None,
         seed: int | None = None,
     ) -> Series:
         """
@@ -158,7 +174,12 @@ class ListNameSpace:
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Determines the order of the sampled values.
+            If True, sampled values are explicitly shuffled.
+            If False, the relative order of the sampled values is preserved.
+            (i.e. they appear in the same order as the original input list).
+            If None (default), no ordering guarantee; uses the most performant
+            algorithm.
         seed
             Seed for the random number generator. If set to None (default), a
             random seed is generated for each sample operation.
@@ -166,7 +187,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("values", [[1, 2, 3], [4, 5]])
-        >>> s.list.sample(n=pl.Series("n", [2, 1]), seed=1)
+        >>> s.list.sample(n=pl.Series("n", [2, 1]), shuffle=False, seed=1)
         shape: (2,)
         Series: 'values' [list[i64]]
         [
@@ -598,6 +619,7 @@ class ListNameSpace:
         Traceback (most recent call last):
         ...
         polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        ...
         """  # noqa: W505
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Series:
@@ -631,7 +653,11 @@ class ListNameSpace:
 
     def arg_min(self) -> Series:
         """
-        Retrieve the index of the minimal value in every sublist.
+        Retrieve an index of a minimal value in every sublist.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------
@@ -653,7 +679,11 @@ class ListNameSpace:
 
     def arg_max(self) -> Series:
         """
-        Retrieve the index of the maximum value in every sublist.
+        Retrieve an index of a maximum value in every sublist.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------
@@ -817,7 +847,9 @@ class ListNameSpace:
         ]
         """
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
+    def explode(
+        self, *, empty_as_null: bool | None = None, keep_nulls: bool = True
+    ) -> Series:
         """
         Returns a column with a separate row for every list element.
 
@@ -840,7 +872,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
-        >>> s.list.explode()
+        >>> s.list.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [
@@ -967,6 +999,11 @@ class ListNameSpace:
                 .select_seq(F.col(s.name).list.to_struct(fields=fields))
                 .to_series()
             )
+
+        issue_deprecation_warning(
+            "list.to_struct() without a list of field names is deprecated. Please "
+            "pass a list of field names."
+        )
 
         return wrap_s(self._s.list_to_struct(n_field_strategy, fields))
 

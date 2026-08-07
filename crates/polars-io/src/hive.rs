@@ -1,7 +1,9 @@
 use polars_core::frame::DataFrame;
 use polars_core::frame::column::ScalarColumn;
-use polars_core::prelude::Column;
+use polars_core::prelude::{Column, DataType};
 use polars_core::series::Series;
+
+use crate::utils::HIVE_VALUE_ENCODE_CHARSET;
 
 /// Materializes hive partitions.
 /// We have a special num_rows arg, as df can be empty when a projection contains
@@ -14,9 +16,9 @@ use polars_core::series::Series;
 /// # Safety
 ///
 /// num_rows equals the height of the df when the df height is non-zero.
-pub(crate) fn materialize_hive_partitions<D>(
+pub(crate) fn materialize_hive_partitions<F, M>(
     df: &mut DataFrame,
-    reader_schema: &polars_schema::Schema<D>,
+    reader_schema: &polars_schema::Schema<F, M>,
     hive_partition_columns: Option<&[Series]>,
 ) {
     let num_rows = df.height();
@@ -71,10 +73,10 @@ pub(crate) fn materialize_hive_partitions<D>(
 ///
 /// # Panics
 /// Panics if either `cols_lhs` or `cols_rhs` is empty.
-pub fn merge_sorted_to_schema_order<'a, D>(
+pub fn merge_sorted_to_schema_order<'a, F, M>(
     cols_lhs: &'a mut dyn Iterator<Item = Column>,
     cols_rhs: &'a mut dyn Iterator<Item = Column>,
-    schema: &polars_schema::Schema<D>,
+    schema: &polars_schema::Schema<F, M>,
     output: &'a mut Vec<Column>,
 ) {
     merge_sorted_to_schema_order_impl(cols_lhs, cols_rhs, output, &|v| schema.index_of(v.name()))
@@ -131,4 +133,40 @@ pub fn merge_sorted_to_schema_order_impl<'a, T, O>(
     let [a, b] = series_arr;
     output.extend(a);
     output.extend(b);
+}
+
+/// # Panics
+/// The `Display` impl of this will panic if a column has non-unit length.
+pub struct HivePathFormatter<'a> {
+    keys: &'a [Column],
+}
+
+impl<'a> HivePathFormatter<'a> {
+    pub fn new(keys: &'a [Column]) -> Self {
+        Self { keys }
+    }
+}
+
+impl std::fmt::Display for HivePathFormatter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for column in self.keys {
+            assert_eq!(column.len(), 1);
+            let column = column.cast(&DataType::String).unwrap();
+
+            let key = column.name();
+            let value = percent_encoding::percent_encode(
+                column
+                    .str()
+                    .unwrap()
+                    .get(0)
+                    .unwrap_or("__HIVE_DEFAULT_PARTITION__")
+                    .as_bytes(),
+                HIVE_VALUE_ENCODE_CHARSET,
+            );
+
+            write!(f, "{key}={value}/")?
+        }
+
+        Ok(())
+    }
 }

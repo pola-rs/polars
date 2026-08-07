@@ -149,12 +149,13 @@ pub(super) fn rolling_corr_cov(
     let mut x = s[0].as_materialized_series().rechunk();
     let mut y = s[1].as_materialized_series().rechunk();
 
-    if !x.dtype().is_float() {
-        x = x.cast(&DataType::Float64)?;
-    }
-    if !y.dtype().is_float() {
-        y = y.cast(&DataType::Float64)?;
-    }
+    let st = match polars_core::utils::try_get_supertype(x.dtype(), y.dtype())? {
+        dt if dt.is_float() => dt,
+        _ => DataType::Float64,
+    };
+
+    x = x.cast(&st)?;
+    y = y.cast(&st)?;
     let dtype = x.dtype().clone();
 
     let mean_x_y = (&x * &y)?.rolling_mean(rolling_options.clone())?;
@@ -189,9 +190,11 @@ pub(super) fn rolling_corr_cov(
 
     let mean_x = x.rolling_mean(rolling_options.clone())?;
     let mean_y = y.rolling_mean(rolling_options.clone())?;
+
+    let ddof_value = if is_corr { 1u8 } else { cov_options.ddof };
     let ddof = Series::new(
         PlSmallStr::EMPTY,
-        &[AnyValue::from(cov_options.ddof).cast(&dtype)],
+        &[AnyValue::from(ddof_value).cast(&dtype)],
     );
 
     let numerator = ((mean_x_y - (mean_x * mean_y).unwrap()).unwrap()

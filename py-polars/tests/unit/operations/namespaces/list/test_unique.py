@@ -19,19 +19,19 @@ def test_list_unique_boolean_22753() -> None:
     )
 
     assert_series_equal(
-        s.list.unique(),
+        s.list.unique().list.sort(),
         pl.Series(
             [
                 [],
                 [None],
                 [None],
                 [None],
-                [False, None],
-                [False, None],
-                [False, None],
-                [False, None],
-                [False, None],
-                [False, True, None],
+                [None, False],
+                [None, False],
+                [None, False],
+                [None, False],
+                [None, False],
+                [None, False, True],
             ]
         ),
     )

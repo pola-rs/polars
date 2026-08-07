@@ -69,13 +69,13 @@ where
     } else {
         build_tables(build, nulls_equal)
     };
-    try_raise_keyboard_interrupt();
+    try_raise_polars_abort();
 
     let n_tables = hash_tbls.len();
     let offsets = probe_to_offsets(&probe);
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
-    let out = POOL.install(|| {
+    let out = RAYON.install(|| {
         let tuples = probe
             .into_par_iter()
             .zip(offsets)

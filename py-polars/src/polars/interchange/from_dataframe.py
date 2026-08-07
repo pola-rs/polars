@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 import polars.functions as F
+from polars._utils.deprecation import deprecated
 from polars._utils.various import qualified_type_name
 from polars.datatypes import Boolean, Enum, Int64, String, UInt8, UInt32
 from polars.exceptions import InvalidOperationError
@@ -22,9 +23,15 @@ if TYPE_CHECKING:
     from polars.interchange.protocol import DataFrame as InterchangeDataFrame
 
 
+@deprecated(
+    "Support for the dataframe interchange protocol is deprecated since version 1.40.0"
+)
 def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:
     """
     Build a Polars DataFrame from any dataframe supporting the interchange protocol.
+
+    .. deprecated:: 1.40.0
+        Support for the Dataframe Interchange Protocol is deprecated.
 
     Parameters
     ----------

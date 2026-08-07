@@ -356,6 +356,7 @@ def test_parse_apply_functions(
 
     parser = BytecodeParser(eval(func), map_target="expr")
     suggested_expression = parser.to_expression(col)
+    assert suggested_expression is not None
     assert suggested_expression == expr_repr
 
     df = pl.DataFrame(
@@ -538,6 +539,7 @@ def test_parse_apply_series(
 
     parser = BytecodeParser(func, map_target="series")
     suggested_expression = parser.to_expression(s.name)
+    assert suggested_expression is not None
     assert suggested_expression == expr_repr
 
     with pytest.warns(

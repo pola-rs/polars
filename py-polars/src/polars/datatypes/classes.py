@@ -17,10 +17,17 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyCategories
     from polars._plr import dtype_str_repr as _dtype_str_repr
 
+
 import polars.datatypes.classes as pldt
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Callable, Iterable, Iterator, Sequence
+
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 
     from polars import Series
     from polars._typing import (
@@ -32,17 +39,18 @@ if TYPE_CHECKING:
     )
 
 
-T = TypeVar("T")
-R = TypeVar("R")
+R_co = TypeVar("R_co", covariant=True)
 
 
-class classinstmethod(Generic[R]):
+class classinstmethod(Generic[R_co]):
     """Decorator that allows a method to be called from the class OR instance."""
 
-    def __init__(self, func: Callable[..., R]) -> None:
+    func: Callable[..., R_co]
+
+    def __init__(self, func: Callable[..., R_co]) -> None:
         self.func = func
 
-    def __get__(self, instance: Any, type_: Any) -> Callable[..., R]:
+    def __get__(self, instance: Any, type_: Any) -> Callable[..., R_co]:
         if instance is not None:
             return self.func.__get__(instance, type_)
         return self.func.__get__(type_, type_)
@@ -104,6 +112,10 @@ class DataTypeClass(type):
         ...
 
     @classmethod
+    def is_extension(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
     def from_python(cls, py_type: PythonDataType) -> PolarsDataType:  # noqa: D102
         ...
 
@@ -123,7 +135,9 @@ class DataType(metaclass=DataTypeClass):
         return _dtype_str_repr(self)
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: pl.DataTypeExpr) -> pl.Expr: ...
+    def __eq__(  # pyrefly: ignore[bad-override]
+        self, other: pl.DataTypeExpr
+    ) -> pl.Expr: ...
 
     @overload
     def __eq__(self, other: PolarsDataType) -> bool: ...
@@ -143,7 +157,7 @@ class DataType(metaclass=DataTypeClass):
         return self.__class__.__name__
 
     @classmethod
-    def base_type(cls) -> DataTypeClass:
+    def base_type(cls) -> type[Self]:
         """
         Return this DataType's fundamental/root type class.
 
@@ -224,6 +238,11 @@ class DataType(metaclass=DataTypeClass):
     def is_nested(cls) -> bool:
         """Check whether the data type is a nested type."""
         return issubclass(cls, NestedType)
+
+    @classmethod
+    def is_extension(cls) -> bool:
+        """Check whether the data type is an extension type."""
+        return issubclass(cls, BaseExtension)
 
     @classmethod
     def from_python(cls, py_type: PythonDataType) -> PolarsDataType:
@@ -408,10 +427,6 @@ class UInt128(UnsignedIntegerType):
 
 class Float16(FloatType):
     """16-bit floating point type.
-
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
 
     .. warning::
         Regular computing platforms do not natively support `Float16` operations,
@@ -709,13 +724,24 @@ class Categories:
         >>> fruit2["banana"]
         1
 
-    Note that the `Categories` instance is only a weak reference to the actual
-    mapping stored in Polars; if no actual data exists using this mapping (like
+    To get a list of all categories, you can iterate over the `Categories` instance:
+
+        >>> list(fruit)
+        ['apple', 'banana', 'orange']
+
+    .. note::
+        Because the categories are backed by a concurrent data structure, physical
+        category values may be reserved before they are assigned a string lexical
+        value if concurrent queries are running. As a result, the resulting `Series`
+        may contain `None` values.
+
+    The `Categories` instance is only a weak reference to the actual
+    mapping stored in Polars. If no actual data exists using this mapping (like
     a `Series` or `DataFrame`), the mapping is cleaned up by Polars:
 
         >>> del s
-        >>> fruit["apple"] is None
-        True
+        >>> print(fruit["apple"])
+        None
 
     If you wish to keep a persistent mapping, simply keep alive some object which
     uses the mapping, e.g. `keepalive = pl.Series([], dtype=pl.Categorical(fruit))`.
@@ -811,12 +837,70 @@ class Categories:
         return self._categories.is_global()
 
     def __getitem__(self, key: str | int | None) -> str | int | None:
+        # TODO: In 2.0, this should raise KeyError instead of returning if key is a str.
+        # and an IndexError should be raised if the int key is larger than self.len().
+        # TODO: In 2.0, this should raise TypeError instead of returning if key is None.
         if key is None:
             return key
         elif isinstance(key, str):
             return self._categories.get_cat(key)
-        else:
+        elif isinstance(key, int):
             return self._categories.cat_to_str(key)
+        else:
+            msg = f"invalid key type {type(key)}; expected str or int"
+            raise TypeError(msg)
+
+    def __contains__(self, item: str | int) -> bool:
+        if isinstance(item, str):
+            return self._categories.get_cat(item) is not None
+        elif isinstance(item, int):
+            return self._categories.cat_to_str(item) is not None
+        else:
+            return False
+
+    def __iter__(self) -> Iterator[str | None]:
+        for i in range(self._categories.num_cats_upper_bound()):
+            yield self._categories.cat_to_str(i)
+
+    def to_series(self) -> Series:
+        """
+        Return a :class:`Series` containing all categories in this `Categories`.
+
+        The categories are ordered by their physical category value.
+
+        .. note::
+            Because the categories are backed by a concurrent data structure, physical
+            category values may be reserved before they are assigned a string lexical
+            value if concurrent queries are running. As a result, the resulting `Series`
+            may contain `None` values.
+
+        Examples
+        --------
+        >>> fruit = pl.Categories("fruit")
+        >>> s = pl.Series(["apple", "banana", "orange"], dtype=pl.Categorical(fruit))
+        >>> fruit.to_series()
+        shape: (3,)
+        Series: 'fruit' [str]
+        [
+            "apple"
+            "banana"
+            "orange"
+        ]
+        """
+        return pl.Series(self.name(), list(self), dtype=String)
+
+    def to_dict(self) -> dict[str, int]:
+        """
+        Return a dictionary mapping category strings to their physical category values.
+
+        Examples
+        --------
+        >>> fruit = pl.Categories("fruit")
+        >>> s = pl.Series(["apple", "banana", "orange"], dtype=pl.Categorical(fruit))
+        >>> fruit.to_dict()
+        {'apple': 0, 'banana': 1, 'orange': 2}
+        """
+        return {cat: i for i, cat in enumerate(self) if cat is not None}
 
     def __repr__(self) -> str:
         name = self.name()
@@ -1004,7 +1088,20 @@ class Enum(DataType):
         return f"{class_name}(categories={self.categories.to_list()!r})"
 
     def union(self, other: Enum) -> Enum:
-        """Union of two Enums."""
+        """
+        Union of two Enums.
+
+        .. deprecated:: 1.38
+            `Enum.union()` is deprecated and will be removed in version 2.0.
+            Enums are ordered sets and union cannot preserve both orderings.
+        """
+        from polars._utils.deprecation import issue_deprecation_warning
+
+        issue_deprecation_warning(
+            "`Enum.union()` is deprecated and will be removed in version 2.0. "
+            "Enums are ordered sets and union cannot preserve both orderings.",
+            version="1.38",
+        )
         return Enum(
             F.concat((self.categories, other.categories)).unique(maintain_order=True)
         )

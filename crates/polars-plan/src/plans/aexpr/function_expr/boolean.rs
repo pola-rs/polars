@@ -13,6 +13,10 @@ pub enum IRBooleanFunction {
     All {
         ignore_nulls: bool,
     },
+    IsEmpty {
+        ignore_nulls: bool,
+    },
+    HasNulls,
     IsNull,
     IsNotNull,
     IsFinite,
@@ -41,6 +45,10 @@ pub enum IRBooleanFunction {
         rel_tol: TotalOrdWrap<f64>,
         nans_equal: bool,
     },
+    IsSorted {
+        descending: Option<bool>,
+        nulls_last: Option<bool>,
+    },
     AllHorizontal,
     AnyHorizontal,
     // Also bitwise negate
@@ -67,7 +75,7 @@ impl IRBooleanFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use IRBooleanFunction as B;
         match self {
-            B::Any { .. } | B::All { .. } => {
+            B::Any { .. } | B::All { .. } | B::IsEmpty { .. } | B::HasNulls => {
                 FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
             B::IsNull | B::IsNotNull => FunctionOptions::elementwise(),
@@ -103,6 +111,7 @@ impl IRBooleanFunction {
                     (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
                 )
                 .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_ALL_INPUTS),
+            B::IsSorted { .. } => FunctionOptions::aggregation(),
             B::AllHorizontal | B::AnyHorizontal => FunctionOptions::elementwise().with_flags(|f| {
                 f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::ALLOW_EMPTY_INPUTS
             }),
@@ -116,8 +125,19 @@ impl Display for IRBooleanFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use IRBooleanFunction::*;
         let s = match self {
-            All { .. } => "all",
-            Any { .. } => "any",
+            All {
+                ignore_nulls: false,
+            } => "all",
+            All { ignore_nulls: true } => "all_ignore_nulls",
+            Any {
+                ignore_nulls: false,
+            } => "any",
+            Any { ignore_nulls: true } => "any_ignore_nulls",
+            IsEmpty {
+                ignore_nulls: false,
+            } => "is_empty",
+            IsEmpty { ignore_nulls: true } => "is_empty_ignore_nulls",
+            HasNulls => "has_nulls",
             IsNull => "is_null",
             IsNotNull => "is_not_null",
             IsFinite => "is_finite",
@@ -138,6 +158,7 @@ impl Display for IRBooleanFunction {
             IsIn { .. } => "is_in",
             #[cfg(feature = "is_close")]
             IsClose { .. } => "is_close",
+            IsSorted { .. } => "is_sorted",
             AnyHorizontal => "any_horizontal",
             AllHorizontal => "all_horizontal",
             Not => "not",

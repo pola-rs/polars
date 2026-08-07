@@ -73,6 +73,7 @@ def test_mean_overflow() -> None:
     assert np.isclose(result, expected)
 
     result = df.with_columns(pl.col("value").cast(pl.Int32)).get_column("value").mean()
+    assert isinstance(result, (int, float))
     assert np.isclose(result, expected)
 
 

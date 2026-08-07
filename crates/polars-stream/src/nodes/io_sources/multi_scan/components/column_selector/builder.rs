@@ -1,5 +1,5 @@
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn, PlHashMap};
+use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn as _, PlHashMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, LIST_ELEMENT_DEFAULT_ID};
@@ -305,6 +305,16 @@ impl ColumnSelectorBuilder {
             return attach_cast(CastOptions::NonStrict);
         }
 
+        if target_dtype.is_float() && incoming_dtype.is_integer() {
+            return if self.cast_columns_policy.integer_to_float_cast {
+                attach_cast(CastOptions::Overflowing)
+            } else {
+                mismatch_err(
+                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='allow-float')",
+                )
+            };
+        }
+
         if let (
             DataType::Datetime(target_unit, target_zone),
             DataType::Datetime(incoming_unit, incoming_zone),
@@ -334,19 +344,44 @@ impl ColumnSelectorBuilder {
 
                     (TimeUnit::Microseconds, TimeUnit::Milliseconds) => {
                         if !self.cast_columns_policy.datetime_microseconds_downcast {
-                            // TODO
                             return mismatch_err(
-                                "unimplemented: 'microsecond-downcast' in scan cast options",
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='microsecond-downcast')",
                             );
                         }
                     },
 
-                    _ => return mismatch_err(""),
+                    (TimeUnit::Microseconds, TimeUnit::Nanoseconds) => {
+                        if !self.cast_columns_policy.datetime_microseconds_upcast {
+                            return mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='microsecond-upcast')",
+                            );
+                        }
+                    },
+
+                    (TimeUnit::Milliseconds, TimeUnit::Microseconds | TimeUnit::Nanoseconds) => {
+                        if !self.cast_columns_policy.datetime_milliseconds_upcast {
+                            return mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='millisecond-upcast')",
+                            );
+                        }
+                    },
+
+                    // All distinct-unit pairs are covered above.
+                    _ => unreachable!(),
                 };
             }
 
+            // Upcasting to a finer unit (`target_unit < incoming_unit`) multiplies the values
+            // and can overflow, so use strict casting to raise if out-of-range. Downcasts and
+            // timezone-only casts only lose precision, so non-strict is fine.
+            let cast_options = if target_unit < incoming_unit {
+                CastOptions::Strict
+            } else {
+                CastOptions::NonStrict
+            };
+
             // Dtype differs and we are allowed to coerce
-            return attach_cast(CastOptions::NonStrict);
+            return attach_cast(cast_options);
         }
 
         if target_dtype.is_string() && incoming_dtype.is_categorical() {
@@ -416,7 +451,7 @@ impl ColumnSelectorBuilder {
                             "encountered extra struct field: {}, \
                             hint: specify this field in the schema, or pass \
                             cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
-                            &extra_col.name,
+                            extra_col.name,
                         ));
                     }
 
@@ -454,7 +489,7 @@ impl ColumnSelectorBuilder {
                                     return mismatch_err(&format!(
                                         "encountered missing struct field: {}, \
                                         hint: pass cast_options=pl.ScanCastOptions(missing_struct_fields='insert')",
-                                        &output_column.name,
+                                        output_column.name,
                                     ));
                                 },
                             }

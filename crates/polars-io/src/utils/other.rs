@@ -2,8 +2,9 @@ use std::io::Read;
 #[cfg(target_os = "emscripten")]
 use std::io::{Seek, SeekFrom};
 
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
-use polars_utils::mmap::{MMapSemaphore, MemSlice};
+use polars_utils::mmap::MMapSemaphore;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 
@@ -29,7 +30,7 @@ pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
         }
 
         let mmap = MMapSemaphore::new_from_file_with_options(file, options)?;
-        Ok(ReaderBytes::Owned(MemSlice::from_mmap(Arc::new(mmap))))
+        Ok(ReaderBytes::Owned(Buffer::from_owner(mmap)))
     } else {
         // we can get the bytes for free
         if reader.to_bytes().is_some() {

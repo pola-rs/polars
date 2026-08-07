@@ -80,7 +80,7 @@ fn flatten_par_impl<T: Send + Sync + Copy>(
     let mut out = Vec::with_capacity(len);
     let out_ptr = unsafe { SyncPtr::new(out.as_mut_ptr()) };
 
-    POOL.install(|| {
+    RAYON.install(|| {
         offsets.into_par_iter().enumerate().for_each(|(i, offset)| {
             let buf = bufs[i];
             let ptr: *mut T = out_ptr.get();
@@ -121,6 +121,6 @@ pub fn flatten_nullable<S: AsRef<[NullableIdxSize]> + Send + Sync>(
         validity.freeze()
     };
 
-    let (a, b) = POOL.join(a, b);
+    let (a, b) = RAYON.join(a, b);
     PrimitiveArray::from_vec(bytemuck::cast_vec::<_, IdxSize>(a)).with_validity(Some(b))
 }

@@ -22,18 +22,19 @@ pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_compute::rolling::QuantileMethod;
-use polars_core::POOL;
 use polars_core::error::feature_gated;
+#[cfg(feature = "pivot")]
+use polars_core::frame::PivotColumnNaming;
 use polars_core::prelude::*;
+use polars_core::query_result::QueryResult;
 use polars_io::RowIndex;
 use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_ir;
 use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
-use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
+use polars_ops::frame::{JoinBuildSide, JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
 use polars_utils::pl_str::PlSmallStr;
-use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 use crate::frame::cached_arenas::CachedArena;
 use crate::prelude::*;
@@ -190,9 +191,14 @@ impl LazyFrame {
         self
     }
 
-    #[cfg(feature = "new_streaming")]
-    pub fn with_new_streaming(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptFlags::NEW_STREAMING, toggle);
+    #[cfg(feature = "streaming")]
+    pub fn with_streaming(mut self, toggle: bool) -> Self {
+        self.opt_state.set(OptFlags::STREAMING, toggle);
+        self
+    }
+
+    pub fn with_gpu(mut self, toggle: bool) -> Self {
+        self.opt_state.set(OptFlags::GPU, toggle);
         self
     }
 
@@ -520,25 +526,24 @@ impl LazyFrame {
 
     pub(crate) fn optimize_with_scratch(
         self,
-        lp_arena: &mut Arena<IR>,
+        ir_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         scratch: &mut Vec<Node>,
     ) -> PolarsResult<Node> {
-        #[allow(unused_mut)]
-        let mut opt_state = self.opt_state;
-        let new_streaming = self.opt_state.contains(OptFlags::NEW_STREAMING);
-
+        let mut opt_flags = self.opt_state;
+        // Unset CSE
+        // This can be turned on again during ir-conversion.
+        #[allow(clippy::eq_op)]
         #[cfg(feature = "cse")]
-        if new_streaming {
-            // The new streaming engine can't deal with the way the common
-            // subexpression elimination adds length-incorrect with_columns.
-            opt_state &= !OptFlags::COMM_SUBEXPR_ELIM;
+        if opt_flags.contains(OptFlags::EAGER) {
+            opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
         }
+        let root = to_alp(self.logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
 
         let lp_top = optimize(
-            self.logical_plan,
-            opt_state,
-            lp_arena,
+            root,
+            opt_flags,
+            ir_arena,
             expr_arena,
             scratch,
             apply_scan_predicate_to_scan_ir,
@@ -626,82 +631,71 @@ impl LazyFrame {
     /// `engine`.
     ///
     /// The query is optimized prior to execution.
-    pub fn collect_with_engine(mut self, mut engine: Engine) -> PolarsResult<DataFrame> {
-        let payload = match &self.logical_plan {
-            DslPlan::Sink { payload, .. } => payload.clone(),
-            DslPlan::SinkMultiple { .. } => {
-                polars_ensure!(matches!(engine, Engine::Auto | Engine::Streaming), InvalidOperation: "lazy multisinks only supported on streaming engine");
-                feature_gated!("new_streaming", {
-                    let sink_multiple = self.with_new_streaming(true);
-                    let mut alp_plan = sink_multiple.to_alp_optimized()?;
-                    let result = polars_stream::run_query(
-                        alp_plan.lp_top,
-                        &mut alp_plan.lp_arena,
-                        &mut alp_plan.expr_arena,
-                    );
-                    return result.map(|_| DataFrame::empty());
-                })
-            },
-            _ => {
-                self.logical_plan = DslPlan::Sink {
-                    input: Arc::new(self.logical_plan),
-                    payload: SinkType::Memory,
-                };
-                SinkType::Memory
-            },
+    pub fn collect_with_engine(mut self, engine: Engine) -> PolarsResult<QueryResult> {
+        let engine = match engine {
+            Engine::Streaming => Engine::Streaming,
+            _ if std::env::var("POLARS_FORCE_STREAMING").as_deref() == Ok("1") => Engine::Streaming,
+            Engine::Auto => Engine::InMemory,
+            v => v,
         };
 
-        // Default engine for collect is InMemory, sink_* is Streaming
-        if engine == Engine::Auto {
-            engine = match payload {
-                #[cfg(feature = "new_streaming")]
-                SinkType::Callback { .. } | SinkType::File { .. } => Engine::Streaming,
-                _ => Engine::InMemory,
-            };
-        }
-        // Gpu uses some hacks to dispatch.
-        if engine == Engine::Gpu {
-            engine = Engine::InMemory;
-        }
-
-        #[cfg(feature = "new_streaming")]
+        if engine != Engine::Streaming
+            && std::env::var("POLARS_AUTO_STREAMING").as_deref() == Ok("1")
         {
-            if let Some(result) = self.try_new_streaming_if_requested() {
-                return result.map(|v| v.unwrap_single());
-            }
+            feature_gated!("streaming", {
+                if let Some(r) = self.clone()._collect_with_streaming_suppress_todo_panic() {
+                    return r;
+                }
+            })
         }
-
         match engine {
-            Engine::Auto => unreachable!(),
             Engine::Streaming => {
-                feature_gated!("new_streaming", self = self.with_new_streaming(true))
+                feature_gated!("streaming", self = self.with_streaming(true))
             },
-            _ => {},
+            Engine::Gpu => self = self.with_gpu(true),
+            _ => (),
         }
-        let mut alp_plan = self.clone().to_alp_optimized()?;
+
+        let mut ir_plan = self.to_alp_optimized()?;
+
+        ir_plan.ensure_root_node_is_sink();
 
         match engine {
-            Engine::Auto | Engine::Streaming => feature_gated!("new_streaming", {
-                let result = polars_stream::run_query(
-                    alp_plan.lp_top,
-                    &mut alp_plan.lp_arena,
-                    &mut alp_plan.expr_arena,
-                );
-                result.map(|v| v.unwrap_single())
+            Engine::Streaming => feature_gated!("streaming", {
+                polars_stream::run_query(
+                    ir_plan.lp_top,
+                    &mut ir_plan.lp_arena,
+                    &mut ir_plan.expr_arena,
+                )
             }),
-            Engine::Gpu => {
-                Err(polars_err!(InvalidOperation: "sink is not supported for the gpu engine"))
-            },
-            Engine::InMemory => {
+            Engine::InMemory | Engine::Gpu => {
+                if let IR::SinkMultiple { inputs } = ir_plan.root() {
+                    polars_ensure!(
+                        engine != Engine::Gpu,
+                        InvalidOperation:
+                        "collect_all is not supported for the gpu engine"
+                    );
+
+                    return create_multiple_physical_plans(
+                        inputs.clone().as_slice(),
+                        &mut ir_plan.lp_arena,
+                        &mut ir_plan.expr_arena,
+                        BUILD_STREAMING_EXECUTOR,
+                    )?
+                    .execute()
+                    .map(QueryResult::Multiple);
+                }
+
                 let mut physical_plan = create_physical_plan(
-                    alp_plan.lp_top,
-                    &mut alp_plan.lp_arena,
-                    &mut alp_plan.expr_arena,
+                    ir_plan.lp_top,
+                    &mut ir_plan.lp_arena,
+                    &mut ir_plan.expr_arena,
                     BUILD_STREAMING_EXECUTOR,
                 )?;
                 let mut state = ExecutionState::new();
-                physical_plan.execute(&mut state)
+                physical_plan.execute(&mut state).map(QueryResult::Single)
             },
+            Engine::Auto => unreachable!(),
         }
     }
 
@@ -716,105 +710,20 @@ impl LazyFrame {
 
     pub fn collect_all_with_engine(
         plans: Vec<DslPlan>,
-        mut engine: Engine,
+        engine: Engine,
         opt_state: OptFlags,
     ) -> PolarsResult<Vec<DataFrame>> {
         if plans.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Default engine for collect_all is InMemory
-        if engine == Engine::Auto {
-            engine = Engine::InMemory;
-        }
-        // Gpu uses some hacks to dispatch.
-        if engine == Engine::Gpu {
-            engine = Engine::InMemory;
-        }
-
-        let mut sink_multiple = LazyFrame {
+        LazyFrame {
             logical_plan: DslPlan::SinkMultiple { inputs: plans },
             opt_state,
             cached_arena: Default::default(),
-        };
-
-        #[cfg(feature = "new_streaming")]
-        {
-            if let Some(result) = sink_multiple.try_new_streaming_if_requested() {
-                return result.map(|v| v.unwrap_multiple());
-            }
         }
-
-        match engine {
-            Engine::Auto => unreachable!(),
-            Engine::Streaming => {
-                feature_gated!(
-                    "new_streaming",
-                    sink_multiple = sink_multiple.with_new_streaming(true)
-                )
-            },
-            _ => {},
-        }
-        let mut alp_plan = sink_multiple.to_alp_optimized()?;
-
-        if engine == Engine::Streaming {
-            feature_gated!("new_streaming", {
-                let result = polars_stream::run_query(
-                    alp_plan.lp_top,
-                    &mut alp_plan.lp_arena,
-                    &mut alp_plan.expr_arena,
-                );
-                return result.map(|v| v.unwrap_multiple());
-            });
-        }
-
-        let IR::SinkMultiple { inputs } = alp_plan.root() else {
-            unreachable!()
-        };
-
-        let mut multiplan = create_multiple_physical_plans(
-            inputs.clone().as_slice(),
-            &mut alp_plan.lp_arena,
-            &mut alp_plan.expr_arena,
-            BUILD_STREAMING_EXECUTOR,
-        )?;
-
-        match engine {
-            Engine::Gpu => polars_bail!(
-                InvalidOperation: "collect_all is not supported for the gpu engine"
-            ),
-            Engine::InMemory => {
-                // We don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
-                // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
-                // within bounds
-                let mut state = ExecutionState::new();
-                if let Some(mut cache_prefiller) = multiplan.cache_prefiller {
-                    cache_prefiller.execute(&mut state)?;
-                }
-                let out = POOL.install(|| {
-                    multiplan
-                        .physical_plans
-                        .chunks_mut(POOL.current_num_threads() * 3)
-                        .map(|chunk| {
-                            chunk
-                                .into_par_iter()
-                                .enumerate()
-                                .map(|(idx, input)| {
-                                    let mut input = std::mem::take(input);
-                                    let mut state = state.split();
-                                    state.branch_idx += idx;
-
-                                    let df = input.execute(&mut state)?;
-                                    Ok(df)
-                                })
-                                .collect::<PolarsResult<Vec<_>>>()
-                        })
-                        .collect::<PolarsResult<Vec<_>>>()
-                });
-                Ok(out?.into_iter().flatten().collect())
-            },
-            _ => unreachable!(),
-        }
+        .collect_with_engine(engine)
+        .map(|r| r.unwrap_multiple())
     }
 
     /// Execute all the lazy operations and collect them into a [`DataFrame`].
@@ -835,7 +744,11 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
-        self.collect_with_engine(Engine::InMemory)
+        self.collect_with_engine(Engine::Auto).map(|r| match r {
+            QueryResult::Single(df) => df,
+            // TODO: Should return query results
+            QueryResult::Multiple(_) => DataFrame::empty(),
+        })
     }
 
     /// Collect the query in batches.
@@ -862,9 +775,8 @@ impl LazyFrame {
             chunk_size,
         )?;
         let runner = move || {
-            // We use a tokio spawn_blocking here as it has a high blocking
-            // thread pool limit.
-            polars_io::pl_async::get_runtime().spawn_blocking(move || {
+            // We use spawn_blocking here as it has a high blocking thread pool limit.
+            polars_core::runtime::ASYNC.spawn_blocking(move || {
                 if let Err(e) = ldf.collect_with_engine(engine) {
                     runner_send.send(Err(e)).ok();
                 }
@@ -895,7 +807,7 @@ impl LazyFrame {
         let query_start = std::time::Instant::now();
         let (mut state, mut physical_plan, _) =
             self.prepare_collect_post_opt(false, Some(query_start), post_opt)?;
-        state.time_nodes(query_start);
+        state.time_nodes(query_start, query_start.elapsed());
         let out = physical_plan.execute(&mut state)?;
         let timer_df = state.finish_timer()?;
         Ok((out, timer_df))
@@ -937,55 +849,46 @@ impl LazyFrame {
         Ok(self)
     }
 
-    #[cfg(feature = "new_streaming")]
-    pub fn try_new_streaming_if_requested(
-        &mut self,
-    ) -> Option<PolarsResult<polars_stream::QueryResult>> {
-        let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
-        let force_new_streaming = std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1");
+    /// Collect with the streaming engine. Returns `None` if the streaming engine panics with a todo!.
+    #[cfg(feature = "streaming")]
+    fn _collect_with_streaming_suppress_todo_panic(
+        mut self,
+    ) -> Option<PolarsResult<polars_core::query_result::QueryResult>> {
+        self.opt_state |= OptFlags::STREAMING;
+        let mut ir_plan = match self.to_alp_optimized() {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+        };
 
-        if auto_new_streaming || force_new_streaming {
-            // Try to run using the new streaming engine, falling back
-            // if it fails in a todo!() error if auto_new_streaming is set.
-            let mut new_stream_lazy = self.clone();
-            new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
-            let mut alp_plan = match new_stream_lazy.to_alp_optimized() {
-                Ok(v) => v,
-                Err(e) => return Some(Err(e)),
-            };
+        ir_plan.ensure_root_node_is_sink();
 
-            let f = || {
-                polars_stream::run_query(
-                    alp_plan.lp_top,
-                    &mut alp_plan.lp_arena,
-                    &mut alp_plan.expr_arena,
-                )
-            };
+        let f = || {
+            polars_stream::run_query(
+                ir_plan.lp_top,
+                &mut ir_plan.lp_arena,
+                &mut ir_plan.expr_arena,
+            )
+        };
 
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
-                Ok(v) => return Some(v),
-                Err(e) => {
-                    // Fallback to normal engine if error is due to not being implemented
-                    // and auto_new_streaming is set, otherwise propagate error.
-                    if !force_new_streaming
-                        && auto_new_streaming
-                        && e.downcast_ref::<&str>()
-                            .map(|s| s.starts_with("not yet implemented"))
-                            .unwrap_or(false)
-                    {
-                        if polars_core::config::verbose() {
-                            eprintln!(
-                                "caught unimplemented error in new streaming engine, falling back to normal engine"
-                            );
-                        }
-                    } else {
-                        std::panic::resume_unwind(e);
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                // Fallback to normal engine if error is due to not being implemented
+                // and auto_streaming is set, otherwise propagate error.
+                if e.downcast_ref::<&str>()
+                    .is_some_and(|s| s.starts_with("not yet implemented"))
+                {
+                    if polars_core::config::verbose() {
+                        eprintln!(
+                            "caught unimplemented error in new streaming engine, falling back to normal engine"
+                        );
                     }
-                },
-            }
+                    None
+                } else {
+                    std::panic::resume_unwind(e)
+                }
+            },
         }
-
-        None
     }
 
     pub fn sink(
@@ -1011,14 +914,12 @@ impl LazyFrame {
                     base_path,
                     file_path_provider,
                     partition_strategy,
-                    finish_callback,
                     max_rows_per_file,
                     approximate_bytes_per_file,
                 } => SinkType::Partitioned(PartitionedSinkOptions {
                     base_path,
                     file_path_provider,
                     partition_strategy,
-                    finish_callback,
                     file_format,
                     unified_sink_args,
                     max_rows_per_file,
@@ -1486,6 +1387,7 @@ impl LazyFrame {
             nulls_equal,
             coalesce,
             maintain_order,
+            build_side,
         } = args;
 
         if slice.is_some() {
@@ -1501,7 +1403,8 @@ impl LazyFrame {
             .validate(validation)
             .join_nulls(nulls_equal)
             .coalesce(coalesce)
-            .maintain_order(maintain_order);
+            .maintain_order(maintain_order)
+            .build_side(build_side);
 
         if let Some(suffix) = suffix {
             builder = builder.suffix(suffix);
@@ -1518,6 +1421,18 @@ impl LazyFrame {
     /// representing the `join` operation.
     pub fn join_builder(self) -> JoinBuilder {
         JoinBuilder::new(self)
+    }
+
+    /// Gathers rows from this DataFrame based on the indices in idxs.
+    ///
+    /// idxs must only have a single column of indices.
+    pub fn gather(self, idxs: LazyFrame, null_on_oob: bool) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .gather(idxs.logical_plan, null_on_oob)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Add or replace a column, given as an expression, to a DataFrame.
@@ -1848,6 +1763,11 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Remove all the rows of the LazyFrame.
+    pub fn clear(self) -> LazyFrame {
+        self.slice(0, 0)
+    }
+
     /// Get the first row.
     ///
     /// Equivalent to `self.slice(0, 1)`.
@@ -1881,6 +1801,7 @@ impl LazyFrame {
         agg: Expr,
         maintain_order: bool,
         separator: PlSmallStr,
+        column_naming: PivotColumnNaming,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self
@@ -1893,6 +1814,7 @@ impl LazyFrame {
                 agg,
                 maintain_order,
                 separator,
+                column_naming,
             )
             .build();
         Self::from_logical_plan(lp, opt_state)
@@ -1991,7 +1913,10 @@ impl LazyFrame {
                 unified_scan_args,
                 ..
             } if unified_scan_args.row_index.is_none()
-                && !matches!(&**scan_type, FileScanDsl::Anonymous { .. }) =>
+                && !matches!(
+                    &**scan_type,
+                    FileScanDsl::Anonymous { .. } | FileScanDsl::ExpandedPaths { .. }
+                ) =>
             {
                 let DslPlan::Scan {
                     sources,
@@ -2036,16 +1961,28 @@ impl LazyFrame {
     }
 
     #[cfg(feature = "merge_sorted")]
-    pub fn merge_sorted<S>(self, other: LazyFrame, key: S) -> PolarsResult<LazyFrame>
+    pub fn merge_sorted<I, S>(
+        self,
+        other: LazyFrame,
+        key: I,
+        maintain_order: bool,
+    ) -> PolarsResult<LazyFrame>
     where
+        I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let key = key.into();
+        let key: Arc<[PlSmallStr]> = key.into_iter().map(Into::into).collect();
+
+        polars_ensure!(
+            !key.is_empty(),
+            ComputeError: "merge_sorted requires at least one key column"
+        );
 
         let lp = DslPlan::MergeSorted {
             input_left: Arc::new(self.logical_plan),
             input_right: Arc::new(other.logical_plan),
             key,
+            maintain_order,
         };
         Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
     }
@@ -2160,7 +2097,7 @@ impl LazyGroupBy {
             .collect::<Vec<_>>();
 
         self.agg([all().as_expr().head(n)]).explode_impl(
-            all() - by_name(keys.iter().cloned(), false),
+            all() - by_name(keys.iter().cloned(), false, false),
             ExplodeOptions {
                 empty_as_null: true,
                 keep_nulls: true,
@@ -2178,7 +2115,7 @@ impl LazyGroupBy {
             .collect::<Vec<_>>();
 
         self.agg([all().as_expr().tail(n)]).explode_impl(
-            all() - by_name(keys.iter().cloned(), false),
+            all() - by_name(keys.iter().cloned(), false, false),
             ExplodeOptions {
                 empty_as_null: true,
                 keep_nulls: true,
@@ -2233,6 +2170,7 @@ pub struct JoinBuilder {
     nulls_equal: bool,
     coalesce: JoinCoalesce,
     maintain_order: MaintainOrderJoin,
+    build_side: Option<JoinBuildSide>,
 }
 impl JoinBuilder {
     /// Create the `JoinBuilder` with the provided `LazyFrame` as the left table.
@@ -2250,6 +2188,7 @@ impl JoinBuilder {
             nulls_equal: false,
             coalesce: Default::default(),
             maintain_order: Default::default(),
+            build_side: None,
         }
     }
 
@@ -2336,6 +2275,12 @@ impl JoinBuilder {
         self
     }
 
+    /// Whether to prefer a specific build side.
+    pub fn build_side(mut self, build_side: Option<JoinBuildSide>) -> Self {
+        self.build_side = build_side;
+        self
+    }
+
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let opt_state = self.lf.opt_state;
@@ -2349,6 +2294,7 @@ impl JoinBuilder {
             nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
+            build_side: self.build_side,
         };
 
         let lp = self
@@ -2440,6 +2386,7 @@ impl JoinBuilder {
             nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
+            build_side: self.build_side,
         };
         let options = JoinOptions {
             allow_parallel: self.allow_parallel,
@@ -2461,11 +2408,11 @@ impl JoinBuilder {
 }
 
 pub const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorBuilder> = {
-    #[cfg(not(feature = "new_streaming"))]
+    #[cfg(not(feature = "streaming"))]
     {
         None
     }
-    #[cfg(feature = "new_streaming")]
+    #[cfg(feature = "streaming")]
     {
         Some(polars_stream::build_streaming_query_executor)
     }

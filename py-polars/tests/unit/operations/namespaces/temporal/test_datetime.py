@@ -865,7 +865,7 @@ def test_offset_by() -> None:
     assert df["date_min"].to_list() == expected_dates
 
 
-@pytest.mark.parametrize("time_zone", ["US/Central", None])
+@pytest.mark.parametrize("time_zone", ["America/Chicago", None])
 def test_offset_by_crossing_dst(time_zone: str | None) -> None:
     ser = pl.Series([datetime(2021, 11, 7)]).dt.replace_time_zone(time_zone)
     result = ser.dt.offset_by("1d")
@@ -1440,20 +1440,19 @@ def test_dt_mean_deprecated() -> None:
     [
         pl.Date,
         pl.Datetime("ms"),
-        pl.Datetime("ms", "EST"),
+        pl.Datetime("ms", "America/New_York"),
         pl.Datetime("us"),
-        pl.Datetime("us", "EST"),
+        pl.Datetime("us", "America/New_York"),
         pl.Datetime("ns"),
-        pl.Datetime("ns", "EST"),
+        pl.Datetime("ns", "America/New_York"),
     ],
 )
 @pytest.mark.parametrize(
     "value",
     [
-        # date(1677, 9, 22), # See test_literal_from_datetime.
+        date(1677, 9, 22),
         date(1970, 1, 1),
         date(2024, 2, 29),
-        date(2262, 4, 11),
     ],
 )
 def test_literal_from_date(
@@ -1473,29 +1472,22 @@ def test_literal_from_date(
     [
         pl.Date,
         pl.Datetime("ms"),
-        pl.Datetime("ms", "EST"),
+        pl.Datetime("ms", "America/New_York"),
         pl.Datetime("us"),
-        pl.Datetime("us", "EST"),
+        pl.Datetime("us", "America/New_York"),
         pl.Datetime("ns"),
-        pl.Datetime("ns", "EST"),
+        pl.Datetime("ns", "America/New_York"),
     ],
 )
 @pytest.mark.parametrize(
     "value",
     [
-        # Very old dates with a timezone like EST caused problems for the CI due
-        # to the IANA timezone database updating their historical offset, so
-        # these have been disabled for now. A mismatch between the timezone
-        # database that chrono_tz crate uses vs. the one that Python uses (which
-        # differs from platform to platform) will cause this to fail.
-        # datetime(1677, 9, 22),
-        # datetime(1677, 9, 22, tzinfo=ZoneInfo("EST")),
+        datetime(1677, 9, 22),
+        datetime(1677, 9, 22, tzinfo=ZoneInfo("America/New_York")),
         datetime(1970, 1, 1),
-        datetime(1970, 1, 1, tzinfo=ZoneInfo("EST")),
+        datetime(1970, 1, 1, tzinfo=ZoneInfo("America/New_York")),
         datetime(2024, 2, 29),
-        datetime(2024, 2, 29, tzinfo=ZoneInfo("EST")),
-        datetime(2262, 4, 11),
-        datetime(2262, 4, 11, tzinfo=ZoneInfo("EST")),
+        datetime(2024, 2, 29, tzinfo=ZoneInfo("America/New_York")),
     ],
 )
 def test_literal_from_datetime(
@@ -1567,3 +1559,40 @@ def test_out_of_range_date_year_11991() -> None:
     # is_leap_year should also return null for out-of-range dates
     result_leap = s.dt.is_leap_year()
     assert result_leap[0] is None
+
+
+@pytest.mark.parametrize(
+    "method", ["day", "month", "year", "hour", "minute", "second", "weekday"]
+)
+def test_dt_extract_with_null_tz_aware_27862(method: str) -> None:
+    # A null slot's backing value may be anything (only valid, initialized
+    # memory is guaranteed); pandas/pyarrow leave i64::MIN there. Extraction
+    # must skip the masked slot rather than convert it, which previously panicked.
+    pa = pytest.importorskip("pyarrow")
+    i64_min = -(2**63)
+    values = (1609459200000000).to_bytes(8, "little", signed=True) + i64_min.to_bytes(
+        8, "little", signed=True
+    )
+    arr = pa.Array.from_buffers(
+        pa.timestamp("us", tz="UTC"),
+        2,
+        [pa.py_buffer(bytes([0b01])), pa.py_buffer(values)],
+    )
+    s: pl.Series = pl.from_arrow(arr)  # type: ignore[assignment]
+    out = getattr(s.dt, method)()
+    assert out[1] is None
+    assert out[0] is not None
+
+
+@pytest.mark.parametrize("tz", [None, "UTC"])
+@pytest.mark.parametrize("method", ["day", "month", "year", "hour", "minute", "second"])
+def test_dt_extract_present_out_of_range_27862(method: str, tz: str | None) -> None:
+    # A *present* (non-null) timestamp that is out of the representable datetime
+    # range must yield null, not a garbage default value or a panic. Build it by
+    # casting a raw i64 that is far beyond chrono's range into a Datetime column.
+    s = pl.Series([9_000_000_000_000_000_000], dtype=pl.Int64).cast(
+        pl.Datetime("us", tz)
+    )
+    assert s.null_count() == 0  # the value is present, not masked
+    out = getattr(s.dt, method)()
+    assert out[0] is None

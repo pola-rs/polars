@@ -10,16 +10,6 @@ use crate::prelude::*;
 pub struct ListNameSpace(pub Expr);
 
 impl ListNameSpace {
-    #[cfg(feature = "list_any_all")]
-    pub fn any(self) -> Expr {
-        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::Any))
-    }
-
-    #[cfg(feature = "list_any_all")]
-    pub fn all(self) -> Expr {
-        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::All))
-    }
-
     #[cfg(feature = "list_drop_nulls")]
     pub fn drop_nulls(self) -> Expr {
         self.0
@@ -31,7 +21,7 @@ impl ListNameSpace {
         self,
         n: Expr,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Expr {
         self.0.map_binary(
@@ -50,7 +40,7 @@ impl ListNameSpace {
         self,
         fraction: Expr,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Expr {
         self.0.map_binary(
@@ -113,29 +103,6 @@ impl ListNameSpace {
             .map_unary(FunctionExpr::ListExpr(ListFunction::Sort(options)))
     }
 
-    /// Reverse every sublist
-    pub fn reverse(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::Reverse))
-    }
-
-    /// Keep only the unique values in every sublist.
-    pub fn unique(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::Unique(false)))
-    }
-
-    /// Keep only the unique values in every sublist.
-    pub fn unique_stable(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::Unique(true)))
-    }
-
-    pub fn n_unique(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::NUnique))
-    }
-
     /// Get items in every sublist by index.
     pub fn get(self, index: Expr, null_on_oob: bool) -> Expr {
         self.0.map_binary(
@@ -183,13 +150,17 @@ impl ListNameSpace {
         )
     }
 
-    /// Return the index of the minimal value of every sublist
+    /// Return the index of the minimal value of every sublist.
+    ///
+    /// In the case of a tie, this may return the index of any of the minimum values.
     pub fn arg_min(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::ListExpr(ListFunction::ArgMin))
     }
 
-    /// Return the index of the maximum value of every sublist
+    /// Return the index of the maximum value of every sublist.
+    ///
+    /// In the case of a tie, this may return the index of any of the maximum values.
     pub fn arg_max(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::ListExpr(ListFunction::ArgMax))

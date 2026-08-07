@@ -133,17 +133,16 @@ fn read_int96_timestamps() -> PolarsResult<()> {
     };
 
     // This data contains int96 timestamps in the year 1000 and 3000, which are out of range for
-    // Timestamp(TimeUnit::Nanoseconds) and will cause a panic in dev builds/overflow in release builds
-    // However, the code should work for the Microsecond/Millisecond time units
+    // Timestamp(TimeUnit::Nanoseconds). With checked arithmetic, out-of-range values return None
+    // instead of panicking. All time units should now work without error.
     for time_unit in [
+        arrow::datatypes::TimeUnit::Nanosecond,
         arrow::datatypes::TimeUnit::Microsecond,
         arrow::datatypes::TimeUnit::Millisecond,
         arrow::datatypes::TimeUnit::Second,
     ] {
-        parse(time_unit).expect("Should not error");
+        parse(time_unit).expect("Should not panic with saturating arithmetic");
     }
-    std::panic::catch_unwind(|| parse(arrow::datatypes::TimeUnit::Nanosecond))
-        .expect_err("Should be a panic error");
 
     Ok(())
 }

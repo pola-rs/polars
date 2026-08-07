@@ -6,7 +6,6 @@ use crate::prelude::AExpr;
 
 impl Hash for AExpr {
     // This hashes the variant, not the whole expression
-    // IMPORTANT: This is also used for equality in some cases with blake3.
     // Make sure that all attributes that are important for equality are hashed. Nodes don't have
     // to be hashed.
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -14,6 +13,7 @@ impl Hash for AExpr {
 
         match self {
             AExpr::Column(name) => name.hash(state),
+            #[cfg(feature = "dtype-struct")]
             AExpr::StructField(name) => name.hash(state),
             AExpr::Literal(lv) => lv.hash(state),
             AExpr::Function {
@@ -87,19 +87,20 @@ impl Hash for AExpr {
                 truthy: _,
                 falsy: _,
             } => {},
-            AExpr::AnonymousStreamingAgg {
+            AExpr::AnonymousAgg {
                 input: _,
                 fmt_str,
-                function: _,
+                function,
             } => {
+                function.hash(state);
                 fmt_str.hash(state);
-                // Invariant, fmt_str is unique. Only used in cloud.
             },
             AExpr::Eval {
                 expr: _,
                 evaluation: _,
                 variant,
             } => variant.hash(state),
+            #[cfg(feature = "dtype-struct")]
             AExpr::StructEval {
                 expr: _,
                 evaluation: _,

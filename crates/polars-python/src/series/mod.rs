@@ -22,12 +22,12 @@ mod map;
 mod numpy_ufunc;
 #[cfg(feature = "pymethods")]
 mod scatter;
-pub(crate) use import::import_schema_pycapsule;
+pub(crate) use import::{call_arrow_c_stream, import_schema_pycapsule, open_stream_capsule};
 use parking_lot::RwLock;
 use polars::prelude::{Column, Series};
 use pyo3::pyclass;
 
-#[pyclass(frozen)]
+#[pyclass(frozen, from_py_object)]
 #[repr(transparent)]
 pub struct PySeries {
     pub series: RwLock<Series>,

@@ -9,7 +9,10 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
+polars-async = { workspace = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true, features = ["gather"] }
+polars-config = { workspace = true }
 polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-row = { workspace = true }
@@ -32,7 +35,7 @@ itoa = { workspace = true }
 ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
 proptest = { workspace = true, optional = true }
-rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
+rand = { workspace = true, optional = true, features = ["std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true, optional = true }
@@ -41,6 +44,7 @@ schemars = { workspace = true, optional = true, features = ["uuid1"] }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 strum_macros = { workspace = true }
+tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread", "time", "sync"] }
 uuid = { workspace = true }
 xxhash-rust = { workspace = true }
 
@@ -139,6 +143,8 @@ python = ["polars-error/python"]
 serde = [
   "dep:serde",
   "bitflags/serde",
+  "polars-buffer/serde",
+  "polars-config/serde",
   "polars-schema/serde",
   "polars-utils/serde",
   "polars-compute/serde",

@@ -58,6 +58,53 @@ def test_is_unique_struct() -> None:
     ).is_duplicated().to_list() == [True, False, True]
 
 
+def test_is_unique_list() -> None:
+    # Expression API (original issue)
+    df = pl.DataFrame({"a": [[0, 1], [0, 1]]})
+    result = df.select(pl.col("a").is_unique())
+    assert result["a"].to_list() == [False, False]
+
+    # Basic list uniqueness
+    s = pl.Series("a", [[1, 2], [3, 4], [1, 2]])
+    assert s.is_unique().to_list() == [False, True, False]
+    assert s.is_duplicated().to_list() == [True, False, True]
+
+    # All unique
+    s = pl.Series("a", [[1, 2], [3, 4], [5, 6]])
+    assert s.is_unique().to_list() == [True, True, True]
+
+    # All duplicates
+    s = pl.Series("a", [[1, 2], [1, 2], [1, 2]])
+    assert s.is_unique().to_list() == [False, False, False]
+
+    # With nulls
+    s = pl.Series("a", [[1, 2], None, [1, 2], None])
+    assert s.is_unique().to_list() == [False, False, False, False]
+
+    # Empty lists
+    s = pl.Series("a", [[], [], [1]])
+    assert s.is_unique().to_list() == [False, False, True]
+
+    # Nested lists
+    s = pl.Series("a", [[[1, 2]], [[1, 2]], [[3, 4]]])
+    assert s.is_unique().to_list() == [False, False, True]
+
+
+def test_is_unique_array() -> None:
+    # Basic array uniqueness
+    s = pl.Series("a", [[1, 2, 3], [4, 5, 6], [1, 2, 3]], dtype=pl.Array(pl.Int64, 3))
+    assert s.is_unique().to_list() == [False, True, False]
+    assert s.is_duplicated().to_list() == [True, False, True]
+
+    # All unique
+    s = pl.Series("a", [[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=pl.Array(pl.Int64, 3))
+    assert s.is_unique().to_list() == [True, True, True]
+
+    # All duplicates
+    s = pl.Series("a", [[1, 2, 3], [1, 2, 3], [1, 2, 3]], dtype=pl.Array(pl.Int64, 3))
+    assert s.is_unique().to_list() == [False, False, False]
+
+
 def test_is_duplicated_series() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
     assert_series_equal(s.is_duplicated(), pl.Series("a", [False, True, True, False]))

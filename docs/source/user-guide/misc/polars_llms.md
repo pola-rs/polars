@@ -7,21 +7,25 @@ These approaches have been developed by the Polars community through testing mod
 various inputs. If you find additional effective approaches for generating Polars code from LLMs,
 please raise a [pull request](https://github.com/pola-rs/polars/pulls).
 
+## Polars skill
+
+The official [Polars skill for Agents](https://github.com/polars-inc/skills) loads Polars expertise
+directly into the agent so it writes more idiomatic Polars code and can translate pandas code to
+Polars. See the repository for installation instructions.
+
 ## Polars MCP server
 
-The new remote Model Context Protocol (MCP) server for Polars provides access to the latest version
-of the official Polars and Polars Cloud documentation. The server enables LLMs to query the user
-guide and API references directly, making it easier to get more accurate answers about DataFrame
-operations, expressions, lazy evaluation, and cloud deployments. The MCP server delivers up-to-date
-documentation to help you rewrite existing queries from other libraries to Polars or work with
-Polars more efficiently.
+The new remote Model Context Protocol (MCP) server for Polars provides access to the official Polars
+and Polars Cloud documentation. The server enables LLMs to query the user guide and API references
+directly, making it easier to get more accurate answers about DataFrame operations, expressions,
+lazy evaluation, and cloud deployments.
 
 ```json
 {
   "mcpServers": {
     "ask_polars": {
       "command": "npx",
-      "args": ["mcp-remote", "https://mcp.polars.workers.dev/sse"]
+      "args": ["mcp-remote", "https://mcp.pola.rs/mcp"]
     }
   }
 }

@@ -62,19 +62,22 @@ impl DataFrame {
                 let columns = self
                     .materialized_column_iter()
                     // first cast to supertype before casting to physical to ensure units are correct
-                    .map(|s| s.cast(dtype).unwrap().cast(&phys_dtype).unwrap())
-                    .collect::<Vec<_>>();
+                    .map(|s| s.cast(dtype)?.cast(&phys_dtype))
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
                 // this is very expensive. A lot of cache misses here.
                 // This is the part that is performance critical.
-                for s in columns {
-                    polars_ensure!(s.dtype() == &phys_dtype, ComputeError: "cannot transpose with supertype: {}", dtype);
-                    s.iter().zip(buffers.iter_mut()).for_each(|(av, buf)| {
+                for series in &columns {
+                    polars_ensure!(
+                        series.dtype() == &phys_dtype,
+                        ComputeError: "cannot transpose with supertype: {}", dtype
+                    );
+                    for (av, buf) in series.iter().zip(buffers.iter_mut()) {
                         // SAFETY: we checked the type and we borrow
                         unsafe {
                             buf.add_unchecked_borrowed_physical(&av);
                         }
-                    });
+                    }
                 }
                 cols_t.extend(buffers.into_iter().zip(names_out).map(|(buf, name)| {
                     // SAFETY: we are casting back to the supertype
@@ -122,10 +125,7 @@ impl DataFrame {
                     let new_names = self.column(name.as_str()).and_then(|x| x.str())?;
                     polars_ensure!(new_names.null_count() == 0, ComputeError: "Column with new names can't have null values");
                     df = Cow::Owned(self.drop(name.as_str())?);
-                    new_names
-                        .into_no_null_iter()
-                        .map(PlSmallStr::from_str)
-                        .collect()
+                    new_names.no_null_iter().map(PlSmallStr::from_str).collect()
                 },
                 Either::Right(names) => {
                     polars_ensure!(names.len() == self.height(), ShapeMismatch: "Length of new column names must be the same as the row count");
@@ -186,7 +186,7 @@ pub(super) fn numeric_transpose<T: PolarsNumericType>(
     let values_buf_ptr = &mut values_buf as *mut Vec<Vec<T::Native>> as usize;
     let validity_buf_ptr = &mut validity_buf as *mut Vec<Vec<bool>> as usize;
 
-    POOL.install(|| {
+    RAYON.install(|| {
         cols.iter()
             .map(Column::as_materialized_series)
             .enumerate()
@@ -259,7 +259,7 @@ pub(super) fn numeric_transpose<T: PolarsNumericType>(
             );
             ChunkedArray::<T>::with_chunk(name.clone(), arr).into_column()
         });
-    POOL.install(|| cols_t.par_extend(par_iter));
+    RAYON.install(|| cols_t.par_extend(par_iter));
 }
 
 #[cfg(test)]

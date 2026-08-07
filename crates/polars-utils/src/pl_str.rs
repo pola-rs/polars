@@ -314,3 +314,42 @@ pub fn unique_column_name() -> PlSmallStr {
     let idx = COUNTER.fetch_add(1);
     format_pl_smallstr!("_POLARS_TMP_{idx}")
 }
+
+#[cfg(feature = "python")]
+mod _python_impl {
+    use std::convert::Infallible;
+
+    use pyo3::pybacked::PyBackedStr;
+    use pyo3::types::PyString;
+    use pyo3::{Borrowed, Bound, FromPyObject, IntoPyObject, PyAny, PyErr, PyResult};
+
+    use super::PlSmallStr;
+
+    impl<'py> IntoPyObject<'py> for PlSmallStr {
+        type Target = PyString;
+        type Output = Bound<'py, Self::Target>;
+        type Error = Infallible;
+
+        fn into_pyobject(self, py: pyo3::Python<'py>) -> Result<Self::Output, Self::Error> {
+            self.as_str().into_pyobject(py)
+        }
+    }
+
+    impl<'py> IntoPyObject<'py> for &PlSmallStr {
+        type Target = PyString;
+        type Output = Bound<'py, Self::Target>;
+        type Error = Infallible;
+
+        fn into_pyobject(self, py: pyo3::Python<'py>) -> Result<Self::Output, Self::Error> {
+            self.as_str().into_pyobject(py)
+        }
+    }
+
+    impl<'a, 'py> FromPyObject<'a, 'py> for PlSmallStr {
+        type Error = PyErr;
+
+        fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+            Ok((&*ob.extract::<PyBackedStr>()?).into())
+        }
+    }
+}

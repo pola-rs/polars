@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
@@ -5,6 +6,7 @@ use arrow_format::ipc::FooterRef;
 use arrow_format::ipc::planus::ReadAsRoot;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
+use polars_utils::bool::UnsafeBool;
 
 use super::super::{ARROW_MAGIC_V1, ARROW_MAGIC_V2, CONTINUATION_MARKER};
 use super::common::*;
@@ -23,6 +25,9 @@ pub struct FileMetadata {
 
     /// The custom metadata that is read from the schema
     pub custom_schema_metadata: Option<Arc<Metadata>>,
+
+    /// Custom metadata from footer.
+    pub custom_metadata: Option<Arc<Metadata>>,
 
     /// The files' [`IpcSchema`]
     pub ipc_schema: IpcSchema,
@@ -78,6 +83,7 @@ pub(crate) fn get_dictionary_batch<'a>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn read_dictionary_block<R: Read + Seek>(
     reader: &mut R,
     metadata: &FileMetadata,
@@ -88,6 +94,7 @@ pub fn read_dictionary_block<R: Read + Seek>(
     dictionaries: &mut Dictionaries,
     message_scratch: &mut Vec<u8>,
     dictionary_scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<()> {
     let offset: u64 = if force_zero_offset {
         0
@@ -114,6 +121,7 @@ pub fn read_dictionary_block<R: Read + Seek>(
         reader,
         offset + length,
         dictionary_scratch,
+        checked,
     )
 }
 
@@ -123,6 +131,7 @@ pub fn read_file_dictionaries<R: Read + Seek>(
     reader: &mut R,
     metadata: &FileMetadata,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<Dictionaries> {
     let mut dictionaries = Default::default();
 
@@ -143,6 +152,7 @@ pub fn read_file_dictionaries<R: Read + Seek>(
             &mut dictionaries,
             &mut message_scratch,
             scratch,
+            checked,
         )?;
     }
     Ok(dictionaries)
@@ -258,6 +268,22 @@ pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMet
     let ipc_schema = deserialize_schema_ref_from_footer(footer)?;
     let (schema, ipc_schema, custom_schema_metadata) = fb_to_schema(ipc_schema)?;
 
+    let custom_metadata = footer
+        .custom_metadata()?
+        .map(|md| {
+            md.iter()
+                .map(|kv_pair| {
+                    let kv_pair = kv_pair?;
+                    Ok((
+                        kv_pair.key()?.unwrap_or("").into(),
+                        kv_pair.value()?.unwrap_or("").into(),
+                    ))
+                })
+                .collect::<PolarsResult<BTreeMap<_, _>>>()
+        })
+        .transpose()?
+        .map(Arc::new);
+
     Ok(FileMetadata {
         schema: Arc::new(schema),
         ipc_schema,
@@ -265,6 +291,7 @@ pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMet
         dictionaries,
         size,
         custom_schema_metadata: custom_schema_metadata.map(Arc::new),
+        custom_metadata,
     })
 }
 
@@ -349,6 +376,7 @@ pub fn read_batch<R: Read + Seek>(
     force_zero_offset: bool,
     message_scratch: &mut Vec<u8>,
     data_scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     let block = metadata.blocks[index];
 
@@ -382,5 +410,6 @@ pub fn read_batch<R: Read + Seek>(
         reader,
         offset + length,
         data_scratch,
+        checked,
     )
 }

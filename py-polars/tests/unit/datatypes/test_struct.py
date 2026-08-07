@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import operator
+import re
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import TYPE_CHECKING, Any
@@ -12,7 +13,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import DuplicateError, InvalidOperationError
+from polars.exceptions import ComputeError, DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -265,30 +266,34 @@ def test_from_dicts_struct() -> None:
 @pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
-    assert df.to_series().list.to_struct().to_list() == [
-        {"field_0": 1, "field_1": 2, "field_2": 3},
-        {"field_0": 1, "field_1": 2, "field_2": None},
-    ]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert df.to_series().list.to_struct().to_list() == [
+            {"field_0": 1, "field_1": 2, "field_2": 3},
+            {"field_0": 1, "field_1": 2, "field_2": None},
+        ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    assert df.to_series().list.to_struct(
-        fields=lambda idx: f"col_name_{idx}"
-    ).to_list() == [
-        {"col_name_0": 1, "col_name_1": 2},
-        {"col_name_0": 1, "col_name_1": 2},
-    ]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert df.to_series().list.to_struct(
+            fields=lambda idx: f"col_name_{idx}"
+        ).to_list() == [
+            {"col_name_0": 1, "col_name_1": 2},
+            {"col_name_0": 1, "col_name_1": 2},
+        ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    assert df.to_series().list.to_struct("max_width").to_list() == [
-        {"field_0": 1, "field_1": 2, "field_2": None},
-        {"field_0": 1, "field_1": 2, "field_2": 3},
-    ]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert df.to_series().list.to_struct("max_width").to_list() == [
+            {"field_0": 1, "field_1": 2, "field_2": None},
+            {"field_0": 1, "field_1": 2, "field_2": 3},
+        ]
 
     # set upper bound
     df = pl.DataFrame({"lists": [[1, 1, 1], [0, 1, 0], [1, 0, 0]]})
-    assert df.lazy().select(pl.col("lists").list.to_struct(upper_bound=3)).unnest(
-        "lists"
-    ).sum().collect().columns == ["field_0", "field_1", "field_2"]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert df.lazy().select(pl.col("lists").list.to_struct(upper_bound=3)).unnest(
+            "lists"
+        ).sum().collect().columns == ["field_0", "field_1", "field_2"]
 
 
 def test_sort_df_with_list_struct() -> None:
@@ -502,7 +507,8 @@ def test_list_of_struct_unique() -> None:
     assert {"a": 1, "b": 11} in unique_el
 
 
-def test_nested_explode_4026() -> None:
+@pytest.mark.parametrize("empty_as_null", [False, True])
+def test_nested_explode_4026(empty_as_null: bool) -> None:
     df = pl.DataFrame(
         {
             "data": [
@@ -515,7 +521,7 @@ def test_nested_explode_4026() -> None:
         }
     )
 
-    assert df.explode("data").to_dict(as_series=False) == {
+    assert df.explode("data", empty_as_null=empty_as_null).to_dict(as_series=False) == {
         "data": [
             {"account_id": 10, "values": [1, 2]},
             {"account_id": 11, "values": [10, 20]},
@@ -955,9 +961,13 @@ def test_struct_wildcard_expansion_and_exclude() -> None:
     )
 
     # ensure wildcard expansion is on input
-    assert df.lazy().select(
-        pl.col("meta_data").struct.with_fields("*")
-    ).collect().schema["meta_data"].fields == [  # type: ignore[attr-defined]
+    schema_dtype = (
+        df.lazy()
+        .select(pl.col("meta_data").struct.with_fields("*"))
+        .collect()
+        .schema["meta_data"]
+    )
+    assert schema_dtype.fields == [  # type: ignore[attr-defined]
         pl.Field("system_data", pl.String),
         pl.Field("user_data", pl.String),
         pl.Field("id", pl.Int64),
@@ -1077,7 +1087,7 @@ def test_struct_chunked_zip_18119() -> None:
     b = pl.concat([b_dfs[4], b_dfs[1]])
     mask = pl.concat([mask_dfs[3], mask_dfs[2]])
 
-    df = pl.concat([a, b, mask], how="horizontal")
+    df = pl.concat([a, b, mask], how="horizontal", strict=True)
 
     assert_frame_equal(
         df.select(pl.when(pl.col.f).then(pl.col.a).otherwise(pl.col.b)),
@@ -1093,6 +1103,17 @@ def test_struct_null_zip() -> None:
     )
 
 
+def test_rename_fields_len_mismatch_deprecated() -> None:
+    s = pl.Series("s", [{"a": 1, "b": 2}])
+    s.struct.rename_fields(["x"])  # Should not warn
+
+    msg = "struct.rename_fields() argument has a different number of fields than the struct it operates on"
+    with pytest.warns(DeprecationWarning, match=re.escape(f"{msg} (1 vs 2)")):
+        s.struct.rename_fields(["x"])
+    with pytest.warns(DeprecationWarning, match=re.escape(f"{msg} (3 vs 2)")):
+        s.struct.rename_fields(["x", "y", "z"])
+
+
 @pytest.mark.may_fail_cloud  # reason: ZFS
 @pytest.mark.parametrize("size", [0, 1, 2, 5, 9, 13, 42])
 def test_zfs_construction(size: int) -> None:
@@ -1106,6 +1127,38 @@ def test_zfs_unnest(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([])).struct.unnest()
     assert a.height == size
     assert a.width == 0
+
+
+def test_unnest_zero_field_struct_preserves_height() -> None:
+    df = pl.Series("a", [{}, {}, {}, {}, {}], pl.Struct([])).to_frame()
+    result = df.unnest("a")
+    assert result.shape == (5, 0)
+
+
+def test_unnest_all_struct_columns() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [{"x": 1, "y": 2}, {"x": 3, "y": 4}],
+            "c": ["foo", "bar"],
+            "d": [{"z": 5}, {"z": 6}],
+        }
+    )
+    # Unnest all struct columns by calling without arguments
+    result = df.unnest()
+    assert result.columns == ["a", "x", "y", "c", "z"]
+    assert result["x"].to_list() == [1, 3]
+    assert result["y"].to_list() == [2, 4]
+    assert result["z"].to_list() == [5, 6]
+
+    # LazyFrame should work the same way
+    result_lazy = df.lazy().unnest().collect()
+    assert_frame_equal(result, result_lazy)
+
+    # Unnesting when there are no struct columns should return the same dataframe
+    df_no_structs = pl.DataFrame({"a": [1, 2], "b": ["foo", "bar"]})
+    result = df_no_structs.unnest()
+    assert_frame_equal(result, df_no_structs)
 
 
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
@@ -1144,11 +1197,7 @@ def test_zfs_struct_fns() -> None:
     a = pl.Series("a", [{}], pl.Struct([]))
 
     assert a.struct.fields == []
-
-    # @TODO: This should really throw an error as per #19132
-    assert a.struct.rename_fields(["a"]).struct.unnest().shape == (1, 0)
     assert a.struct.rename_fields([]).struct.unnest().shape == (1, 0)
-
     assert_series_equal(a.struct.json_encode(), pl.Series("a", ["{}"], pl.String))
 
 
@@ -1192,11 +1241,12 @@ def test_list_to_struct_19208() -> None:
             ]
         }
     )
-    assert pl.concat([df[0], df[1], df[2]]).select(
-        pl.col("nested").list.to_struct(upper_bound=1)
-    ).to_dict(as_series=False) == {
-        "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
-    }
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert pl.concat([df[0], df[1], df[2]]).select(
+            pl.col("nested").list.to_struct(upper_bound=1)
+        ).to_dict(as_series=False) == {
+            "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
+        }
 
 
 def test_struct_reverse_outer_validity_19445() -> None:
@@ -1310,7 +1360,8 @@ def test_zip_outer_validity_infinite_recursion_21267() -> None:
     )
 
 
-def test_struct_arithmetic_broadcast_21376() -> None:
+@pytest.mark.parametrize("empty_as_null", [False, True])
+def test_struct_arithmetic_broadcast_21376(empty_as_null: bool) -> None:
     df = pl.DataFrame(
         {
             "struct1": [{"low": 1, "mid": 2, "up": 3}],
@@ -1326,7 +1377,7 @@ def test_struct_arithmetic_broadcast_21376() -> None:
     )
     out = (
         df.with_row_index()
-        .explode("list_struct")
+        .explode("list_struct", empty_as_null=empty_as_null)
         .select((pl.col("struct1") + pl.col("list_struct")).alias("add_struct"))
     )
     assert_frame_equal(out, expected)
@@ -1399,7 +1450,7 @@ def test_struct_equal_missing_null_25360() -> None:
     q1 = lf.select(a1=pl.col.a.slice(1, 1).first())
     q2 = lf.group_by(pl.lit(1)).agg(a2=pl.col.a.slice(1, 1).first()).drop("literal")
 
-    q = pl.concat([q1, q2], how="horizontal").collect()
+    q = pl.concat([q1, q2], how="horizontal", strict=True).collect()
 
     result = q.select(
         eq=pl.col.a1.eq(pl.col.a2),
@@ -1846,3 +1897,122 @@ def test_struct_with_fields_order_observe() -> None:
         .select(pl.col.a.value_counts().struct.with_fields(pl.field("count") * 2))
     )
     assert "SORT" not in q.explain()
+
+
+def test_join_general_error() -> None:
+    lhs = pl.DataFrame({"x": [1, 2, 3]})
+    rhs = pl.DataFrame({"x": ["a", "b", "c"]})
+
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match=r"datatypes of join keys don't match - `x`: i64 on left does not match `x`: str on right",
+    ):
+        lhs.join(rhs, on="x")
+
+
+def test_join_struct_error_lazy_26276() -> None:
+    lhs = pl.DataFrame({"x": [{"a": 1, "b": 2}]}).lazy()
+    rhs = pl.DataFrame({"x": [{"b": 2, "a": 1}]}).lazy()
+
+    with pytest.raises(pl.exceptions.SchemaError, match=r"struct \{.*\}"):
+        lhs.join(rhs, on="x").collect()
+
+
+def test_from_dicts_mixed_struct_schema_raises_not_panics_27170() -> None:
+    records = [{"id": f"id_{i}", "vals": [{"value": i}]} for i in range(200)]
+    records += [{"id": f"bad_{i}", "vals": [{"value": {"key": i}}]} for i in range(5)]
+
+    with pytest.raises(ComputeError):
+        pl.DataFrame(records)
+
+
+def test_with_fields_optimize_expr_fused_multiply_add_27233() -> None:
+    df = pl.DataFrame({"s": [{"x": 10, "y": 11}, {"x": 20, "y": 21}]})
+
+    out = df.select(
+        pl.col.s.struct.with_fields(fma=pl.field("x") * pl.lit(2) + pl.field("y"))
+    )
+    expected = pl.concat(
+        [df.unnest("s"), pl.DataFrame({"fma": [31, 61]})],
+        how="horizontal",
+        strict=True,
+    )
+    assert_frame_equal(out.unnest("s"), expected)
+
+
+def test_with_fields_agglist_in_over_unary_28674() -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": ["a", "a", "b", "a", "b", "b"],
+            "x": [1, 2, 10, 3, 20, 30],
+        }
+    )
+
+    s = pl.struct(v=pl.col("x").cum_sum())
+    ext = s.struct.with_fields(pl.field("v").abs().alias("abs"))
+
+    out = lf.select("g", ext.over("g")).collect()
+
+    ref = pl.struct(s.struct.field("v"), s.struct.field("v").abs().alias("abs"))
+    expected = lf.select("g", ref.over("g")).collect()
+
+    assert_frame_equal(out, expected)
+
+
+def test_with_fields_agglist_in_over_binary_28674() -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": ["a", "a", "b", "a", "b", "b"],
+            "x": [1, 2, 10, 3, 20, 30],
+        }
+    )
+
+    s = pl.struct(v=pl.col("x").cum_sum())
+    ext = s.struct.with_fields((pl.field("v") * 2).alias("double"))
+
+    out = lf.select("g", ext.over("g")).collect()
+
+    ref = pl.struct(s.struct.field("v"), (s.struct.field("v") * 2).alias("double"))
+    expected = lf.select("g", ref.over("g")).collect()
+
+    assert_frame_equal(out, expected)
+
+
+def test_struct_with_fields_agglist_nulls_28674() -> None:
+
+    lf = pl.LazyFrame({"g": ["a", "b", "a", "b"], "x": [1, None, None, 20]})
+    s = pl.struct(v=pl.col("x").cum_sum())
+    ext = s.struct.with_fields(pl.field("v").abs().alias("abs"))
+
+    out = lf.select("g", ext.over("g").alias("m")).collect().unnest("m")
+    expected = pl.DataFrame(
+        {
+            "g": ["a", "b", "a", "b"],
+            "v": [1, None, None, 20],
+            "abs": [1, None, None, 20],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        lambda x: x.sqrt(),
+        lambda x: x.cbrt(),
+        lambda x: x.pct_change(),
+        lambda x: x.ewm_mean(alpha=0.5),
+        lambda x: x.ewm_std(alpha=0.5),
+        lambda x: x.ewm_var(alpha=0.5),
+        lambda x: x.ewm_sum(alpha=0.5),
+    ],
+    ids=["sqrt", "cbrt", "pct_change", "ewm_mean", "ewm_std", "ewm_var", "ewm_sum"],
+)
+def test_numeric_op_on_struct_raises_28563(op: Any) -> None:
+    with pytest.raises(InvalidOperationError):
+        op(pl.Series("a", [{"x": 1}]))
+
+    lf = pl.LazyFrame({"meta": [{"id": 1}, {"id": 2}]})
+    with pytest.raises(InvalidOperationError):
+        lf.select(op(pl.col("meta"))).collect()

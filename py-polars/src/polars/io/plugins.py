@@ -170,7 +170,7 @@ def _defer(
         with_columns: list[str] | None,
         predicate: Expr | None,
         n_rows: int | None,
-        batch_size: int | None,
+        batch_size: int | None,  # noqa: ARG001
     ) -> Iterator[DataFrame]:
         lf = function().lazy()
         if with_columns is not None:

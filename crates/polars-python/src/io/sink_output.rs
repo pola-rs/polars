@@ -1,9 +1,11 @@
-use polars::prelude::sink2::{FileProviderFunction, FileProviderType};
-use polars::prelude::{PartitionStrategy, PlRefPath, SinkDestination, SpecialEq};
+use polars::prelude::file_provider::{FileProviderFunction, FileProviderType, IcebergPathProvider};
+use polars::prelude::{PartitionStrategy, PlRefPath, PlSmallStr, SinkDestination, SpecialEq};
 use polars_utils::IdxSize;
 use polars_utils::python_function::PythonObject;
+use pyo3::exceptions::PyValueError;
 use pyo3::intern;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 
 use crate::PyExpr;
 use crate::prelude::Wrap;
@@ -60,7 +62,6 @@ impl PyFileSinkDestination<'_> {
                 keys: partition_by.into_iter().map(|x| x.inner).collect(),
                 include_keys: include_key.unwrap_or(true),
                 keys_pre_grouped: false,
-                per_partition_sort_by: vec![],
             }
         } else {
             // Should be validated on Python side
@@ -69,15 +70,41 @@ impl PyFileSinkDestination<'_> {
             PartitionStrategy::FileSize
         };
 
+        let file_path_provider = if let Some(file_path_provider) = file_path_provider {
+            let py = self.0.py();
+
+            Some(
+                match file_path_provider.getattr(py, intern!(py, "pl_path_provider_id")) {
+                    Ok(v) => match &*v.extract::<PyBackedStr>(py)? {
+                        "iceberg" => {
+                            let extension: PyBackedStr = file_path_provider
+                                .getattr(py, intern!(py, "extension"))?
+                                .extract(py)?;
+
+                            FileProviderType::Iceberg(IcebergPathProvider {
+                                extension: PlSmallStr::from_str(&extension),
+                                file_part_prefix: String::new(),
+                            })
+                        },
+                        id => {
+                            return Err(PyValueError::new_err(format!(
+                                "unknown pl_path_provider_id: '{id}'"
+                            )));
+                        },
+                    },
+                    Err(_) => FileProviderType::Function(FileProviderFunction::Python(
+                        SpecialEq::new(PythonObject(file_path_provider).into()),
+                    )),
+                },
+            )
+        } else {
+            None
+        };
+
         Ok(SinkDestination::Partitioned {
             base_path: base_path.0,
-            file_path_provider: file_path_provider.map(|x| {
-                FileProviderType::Function(FileProviderFunction::Python(SpecialEq::new(
-                    PythonObject(x).into(),
-                )))
-            }),
+            file_path_provider,
             partition_strategy,
-            finish_callback: None,
             max_rows_per_file: max_rows_per_file.unwrap_or(IdxSize::MAX),
             approximate_bytes_per_file,
         })

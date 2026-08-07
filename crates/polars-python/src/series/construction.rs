@@ -2,12 +2,11 @@ use std::borrow::Cow;
 
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::BitmapBuilder;
-use arrow::buffer::Buffer;
-use arrow::storage::SharedStorage;
 use arrow::types::NativeType;
 use num_traits::AsPrimitive;
 use numpy::{Element, PyArray1, PyArrayMethods, PyUntypedArrayMethods};
 use polars::prelude::*;
+use polars_buffer::{Buffer, SharedStorage};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
@@ -384,22 +383,21 @@ impl PySeries {
     fn from_arrow(name: &str, array: &Bound<PyAny>) -> PyResult<Self> {
         let arr = array_to_rust(array)?;
 
-        match arr.dtype() {
-            ArrowDataType::LargeList(_) => {
-                let array = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
-                let fast_explode = array.offsets().as_slice().windows(2).all(|w| w[0] != w[1]);
+        // Compute first. The physical conversion retains offsets so the flag remains valid.
+        let fast_explode = arr
+            .as_any()
+            .downcast_ref::<LargeListArray>()
+            .is_some_and(|a| a.offsets().as_slice().windows(2).all(|w| w[0] != w[1]));
 
-                let mut out = ListChunked::with_chunk(name.into(), array.clone());
-                if fast_explode {
-                    out.set_fast_explode()
-                }
-                Ok(out.into_series().into())
-            },
-            _ => {
-                let series: Series =
-                    Series::try_new(name.into(), arr).map_err(PyPolarsErr::from)?;
-                Ok(series.into())
-            },
+        // Normal conversion handling nested types recursively.
+        let mut series: Series = Series::try_new(name.into(), arr).map_err(PyPolarsErr::from)?;
+
+        if fast_explode && series.dtype().is_list() {
+            let mut ca = series.list().map_err(PyPolarsErr::from)?.clone();
+            ca.set_fast_explode();
+            series = ca.into_series();
         }
+
+        Ok(series.into())
     }
 }

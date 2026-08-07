@@ -269,7 +269,7 @@ def test_list_arithmetic_values(
 
     l, r, o = materialize_series(True, 3, 0)  # noqa: E741
     if list_side != "none":
-        # TODO: FIXME: We get an error on non-lists with this:
+        # TODO: We get an error on non-lists with this:
         # "floor_div operation not supported for dtype `bool`"
         assert_series_equal(exec_op(l, r, op.floordiv), o)
 
@@ -310,6 +310,36 @@ def test_list_truediv_schema(
     df = pl.DataFrame({"lhs": [[None, 10]], "rhs": 2}, schema=schema)
     result = df.lazy().select(pl.col("lhs").truediv("rhs")).collect_schema()["lhs"]
     assert result == expected_dtype
+
+
+@pytest.mark.parametrize(
+    ("lhs_dtype", "literal", "arith_op", "expected_dtype"),
+    [
+        # A dynamically-typed literal (bare Python `1`) must not widen the result
+        # beyond what the list's own leaf dtype already supports.
+        (pl.List(pl.Float32), 1, operator.add, pl.List(pl.Float32)),
+        (pl.List(pl.Float32), 1, operator.sub, pl.List(pl.Float32)),
+        (pl.List(pl.Float32), 2, operator.mul, pl.List(pl.Float32)),
+        (pl.List(pl.Int8), 1, operator.add, pl.List(pl.Int8)),
+        (pl.List(pl.Int64), 1, operator.mod, pl.List(pl.Int64)),
+        (pl.List(pl.Int64), 2, operator.floordiv, pl.List(pl.Int64)),
+        (pl.List(pl.Float32), 1, operator.truediv, pl.List(pl.Float32)),
+        (pl.List(pl.Int64), 2, operator.truediv, pl.List(pl.Float64)),
+        # A dynamic float literal should still upcast an integer list, as normal.
+        (pl.List(pl.Int32), 1.5, operator.add, pl.List(pl.Float64)),
+    ],
+)
+def test_list_arithmetic_literal_dtype(
+    lhs_dtype: PolarsDataType,
+    literal: int | float,
+    arith_op: Callable[[Any, Any], Any],
+    expected_dtype: PolarsDataType,
+) -> None:
+    """The declared schema and the actually-produced dtype must agree (#19671)."""
+    df = pl.DataFrame({"a": [[0]]}, schema={"a": lhs_dtype})
+    q = df.lazy().select(arith_op(pl.col("a"), literal))
+    assert q.collect_schema()["a"] == expected_dtype
+    assert q.collect().schema["a"] == expected_dtype
 
 
 @pytest.mark.parametrize("exec_op", EXEC_OP_COMBINATIONS)

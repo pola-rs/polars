@@ -1,4 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use std::sync::OnceLock;
+
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use polars_compute::gather::take_unchecked;
@@ -7,6 +9,7 @@ use polars_utils::index::check_bounds;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
+use crate::utils::Container;
 
 pub fn check_bounds_nulls(idx: &PrimitiveArray<IdxSize>, len: IdxSize) -> PolarsResult<()> {
     let mask = BitMask::from_bitmap(idx.validity().unwrap());
@@ -344,11 +347,46 @@ impl IdxCa {
 #[cfg(feature = "dtype-array")]
 impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
-        let chunks = vec![take_unchecked(
-            self.rechunk().downcast_as_array(),
-            indices.rechunk().downcast_as_array(),
-        )];
-        self.copy_with_chunks(chunks)
+        // Taking nested types by value is expensive, so at a certain len[n] ratio
+        // we rechunk first, so that we can memcopy internally
+        if self.n_chunks() > 1 && should_rechunk(self.len(), indices.len()) {
+            let chunks = vec![take_unchecked(
+                self.rechunk().downcast_as_array(),
+                indices.rechunk().downcast_as_array(),
+            )];
+            return self.copy_with_chunks(chunks);
+        }
+        let ca = self;
+        let targets_have_nulls = ca.null_count() > 0;
+        let targets: Vec<_> = ca.downcast_iter().collect();
+
+        let chunks = indices.downcast_iter().map(|idx_arr| {
+            let dtype = ca.dtype().to_arrow(CompatLevel::newest());
+            if targets.len() == 1 {
+                let target = targets.first().unwrap();
+                take_unchecked(&**target, idx_arr)
+            } else {
+                let cumlens = cumulative_lengths(&targets);
+                if targets_have_nulls {
+                    let arr: FixedSizeListArray = idx_arr
+                        .iter()
+                        .map(|i| target_get_unchecked(&targets, &cumlens, *i?))
+                        .collect_arr_trusted_with_dtype(dtype);
+                    arr.to_boxed()
+                } else {
+                    let arr: FixedSizeListArray = idx_arr
+                        .iter()
+                        .map(|i| Some(target_value_unchecked(&targets, &cumlens, *i?)))
+                        .collect_arr_trusted_with_dtype(dtype);
+                    arr.to_boxed()
+                }
+            }
+        });
+
+        let mut out = ca.with_chunks(chunks.collect());
+        let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
+        out.set_sorted_flag(sorted_flag);
+        out
     }
 }
 
@@ -362,11 +400,46 @@ impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for ArrayChunked {
 
 impl ChunkTakeUnchecked<IdxCa> for ListChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
-        let chunks = vec![take_unchecked(
-            self.rechunk().downcast_as_array(),
-            indices.rechunk().downcast_as_array(),
-        )];
-        self.copy_with_chunks(chunks)
+        // Taking nested types by value is expensive, so at a certain len[n] ratio
+        // we rechunk first, so that we can memcopy internally
+        if self.n_chunks() > 1 && should_rechunk(self.len(), indices.len()) {
+            let chunks = vec![take_unchecked(
+                self.rechunk().downcast_as_array(),
+                indices.rechunk().downcast_as_array(),
+            )];
+            return self.copy_with_chunks(chunks);
+        }
+        let ca = self;
+        let targets_have_nulls = ca.null_count() > 0;
+        let targets: Vec<_> = ca.downcast_iter().collect();
+
+        let chunks = indices.downcast_iter().map(|idx_arr| {
+            let dtype = ca.dtype().to_arrow(CompatLevel::newest());
+            if targets.len() == 1 {
+                let target = targets.first().unwrap();
+                take_unchecked(&**target, idx_arr)
+            } else {
+                let cumlens = cumulative_lengths(&targets);
+                if targets_have_nulls {
+                    let arr: ListArray<i64> = idx_arr
+                        .iter()
+                        .map(|i| target_get_unchecked(&targets, &cumlens, *i?))
+                        .collect_arr_trusted_with_dtype(dtype);
+                    arr.to_boxed()
+                } else {
+                    let arr: ListArray<i64> = idx_arr
+                        .iter()
+                        .map(|i| Some(target_value_unchecked(&targets, &cumlens, *i?)))
+                        .collect_arr_trusted_with_dtype(dtype);
+                    arr.to_boxed()
+                }
+            }
+        });
+
+        let mut out = ca.with_chunks(chunks.collect());
+        let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), indices.is_sorted_flag());
+        out.set_sorted_flag(sorted_flag);
+        out
     }
 }
 
@@ -375,4 +448,22 @@ impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for ListChunked {
         let idx = IdxCa::mmap_slice(PlSmallStr::EMPTY, indices.as_ref());
         self.take_unchecked(&idx)
     }
+}
+
+fn should_rechunk(n_values: usize, n_indices: usize) -> bool {
+    n_indices > 0 && { (n_values / n_indices) > gather_ratio() }
+}
+
+fn gather_ratio() -> usize {
+    return *GATHER_RECHUNK_RATIO.get_or_init(|| {
+        const NAME: &str = "POLARS_GATHER_RECHUNK_RATIO";
+        std::env::var(NAME)
+            .map(|x| {
+                x.parse::<usize>()
+                    .unwrap_or_else(|_| panic!("invalid value for {NAME}: {x}"))
+            })
+            .unwrap_or(const { 64 })
+    });
+
+    static GATHER_RECHUNK_RATIO: OnceLock<usize> = OnceLock::new();
 }

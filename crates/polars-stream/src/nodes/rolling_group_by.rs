@@ -1,11 +1,15 @@
 use std::sync::Arc;
 
 use chrono_tz::Tz;
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::distributor_channel::distributor_channel;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, GroupsType, TimeUnit};
 use polars_core::schema::Schema;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
 use polars_expr::state::ExecutionState;
+use polars_ops::series::SeriesMethods;
 use polars_time::prelude::{RollingWindower, ensure_duration_matches_dtype};
 use polars_time::{ClosedWindow, Duration};
 use polars_utils::IdxSize;
@@ -13,9 +17,6 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::ComputeNode;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::PortState;
@@ -260,7 +261,11 @@ impl ComputeNode for RollingGroupBy {
                     .await?;
 
                     _ = send
-                        .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                        .send(Morsel::new_unregistered(
+                            df,
+                            self.seq.successor(),
+                            SourceToken::new(),
+                        ))
                         .await;
                 }
 
@@ -311,10 +316,12 @@ impl ComputeNode for RollingGroupBy {
         //
         // This finds boundaries to distribute to worker threads over.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+            let mut prev_max = None;
             while let Ok(morsel) = recv.recv().await
                 && self.slice_length > 0
             {
-                let (df, seq, source_token, wait_token) = morsel.into_inner();
+                let (sf, seq, source_token, wait_token) = morsel.into_inner();
+                let df = sf.into_df().await;
                 self.seq = seq;
                 drop(wait_token);
 
@@ -327,7 +334,18 @@ impl ComputeNode for RollingGroupBy {
                     morsel_index_column.null_count() == 0,
                     ComputeError: "null values in `rolling` not supported, fill nulls."
                 );
-
+                morsel_index_column
+                    .as_materialized_series()
+                    .ensure_sorted_arg("rolling")?;
+                if let Some(prev_max) = prev_max {
+                    polars_ensure!(prev_max <= morsel_index_column.get(0)?,
+                        InvalidOperation: "argument in operation 'rolling' is not sorted, please sort the 'expr/series/column' first");
+                }
+                prev_max = Some(
+                    morsel_index_column
+                        .get(morsel_index_column.len() - 1)?
+                        .into_static(),
+                );
                 self.buf_key_column.append(morsel_index_column)?;
 
                 use DataType as DT;
@@ -349,7 +367,11 @@ impl ComputeNode for RollingGroupBy {
 
                 if let Some((windows, df, key)) = self.next_windows(false)? {
                     if distributor
-                        .send((Morsel::new(df, seq, source_token), key, windows))
+                        .send((
+                            Morsel::new_unregistered(df, seq, source_token),
+                            key,
+                            windows,
+                        ))
                         .await
                         .is_err()
                     {

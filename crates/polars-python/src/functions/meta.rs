@@ -1,6 +1,6 @@
-use polars_core::POOL;
 use polars_core::fmt::FloatFmt;
 use polars_core::prelude::IDX_DTYPE;
+use polars_core::runtime::RAYON;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -13,7 +13,7 @@ pub fn get_index_type(py: Python) -> PyResult<Bound<PyAny>> {
 
 #[pyfunction]
 pub fn thread_pool_size() -> usize {
-    POOL.current_num_threads()
+    RAYON.current_num_threads()
 }
 
 #[pyfunction]

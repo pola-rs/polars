@@ -1,5 +1,7 @@
 use arrow::array::PrimitiveArray;
-use polars_core::chunked_array::ops::row_encode::encode_rows_unordered;
+use polars_core::chunked_array::ops::row_encode::{
+    encode_rows_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
+};
 use polars_core::series::BitRepr;
 use polars_core::utils::split;
 use polars_core::with_match_physical_float_polars_type;
@@ -66,20 +68,20 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 )
             },
             T::List(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_left(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-array")]
             T::Array(_, _) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_left(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_left(rhs, validate, nulls_equal)
             },
             x if x.is_float() => {
@@ -169,20 +171,20 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 }
             },
             T::List(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_semi_anti(rhs, anti, nulls_equal)?
             },
             #[cfg(feature = "dtype-array")]
             T::Array(_, _) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_semi_anti(rhs, anti, nulls_equal)?
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_semi_anti(rhs, anti, nulls_equal)?
             },
             x if x.is_float() => {
@@ -295,20 +297,20 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 ))
             },
             T::List(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_inner(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-array")]
             T::Array(_, _) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_inner(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_inner(rhs, validate, nulls_equal)
             },
             x if x.is_float() => {
@@ -328,19 +330,21 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::U8(lhs), B::U8(rhs)) => group_join_inner(&lhs, &rhs, validate, nulls_equal),
+                    (B::U8(lhs), B::U8(rhs)) => {
+                        group_join_inner::<UInt8Type>(&lhs, &rhs, validate, nulls_equal)
+                    },
                     (B::U16(lhs), B::U16(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                        group_join_inner::<UInt16Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     (B::U32(lhs), B::U32(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                        group_join_inner::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     (B::U64(lhs), BitRepr::U64(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                        group_join_inner::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     #[cfg(feature = "dtype-u128")]
                     (B::U128(lhs), BitRepr::U128(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                        group_join_inner::<UInt128Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
@@ -388,20 +392,20 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 hash_join_tuples_outer(lhs, rhs, swapped, validate, nulls_equal)
             },
             T::List(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_outer(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-array")]
             T::Array(_, _) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_outer(rhs, validate, nulls_equal)
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
-                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
-                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                let lhs = &encode_join_nested_key(lhs.into_owned(), nulls_equal)?;
+                let rhs = &encode_join_nested_key(rhs.into_owned(), nulls_equal)?;
                 lhs.hash_join_outer(rhs, validate, nulls_equal)
             },
             x if x.is_float() => {
@@ -455,6 +459,16 @@ where
         .collect()
 }
 
+fn encode_join_nested_key(s: Series, nulls_equal: bool) -> PolarsResult<Series> {
+    let by = [s.into_column()];
+    let encoded = if nulls_equal {
+        encode_rows_unordered(&by)?
+    } else {
+        encode_rows_vertical_par_unordered_broadcast_nulls(&by)?
+    };
+    Ok(encoded.into_series())
+}
+
 fn get_arrays<T: PolarsDataType>(cas: &[ChunkedArray<T>]) -> Vec<&T::Array> {
     cas.iter().flat_map(|arr| arr.downcast_iter()).collect()
 }
@@ -473,7 +487,7 @@ where
     for<'a> <T::Physical<'a> as ToTotalOrd>::TotalOrdItem:
         Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
 {
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
     let (a, b, swapped) = det_hash_prone_order!(left, right);
     let splitted_a = split(a, n_threads);
     let splitted_b = split(b, n_threads);
@@ -561,7 +575,7 @@ fn create_mappings(
         }
     };
 
-    POOL.join(mapping_left, mapping_right)
+    RAYON.join(mapping_left, mapping_right)
 }
 
 #[cfg(not(feature = "chunked_ids"))]
@@ -587,7 +601,7 @@ where
     T::Native: DirtyHash + Copy + ToTotalOrd,
     <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash,
 {
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
     let splitted_a = split(left, n_threads);
     let splitted_b = split(right, n_threads);
     match (
@@ -720,7 +734,7 @@ where
     <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
     <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash + IsNull,
 {
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
     let splitted_a = split(left, n_threads);
     let splitted_b = split(right, n_threads);
     match (

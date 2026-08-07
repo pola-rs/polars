@@ -2,6 +2,7 @@ use std::io::{Read, Seek};
 
 use arrow_format::ipc::KeyValueRef;
 use polars_error::{PolarsResult, polars_err};
+use polars_utils::bool::UnsafeBool;
 
 use super::common::*;
 use super::file::{get_message_from_block, get_message_from_block_offset, get_record_batch};
@@ -21,6 +22,7 @@ pub struct FileReader<R: Read + Seek> {
     remaining: usize,
     data_scratch: Vec<u8>,
     message_scratch: Vec<u8>,
+    checked: UnsafeBool,
 }
 
 impl<R: Read + Seek> FileReader<R> {
@@ -44,7 +46,18 @@ impl<R: Read + Seek> FileReader<R> {
             current_block: 0,
             data_scratch: Default::default(),
             message_scratch: Default::default(),
+            checked: Default::default(),
         }
+    }
+
+    /// # Safety
+    /// Don't do expensive checks.
+    /// This means the data source has to be trusted to be correct.
+    pub unsafe fn unchecked(mut self) -> Self {
+        unsafe {
+            self.checked = UnsafeBool::new_false();
+        }
+        self
     }
 
     /// Creates a new [`FileReader`]. Use `projection` to only take certain columns.
@@ -65,6 +78,7 @@ impl<R: Read + Seek> FileReader<R> {
             current_block: 0,
             data_scratch: Default::default(),
             message_scratch: Default::default(),
+            checked: Default::default(),
         }
     }
 
@@ -121,6 +135,7 @@ impl<R: Read + Seek> FileReader<R> {
                 &mut self.reader,
                 &self.metadata,
                 &mut self.data_scratch,
+                self.checked,
             )?);
         };
         Ok(())
@@ -191,6 +206,7 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
             false,
             &mut self.message_scratch,
             &mut self.data_scratch,
+            self.checked,
         );
         self.remaining -= chunk.as_ref().map(|x| x.len()).unwrap_or_default();
 

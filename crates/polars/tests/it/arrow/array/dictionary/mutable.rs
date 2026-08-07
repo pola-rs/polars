@@ -11,7 +11,7 @@ use polars_utils::aliases::{InitHashMaps, PlHashSet};
 fn primitive() -> PolarsResult<()> {
     let data = vec![Some(1), Some(2), Some(1)];
 
-    let mut a = MutableDictionaryArray::<i32, MutablePrimitiveArray<i32>>::new();
+    let mut a = MutableDictionaryArray::<i32, MutablePrimitiveArray<i32>>::new(false);
     a.try_extend(data)?;
     assert_eq!(a.len(), 3);
     assert_eq!(a.values().len(), 2);
@@ -22,7 +22,7 @@ fn primitive() -> PolarsResult<()> {
 fn utf8_natural() -> PolarsResult<()> {
     let data = vec![Some("a"), Some("b"), Some("a")];
 
-    let mut a = MutableDictionaryArray::<i32, MutableUtf8Array<i32>>::new();
+    let mut a = MutableDictionaryArray::<i32, MutableUtf8Array<i32>>::new(false);
     a.try_extend(data)?;
 
     assert_eq!(a.len(), 3);
@@ -38,7 +38,7 @@ fn binary_natural() -> PolarsResult<()> {
         Some("a".as_bytes()),
     ];
 
-    let mut a = MutableDictionaryArray::<i32, MutableBinaryArray<i32>>::new();
+    let mut a = MutableDictionaryArray::<i32, MutableBinaryArray<i32>>::new(false);
     a.try_extend(data)?;
     assert_eq!(a.len(), 3);
     assert_eq!(a.values().len(), 2);
@@ -47,7 +47,8 @@ fn binary_natural() -> PolarsResult<()> {
 
 #[test]
 fn push_utf8() {
-    let mut new: MutableDictionaryArray<i32, MutableUtf8Array<i32>> = MutableDictionaryArray::new();
+    let mut new: MutableDictionaryArray<i32, MutableUtf8Array<i32>> =
+        MutableDictionaryArray::new(false);
 
     for value in [Some("A"), Some("B"), None, Some("C"), Some("A"), Some("B")] {
         new.try_push(value).unwrap();
@@ -68,36 +69,38 @@ fn push_utf8() {
 
 #[test]
 fn into_empty() {
-    let mut new: MutableDictionaryArray<i32, MutableUtf8Array<i32>> = MutableDictionaryArray::new();
+    let mut new: MutableDictionaryArray<i32, MutableUtf8Array<i32>> =
+        MutableDictionaryArray::new(false);
     for value in [Some("A"), Some("B"), None, Some("C"), Some("A"), Some("B")] {
         new.try_push(value).unwrap();
     }
     let values = new.values().clone();
-    let empty = new.into_empty();
+    let empty = new.into_empty(false);
     assert_eq!(empty.values(), &values);
     assert!(empty.is_empty());
 }
 
 #[test]
 fn from_values() {
-    let mut new: MutableDictionaryArray<i32, MutableUtf8Array<i32>> = MutableDictionaryArray::new();
+    let mut new: MutableDictionaryArray<i32, MutableUtf8Array<i32>> =
+        MutableDictionaryArray::new(false);
     for value in [Some("A"), Some("B"), None, Some("C"), Some("A"), Some("B")] {
         new.try_push(value).unwrap();
     }
     let mut values = new.values().clone();
-    let empty = MutableDictionaryArray::<i32, _>::from_values(values.clone()).unwrap();
+    let empty = MutableDictionaryArray::<i32, _>::from_values(values.clone(), false).unwrap();
     assert_eq!(empty.values(), &values);
     assert!(empty.is_empty());
     values.push(Some("A"));
-    assert!(MutableDictionaryArray::<i32, _>::from_values(values).is_err());
+    assert!(MutableDictionaryArray::<i32, _>::from_values(values, false).is_err());
 }
 
 #[test]
 fn try_empty() {
     let mut values = MutableUtf8Array::<i32>::new();
-    MutableDictionaryArray::<i32, _>::try_empty(values.clone()).unwrap();
+    MutableDictionaryArray::<i32, _>::try_empty(values.clone(), false).unwrap();
     values.push(Some("A"));
-    assert!(MutableDictionaryArray::<i32, _>::try_empty(values.clone()).is_err());
+    assert!(MutableDictionaryArray::<i32, _>::try_empty(values.clone(), false).is_err());
 }
 
 fn test_push_ex<M, T>(values: Vec<T>, gen_: impl Fn(usize) -> T)
@@ -108,7 +111,7 @@ where
 {
     for is_extend in [false, true] {
         let mut set = PlHashSet::new();
-        let mut arr = MutableDictionaryArray::<u8, M>::new();
+        let mut arr = MutableDictionaryArray::<u8, M>::new(false);
         macro_rules! push {
             ($v:expr) => {
                 if is_extend {
@@ -155,7 +158,7 @@ fn test_push_i64_ex() {
 fn test_big_dict() {
     let n = 10;
     let strings = (0..10).map(|i| i.to_string()).collect::<Vec<_>>();
-    let mut arr = MutableDictionaryArray::<u8, MutableUtf8Array<i32>>::new();
+    let mut arr = MutableDictionaryArray::<u8, MutableUtf8Array<i32>>::new(false);
     for s in &strings {
         arr.try_push(Some(s)).unwrap();
     }

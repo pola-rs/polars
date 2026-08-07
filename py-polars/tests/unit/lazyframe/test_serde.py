@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import pickle
 from typing import TYPE_CHECKING
 
 import pytest
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import SerializationFormat
+    from tests.conftest import PlMonkeyPatch
 
 
 @given(
@@ -118,6 +120,21 @@ def test_lf_serde_scan(tmp_path: Path) -> None:
     assert_frame_equal(result.collect(), df)
 
 
+def test_lf_serde_scan_bytes() -> None:
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    buffer = io.BytesIO()
+    expected.write_parquet(buffer)
+
+    lf = pl.scan_parquet(buffer.getvalue())
+
+    serialized = lf.serialize()
+    result = pl.LazyFrame.deserialize(io.BytesIO(serialized))
+    assert_frame_equal(result.collect(), expected)
+
+    result = pickle.loads(pickle.dumps(lf))
+    assert_frame_equal(result.collect(), expected)
+
+
 @pytest.mark.filterwarnings("ignore::polars.exceptions.PolarsInefficientMapWarning")
 def test_lf_serde_version_specific_lambda() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]}).select(
@@ -159,9 +176,9 @@ def test_lf_serde_map_batches_on_lazyframe() -> None:
 
 @pytest.mark.parametrize("max_byte_slice_len", [1, 2, 3, 100, 4294967295])
 def test_lf_serde_chunked_bytes(
-    monkeypatch: pytest.MonkeyPatch, max_byte_slice_len: int
+    plmonkeypatch: PlMonkeyPatch, max_byte_slice_len: int
 ) -> None:
-    monkeypatch.setenv(
+    plmonkeypatch.setenv(
         "POLARS_SERIALIZE_LAZYFRAME_MAX_BYTE_SLICE_LEN", str(max_byte_slice_len)
     )
     lf = pl.LazyFrame({"a": range(5000)})

@@ -117,7 +117,7 @@ fn reduce_primitive<
     mut stats: I,
 ) -> PrimitiveStatistics<T> {
     let initial = stats.next().unwrap().clone();
-    stats.fold(initial, |mut acc, new| {
+    let mut result = stats.fold(initial, |mut acc, new| {
         acc.min_value = reduce_single(
             acc.min_value,
             new.min_value,
@@ -131,7 +131,10 @@ fn reduce_primitive<
         acc.null_count = reduce_single(acc.null_count, new.null_count, |x, y| x + y);
         acc.distinct_count = None;
         acc
-    })
+    });
+    result.min_value = result.min_value.map(|v| v.norm_min());
+    result.max_value = result.max_value.map(|v| v.norm_max());
+    result
 }
 
 #[cfg(test)]

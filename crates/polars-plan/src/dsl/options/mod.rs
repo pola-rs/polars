@@ -1,11 +1,12 @@
 use std::hash::Hash;
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
-use std::str::FromStr;
 use std::sync::Arc;
 
+pub mod file_provider;
+pub mod iceberg_sink_state;
 pub mod sink;
-pub mod sink2;
+pub use polars_config::Engine;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
@@ -13,7 +14,7 @@ use polars_io::csv::write::CsvWriterOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcWriterOptions;
 #[cfg(feature = "json")]
-use polars_io::json::JsonWriterOptions;
+use polars_io::ndjson::NDJsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
 #[cfg(feature = "iejoin")]
@@ -29,17 +30,17 @@ use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 pub use sink::{
-    CallbackSinkType, FileSinkOptions, PartitionTargetCallback, PartitionTargetCallbackResult,
-    PartitionTargetContext, PartitionTargetContextKey, PartitionVariantIR, PartitionedSinkOptions,
-    PartitionedSinkOptionsIR, SinkFinishCallback, SinkOptions, SinkTarget, SinkType, SinkTypeIR,
-    SortColumn, SortColumnIR,
+    CallbackSinkType, FileSinkOptions, PartitionStrategy, PartitionStrategyIR,
+    PartitionedSinkOptions, PartitionedSinkOptionsIR, SinkDestination, SinkTarget, SinkType,
+    SinkTypeIR, UnifiedSinkArgs,
 };
-pub use sink2::{PartitionStrategy, PartitionStrategyIR, SinkDestination, UnifiedSinkArgs};
 use strum_macros::IntoStaticStr;
 
 use super::Expr;
 use crate::dsl::Selector;
-use crate::plans::ExprIR;
+#[cfg(feature = "cse")]
+use crate::plans::ExpressionHasher;
+use crate::plans::{ExprIR, ExpressionComparator};
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -102,6 +103,30 @@ impl Hash for JoinTypeOptionsIR {
 }
 
 impl JoinTypeOptionsIR {
+    pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin(lhs) => matches!(other, Self::IEJoin(rhs) if lhs == rhs),
+            Self::CrossAndFilter { predicate: lhs } => {
+                matches!(other, Self::CrossAndFilter { predicate: rhs } if expr_cmp.equals(lhs, rhs))
+            },
+        }
+    }
+
+    #[cfg(feature = "cse")]
+    pub(crate) fn shallow_hash<H: std::hash::Hasher>(
+        &self,
+        state: &mut H,
+        expr_hash: &impl ExpressionHasher,
+    ) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin(options) => options.hash(state),
+            Self::CrossAndFilter { predicate } => expr_hash.hash_expr(predicate, state),
+        }
+    }
+
     pub fn compile<C: FnOnce(&ExprIR) -> PolarsResult<Arc<dyn CrossJoinFilter>>>(
         self,
         plan: C,
@@ -126,6 +151,48 @@ pub struct JoinOptionsIR {
     pub force_parallel: bool,
     pub args: JoinArgs,
     pub options: Option<JoinTypeOptionsIR>,
+}
+
+impl JoinOptionsIR {
+    pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
+        let Self {
+            allow_parallel,
+            force_parallel,
+            args,
+            options,
+        } = self;
+
+        *allow_parallel == other.allow_parallel
+            && *force_parallel == other.force_parallel
+            && *args == other.args
+            && match (options, &other.options) {
+                (Some(lhs), Some(rhs)) => lhs.shallow_eq(rhs, expr_cmp),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+
+    #[cfg(feature = "cse")]
+    pub(crate) fn shallow_hash<H: std::hash::Hasher>(
+        &self,
+        state: &mut H,
+        expr_hash: &impl ExpressionHasher,
+    ) {
+        let Self {
+            allow_parallel,
+            force_parallel,
+            args,
+            options,
+        } = self;
+
+        allow_parallel.hash(state);
+        force_parallel.hash(state);
+        args.hash(state);
+        std::mem::discriminant(options).hash(state);
+        if let Some(options) = options {
+            options.shallow_hash(state, expr_hash);
+        }
+    }
 }
 
 impl From<JoinOptions> for JoinOptionsIR {
@@ -197,44 +264,6 @@ pub struct UnpivotArgsDSL {
 
 #[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum Engine {
-    Auto,
-    Streaming,
-    InMemory,
-    Gpu,
-}
-
-impl FromStr for Engine {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            // "cpu" for backwards compatibility
-            "auto" => Ok(Engine::Auto),
-            "cpu" | "in-memory" => Ok(Engine::InMemory),
-            "streaming" => Ok(Engine::Streaming),
-            "gpu" => Ok(Engine::Gpu),
-            "old-streaming" => Err("the 'old-streaming' engine has been removed".to_owned()),
-            v => Err(format!(
-                "`engine` must be one of {{'auto', 'in-memory', 'streaming', 'gpu'}}, got {v}",
-            )),
-        }
-    }
-}
-
-impl Engine {
-    pub fn into_static_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Streaming => "streaming",
-            Self::InMemory => "in-memory",
-            Self::Gpu => "gpu",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub slice: Option<(i64, usize)>,
     // known row_output, estimated row output
@@ -260,12 +289,25 @@ impl Default for UnionOptions {
     }
 }
 
-#[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct HConcatOptions {
     pub parallel: bool,
     pub strict: bool,
+    // Treat unit values as scalar.
+    // E.g. broadcast them instead of fill nulls.
+    pub broadcast_unit_length: bool,
+}
+
+impl Default for HConcatOptions {
+    fn default() -> Self {
+        Self {
+            parallel: true,
+            strict: false,
+            broadcast_unit_length: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
@@ -351,7 +393,7 @@ pub enum FileWriteFormat {
     #[cfg(feature = "csv")]
     Csv(CsvWriterOptions),
     #[cfg(feature = "json")]
-    NDJson(JsonWriterOptions),
+    NDJson(NDJsonWriterOptions),
 }
 
 impl FileWriteFormat {

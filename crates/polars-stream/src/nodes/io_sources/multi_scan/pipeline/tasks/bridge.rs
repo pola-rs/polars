@@ -1,9 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use crate::async_executor;
-use crate::async_executor::{JoinHandle, TaskPriority};
-use crate::async_primitives::connector;
-use crate::async_primitives::wait_group::WaitToken;
+use polars_async::executor;
+use polars_async::executor::{JoinHandle, TaskPriority};
+use polars_async::primitives::connector;
+use polars_async::primitives::wait_group::WaitToken;
+
 use crate::morsel::{MorselSeq, SourceToken};
 use crate::nodes::io_sources::multi_scan::components::bridge::{
     BridgeRecvPort, BridgeState, StopReason,
@@ -22,7 +23,7 @@ pub fn spawn_bridge(
     let (incoming_tx, incoming) = connector::connector();
     let (outgoing_tx, outgoing) = connector::connector();
 
-    let handle = async_executor::spawn(
+    let handle = executor::spawn(
         TaskPriority::Low,
         Bridge {
             incoming,

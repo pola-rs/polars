@@ -2,18 +2,19 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "temporal")]
 use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
+use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
 use polars_utils::float16::pf16;
-use polars_utils::hashing::hash_to_partition;
+use polars_utils::total_ord::{TotalEq, TotalHash};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::constants::get_literal_name;
 use crate::prelude::*;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DynLiteralValue {
@@ -22,7 +23,21 @@ pub enum DynLiteralValue {
     Float(f64),
     List(DynListLiteralValue),
 }
-#[derive(Clone, PartialEq)]
+
+impl PartialEq for DynLiteralValue {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Self::Str(l) => matches!(other, Self::Str(r) if l == r),
+            Self::Int(l) => matches!(other, Self::Int(r) if l == r),
+            Self::Float(l) => matches!(other, Self::Float(r) if l.tot_eq(r)),
+            Self::List(l) => matches!(other, Self::List(r) if l == r),
+        }
+    }
+}
+
+impl Eq for DynLiteralValue {}
+
+#[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DynListLiteralValue {
@@ -32,13 +47,29 @@ pub enum DynListLiteralValue {
     List(Box<[Option<DynListLiteralValue>]>),
 }
 
+impl PartialEq for DynListLiteralValue {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Self::Str(l) => matches!(other, Self::Str(r) if l == r),
+            Self::Int(l) => matches!(other, Self::Int(r) if l == r),
+            Self::Float(l) => {
+                matches!(other, Self::Float(r) if l.len() == r.len() &&
+                    l.iter().zip(r).all(|(li, ri)| li.tot_eq(ri)))
+            },
+            Self::List(l) => matches!(other, Self::List(r) if l == r),
+        }
+    }
+}
+
+impl Eq for DynListLiteralValue {}
+
 impl Hash for DynLiteralValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
             Self::Str(i) => i.hash(state),
             Self::Int(i) => i.hash(state),
-            Self::Float(i) => i.to_ne_bytes().hash(state),
+            Self::Float(i) => i.tot_hash(state),
             Self::List(i) => i.hash(state),
         }
     }
@@ -50,9 +81,7 @@ impl Hash for DynListLiteralValue {
         match self {
             Self::Str(i) => i.hash(state),
             Self::Int(i) => i.hash(state),
-            Self::Float(i) => i
-                .iter()
-                .for_each(|i| i.map(|i| i.to_ne_bytes()).hash(state)),
+            Self::Float(i) => i.iter().for_each(|i| i.tot_hash(state)),
             Self::List(i) => i.hash(state),
         }
     }
@@ -289,6 +318,10 @@ impl LiteralValue {
 
     pub fn is_scalar(&self) -> bool {
         !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
+    }
+
+    pub fn is_nan(&self) -> bool {
+        self.to_any_value().is_some_and(|av| av.is_nan())
     }
 
     pub fn to_any_value(&self) -> Option<AnyValue<'_>> {
@@ -616,17 +649,14 @@ impl Hash for LiteralValue {
         std::mem::discriminant(self).hash(state);
         match self {
             LiteralValue::Series(s) => {
-                // Free stats
-                s.dtype().hash(state);
-                let len = s.len();
-                len.hash(state);
-                s.null_count().hash(state);
-                const RANDOM: u64 = 0x2c194fa5df32a367;
-                let mut rng = (len as u64) ^ RANDOM;
-                for _ in 0..std::cmp::min(5, len) {
-                    let idx = hash_to_partition(rng, len);
-                    s.get(idx).unwrap().hash(state);
-                    rng = rng.rotate_right(17).wrapping_add(RANDOM);
+                state.write_usize(if s.len() > CHEAP_SERIES_HASH_LIMIT {
+                    Arc::as_ptr(&s.0) as *const () as usize
+                } else {
+                    0
+                });
+
+                for av in s.iter().take(CHEAP_SERIES_HASH_LIMIT) {
+                    av.hash(state)
                 }
             },
             LiteralValue::Range(range) => range.hash(state),

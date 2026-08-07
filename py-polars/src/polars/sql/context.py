@@ -16,7 +16,7 @@ from polars._utils.pycapsule import is_pycapsule
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import _get_stack_locals, qualified_type_name
 from polars._utils.wrap import wrap_ldf
-from polars.convert import from_arrow, from_pandas
+from polars.convert import from_pandas
 from polars.dataframe import DataFrame
 from polars.lazyframe import LazyFrame
 from polars.series import Series
@@ -71,7 +71,7 @@ def _ensure_lazyframe(obj: Any) -> LazyFrame:
     elif is_pycapsule(obj) or (
         _check_for_pyarrow(obj) and isinstance(obj, (pa.Table, pa.RecordBatch))
     ):
-        return from_arrow(obj).lazy()  # type: ignore[union-attr]
+        return DataFrame(obj).lazy()  # type: ignore[union-attr]
     else:
         msg = f"unrecognised frame type: {qualified_type_name(obj)}"
         raise ValueError(msg)
@@ -114,7 +114,6 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, CompatibleFrameType | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        all_compatible: bool = ...,
         eager: Literal[False] = False,
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
@@ -125,7 +124,6 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, CompatibleFrameType | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        all_compatible: bool = ...,
         eager: Literal[True],
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
@@ -136,7 +134,6 @@ class SQLContext(Generic[FrameType]):
         frames: Mapping[str, CompatibleFrameType | None] | None = ...,
         *,
         register_globals: bool | int = ...,
-        all_compatible: bool = ...,
         eager: bool,
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
@@ -408,11 +405,11 @@ class SQLContext(Generic[FrameType]):
         >>> ctx.execute(
         ...     '''
         ...     SELECT
-        ...         MAX(release_year / 10) * 10 AS decade,
+        ...         MAX(release_year // 10) * 10 AS decade,
         ...         SUM(gross) AS total_gross,
         ...         COUNT(title) AS n_films,
         ...     FROM films
-        ...     GROUP BY (release_year / 10) -- decade
+        ...     GROUP BY (release_year // 10) -- decade
         ...     ORDER BY total_gross DESC
         ...     ''',
         ...     eager=True,

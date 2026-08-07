@@ -148,13 +148,14 @@ pub fn decode_is_in_inlinable(
             return Err(super::invalid_input_err());
         }
 
-        if length > View::MAX_INLINE_SIZE {
-            continue;
-        }
-
+        // Always advance the slice before checking length.
         let value;
         (value, values) = values.split_at(length as usize);
 
+        // Non-inlinable views can't match inlinable needles.
+        if length > View::MAX_INLINE_SIZE {
+            continue;
+        }
         // SAFETY: we made sure length <= View::MAX_INLINE_SIZE.
         let mut view = unsafe { View::new_inline_unchecked(value) };
         view.length = length;

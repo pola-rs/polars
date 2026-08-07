@@ -2,14 +2,17 @@ use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
+use polars_async::executor::{self};
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::ArrowSchema;
+use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
+use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
-use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder, MemSliceByteSource};
-use polars_io::{RowIndex, pl_async};
+use polars_io::utils::byte_source::{BufferByteSource, DynByteSource, DynByteSourceBuilder};
 use polars_parquet::read::schema::infer_schema_with_options;
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
@@ -20,8 +23,9 @@ use super::multi_scan::reader_interface::output::{FileReaderOutputRecv, FileRead
 use super::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, calc_row_position_after_slice,
 };
-use crate::async_executor::{self};
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use super::shared::pipeline_budget::PipelineBudget;
+use crate::metrics::OptIOMetrics;
+use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::parquet::projection::{
     ArrowFieldProjection, resolve_arrow_field_projections,
@@ -45,6 +49,7 @@ pub struct ParquetFileReader {
     metadata: Option<Arc<FileMetadata>>,
     byte_source_builder: DynByteSourceBuilder,
     row_group_prefetch_sync: RowGroupPrefetchSync,
+    io_metrics: OptIOMetrics,
     verbose: bool,
 
     /// Set during initialize()
@@ -52,10 +57,9 @@ pub struct ParquetFileReader {
 }
 
 struct RowGroupPrefetchSync {
-    prefetch_limit: usize,
-    prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Pipeline throttling, by count and by memory.
+    pipeline_budget: PipelineBudget,
     shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
-
     /// Waits for the previous reader to finish spawning prefetches.
     prev_all_spawned: Option<WaitGroup>,
     /// Dropped once the current reader has finished spawning prefetches.
@@ -82,12 +86,17 @@ impl FileReader for ParquetFileReader {
         let scan_source = self.scan_source.clone();
         let byte_source_builder = self.byte_source_builder.clone();
         let cloud_options = self.cloud_options.clone();
+        let io_metrics = self.io_metrics.clone();
 
-        let byte_source = pl_async::get_runtime()
+        let byte_source = ASYNC
             .spawn(async move {
                 scan_source
                     .as_scan_source_ref()
-                    .to_dyn_byte_source(&byte_source_builder, cloud_options.as_deref())
+                    .to_dyn_byte_source(
+                        &byte_source_builder,
+                        cloud_options.as_deref(),
+                        io_metrics.0,
+                    )
                     .await
             })
             .await
@@ -101,7 +110,7 @@ impl FileReader for ParquetFileReader {
             let (metadata_bytes, opt_full_bytes) = {
                 let byte_source = byte_source.clone();
 
-                pl_async::get_runtime()
+                ASYNC
                     .spawn(async move {
                         metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await
                     })
@@ -110,12 +119,11 @@ impl FileReader for ParquetFileReader {
             };
 
             if let Some(full_bytes) = opt_full_bytes {
-                byte_source = Arc::new(DynByteSource::MemSlice(MemSliceByteSource(full_bytes)));
+                byte_source = Arc::new(DynByteSource::Buffer(BufferByteSource(full_bytes)));
             }
 
             Arc::new(polars_parquet::parquet::read::deserialize_metadata(
-                metadata_bytes.as_ref(),
-                metadata_bytes.len() * 2 + 1024,
+                metadata_bytes,
             )?)
         };
 
@@ -161,6 +169,37 @@ impl FileReader for ParquetFileReader {
             byte_source,
         } = self.init_data.clone().unwrap();
 
+        let n_rows_in_file = self._n_rows_in_file()?;
+
+        let single_morsel_height: Option<usize> = if let BeginReadArgs {
+            projection,
+            row_index: None,
+            pre_slice,
+            predicate: None,
+            cast_columns_policy: _,
+            num_pipelines: _,
+            disable_morsel_split: true,
+            last_morsel_pipelines: _,
+            callbacks:
+                FileReaderCallbacks {
+                    file_schema_tx: _,
+                    n_rows_in_file_tx: _,
+                    row_position_on_end_tx: _,
+                },
+        } = &args
+            && projection.is_empty()
+        {
+            let mut h: usize = n_rows_in_file as _;
+
+            if let Some(pre_slice) = pre_slice.clone() {
+                h = usize::min(h, pre_slice.restrict_to_bounds(h).len());
+            }
+
+            Some(h)
+        } else {
+            None
+        };
+
         let BeginReadArgs {
             projection,
             row_index,
@@ -168,6 +207,8 @@ impl FileReader for ParquetFileReader {
             predicate,
             cast_columns_policy,
             num_pipelines,
+            disable_morsel_split,
+            last_morsel_pipelines,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -177,15 +218,6 @@ impl FileReader for ParquetFileReader {
         } = args;
 
         let file_schema = self._file_schema().clone();
-
-        let projected_arrow_fields = resolve_arrow_field_projections(
-            &file_arrow_schema,
-            &file_schema,
-            projection,
-            cast_columns_policy,
-        )?;
-
-        let n_rows_in_file = self._n_rows_in_file()?;
 
         let normalized_pre_slice = pre_slice_arg
             .clone()
@@ -217,23 +249,70 @@ impl FileReader for ParquetFileReader {
                     "[ParquetFileReader]: early return: \
                     n_rows_in_file: {n_rows_in_file}, \
                     pre_slice: {pre_slice_arg:?}, \
-                    resolved_pre_slice: {normalized_pre_slice:?} \
-                    "
+                    resolved_pre_slice: {normalized_pre_slice:?}"
                 )
             }
 
             return Ok((
                 rx,
-                async_executor::spawn(TaskPriority::Low, std::future::ready(Ok(()))),
+                executor::spawn(TaskPriority::Low, std::future::ready(Ok(()))),
             ));
         }
 
-        // Prepare parameters for dispatch
+        let mut _projected_arrow_fields: Option<Arc<[ArrowFieldProjection]>> = None;
+        let mut projected_arrow_fields = || {
+            if _projected_arrow_fields.is_none() {
+                _projected_arrow_fields = Some(resolve_arrow_field_projections(
+                    &file_arrow_schema,
+                    &file_schema,
+                    projection.clone(),
+                    cast_columns_policy.clone(),
+                )?);
+            }
+            PolarsResult::Ok(_projected_arrow_fields.as_ref().unwrap().clone())
+        };
 
+        if verbose {
+            eprintln!(
+                "[ParquetFileReader]: \
+                project: {} / {}, \
+                pre_slice: {:?}, \
+                resolved_pre_slice: {:?}, \
+                row_index: {:?}, \
+                predicate: {:?}",
+                projected_arrow_fields()?.len(),
+                file_schema.len(),
+                pre_slice_arg,
+                normalized_pre_slice,
+                row_index,
+                predicate.as_ref().map(|_| "<predicate>"),
+            )
+        }
+
+        if let Some(single_morsel_height) = single_morsel_height {
+            let (mut tx, rx) = FileReaderOutputSend::new_serial();
+
+            let handle = executor::spawn(TaskPriority::Low, async move {
+                let _ = tx
+                    .send_morsel(Morsel::new_unregistered(
+                        DataFrame::empty_with_height(single_morsel_height),
+                        MorselSeq::default(),
+                        SourceToken::default(),
+                    ))
+                    .await;
+                Ok(())
+            });
+
+            return Ok((rx, handle));
+        }
+
+        // Prepare parameters for dispatch
+        let projected_arrow_fields = projected_arrow_fields()?.clone();
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
         let row_group_prefetch_size = self
             .row_group_prefetch_sync
-            .prefetch_limit
+            .pipeline_budget
+            .count_limit()
             .min(file_metadata.row_groups.len())
             .max(1);
 
@@ -244,24 +323,6 @@ impl FileReader for ParquetFileReader {
                 .unwrap_or(16_777_216);
 
         let is_full_projection = projected_arrow_fields.len() == file_schema.len();
-
-        if verbose {
-            eprintln!(
-                "[ParquetFileReader]: \
-                project: {} / {}, \
-                pre_slice: {:?}, \
-                resolved_pre_slice: {:?}, \
-                row_index: {:?}, \
-                predicate: {:?} \
-                ",
-                projected_arrow_fields.len(),
-                file_schema.len(),
-                pre_slice_arg,
-                normalized_pre_slice,
-                &row_index,
-                predicate.as_ref().map(|_| "<predicate>"),
-            )
-        }
 
         let (output_recv, handle) = ParquetReadImpl {
             projected_arrow_fields,
@@ -279,23 +340,26 @@ impl FileReader for ParquetFileReader {
                 num_pipelines,
                 row_group_prefetch_size,
                 target_values_per_thread,
+                last_morsel_pipelines,
             },
             verbose,
             memory_prefetch_func,
             row_index,
-            rg_prefetch_semaphore: Arc::clone(&self.row_group_prefetch_sync.prefetch_semaphore),
+
+            pipeline_budget: self.row_group_prefetch_sync.pipeline_budget.clone(),
             rg_prefetch_prev_all_spawned: Option::take(
                 &mut self.row_group_prefetch_sync.prev_all_spawned,
             ),
             rg_prefetch_current_all_spawned: Option::take(
                 &mut self.row_group_prefetch_sync.current_all_spawned,
             ),
+            disable_morsel_split,
         }
         .run();
 
         Ok((
             output_recv,
-            async_executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
+            executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
         ))
     }
 
@@ -375,9 +439,10 @@ struct ParquetReadImpl {
     memory_prefetch_func: fn(&[u8]) -> (),
     row_index: Option<RowIndex>,
 
-    rg_prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    pipeline_budget: PipelineBudget,
     rg_prefetch_prev_all_spawned: Option<WaitGroup>,
     rg_prefetch_current_all_spawned: Option<WaitToken>,
+    disable_morsel_split: bool,
 }
 
 #[derive(Debug)]
@@ -388,12 +453,15 @@ struct Config {
     /// Minimum number of values for a parallel spawned task to process to amortize
     /// parallelism overhead.
     target_values_per_thread: usize,
+    /// Minimum number of pieces to split this file's last morsel into. Precomputed by the
+    /// multi-scan layer to share the parallelism budget across files.
+    last_morsel_pipelines: usize,
 }
 
 impl ParquetReadImpl {
     fn run(mut self) -> AsyncTaskData {
         if self.verbose {
-            eprintln!("[ParquetFileReader]: {:?}", &self.config);
+            eprintln!("[ParquetFileReader]: {:?}", self.config);
         }
 
         self.init_morsel_distributor()

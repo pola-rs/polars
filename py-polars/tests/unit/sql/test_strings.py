@@ -463,6 +463,39 @@ def test_string_substr() -> None:
         }
 
 
+def test_string_lpad_rpad() -> None:
+    df = pl.DataFrame({"txt": ["hello", "hi", "a", None, "longstring"]})
+
+    res = df.sql(
+        """
+        SELECT
+          LPAD(txt, 7, 'x')  AS lpad_x,
+          LPAD(txt, 7)        AS lpad_sp,
+          RPAD(txt, 7, '-')   AS rpad_d,
+          RPAD(txt, 7)        AS rpad_sp,
+          LPAD(txt, 4, '#')   AS lpad_trunc,
+          RPAD(txt, 4, '#')   AS rpad_trunc
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "lpad_x": ["xxhello", "xxxxxhi", "xxxxxxa", None, "longstr"],
+        "lpad_sp": ["  hello", "     hi", "      a", None, "longstr"],
+        "rpad_d": ["hello--", "hi-----", "a------", None, "longstr"],
+        "rpad_sp": ["hello  ", "hi     ", "a      ", None, "longstr"],
+        "lpad_trunc": ["hell", "##hi", "###a", None, "long"],
+        "rpad_trunc": ["hell", "hi##", "a###", None, "long"],
+    }
+
+    # error: multi-char fill string
+    for pad_func in ("LPAD", "RPAD"):
+        with pytest.raises(
+            SQLSyntaxError,
+            match=f"{pad_func} fill value must be a single character",
+        ):
+            df.sql(f"SELECT {pad_func}(txt, 5, 'xy') FROM self")
+
+
 def test_string_trim(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
     out = lf.sql(

@@ -72,6 +72,10 @@ impl ScalarColumn {
         self.length == 0
     }
 
+    pub fn is_full_null(&self) -> bool {
+        self.scalar.is_null()
+    }
+
     fn _to_series(name: PlSmallStr, value: Scalar, length: usize) -> Series {
         let series = if length == 0 {
             Series::new_empty(name, value.dtype())
@@ -299,6 +303,13 @@ impl ScalarColumn {
     pub fn into_nulls(mut self) -> Self {
         self.scalar.update(AnyValue::Null);
         self
+    }
+
+    /// Packs every element into a single-element list.
+    pub fn to_unit_list(&self) -> Self {
+        let mut slf = self.clone();
+        slf.map_scalar(|s| Scalar::new_list(s.into_series(PlSmallStr::EMPTY)));
+        slf
     }
 
     pub fn map_scalar(&mut self, map_scalar: impl Fn(Scalar) -> Scalar) {

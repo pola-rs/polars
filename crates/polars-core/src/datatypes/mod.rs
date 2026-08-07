@@ -422,8 +422,7 @@ pub type BinaryOffsetChunked = ChunkedArray<BinaryOffsetType>;
 #[cfg(feature = "object")]
 pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 
-pub trait NumericNative:
-    TotalOrd
+pub trait NumericNative: TotalOrd
     + PartialOrd
     + TotalHash
     + NativeType
@@ -431,8 +430,6 @@ pub trait NumericNative:
     + NumCast
     + Zero
     + One
-    // + Simd
-    // + Simd8
     + std::iter::Sum<Self>
     + Add<Output = Self>
     + Sub<Output = Self>
@@ -445,7 +442,7 @@ pub trait NumericNative:
     + Bounded
     + FromPrimitive
     + IsFloat
-    + HasPrimitiveArithmeticKernel<TrueDivT=<Self::TrueDivPolarsType as PolarsNumericType>::Native>
+    + HasPrimitiveArithmeticKernel<TrueDivT = <Self::TrueDivPolarsType as PolarsNumericType>::Native>
     + FloatSum<f64>
     + AsPrimitive<f64>
     + MinMax

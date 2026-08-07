@@ -10,7 +10,7 @@ unsafe impl IntoSeries for ExtensionChunked {
 impl SeriesWrap<ExtensionChunked> {
     fn apply_on_storage<F>(&self, apply: F) -> Series
     where
-        F: Fn(&Series) -> Series,
+        F: FnOnce(&Series) -> Series,
     {
         apply(self.0.storage()).into_extension(self.0.extension_type().clone())
     }
@@ -189,6 +189,10 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
         self.apply_on_storage(|s| s.rechunk())
     }
 
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.apply_on_storage(move |s| s.with_validity(validity))
+    }
+
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.apply_on_storage(|s| s.new_from_index(index, length))
     }
@@ -294,14 +298,17 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
         self.try_apply_on_storage(|s| s.unique())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         self.0.storage().n_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.0.storage().arg_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         self.0.storage().unique_id()
     }

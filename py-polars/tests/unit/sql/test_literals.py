@@ -72,6 +72,18 @@ def test_bit_hex_errors() -> None:
             pl.sql_expr("colx IN (x'FF',x'123')")
 
         with pytest.raises(
+            SQLSyntaxError,
+            match="invalid hex string literal",
+        ):
+            ctx.execute("SELECT x'ZZZZ' FROM test", eager=True)
+
+        with pytest.raises(
+            SQLSyntaxError,
+            match="invalid hex string literal",
+        ):
+            pl.sql_expr("colx IN (x'FF',x'GHIJ')")
+
+        with pytest.raises(
             SQLInterfaceError,
             match=r'NationalStringLiteral\("hmmm"\) is not a supported literal',
         ):

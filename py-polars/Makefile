@@ -28,6 +28,10 @@ requirements-all: .venv  ## Install/refresh all Python requirements (including t
 build: .venv  ## Compile and install Python Polars for development
 	@$(MAKE) -s -C .. $@
 
+.PHONY: build-debug
+build-debug: .venv  ## Compile and install Python Polars for development with full debug symbols
+	@$(MAKE) -s -C .. $@
+
 .PHONY: build-release
 build-release: .venv  ## Compile and install Python Polars binary with optimizations, with minimal debug symbols
 	@$(MAKE) -s -C .. $@
@@ -51,8 +55,9 @@ fix:
 .PHONY: lint
 lint: .venv  ## Run lint checks (only)
 	$(VENV_BIN)/ruff check
+	$(VENV_BIN)/pyrefly check
+	$(VENV_BIN)/mypy
 	$(VENV_BIN)/typos ..
-	-$(VENV_BIN)/mypy
 
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting (python and rust)
@@ -62,7 +67,7 @@ fmt: .venv  ## Run autoformatting (python and rust)
 
 .PHONY: clippy
 clippy:  ## Run clippy
-	cargo clippy --locked -- -D warnings -D clippy::dbg_macro
+	python3 ../tools/cargo-fail-warning.py clippy --locked -- -W clippy::dbg_macro
 
 .PHONY: pre-commit
 pre-commit: fmt lint clippy  ## Run all code formatting, lint, and clippy quality checks
@@ -73,7 +78,7 @@ test: .venv build  ## Run fast unittests
 
 .PHONY: test-streaming
 test-streaming: .venv build  ## Run fast unittests with the streaming engine
-	POLARS_TIMEOUT_MS=60000 POLARS_AUTO_NEW_STREAMING=1 $(VENV_BIN)/pytest -n auto -m "not may_fail_auto_streaming and not docs and not benchmark and not ci_only" $(PYTEST_ARGS)
+	POLARS_TIMEOUT_MS=60000 POLARS_AUTO_STREAMING=1 $(VENV_BIN)/pytest -n auto -m "not may_fail_auto_streaming and not docs and not benchmark and not ci_only" $(PYTEST_ARGS)
 
 .PHONY: test-all
 test-all: .venv build  ## Run all tests
@@ -109,6 +114,7 @@ clean:  ## Clean up caches and build artifacts
 	@rm -f .coverage
 	@rm -f coverage.xml
 	@rm -f polars/polars.abi3.so
+	@find runtime -type f -name '*.so' -delete
 	@find . -type f -name '*.py[co]' -delete -or -type d -name __pycache__ -exec rm -r {} +
 
 .PHONY: help

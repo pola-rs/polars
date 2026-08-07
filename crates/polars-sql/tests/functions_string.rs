@@ -127,7 +127,7 @@ fn test_array_literal() {
     }
     .unwrap()
     .lazy()
-    .select(&[col("arr").implode()])
+    .select(&[col("arr").implode(true)])
     .collect()
     .unwrap();
 

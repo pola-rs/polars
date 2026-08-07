@@ -279,3 +279,11 @@ def test_lit_object_type_25713() -> None:
     out = pl.select(pl.lit(obj, dtype=pl.Object))
     expected = pl.DataFrame({"literal": [obj]}, schema={"literal": pl.Object})
     assert out.to_dict(as_series=False) == expected.to_dict(as_series=False)
+
+
+def test_allow_dtype_expr_lit_26644() -> None:
+    result = pl.DataFrame().select(
+        pl.lit(None, pl.dtype_of(pl.lit(["abc"])).list.inner_dtype())
+    )
+    expected = pl.DataFrame({"literal": pl.Series([None], dtype=pl.String)})
+    assert_frame_equal(result, expected)

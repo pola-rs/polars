@@ -22,13 +22,13 @@ fn test_lazy_window_functions() {
     let _ = df
         .clone()
         .lazy()
-        .select(&[avg("values").over([col("groups")]).alias("part")])
+        .select(&[avg("values").over([col("groups")]).unwrap().alias("part")])
         .collect()
         .unwrap();
     // test if partition aggregation is correct
     let out = df
         .lazy()
-        .select([col("groups"), sum("values").over([col("groups")])])
+        .select([col("groups"), sum("values").over([col("groups")]).unwrap()])
         .collect()
         .unwrap();
     assert_eq!(
@@ -123,7 +123,11 @@ fn test_reverse_in_groups() -> PolarsResult<()> {
         .select([
             col("B"),
             col("fruits"),
-            col("B").reverse().over([col("fruits")]).alias("rev"),
+            col("B")
+                .reverse()
+                .over([col("fruits")])
+                .unwrap()
+                .alias("rev"),
         ])
         .collect()?;
 
@@ -147,6 +151,7 @@ fn test_sort_by_in_groups() -> PolarsResult<()> {
             col("A")
                 .sort_by([col("B")], SortMultipleOptions::default())
                 .over([col("cars")])
+                .unwrap()
                 .alias("sorted_A_by_B"),
         ])
         .collect()?;
@@ -195,7 +200,7 @@ fn test_window_mapping() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([col("A").over([col("fruits")])])
+        .select([col("A").over([col("fruits")]).unwrap()])
         .collect()?;
 
     assert!(out.column("A")?.equals(df.column("A")?));
@@ -203,7 +208,7 @@ fn test_window_mapping() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([col("A"), lit(0).over([col("fruits")])])
+        .select([col("A"), lit(0).over([col("fruits")]).unwrap()])
         .collect()?;
 
     assert_eq!(out.shape(), (5, 2));
@@ -211,7 +216,10 @@ fn test_window_mapping() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([(lit(10) + col("A")).alias("foo").over([col("fruits")])])
+        .select([(lit(10) + col("A"))
+            .alias("foo")
+            .over([col("fruits")])
+            .unwrap()])
         .collect()?;
 
     let expected = Column::new("foo".into(), [11, 12, 13, 14, 15]);
@@ -226,7 +234,8 @@ fn test_window_mapping() -> PolarsResult<()> {
             col("A"),
             (col("B").sum() + col("A"))
                 .alias("foo")
-                .over([col("fruits")]),
+                .over([col("fruits")])
+                .unwrap(),
         ])
         .collect()?;
     let expected = Column::new("foo".into(), [11, 12, 8, 9, 15]);
@@ -241,7 +250,8 @@ fn test_window_mapping() -> PolarsResult<()> {
             col("B"),
             (col("B").shift(lit(1)) - col("A"))
                 .alias("foo")
-                .over([col("fruits")]),
+                .over([col("fruits")])
+                .unwrap(),
         ])
         .collect()?;
     let expected = Column::new("foo".into(), [None, Some(3), None, Some(-1), Some(-1)]);
@@ -254,7 +264,10 @@ fn test_window_mapping() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .select([(lit(10) + col("A")).alias("foo").over([col("fruits")])])
+        .select([(lit(10) + col("A"))
+            .alias("foo")
+            .over([col("fruits")])
+            .unwrap()])
         .collect()?;
     let expected = Column::new("foo".into(), [13, 14, 11, 12, 15]);
     assert!(out.column("foo")?.equals(&expected));
@@ -268,7 +281,8 @@ fn test_window_mapping() -> PolarsResult<()> {
             col("A"),
             (col("B").sum() + col("A"))
                 .alias("foo")
-                .over([col("fruits")]),
+                .over([col("fruits")])
+                .unwrap(),
         ])
         .collect()?;
 
@@ -283,7 +297,8 @@ fn test_window_mapping() -> PolarsResult<()> {
             col("B"),
             (col("B").shift(lit(1)) - col("A"))
                 .alias("foo")
-                .over([col("fruits")]),
+                .over([col("fruits")])
+                .unwrap(),
         ])
         .collect()?;
 
@@ -301,21 +316,25 @@ fn test_window_exprs_in_binary_exprs() -> PolarsResult<()> {
     ]?
     .lazy()
     .with_columns([
-        (col("value") - col("value").mean().over([col("cat")]))
+        (col("value") - col("value").mean().over([col("cat")]).unwrap())
             .cast(DataType::Int32)
             .alias("centered"),
-        (col("value") - col("value").std(1).over([col("cat")]))
+        (col("value") - col("value").std(1).over([col("cat")]).unwrap())
             .cast(DataType::Int32)
             .alias("scaled"),
-        ((col("value") - col("value").mean().over([col("cat")]))
-            / col("value").std(1).over([col("cat")]))
+        ((col("value") - col("value").mean().over([col("cat")]).unwrap())
+            / col("value").std(1).over([col("cat")]).unwrap())
         .cast(DataType::Int32)
         .alias("stdized"),
-        ((col("value") - col("value").mean()).over([col("cat")]) / col("value").std(1))
-            .cast(DataType::Int32)
-            .alias("stdized2"),
+        ((col("value") - col("value").mean())
+            .over([col("cat")])
+            .unwrap()
+            / col("value").std(1))
+        .cast(DataType::Int32)
+        .alias("stdized2"),
         ((col("value") - col("value").mean()) / col("value").std(1))
             .over([col("cat")])
+            .unwrap()
             .cast(DataType::Int32)
             .alias("stdized3"),
     ])
@@ -346,8 +365,16 @@ fn test_window_exprs_any_all() -> PolarsResult<()> {
     ]?
     .lazy()
     .select([
-        col("var2").any(true).over([col("var1")]).alias("any"),
-        col("var2").all(true).over([col("var1")]).alias("all"),
+        col("var2")
+            .any(true)
+            .over([col("var1")])
+            .unwrap()
+            .alias("any"),
+        col("var2")
+            .all(true)
+            .over([col("var1")])
+            .unwrap()
+            .alias("all"),
     ])
     .collect()?;
 
@@ -373,6 +400,7 @@ fn test_window_naive_any() -> PolarsResult<()> {
                 .sum()
                 .gt(lit(0))
                 .over([col("row_id")])
+                .unwrap()
                 .alias("res"),
         )
         .collect()?;
@@ -391,7 +419,7 @@ fn test_window_map_empty_df_3542() -> PolarsResult<()> {
     let out = df
         .lazy()
         .filter(col("y").lt(0))
-        .select([col("y").fill_null(0).last().over([col("y")])])
+        .select([col("y").fill_null(0).last().over([col("y")]).unwrap()])
         .collect()?;
     assert_eq!(out.height(), 0);
     Ok(())

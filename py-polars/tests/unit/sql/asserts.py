@@ -11,7 +11,7 @@ from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Collection, Mapping, Sequence
 
     from polars.type_aliases import PolarsDataType
 
@@ -25,7 +25,7 @@ _POLARS_TO_SQLITE_: dict[PolarsDataType, str] = {
 
 
 def _execute_with_sqlite(
-    frames: dict[str, pl.DataFrame | pl.LazyFrame],
+    frames: Mapping[str, pl.DataFrame | pl.LazyFrame],
     query: str,
 ) -> pl.DataFrame:
     """Execute a SQL query against SQLite, returning a DataFrame."""
@@ -57,7 +57,7 @@ def _execute_with_sqlite(
 
 
 def _execute_with_duckdb(
-    frames: dict[str, pl.DataFrame | pl.LazyFrame],
+    frames: Mapping[str, pl.DataFrame | pl.LazyFrame],
     query: str,
 ) -> pl.DataFrame:
     """Execute a SQL query against DuckDB, returning a DataFrame."""
@@ -81,10 +81,12 @@ _COMPARISON_BACKENDS_ = {
 
 
 def assert_sql_matches(
-    frames: pl.DataFrame | pl.LazyFrame | dict[str, pl.DataFrame | pl.LazyFrame],
+    frames: pl.DataFrame | pl.LazyFrame | Mapping[str, pl.DataFrame | pl.LazyFrame],
     *,
     query: str,
-    compare_with: Literal["sqlite", "duckdb"] | Collection[Literal["sqlite", "duckdb"]],
+    compare_with: (
+        Literal["sqlite", "duckdb"] | Collection[Literal["sqlite", "duckdb"]] | None
+    ),
     check_dtypes: bool = False,
     check_row_order: bool = True,
     check_column_names: bool = True,
@@ -108,6 +110,7 @@ def assert_sql_matches(
         One or more named SQL engines to use as a reference for comparison.
         - 'sqlite': Use Python's built-in `sqlite3` module.
         - 'duckdb': Use DuckDB (requires `duckdb` to be installed separately).
+        - None: Don't compare against a backend (requires that "expected" is set).
     check_dtypes
         Require that the comparison frame dtypes match; defaults to False, as different
         backends may use different type systems, and we care about the values.
@@ -153,7 +156,12 @@ def assert_sql_matches(
     with pl.SQLContext(frames=frames, eager=True) as ctx:
         polars_result = ctx.execute(query=query, eager=True)
 
-    if isinstance(compare_with, str):
+    if not compare_with:
+        if expected is None:
+            msg = "if no comparison backend specified, `expected` is required"
+            raise ValueError(msg)
+        compare_with = []
+    elif isinstance(compare_with, str):
         compare_with = [compare_with]
 
     for comparison_backend in compare_with:

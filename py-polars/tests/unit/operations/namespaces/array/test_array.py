@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_arr_min_max() -> None:
@@ -184,12 +187,6 @@ def test_array_any_all() -> None:
     expected_all = pl.Series([True, False, False, True, None])
     assert_series_equal(s.arr.all(), expected_all)
 
-    s = pl.Series([[1, 2], [3, 4], [5, 6]], dtype=pl.Array(pl.Int64, 2))
-    with pytest.raises(ComputeError, match="expected boolean elements in array"):
-        s.arr.any()
-    with pytest.raises(ComputeError, match="expected boolean elements in array"):
-        s.arr.all()
-
 
 def test_array_sort() -> None:
     s = pl.Series([[2, None, 1], [1, 3, 2]], dtype=pl.Array(pl.UInt32, 3))
@@ -248,8 +245,13 @@ def test_array_get() -> None:
     assert_frame_equal(out_df, expected_df)
 
     # Out-of-bounds index literal.
-    with pytest.raises(ComputeError, match="get index is out of bounds"):
-        out = s.arr.get(100, null_on_oob=False)
+    with pytest.raises(
+        ComputeError,
+        match="get index 100 is out of bounds for array of width 4",
+    ):
+        s.to_frame().lazy().select(
+            pl.first().arr.get(100, null_on_oob=False)
+        ).collect_schema()
 
     # Negative index literal.
     out = s.arr.get(-2, null_on_oob=False)
@@ -438,7 +440,7 @@ def test_array_explode() -> None:
             "logical": pl.Array(pl.Date, 2),
         },
     )
-    out = df.select(pl.all().arr.explode())
+    out = df.select(pl.all().arr.explode(empty_as_null=True))
     expected = pl.DataFrame(
         {
             "str": ["a", "b", "c", None, None],
@@ -462,7 +464,7 @@ def test_array_explode() -> None:
         ],
         dtype=pl.Array(pl.Date, 2),
     )
-    out_s = s.arr.explode()
+    out_s = s.arr.explode(empty_as_null=False)
     expected_s = pl.Series(
         [
             datetime.date(1998, 1, 1),
@@ -515,12 +517,13 @@ def test_array_to_struct() -> None:
     df = pl.DataFrame(
         {"a": [[1, 2, None], [1, 2, 3]]}, schema={"a": pl.Array(pl.Int8, 3)}
     )
-    assert df.select(
-        pl.col("a").arr.to_struct(fields=lambda idx: f"col_name_{idx}")
-    ).to_series().to_list() == [
-        {"col_name_0": 1, "col_name_1": 2, "col_name_2": None},
-        {"col_name_0": 1, "col_name_1": 2, "col_name_2": 3},
-    ]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert df.select(
+            pl.col("a").arr.to_struct(fields=lambda idx: f"col_name_{idx}")
+        ).to_series().to_list() == [
+            {"col_name_0": 1, "col_name_1": 2, "col_name_2": None},
+            {"col_name_0": 1, "col_name_1": 2, "col_name_2": 3},
+        ]
 
     assert df.lazy().select(pl.col("a").arr.to_struct()).unnest(
         "a"
@@ -563,7 +566,7 @@ def test_array_n_unique() -> None:
 
 def test_explode_19049() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3]]}, schema={"a": pl.Array(pl.Int64, 3)})
-    result_df = df.select(pl.col.a.arr.explode())
+    result_df = df.select(pl.col.a.arr.explode(empty_as_null=True))
     expected_df = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
     assert_frame_equal(result_df, expected_df)
 
@@ -572,7 +575,7 @@ def test_explode_19049() -> None:
         InvalidOperationError,
         match="expected Array datatype for array operation, got: Int64",
     ):
-        df.select(pl.col.a.arr.explode())
+        df.select(pl.col.a.arr.explode(empty_as_null=True))
 
 
 def test_array_join_unequal_lengths_22018() -> None:
@@ -651,7 +654,7 @@ def test_arr_contains() -> None:
     "expr",
     [
         pl.col("a").arr.contains("z"),
-        pl.col("a").arr.explode(),
+        pl.col("a").arr.explode(empty_as_null=True),
         pl.col("a").arr.sum(),
         pl.col("a").arr.to_list(),
         pl.col("a").arr.to_struct(),
@@ -686,3 +689,34 @@ def test_schema_non_array(expr: pl.Expr) -> None:
         match="expected Array datatype for array operation, got: String",
     ):
         lf.select(expr).collect_schema()
+
+
+def test_array_get_broadcast_26217() -> None:
+    df = pl.DataFrame({"idx": [0, 1, 2, 1, 2, 0, 1]})
+    out = df.select(pl.lit([42, 13, 37], pl.Array(pl.UInt8, 3)).arr.get(pl.col.idx))
+    expected = pl.DataFrame(
+        {"literal": [42, 13, 37, 13, 37, 42, 13]}, schema={"literal": pl.UInt8}
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.may_fail_auto_streaming
+@pytest.mark.debug
+def test_array_idx_size_limit_eval(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_ARRAY_EVAL_IDX_SIZE_LIMIT", "20")
+    s = pl.Series([None])
+    width = 19
+    s = s.new_from_index(0, width)
+    assert (
+        pl.Series("a", [s, s, s, s], dtype=pl.Array(pl.Null, width))
+        .to_frame()
+        .select(pl.col("a").arr.eval(pl.element().len() * pl.element()))
+        .head(1)
+        .item()
+        .to_list()
+        == [None] * width
+    )
+
+    captured = capfd.readouterr().err
+    assert "IdxSize limit hit; chunking branch hit" in captured

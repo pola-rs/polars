@@ -3,7 +3,7 @@ use std::sync::Arc;
 use polars_dtype::categorical::{CatSize, Categories};
 use pyo3::{pyclass, pymethods};
 
-#[pyclass(frozen)]
+#[pyclass(frozen, from_py_object)]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyCategories {
@@ -65,6 +65,10 @@ impl PyCategories {
 
     pub fn cat_to_str(&self, cat: CatSize) -> Option<String> {
         Some(self.categories.mapping().cat_to_str(cat)?.to_owned())
+    }
+
+    pub fn num_cats_upper_bound(&self) -> usize {
+        self.categories.mapping().num_cats_upper_bound()
     }
 
     pub fn is_global(&self) -> bool {

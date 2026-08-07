@@ -10,12 +10,12 @@ from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import (
-    find_stacklevel,
-    issue_warning,
-    no_default,
+    NO_DEFAULT,
+    _NamespaceSuggestMixin,
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_expr
+from polars._warnings import find_stacklevel, issue_warning
 from polars.datatypes import Date, Datetime, Int64, Time, parse_into_datatype_expr
 from polars.exceptions import ChronoFormatWarning
 
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
         from typing_extensions import deprecated  # noqa: TC004
 
 
-class ExprStringNameSpace:
+class ExprStringNameSpace(_NamespaceSuggestMixin):
     """Namespace for string related expressions."""
 
     _accessor = "str"
@@ -60,6 +60,8 @@ class ExprStringNameSpace:
     ) -> Expr:
         """
         Convert a String column into a Date column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -108,6 +110,8 @@ class ExprStringNameSpace:
     ) -> Expr:
         """
         Convert a String column into a Datetime column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -188,6 +192,8 @@ class ExprStringNameSpace:
         """
         Convert a String column into a Time column.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         format
@@ -227,6 +233,8 @@ class ExprStringNameSpace:
     ) -> Expr:
         """
         Convert a String column into a Date/Datetime/Time column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -329,6 +337,8 @@ class ExprStringNameSpace:
         """
         Convert a String column into a Decimal column.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
@@ -381,6 +391,8 @@ class ExprStringNameSpace:
         """
         Return the length of each string as the number of bytes.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -421,6 +433,8 @@ class ExprStringNameSpace:
     def len_chars(self) -> Expr:
         """
         Return the length of each string as the number of characters.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -468,6 +482,8 @@ class ExprStringNameSpace:
         """
         Modify strings to their uppercase equivalent.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"foo": ["cat", "dog"]})
@@ -487,6 +503,8 @@ class ExprStringNameSpace:
     def to_lowercase(self) -> Expr:
         """
         Modify strings to their lowercase equivalent.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -508,10 +526,12 @@ class ExprStringNameSpace:
         """
         Modify strings to their titlecase equivalent.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Notes
         -----
         This is a form of case transform where the first letter of each word is
-        capitalized, with the rest of the word in lowercase. Non-alphanumeric
+        capitalized, with the rest of the word in lowercase. Non-alphabetical
         characters define the word boundaries.
 
         Examples
@@ -544,6 +564,8 @@ class ExprStringNameSpace:
     def strip_chars(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove leading and trailing characters.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -601,6 +623,8 @@ class ExprStringNameSpace:
     def strip_chars_start(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove leading characters.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. note::
             This method strips any characters present in `characters` from the
@@ -670,6 +694,8 @@ class ExprStringNameSpace:
     def strip_chars_end(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove trailing characters.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. note::
             This method strips any characters present in `characters` from the
@@ -752,6 +778,8 @@ class ExprStringNameSpace:
         """
         Remove prefix.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         The prefix will be removed from the string exactly once, if found.
 
         .. note::
@@ -791,6 +819,8 @@ class ExprStringNameSpace:
     def strip_suffix(self, suffix: IntoExpr) -> Expr:
         """
         Remove suffix.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         The suffix will be removed from the string exactly once, if found.
 
@@ -832,6 +862,8 @@ class ExprStringNameSpace:
         """
         Pad the start of the string until it reaches the given length.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         length
@@ -870,6 +902,8 @@ class ExprStringNameSpace:
     def pad_end(self, length: int | IntoExprColumn, fill_char: str = " ") -> Expr:
         """
         Pad the end of the string until it reaches the given length.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -913,6 +947,8 @@ class ExprStringNameSpace:
 
         A sign prefix (`-`) is handled by inserting the padding after the sign
         character rather than before.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -971,6 +1007,8 @@ class ExprStringNameSpace:
     ) -> Expr:
         """
         Check if the string contains a substring that matches a pattern.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1043,6 +1081,8 @@ class ExprStringNameSpace:
         Return the bytes offset of the first substring matching a pattern.
 
         If the pattern is not found, returns None.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1133,6 +1173,8 @@ class ExprStringNameSpace:
         """
         Check if string values end with a substring.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         suffix
@@ -1195,6 +1237,8 @@ class ExprStringNameSpace:
     def starts_with(self, prefix: str | Expr) -> Expr:
         """
         Check if string values start with a substring.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1266,6 +1310,8 @@ class ExprStringNameSpace:
 
         Throws an error if invalid JSON strings are encountered.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         dtype
@@ -1323,6 +1369,8 @@ class ExprStringNameSpace:
         Documentation on the JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         json_path
@@ -1368,6 +1416,8 @@ class ExprStringNameSpace:
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1405,6 +1455,8 @@ class ExprStringNameSpace:
         encoding : {'hex', 'base64'}
             The encoding to use.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1436,6 +1488,8 @@ class ExprStringNameSpace:
     def extract(self, pattern: IntoExprColumn, group_index: int = 1) -> Expr:
         r"""
         Extract the target capture group from provided patterns.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1523,6 +1577,8 @@ class ExprStringNameSpace:
         Extract each successive non-overlapping regex match in an individual string
         as a list. If the haystack string is `null`, `null` is returned.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         pattern
@@ -1605,6 +1661,8 @@ class ExprStringNameSpace:
     def extract_groups(self, pattern: str) -> Expr:
         r"""
         Extract all capture groups for the given regex pattern.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1696,6 +1754,8 @@ class ExprStringNameSpace:
         r"""
         Count all successive non-overlapping regex matches.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         pattern
@@ -1759,6 +1819,8 @@ class ExprStringNameSpace:
     ) -> Expr:
         r"""
         Split the string by a substring.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1879,6 +1941,8 @@ class ExprStringNameSpace:
 
         If it cannot make `n` splits, the remaining field elements will be null.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         by
@@ -1947,6 +2011,8 @@ class ExprStringNameSpace:
         elements will be null. If the number of possible splits is `n-1` or greater,
         the last (nth) substring will contain the remainder of the string.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         by
@@ -2010,6 +2076,8 @@ class ExprStringNameSpace:
     ) -> Expr:
         r"""
         Replace first matching regex/literal substring with a new string value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2128,6 +2196,8 @@ class ExprStringNameSpace:
     ) -> Expr:
         r"""
         Replace all matching regex/literal substrings with a new string value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2249,6 +2319,8 @@ class ExprStringNameSpace:
         """
         Returns string values in reversed order.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"text": ["foo", "bar", "man\u0303ana"]})
@@ -2271,6 +2343,8 @@ class ExprStringNameSpace:
     ) -> Expr:
         """
         Extract a substring from each string value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2337,6 +2411,8 @@ class ExprStringNameSpace:
     def head(self, n: int | IntoExprColumn) -> Expr:
         """
         Return the first n characters of each string in a String Series.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2411,6 +2487,8 @@ class ExprStringNameSpace:
         """
         Return the last n characters of each string in a String Series.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -2481,20 +2559,15 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_tail(n_pyexpr))
 
     @deprecated(
-        '`str.explode` is deprecated; use `str.split("").explode()` instead.'
-        " Note that empty strings will result in null instead of being preserved."
-        " To get the exact same behavior, split first and then use a `pl.when...then...otherwise`"
-        " expression to handle the empty list before exploding."
+        '`str.explode` is deprecated; use `str.split("").explode(empty_as_null=False)` instead.'
     )
     def explode(self) -> Expr:
         """
         Returns a column with a separate row for every string character.
 
         .. deprecated:: 0.20.31
-            Use the `.str.split("").explode()` method instead. Note that empty strings
-            will result in null instead of being preserved. To get the exact same
-            behavior, split first and then use a `pl.when...then...otherwise`
-            expression to handle the empty list before exploding.
+            '`str.explode` is deprecated; use
+            `str.split("").explode(empty_as_null=False)` instead.'
 
         Returns
         -------
@@ -2531,6 +2604,8 @@ class ExprStringNameSpace:
     ) -> Expr:
         """
         Convert a String column into an Int64 column with base radix.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2598,6 +2673,8 @@ class ExprStringNameSpace:
 
         Determines if any of the patterns are contained in the string.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         patterns
@@ -2646,13 +2723,15 @@ class ExprStringNameSpace:
     def replace_many(
         self,
         patterns: IntoExpr | Mapping[str, str],
-        replace_with: IntoExpr | NoDefault = no_default,
+        replace_with: IntoExpr | NoDefault = NO_DEFAULT,
         *,
         ascii_case_insensitive: bool = False,
         leftmost: bool = False,
     ) -> Expr:
         """
         Use the Aho-Corasick algorithm to replace many matches.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2826,7 +2905,7 @@ class ExprStringNameSpace:
         │ abcd     ┆ z        │
         └──────────┴──────────┘
         """  # noqa: W505
-        if replace_with is no_default:
+        if replace_with is NO_DEFAULT:
             if not isinstance(patterns, Mapping):
                 msg = "`replace_with` argument is required if `patterns` argument is not a Mapping type"
                 raise TypeError(msg)
@@ -2858,6 +2937,8 @@ class ExprStringNameSpace:
     ) -> Expr:
         """
         Use the Aho-Corasick algorithm to extract many matches.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2950,6 +3031,8 @@ class ExprStringNameSpace:
         The function will return the bytes offset of the start of each match.
         The return type will be `List<UInt32>`
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         patterns
@@ -3029,6 +3112,8 @@ class ExprStringNameSpace:
     def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Expr:
         """
         Vertically concatenate the string values in the column to a single string value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3128,6 +3213,8 @@ class ExprStringNameSpace:
         r"""
         Returns string values with all regular expression meta characters escaped.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
@@ -3151,6 +3238,8 @@ class ExprStringNameSpace:
         Returns the Unicode normal form of the string values.
 
         This uses the forms described in Unicode Standard Annex 15: <https://www.unicode.org/reports/tr15/>.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3189,11 +3278,27 @@ class ExprStringNameSpace:
 
 
 def _validate_format_argument(format: str | None) -> None:
-    if format is not None and ".%f" in format:
-        message = (
-            "Detected the pattern `.%f` in the chrono format string."
+    if format is None:
+        return
+
+    arg_info_list = [
+        (
+            ".%f",
             " This pattern should not be used to parse values after a decimal point."
-            " Use `%.f` instead."
-            " See the full specification: https://docs.rs/chrono/latest/chrono/format/strftime"
-        )
-        warnings.warn(message, ChronoFormatWarning, stacklevel=find_stacklevel())
+            " Use `%.f` instead.",
+        ),
+        (
+            "%f",
+            " This pattern should not be used to parse microseconds."
+            " Instead, use e.g. `%3f` for decimal fraction of a second with a fixed length of 3.",
+        ),
+    ]
+
+    for arg_info in arg_info_list:
+        if arg_info[0] in format:
+            message = (
+                f"Detected the pattern `{arg_info[0]}` in the chrono format string."
+                f"{arg_info[1]}"
+                " See the full specification: https://docs.rs/chrono/latest/chrono/format/strftime"
+            )
+            warnings.warn(message, ChronoFormatWarning, stacklevel=find_stacklevel())

@@ -203,18 +203,25 @@ class ArrayNameSpace:
         ]
         """
 
-    def any(self) -> Series:
+    def any(self, *, ignore_nulls: bool = True) -> Series:
         """
         Evaluate whether any boolean value is true for every subarray.
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
-
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `False`.
 
         Examples
         --------
@@ -376,18 +383,25 @@ class ArrayNameSpace:
         ]
         """
 
-    def all(self) -> Series:
+    def all(self, *, ignore_nulls: bool = True) -> Series:
         """
         Evaluate whether all boolean values are true for every subarray.
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
-
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `True`.
 
         Examples
         --------
@@ -465,7 +479,11 @@ class ArrayNameSpace:
 
     def arg_min(self) -> Series:
         """
-        Retrieve the index of the minimal value in every sub-array.
+        Retrieve an index of a minimal value in every sub-array.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------
@@ -488,7 +506,11 @@ class ArrayNameSpace:
 
     def arg_max(self) -> Series:
         """
-        Retrieve the index of the maximum value in every sub-array.
+        Retrieve an index of a maximum value in every sub-array.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------
@@ -621,7 +643,9 @@ class ArrayNameSpace:
 
         """
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
+    def explode(
+        self, *, empty_as_null: bool | None = None, keep_nulls: bool = True
+    ) -> Series:
         """
         Returns a column with a separate row for every array element.
 
@@ -640,7 +664,7 @@ class ArrayNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
-        >>> s.arr.explode()
+        >>> s.arr.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [

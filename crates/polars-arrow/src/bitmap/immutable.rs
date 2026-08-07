@@ -1,21 +1,21 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::ops::Deref;
-use std::sync::LazyLock;
 
 use either::Either;
+use polars_buffer::{Buffer, SharedStorage};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::utils::{self, BitChunk, BitChunks, BitmapIter, count_zeros, fmt, get_bit_unchecked};
 use super::{IntoIter, MutableBitmap, chunk_iter_to_vec, num_intersections_with};
 use crate::array::Splitable;
+use crate::bitmap::BitmapBuilder;
 use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
     FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
 };
 use crate::bitmap::utils::bytes_for;
 use crate::legacy::utils::FromTrustedLenIterator;
-use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
 
 const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
@@ -167,19 +167,45 @@ impl Bitmap {
         AlignedBitmapSlice::new(&self.storage, self.offset, self.length)
     }
 
+    /// Reallocates if this bitmap has a bit offset that is not a multiple of 8.
+    pub fn to_aligned_bitmap(&self) -> Bitmap {
+        if self.offset.is_multiple_of(8) {
+            self.clone()
+        } else {
+            Bitmap::from_trusted_len_iter(self.iter())
+        }
+    }
+
     /// Returns the byte slice of this [`Bitmap`].
     ///
     /// The returned tuple contains:
-    /// * `.1`: The byte slice, truncated to the start of the first bit. So the start of the slice
+    /// * `.0`: The byte slice, truncated to the start of the first bit. So the start of the slice
     ///   is within the first 8 bits.
-    /// * `.2`: The start offset in bits on a range `0 <= offsets < 8`.
-    /// * `.3`: The length in number of bits.
+    /// * `.1`: The start offset in bits on a range `0 <= offsets < 8`.
+    /// * `.2`: The length in number of bits.
     #[inline]
     pub fn as_slice(&self) -> (&[u8], usize, usize) {
         let start = self.offset / 8;
         let len = (self.offset % 8 + self.length).saturating_add(7) / 8;
         (
             &self.storage[start..start + len],
+            self.offset % 8,
+            self.length,
+        )
+    }
+
+    /// Returns the buffer of this [`Bitmap`].
+    ///
+    /// The returned tuple contains:
+    /// * `.0`: The byte slice, truncated to the start of the first bit. So the start of the slice
+    ///   is within the first 8 bits.
+    /// * `.1`: The start offset in bits on a range `0 <= offsets < 8`.
+    /// * `.2`: The length in number of bits.
+    pub fn as_buffer(&self) -> (Buffer<u8>, usize, usize) {
+        let start = self.offset / 8;
+        let len = (self.offset % 8 + self.length).saturating_add(7) / 8;
+        (
+            Buffer::from_storage(self.storage.clone()).sliced(start..start + len),
             self.offset % 8,
             self.length,
         )
@@ -340,6 +366,14 @@ impl Bitmap {
         self.storage.deref().as_ptr()
     }
 
+    /// If this bitmap has a bit offset that is a multiple of 8, returns
+    /// an offset-adjusted `Some(ptr)`.
+    pub fn as_aligned_ptr(&self) -> Option<*const u8> {
+        self.offset
+            .is_multiple_of(8)
+            .then(|| unsafe { self.as_ptr().add(self.offset / 8) })
+    }
+
     /// Returns a pointer to the start of this [`Bitmap`] (ignores `offsets`)
     /// This pointer is allocated iff `self.len() > 0`.
     pub(crate) fn offset(&self) -> usize {
@@ -386,21 +420,8 @@ impl Bitmap {
     /// Initializes an new [`Bitmap`] filled with unset values.
     #[inline]
     pub fn new_zeroed(length: usize) -> Self {
-        // We intentionally leak 1MiB of zeroed memory once so we don't have to
-        // refcount it.
-        const GLOBAL_ZERO_SIZE: usize = 1024 * 1024;
-        static GLOBAL_ZEROES: LazyLock<SharedStorage<u8>> = LazyLock::new(|| {
-            let mut ss = SharedStorage::from_vec(vec![0; GLOBAL_ZERO_SIZE]);
-            ss.leak();
-            ss
-        });
-
         let bytes_needed = length.div_ceil(8);
-        let storage = if bytes_needed <= GLOBAL_ZERO_SIZE {
-            GLOBAL_ZEROES.clone()
-        } else {
-            SharedStorage::from_vec(vec![0; bytes_needed])
-        };
+        let storage = Buffer::zeroed(bytes_needed).into_storage();
         Self {
             storage,
             offset: 0,
@@ -647,6 +668,26 @@ impl FromTrustedLenIterator<bool> for Bitmap {
 }
 
 impl Bitmap {
+    /// Returns a bitmap from an iterator, returning None if all elements were true.
+    pub fn opt_from_iter<I: Iterator<Item = bool>>(mut iterator: I) -> Option<Self> {
+        let mut num_true = 0;
+        loop {
+            match iterator.next() {
+                Some(true) => num_true += 1,
+                Some(false) => break,
+                None => return None, // All true.
+            }
+        }
+
+        let mut bm = BitmapBuilder::with_capacity(num_true + 1 + iterator.size_hint().0);
+        bm.extend_constant(num_true, true);
+        bm.push(false);
+        for x in iterator {
+            bm.push(x);
+        }
+        bm.into_opt_validity()
+    }
+
     /// Creates a new [`Bitmap`] from an iterator of booleans.
     ///
     /// # Safety

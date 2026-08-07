@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars._typing import ConcatMethod
 from polars.testing import assert_frame_equal
 
 
@@ -109,11 +110,26 @@ def test_union_horizontal() -> None:
     df2 = pl.DataFrame({"b": [4, 5]})
     df3 = pl.DataFrame({"c": [6, 7, 8, 9]})
 
-    result = pl.union([df1, df2, df3], how="horizontal")
+    with pytest.deprecated_call(match="default behavior of `how='horizontal'`"):
+        result = pl.union([df1, df2, df3], how="horizontal")
     expected = pl.DataFrame(
         {"a": [1, 2, 3, None], "b": [4, 5, None, None], "c": [6, 7, 8, 9]}
     )
     assert_frame_equal(result, expected)
+
+    result = pl.union([df1, df2, df3], how="horizontal_extend")
+    assert_frame_equal(result, expected)
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.union([df1, df2], how="horizontal", strict=True)
+
+    with pytest.deprecated_call(match="`strict` parameter"):
+        result = pl.union([df1, df2, df3], how="horizontal", strict=False)
+    assert_frame_equal(result, expected)
+
+    for strict in (True, False):
+        with pytest.raises(ValueError, match=r"strict.*horizontal_extend"):
+            pl.union([df1, df2], how="horizontal_extend", strict=strict)
 
 
 def test_union_align_no_common_columns() -> None:
@@ -142,12 +158,28 @@ def test_union_lazyframe_horizontal() -> None:
     lf1 = pl.DataFrame({"a": [1, 2]}).lazy()
     lf2 = pl.DataFrame({"b": [3, 4, 5]}).lazy()
 
-    result = pl.union([lf1, lf2], how="horizontal")
+    with pytest.deprecated_call(match="default behavior of `how='horizontal'`"):
+        result = pl.union([lf1, lf2], how="horizontal")
     assert isinstance(result, pl.LazyFrame)
 
     collected = result.collect()
     expected = pl.DataFrame({"a": [1, 2, None], "b": [3, 4, 5]})
     assert_frame_equal(collected, expected)
+
+    result = pl.union([lf1, lf2], how="horizontal_extend")
+    assert isinstance(result, pl.LazyFrame)
+    assert_frame_equal(result.collect(), expected)
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.union([lf1, lf2], how="horizontal", strict=True).collect()
+
+    with pytest.deprecated_call(match="`strict` parameter"):
+        result = pl.union([lf1, lf2], how="horizontal", strict=False)
+    assert_frame_equal(result.collect(), expected)
+
+    for strict in (True, False):
+        with pytest.raises(ValueError, match=r"strict.*horizontal_extend"):
+            pl.union([lf1, lf2], how="horizontal_extend", strict=strict)
 
 
 def test_union_lazyframe_diagonal() -> None:
@@ -213,3 +245,40 @@ def test_union_with_empty_dataframes() -> None:
 
     result2 = pl.union([df_with_data, empty_df])
     assert_frame_equal(result2, df_with_data, check_row_order=False)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "how",
+    [
+        "align",
+        "align_full",
+        "align_inner",
+        "align_left",
+        "align_right",
+    ],
+)
+@pytest.mark.parametrize(
+    "n_dfs",
+    [3, 4, 5],  # balanced tree +/- 1
+)
+def test_union_align_associativity_26788(how: ConcatMethod, n_dfs: int) -> None:
+    # create every possible key combination over `n_dfs` dataframes
+    n_dfs = n_dfs
+    keys = [
+        [x for x in range(1 << n_dfs) if not (x >> (n_dfs - 1 - i) & 1)]
+        for i in range(n_dfs)
+    ]
+    dfs = [
+        pl.DataFrame({"k": key})
+        .with_columns((i * 100 + pl.col.k).alias(f"v_{i}"))
+        .lazy()
+        for i, key in enumerate(keys)
+    ]
+
+    chained_from_left = dfs[0]
+    for df in dfs[1:]:
+        chained_from_left = pl.union([chained_from_left, df], how=how)
+
+    full = pl.union(dfs, how=how)
+    assert_frame_equal(chained_from_left, full, check_row_order=False)

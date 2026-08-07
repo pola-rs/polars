@@ -40,7 +40,7 @@ print(df.head(3))
 # --8<-- [end:head]
 
 # --8<-- [start:glimpse]
-print(df.glimpse(return_as_string=True))
+print(df.glimpse(return_type="string"))
 # --8<-- [end:glimpse]
 
 # --8<-- [start:tail]
@@ -48,9 +48,7 @@ print(df.tail(3))
 # --8<-- [end:tail]
 
 # --8<-- [start:sample]
-import random
-
-random.seed(42)  # For reproducibility.
+pl.set_random_seed(42)  # For reproducibility.
 
 print(df.sample(2))
 # --8<-- [end:sample]

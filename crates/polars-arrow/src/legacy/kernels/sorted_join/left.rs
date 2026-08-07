@@ -33,6 +33,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
     ));
     out_lhs.extend(left_offset..(left_idx + left_offset));
 
+    #[allow(clippy::explicit_counter_loop)]
     for &val_l in &left[left_idx as usize..] {
         loop {
             match right.get(right_idx as usize) {
@@ -52,15 +53,14 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                                     right_idx = current_idx;
                                     break;
                                 },
-                                Some(&val_r) => {
-                                    if val_l == val_r {
-                                        out_lhs.push(left_idx + left_offset);
-                                        out_rhs.push(right_idx.into());
-                                    } else {
-                                        // reset right index because the next lhs value can be the same
-                                        right_idx = current_idx;
-                                        break;
-                                    }
+                                Some(&val_r) if val_l == val_r => {
+                                    out_lhs.push(left_idx + left_offset);
+                                    out_rhs.push(right_idx.into());
+                                },
+                                Some(_) => {
+                                    // reset right index because the next lhs value can be the same
+                                    right_idx = current_idx;
+                                    break;
                                 },
                             }
                         }

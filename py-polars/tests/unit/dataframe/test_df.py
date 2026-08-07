@@ -40,7 +40,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
     from polars import Expr
-    from polars._typing import JoinStrategy, UniqueKeepStrategy
+    from polars._typing import JoinStrategy, PolarsDataType, UniqueKeepStrategy
+    from tests.conftest import PlMonkeyPatch
 
 
 class MappingObject(Mapping[str, Any]):  # noqa: D101
@@ -174,7 +175,7 @@ def test_mixed_sequence_selection() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_from_arrow(monkeypatch: Any) -> None:
+def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
     tbl = pa.table(
         {
             "a": pa.array([1, 2], pa.timestamp("s")),
@@ -189,7 +190,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
         }
     )
     record_batches = tbl.to_batches(max_chunksize=1)
-    expected_schema = {
+    expected_schema: dict[str, PolarsDataType] = {
         "a": pl.Datetime("ms"),
         "b": pl.Datetime("ms"),
         "c": pl.Datetime("us"),
@@ -240,7 +241,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
     # try a single column dtype override
     for t in (tbl, empty_tbl):
         df = pl.DataFrame(t, schema_overrides={"e": pl.Int8})
-        override_schema = expected_schema.copy()
+        override_schema: dict[str, PolarsDataType] = expected_schema.copy()
         override_schema["e"] = pl.Int8
         assert df.schema == override_schema
         assert df.rows() == expected_data[: (df.height)]
@@ -272,7 +273,6 @@ def test_from_arrow(monkeypatch: Any) -> None:
     assert df2.rows() == df.rows()[:3]
 
     assert df0.schema == {"id": pl.String, "points": pl.Int64}
-    print(df1.schema)
     assert df1.schema == {"x": pl.String, "y": pl.Int32}
     assert df2.schema == {"x": pl.String, "y": pl.Int32}
 
@@ -630,9 +630,20 @@ def test_pipe() -> None:
     assert_frame_equal(result, df * 3)
 
 
+def test_map_columns() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
+
+    def _mul_add(s: pl.Series, mul: int, add: int = 0) -> pl.Series:
+        return s * mul + add
+
+    result = df.map_columns(["foo", "bar"], _mul_add, 3, add=1)
+
+    assert_frame_equal(result, df * 3 + 1)
+
+
 def test_explode() -> None:
     df = pl.DataFrame({"letters": ["c", "a"], "nrs": [[1, 2], [1, 3]]})
-    out = df.explode("nrs")
+    out = df.explode("nrs", empty_as_null=False)
     assert out["letters"].to_list() == ["c", "c", "a", "a"]
     assert out["nrs"].to_list() == [1, 2, 1, 3]
 
@@ -984,7 +995,7 @@ def test_head_group_by() -> None:
         df.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(cs.all().exclude(keys))
+        .explode(cs.all().exclude(keys), empty_as_null=False)
     )
 
     assert out.shape == (5, 4)
@@ -1679,7 +1690,7 @@ def test_join_where() -> None:
         }
     )
 
-    assert_frame_equal(out, expected)
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 def test_join_where_bad_input_type() -> None:
@@ -1904,7 +1915,7 @@ def test_group_by_cat_list() -> None:
         .agg([pl.col("cat_column")])["cat_column"]
     )
 
-    out = grouped.explode()
+    out = grouped.explode(empty_as_null=False)
     assert out.dtype == pl.Categorical
     assert out[0] == "a"
 
@@ -2031,8 +2042,6 @@ def test_filter_with_all_expansion() -> None:
     assert out.shape == (2, 3)
 
 
-# TODO: investigate this discrepancy in auto streaming
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud
 def test_extension() -> None:
     class Foo:
@@ -2059,24 +2068,16 @@ def test_extension() -> None:
     rc = sys.getrefcount(foos[0])
     assert rc == base_count
 
+    # Aggregating objects into a list raises, as nested objects
+    # are not supported
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 1
 
-    out = df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 2
-    s = out["a"].list.explode()
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 3
-    del s
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 2
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
+        df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
 
-    assert out["a"].list.explode().to_list() == foos
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 2
-    del out
+    # The failed query must not leak references
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 1
     del df
@@ -2396,7 +2397,7 @@ def test_group_by_slice_expression_args() -> None:
     out = (
         df.group_by("groups", maintain_order=True)
         .agg([pl.col("vals").slice((pl.len() * 0.1).cast(int), (pl.len() // 5))])
-        .explode("vals")
+        .explode("vals", empty_as_null=False)
     )
 
     expected = pl.DataFrame(
@@ -2423,14 +2424,14 @@ def test_explode_empty() -> None:
         .group_by("x", maintain_order=True)
         .agg(pl.col("y").gather([]))
     )
-    assert df.explode("y").to_dict(as_series=False) == {
+    assert df.explode("y", empty_as_null=True).to_dict(as_series=False) == {
         "x": ["a", "b"],
         "y": [None, None],
     }
 
     df = pl.DataFrame({"x": ["1", "2", "4"], "y": [["a", "b", "c"], ["d"], []]})
     assert_frame_equal(
-        df.explode("y"),
+        df.explode("y", empty_as_null=True),
         pl.DataFrame({"x": ["1", "1", "1", "2", "4"], "y": ["a", "b", "c", "d", None]}),
     )
 
@@ -2440,7 +2441,7 @@ def test_explode_empty() -> None:
             "numbers": [[]],
         }
     )
-    assert df.explode("numbers").to_dict(as_series=False) == {
+    assert df.explode("numbers", empty_as_null=True).to_dict(as_series=False) == {
         "letters": ["a"],
         "numbers": [None],
     }
@@ -2798,7 +2799,7 @@ def test_set() -> None:
 
     # needs to be a 2 element tuple
     with pytest.raises(ValueError):
-        df[1, 2, 3] = 1
+        df[1, 2, 3] = 1  # type: ignore[index]
 
     # we cannot index with any type, such as bool
     with pytest.raises(TypeError):
@@ -2848,6 +2849,7 @@ def test_init_datetimes_with_timezone() -> None:
     tz_europe = "Europe/Amsterdam"
 
     dtm = datetime(2022, 10, 12, 12, 30)
+    type_overrides: dict[str, Any]
     for time_unit in DTYPE_TEMPORAL_UNITS:
         for type_overrides in (
             {
@@ -2928,15 +2930,19 @@ def test_init_vs_strptime_consistency(
 def test_init_vs_strptime_consistency_converts() -> None:
     result = pl.Series(
         [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=-8)))],
-        dtype=pl.Datetime("us", "US/Pacific"),
+        dtype=pl.Datetime("us", "America/Los_Angeles"),
     ).item()
-    assert result == datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Pacific"))
+    assert result == datetime(
+        2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="America/Los_Angeles")
+    )
     result = (
         pl.Series(["2020-01-01 00:00-08:00"])
-        .str.strptime(pl.Datetime("us", "US/Pacific"))
+        .str.strptime(pl.Datetime("us", "America/Los_Angeles"))
         .item()
     )
-    assert result == datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Pacific"))
+    assert result == datetime(
+        2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="America/Los_Angeles")
+    )
 
 
 def test_init_physical_with_timezone() -> None:
@@ -3328,3 +3334,53 @@ def test_with_columns_generator_alias() -> None:
     df = pl.select(a=1).with_columns(expr.alias(name) for name, expr in data.items())
     expected = pl.DataFrame({"a": [2]})
     assert df.equals(expected)
+
+
+def test_sort_errors_with_object_dtype_24677() -> None:
+    df = pl.DataFrame({"a": [object(), object()], "b": [1, 2]})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=r"column '.*' has a dtype of '.*', which does not support sorting",
+    ):
+        df.sort("a")
+
+
+def test_sample_respects_global_seed_26973() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5, 6, 7, 8]})
+
+    pl.set_random_seed(0)
+    result1 = df.sample(1)
+    pl.set_random_seed(0)
+    result2 = df.sample(1)
+
+    assert_frame_equal(result1, result2)
+
+
+def test_transpose_mixed_list_and_non_list_columns_no_panic_26538() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2], [3, 4]],
+            "b": [[5, 6], [7, 8]],
+            "c": ["foo", "bar"],
+            "d": [["baz"], ["qux"]],
+        }
+    )
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.transpose()
+
+
+# shuffle=True and shuffle=None both rely on rand::seq::index::sample's
+# unspecified order, so they produce the same behavior here
+@pytest.mark.parametrize("shuffle", [False, None, True])
+def test_df_sample_reworked_shuffle_23557(shuffle: bool | None) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3, 4]})
+
+    result = df.sample(n=2, shuffle=shuffle, seed=0)["x"].to_list()
+
+    if shuffle is False:
+        assert result == [1, 2]
+    else:
+        assert len(result) == 2
+        assert set(result).issubset({1, 2, 3, 4})

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
+    _NamespaceSuggestMixin,
     qualified_type_name,
     sphinx_accessor,
 )
@@ -25,7 +26,7 @@ elif BUILDING_SPHINX_DOCS:
 
 
 @expr_dispatch
-class StructNameSpace:
+class StructNameSpace(_NamespaceSuggestMixin):
     """Series.struct namespace."""
 
     _accessor = "struct"
@@ -98,6 +99,30 @@ class StructNameSpace:
         >>> s = s.struct.rename_fields(["c", "d"])
         >>> s.struct.fields
         ['c', 'd']
+        """
+
+    def drop(self, names: Sequence[str], *, strict: bool = True) -> Series:
+        """
+        Drop one or more fields from the struct.
+
+        Parameters
+        ----------
+        names
+            Names of the fields to drop.
+        strict
+            If True, raise an error if any of the specified fields do not exist in the
+            struct.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+        >>> s.struct.drop(["a"])
+        shape: (2,)
+        Series: 'a' [struct[1]]
+        [
+            {2}
+            {4}
+        ]
         """
 
     @property

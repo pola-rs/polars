@@ -10,7 +10,6 @@ pub type ToPython = Arc<dyn for<'a> Fn(&'a dyn Any) -> PyResult<Py<PyAny>> + Sen
 
 #[derive(Clone)]
 pub struct FromPythonConvertRegistry {
-    pub partition_target_cb_result: FromPython,
     pub file_provider_result: FromPython,
     pub series: FromPython,
     pub df: FromPython,
@@ -58,6 +57,34 @@ impl PythonConvertRegistry {
                 py.import("polars.io.partition")
                     .unwrap()
                     .getattr("FileProviderArgs")
+                    .unwrap()
+                    .unbind()
+            })
+        });
+
+        &CLS
+    }
+
+    pub fn py_sinked_paths_callback_args_dataclass(&self) -> &'static Py<PyAny> {
+        static CLS: LazyLock<Py<PyAny>> = LazyLock::new(|| {
+            Python::attach(|py| {
+                py.import("polars.io.partition")
+                    .unwrap()
+                    .getattr("SinkedPathsCallbackArgs")
+                    .unwrap()
+                    .unbind()
+            })
+        });
+
+        &CLS
+    }
+
+    pub fn py_iceberg_sink_state_class(&self) -> &'static Py<PyAny> {
+        static CLS: LazyLock<Py<PyAny>> = LazyLock::new(|| {
+            Python::attach(|py| {
+                py.import("polars.io.iceberg._sink")
+                    .unwrap()
+                    .getattr("IcebergSinkState")
                     .unwrap()
                     .unbind()
             })

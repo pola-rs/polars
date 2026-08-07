@@ -22,13 +22,13 @@ impl PhysicalExpr for CastExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let column = self.input.evaluate(df, state)?;
         self.finish(&column)
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -57,7 +57,7 @@ impl PhysicalExpr for CastExpr {
             AggState::NotAggregated(_) => {
                 if match self.options {
                     CastOptions::NonStrict | CastOptions::Overflowing => true,
-                    CastOptions::Strict => ac.original_len,
+                    CastOptions::Strict => ac.original_groups,
                 } {
                     // before we flatten, make sure that groups are updated
                     ac.groups();

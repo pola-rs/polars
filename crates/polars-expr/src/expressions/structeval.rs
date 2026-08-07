@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use polars_core::POOL;
 use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
 use polars_plan::dsl::Expr;
 use rayon::prelude::*;
@@ -213,7 +213,7 @@ impl PhysicalExpr for StructEvalExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
 
         // Set ExecutionState.
@@ -235,7 +235,7 @@ impl PhysicalExpr for StructEvalExpr {
             Ok(result)
         };
         let cols = if self.allow_threading {
-            POOL.install(|| {
+            RAYON.install(|| {
                 self.evaluation
                     .par_iter()
                     .map(f)
@@ -246,16 +246,14 @@ impl PhysicalExpr for StructEvalExpr {
                 .iter()
                 .map(f)
                 .collect::<PolarsResult<Vec<_>>>()
-        };
-        for col in cols? {
-            eval.push(col);
-        }
+        }?;
+        eval.extend(cols);
 
         // Apply with_fields.
         with_fields(&eval)
     }
 
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -280,7 +278,7 @@ impl PhysicalExpr for StructEvalExpr {
 
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate_on_groups(df, groups, &state);
         let acs_eval = if self.allow_threading {
-            POOL.install(|| {
+            RAYON.install(|| {
                 self.evaluation
                     .par_iter()
                     .map(f)
@@ -291,10 +289,8 @@ impl PhysicalExpr for StructEvalExpr {
                 .iter()
                 .map(f)
                 .collect::<PolarsResult<Vec<_>>>()
-        };
-        for ac in acs_eval? {
-            acs.push(ac)
-        }
+        }?;
+        acs.extend(acs_eval);
 
         // Revert ExecutionState.
         state.with_fields_ac = None;

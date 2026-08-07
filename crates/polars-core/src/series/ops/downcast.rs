@@ -44,7 +44,7 @@ impl Series {
     /// let s = Series::new("foo".into(), [1i32 ,2, 3]);
     /// let s_squared: Series = s.i32()
     ///     .unwrap()
-    ///     .into_iter()
+    ///     .iter()
     ///     .map(|opt_v| {
     ///         match opt_v {
     ///             Some(v) => Some(v * v),
@@ -233,7 +233,7 @@ impl Series {
     /// let s = Series::new("foo".into(), [1i32 ,2, 3]);
     /// let s_squared: Series = s.i32()
     ///     .unwrap()
-    ///     .into_iter()
+    ///     .iter()
     ///     .map(|opt_v| {
     ///         match opt_v {
     ///             Some(v) => Some(v * v),

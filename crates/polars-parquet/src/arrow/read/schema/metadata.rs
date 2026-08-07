@@ -31,7 +31,7 @@ fn convert_field(field: &mut Field) {
     // @NOTE: We cast non-Polars dictionaries to normal values because Polars does not have a
     // generic dictionary type.
     field.dtype = match std::mem::take(&mut field.dtype) {
-        ArrowDataType::Dictionary(key_type, value_type, sorted) => {
+        ArrowDataType::Dictionary(key_type, value_type, ordered) => {
             let is_pl_enum_or_categorical =
                 field.metadata.as_ref().is_some_and(|md| {
                     md.contains_key(DTYPE_ENUM_VALUES_LEGACY)
@@ -47,8 +47,14 @@ fn convert_field(field: &mut Field) {
                 ArrowDataType::Utf8View | ArrowDataType::Utf8 | ArrowDataType::LargeUtf8
             );
 
-            if is_pl_enum_or_categorical || is_int_to_str {
-                convert_dtype(ArrowDataType::Dictionary(key_type, value_type, sorted))
+            if is_pl_enum_or_categorical {
+                let is_pl_enum = field.metadata.as_ref().is_some_and(|md| {
+                    md.contains_key(DTYPE_ENUM_VALUES_LEGACY)
+                        || md.contains_key(DTYPE_ENUM_VALUES_NEW)
+                });
+                convert_dtype(ArrowDataType::Dictionary(key_type, value_type, is_pl_enum))
+            } else if is_int_to_str {
+                convert_dtype(ArrowDataType::Dictionary(key_type, value_type, ordered))
             } else {
                 convert_dtype(*value_type)
             }
@@ -78,6 +84,7 @@ fn convert_dtype(mut dtype: ArrowDataType) -> ArrowDataType {
                 convert_field(field);
             }
         },
+        Decimal32(p, s) | Decimal64(p, s) => dtype = Decimal(p, s),
         Float16 => dtype = Float16,
         Binary | LargeBinary => dtype = BinaryView,
         Utf8 | LargeUtf8 => dtype = Utf8View,

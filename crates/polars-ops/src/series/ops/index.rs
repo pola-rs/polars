@@ -1,81 +1,86 @@
-use num_traits::ToPrimitive;
+use arrow::array::Array;
+use arrow::bitmap::BitmapBuilder;
+use arrow::compute::utils::combine_validities_and;
+use arrow::datatypes::IdxArr;
+use num_traits::{Bounded, ToPrimitive, Zero};
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
-use polars_core::prelude::{ChunkedArray, DataType, IdxCa, IdxSize, PolarsIntegerType, Series};
+use polars_core::prelude::{ChunkedArray, IdxCa, IdxSize, PolarsIntegerType, Series};
+use polars_core::with_match_physical_integer_polars_type;
+use polars_utils::select::select_unpredictable;
+use polars_utils::vec::PushUnchecked;
 
 /// UNSIGNED conversion:
-///
-/// - `0 <= v < target_len`  → `Some(v as IdxSize)`
+/// - `0 <= v < target_len`  → `Some(v)`
 /// - `v >= target_len`      → `None`
-/// - values that cannot be represented as `u64` → `None`
-fn convert_unsigned<T>(ca: &ChunkedArray<T>, target_len: usize) -> PolarsResult<IdxCa>
-where
-    T: PolarsIntegerType,
-    T::Native: ToPrimitive,
-{
-    let len_u64 = target_len as u64;
-
-    let out: IdxCa = ca
-        .into_iter()
-        .map(|opt_v| {
-            opt_v.and_then(|v| {
-                // cannot represent as u64 → None (treated as OOB)
-                let v_u64 = v.to_u64()?;
-
-                if v_u64 < len_u64 {
-                    Some(v_u64 as IdxSize)
-                } else {
-                    None
-                }
-            })
-        })
-        .collect();
-
-    Ok(out)
-}
-
-/// SIGNED conversion with Python-style negative semantics:
 ///
-/// - `0 <= v < target_len`          → `Some(v as IdxSize)`
-/// - `v >= target_len`              → `None`
-/// - `-target_len <= v < 0`         → `Some(target_len + v)`
+/// SIGNED conversion with Python-style negative semantics:
 /// - `v < -target_len`              → `None`
-/// - values that cannot be represented as `i64` → `None`
-fn convert_signed<T>(ca: &ChunkedArray<T>, target_len: usize) -> PolarsResult<IdxCa>
+/// - `-target_len <= v < 0`         → `Some(target_len + v)`
+/// - `0 <= v < target_len`          → `Some(v)`
+/// - `v >= target_len`              → `None`
+pub fn convert_and_bound_idx_ca<T>(
+    ca: &ChunkedArray<T>,
+    target_len: usize,
+    null_on_oob: bool,
+) -> PolarsResult<IdxCa>
 where
     T: PolarsIntegerType,
     T::Native: ToPrimitive,
 {
-    let len_i64 = target_len as i64;
+    let mut out = Vec::with_capacity(ca.len());
+    let mut in_bounds = BitmapBuilder::with_capacity(ca.len());
+    assert!(target_len < IdxSize::MAX as usize);
 
-    let out: IdxCa = ca
-        .into_iter()
-        .map(|opt_v| {
-            opt_v.and_then(|v| {
-                // cannot represent as i64 → None (treated as OOB)
-                let v_i64 = v.to_i64()?;
-
-                if v_i64 >= 0 {
-                    // 0 <= v < len
-                    if v_i64 < len_i64 {
-                        Some(v_i64 as IdxSize)
+    let unsigned = T::Native::min_value() == T::Native::zero(); // Optimized to constant by compiler.
+    if unsigned {
+        let len_u64 = target_len as u64;
+        for arr in ca.downcast_iter() {
+            for v in arr.values().iter() {
+                // SAFETY: we reserved.
+                unsafe {
+                    if let Some(v_u64) = v.to_u64() {
+                        // Usually infallible.
+                        out.push_unchecked(v_u64 as IdxSize);
+                        in_bounds.push_unchecked(v_u64 < len_u64);
                     } else {
-                        None
-                    }
-                } else {
-                    // negative index: valid iff -len <= v < 0
-                    if v_i64 >= -len_i64 {
-                        let pos = len_i64 + v_i64; // in [0, len)
-                        debug_assert!(pos >= 0 && pos < len_i64);
-                        Some(pos as IdxSize)
-                    } else {
-                        None
+                        in_bounds.push_unchecked(false);
                     }
                 }
-            })
-        })
-        .collect();
+            }
+        }
+    } else {
+        let len_i64 = target_len as i64;
+        for arr in ca.downcast_iter() {
+            for v in arr.values().iter() {
+                // SAFETY: we reserved.
+                unsafe {
+                    if let Some(v_i64) = v.to_i64() {
+                        // Usually infallible.
+                        let mut shifted = v_i64;
+                        shifted += select_unpredictable(v_i64 < 0, len_i64, 0);
+                        out.push_unchecked(shifted as IdxSize);
+                        in_bounds.push_unchecked((v_i64 >= -len_i64) & (v_i64 < len_i64));
+                    } else {
+                        in_bounds.push_unchecked(false);
+                    }
+                }
+            }
+        }
+    }
 
-    Ok(out)
+    let idx_arr = IdxArr::from_vec(out);
+    let in_bounds_valid = in_bounds.into_opt_validity();
+    let ca_valid = ca.rechunk_validity();
+    let valid = combine_validities_and(in_bounds_valid.as_ref(), ca_valid.as_ref());
+    let out = idx_arr.with_validity(valid);
+
+    if !null_on_oob && out.null_count() != ca.null_count() {
+        polars_bail!(
+            OutOfBounds: "gather indices are out of bounds"
+        );
+    }
+
+    Ok(out.into())
 }
 
 /// Convert arbitrary integer Series into IdxCa, using `target_len` as logical length.
@@ -84,7 +89,7 @@ where
 /// - We track null counts before and after:
 ///   - if `null_on_oob == true`, extra nulls are expected and we just return.
 ///   - if `null_on_oob == false` and new nulls appear, we raise OutOfBounds.
-pub fn convert_to_unsigned_index(
+pub fn convert_and_bound_index(
     s: &Series,
     target_len: usize,
     null_on_oob: bool,
@@ -95,75 +100,8 @@ pub fn convert_to_unsigned_index(
         InvalidOperation: "expected integers as index"
     );
 
-    assert!(
-        (target_len as u128) <= (IdxSize::MAX as u128),
-        "internal error: target_len does not fit in IdxSize"
-    );
-
-    let in_nulls = s.null_count();
-
-    // Normalize to IdxCa with all OOB indices already mapped to nulls.
-    let idx: IdxCa = match dtype {
-        // ----- SIGNED -----
-        DataType::Int64 => {
-            let ca = s.i64().unwrap();
-            convert_signed(ca, target_len)?
-        },
-        DataType::Int32 => {
-            let ca = s.i32().unwrap();
-            convert_signed(ca, target_len)?
-        },
-        #[cfg(feature = "dtype-i16")]
-        DataType::Int16 => {
-            let ca = s.i16().unwrap();
-            convert_signed(ca, target_len)?
-        },
-        #[cfg(feature = "dtype-i8")]
-        DataType::Int8 => {
-            let ca = s.i8().unwrap();
-            convert_signed(ca, target_len)?
-        },
-        #[cfg(feature = "dtype-i128")]
-        DataType::Int128 => {
-            let ca = s.i128().unwrap();
-            convert_signed(ca, target_len)?
-        },
-
-        // ----- UNSIGNED -----
-        DataType::UInt64 => {
-            let ca = s.u64().unwrap();
-            convert_unsigned(ca, target_len)?
-        },
-        DataType::UInt32 => {
-            let ca = s.u32().unwrap();
-            convert_unsigned(ca, target_len)?
-        },
-        #[cfg(feature = "dtype-u16")]
-        DataType::UInt16 => {
-            let ca = s.u16().unwrap();
-            convert_unsigned(ca, target_len)?
-        },
-        #[cfg(feature = "dtype-u8")]
-        DataType::UInt8 => {
-            let ca = s.u8().unwrap();
-            convert_unsigned(ca, target_len)?
-        },
-        #[cfg(feature = "dtype-u128")]
-        DataType::UInt128 => {
-            let ca = s.u128().unwrap();
-            convert_unsigned(ca, target_len)?
-        },
-
-        _ => unreachable!(),
-    };
-
-    let out_nulls = idx.null_count();
-
-    if !null_on_oob && out_nulls > in_nulls {
-        polars_bail!(
-            OutOfBounds: "gather indices are out of bounds"
-        );
-    }
-
-    Ok(idx)
+    with_match_physical_integer_polars_type!(dtype, |$T| {
+        let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
+        convert_and_bound_idx_ca(ca, target_len, null_on_oob)
+    })
 }

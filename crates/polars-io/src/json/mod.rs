@@ -75,17 +75,10 @@ use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_error::{PolarsResult, polars_bail};
 use polars_json::json::write::FallibleStreamingIterator;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 use simd_json::BorrowedValue;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct JsonWriterOptions {}
 
 /// The format to use to write the DataFrame to JSON: `Json` (a JSON array)
 /// or `JsonLines` (each row output on a separate line).
@@ -273,6 +266,7 @@ where
                 polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson");
                 let mut bytes = rb.deref().to_vec();
                 let owned = &mut vec![];
+                #[expect(deprecated)] // JSON is not a row-format
                 compression::maybe_decompress_bytes(&bytes, owned)?;
                 // the easiest way to avoid ownership issues is by implicitly figuring out if
                 // decompression happened (owned is only populated on decompress), then pick which bytes to parse

@@ -19,6 +19,7 @@ from polars.functions.as_datatype import (
     concat_str,
     duration,
     format,
+    list,
     struct,
 )
 from polars.functions.as_datatype import date_ as date
@@ -27,7 +28,7 @@ from polars.functions.as_datatype import time_ as time
 from polars.functions.business import business_day_count
 from polars.functions.col import col
 from polars.functions.datatype import dtype_of, self_dtype, struct_with_fields
-from polars.functions.eager import align_frames, concat, union
+from polars.functions.eager import align_frames, concat, merge_sorted, union
 from polars.functions.escape_regex import escape_regex
 from polars.functions.lazy import (
     _row_encode,
@@ -115,6 +116,7 @@ __all__ = [
     "approx_n_unique",
     "arg_where",
     "concat",
+    "merge_sorted",
     "union",
     "date_range",
     "date_ranges",
@@ -140,6 +142,7 @@ __all__ = [
     "concat_arr",
     "concat_list",
     "concat_str",
+    "list",
     "corr",
     "count",
     "cov",

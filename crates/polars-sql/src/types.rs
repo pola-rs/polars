@@ -46,7 +46,7 @@ pub fn is_iso_time(value: &str) -> bool {
     TIME_LITERAL_RE.is_match(value)
 }
 
-fn timeunit_from_precision(prec: &Option<u64>) -> PolarsResult<TimeUnit> {
+pub(crate) fn timeunit_from_precision(prec: &Option<u64>) -> PolarsResult<TimeUnit> {
     Ok(match prec {
         None => TimeUnit::Microseconds,
         Some(n) if (1u64..=3u64).contains(n) => TimeUnit::Milliseconds,

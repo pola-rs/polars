@@ -1,7 +1,6 @@
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
-use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
@@ -35,10 +34,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
 
     fn _get_flags(&self) -> StatisticsFlags {
         self.0.physical().get_flags()
-    }
-
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.physical().equal_element(idx_self, idx_other, other)
     }
 
     #[cfg(feature = "zip_with")]
@@ -91,6 +86,16 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .agg_max(groups)
             .into_duration(self.0.time_unit())
             .into_series()
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_max(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -416,6 +421,15 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.0
+            .physical()
+            .clone()
+            .with_validity(validity)
+            .into_duration(self.0.time_unit())
+            .into_series()
+    }
+
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.0
             .physical()
@@ -467,6 +481,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.physical().n_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         ChunkUnique::unique_id(self.0.physical())
     }
@@ -549,6 +564,25 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             self.dtype().clone(),
             v.as_duration(self.0.time_unit()),
         ))
+    }
+
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let result = self.0.physical().quantiles_reduce(quantiles, method)?;
+        if let AnyValue::List(float_s) = result.value() {
+            let float_ca = float_s.f64().unwrap();
+            let int_s = float_ca
+                .iter()
+                .map(|v: Option<f64>| v.map(|f| f as i64))
+                .collect::<Int64Chunked>()
+                .into_duration(self.0.time_unit())
+                .into_series();
+            Ok(Scalar::new(
+                DataType::List(Box::new(self.dtype().clone())),
+                AnyValue::List(int_s),
+            ))
+        } else {
+            polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")
+        }
     }
 
     #[cfg(feature = "approx_unique")]

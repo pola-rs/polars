@@ -1,5 +1,6 @@
 mod count;
 mod dsl;
+mod equality;
 mod hint;
 #[cfg(feature = "python")]
 mod python_udf;
@@ -15,7 +16,6 @@ pub use hint::*;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_io::cloud::CloudOptions;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -43,8 +43,8 @@ pub enum FunctionIR {
     FastCount {
         sources: ScanSources,
         scan_type: Box<FileScanIR>,
-        cloud_options: Option<CloudOptions>,
         alias: Option<PlSmallStr>,
+        cloud_options: Box<Option<polars_io::cloud::CloudOptions>>,
     },
 
     Unnest {
@@ -84,17 +84,54 @@ impl Hash for FunctionIR {
         std::mem::discriminant(self).hash(state);
         match self {
             #[cfg(feature = "python")]
-            FunctionIR::OpaquePython { .. } => {},
-            FunctionIR::Opaque { fmt_str, .. } => fmt_str.hash(state),
+            FunctionIR::OpaquePython(OpaquePythonUdf {
+                function,
+                schema,
+                predicate_pd,
+                projection_pd,
+                streamable,
+                validate_output,
+            }) => {
+                // Use the Python object pointer as its identity (equivalent to Python's id()).
+                // This ensures two different Python functions are never treated as identical
+                // by common subplan elimination, while the same function object used twice
+                // on the same input is correctly recognised as a common subplan.
+                let ptr_addr = function.0.as_ptr() as usize;
+                ptr_addr.hash(state);
+                // Behavior-affecting fields, mirrored from `PartialEq`.
+                schema.hash(state);
+                predicate_pd.hash(state);
+                projection_pd.hash(state);
+                streamable.hash(state);
+                validate_output.hash(state);
+            },
+            FunctionIR::Opaque {
+                function,
+                schema,
+                predicate_pd,
+                projection_pd,
+                streamable,
+                fmt_str: _,
+            } => {
+                // There is no meaningful structural hash for a `dyn DataFrameUdf`; use the `Arc`
+                // allocation address as its identity, matching `PartialEq` (`Arc::ptr_eq`).
+                (Arc::as_ptr(function) as *const () as usize).hash(state);
+                std::mem::discriminant(schema).hash(state);
+                if let Some(schema) = schema {
+                    (Arc::as_ptr(schema) as *const () as usize).hash(state);
+                }
+                predicate_pd.hash(state);
+                projection_pd.hash(state);
+                streamable.hash(state);
+            },
             FunctionIR::FastCount {
                 sources,
                 scan_type,
-                cloud_options,
                 alias,
+                ..
             } => {
                 sources.hash(state);
                 scan_type.hash(state);
-                cloud_options.hash(state);
                 alias.hash(state);
             },
             FunctionIR::Unnest { columns, separator } => {
@@ -130,15 +167,18 @@ impl FunctionIR {
     pub fn is_streamable(&self) -> bool {
         use FunctionIR::*;
         match self {
-            Rechunk => false,
-            FastCount { .. } | Unnest { .. } | Explode { .. } => true,
+            Unnest { .. } | Explode { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
+            Hint(_) => true,
+
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { streamable, .. }) => *streamable,
+
+            Rechunk => false,
+            FastCount { .. } => false,
             RowIndex { .. } => false,
-            Hint(_) => true,
         }
     }
 
@@ -202,9 +242,17 @@ impl FunctionIR {
             FastCount {
                 sources,
                 scan_type,
-                cloud_options,
                 alias,
-            } => count::count_rows(sources, scan_type, cloud_options.as_ref(), alias.clone()),
+                cloud_options,
+            } => {
+                debug_assert_eq!(df.shape(), (0, 0));
+                count::count_rows(
+                    sources,
+                    scan_type,
+                    alias.clone(),
+                    cloud_options.as_ref().as_ref(),
+                )
+            },
             Rechunk => {
                 df.rechunk_mut_par();
                 Ok(df)
@@ -226,10 +274,8 @@ impl FunctionIR {
             },
             RowIndex { name, offset, .. } => df.with_row_index(name.clone(), *offset),
             Hint(hint) => {
-                #[expect(irrefutable_let_patterns)]
-                if let HintIR::Sorted(s) = &hint
-                    && let Some(s) = s.first()
-                {
+                let HintIR::Sorted(s) = &hint;
+                if let Some(s) = s.first() {
                     let idx = df.try_get_column_index(&s.column)?;
                     let col = &mut unsafe { df.columns_mut_retain_schema() }[idx];
                     if let Some(d) = s.descending {
@@ -324,8 +370,8 @@ impl Display for FunctionIR {
             FastCount {
                 sources,
                 scan_type,
-                cloud_options: _,
                 alias,
+                ..
             } => {
                 let scan_type: &str = (&(**scan_type)).into();
                 let default_column_name = PlSmallStr::from_static(crate::constants::LEN);

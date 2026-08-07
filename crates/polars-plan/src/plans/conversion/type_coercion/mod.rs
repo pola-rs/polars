@@ -136,10 +136,13 @@ impl OptimizationRule for TypeCoercionRule {
 
                         let v = CastColumnsPolicy {
                             integer_upcast: true,
+                            integer_to_float_cast: false,
                             float_upcast: true,
                             float_downcast: true,
                             datetime_nanoseconds_downcast: true,
                             datetime_microseconds_downcast: true,
+                            datetime_milliseconds_upcast: true,
+                            datetime_microseconds_upcast: true,
                             datetime_convert_timezone: true,
                             null_upcast: true,
                             categorical_to_string: true,
@@ -181,7 +184,10 @@ impl OptimizationRule for TypeCoercionRule {
 
                 inline_or_prune_cast(&input, &dtype, options, schema, expr_arena)?
             },
-            AExpr::Agg(IRAggExpr::Implode(expr)) => inline_implode(expr, expr_arena)?,
+            AExpr::Agg(IRAggExpr::Implode {
+                input,
+                maintain_order: _,
+            }) => inline_implode(input, expr_arena)?,
             AExpr::Ternary {
                 truthy: truthy_node,
                 falsy: falsy_node,
@@ -233,6 +239,209 @@ impl OptimizationRule for TypeCoercionRule {
                 op,
                 right: node_right,
             } => return process_binary(expr_arena, schema, node_left, op, node_right),
+            #[cfg(feature = "is_between")]
+            AExpr::Function {
+                ref input,
+                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
+                options,
+            } => {
+                use CmpLiteralRhsRewrite::*;
+
+                use crate::plans::type_coercion::binary::{
+                    BoolValueAlways, CmpLiteralRhsRewrite, coerce_comparison_literal,
+                    coerced_binop_dtype,
+                };
+
+                let [needle, low, high] = input.as_slice() else {
+                    return Ok(None);
+                };
+
+                let needle = needle.clone();
+                let low = low.clone();
+                let high = high.clone();
+
+                let mut new_low: Option<ExprIR> = None;
+                let mut new_high: Option<ExprIR> = None;
+                // Some(v):
+                // * v @ false -> LHS only
+                // * v @ true -> RHS only
+                let mut one_side: Option<bool> = None;
+
+                let cmp_op_low = match closed {
+                    ClosedInterval::Both | ClosedInterval::Left => Operator::GtEq,
+                    ClosedInterval::Right | ClosedInterval::None => Operator::Gt,
+                };
+                let cmp_op_high = match closed {
+                    ClosedInterval::Both | ClosedInterval::Right => Operator::LtEq,
+                    ClosedInterval::Left | ClosedInterval::None => Operator::Lt,
+                };
+
+                let needle_dtype = unpack!(try_get_dtype(expr_arena, needle.node(), schema).ok());
+
+                let (low_ae, low_dtype) =
+                    unpack!(get_aexpr_and_type(expr_arena, low.node(), schema));
+
+                if low_dtype != needle_dtype
+                    && let AExpr::Literal(lv) = low_ae
+                {
+                    use crate::plans::type_coercion::binary::BoolValueAlways;
+
+                    if let LiteralValue::Scalar(lit) = lv.clone().materialize()
+                        && let Some(rewrite) = coerce_comparison_literal(
+                            needle.node(),
+                            &needle_dtype,
+                            cmp_op_low,
+                            lit,
+                            expr_arena,
+                        )
+                    {
+                        match rewrite {
+                            ReplaceLit(new_lit) => {
+                                new_low = Some(ExprIR::from_node(
+                                    expr_arena.add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
+                                    expr_arena,
+                                ));
+                            },
+                            NewAExpr {
+                                aexpr,
+                                output_constraint,
+                            } => match output_constraint {
+                                Some(BoolValueAlways::True | BoolValueAlways::TrueOrNull) => {
+                                    one_side = Some(true)
+                                },
+                                Some(BoolValueAlways::FalseOrNull) => return Ok(Some(aexpr)),
+                                None => return Ok(None),
+                            },
+                        }
+                    }
+                }
+
+                let (high_ae, high_dtype) =
+                    unpack!(get_aexpr_and_type(expr_arena, high.node(), schema));
+
+                if high_dtype != needle_dtype
+                    && let AExpr::Literal(lv) = high_ae
+                {
+                    if let LiteralValue::Scalar(lit) = lv.clone().materialize()
+                        && let Some(rewrite) = coerce_comparison_literal(
+                            needle.node(),
+                            &needle_dtype,
+                            cmp_op_high,
+                            lit,
+                            expr_arena,
+                        )
+                    {
+                        match rewrite {
+                            ReplaceLit(new_lit) => {
+                                new_high = Some(ExprIR::from_node(
+                                    expr_arena.add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
+                                    expr_arena,
+                                ));
+                            },
+                            NewAExpr {
+                                aexpr,
+                                output_constraint,
+                            } => match output_constraint {
+                                Some(BoolValueAlways::True | BoolValueAlways::TrueOrNull) => {
+                                    one_side = Some(false)
+                                },
+                                Some(BoolValueAlways::FalseOrNull) => return Ok(Some(aexpr)),
+                                None => return Ok(None),
+                            },
+                        }
+                    }
+                }
+
+                let out = match one_side {
+                    Some(false) => AExpr::BinaryExpr {
+                        left: needle.node(),
+                        op: cmp_op_low,
+                        right: new_low.unwrap_or(low).node(),
+                    },
+                    Some(true) => AExpr::BinaryExpr {
+                        left: needle.node(),
+                        op: cmp_op_high,
+                        right: new_high.unwrap_or(high).node(),
+                    },
+                    None => {
+                        let CastingRules::Supertype(supertype_options) =
+                            unpack!(options.cast_options)
+                        else {
+                            return Ok(None);
+                        };
+                        let mut low = new_low.unwrap_or(low);
+                        let mut high = new_high.unwrap_or(high);
+
+                        let low_dtype = unpack!(try_get_dtype(expr_arena, low.node(), schema).ok());
+                        let high_dtype =
+                            unpack!(try_get_dtype(expr_arena, high.node(), schema).ok());
+
+                        let low_st = unpack!(coerced_binop_dtype(
+                            expr_arena,
+                            needle.node(),
+                            &needle_dtype,
+                            cmp_op_low,
+                            low.node(),
+                            &low_dtype,
+                        )?);
+                        let high_st = unpack!(coerced_binop_dtype(
+                            expr_arena,
+                            needle.node(),
+                            &needle_dtype,
+                            cmp_op_high,
+                            high.node(),
+                            &high_dtype,
+                        )?);
+
+                        let super_type = unpack!(get_supertype_with_options(
+                            &low_st,
+                            &high_st,
+                            supertype_options,
+                        ));
+
+                        let mut needle = needle;
+                        // TODO: NonStrict casts are what process_binary
+                        // inserts for binops. cast_expr_ir always ignores
+                        // the input CastOptions and sets strict casts.
+                        // Should probably be consistent.
+                        cast_expr_ir(
+                            &mut needle,
+                            &needle_dtype,
+                            &super_type,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                        cast_expr_ir(
+                            &mut low,
+                            &low_dtype,
+                            &super_type,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                        cast_expr_ir(
+                            &mut high,
+                            &high_dtype,
+                            &super_type,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                        // We've already applied all the casts, so switch
+                        // off casting for this newly rewritten isbetween
+                        // node.
+                        let mut options = options;
+                        options.cast_options = None;
+                        AExpr::Function {
+                            input: vec![needle, low, high],
+                            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween {
+                                closed,
+                            }),
+                            options,
+                        }
+                    },
+                };
+
+                Some(out)
+            },
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 ref function,
@@ -320,8 +529,10 @@ impl OptimizationRule for TypeCoercionRule {
                     },
                     IsInTypeCoercionResult::Implode => {
                         assert!(!is_contains);
-                        let other_input =
-                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[1].node(),
+                            maintain_order: true,
+                        }));
                         input[1].set_node(other_input);
                     },
                 }
@@ -434,6 +645,9 @@ impl OptimizationRule for TypeCoercionRule {
                     }
                     | ref ewm_variant @ IRFunctionExpr::EwmStd {
                         options: ewm_options,
+                    }
+                    | ref ewm_variant @ IRFunctionExpr::EwmSum {
+                        options: ewm_options,
                     },
                 ref input,
                 options,
@@ -458,6 +672,7 @@ impl OptimizationRule for TypeCoercionRule {
                 if dtype.is_float() {
                     return Ok(None);
                 }
+                polars_ensure!(!dtype.is_struct(), opq = ewm, dtype);
 
                 let new_function = match ewm_variant {
                     IRFunctionExpr::EwmMean { .. } => IRFunctionExpr::EwmMean {
@@ -469,6 +684,9 @@ impl OptimizationRule for TypeCoercionRule {
                     IRFunctionExpr::EwmStd { .. } => IRFunctionExpr::EwmStd {
                         options: ewm_options,
                     },
+                    IRFunctionExpr::EwmSum { .. } => IRFunctionExpr::EwmSum {
+                        options: ewm_options,
+                    },
                     _ => unreachable!(),
                 };
 
@@ -476,7 +694,7 @@ impl OptimizationRule for TypeCoercionRule {
                     expr_arena.add(AExpr::Cast {
                         expr: input_expr.node(),
                         dtype: DataType::Float64,
-                        // FIXME: Non-strict to match legacy execution behavior, but should be strict.
+                        // TODO: Non-strict to match legacy execution behavior, but should be strict.
                         options: CastOptions::NonStrict,
                     }),
                     expr_arena,
@@ -573,54 +791,69 @@ impl OptimizationRule for TypeCoercionRule {
             },
             #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
             AExpr::Function {
-                function:
-                    ref function @ IRFunctionExpr::TemporalExpr(IRTemporalFunction::Duration(_)),
+                function: IRFunctionExpr::TemporalExpr(IRTemporalFunction::Duration(_)),
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, dtype| match dtype {
+                    DataType::Int64 | DataType::Float64 => Ok(None),
+                    dt if dt.is_integer() => Ok(Some(DataType::Int64)),
+                    dt if dt.is_float() => Ok(Some(DataType::Float64)),
+                    dt => polars_bail!(
+                        InvalidOperation: "expected integer or float dtype, (got {dt}) in input {i} of duration"
+                    ),
+                },
+            )?,
+            #[cfg(feature = "business")]
+            AExpr::Function {
+                function: IRFunctionExpr::Business(ref business_fn),
                 ref input,
                 options,
             } => {
-                let no_cast_needed = input.iter().all(|expr| {
-                    let (_, dtype) = get_aexpr_and_type(expr_arena, expr.node(), schema).unwrap();
-                    matches!(dtype, DataType::Int64 | DataType::Float64)
-                });
-                if no_cast_needed {
-                    return Ok(None);
-                }
+                let holiday_arg_idx: usize = match business_fn {
+                    IRBusinessFunction::AddBusinessDay { .. }
+                    | IRBusinessFunction::BusinessDayCount { .. } => 2,
+                    IRBusinessFunction::IsBusinessDay { .. } => 1,
+                };
 
-                let function = function.clone();
-                let input = input.clone().into_iter().enumerate().map(|(i, expr)| {
-                    let mut expr = expr.to_owned();
-                    let (_, dtype) = get_aexpr_and_type(expr_arena, expr.node(), schema).unwrap();
-                    Ok(match &dtype {
-                        DataType::Int64 | DataType::Float64 => expr,
-                        dt if dt.is_integer() => {
-                            cast_expr_ir(
-                                &mut expr,
-                                &dtype,
-                                &DataType::Int64,
-                                expr_arena,
-                                CastOptions::Strict,
-                            )?;
-                            expr
-                        },
-                        dt if dt.is_float() => {
-                            cast_expr_ir(
-                                &mut expr,
-                                &dtype,
-                                &DataType::Float64,
-                                expr_arena,
-                                CastOptions::Strict,
-                            )?;
-                            expr
-                        },
-                        dt => {
-                            polars_bail!(InvalidOperation: "expected integer or float dtype, (got {dt}) in input {i} of duration")
-                        },
-                    })
-                }).try_collect()?;
+                let holiday_arg = unpack!(input.get(holiday_arg_idx));
+
+                // We implode, only for literal Series(dtype=Date), as this is considered a valid
+                // parameter on the Python API as an `Iterable[date]`.
+                let new_lv_ae: AExpr = match expr_arena.get(holiday_arg.node()) {
+                    AExpr::Literal(LiteralValue::Series(s)) if s.dtype() == &DataType::Date => {
+                        AExpr::Literal(LiteralValue::Series(SpecialEq::new(
+                            s.implode().unwrap().into_series(),
+                        )))
+                    },
+                    ae => {
+                        let dtype = ae.to_dtype(&ToFieldContext::new(expr_arena, schema))?;
+
+                        let is_list_of_date = match &dtype {
+                            DataType::List(inner) => inner.as_ref() == &DataType::Date,
+                            _ => false,
+                        };
+
+                        polars_ensure!(
+                            is_list_of_date,
+                            ComputeError:
+                            "dtype of holidays list must be List(Date), got {dtype:?} instead"
+                        );
+
+                        return Ok(None);
+                    },
+                };
+
+                let mut input = input.clone();
+                let function = IRFunctionExpr::Business(business_fn.clone());
+                input[holiday_arg_idx].set_node(expr_arena.add(new_lv_ae));
 
                 Some(AExpr::Function {
-                    function,
                     input,
+                    function,
                     options,
                 })
             },
@@ -650,8 +883,10 @@ Please use `implode` to return to previous behavior.
 See https://github.com/pola-rs/polars/issues/22149 for more information."
                     );
 
-                    let other_input =
-                        expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                    let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                        input: input[1].node(),
+                        maintain_order: true,
+                    }));
                     input[1].set_node(other_input);
 
                     return Ok(Some(AExpr::Function {
@@ -698,8 +933,10 @@ Please use `implode` to return to previous behavior.
 See https://github.com/pola-rs/polars/issues/22149 for more information."
                     );
 
-                    let other_input =
-                        expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                    let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                        input: input[1].node(),
+                        maintain_order: true,
+                    }));
                     input[1].set_node(other_input);
 
                     return Ok(Some(AExpr::Function {
@@ -721,38 +958,31 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             #[cfg(feature = "string_pad")]
             AExpr::Function {
                 function:
-                    ref function @ IRFunctionExpr::StringExpr(
+                    IRFunctionExpr::StringExpr(
                         IRStringFunction::PadStart { .. }
                         | IRStringFunction::PadEnd { .. }
                         | IRStringFunction::ZFill,
                     ),
-                ref input,
-                options,
-            } => {
-                let (_, length_type) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, _| Ok((i == 1).then_some(DataType::UInt64)), // length
+            )?,
 
-                if length_type == DataType::UInt64 {
-                    None
-                } else {
-                    let function = function.clone();
-                    let mut input = input.clone();
-                    cast_expr_ir(
-                        &mut input[1],
-                        &length_type,
-                        &DataType::UInt64,
-                        expr_arena,
-                        CastOptions::Strict,
-                    )?;
-
-                    Some(AExpr::Function {
-                        function,
-                        input,
-                        options,
-                    })
-                }
-            },
-
+            #[cfg(all(feature = "strings", feature = "concat_str"))]
+            AExpr::Function {
+                function: IRFunctionExpr::StringExpr(IRStringFunction::ConcatHorizontal { .. }),
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::NonStrict,
+                |_, dtype| Ok((!dtype.is_string()).then_some(DataType::String)),
+            )?,
             #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
                 function:
@@ -785,13 +1015,17 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     );
 
                     if !type_patterns.is_list() {
-                        let other_input =
-                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[1].node(),
+                            maintain_order: true,
+                        }));
                         input[1].set_node(other_input);
                     }
                     if !type_replace_with.is_list() {
-                        let other_input =
-                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[2].node())));
+                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[2].node(),
+                            maintain_order: true,
+                        }));
                         input[2].set_node(other_input);
                     }
 
@@ -825,18 +1059,27 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let (_, type_new) =
                     unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
 
+                polars_ensure!(
+                    !type_old.contains_objects() && !type_new.contains_objects(),
+                    InvalidOperation: "`replace` does not support `old`/`new` values of object dtype"
+                );
+
                 let (DataType::List(_), DataType::List(_)) = (&type_old, &type_new) else {
                     let function = function.clone();
                     let mut input = input.clone();
 
                     if !type_old.is_list() {
-                        let other_input =
-                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[1].node())));
+                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[1].node(),
+                            maintain_order: true,
+                        }));
                         input[1].set_node(other_input);
                     }
                     if !type_new.is_list() {
-                        let other_input =
-                            expr_arena.add(AExpr::Agg(IRAggExpr::Implode(input[2].node())));
+                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                            input: input[2].node(),
+                            maintain_order: true,
+                        }));
                         input[2].set_node(other_input);
                     }
 
@@ -846,7 +1089,6 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         options,
                     }));
                 };
-
                 None
             },
             #[cfg(feature = "range")]
@@ -863,6 +1105,9 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
                 let (_, type_end) =
                     unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
+
+                polars_ensure!(type_start.is_numeric() || type_start.is_null(), InvalidOperation: "`start` must be numeric for `int_range`, got {}", type_start);
+                polars_ensure!(type_end.is_numeric() || type_end.is_null(), InvalidOperation: "`end` must be numeric for `int_range`, got {}", type_end);
 
                 if [&type_start, &type_end]
                     .into_iter()
@@ -892,71 +1137,33 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             },
             #[cfg(feature = "range")]
             AExpr::Function {
-                function:
-                    ref function @ IRFunctionExpr::Range(IRRangeFunction::IntRanges { dtype: _ }),
-                ref input,
-                options,
-            } => {
-                let (_, type_start) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
-                let (_, type_end) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
-                let (_, type_step) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
-
-                if [&type_start, &type_end, &type_step]
-                    .into_iter()
-                    .all(|dtype| dtype == &DataType::Int64)
-                {
-                    return Ok(None);
-                }
-
-                let function = function.clone();
-                let mut input = input.clone();
-                for (i, dtype) in [type_start, type_end, type_step].into_iter().enumerate() {
-                    cast_expr_ir(
-                        &mut input[i],
-                        &dtype,
-                        &DataType::Int64,
-                        expr_arena,
-                        CastOptions::Strict,
-                    )?;
-                }
-
-                Some(AExpr::Function {
-                    function,
-                    input,
-                    options,
-                })
-            },
+                function: IRFunctionExpr::Range(IRRangeFunction::IntRanges { .. }),
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, dtype| {
+                    let name = ["start", "end", "step"][i];
+                    polars_ensure!(
+                        dtype.is_numeric() || dtype.is_null(),
+                        InvalidOperation: "`{name}` must be numeric for `int_ranges`, got {dtype}"
+                    );
+                    Ok(Some(DataType::Int64))
+                },
+            )?,
             #[cfg(feature = "moment")]
             AExpr::Function {
-                function: ref function @ (IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..)),
-                ref input,
-                options,
-            } => {
-                let (_, type_input) =
-                    unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
-
-                if matches!(type_input, DataType::Float64) {
-                    return Ok(None);
-                }
-
-                let function = function.clone();
-                let mut input = input.clone();
-                cast_expr_ir(
-                    &mut input[0],
-                    &type_input,
-                    &DataType::Float64,
-                    expr_arena,
-                    CastOptions::Strict,
-                )?;
-                Some(AExpr::Function {
-                    function,
-                    input,
-                    options,
-                })
-            },
+                function: IRFunctionExpr::Skew(..) | IRFunctionExpr::Kurtosis(..),
+                ..
+            } => coerce_function_inputs(
+                expr_node,
+                expr_arena,
+                schema,
+                CastOptions::Strict,
+                |i, _| Ok((i == 0).then_some(DataType::Float64)),
+            )?,
             #[cfg(all(feature = "range", feature = "dtype-date"))]
             AExpr::Function {
                 function:
@@ -1283,6 +1490,54 @@ fn cast_expr_ir(
     e.set_dtype(to_dtype.clone());
 
     Ok(())
+}
+
+fn coerce_function_inputs(
+    node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &Schema,
+    cast_options: CastOptions,
+    target_dtype: impl Fn(usize, &DataType) -> PolarsResult<Option<DataType>>,
+) -> PolarsResult<Option<AExpr>> {
+    let AExpr::Function {
+        function,
+        input,
+        options,
+    } = expr_arena.get(node)
+    else {
+        return Ok(None);
+    };
+
+    let mut needs_cast = false;
+    for (i, e) in input.iter().enumerate() {
+        let from = try_get_dtype(expr_arena, e.node(), schema)?;
+        if target_dtype(i, &from)?.is_some_and(|to| to != from) {
+            needs_cast = true;
+            break;
+        }
+    }
+    if !needs_cast {
+        return Ok(None);
+    }
+
+    let function = function.clone();
+    let options = *options;
+    let mut input = input.to_vec();
+
+    for (i, e) in input.iter_mut().enumerate() {
+        let from = try_get_dtype(expr_arena, e.node(), schema)?;
+        if let Some(to) = target_dtype(i, &from)?
+            && to != from
+        {
+            cast_expr_ir(e, &from, &to, expr_arena, cast_options)?;
+        }
+    }
+
+    Ok(Some(AExpr::Function {
+        function,
+        input,
+        options,
+    }))
 }
 
 fn check_cast(from: &DataType, to: &DataType) -> PolarsResult<()> {

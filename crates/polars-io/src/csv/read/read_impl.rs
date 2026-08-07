@@ -1,24 +1,24 @@
 use std::fmt;
 use std::sync::Mutex;
 
-use polars_core::POOL;
+use polars_buffer::{Buffer, SharedStorage};
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
-use polars_utils::mmap::MemSlice;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 
 use super::CsvParseOptions;
-use super::buffer::init_buffers;
+use super::builder::init_builders;
 use super::options::{CsvEncoding, NullValuesCompiled};
 use super::parser::{CountLines, is_comment_line, parse_lines};
 use super::reader::prepare_csv_schema;
 #[cfg(feature = "decompress")]
 use super::utils::decompress;
 use crate::RowIndex;
-use crate::csv::read::{CsvReadOptions, read_until_start_and_infer_schema};
+use crate::csv::read::{CsvReadOptions, read_until_start_and_infer_schema_from_compressed_reader};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::compression::{CompressedReader, SupportedCompression};
@@ -66,7 +66,7 @@ pub fn cast_columns(
     };
 
     if parallel {
-        let cols = POOL.install(|| {
+        let cols = RAYON.install(|| {
             df.columns()
                 .into_par_iter()
                 .map(|s| {
@@ -97,7 +97,7 @@ struct ReaderBytesAndDependents<'a> {
     // SAFETY: This is lifetime bound to `reader_bytes`
     compressed_reader: CompressedReader,
     // SAFETY: This is lifetime bound to `reader_bytes`
-    leftover: MemSlice,
+    leftover: Buffer<u8>,
     _reader_bytes: ReaderBytes<'a>,
 }
 
@@ -187,8 +187,8 @@ impl<'a> CoreReader<'a> {
             ReaderBytes::Borrowed(slice) => {
                 // SAFETY: The produced slice and derived slices MUST not live longer than
                 // `reader_bytes`. TODO use `scan_csv` to implement `read_csv`.
-                let static_slice = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(slice) };
-                MemSlice::from_static(static_slice)
+                let ss = unsafe { SharedStorage::from_slice_unchecked(slice) };
+                Buffer::from_storage(ss)
             },
             ReaderBytes::Owned(slice) => slice.clone(),
         };
@@ -216,8 +216,12 @@ impl<'a> CoreReader<'a> {
         };
 
         // Since this is also used to skip to the start, always call it.
-        let (inferred_schema, leftover) =
-            read_until_start_and_infer_schema(&read_options, None, None, &mut compressed_reader)?;
+        let (inferred_schema, leftover) = read_until_start_and_infer_schema_from_compressed_reader(
+            &read_options,
+            None,
+            None,
+            &mut compressed_reader,
+        )?;
 
         let mut schema = match schema {
             Some(schema) => schema,
@@ -346,7 +350,9 @@ impl<'a> CoreReader<'a> {
             return Ok(df);
         }
 
-        let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
+        let n_threads = self
+            .n_threads
+            .unwrap_or_else(|| RAYON.current_num_threads());
 
         // This is chosen by benchmarking on ny city trip csv dataset.
         // We want small enough chunks such that threads start working as soon as possible
@@ -392,7 +398,7 @@ impl<'a> CoreReader<'a> {
         let check_utf8 = matches!(self.parse_options.encoding, CsvEncoding::Utf8)
             && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
-        POOL.scope(|s| {
+        RAYON.scope(|s| {
             // Pass 1: identify chunks for parallel processing (line parsing).
             loop {
                 let b = unsafe { bytes.get_unchecked(total_offset..) };
@@ -434,7 +440,7 @@ impl<'a> CoreReader<'a> {
                     let projection = projection.as_ref();
                     let slf = &(*self);
                     s.spawn(move |_| {
-                        if check_utf8 && !super::buffer::validate_utf8(b) {
+                        if check_utf8 && !super::builder::validate_utf8(b) {
                             let mut results = results.lock().unwrap();
                             results.push((
                                 b.as_ptr() as usize,
@@ -462,9 +468,9 @@ impl<'a> CoreReader<'a> {
                                         b.len()
                                     );
                                     if slf.ignore_errors {
-                                        polars_warn!("{}", msg);
+                                        polars_warn!("{msg}");
                                     } else {
-                                        polars_bail!(ComputeError: msg);
+                                        polars_bail!(ComputeError: msg)
                                     }
                                 }
 
@@ -558,7 +564,7 @@ pub fn read_chunk(
     // approximate (sometimes they're smaller), this isn't broken, but it does
     // mean a bunch of extra allocation and copying. So we allocate a
     // larger-by-one buffer so the size is more likely to be accurate.
-    let mut buffers = init_buffers(
+    let mut buffers = init_builders(
         projection,
         capacity + 1,
         schema,

@@ -7,14 +7,12 @@ use std::io::{Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
 #[cfg(target_family = "unix")]
 use std::os::fd::{FromRawFd, RawFd};
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
 use polars::prelude::PlRefPath;
-use polars::prelude::file::{Writeable, WriteableTrait};
+use polars::prelude::file::{Writable, WritableTrait};
+use polars_buffer::{Buffer, SharedStorage};
 use polars_error::polars_err;
-use polars_utils::create_file;
-use polars_utils::mmap::MemSlice;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -32,7 +30,7 @@ pub(crate) struct PyFileLikeObject {
     has_flush: bool,
 }
 
-impl WriteableTrait for PyFileLikeObject {
+impl WritableTrait for PyFileLikeObject {
     fn close(&mut self) -> io::Result<()> {
         Ok(())
     }
@@ -69,7 +67,7 @@ impl PyFileLikeObject {
         }
     }
 
-    pub(crate) fn to_memslice(&self) -> MemSlice {
+    pub(crate) fn to_buffer(&self) -> Buffer<u8> {
         Python::attach(|py| {
             let bytes = self
                 .inner
@@ -79,8 +77,9 @@ impl PyFileLikeObject {
             if let Ok(b) = bytes.cast_bound::<PyBytes>(py) {
                 // SAFETY: we keep the underlying python object alive.
                 let slice = b.as_bytes();
-                let arc = Arc::new(bytes.clone_ref(py));
-                return unsafe { MemSlice::from_arc(slice, arc) };
+                let owner = bytes.clone_ref(py);
+                let ss = unsafe { SharedStorage::from_slice_with_owner(slice, owner) };
+                return Buffer::from_storage(ss);
             }
 
             if let Ok(b) = bytes.cast_bound::<PyString>(py) {
@@ -88,10 +87,11 @@ impl PyFileLikeObject {
                     Cow::Borrowed(v) => {
                         // SAFETY: we keep the underlying python object alive.
                         let slice = v.as_bytes();
-                        let arc = Arc::new(bytes.clone_ref(py));
-                        unsafe { MemSlice::from_arc(slice, arc) }
+                        let owner = bytes.clone_ref(py);
+                        let ss = unsafe { SharedStorage::from_slice_with_owner(slice, owner) };
+                        return Buffer::from_storage(ss);
                     },
-                    Cow::Owned(v) => MemSlice::from_vec(v.into_bytes()),
+                    Cow::Owned(v) => Buffer::from_vec(v.into_bytes()),
                 };
             }
 
@@ -289,21 +289,21 @@ impl EitherRustPythonFile {
 
     fn into_scan_source_input(self) -> PythonScanSourceInput {
         match self {
-            EitherRustPythonFile::Py(f) => PythonScanSourceInput::Buffer(f.to_memslice()),
+            EitherRustPythonFile::Py(f) => PythonScanSourceInput::Buffer(f.to_buffer()),
             EitherRustPythonFile::Rust(f) => PythonScanSourceInput::File(f),
         }
     }
 
-    pub(crate) fn into_writeable(self) -> Writeable {
+    pub(crate) fn into_writable(self) -> Writable {
         match self {
-            Self::Py(f) => Writeable::Dyn(Box::new(f)),
-            Self::Rust(f) => Writeable::Local(f),
+            Self::Py(f) => Writable::Dyn(Box::new(f)),
+            Self::Rust(f) => Writable::Local(f),
         }
     }
 }
 
 pub(crate) enum PythonScanSourceInput {
-    Buffer(MemSlice),
+    Buffer(Buffer<u8>),
     Path(PlRefPath),
     File(std::fs::File),
 }
@@ -421,9 +421,10 @@ pub(crate) fn get_python_scan_source_input(
         if let Ok(b) = py_f.cast::<PyBytes>() {
             // SAFETY: we keep the underlying python object alive.
             let slice = b.as_bytes();
-            let arc = Arc::new(b.clone().unbind());
-            let memslice = unsafe { MemSlice::from_arc(slice, arc) };
-            return Ok(PythonScanSourceInput::Buffer(memslice));
+            let owner = b.clone().unbind();
+            let ss = unsafe { SharedStorage::from_slice_with_owner(slice, owner) };
+            let buffer = Buffer::from_storage(ss);
+            return Ok(PythonScanSourceInput::Buffer(buffer));
         }
 
         if let Ok(s) = py_f.extract::<Cow<str>>() {
@@ -446,9 +447,9 @@ fn get_either_buffer_or_path(
         if let Ok(s) = py_f.extract::<Cow<str>>() {
             let file_path = resolve_homedir(s.as_ref());
             let f = if write {
-                create_file(&file_path).map_err(PyPolarsErr::from)?
+                polars_utils::io::create_file(&file_path).map_err(PyPolarsErr::from)?
             } else {
-                polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
+                polars_utils::io::open_file(&file_path).map_err(PyPolarsErr::from)?
             };
             Ok((
                 EitherRustPythonFile::Rust(f.into()),
@@ -500,17 +501,15 @@ pub(crate) fn get_mmap_bytes_reader_and_path(
     if let Ok(bytes) = py_f.cast::<PyBytes>() {
         // SAFETY: we keep the underlying python object alive.
         let slice = bytes.as_bytes();
-        let arc = Arc::new(bytes.clone().unbind());
-        let memslice = unsafe { MemSlice::from_arc(slice, arc) };
-        Ok((Box::new(Cursor::new(memslice)), None))
+        let owner = bytes.clone().unbind();
+        let ss = unsafe { SharedStorage::from_slice_with_owner(slice, owner) };
+        Ok((Box::new(Cursor::new(Buffer::from_storage(ss))), None))
     }
     // string so read file
     else {
         match get_either_buffer_or_path(py_f.to_owned().unbind(), false)? {
             (EitherRustPythonFile::Rust(f), path) => Ok((Box::new(f), path)),
-            (EitherRustPythonFile::Py(f), path) => {
-                Ok((Box::new(Cursor::new(f.to_memslice())), path))
-            },
+            (EitherRustPythonFile::Py(f), path) => Ok((Box::new(Cursor::new(f.to_buffer())), path)),
         }
     }
 }

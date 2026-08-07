@@ -421,8 +421,8 @@ lf.pipe(lambda lf: lf.with_columns(
     get_ham("col_a"),
     get_bar("col_b", lf.schema),
     get_foo("col_c", lf.schema),
-)
+))
 ```
 
-Another benefit of writing functions that return expressions, is that these functions are composable
+Another benefit of writing functions that return expressions is that these functions are composable,
 as expressions can be chained and partially applied, leading to much more flexibility in the design.

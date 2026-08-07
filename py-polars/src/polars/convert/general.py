@@ -4,6 +4,8 @@ import io
 import itertools
 import re
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from enum import Enum, auto
 from typing import TYPE_CHECKING, Any, Literal, overload
 
 import polars._reexport as pl
@@ -26,10 +28,10 @@ from polars._utils.deprecation import (
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.various import (
     _cast_repr_strings_with_schema,
-    issue_warning,
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_df, wrap_s
+from polars._warnings import issue_warning
 from polars.datatypes import N_INFER_DEFAULT, Categorical, String
 from polars.exceptions import NoDataError
 
@@ -491,9 +493,13 @@ def from_arrow(
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
-        If you supply a list of column names that does not match the names in the
-        underlying data, the names given here will overwrite them. The number
-        of names given in the schema should match the underlying data dimensions.
+        Schema entries are applied positionally, following the order of the
+        Python dictionary. The provided schema takes precedence over the schema
+        of the underlying Arrow data. As such, if the provided schema names do
+        not match the underlying Arrow data, the column names of the Arrow data
+        will be discarded in favor of the names set in this argument.
+        The number of names given in the schema must match the underlying data
+        dimensions.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.
@@ -536,6 +542,14 @@ def from_arrow(
     ]
     """  # noqa: W505
     if is_pycapsule(data) and not _check_for_pyarrow(data):
+        # 2.0: Remove warning and return a Series.
+        issue_warning(
+            "from_arrow(<ArrowStreamExportable>) will return a Series instead of "
+            "a DataFrame in 2.0. To avoid this warning, pass the ArrowStreamExportable "
+            "to either `pl.DataFrame` or `pl.Series` instead based on your desired "
+            "output type.",
+            FutureWarning,
+        )
         return pycapsule_to_frame(
             data,
             schema=schema,
@@ -715,6 +729,78 @@ def from_pandas(
         raise TypeError(msg)
 
 
+@dataclass(frozen=True, slots=True)
+class _TablePatterns:
+    """Format-specific regex patterns for table parsing."""
+
+    cell_edge: re.Pattern[str]
+    cell_split: re.Pattern[str]
+    header_div: re.Pattern[str]
+    row_div: re.Pattern[str]
+    rstrip_chars: str
+
+
+_TABLE_PATTERNS_CACHE: dict[TableRepr, _TablePatterns] = {}
+
+
+def _build_table_patterns(table_repr: TableRepr) -> _TablePatterns:
+    if table_repr is TableRepr.UTF8:
+        return _TablePatterns(
+            cell_edge=re.compile(r"^[\W+]*│"),
+            cell_split=re.compile(r"[│┆]"),
+            header_div=re.compile(r"^[╞═╪╡\s]+$"),
+            row_div=re.compile(r"^[├╌┼┤─]+$"),
+            rstrip_chars="│ ",
+        )
+    elif table_repr is TableRepr.ASCII:
+        return _TablePatterns(
+            cell_edge=re.compile(r"^[\W+]*[|]"),
+            cell_split=re.compile(r"[|]"),
+            header_div=re.compile(r"^[+=\-\s]+$"),
+            row_div=re.compile(r"^[|+\-]+$"),
+            rstrip_chars="| ",
+        )
+    msg = f"unsupported table format: {table_repr!r}"
+    raise ValueError(msg)
+
+
+class TableRepr(Enum):  # noqa: D101
+    UTF8 = auto()
+    ASCII = auto()
+
+    @property
+    def patterns(self) -> _TablePatterns:  # noqa: D102
+        try:
+            return _TABLE_PATTERNS_CACHE[self]
+        except KeyError:
+            rx = _build_table_patterns(self)
+            _TABLE_PATTERNS_CACHE[self] = rx
+            return rx
+
+
+def _extract_table(data: str) -> tuple[str, TableRepr] | None:
+    """Extract a DataFrame table string and infer its format from the input."""
+    # UTF8: identified by box-drawing corner chars
+    m = re.search(r"([┌╭].*?[┘╯])", data, re.DOTALL)
+    if m is not None:
+        return m.group(), TableRepr.UTF8
+
+    # ASCII: identified by border lines matching "+---+---+"
+    border_re = re.compile(r"^\s*[#>. ]*\+[-+=+]+\+\s*$")
+    lines = data.split("\n")
+    first = last = None
+    for i, line in enumerate(lines):
+        if border_re.match(line):
+            if first is None:
+                first = i
+            last = i
+
+    if first is not None and last is not None and first < last:
+        return "\n".join(lines[first : last + 1]), TableRepr.ASCII
+
+    return None
+
+
 @deprecate_renamed_parameter("tbl", "data", version="0.20.17")
 def from_repr(data: str) -> DataFrame | Series:
     """
@@ -732,8 +818,9 @@ def from_repr(data: str) -> DataFrame | Series:
 
     Notes
     -----
-    This function handles the default UTF8_FULL (and UTF8_FULL_CONDENSED) DataFrame
-    tables, with or without rounded corners. Truncated columns/rows are omitted,
+    This function handles the UTF8_FULL (default) and UTF8_FULL_CONDENSED
+    DataFrame table formats (with or without rounded corners), as well as
+    ASCII_FULL and ASCII_FULL_CONDENSED. Truncated columns/rows are omitted,
     wrapped headers are accounted for, and dtypes are automatically identified.
 
     Currently compound/nested dtypes such as List and Struct are not supported;
@@ -793,9 +880,8 @@ def from_repr(data: str) -> DataFrame | Series:
     [True, False, True]
     """
     # find DataFrame table...
-    m = re.search(r"([┌╭].*?[┘╯])", data, re.DOTALL)
-    if m is not None:
-        return _from_dataframe_repr(m)
+    if (tbl_repr_type := _extract_table(data)) is not None:
+        return _from_dataframe_repr(*tbl_repr_type)
 
     # ...or Series in the given string
     m = re.search(
@@ -810,8 +896,8 @@ def from_repr(data: str) -> DataFrame | Series:
     raise ValueError(msg)
 
 
-def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
-    """Reconstruct a DataFrame from a regex-matched table repr."""
+def _from_dataframe_repr(tbl: str, table_repr: TableRepr) -> DataFrame:
+    """Reconstruct a DataFrame from a table repr string."""
     from polars.datatypes.convert import dtype_short_repr_to_dtype
     from polars.io.database._inference import dtype_from_database_typename
 
@@ -825,22 +911,38 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
             )
         )
 
-    # extract elements from table structure
-    lines = m.group().split("\n")[1:-1]
-    rows = [
-        [re.sub(r"^[\W+]*│", "", elem).strip() for elem in row]
-        for row in (re.split(r"[│┆|]", row.lstrip("#. ").rstrip("│ ")) for row in lines)
-        if len(row) > 1 or not re.search(r"├[╌┼]+┤", row[0])
-    ]
+    # associated regex patterns for the given table format
+    rx = table_repr.patterns
 
-    # determine the beginning /end of the header block
+    def _is_header_divider(line: str) -> bool:
+        s = line.lstrip("#. ").strip()
+        return bool(s) and rx.header_div.match(s) is not None
+
+    def _is_row_divider(line: str) -> bool:
+        s = line.lstrip("#. ").strip()
+        return bool(s) and rx.row_div.match(s) is not None
+
+    # extract elements from table structure
+    lines = tbl.split("\n")[1:-1]
+    rows: list[list[str]] = []
     table_body_start = 2
     found_header_divider = False
-    for idx, (elem, *_) in enumerate(rows):
-        if re.match(r"^\W*[╞]", elem):
+    _found_body_boundary = False
+
+    for line in lines:
+        if not found_header_divider and _is_header_divider(line):
             found_header_divider = True
-            table_body_start = idx
-            break
+            table_body_start = len(rows)
+            _found_body_boundary = True
+            continue
+        if _is_row_divider(line):
+            if not _found_body_boundary:
+                table_body_start = len(rows)
+                _found_body_boundary = True
+            continue
+        cleaned = line.lstrip("#. ").rstrip(rx.rstrip_chars)
+        cells = rx.cell_split.split(cleaned)
+        rows.append([rx.cell_edge.sub("", c).strip() for c in cells])
 
     # handle headers with wrapped column names and determine headers/dtypes
     header_rows = rows[:table_body_start]
@@ -861,7 +963,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     else:
         headers, dtypes = (list(h) for h in itertools.zip_longest(*header_block))
 
-    body = rows[table_body_start + 1 :]
+    body = rows[table_body_start:]
     if not headers[0] and not dtypes[0]:
         body = [row[1:] for row in body]
         headers = headers[1:]
@@ -871,7 +973,10 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
 
     # transpose rows into columns, detect/omit truncated columns
     coldata = list(
-        zip(*(row for row in body if not all((e == "…") for e in row)), strict=True)
+        zip(
+            *(row for row in body if not all(e in ("…", "...") for e in row)),
+            strict=True,
+        )
     )
     for el in ("…", "..."):
         if el in headers:

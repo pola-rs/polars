@@ -1,7 +1,7 @@
 #![allow(clippy::eq_op)] // We use x != x to detect NaN generically.
 
 use arrow::bitmap::Bitmap;
-use arrow::storage::SharedStorage;
+use polars_buffer::SharedStorage;
 use polars_utils::float::IsFloat;
 
 fn chunk_has_nan<T: PartialEq>(arr: &[T; 64]) -> bool {

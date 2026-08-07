@@ -297,6 +297,8 @@ pub(super) async fn expand_paths_hf(
             client,
         };
 
+        let sort_start_idx = out_paths.len();
+
         while let Some(bytes) = gp.next().await {
             let bytes = bytes?;
             let response: Vec<HFAPIResponse> = decode_json_response(bytes.as_ref())?;
@@ -316,6 +318,10 @@ pub(super) async fn expand_paths_hf(
                     }
                 }
             }
+        }
+
+        if let Some(mut_slice) = out_paths.get_mut(sort_start_idx..) {
+            <[PlRefPath]>::sort_unstable(mut_slice);
         }
     }
 

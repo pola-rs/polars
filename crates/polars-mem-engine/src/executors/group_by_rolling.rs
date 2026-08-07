@@ -10,6 +10,7 @@ pub(crate) struct GroupByRollingExec {
     #[cfg(feature = "dynamic_group_by")]
     pub(crate) options: RollingGroupOptions,
     pub(crate) input_schema: SchemaRef,
+    pub(crate) output_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
     pub(crate) apply: Option<PlanCallback<DataFrame, DataFrame>>,
 }
@@ -32,7 +33,7 @@ pub(super) fn sort_and_groups(
         // If not sorted on keys, sort.
         let idx_s = idx.clone().into_series();
         if !idx_s.is_sorted(Default::default()).unwrap() {
-            let (df_ordered, keys_ordered) = POOL.join(
+            let (df_ordered, keys_ordered) = RAYON.join(
                 || df.take_unchecked(&idx),
                 || {
                     keys.iter()
@@ -83,7 +84,7 @@ impl GroupByRollingExec {
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);
-            return gb.apply_sliced(self.slice, move |df| f.call(df));
+            return gb.apply_sliced(self.slice, move |df| f.call(df), Some(&self.output_schema));
         }
 
         let mut groups = &groups;

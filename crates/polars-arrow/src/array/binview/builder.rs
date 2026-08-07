@@ -2,14 +2,16 @@ use std::marker::PhantomData;
 use std::sync::LazyLock;
 
 use hashbrown::hash_map::Entry;
+use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
-use crate::array::binview::{DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE};
+use crate::array::binview::{
+    BINVIEW_ARROW_BUFFER_LEN_LIMIT, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE,
+};
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
-use crate::array::{Array, BinaryViewArrayGeneric, View, ViewType};
+use crate::array::{Array, BINVIEW_MAX_ROW_BYTE_LEN, BinaryViewArrayGeneric, View, ViewType};
 use crate::bitmap::OptBitmapBuilder;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::pushable::Pushable;
 
@@ -60,7 +62,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     fn reserve_active_buffer(&mut self, additional: usize) {
         let len = self.active_buffer.len();
         let cap = self.active_buffer.capacity();
-        if additional > cap - len || len + additional >= (u32::MAX - 1) as usize {
+        if len.saturating_add(additional) > usize::min(BINVIEW_ARROW_BUFFER_LEN_LIMIT, cap) {
             self.reserve_active_buffer_slow(additional);
         }
     }
@@ -68,14 +70,19 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     #[cold]
     fn reserve_active_buffer_slow(&mut self, additional: usize) {
         assert!(
-            additional <= (u32::MAX - 1) as usize,
+            additional <= BINVIEW_MAX_ROW_BYTE_LEN,
             "strings longer than 2^32 - 2 are not supported"
         );
 
+        const {
+            assert!(MAX_EXP_BLOCK_SIZE < BINVIEW_ARROW_BUFFER_LEN_LIMIT);
+        }
+
         // Allocate a new buffer and flush the old buffer.
-        let new_capacity = (self.active_buffer.capacity() * 2)
-            .clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE)
-            .max(additional);
+        let new_capacity = usize::max(
+            additional,
+            (self.active_buffer.capacity() * 2).clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE),
+        );
 
         let old_buffer =
             core::mem::replace(&mut self.active_buffer, Vec::with_capacity(new_capacity));
@@ -240,7 +247,7 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
                 Buffer::from(self.views),
                 Buffer::from(self.buffer_set),
                 self.validity.into_opt_validity(),
-                self.total_bytes_len,
+                Some(self.total_bytes_len),
                 self.total_buffer_len,
             )
         }
@@ -261,7 +268,7 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
                 Buffer::from(core::mem::take(&mut self.views)),
                 Buffer::from(core::mem::take(&mut self.buffer_set)),
                 core::mem::take(&mut self.validity).into_opt_validity(),
-                self.total_bytes_len,
+                Some(self.total_bytes_len),
                 self.total_buffer_len,
             )
         };

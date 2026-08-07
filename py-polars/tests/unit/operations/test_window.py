@@ -766,7 +766,9 @@ def test_window_implode_explode() -> None:
             "y": [2, 2, 2, 3, 3, 3, 4, 4, 4],
         }
     ).select(
-        works=(pl.col.x * pl.col.x.implode().explode()).over(pl.col.y),
+        works=(pl.col.x * pl.col.x.implode().explode(empty_as_null=False)).over(
+            pl.col.y
+        ),
     ).to_dict(as_series=False) == {"works": [1, 4, 9, 1, 4, 9, 1, 4, 9]}
 
 
@@ -906,8 +908,6 @@ def test_aggregate_gather_over_dtype_24632(
     assert q.collect_schema() == q.collect().schema
 
 
-@pytest.mark.may_fail_auto_streaming  # reason: issue
-# https://github.com/pola-rs/polars/issues/24865
 @pytest.mark.parametrize(
     ("expr", "mapping_strategy", "result"),
     [
@@ -968,8 +968,6 @@ def test_mapping_strategy_scalar_matrix(
         assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming  # reason: issue
-# https://github.com/pola-rs/polars/issues/24865
 @pytest.mark.parametrize(
     "expr",
     [
@@ -1047,3 +1045,17 @@ def test_shape_mismatch_group_by_unique_slice() -> None:
         match="the length of the window expression did not match that of the group",
     ):
         q.collect()
+
+
+def test_over_literal_cum_sum_26800() -> None:
+    df = pl.DataFrame({"g": [10, 10, 10, 20, 20, 10], "one": [1, 1, 1, 1, 1, 1]})
+
+    q = df.lazy().with_columns(pl.lit(1).cum_sum().over("g").alias("cum_sum"))
+    out = q.collect()
+
+    expected = df.with_columns(pl.lit(1).cast(pl.Int64).alias("cum_sum"))
+
+    q = df.lazy().with_columns(pl.col.one.first().cum_sum().over("g").alias("cum_sum"))
+    out = q.collect()
+
+    assert_frame_equal(out, expected)

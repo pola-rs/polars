@@ -7,6 +7,7 @@ Manipulation/selection
    :toctree: api/
 
     Series.__getitem__
+    Series.__setitem__
     Series.alias
     Series.append
     Series.arg_sort
@@ -56,9 +57,11 @@ Manipulation/selection
     Series.shuffle
     Series.slice
     Series.sort
+    Series.sql
     Series.tail
     Series.to_dummies
     Series.top_k
     Series.top_k_by
+    Series.truncate
     Series.unique
     Series.zip_with

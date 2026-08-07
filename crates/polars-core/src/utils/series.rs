@@ -1,5 +1,8 @@
 use std::rc::Rc;
 
+use polars_compute::find_validity_mismatch::find_validity_mismatch;
+use polars_compute::gather::take_unchecked;
+
 use crate::prelude::*;
 use crate::series::amortized_iter::AmortSeries;
 
@@ -54,7 +57,6 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
     let mut idxs = Vec::new();
     input.find_validity_mismatch(output, &mut idxs);
 
-    // Base case. No strict casting failed.
     if idxs.is_empty() {
         return Ok(());
     }
@@ -88,5 +90,28 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
         input.len(),
         failures.fmt_list(),
         additional_info,
+    )
+}
+
+pub fn handle_array_casting_failures(input: &dyn Array, output: &dyn Array) -> PolarsResult<()> {
+    let mut idxs = Vec::new();
+    find_validity_mismatch(input, output, &mut idxs);
+    if idxs.is_empty() {
+        return Ok(());
+    }
+
+    let num_failures = idxs.len();
+    let failures = PrimitiveArray::with_slice(&idxs[..num_failures.min(10)], |idxs| unsafe {
+        take_unchecked(input, &idxs)
+    });
+
+    polars_bail!(
+        InvalidOperation:
+        "conversion from `{}` to `{}` failed for {} out of {} values: {}",
+        DataType::from_arrow(input.dtype(), None),
+        DataType::from_arrow(output.dtype(), None),
+        num_failures,
+        input.len(),
+        Series::try_from((PlSmallStr::EMPTY, failures))?,
     )
 }

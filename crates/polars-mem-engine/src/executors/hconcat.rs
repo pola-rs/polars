@@ -38,9 +38,9 @@ impl Executor for HConcatExec {
             // We don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
             // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
             // within bounds
-            let out = POOL.install(|| {
+            let out = RAYON.install(|| {
                 inputs
-                    .chunks_mut(POOL.current_num_threads() * 3)
+                    .chunks_mut(RAYON.current_num_threads() * 3)
                     .map(|chunk| {
                         chunk
                             .into_par_iter()
@@ -59,6 +59,11 @@ impl Executor for HConcatExec {
         };
 
         // Invariant of IR. Schema is already checked to contain no duplicates.
-        concat_df_horizontal(&dfs, false, self.options.strict)
+        concat_df_horizontal(
+            &dfs,
+            false,
+            self.options.strict,
+            self.options.broadcast_unit_length,
+        )
     }
 }

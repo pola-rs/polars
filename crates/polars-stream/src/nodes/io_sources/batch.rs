@@ -1,13 +1,13 @@
 //! Reads batches from a `dyn Fn`
 
 use async_trait::async_trait;
+use polars_async::executor::{JoinHandle, TaskPriority, spawn};
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::async_executor::{JoinHandle, TaskPriority, spawn};
 use crate::execute::StreamingExecutionState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::{
@@ -84,7 +84,7 @@ pub type GetBatchFn =
 pub use get_batch_state::GetBatchState;
 
 mod get_batch_state {
-    use polars_io::pl_async::get_runtime;
+    use polars_core::runtime::ASYNC;
 
     use super::{DataFrame, GetBatchFn, PolarsResult, StreamingExecutionState};
 
@@ -99,7 +99,7 @@ mod get_batch_state {
             mut slf: Self,
             execution_state: StreamingExecutionState,
         ) -> PolarsResult<(Self, Option<DataFrame>)> {
-            get_runtime()
+            ASYNC
                 .spawn_blocking({
                     move || unsafe { slf.next_impl(&execution_state).map(|x| (slf, x)) }
                 })
@@ -111,7 +111,7 @@ mod get_batch_state {
             mut slf: Self,
             execution_state: StreamingExecutionState,
         ) -> PolarsResult<(Self, Option<DataFrame>)> {
-            get_runtime()
+            ASYNC
                 .spawn_blocking({
                     move || unsafe { slf.peek_impl(&execution_state).map(|x| (slf, x)) }
                 })
@@ -180,6 +180,8 @@ impl FileReader for BatchFnReader {
             predicate: None,
             cast_columns_policy: _,
             num_pipelines: _,
+            disable_morsel_split: _,
+            last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
                     mut file_schema_tx,
@@ -188,7 +190,7 @@ impl FileReader for BatchFnReader {
                 },
         } = args
         else {
-            panic!("unsupported args: {:?}", &args)
+            panic!("unsupported args: {:?}", args)
         };
 
         let execution_state = self.execution_state().clone();
@@ -243,7 +245,11 @@ impl FileReader for BatchFnReader {
                 n_rows_seen = n_rows_seen.saturating_add(df.height());
 
                 if morsel_sender
-                    .send_morsel(Morsel::new(df, MorselSeq::new(seq), source_token.clone()))
+                    .send_morsel(Morsel::new_unregistered(
+                        df,
+                        MorselSeq::new(seq),
+                        source_token.clone(),
+                    ))
                     .await
                     .is_err()
                 {

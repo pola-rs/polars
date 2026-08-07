@@ -196,11 +196,9 @@ impl ListChunked {
 
     /// Zip with a `ChunkedArray` then apply a binary function `F` elementwise.
     #[must_use]
-    pub fn zip_and_apply_amortized<'a, T, I, F>(&'a self, ca: &'a ChunkedArray<T>, mut f: F) -> Self
+    pub fn zip_and_apply_amortized<'a, T, F>(&'a self, ca: &'a ChunkedArray<T>, mut f: F) -> Self
     where
         T: PolarsDataType,
-        &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
-        I: TrustedLen<Item = Option<T::Physical<'a>>>,
         F: FnMut(Option<AmortSeries>, Option<T::Physical<'a>>) -> Option<Series>,
     {
         if self.is_empty() {
@@ -209,7 +207,7 @@ impl ListChunked {
         let mut fast_explode = self.null_count() == 0;
         let mut out: ListChunked = {
             self.amortized_iter()
-                .zip(ca)
+                .zip(ca.iter())
                 .map(|(opt_s, opt_v)| {
                     let out = f(opt_s, opt_v);
                     match out {
@@ -326,15 +324,13 @@ impl ListChunked {
         Ok(out)
     }
 
-    pub fn try_zip_and_apply_amortized<'a, T, I, F>(
+    pub fn try_zip_and_apply_amortized<'a, T, F>(
         &'a self,
         ca: &'a ChunkedArray<T>,
         mut f: F,
     ) -> PolarsResult<Self>
     where
         T: PolarsDataType,
-        &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
-        I: TrustedLen<Item = Option<T::Physical<'a>>>,
         F: FnMut(Option<AmortSeries>, Option<T::Physical<'a>>) -> PolarsResult<Option<Series>>,
     {
         if self.is_empty() {
@@ -343,7 +339,7 @@ impl ListChunked {
         let mut fast_explode = self.null_count() == 0;
         let mut out: ListChunked = {
             self.amortized_iter()
-                .zip(ca)
+                .zip(ca.iter())
                 .map(|(opt_s, opt_v)| {
                     let out = f(opt_s, opt_v)?;
                     match out {
@@ -494,8 +490,10 @@ mod test {
             .unwrap();
         let ca = builder.finish();
 
-        ca.amortized_iter().zip(&ca).for_each(|(s1, s2)| {
-            assert!(s1.unwrap().as_ref().equals(&s2.unwrap()));
-        })
+        ca.amortized_iter()
+            .zip(ca.series_iter())
+            .for_each(|(s1, s2)| {
+                assert!(s1.unwrap().as_ref().equals(&s2.unwrap()));
+            })
     }
 }

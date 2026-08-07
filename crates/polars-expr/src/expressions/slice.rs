@@ -1,6 +1,6 @@
 use AnyValue::Null;
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::utils::{CustomIterTools, slice_offsets};
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
@@ -83,8 +83,8 @@ impl PhysicalExpr for SliceExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
-        let results = POOL.install(|| {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        let results = RAYON.install(|| {
             [&self.offset, &self.length, &self.input]
                 .par_iter()
                 .map(|e| e.evaluate(df, state))
@@ -98,13 +98,13 @@ impl PhysicalExpr for SliceExpr {
         Ok(series.slice(offset, length))
     }
 
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let mut results = POOL.install(|| {
+        let mut results = RAYON.install(|| {
             [&self.offset, &self.length, &self.input]
                 .par_iter()
                 .map(|e| e.evaluate_on_groups(df, groups, state))
@@ -134,7 +134,7 @@ impl PhysicalExpr for SliceExpr {
                     return Ok(ac);
                 }
                 if let AggregatedScalar(c) = ac.state {
-                    ac.state = AggregatedList(c.as_list().into_column());
+                    ac.state = AggregatedList(c.to_unit_list());
                     ac.update_groups = UpdateGroups::WithSeriesLen;
                 }
                 let groups = ac.groups();
@@ -164,7 +164,7 @@ impl PhysicalExpr for SliceExpr {
                 if matches!(ac.state, LiteralScalar(_)) {
                     ac.aggregated();
                 } else if let AggregatedScalar(c) = ac.state {
-                    ac.state = AggregatedList(c.as_list().into_column());
+                    ac.state = AggregatedList(c.to_unit_list());
                     ac.update_groups = UpdateGroups::WithSeriesLen;
                 }
                 let groups = ac.groups();
@@ -206,7 +206,7 @@ impl PhysicalExpr for SliceExpr {
                 if matches!(ac.state, LiteralScalar(_)) {
                     ac.aggregated();
                 } else if let AggregatedScalar(c) = ac.state {
-                    ac.state = AggregatedList(c.as_list().into_column());
+                    ac.state = AggregatedList(c.to_unit_list());
                     ac.update_groups = UpdateGroups::WithSeriesLen;
                 }
                 let groups = ac.groups();
@@ -248,7 +248,7 @@ impl PhysicalExpr for SliceExpr {
                 if matches!(ac.state, LiteralScalar(_)) {
                     ac.aggregated();
                 } else if let AggregatedScalar(c) = ac.state {
-                    ac.state = AggregatedList(c.as_list().into_column());
+                    ac.state = AggregatedList(c.to_unit_list());
                     ac.update_groups = UpdateGroups::WithSeriesLen;
                 }
 
@@ -296,7 +296,7 @@ impl PhysicalExpr for SliceExpr {
         };
 
         ac.with_groups(groups.into_sliceable())
-            .set_original_len(false);
+            .set_original_groups(false);
 
         Ok(ac)
     }

@@ -60,8 +60,9 @@ When building series or dataframes, Polars will convert dictionaries to the data
 --8<-- "python/user-guide/expressions/structs.py:series_struct"
 ```
 
-The number of fields, their names, and their types, are inferred from the first dictionary seen.
-Subsequent incongruences can result in `null` values or in errors:
+The field count, names, types, and order are inferred from the first dictionary seen. This field
+order is retained by the resulting `Struct`. Subsequent incongruences can result in `null` values or
+in errors:
 
 {{code_block('user-guide/expressions/structs','series_struct_error',['Series'])}}
 

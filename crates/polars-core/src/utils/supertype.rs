@@ -24,15 +24,17 @@ pub fn try_get_supertype_with_options(
     )
 }
 
-/// Returns a numeric supertype that `l` and `r` can be safely upcasted to if it exists.
+/// Returns the smallest numeric dtype that `l` and `r` can both be cast to without loss of data.
+/// If no such dtype exists, or `l` and `r` are already matching, returns `None`.
 pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Option<DataType> {
     use DataType::*;
 
-    if l == r || matches!(l, Unknown(_)) || matches!(r, Unknown(_)) {
+    if l.is_unknown() || r.is_unknown() || l.is_nested() || r.is_nested() || l == r {
         None
     } else if l.is_float() && r.is_float() {
         match (l, r) {
             (Float64, _) | (_, Float64) => Some(Float64),
+            (Float32, _) | (_, Float32) => Some(Float32),
             v => {
                 // Did we add a new float type?
                 if cfg!(debug_assertions) {
@@ -440,6 +442,49 @@ pub fn get_supertype_with_options(
                     None => None
                 }
             },
+            #[cfg(feature = "dtype-struct")]
+            (Struct(fields_a), Struct(fields_b)) => {
+                super_type_structs(fields_a, fields_b)
+            }
+            #[cfg(feature = "dtype-struct")]
+            (Struct(fields_a), rhs) if rhs.is_primitive_numeric() => {
+                let mut new_fields = Vec::with_capacity(fields_a.len());
+                for a in fields_a {
+                    let st = get_supertype(&a.dtype, rhs)?;
+                    new_fields.push(Field::new(a.name.clone(), st))
+                }
+                Some(Struct(new_fields))
+            }
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(p1, s1), Decimal(p2, s2)) => {
+                Some(Decimal((*p1).max(*p2), (*s1).max(*s2)))
+            },
+            #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
+            (Decimal(_, _), Float16) => Some(Float64),
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(_, _), Float32 | Float64 | Unknown(UnknownKind::Float)) => Some(Float64),
+            #[cfg(feature = "dtype-decimal")]
+            (Decimal(prec, scale), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => {
+                let fits = |v| { i128_to_dec128(v, *prec, *scale).is_some() };
+                let fits_orig_prec_scale = match dt {
+                    UInt8 => fits(u8::MAX as i128),
+                    UInt16 => fits(u16::MAX as i128),
+                    UInt32 => fits(u32::MAX as i128),
+                    UInt64 => fits(u64::MAX as i128),
+                    UInt128 => false,
+                    Int8 => fits(i8::MAX as i128),
+                    Int16 => fits(i16::MAX as i128),
+                    Int32 => fits(i32::MAX as i128),
+                    Int64 => fits(i64::MAX as i128),
+                    Int128 => false,
+                    _ => unreachable!(),
+                };
+                if fits_orig_prec_scale {
+                    Some(Decimal(*prec, *scale))
+                } else {
+                    Some(Decimal(DEC128_MAX_PREC, *scale))
+                }
+            }
             (dt, Unknown(kind)) => {
                 match kind {
                     UnknownKind::Float | UnknownKind::Int(_) if  dt.is_string() => {
@@ -451,7 +496,13 @@ pub fn get_supertype_with_options(
                     },
                     // Materialize float to float
                     UnknownKind::Float | UnknownKind::Int(_) if dt.is_float() => Some(dt.clone()),
-                    UnknownKind::Float if dt.is_integer() | dt.is_decimal() => Some(Unknown(UnknownKind::Float)),
+                    UnknownKind::Float if dt.is_integer() => {
+                        if dt.is_known() {
+                            Some(Float64)
+                        } else {
+                            Some(Unknown(UnknownKind::Float))
+                        }
+                    },
                     // Materialize str
                     UnknownKind::Str if dt.is_string() | dt.is_enum() => Some(dt.clone()),
                     // Materialize str
@@ -484,6 +535,10 @@ pub fn get_supertype_with_options(
                             }
                         }
                     }
+                    UnknownKind::Int(v) if dt.is_bool() => {
+                        let int_dtype = materialize_dyn_int(*v).dtype();
+                        get_supertype(dt, &int_dtype)
+                    },
                     #[cfg(feature = "dtype-decimal")]
                     UnknownKind::Int(_) if dt.is_decimal() => {
                         let DataType::Decimal(_prec, scale) = dt else { unreachable!() };
@@ -492,49 +547,6 @@ pub fn get_supertype_with_options(
                     _ => Some(Unknown(UnknownKind::Any))
                 }
             },
-            #[cfg(feature = "dtype-struct")]
-            (Struct(fields_a), Struct(fields_b)) => {
-                super_type_structs(fields_a, fields_b)
-            }
-            #[cfg(feature = "dtype-struct")]
-            (Struct(fields_a), rhs) if rhs.is_primitive_numeric() => {
-                let mut new_fields = Vec::with_capacity(fields_a.len());
-                for a in fields_a {
-                    let st = get_supertype(&a.dtype, rhs)?;
-                    new_fields.push(Field::new(a.name.clone(), st))
-                }
-                Some(Struct(new_fields))
-            }
-            #[cfg(feature = "dtype-decimal")]
-            (Decimal(p1, s1), Decimal(p2, s2)) => {
-                Some(Decimal((*p1).max(*p2), (*s1).max(*s2)))
-            },
-            #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
-            (Decimal(_, _), Float16) => Some(Float64),
-            #[cfg(feature = "dtype-decimal")]
-            (Decimal(_, _), Float32 | Float64) => Some(Float64),
-            #[cfg(feature = "dtype-decimal")]
-            (Decimal(prec, scale), dt) if dt.is_signed_integer() || dt.is_unsigned_integer() => {
-                let fits = |v| { i128_to_dec128(v, *prec, *scale).is_some() };
-                let fits_orig_prec_scale = match dt {
-                    UInt8 => fits(u8::MAX as i128),
-                    UInt16 => fits(u16::MAX as i128),
-                    UInt32 => fits(u32::MAX as i128),
-                    UInt64 => fits(u64::MAX as i128),
-                    UInt128 => false,
-                    Int8 => fits(i8::MAX as i128),
-                    Int16 => fits(i16::MAX as i128),
-                    Int32 => fits(i32::MAX as i128),
-                    Int64 => fits(i64::MAX as i128),
-                    Int128 => false,
-                    _ => unreachable!(),
-                };
-                if fits_orig_prec_scale {
-                    Some(Decimal(*prec, *scale))
-                } else {
-                    Some(Decimal(DEC128_MAX_PREC, *scale))
-                }
-            }
             _ => None,
         }
     }

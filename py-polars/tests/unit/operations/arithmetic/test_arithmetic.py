@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import operator
+import re
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -22,7 +23,7 @@ from polars import (
     UInt64,
 )
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_frame_equal, assert_schema_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, UNSIGNED_INTEGER_DTYPES
 
 if TYPE_CHECKING:
@@ -188,7 +189,7 @@ def test_fused_arithm() -> None:
     )
     # the extra aliases are because the fma does operation reordering
     assert (
-        """col("c").fma([col("a"), col("b")]).alias("a"), col("a").fma([col("b"), col("c")]).alias("2")"""
+        """col("a").fma([col("b"), col("c")]), col("b").fma([col("c"), col("a")]).alias("2")"""
         in q.explain()
     )
     assert q.collect().to_dict(as_series=False) == {
@@ -206,7 +207,7 @@ def test_fused_arithm() -> None:
 
     # check if we constant fold instead of fma
     q = df.lazy().select(pl.lit(1) * pl.lit(2) - pl.col("c"))
-    assert """(2) - (col("c")""" in q.explain()
+    assert """2 - col("c")""" in q.explain()
 
     # Check if fused is turned off for literals see: #9857
     for expr in [
@@ -334,16 +335,6 @@ def test_null_column_arithmetic(op: Any) -> None:
     # test broadcast left
     output_df = df.select(op(pl.Series("a", [None]), pl.col("a")))
     assert_frame_equal(expected_df, output_df)
-
-
-def test_bool_floordiv() -> None:
-    df = pl.DataFrame({"x": [True]})
-
-    with pytest.raises(
-        InvalidOperationError,
-        match="floor_div operation not supported for dtype `bool`",
-    ):
-        df.with_columns(pl.col("x").floordiv(2))
 
 
 def test_arithmetic_in_aggregation_3739() -> None:
@@ -993,3 +984,56 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
         pl.Series("a", [81], dtype=dtype).log(b),
         pl.Series("a", [4, 4, 2, 4, 2], dtype=dtype),
     )
+
+
+@pytest.mark.parametrize(
+    ("op", "op_str"),
+    [(operator.and_, "&"), (operator.or_, "|"), (operator.xor, "^")],
+    ids=["and", "or", "xor"],
+)
+def test_bitwise_bool_ops_deprecated(
+    op: Callable[[Any, Any], Any], op_str: str
+) -> None:
+    lf = pl.LazyFrame(
+        {"int": [], "bool": []}, schema={"int": pl.Int32, "bool": pl.Boolean}
+    )
+    hint = "Hint: cast the Boolean to Int32 using pl.Expr.cast()."
+
+    msg = (
+        f"{op_str} on Boolean and Int32 is deprecated and will raise a ComputeError in Polars 2.0\n"
+        + hint
+    )
+    with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
+        lf.select(op(pl.col("bool"), pl.col("int"))).collect_schema()
+
+    msg = (
+        f"{op_str} on Int32 and Boolean is deprecated and will raise a ComputeError in Polars 2.0\n"
+        + hint
+    )
+    with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
+        lf.select(op(pl.col("int"), pl.col("bool"))).collect_schema()
+
+
+def test_fma_unknown_type_coercion_28315() -> None:
+    df = pl.DataFrame(
+        {"x": [0.0, 1.0], "w": [1.0, 1.0]},
+        schema={"x": pl.Float32, "w": pl.Float32},
+    )
+
+    expr = pl.col("x") * pl.col("w") + 1e-30 * (pl.col("x") == 0)
+
+    assert_frame_equal(
+        df.select(expr),
+        pl.Series("x", [1e-30, 1.0], dtype=pl.Float32).to_frame(),
+    )
+
+
+def test_truediv_decimal_schema_28372() -> None:
+    lf = pl.LazyFrame(
+        {"x": [1.0, 2.5, 3.5656]}, schema={"x": pl.Decimal(15, 2)}
+    ).select(f=pl.col.x.sum() / 7.0, i=pl.col.x.sum() / 7)
+    expected = pl.LazyFrame(
+        {"f": [1.01], "i": [1.01]}, schema_overrides={"i": pl.Decimal(38, 2)}
+    )
+    assert_schema_equal(lf.collect_schema(), expected.collect_schema())
+    assert_frame_equal(lf, expected)

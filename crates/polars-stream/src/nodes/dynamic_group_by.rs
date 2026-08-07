@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
 use arrow::legacy::time_zone::Tz;
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::distributor_channel::distributor_channel;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, GroupsType, Int64Chunked, IntoColumn, TimeUnit};
 use polars_core::schema::Schema;
@@ -14,9 +17,6 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::ComputeNode;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::PortState;
@@ -355,7 +355,11 @@ impl ComputeNode for DynamicGroupBy {
                     .await?;
 
                     _ = send
-                        .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                        .send(Morsel::new_unregistered(
+                            df,
+                            self.seq.successor(),
+                            SourceToken::new(),
+                        ))
                         .await;
                 }
 
@@ -427,7 +431,8 @@ impl ComputeNode for DynamicGroupBy {
             while let Ok(morsel) = recv.recv().await
                 && self.slice_length > 0
             {
-                let (df, seq, source_token, wait_token) = morsel.into_inner();
+                let (sf, seq, source_token, wait_token) = morsel.into_inner();
+                let df = sf.into_df().await;
                 self.seq = seq;
                 drop(wait_token);
 
@@ -462,7 +467,7 @@ impl ComputeNode for DynamicGroupBy {
                 if let Some((windows, lower_bound, upper_bound, df)) = self.next_windows(false)? {
                     if distributor
                         .send((
-                            Morsel::new(df, seq, source_token),
+                            Morsel::new_unregistered(df, seq, source_token),
                             windows,
                             lower_bound,
                             upper_bound,

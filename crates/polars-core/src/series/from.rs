@@ -12,7 +12,6 @@ use polars_compute::cast::cast_unchecked as cast;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::dec128_fits;
 use polars_error::feature_gated;
-use polars_utils::check_allow_importing_interval_as_struct;
 use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::cast::{CastOptions, cast_chunks};
@@ -20,6 +19,7 @@ use crate::chunked_array::cast::{CastOptions, cast_chunks};
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
+use crate::config::check_allow_importing_interval_as_struct;
 use crate::prelude::*;
 
 impl Series {
@@ -531,7 +531,7 @@ impl Series {
                         let arr = arr.as_any().downcast_ref::<MapArray>().unwrap();
                         let offsets: &OffsetsBuffer<i32> = arr.offsets();
 
-                        let validity = values.validity().cloned();
+                        let validity = arr.validity().cloned();
 
                         Box::from(ListArray::<i64>::new(
                             ListArray::<i64>::default_datatype(values.dtype().clone()),
@@ -572,6 +572,40 @@ impl Series {
 
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
         }
+    }
+
+    #[cfg(feature = "dtype-categorical")]
+    pub fn from_cats_and_dtype(
+        cats: &Series,
+        dtype: &DataType,
+        strict: bool,
+    ) -> PolarsResult<Series> {
+        let phys = dtype.cat_physical()?;
+        let phys_dtype = DataType::from(phys);
+        if cats.dtype() != &phys_dtype {
+            polars_bail!(
+                SchemaMismatch:
+                "cannot convert column of type {} to {} with physical type {}; \
+                column dtype must match the enum/categorical's physical type",
+                cats.dtype(), dtype, phys_dtype
+            )
+        }
+
+        let out = with_match_categorical_physical_type!(phys, |$C| {
+            // SAFETY: we are guarded by the type system.
+            type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
+            let ca: &PhysCa = cats.as_ref().as_ref();
+            CategoricalChunked::<$C>::from_cats_and_dtype(ca.clone(), dtype.clone()).into_series()
+        });
+
+        if strict && out.null_count() != cats.null_count() {
+            polars_bail!(
+                ComputeError:
+                "found invalid category value when converting from physical to {dtype}",
+            );
+        }
+
+        Ok(out)
     }
 }
 
@@ -927,9 +961,17 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
 
     fn try_from(field_arr: (&ArrowField, Vec<ArrayRef>)) -> PolarsResult<Self> {
         let (field, chunks) = field_arr;
-
+        let arrow_dt = field.dtype();
         let dtype = check_types(&chunks)?;
-        polars_ensure!(dtype == *field.dtype(), ComputeError: "Arrow Field dtype does not match the ArrayRef dtypes");
+        let compatible = match (&dtype, arrow_dt) {
+            // See #26174, we don't care about dictionary ordering.
+            (
+                ArrowDataType::Dictionary(int0, inner0, _ord0),
+                ArrowDataType::Dictionary(int1, inner1, _ord1),
+            ) => (int0, inner0) == (int1, inner1),
+            (l, r) => l == r,
+        };
+        polars_ensure!(compatible, ComputeError: "Arrow Field dtype does not match the ArrayRef dtypes");
 
         // SAFETY:
         // dtype is checked

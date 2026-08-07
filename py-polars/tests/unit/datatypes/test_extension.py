@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import JoinStrategy, PolarsDataType
@@ -158,3 +158,57 @@ def test_extension_join_payload(how: JoinStrategy) -> None:
     )
     print(result, expected)
     assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_extension_native_to_extension_cast_27193() -> None:
+    native = pl.Series("inner", [[1, 2], [3, 4]], pl.Array(pl.Int8, 2))
+    casted = native.arr.eval(pl.element().ext.to(PythonTestExtension(storage=pl.Int8)))
+    expected = pl.Series(
+        "inner", [[1, 2], [3, 4]], pl.Array(PythonTestExtension(storage=pl.Int8), 2)
+    )
+    assert_series_equal(casted, expected)
+
+
+def test_extension_to_extension_raises_27519() -> None:
+    AExtension = pl.Extension(name="a.ext", storage=pl.Int64)
+    BExtension = pl.Extension(name="b.ext", storage=pl.Int64)
+
+    s = pl.Series("x", [0], dtype=AExtension)
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=r"cannot call `\.ext\.to` on a column that is already an Extension type",
+    ):
+        s.to_frame().select(pl.col("x").ext.to(BExtension))
+
+
+def test_ext_to_mismatched_storage_raises_27519() -> None:
+    Ext = pl.Extension(name="a.ext", storage=pl.Int64)
+    s = pl.Series("x", [1.0], dtype=pl.Float64)
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match=r"column dtype must match",
+    ):
+        s.to_frame().select(pl.col("x").ext.to(Ext))
+
+
+def test_ext_concat_27512() -> None:
+    ExtensionA = pl.Extension(name="extension.a", storage=pl.Int64)
+    ExtensionAFloat = pl.Extension(name="extension.a", storage=pl.Float64)
+    ExtensionB = pl.Extension(name="extension.b", storage=pl.Int64)
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.concat(
+            [
+                pl.DataFrame(range(2), schema={"col": ExtensionA}),
+                pl.DataFrame(range(2), schema={"col": ExtensionB}),
+            ]
+        )
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.concat(
+            [
+                pl.DataFrame(range(2), schema={"col": ExtensionA}),
+                pl.DataFrame(range(2), schema={"col": ExtensionAFloat}),
+            ]
+        )

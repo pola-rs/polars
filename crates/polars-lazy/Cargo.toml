@@ -12,7 +12,9 @@ description = "Lazy query engine for the Polars DataFrame library"
 arrow = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true, optional = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
+polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-expr = { workspace = true }
 polars-io = { workspace = true, features = ["lazy"] }
@@ -41,7 +43,7 @@ version_check = { workspace = true }
 [features]
 catalog = ["polars-io/catalog"]
 nightly = ["polars-core/nightly", "polars-expr/nightly"]
-new_streaming = ["polars-stream"]
+streaming = ["polars-stream"]
 parquet = [
   "polars-io/parquet",
   "polars-plan/parquet",
@@ -50,7 +52,6 @@ parquet = [
   "polars-stream?/parquet",
 ]
 async = [
-  "polars-plan/async",
   "polars-io/cloud",
   "polars-mem-engine/async",
 ]
@@ -81,6 +82,7 @@ temporal = [
   "dtype-duration",
   "polars-plan/temporal",
   "polars-expr/temporal",
+  "polars-stream?/temporal",
 ]
 # debugging purposes
 fmt = ["polars-core/fmt", "polars-plan/fmt"]
@@ -119,6 +121,7 @@ dtype-categorical = [
 ]
 dtype-date = [
   "polars-plan/dtype-date",
+  "polars-stream?/dtype-date",
   "polars-time/dtype-date",
   "temporal",
   "polars-expr/dtype-date",
@@ -126,6 +129,7 @@ dtype-date = [
 ]
 dtype-datetime = [
   "polars-plan/dtype-datetime",
+  "polars-stream?/dtype-datetime",
   "polars-time/dtype-datetime",
   "temporal",
   "polars-expr/dtype-datetime",
@@ -134,10 +138,12 @@ dtype-datetime = [
 dtype-decimal = [
   "polars-plan/dtype-decimal",
   "polars-expr/dtype-decimal",
+  "polars-stream?/dtype-decimal",
   "polars-mem-engine/dtype-decimal",
 ]
 dtype-duration = [
   "polars-plan/dtype-duration",
+  "polars-stream?/dtype-duration",
   "polars-time/dtype-duration",
   "temporal",
   "polars-expr/dtype-duration",
@@ -154,7 +160,12 @@ dtype-i16 = [
   "polars-mem-engine/dtype-i16",
   "polars-stream?/dtype-i16",
 ]
-dtype-i128 = ["polars-plan/dtype-i128", "polars-expr/dtype-i128", "polars-stream?/dtype-i128"]
+dtype-i128 = [
+  "polars-plan/dtype-i128",
+  "polars-stream?/dtype-i128",
+  "polars-expr/dtype-i128",
+  "polars-stream?/dtype-i128",
+]
 dtype-i8 = ["polars-plan/dtype-i8", "polars-expr/dtype-i8", "polars-mem-engine/dtype-i8", "polars-stream?/dtype-i8"]
 dtype-struct = [
   "polars-plan/dtype-struct",
@@ -164,6 +175,7 @@ dtype-struct = [
 ]
 dtype-time = [
   "polars-plan/dtype-time",
+  "polars-stream?/dtype-time",
   "polars-time/dtype-time",
   "temporal",
   "polars-expr/dtype-time",
@@ -217,14 +229,20 @@ approx_unique = ["polars-plan/approx_unique", "polars-expr/approx_unique", "pola
 is_in = ["polars-plan/is_in", "polars-ops/is_in", "polars-expr/is_in", "polars-stream?/is_in"]
 repeat_by = ["polars-expr/repeat_by"]
 round_series = ["polars-expr/round_series", "polars-ops/round_series"]
-is_first_distinct = ["polars-expr/is_first_distinct"]
+is_first_distinct = ["polars-expr/is_first_distinct", "polars-stream?/is_first_distinct"]
 is_last_distinct = ["polars-expr/is_last_distinct"]
 is_between = ["polars-expr/is_between"]
 is_close = ["polars-expr/is_close"]
 is_unique = ["polars-expr/is_unique"]
 cross_join = ["polars-plan/cross_join", "polars-ops/cross_join"]
-asof_join = ["polars-plan/asof_join", "polars-time", "polars-ops/asof_join", "polars-mem-engine/asof_join"]
-iejoin = ["polars-plan/iejoin"]
+asof_join = [
+  "polars-plan/asof_join",
+  "polars-stream/asof_join",
+  "polars-time",
+  "polars-ops/asof_join",
+  "polars-mem-engine/asof_join",
+]
+iejoin = ["polars-plan/iejoin", "polars-stream/iejoin"]
 business = ["polars-expr/business"]
 concat_str = ["polars-expr/concat_str"]
 range = [
@@ -233,7 +251,7 @@ range = [
 ]
 mode = ["polars-expr/mode", "polars-stream?/mode"]
 cum_agg = ["polars-expr/cum_agg", "polars-stream?/cum_agg"]
-interpolate = ["polars-expr/interpolate"]
+interpolate = ["polars-expr/interpolate", "polars-stream?/interpolate"]
 interpolate_by = ["polars-expr/interpolate_by"]
 rolling_window = [
   "polars-expr/rolling_window",
@@ -245,7 +263,7 @@ rolling_window_by = [
 rank = ["polars-expr/rank"]
 diff = ["polars-expr/diff", "polars-stream?/diff"]
 pct_change = ["polars-expr/pct_change"]
-moment = ["polars-expr/moment", "polars-ops/moment"]
+moment = ["polars-expr/moment", "polars-ops/moment", "polars-stream?/moment"]
 abs = ["polars-expr/abs"]
 random = ["polars-expr/random"]
 dynamic_group_by = [
@@ -261,7 +279,7 @@ ewma_by = ["polars-expr/ewma_by"]
 dot_diagram = ["polars-plan/dot_diagram"]
 diagonal_concat = []
 unique_counts = ["polars-expr/unique_counts"]
-log = ["polars-expr/log"]
+log = ["polars-expr/log", "polars-stream?/log"]
 list_eval = []
 cumulative_eval = []
 list_to_struct = ["polars-expr/list_to_struct"]
@@ -281,7 +299,7 @@ string_normalize = ["polars-expr/string_normalize"]
 string_reverse = ["polars-expr/string_reverse"]
 string_to_integer = ["polars-expr/string_to_integer"]
 arg_where = ["polars-expr/arg_where"]
-index_of = ["polars-expr/index_of"]
+index_of = ["polars-stream?/index_of", "polars-expr/index_of"]
 search_sorted = ["polars-expr/search_sorted"]
 merge_sorted = ["polars-plan/merge_sorted", "polars-stream?/merge_sorted", "polars-mem-engine/merge_sorted"]
 meta = ["polars-plan/meta"]
@@ -295,6 +313,7 @@ regex = ["polars-expr/regex"]
 serde = [
   "polars-plan/serde",
   "arrow/serde",
+  "polars-buffer/serde",
   "polars-core/serde-lazy",
   "polars-time?/serde",
   "polars-io/serde",
@@ -304,15 +323,13 @@ serde = [
 ]
 fused = ["polars-expr/fused", "polars-ops/fused"]
 list_sets = ["polars-expr/list_sets", "polars-ops/list_sets"]
-list_any_all = ["polars-ops/list_any_all", "polars-expr/list_any_all"]
-array_any_all = ["polars-ops/array_any_all", "polars-expr/array_any_all", "dtype-array"]
 list_drop_nulls = ["polars-ops/list_drop_nulls", "polars-expr/list_drop_nulls"]
 list_sample = ["polars-ops/list_sample", "polars-expr/list_sample"]
 cutqcut = ["polars-expr/cutqcut", "polars-ops/cutqcut"]
 rle = ["polars-expr/rle", "polars-ops/rle"]
 extract_groups = ["polars-expr/extract_groups"]
 peaks = ["polars-expr/peaks"]
-cov = ["polars-ops/cov", "polars-expr/cov"]
+cov = ["polars-ops/cov", "polars-expr/cov", "polars-stream?/cov"]
 hist = ["polars-expr/hist"]
 replace = ["polars-expr/replace", "polars-stream?/replace"]
 
@@ -411,7 +428,6 @@ features = [
   "is_last_distinct",
   "is_unique",
   "json",
-  "list_any_all",
   "list_count",
   "list_drop_nulls",
   "list_eval",

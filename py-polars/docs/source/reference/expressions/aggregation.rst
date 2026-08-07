@@ -17,7 +17,9 @@ Aggregation
     Expr.bitwise_xor
     Expr.count
     Expr.first
+    Expr.has_nulls
     Expr.implode
+    Expr.is_empty
     Expr.last
     Expr.len
     Expr.max

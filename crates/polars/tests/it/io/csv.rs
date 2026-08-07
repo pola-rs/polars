@@ -1255,10 +1255,7 @@ fn test_trailing_empty_string_cols() -> PolarsResult<()> {
     let df = CsvReader::new(file).finish()?;
     let col = df.column("colx")?;
     let col = col.str()?;
-    assert_eq!(
-        col.into_no_null_iter().collect::<Vec<_>>(),
-        &["abc", "xyz", ""]
-    );
+    assert_eq!(col.no_null_iter().collect::<Vec<_>>(), &["abc", "xyz", ""]);
 
     let csv = "colx,coly\nabc,def\nxyz,mno\n,";
     let file = Cursor::new(csv);
@@ -1280,7 +1277,7 @@ fn test_escaping_quotes() -> PolarsResult<()> {
     let df = CsvReader::new(file).finish()?;
     let col = df.column("a")?;
     let col = col.str()?;
-    assert_eq!(col.into_no_null_iter().collect::<Vec<_>>(), &["\""]);
+    assert_eq!(col.no_null_iter().collect::<Vec<_>>(), &["\""]);
     Ok(())
 }
 

@@ -1,15 +1,50 @@
 use std::hash::BuildHasher;
 
-use hashbrown::hash_map::RawEntryMut;
+use indexmap::map::RawEntryApiV1;
+use indexmap::map::raw_entry_v1::RawEntryMut;
 use polars_core::CHEAP_SERIES_HASH_LIMIT;
+use polars_core::config::verbose;
+use polars_core::prelude::PlIndexMap;
+use polars_core::schema::Schema;
+use polars_error::PolarsResult;
 use polars_utils::aliases::PlFixedStateQuality;
+use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::_boost_hash_combine;
-use polars_utils::vec::CapacityByFactor;
+use polars_utils::pl_str::PlSmallStr;
+use polars_utils::scratch_vec::ScratchVec;
 
-use super::*;
 use crate::constants::CSE_REPLACED;
+use crate::plans::aexpr::is_inherently_nondeterministic_top_level;
+use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
+use crate::plans::visitor::{
+    IRNode, IRNodeArena, RewriteRecursion, RewritingVisitor, TreeWalker as _, VisitRecursion,
+    Visitor,
+};
+use crate::plans::{AExpr, ExprIR, IR, IRBuilder, IRFunctionExpr, LiteralValue, OutputName};
+use crate::prelude::ProjectionOptions;
 use crate::prelude::visitor::AexprNode;
+
+type Accepted = Option<(VisitRecursion, bool)>;
+// Don't allow this node in a cse.
+const REFUSE_NO_MEMBER: Accepted = Some((VisitRecursion::Continue, false));
+// Don't allow this node, but allow as a member of a cse.
+const REFUSE_ALLOW_MEMBER: Accepted = Some((VisitRecursion::Continue, true));
+const REFUSE_SKIP: Accepted = Some((VisitRecursion::Skip, false));
+// Accept this node.
+const ACCEPT: Accepted = None;
+
+/// CSE refuses anything inherently non-deterministic _except_ user UDFs,
+/// which CSE folds via Python/library identity (per #26253).
+fn refused_by_cse_due_to_nondeterminism(ae: &AExpr) -> bool {
+    if matches!(
+        ae,
+        AExpr::AnonymousFunction { .. } | AExpr::AnonymousAgg { .. }
+    ) {
+        return false;
+    }
+    is_inherently_nondeterministic_top_level(ae)
+}
 
 #[derive(Debug, Clone)]
 struct ProjectionExprs {
@@ -110,13 +145,13 @@ impl Identifier {
 
 #[derive(Default)]
 struct IdentifierMap<V> {
-    inner: PlHashMap<Identifier, V>,
+    inner: PlIndexMap<Identifier, V>,
 }
 
 impl<V> IdentifierMap<V> {
     fn get(&self, id: &Identifier, arena: &Arena<AExpr>) -> Option<&V> {
         self.inner
-            .raw_entry()
+            .raw_entry_v1()
             .from_hash(id.hash(), |k| k.is_equal(id, arena))
             .map(|(_k, v)| v)
     }
@@ -130,12 +165,12 @@ impl<V> IdentifierMap<V> {
         let h = id.hash();
         match self
             .inner
-            .raw_entry_mut()
+            .raw_entry_mut_v1()
             .from_hash(h, |k| k.is_equal(&id, arena))
         {
             RawEntryMut::Occupied(entry) => entry.into_mut(),
             RawEntryMut::Vacant(entry) => {
-                let (_, v) = entry.insert_with_hasher(h, id, v(), |id| id.hash());
+                let (_, v) = entry.insert_hashed_nocheck(h, id, v());
                 v
             },
         }
@@ -154,7 +189,7 @@ impl<V> IdentifierMap<V> {
 /// Does no analysis whether this leads to legal substitutions.
 #[derive(Default)]
 pub struct NaiveExprMerger {
-    node_to_uniq_id: PlHashMap<Node, u32>,
+    node_to_uniq_id: PlIndexMap<Node, u32>,
     uniq_id_to_node: Vec<Node>,
     identifier_to_uniq_id: IdentifierMap<u32>,
     arg_stack: Vec<Option<Identifier>>,
@@ -162,8 +197,13 @@ pub struct NaiveExprMerger {
 
 impl NaiveExprMerger {
     pub fn add_expr(&mut self, node: Node, arena: &Arena<AExpr>) {
-        let node = AexprNode::new(node);
-        node.visit(self, arena).unwrap();
+        AexprNode::new(node).visit(self, arena).unwrap();
+    }
+
+    pub fn add_and_get_uniq_id(&mut self, node: Node, arena: &Arena<AExpr>) -> u32 {
+        let aexpr_node = AexprNode::new(node);
+        aexpr_node.visit(self, arena).unwrap();
+        *self.node_to_uniq_id.get(&node).unwrap()
     }
 
     pub fn get_uniq_id(&self, node: Node) -> Option<u32> {
@@ -242,14 +282,26 @@ enum VisitRecord {
     SubExprId(Identifier, bool),
 }
 
-fn skip_pre_visit(ae: &AExpr, is_groupby: bool) -> bool {
+fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) -> bool {
     match ae {
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling { .. } => true,
         AExpr::Over { .. } => true,
         #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { .. } => true,
+        AExpr::Eval { .. } => true,
         AExpr::Ternary { .. } => is_groupby,
-        _ => false,
+        ae => {
+            if element_wise_select_only {
+                if is_groupby {
+                    true
+                } else {
+                    !ae.is_elementwise_top_level()
+                }
+            } else {
+                false
+            }
+        },
     }
 }
 
@@ -301,7 +353,7 @@ struct ExprIdentifierVisitor<'a> {
     se_count: &'a mut SubExprCount,
     /// Materialized `CSE` materialized (name) hashes can collide. So we validate that all CSE counts
     /// match name hash counts.
-    name_validation: &'a mut PlHashMap<u64, u32>,
+    name_validation: &'a mut PlIndexMap<u64, u32>,
     identifier_array: &'a mut IdentifierArray,
     // Index in pre-visit traversal order.
     pre_visit_idx: usize,
@@ -314,6 +366,8 @@ struct ExprIdentifierVisitor<'a> {
     has_sub_expr: bool,
     // During aggregation we only identify element-wise operations
     is_group_by: bool,
+    //
+    element_wise_only: bool,
 }
 
 impl ExprIdentifierVisitor<'_> {
@@ -322,7 +376,8 @@ impl ExprIdentifierVisitor<'_> {
         identifier_array: &'a mut IdentifierArray,
         visit_stack: &'a mut Vec<VisitRecord>,
         is_group_by: bool,
-        name_validation: &'a mut PlHashMap<u64, u32>,
+        name_validation: &'a mut PlIndexMap<u64, u32>,
+        element_wise_select_only: bool,
     ) -> ExprIdentifierVisitor<'a> {
         let id_array_offset = identifier_array.len();
         ExprIdentifierVisitor {
@@ -335,6 +390,7 @@ impl ExprIdentifierVisitor<'_> {
             id_array_offset,
             has_sub_expr: false,
             is_group_by,
+            element_wise_only: element_wise_select_only,
         }
     }
 
@@ -398,17 +454,12 @@ impl ExprIdentifierVisitor<'_> {
                     REFUSE_ALLOW_MEMBER
                 }
             },
-            #[cfg(feature = "random")]
-            AExpr::Function {
-                function: IRFunctionExpr::Random { .. },
-                ..
-            } => REFUSE_NO_MEMBER,
+            ae if refused_by_cse_due_to_nondeterminism(ae) => REFUSE_NO_MEMBER,
             #[cfg(feature = "rolling_window")]
             AExpr::Function {
                 function: IRFunctionExpr::RollingExpr { .. },
                 ..
             } => REFUSE_NO_MEMBER,
-            AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
             _ => {
                 // During aggregation we only store elementwise operation in the state
                 // other operations we cannot add to the state as they have the output size of the
@@ -418,7 +469,6 @@ impl ExprIdentifierVisitor<'_> {
                         return REFUSE_NO_MEMBER;
                     }
                     match ae {
-                        AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
                         AExpr::Cast { .. } => REFUSE_ALLOW_MEMBER,
                         _ => ACCEPT,
                     }
@@ -439,7 +489,11 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         node: &Self::Node,
         arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
-        if skip_pre_visit(node.to_aexpr(arena), self.is_group_by) {
+        if skip_pre_visit(
+            node.to_aexpr(arena),
+            self.is_group_by,
+            self.element_wise_only,
+        ) {
             // Still add to the stack so that a parent becomes invalidated.
             self.visit_stack
                 .push(VisitRecord::SubExprId(Identifier::new(), false));
@@ -521,6 +575,7 @@ struct CommonSubExprRewriter<'a> {
     /// Indicates if this expression is rewritten.
     rewritten: bool,
     is_group_by: bool,
+    is_element_wise_select_only: bool,
 }
 
 impl<'a> CommonSubExprRewriter<'a> {
@@ -530,6 +585,7 @@ impl<'a> CommonSubExprRewriter<'a> {
         replaced_identifiers: &'a mut IdentifierMap<()>,
         id_array_offset: usize,
         is_group_by: bool,
+        is_element_wise_select_only: bool,
     ) -> Self {
         Self {
             sub_expr_map,
@@ -540,6 +596,7 @@ impl<'a> CommonSubExprRewriter<'a> {
             id_array_offset,
             rewritten: false,
             is_group_by,
+            is_element_wise_select_only,
         }
     }
 }
@@ -590,7 +647,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         if self.visited_idx + self.id_array_offset >= self.identifier_array.len()
             || self.max_post_visit_idx
                 > self.identifier_array[self.visited_idx + self.id_array_offset].0
-            || skip_pre_visit(ae, self.is_group_by)
+            || skip_pre_visit(ae, self.is_group_by, self.is_element_wise_select_only)
         {
             return Ok(RewriteRecursion::Stop);
         }
@@ -676,11 +733,18 @@ pub(crate) struct CommonSubExprOptimizer {
     replaced_identifiers: IdentifierMap<()>,
     // these are cleared per expr node
     visit_stack: Vec<VisitRecord>,
-    name_validation: PlHashMap<u64, u32>,
+    name_validation: PlIndexMap<u64, u32>,
+    // Set by the streaming engine
+    // Only supports element-wise CSEE
+    // on SELECT/HSTACK
+    element_wise_select_only: bool,
+
+    nodes_scratch: ScratchVec<Node>,
+    heights_scratch: ScratchVec<ExprProjectionHeight>,
 }
 
 impl CommonSubExprOptimizer {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(element_wise_select_only: bool) -> Self {
         Self {
             se_count: Default::default(),
             id_array: Default::default(),
@@ -688,6 +752,9 @@ impl CommonSubExprOptimizer {
             id_array_offsets: Default::default(),
             replaced_identifiers: Default::default(),
             name_validation: Default::default(),
+            element_wise_select_only,
+            nodes_scratch: ScratchVec::default(),
+            heights_scratch: ScratchVec::default(),
         }
     }
 
@@ -696,6 +763,7 @@ impl CommonSubExprOptimizer {
         ae_node: AexprNode,
         is_group_by: bool,
         expr_arena: &mut Arena<AExpr>,
+        element_wise_select_only: bool,
     ) -> PolarsResult<(usize, bool)> {
         let mut visitor = ExprIdentifierVisitor::new(
             &mut self.se_count,
@@ -703,6 +771,7 @@ impl CommonSubExprOptimizer {
             &mut self.visit_stack,
             is_group_by,
             &mut self.name_validation,
+            element_wise_select_only,
         );
         ae_node.visit(&mut visitor, expr_arena).map(|_| ())?;
         Ok((visitor.id_array_offset, visitor.has_sub_expr))
@@ -716,6 +785,7 @@ impl CommonSubExprOptimizer {
         id_array_offset: usize,
         is_group_by: bool,
         expr_arena: &mut Arena<AExpr>,
+        element_wise_select_only: bool,
     ) -> PolarsResult<(AexprNode, bool)> {
         let mut rewriter = CommonSubExprRewriter::new(
             &self.se_count,
@@ -723,6 +793,7 @@ impl CommonSubExprOptimizer {
             &mut self.replaced_identifiers,
             id_array_offset,
             is_group_by,
+            element_wise_select_only,
         );
         ae_node
             .rewrite(&mut rewriter, expr_arena)
@@ -736,6 +807,7 @@ impl CommonSubExprOptimizer {
         id_array_offsets: &mut Vec<u32>,
         is_group_by: bool,
         schema: &Schema,
+        element_wise_select_only: bool,
     ) -> PolarsResult<Option<ProjectionExprs>> {
         let mut has_sub_expr = false;
 
@@ -748,7 +820,7 @@ impl CommonSubExprOptimizer {
             // Visit expressions and collect sub-expression counts.
             let ae_node = AexprNode::new(e.node());
             let (id_array_offset, this_expr_has_se) =
-                self.visit_expression(ae_node, is_group_by, expr_arena)?;
+                self.visit_expression(ae_node, is_group_by, expr_arena, element_wise_select_only)?;
             id_array_offsets.push(id_array_offset as u32);
             has_sub_expr |= this_expr_has_se;
         }
@@ -774,14 +846,19 @@ impl CommonSubExprOptimizer {
         }
 
         if has_sub_expr {
-            let mut new_expr = Vec::with_capacity_by_factor(expr.len(), 1.3);
+            let mut new_expr = Vec::with_capacity((expr.len() as f64 * 1.3) as usize);
 
             // Then rewrite the expressions that have a cse count > 1.
             for (e, offset) in expr.iter().zip(id_array_offsets.iter()) {
                 let ae_node = AexprNode::new(e.node());
 
-                let (out, rewritten) =
-                    self.mutate_expression(ae_node, *offset as usize, is_group_by, expr_arena)?;
+                let (out, rewritten) = self.mutate_expression(
+                    ae_node,
+                    *offset as usize,
+                    is_group_by,
+                    expr_arena,
+                    element_wise_select_only,
+                )?;
 
                 let out_node = out.node();
                 let mut out_e = e.clone();
@@ -800,7 +877,7 @@ impl CommonSubExprOptimizer {
                             continue;
                         }
                         scratch.clear();
-                        let aes = expr_arena.get_many_mut([original, new]);
+                        let aes = expr_arena.get_disjoint_mut([original, new]);
 
                         // Only follow paths that are the same.
                         if std::mem::discriminant(aes[0]) != std::mem::discriminant(aes[1]) {
@@ -820,7 +897,7 @@ impl CommonSubExprOptimizer {
                             stack.push((scratch[i], scratch[i + offset]));
                         }
 
-                        match expr_arena.get_many_mut([original, new]) {
+                        match expr_arena.get_disjoint_mut([original, new]) {
                             [
                                 AExpr::Function {
                                     input: input_original,
@@ -865,6 +942,22 @@ impl CommonSubExprOptimizer {
             // Add the tmp columns
             for id in self.replaced_identifiers.inner.keys() {
                 let (node, _count) = self.se_count.get(id, expr_arena).unwrap();
+
+                // Avoid accidentally broadcasting <scalar literal>.<elementwise_ops..>
+                if self.element_wise_select_only
+                    && !matches!(
+                        aexpr_projection_height_rec(
+                            *node,
+                            expr_arena,
+                            &mut self.nodes_scratch,
+                            &mut self.heights_scratch
+                        ),
+                        ExprProjectionHeight::Column
+                    )
+                {
+                    return Ok(None);
+                }
+
                 let name = id.materialize();
                 let out_e = ExprIR::new(*node, OutputName::Alias(name));
                 new_expr.push(out_e)
@@ -920,6 +1013,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     &mut id_array_offsets,
                     false,
                     input_schema.as_ref().as_ref(),
+                    self.element_wise_select_only,
                 )? {
                     let schema = schema.clone();
                     let options = *options;
@@ -964,6 +1058,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     &mut id_array_offsets,
                     false,
                     input_schema.as_ref().as_ref(),
+                    self.element_wise_select_only,
                 )? {
                     let schema = schema.clone();
                     let options = *options;
@@ -1003,7 +1098,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                 maintain_order,
                 apply,
                 schema,
-            } => {
+            } if !self.element_wise_select_only => {
                 let input_schema = arena.0.get(*input).schema(&arena.0);
                 if let Some(aggs) = self.find_cse(
                     aggs,
@@ -1011,6 +1106,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     &mut id_array_offsets,
                     true,
                     input_schema.as_ref().as_ref(),
+                    self.element_wise_select_only,
                 )? {
                     let keys = keys.clone();
                     let options = options.clone();

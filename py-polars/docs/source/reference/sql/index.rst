@@ -5,7 +5,6 @@ SQL Interface
 This page gives an overview of all public SQL functions
 and operations supported by Polars.
 
-
 .. raw:: html
 
     <style>
@@ -27,27 +26,13 @@ and operations supported by Polars.
 
     .. grid-item-card::
 
-        **SQL Clauses**
-        ^^^^^^^^^^^^^^^
+        **Query Clauses**
+        ^^^^^^^^^^^^^^^^^
 
         .. toctree::
            :maxdepth: 2
 
            clauses
-
-    .. grid-item-card::
-
-        **SQL Functions**
-        ^^^^^^^^^^^^^^^^^
-
-        :doc:`Overview <functions/index>`
-
-        .. toctree::
-           :maxdepth: 2
-
-           functions/index
-
-.. grid::
 
     .. grid-item-card::
 
@@ -58,6 +43,8 @@ and operations supported by Polars.
            :maxdepth: 2
 
            set_operations
+
+.. grid::
 
     .. grid-item-card::
 
@@ -70,3 +57,23 @@ and operations supported by Polars.
            table_operations
 
     .. grid-item-card::
+
+        **Functions**
+        ^^^^^^^^^^^^^
+
+        :doc:`Overview <functions/index>`
+
+        .. toctree::
+           :maxdepth: 2
+
+           functions/index
+
+    .. grid-item-card::
+
+        **Operators**
+        ^^^^^^^^^^^^^
+
+        .. toctree::
+           :maxdepth: 2
+
+           operators/index

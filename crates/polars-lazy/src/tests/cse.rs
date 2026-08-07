@@ -38,6 +38,9 @@ fn test_cse_self_joins() -> PolarsResult<()> {
 
 #[test]
 fn test_cse_unions() -> PolarsResult<()> {
+    unsafe { std::env::set_var("POLARS_ALLOW_NESTED_CSPE", "1") };
+    polars_config::config().reload_env_var("POLARS_ALLOW_NESTED_CSPE");
+
     let lf = scan_foods_ipc();
 
     let lf1 = lf.clone().with_column(col("category").str().to_uppercase());
@@ -75,7 +78,7 @@ fn test_cse_unions() -> PolarsResult<()> {
             _ => true,
         }
     }));
-    assert_eq!(cache_count, 2);
+    assert_eq!(cache_count, 5);
     let out = lf.collect()?;
     assert_eq!(out.get_column_names(), &["category", "fats_g"]);
 
@@ -227,6 +230,9 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "semi_anti_join")]
 fn test_cache_with_partial_projection() -> PolarsResult<()> {
+    unsafe { std::env::set_var("POLARS_ALLOW_NESTED_CSPE", "1") };
+    polars_config::config().reload_env_var("POLARS_ALLOW_NESTED_CSPE");
+
     let lf1 = df![
         "id" => ["a"],
         "x" => [1],
@@ -265,20 +271,36 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
     // EDIT: #15264 this originally
     // tested 2 caches, but we cannot do that after #15264 due to projection pushdown
     // running first and the cache semantics changing, so now we test 1. Maybe we can improve later.
-
-    // ensure we get two different caches
-    // and ensure that every cache only has 1 hit.
+    let mut df_hits = 0;
     let cache_ids = lp_arena
         .iter(lp)
         .flat_map(|(_, lp)| {
             use IR::*;
             match lp {
                 Cache { id, .. } => Some(*id),
+                DataFrameScan {
+                    df, output_schema, ..
+                } => {
+                    if df
+                        .schema()
+                        .iter_names()
+                        .map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .as_slice()
+                        == ["id", "x", "freq"]
+                    {
+                        assert!(output_schema.as_ref().is_some_and(|x| x.len() == 2));
+                        df_hits += 1;
+                    }
+
+                    None
+                },
                 _ => None,
             }
         })
         .collect::<BTreeSet<_>>();
-    assert_eq!(cache_ids.len(), 1);
+    assert_eq!(cache_ids.len(), 2);
+    assert!(df_hits == 3);
 
     Ok(())
 }

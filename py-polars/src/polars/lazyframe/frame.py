@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import contextlib
 import io
-import os
 import warnings
-from collections.abc import Collection, Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
@@ -25,9 +24,11 @@ import polars.selectors as cs
 from polars import functions as F
 from polars._dependencies import (
     _PYARROW_AVAILABLE,
+    _check_for_numpy,
     import_optional,
     subprocess,
 )
+from polars._dependencies import numpy as np
 from polars._dependencies import polars_cloud as pc
 from polars._dependencies import pyarrow as pa
 from polars._typing import (
@@ -45,6 +46,7 @@ from polars._utils.parquet import wrap_parquet_metadata_callback
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
+    parse_into_list_of_expressions_require_selectors,
 )
 from polars._utils.parse.expr import parse_list_into_selector
 from polars._utils.serde import serialize_polars_object
@@ -52,18 +54,18 @@ from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _is_generator,
+    _Omitted,
     display_dot_graph,
     extend_bool,
-    find_stacklevel,
     is_bool_sequence,
     is_sequence,
-    issue_warning,
     normalize_filepath,
     parse_percentiles,
     qualified_type_name,
     require_same_type,
 )
 from polars._utils.wrap import wrap_df, wrap_expr
+from polars._warnings import find_stacklevel, issue_warning
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     N_INFER_DEFAULT,
@@ -100,6 +102,7 @@ from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
+from polars.lazyframe.query_result import SingleNodeQueryResult
 from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
@@ -108,13 +111,17 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Callable, Iterator, Sequence
+    from builtins import slice as slice_
+    from collections.abc import Awaitable, Callable, Iterator
     from io import IOBase
     from typing import IO, Concatenate, Literal, ParamSpec
 
     import deltalake
+    import pyiceberg.catalog
+    import pyiceberg.table
 
-    from polars.io.partition import PartitionBy
+    import polars.io.iceberg
+    from polars.io.partition import PartitionBy, SinkedPathsCallback
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -124,8 +131,9 @@ if TYPE_CHECKING:
         import polars._plr as plr
 
     from polars import DataFrame, DataType, Expr
-    from polars._dependencies import numpy as np
     from polars._typing import (
+        Alignment,
+        ArrowSchemaExportable,
         AsofJoinStrategy,
         ClosedInterval,
         ColumnNameOrSelector,
@@ -138,6 +146,7 @@ if TYPE_CHECKING:
         IntoExpr,
         IntoExprColumn,
         IpcCompression,
+        JoinBuildSide,
         JoinStrategy,
         JoinValidation,
         Label,
@@ -153,12 +162,13 @@ if TYPE_CHECKING:
         SchemaDict,
         SerializationFormat,
         StartBy,
+        StorageOptionsDict,
         SyncOnCloseMethod,
         UniqueKeepStrategy,
     )
     from polars.config import TableFormatNames
     from polars.io.cloud import CredentialProviderFunction
-    from polars.io.parquet import ParquetFieldOverwrites
+    from polars.lazyframe.query_result import QueryResult
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -203,9 +213,7 @@ def _to_sink_target(
 def _gpu_engine_callback(
     engine: EngineType,
     *,
-    streaming: bool,
     background: bool,
-    new_streaming: bool,
     _eager: bool,
 ) -> Callable[[Any, int | None], None] | None:
     is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
@@ -214,10 +222,9 @@ def _gpu_engine_callback(
     ):
         msg = f"Invalid engine argument {engine=}"
         raise ValueError(msg)
-    if (streaming or background or new_streaming) and is_gpu:
+    if background and is_gpu:
         issue_warning(
-            "GPU engine does not support streaming or background collection, "
-            "disabling GPU engine.",
+            "GPU engine does not support background collection, disabling GPU engine.",
             category=UserWarning,
         )
         is_gpu = False
@@ -261,6 +268,11 @@ class LazyFrame:
         * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        The order of the schema determines the column order of the frame.
+        When passing a dict, its insertion order is respected. To override specific
+        column data types by name without changing column order, use
+        ``schema_overrides`` instead.
 
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
@@ -738,6 +750,12 @@ class LazyFrame:
         self._comparison_error("<=")
 
     def __contains__(self, key: str) -> bool:
+        issue_warning(
+            "checking membership of a LazyFrame using `in` requires resolving its schema,"
+            " which is a potentially expensive operation. Use `key in LazyFrame.collect_schema()`"
+            " to check membership without this warning.",
+            category=PerformanceWarning,
+        )
         return key in self.collect_schema()
 
     def __copy__(self) -> LazyFrame:
@@ -746,7 +764,7 @@ class LazyFrame:
     def __deepcopy__(self, memo: None = None) -> LazyFrame:
         return self.clone()
 
-    def __getitem__(self, item: slice) -> LazyFrame:
+    def __getitem__(self, item: slice_) -> LazyFrame:
         """
         Support slice syntax, returning a new LazyFrame.
 
@@ -907,6 +925,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Offers a structured way to apply a sequence of user-defined functions (UDFs).
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         function
@@ -982,13 +1002,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Allows to alter the lazy frame during the plan stage with the resolved schema.
 
         In contrast to `pipe`, this method does not execute `function` immediately but
-        only during the plan stage. This allows to use the resolved schema of the input
+        only during the plan stage. This allows using the resolved schema of the input
         to dynamically alter the lazy frame. This also means that any exceptions raised
         by `function` will only be emitted during the plan stage.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed at any
             point without it being considered a breaking change.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1045,6 +1067,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Creates a summary of statistics for a LazyFrame, returning a DataFrame.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -1148,7 +1172,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         @lru_cache
         def skip_minmax(dt: PolarsDataType) -> bool:
-            return dt.is_nested() or dt in (Categorical, Enum, Null, Object, Unknown)
+            return (
+                dt.is_nested()
+                or dt.is_extension()
+                or dt in (Categorical, Enum, Null, Object, Unknown)
+            )
 
         # determine which columns will produce std/mean/percentile/etc
         # statistics in a single pass over the frame schema
@@ -1228,14 +1256,28 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         summary = dict(zip(schema, column_metrics, strict=True))
 
         # cast by column type (numeric/bool -> float), (other -> string)
+        # for non-numeric columns, format count/null_count with thousands
+        # separator to match the formatting applied to numeric columns.
+        from polars._plr import get_thousands_separator
+
+        thousands_sep = get_thousands_separator()
+
         for c in schema:
             summary[c] = [  # type: ignore[assignment]
                 (
                     None
                     if (v is None or isinstance(v, dict))
-                    else (float(v) if (c in has_numeric_result) else str(v))
+                    else (
+                        float(v)
+                        if (c in has_numeric_result)
+                        else (
+                            f"{int(v):,}".replace(",", thousands_sep)
+                            if (thousands_sep and metric in ("count", "null_count"))
+                            else str(v)
+                        )
+                    )
                 )
-                for v in summary[c]
+                for metric, v in zip(metrics, summary[c], strict=True)
             ]
 
         # return results as a DataFrame
@@ -1250,16 +1292,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         format: ExplainFormat = "plain",
         optimized: bool = True,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
-        streaming: bool = False,
+        type_coercion: bool = True,  # noqa: ARG002
+        predicate_pushdown: bool = True,  # noqa: ARG002
+        projection_pushdown: bool = True,  # noqa: ARG002
+        simplify_expression: bool = True,  # noqa: ARG002
+        slice_pushdown: bool = True,  # noqa: ARG002
+        comm_subplan_elim: bool = True,  # noqa: ARG002
+        comm_subexpr_elim: bool = True,  # noqa: ARG002
+        cluster_with_columns: bool = True,  # noqa: ARG002
+        collapse_joins: bool = True,  # noqa: ARG002
+        streaming: bool = False,  # noqa: ARG002
         engine: EngineType = "auto",
         tree_format: bool | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -1329,16 +1371,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. deprecated:: 1.30.0
                 Use the `engine` parameter instead.
         engine
-            Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query
-            is run using the polars in-memory engine. Polars will also
-            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-            environment variable. If it cannot run the query using the
-            selected engine, the query is run using the polars in-memory
-            engine. If set to `"gpu"`, the GPU engine is used. Fine-grained
-            control over the GPU engine, for example which device to use
-            on a system with multiple devices, is possible by providing a
-            :class:`~.GPUEngine` object with configuration options.
+            Select the engine used to process the query (default ``"auto"``):
+
+            * ``"auto"``: use the engine set by
+              :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+              back to ``"in-memory"`` if unset (this default may change in
+              a future release).
+            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+            * ``"streaming"``: use the streaming engine, which processes
+              queries in batches, reducing memory pressure and often
+              outperforming the in-memory engine. This will soon become
+              the default engine of Polars.
+            * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+              ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+              fine-grained control (e.g. device selection on multi-GPU systems).
+
+            If the selected engine cannot run the query, Polars falls back to
+            the in-memory engine.
 
             .. note::
                GPU mode is considered **unstable**. Not all queries will run
@@ -1347,10 +1397,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
                Running with `POLARS_VERBOSE=1` will provide information if a query
                falls back (and why).
-
-            .. note::
-               The GPU engine does not support streaming, if streaming
-               is enabled then GPU execution is switched off.
         optimizations
             The optimization passes done during query optimization.
 
@@ -1387,9 +1433,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         engine = _select_engine(engine)
 
-        if engine == "streaming":
-            issue_unstable_warning("streaming mode is considered unstable.")
-
         if optimized:
             optimizations = optimizations.__copy__()
             optimizations._pyoptflags.streaming = engine == "streaming"
@@ -1404,6 +1447,48 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             return self._ldf.describe_plan()
 
+    @overload
+    def show_graph(
+        self,
+        *,
+        optimized: bool = ...,
+        show: bool = ...,
+        output_path: str | Path | None = ...,
+        raw_output: Literal[True],
+        figsize: tuple[float, float] = ...,
+        engine: EngineType = ...,
+        plan_stage: PlanStage | None = ...,
+        optimizations: QueryOptFlags = ...,
+    ) -> str: ...
+
+    @overload
+    def show_graph(
+        self,
+        *,
+        optimized: bool = ...,
+        show: bool = ...,
+        output_path: str | Path | None = ...,
+        raw_output: Literal[False] = ...,
+        figsize: tuple[float, float] = ...,
+        engine: EngineType = ...,
+        plan_stage: PlanStage = ...,
+        optimizations: QueryOptFlags = ...,
+    ) -> None: ...
+
+    @overload
+    def show_graph(
+        self,
+        *,
+        optimized: bool = ...,
+        show: bool = ...,
+        output_path: str | Path | None = ...,
+        raw_output: bool = ...,
+        figsize: tuple[float, float] = ...,
+        engine: EngineType = ...,
+        plan_stage: PlanStage = ...,
+        optimizations: QueryOptFlags = ...,
+    ) -> str | None: ...
+
     @deprecate_streaming_parameter()
     @forward_old_opt_flags()
     def show_graph(
@@ -1414,18 +1499,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         output_path: str | Path | None = None,
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
-        type_coercion: bool = True,
+        type_coercion: bool = True,  # noqa: ARG002
         _type_check: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
+        predicate_pushdown: bool = True,  # noqa: ARG002
+        projection_pushdown: bool = True,  # noqa: ARG002
+        simplify_expression: bool = True,  # noqa: ARG002
+        slice_pushdown: bool = True,  # noqa: ARG002
+        comm_subplan_elim: bool = True,  # noqa: ARG002
+        comm_subexpr_elim: bool = True,  # noqa: ARG002
+        cluster_with_columns: bool = True,  # noqa: ARG002
+        collapse_joins: bool = True,  # noqa: ARG002
         engine: EngineType = "auto",
-        plan_stage: PlanStage = "ir",
+        plan_stage: PlanStage | None = None,
         _check_order: bool = True,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> str | None:
@@ -1493,16 +1578,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. deprecated:: 1.30.0
                 Use the `optimizations` parameters.
         engine
-            Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query
-            is run using the polars in-memory engine. Polars will also
-            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-            environment variable. If it cannot run the query using the
-            selected engine, the query is run using the polars in-memory
-            engine. If set to `"gpu"`, the GPU engine is used. Fine-grained
-            control over the GPU engine, for example which device to use
-            on a system with multiple devices, is possible by providing a
-            :class:`~.GPUEngine` object with configuration options.
+            Select the engine used to process the query (default ``"auto"``):
+
+            * ``"auto"``: use the engine set by
+              :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+              back to ``"in-memory"`` if unset (this default may change in
+              a future release).
+            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+            * ``"streaming"``: use the streaming engine, which processes
+              queries in batches, reducing memory pressure and often
+              outperforming the in-memory engine. This will soon become
+              the default engine of Polars.
+            * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+              ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+              fine-grained control (e.g. device selection on multi-GPU systems).
+
+            If the selected engine cannot run the query, Polars falls back to
+            the in-memory engine.
 
             .. note::
                GPU mode is considered **unstable**. Not all queries will run
@@ -1511,10 +1604,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
                Running with `POLARS_VERBOSE=1` will provide information if a query
                falls back (and why).
-
-            .. note::
-               The GPU engine does not support streaming, if streaming
-               is enabled then GPU execution is switched off.
         plan_stage : {'ir', 'physical'}
             Select the stage to display. Currently only the streaming engine has a
             separate physical stage, for the other engines both IR and physical are the
@@ -1534,16 +1623,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
         >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
-        ... ).show_graph()  # doctest: +SKIP
+        ... ).show_graph(plan_stage="ir")  # doctest: +SKIP
         """
         engine = _select_engine(engine)
-
-        if engine == "streaming":
-            issue_unstable_warning("streaming mode is considered unstable.")
 
         optimizations = optimizations.__copy__()
         optimizations._pyoptflags.streaming = engine == "streaming"
         _ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
+
+        if plan_stage is None:
+            warnings.warn(
+                "The default value of `plan_stage` will change from 'ir' to 'physical' in Polars 2.0. "
+                'Explicitly set `plan_stage="ir"` to suppress this warning.',
+                category=FutureWarning,
+                stacklevel=find_stacklevel(),
+            )
+            plan_stage = "ir"
 
         if plan_stage == "ir":
             dot = _ldf.to_dot(optimized)
@@ -1570,6 +1665,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Print the value that this node in the computation graph evaluates to and pass on
         the value.
+
+        .. engine-support:: in-memory
 
         Examples
         --------
@@ -1601,6 +1698,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Sort the LazyFrame by the given columns.
+
+        .. engine-support:: in-memory, partially-distributed
 
         Parameters
         ----------
@@ -1714,6 +1813,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Execute a SQL query against the LazyFrame.
 
+        .. engine-support:: streaming
+
         .. versionadded:: 0.20.23
 
         .. warning::
@@ -1810,6 +1911,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         .. versionchanged:: 1.0.0
             The `descending` parameter was renamed `reverse`.
 
@@ -1888,6 +1991,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         particular order, call :func:`sort` after this function if you wish the
         output to be sorted.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         .. versionchanged:: 1.0.0
             The `descending` parameter was renamed `reverse`.
 
@@ -1951,19 +2056,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.bottom_k(k, by=by, reverse=reverse))
 
     @forward_old_opt_flags()
+    @deprecated(
+        "`LazyFrame.profile` is deprecated. "
+        "It was made for the older in-memory engine, but from version 2.0, "
+        "Polars uses a streaming engine by default. Due to the concurrent "
+        "nature of the streaming engine, the profiling information from this "
+        "function would be misleading.",
+    )
     def profile(
         self,
         *,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        no_optimization: bool = False,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
+        type_coercion: bool = True,  # noqa: ARG002
+        predicate_pushdown: bool = True,  # noqa: ARG002
+        projection_pushdown: bool = True,  # noqa: ARG002
+        simplify_expression: bool = True,  # noqa: ARG002
+        no_optimization: bool = False,  # noqa: ARG002
+        slice_pushdown: bool = True,  # noqa: ARG002
+        comm_subplan_elim: bool = True,  # noqa: ARG002
+        comm_subexpr_elim: bool = True,  # noqa: ARG002
+        cluster_with_columns: bool = True,  # noqa: ARG002
+        collapse_joins: bool = True,  # noqa: ARG002
         show_plot: bool = False,
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
@@ -1973,6 +2085,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> tuple[DataFrame, DataFrame]:
         """
         Profile a LazyFrame.
+
+        .. deprecated:: 1.43.0
+            It was made for the older in-memory engine, but from version 2.0,
+            Polars uses a streaming engine by default. Due to the concurrent
+            nature of the streaming engine, the profiling information from this
+            function would be misleading.
 
         This will run the query and return a tuple
         containing the materialized DataFrame and a DataFrame that
@@ -2040,16 +2158,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         figsize
             matplotlib figsize of the profiling plot
         engine
-            Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query
-            is run using the polars in-memory engine. Polars will also
-            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-            environment variable. If it cannot run the query using the
-            selected engine, the query is run using the polars in-memory
-            engine. If set to `"gpu"`, the GPU engine is used. Fine-grained
-            control over the GPU engine, for example which device to use
-            on a system with multiple devices, is possible by providing a
-            :class:`~.GPUEngine` object with configuration options.
+            Select the engine used to process the query (default ``"auto"``):
+
+            * ``"auto"``: use the engine set by
+              :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+              back to ``"in-memory"`` if unset (this default may change in
+              a future release).
+            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+            * ``"streaming"``: use the streaming engine, which processes
+              queries in batches, reducing memory pressure and often
+              outperforming the in-memory engine. This will soon become
+              the default engine of Polars.
+            * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+              ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+              fine-grained control (e.g. device selection on multi-GPU systems).
+
+            If the selected engine cannot run the query, Polars falls back to
+            the in-memory engine.
 
             .. note::
                GPU mode is considered **unstable**. Not all queries will run
@@ -2058,10 +2184,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
                Running with `POLARS_VERBOSE=1` will provide information if a query
                falls back (and why).
-
-            .. note::
-               The GPU engine does not support streaming, if streaming
-               is enabled then GPU execution is switched off.
         optimizations
             The optimization passes done during query optimization.
 
@@ -2116,9 +2238,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         callback = _gpu_engine_callback(
             engine,
-            streaming=False,
             background=False,
-            new_streaming=False,
             _eager=False,
         )
         if _kwargs.get("post_opt_callback") is not None:
@@ -2166,6 +2286,106 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return df, timings
 
+    @unstable()
+    def execute(
+        self,
+        *,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        engine: EngineType = "auto",
+        **_kwargs: Any,
+    ) -> QueryResult:
+        """
+        Execute the query into a `QueryResult`.
+
+        This method of materializing a `LazyFrame` makes no guarantees as to where
+        the result is materialized. This can be on the GPU for the GPU-engine,
+        on the cluster or remote storage for the distributed engine and the streaming
+        engine could spill the result if it needed to.
+
+        The `QueryResult` can always be consumed as a new `LazyFrame` by calling `.lazy`
+
+        Parameters
+        ----------
+        engine
+            Select the engine used to process the query, optional.
+            At the moment, if set to `"auto"` (default), the query
+            is run using the polars in-memory engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars in-memory
+            engine. If set to `"gpu"`, the GPU engine is used. Fine-grained
+            control over the GPU engine, for example which device to use
+            on a system with multiple devices, is possible by providing a
+            :class:`~.GPUEngine` object with configuration options.
+
+            .. note::
+               GPU mode is considered **unstable**. Not all queries will run
+               successfully on the GPU, however, they should fall back transparently
+               to the default engine if execution is not supported.
+
+               Running with `POLARS_VERBOSE=1` will provide information if a query
+               falls back (and why).
+        optimizations
+            The optimization passes done during query optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
+        Returns
+        -------
+        DataFrame
+
+        See Also
+        --------
+        explain : Print the query plan that is evaluated with collect.
+        profile : Collect the LazyFrame and time each node in the computation graph.
+        polars.collect_all : Collect multiple LazyFrames at the same time.
+        polars.Config.set_streaming_chunk_size : Set the size of streaming batches.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [1, 2, 3, 4, 5, 6],
+        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...     }
+        ... )
+        >>> lf.group_by("a").agg(pl.all().sum()).collect()  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        │ b   ┆ 11  ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        Collect in streaming mode
+
+        >>> lf.group_by("a").agg(pl.all().sum()).collect(
+        ...     engine="streaming"
+        ... )  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        │ b   ┆ 11  ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        Collect in GPU mode
+
+        """
+        df = self.collect(optimizations=optimizations, engine=engine)
+        return SingleNodeQueryResult(df)
+
     @overload
     def collect(
         self,
@@ -2209,23 +2429,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def collect(
         self,
         *,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
+        type_coercion: bool = True,  # noqa: ARG002
+        predicate_pushdown: bool = True,  # noqa: ARG002
+        projection_pushdown: bool = True,  # noqa: ARG002
+        simplify_expression: bool = True,  # noqa: ARG002
+        slice_pushdown: bool = True,  # noqa: ARG002
+        comm_subplan_elim: bool = True,  # noqa: ARG002
+        comm_subexpr_elim: bool = True,  # noqa: ARG002
+        cluster_with_columns: bool = True,  # noqa: ARG002
+        collapse_joins: bool = True,  # noqa: ARG002
+        no_optimization: bool = False,  # noqa: ARG002
         engine: EngineType = "auto",
         background: bool = False,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         **_kwargs: Any,
     ) -> DataFrame | InProcessQuery:
         """
-        Materialize this LazyFrame into a DataFrame.
+        Materialize this `LazyFrame` into a `DataFrame`.
 
         By default, all query optimizations are enabled. Individual optimizations may
         be disabled by setting the corresponding parameter to `False`.
@@ -2283,16 +2503,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. deprecated:: 1.30.0
                 Use the `optimizations` parameters.
         engine
-            Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query
-            is run using the polars in-memory engine. Polars will also
-            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-            environment variable. If it cannot run the query using the
-            selected engine, the query is run using the polars in-memory
-            engine. If set to `"gpu"`, the GPU engine is used. Fine-grained
-            control over the GPU engine, for example which device to use
-            on a system with multiple devices, is possible by providing a
-            :class:`~.GPUEngine` object with configuration options.
+            Select the engine used to process the query (default ``"auto"``):
+
+            * ``"auto"``: use the engine set by
+              :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+              back to ``"in-memory"`` if unset (this default may change in
+              a future release).
+            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+            * ``"streaming"``: use the streaming engine, which processes
+              queries in batches, reducing memory pressure and often
+              outperforming the in-memory engine. This will soon become
+              the default engine of Polars.
+            * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+              ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+              fine-grained control (e.g. device selection on multi-GPU systems).
+
+            If the selected engine cannot run the query, Polars falls back to
+            the in-memory engine.
 
             .. note::
                GPU mode is considered **unstable**. Not all queries will run
@@ -2301,10 +2529,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
                Running with `POLARS_VERBOSE=1` will provide information if a query
                falls back (and why).
-
-            .. note::
-               The GPU engine does not support streaming, or running in the
-               background. If either are enabled, then GPU execution is switched off.
         background
             Run the query in the background and get a handle to the query.
             This handle can be used to fetch the result or cancel the query.
@@ -2399,7 +2623,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         for k in _kwargs:
             if k not in (  # except "private" kwargs
-                "new_streaming",
                 "post_opt_callback",
             ):
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
@@ -2407,21 +2630,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         engine = _select_engine(engine)
 
-        new_streaming = (
-            _kwargs.get("new_streaming", False) or get_engine_affinity() == "streaming"
-        )
-
-        if new_streaming:
-            engine = "streaming"
-
-        if engine == "streaming":
-            issue_unstable_warning("streaming mode is considered unstable.")
-
         callback = _gpu_engine_callback(
             engine,
-            streaming=False,
             background=background,
-            new_streaming=new_streaming,
             _eager=optimizations._pyoptflags.eager,
         )
 
@@ -2482,13 +2693,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         gevent
             Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
         engine
-            Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query
-            is run using the polars in-memory engine. Polars will also
-            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-            environment variable. If it cannot run the query using the
-            selected engine, the query is run using the polars in-memory
-            engine.
+            Select the engine used to process the query (default ``"auto"``):
+
+            * ``"auto"``: use the engine set by
+              :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+              back to ``"in-memory"`` if unset (this default may change in
+              a future release).
+            * ``"in-memory"``: use the in-memory engine, this is the default engine.
+            * ``"streaming"``: use the streaming engine, which processes
+              queries in batches, reducing memory pressure and often
+              outperforming the in-memory engine. This will soon become
+              the default engine of Polars.
+            * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+              ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+              fine-grained control (e.g. device selection on multi-GPU
+              systems).
+
+            If the selected engine cannot run the query, Polars falls back to
+            the in-memory engine.
 
             .. note::
                The GPU engine does not support async, or running in the
@@ -2606,21 +2829,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
-        field_overwrites: ParquetFieldOverwrites
-        | Sequence[ParquetFieldOverwrites]
-        | Mapping[str, ParquetFieldOverwrites]
-        | None = None,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
+        arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        _sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> None: ...
 
     @overload
@@ -2634,21 +2855,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
-        field_overwrites: ParquetFieldOverwrites
-        | Sequence[ParquetFieldOverwrites]
-        | Mapping[str, ParquetFieldOverwrites]
-        | None = None,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
+        arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        _sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
 
     def sink_parquet(
@@ -2661,26 +2880,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         row_group_size: int | None = None,
         data_page_size: int | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         metadata: ParquetMetadata | None = None,
+        arrow_schema: ArrowSchemaExportable | None = None,
         mkdir: bool = False,
         lazy: bool = False,
-        field_overwrites: ParquetFieldOverwrites
-        | Sequence[ParquetFieldOverwrites]
-        | Mapping[str, ParquetFieldOverwrites]
-        | None = None,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        _sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
 
         This allows streaming results that are larger than RAM to be written to disk.
+
+        .. engine-support:: streaming, distributed
 
         Parameters
         ----------
@@ -2752,6 +2971,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -2769,6 +2991,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **experimental**. It may be removed or
                 changed at any point without it being considered a breaking change.
+        arrow_schema
+            Provide a custom arrow schema to write to the file. This allows
+            setting custom schema and field-level metadata. Names and dtypes
+            must match.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         mkdir: bool
             Recursively create all the directories in the path.
 
@@ -2781,23 +3011,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
-        field_overwrites
-            Property overwrites for individual Parquet fields.
-
-            This allows more control over the writing process to the granularity of a
-            Parquet field.
-
-            .. warning::
-                This functionality is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
         engine
-            Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
-            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-            environment variable. If it cannot run the query using the
-            selected engine, the query is run using the polars streaming
-            engine.
+            Select the engine used to process the query (default ``"auto"``):
+
+            * ``"auto"``: use the engine set by
+              :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+              back to ``"streaming"`` if unset.
+            * ``"in-memory"``: use the in-memory engine before writing,
+              this is the default engine.
+            * ``"streaming"``: use the streaming engine, which processes
+              queries in batches, reducing memory pressure and often
+              outperforming the in-memory engine. This will soon become
+              the default engine of Polars.
+            * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+              ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+              fine-grained control.
+
+            If the selected engine cannot run the query, Polars falls back to
+            the streaming engine.
         optimizations
             The optimization passes done during query optimization.
 
@@ -2838,6 +3070,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = "`metadata` parameter is considered experimental"
             issue_unstable_warning(msg)
 
+        if arrow_schema is not None:
+            msg = "`arrow_schema` parameter is considered unstable"
+            issue_unstable_warning(msg)
+
         if isinstance(statistics, bool) and statistics:
             statistics = {
                 "min": True,
@@ -2859,6 +3095,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _init_credential_provider_builder,
         )
 
+        if retries is not None:
+            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+            issue_deprecation_warning(msg)
+            storage_options = storage_options or {}
+            storage_options["max_retries"] = retries
+
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_parquet"
         )
@@ -2875,44 +3117,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         elif callable(metadata):
             metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
 
-        # Convert the field overwrites into something that can be ingested by Rust.
-        field_overwrites_dicts: list[dict[str, Any]] = []
-        if field_overwrites is not None:
-            import collections
-
-            from polars.io.parquet.field_overwrites import (
-                ParquetFieldOverwrites,
-                _parquet_field_overwrites_dict_to_dict_list,
-                _parquet_field_overwrites_to_dict,
-            )
-
-            if isinstance(field_overwrites, ParquetFieldOverwrites):
-                field_overwrites_dicts = [
-                    _parquet_field_overwrites_to_dict(field_overwrites)
-                ]
-            elif isinstance(field_overwrites, collections.abc.Mapping):
-                field_overwrites_dicts = _parquet_field_overwrites_dict_to_dict_list(
-                    dict(field_overwrites)
-                )
-            elif isinstance(field_overwrites, collections.abc.Sequence):
-                field_overwrites_dicts = [
-                    _parquet_field_overwrites_to_dict(c) for c in field_overwrites
-                ]
-            else:
-                msg = f"field_overwrites got the wrong type {type(field_overwrites)}"
-                raise TypeError(msg)
-
         from polars.io.partition import _SinkOptions
 
         sink_options = _SinkOptions(
             mkdir=mkdir,
             maintain_order=maintain_order,
             sync_on_close=sync_on_close,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            retries=retries,
+            sinked_paths_callback=_sinked_paths_callback,
         )
 
         ldf_py = self._ldf.sink_parquet(
@@ -2924,7 +3137,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             row_group_size=row_group_size,
             data_page_size=data_page_size,
             metadata=metadata,
-            field_overwrites=field_overwrites_dicts,
+            arrow_schema=arrow_schema,
         )
 
         if not lazy:
@@ -2940,7 +3153,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
-        storage_options: dict[str, str] | None = ...,
+        storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
         optimizations: QueryOptFlags = ...,
@@ -2952,7 +3165,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["merge"],
-        storage_options: dict[str, str] | None = ...,
+        storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_merge_options: dict[str, Any],
         optimizations: QueryOptFlags = ...,
@@ -2964,7 +3177,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
-        storage_options: dict[str, str] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
@@ -2974,6 +3187,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> deltalake.table.TableMerger | None:
         """
         Sink DataFrame as delta table.
+
+        .. engine-support:: streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3014,13 +3229,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Keyword arguments which are required to `MERGE` a Delta lake Table.
             See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
         engine
-            Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
-            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-            environment variable. If it cannot run the query using the
-            selected engine, the query is run using the polars streaming
-            engine.
+            Select the engine used to process the query (default ``"auto"``):
+
+            * ``"auto"``: use the engine set by
+              :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+              back to ``"streaming"`` if unset.
+            * ``"in-memory"``: use the in-memory engine before writing,
+              this is the default engine.
+            * ``"streaming"``: use the streaming engine, which processes
+              queries in batches, reducing memory pressure and often
+              outperforming the in-memory engine. This will soon become
+              the default engine of Polars.
+            * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+              ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+              fine-grained control.
+
+            If the selected engine cannot run the query, Polars falls back to
+            the streaming engine.
         optimizations
             The optimization passes done during query optimization.
 
@@ -3155,7 +3381,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     .execute()
         ... )  # doctest: +SKIP
         """
-        from polars.io.delta import (
+        from polars.io.delta._utils import (
             _check_for_unsupported_types,
             _check_if_delta_available,
             _resolve_delta_lake_uri,
@@ -3207,7 +3433,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         stream = self.collect_batches(
             engine="streaming",
-            maintain_order=True,
+            maintain_order=False,
             chunk_size=None,
             lazy=True,
             optimizations=optimizations,
@@ -3228,7 +3454,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if delta_write_options is None:
                 delta_write_options = {}
 
-            write_deltalake(
+            write_deltalake(  # pyrefly: ignore[no-matching-overload]
                 table_or_uri=target,
                 data=stream,  # type: ignore[call-overload]
                 mode=mode,
@@ -3236,6 +3462,60 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 **delta_write_options,
             )
             return None
+
+    @unstable()
+    def sink_iceberg(
+        self,
+        target: str | pyiceberg.table.Table,
+        *,
+        mode: Literal["append", "overwrite"],
+        catalog: pyiceberg.catalog.Catalog
+        | polars.io.iceberg.IcebergCatalogConfig
+        | None = None,
+        storage_options: StorageOptionsDict | None = None,
+    ) -> pl.DataFrame:
+        """
+        Sink a LazyFrame to an Iceberg table.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        target
+            A PyIceberg Table object, or a 'namespace.table_name' identifier string.
+        mode : {'append', 'overwrite'}
+            How to handle existing data.
+
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
+        catalog
+            PyIceberg catalog to load the table from if the provided `target`
+            was a table identifier.
+        storage_options
+            Extra options for the storage backends supported by `pyiceberg`.
+            For cloud storages, this may include configurations for authentication etc.
+
+            More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+
+        Returns
+        -------
+        DataFrame
+            Contains the new metadata path.
+        """
+        from polars.io.iceberg._sink import IcebergSinkState
+
+        sink_state = IcebergSinkState.new(
+            target,
+            mode=mode,
+            catalog=catalog,
+            storage_options=storage_options,
+        )
+
+        sink_state.attach_sink(self).collect(engine="streaming")
+
+        return sink_state.commit_result_df.get()  # type: ignore[return-value]
 
     @overload
     def sink_ipc(
@@ -3246,16 +3526,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compat_level: CompatLevel | None = None,
         record_batch_size: int | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        _record_batch_statistics: bool = False,
     ) -> None: ...
 
     @overload
@@ -3267,16 +3548,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compat_level: CompatLevel | None = None,
         record_batch_size: int | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        _record_batch_statistics: bool = False,
     ) -> LazyFrame: ...
 
     def sink_ipc(
@@ -3287,21 +3569,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compat_level: CompatLevel | None = None,
         record_batch_size: int | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        _record_batch_statistics: bool = False,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to an IPC file.
 
         This allows streaming results that are larger than RAM to be written to disk.
+
+        .. engine-support:: streaming, distributed
 
         Parameters
         ----------
@@ -3311,14 +3596,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
         compat_level
-            Use a specific compatibility level
-            when exporting Polars' internal data structures.
+            Compatibility level to use when exporting Polars data structures.
+            The default compatibility level is recommended for most users.
+            Use ``pl.CompatLevel.oldest()`` for the most compatible level.
+            ``pl.CompatLevel.newest()`` uses the highest supported compatibility
+            level, but is considered unstable and may change without it being
+            considered a breaking change.
         record_batch_size
             Size of the record batches in number of rows.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -3350,6 +3639,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -3373,13 +3665,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
         engine
-            Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
-            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-            environment variable. If it cannot run the query using the
-            selected engine, the query is run using the polars streaming
-            engine.
+            Select the engine used to process the query (default ``"auto"``):
+
+            * ``"auto"``: use the engine set by
+              :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+              back to ``"streaming"`` if unset.
+            * ``"in-memory"``: use the in-memory engine before writing,
+              this is the default engine.
+            * ``"streaming"``: use the streaming engine, which processes
+              queries in batches, reducing memory pressure and often
+              outperforming the in-memory engine. This will soon become
+              the default engine of Polars.
+            * ``"gpu"``: not currently supported for this sink.
+
+            If the selected engine cannot run the query, Polars falls back to
+            the streaming engine.
 
             .. note::
                The GPU engine is currently not supported.
@@ -3424,6 +3725,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _init_credential_provider_builder,
         )
 
+        if retries is not None:
+            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+            issue_deprecation_warning(msg)
+            storage_options = storage_options or {}
+            storage_options["max_retries"] = retries
+
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_ipc"
         )
@@ -3449,11 +3756,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             mkdir=mkdir,
             maintain_order=maintain_order,
             sync_on_close=sync_on_close,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            retries=retries,
         )
 
         ldf_py = self._ldf.sink_ipc(
@@ -3462,6 +3766,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             compression=compression,
             compat_level=compat_level_py,
             record_batch_size=record_batch_size,
+            record_batch_statistics=_record_batch_statistics,
         )
 
         if not lazy:
@@ -3477,6 +3782,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
         include_bom: bool = False,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
@@ -3491,11 +3799,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
@@ -3509,6 +3817,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
         include_bom: bool = False,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
@@ -3523,11 +3834,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
@@ -3540,6 +3851,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
         include_bom: bool = False,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         include_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
@@ -3554,11 +3868,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
@@ -3570,12 +3884,37 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         This allows streaming results that are larger than RAM to be written to disk.
 
+        .. engine-support:: streaming, distributed
+
         Parameters
         ----------
         path
             File path to which the file should be written.
         include_bom
             Whether to include UTF-8 BOM in the CSV output.
+        compression
+            What compression format to use.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        compression_level
+            The compression level to use, typically 0-9 or `None` to let the
+            engine choose.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        check_extension
+            Whether to check if the filename matches the compression settings.
+            Will raise an error if compression is set to 'uncompressed' and the
+            filename ends in one of (".gz", ".zst", ".zstd") or if
+            compression != 'uncompressed' and the file uses an mismatched
+            extension. Only applies if file is a path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         include_header
             Whether to include header in the CSV output.
         separator
@@ -3659,6 +3998,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -3682,13 +4024,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
         engine
-            Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
-            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-            environment variable. If it cannot run the query using the
-            selected engine, the query is run using the polars streaming
-            engine.
+            Select the engine used to process the query (default ``"auto"``):
+
+            * ``"auto"``: use the engine set by
+              :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+              back to ``"streaming"`` if unset.
+            * ``"in-memory"``: use the in-memory engine before writing,
+              this is the default engine.
+            * ``"streaming"``: use the streaming engine, which processes
+              queries in batches, reducing memory pressure and often
+              outperforming the in-memory engine. This will soon become
+              the default engine of Polars.
+            * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+              ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+              fine-grained control.
+
+            If the selected engine cannot run the query, Polars falls back to
+            the streaming engine.
         optimizations
             The optimization passes done during query optimization.
 
@@ -3745,21 +4098,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         from polars.io.partition import _SinkOptions
 
+        if retries is not None:
+            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+            issue_deprecation_warning(msg)
+            storage_options = storage_options or {}
+            storage_options["max_retries"] = retries
+
         sink_options = _SinkOptions(
             mkdir=mkdir,
             maintain_order=maintain_order,
             sync_on_close=sync_on_close,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            retries=retries,
         )
 
         ldf_py = self._ldf.sink_csv(
             target=target,
             sink_options=sink_options,
             include_bom=include_bom,
+            compression=compression,
+            compression_level=compression_level,
+            check_extension=check_extension,
             include_header=include_header,
             separator=ord(separator),
             line_terminator=line_terminator,
@@ -3787,12 +4146,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
@@ -3805,12 +4167,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
@@ -3822,12 +4187,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         path: str | Path | IO[bytes] | IO[str] | PartitionBy,
         *,
+        compression: Literal["uncompressed", "gzip", "zstd"] = "uncompressed",
+        compression_level: int | None = None,
+        check_extension: bool = True,
         maintain_order: bool = True,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int = 2,
+        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
@@ -3839,10 +4207,35 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         This allows streaming results that are larger than RAM to be written to disk.
 
+        .. engine-support:: streaming, distributed
+
         Parameters
         ----------
         path
             File path to which the file should be written.
+        compression
+            What compression format to use.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        compression_level
+            The compression level to use, typically 0-9 or `None` to let the
+            engine choose.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        check_extension
+            Whether to check if the filename matches the compression settings.
+            Will raise an error if compression is set to 'uncompressed' and the
+            filename ends in one of (".gz", ".zst", ".zstd") or if
+            compression != 'uncompressed' and the file uses an mismatched
+            extension. Only applies if file is a path.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -3874,6 +4267,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+
+            .. deprecated:: 1.37.1
+                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -3897,13 +4293,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
         engine
-            Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
-            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-            environment variable. If it cannot run the query using the
-            selected engine, the query is run using the polars streaming
-            engine.
+            Select the engine used to process the query (default ``"auto"``):
+
+            * ``"auto"``: use the engine set by
+              :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+              back to ``"streaming"`` if unset.
+            * ``"in-memory"``: use the in-memory engine before writing,
+              this is the default engine.
+            * ``"streaming"``: use the streaming engine, which processes
+              queries in batches, reducing memory pressure and often
+              outperforming the in-memory engine. This will soon become
+              the default engine of Polars.
+            * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+              ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+              fine-grained control.
+
+            If the selected engine cannot run the query, Polars falls back to
+            the streaming engine.
         optimizations
             The optimization passes done during query optimization.
 
@@ -3945,6 +4352,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _init_credential_provider_builder,
         )
 
+        if retries is not None:
+            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+            issue_deprecation_warning(msg)
+            storage_options = storage_options or {}
+            storage_options["max_retries"] = retries
+
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_ndjson"
         )
@@ -3958,14 +4371,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             mkdir=mkdir,
             maintain_order=maintain_order,
             sync_on_close=sync_on_close,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            retries=retries,
         )
 
-        ldf_py = self._ldf.sink_json(target=target, sink_options=sink_options)
+        ldf_py = self._ldf.sink_ndjson(
+            target=target,
+            compression=compression,
+            compression_level=compression_level,
+            check_extension=check_extension,
+            sink_options=sink_options,
+        )
 
         if not lazy:
             ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
@@ -4014,6 +4430,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         This allows streaming results that are larger than RAM in certain cases.
 
+        .. engine-support:: streaming, distributed
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
@@ -4036,13 +4454,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: bool
             Wait to start execution until `collect` is called.
         engine
-            Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
-            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-            environment variable. If it cannot run the query using the
-            selected engine, the query is run using the polars streaming
-            engine.
+            Select the engine used to process the query (default ``"auto"``):
+
+            * ``"auto"``: use the engine set by
+              :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+              back to ``"streaming"`` if unset.
+            * ``"in-memory"``: use the in-memory engine before writing,
+              this is the default engine.
+            * ``"streaming"``: use the streaming engine, which processes
+              queries in batches, reducing memory pressure and often
+              outperforming the in-memory engine. This will soon become
+              the default engine of Polars.
+            * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+              ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+              fine-grained control.
+
+            If the selected engine cannot run the query, Polars falls back to
+            the streaming engine.
         optimizations
             The optimization passes done during query optimization.
 
@@ -4089,6 +4518,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         The query will always be fully executed unless `stop` is called, so you should
         call next until all chunks have been seen.
 
+        .. engine-support:: streaming
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
@@ -4107,13 +4538,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy
             Start the query when first requesting a batch.
         engine
-            Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
-            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-            environment variable. If it cannot run the query using the
-            selected engine, the query is run using the polars streaming
-            engine.
+            Select the engine used to process the query (default ``"auto"``):
+
+            * ``"auto"``: use the engine set by
+              :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+              back to ``"streaming"`` if unset.
+            * ``"in-memory"``: use the in-memory engine before writing,
+              this is the default engine.
+            * ``"streaming"``: use the streaming engine, which processes
+              queries in batches, reducing memory pressure and often
+              outperforming the in-memory engine. This will soon become
+              the default engine of Polars.
+            * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+              ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+              fine-grained control.
+
+            If the selected engine cannot run the query, Polars falls back to
+            the streaming engine.
         optimizations
             The optimization passes done during query optimization.
 
@@ -4123,6 +4565,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
         """
+        engine = _select_engine(engine)
+
+        if engine == "auto":
+            engine = "streaming"
 
         class CollectBatches:
             def __init__(self, inner: Any) -> None:
@@ -4210,6 +4656,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Cache the result once the execution of the physical plan hits this node.
 
         It is not recommended using this as the optimizer likely can do a better job.
+
+        .. engine-support:: in-memory, streaming, distributed
+
         """
         return self._from_pyldf(self._ldf.cache())
 
@@ -4228,6 +4677,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Cast LazyFrame column(s) to the specified dtype(s).
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -4325,6 +4776,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Returns a copy with an identical schema but no data.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -4363,6 +4816,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ null ┆ null │
         └──────┴──────┴──────┘
         """
+        if n == 0:
+            # This branch doesn't collect schema.
+            return self.limit(0)
+        # TODO: don't collect schema.
         return pl.DataFrame(schema=self.collect_schema()).clear(n).lazy()
 
     def clone(self) -> LazyFrame:
@@ -4370,6 +4827,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Create a copy of this LazyFrame.
 
         This is a cheap operation that does not copy data.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         See Also
         --------
@@ -4493,6 +4952,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Rows where the filter predicate does not evaluate to True are discarded
         (this includes rows where the predicate evaluates as `null`).
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -4672,10 +5133,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Rows where the filter predicate does not evaluate to True are retained
         (this includes rows where the predicate evaluates as `null`).
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         predicates
-            Expression that evaluates to a boolean Series.
+            Expression(s) that evaluate to a boolean Series. When multiple predicates
+            are provided they are combined using `&` (logical AND), so a row is only
+            removed when *every* predicate evaluates to True for that row.
         constraints
             Column filters; use `name = value` to filter columns using the supplied
             value. Each constraint behaves the same as `pl.col(name).eq(value)`,
@@ -4813,6 +5278,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Select columns from this LazyFrame.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         *exprs
@@ -4891,11 +5358,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 10        │
         └───────────┘
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.select(pyexprs))
 
     def select_seq(
@@ -4906,6 +5369,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         This will run all expression sequentially instead of in parallel.
         Use this when the work per expression is cheap.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -4921,11 +5386,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         select
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
     def group_by(
@@ -4937,6 +5398,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Start a group by operation.
 
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
+
         Parameters
         ----------
         *by
@@ -4946,7 +5409,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
             Setting this to `True` blocks the possibility
-            to run on the streaming engine.
+            to run partitioned.
         **named_by
             Additional columns to group by, specified as keyword arguments.
             The columns will be renamed to the keyword used.
@@ -5091,6 +5554,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
+
         .. versionchanged:: 0.20.14
             The `by` parameter was renamed `group_by`.
 
@@ -5203,6 +5668,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         where `start` is determined by `start_by`, `offset`, `every`, and the earliest
         datapoint. See the `start_by` argument description for details.
+
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
 
         .. warning::
             The index column must be sorted in ascending order. If `group_by` is passed, then
@@ -5555,6 +6022,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The default is "backward".
 
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
+
         Parameters
         ----------
         other
@@ -5566,11 +6035,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
-        by
-            Join on these columns before doing asof join.
         by_left
             Join on these columns before doing asof join.
         by_right
+            Join on these columns before doing asof join.
+        by
             Join on these columns before doing asof join.
         strategy : {'backward', 'forward', 'nearest'}
             Join strategy.
@@ -5598,9 +6067,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
                 By "calendar day", we mean the corresponding time on the next day
-                (which may not be 24 hours, due to daylight savings). Similarly for
-                "calendar week", "calendar month", "calendar quarter", and
-                "calendar year".
+                (which may not be 24 hours, due to daylight savings - in cases of
+                ambiguity, we follow RFC-5545 and preserve the DST fold of the original
+                datetime). Similarly for "calendar week", "calendar month",
+                "calendar quarter", and "calendar year".
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
@@ -5625,9 +6095,28 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 (i.e., strictly less-than / strictly greater-than).
         check_sortedness
             Check the sortedness of the asof keys. If the keys are not sorted Polars
-            will error. Currently, sortedness cannot be checked if 'by' groups are
-            provided.
+            will error. Currently, the `in-memory` engine cannot check the sortedness
+            if 'by' groups are provided. The `streaming` engine will only check the
+            sortedness of the rows it processes.
 
+        Notes
+        -----
+        If 'by' is set, the implementation will compute the asof join over all of the
+        groups concurrently.  This can potentially lead to high memory usage if there
+        are many groups.
+
+        This can be mitigated by sorting (via :meth:`.sort() <polars.LazyFrame.sort>`)
+        both of the input LazyFrames by the 'by' keys (or using :meth:`.set_sorted()
+        <polars.LazyFrame.set_sorted>` if the columns are already sorted)
+        before computing the join operation; and using the streaming engine to collect
+        the results. For example:
+
+        >>> # Compute streaming asof join with 'by' groups
+        >>> result = (
+        ...     left.sort("by", "on").join_asof(  # Sort left manually
+        ...         right.set_sorted("by", "on"),  # Set right as already sorted
+        ...     )
+        ... ).collect(streaming=True)  # doctest: +SKIP
 
         Examples
         --------
@@ -5898,11 +6387,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         nulls_equal: bool = False,
         coalesce: bool | None = None,
         maintain_order: MaintainOrderJoin | None = None,
+        build_side: JoinBuildSide = "auto",
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> LazyFrame:
         """
         Add a join operation to the Logical Plan.
+
+        .. engine-support:: in-memory, streaming, partially-distributed
 
         .. versionchanged:: 1.24
             The `join_nulls` parameter was renamed `nulls_equal`.
@@ -5929,15 +6421,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - Returns all rows from the right table, and the matched rows from
                    the left table.
                * - **full**
-                 - Returns all rows when there is a match in either left or right.
+                 - Returns all rows from both tables, joining matching rows and
+                   filling non-matches with null values.
                * - **cross**
                  - Returns the Cartesian product of rows from both tables
                * - **semi**
                  - Returns rows from the left table that have a match in the right
-                   table.
+                   table. Does not return columns from the right table.
                * - **anti**
                  - Returns rows from the left table that have no match in the right
-                   table.
+                   table. Does not return columns from the right table.
 
         left_on
             Join column of the left DataFrame.
@@ -5960,9 +6453,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - One-to-many. Checks if join keys are unique in left dataset.
                * - **m:1**
                  - Many-to-one. Check if join keys are unique in right dataset.
-
-            .. note::
-                This is currently not supported by the streaming engine.
         nulls_equal
             Join on null values. By default null values will never produce matches.
         coalesce
@@ -6001,6 +6491,31 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - First preserves the order of the left DataFrame, then the right.
                * - **right_left**
                  - First preserves the order of the right DataFrame, then the left.
+        build_side: {'auto', 'prefer_left', 'prefer_right', 'force_left', 'force_right'}
+            Which side of the join will be used as the build side. This side will be
+            likely be held in memory as a hash table. Note that unless a `force_`
+            variant is chosen, the chosen side might differ across Polars versions or
+            even between different runs.
+
+            .. list-table ::
+               :header-rows: 0
+
+               * - **auto**
+                 - *(Default)* Let Polars figure out the build side.
+               * - **prefer_left**
+                 - Unless there's a very good reason to believe that the right side is
+                   smaller, use the left side.
+               * - **prefer_right**
+                 - Unless there's a very good reason to believe that the left side is
+                   smaller, use the right side.
+               * - **force_left**
+                 - Always use the left side.
+               * - **force_right**
+                 - Always use the right side.
+
+            .. warning::
+                This functionality is considered **experimental**. It may be removed or
+                changed at any point without it being considered a breaking change.
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
@@ -6144,6 +6659,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     suffix,
                     validate,
                     maintain_order,
+                    build_side=build_side,
                     coalesce=None,
                 )
             )
@@ -6171,6 +6687,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 suffix,
                 validate,
                 maintain_order,
+                build_side,
                 coalesce,
             )
         )
@@ -6188,6 +6705,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         This performs an inner join, so only rows where all predicates are true
         are included in the result, and a row from either DataFrame may be included
         multiple times in the result.
+
+        .. engine-support:: in-memory, streaming, partially-distributed
 
         .. note::
             The row order of the input DataFrames is not preserved.
@@ -6277,6 +6796,89 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
+    @unstable()
+    def gather(
+        self,
+        indices: int
+        | Sequence[int]
+        | IntoExpr
+        | pl.Series
+        | np.ndarray[Any, Any]
+        | pl.LazyFrame,
+        *,
+        null_on_oob: bool = False,
+    ) -> LazyFrame:
+        """
+        Selects rows from this LazyFrame at the given indices.
+
+        .. engine-support:: in-memory, streaming
+
+        .. warning::
+            This functionality is experimental. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        indices
+            The indices of the rows to select.
+
+            Due to the lack of a ``LazySeries`` it's permitted to pass a single-width
+            ``LazyFrame`` as indices as well.
+
+        null_on_oob
+            If true when an index is out-of-bounds a null row will be generated
+            instead of raising an error.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame({"x": [2, 1, 0], "s": ["foo", "bar", "baz"]})
+        >>> lf.gather([2, 0, 0]).collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ x   ┆ s   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 0   ┆ baz │
+        │ 2   ┆ foo │
+        │ 2   ┆ foo │
+        └─────┴─────┘
+
+        >>> lf.gather([0, 10, 1], null_on_oob=True).collect()
+        shape: (3, 2)
+        ┌──────┬──────┐
+        │ x    ┆ s    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ str  │
+        ╞══════╪══════╡
+        │ 2    ┆ foo  │
+        │ null ┆ null │
+        │ 1    ┆ bar  │
+        └──────┴──────┘
+
+        >>> idxs = pl.LazyFrame({"i": [1, 10, 0], "b": [True, False, True]})
+        >>> lf.gather(idxs.filter(pl.col.b).select(pl.col.i)).collect()
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ x   ┆ s   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 1   ┆ bar │
+        │ 2   ┆ foo │
+        └─────┴─────┘
+        """
+        if not isinstance(indices, pl.LazyFrame):
+            if (isinstance(indices, Sequence) and not isinstance(indices, str)) or (
+                _check_for_numpy(indices) and isinstance(indices, np.ndarray)
+            ):
+                indices_expr = F.lit(pl.Series("", indices, dtype=Int64))
+            else:
+                indices_expr = wrap_expr(parse_into_expression(indices))
+            indices = self.select(indices_expr)
+
+        return self._from_pyldf(self._ldf.gather(indices._ldf, null_on_oob))
+
     def with_columns(
         self,
         *exprs: IntoExpr | Iterable[IntoExpr],
@@ -6286,6 +6888,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Add columns to this LazyFrame.
 
         Added columns will replace existing columns with the same name.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -6404,11 +7008,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
 
     def with_columns_seq(
@@ -6423,6 +7023,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         This will run all expression sequentially instead of in parallel.
         Use this when the work per expression is cheap.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -6443,11 +7045,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         with_columns
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.with_columns_seq(pyexprs))
 
     @deprecated(
@@ -6523,6 +7121,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Remove columns from the DataFrame.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -6601,6 +7201,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Rename column names.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         mapping
@@ -6663,6 +7265,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Reverse the DataFrame.
 
+        .. engine-support:: in-memory, partially-streaming
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -6690,6 +7294,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Shift values by the given number of indices.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -6769,6 +7375,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Get a slice of this DataFrame.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         offset
@@ -6807,6 +7415,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Get the first `n` rows.
 
         Alias for :func:`LazyFrame.head`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -6851,6 +7461,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Get the first `n` rows.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -6893,6 +7505,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def tail(self, n: int = 5) -> LazyFrame:
         """
         Get the last `n` rows.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -6937,6 +7551,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Get the last row of the DataFrame.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -6960,6 +7576,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def first(self) -> LazyFrame:
         """
         Get the first row of the DataFrame.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -7017,6 +7635,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def with_row_index(self, name: str = "index", offset: int = 0) -> LazyFrame:
         """
         Add a row index as the first column in the LazyFrame.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7141,6 +7761,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Take every nth row in the LazyFrame and return as a new LazyFrame.
 
+        .. engine-support:: in-memory, streaming
+
         Parameters
         ----------
         n
@@ -7189,6 +7811,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Fill null values using the specified value or strategy.
+
+        .. engine-support:: in-memory, streaming, partially-distributed
 
         Parameters
         ----------
@@ -7314,7 +7938,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             if dtypes:
                 return self.with_columns(
-                    F.col(dtypes).fill_null(value, strategy, limit)
+                    F.col([*dtypes, Null]).fill_null(value, strategy, limit)
                 )
 
         return self.select(F.all().fill_null(value, strategy, limit))
@@ -7322,6 +7946,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def fill_nan(self, value: int | float | Expr | None) -> LazyFrame:
         """
         Fill floating point NaN values.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7366,6 +7992,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their standard deviation value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         ddof
@@ -7405,6 +8033,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def var(self, ddof: int = 1) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their variance value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7446,6 +8076,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their maximum value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -7469,6 +8101,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def min(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their minimum value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -7494,6 +8128,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their sum value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -7517,6 +8153,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def mean(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their mean value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -7542,6 +8180,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame to their median value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -7565,6 +8205,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def null_count(self) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame as the sum of their null value count.
+
+        .. engine-support:: in-memory, streaming
 
         Examples
         --------
@@ -7594,6 +8236,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Aggregate the columns in the LazyFrame to their quantile value.
+
+        .. engine-support:: in-memory, partially-streaming
 
         Parameters
         ----------
@@ -7627,11 +8271,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        empty_as_null: bool = True,
+        empty_as_null: bool = _Omitted,
         keep_nulls: bool = True,
     ) -> LazyFrame:
         """
         Explode the DataFrame to long format by exploding the given columns.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7653,7 +8299,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "numbers": [[1], [2, 3], [4, 5], [6, 7, 8]],
         ...     }
         ... )
-        >>> lf.explode("numbers").collect()
+        >>> lf.explode("numbers", empty_as_null=False).collect()
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │
@@ -7670,6 +8316,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
+        if empty_as_null is _Omitted:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
         subset = parse_list_into_selector(columns) | parse_list_into_selector(  # type: ignore[arg-type]
             more_columns
         )
@@ -7690,6 +8342,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         r"""
         Drop duplicate rows from this LazyFrame.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7713,11 +8367,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         -------
         LazyFrame
             LazyFrame with unique rows.
-
-        Warnings
-        --------
-        This method will fail if there is a column of type `List` in the DataFrame (or
-        in the "subset" parameter).
 
         Notes
         -----
@@ -7825,9 +8474,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         parsed_subset: list[PyExpr] | None = None
         if subset is not None:
-            parsed_subset = parse_into_list_of_expressions(
-                subset, __require_selectors=True
-            )
+            parsed_subset = parse_into_list_of_expressions_require_selectors(subset)
         return self._from_pyldf(self._ldf.unique(maintain_order, parsed_subset, keep))
 
     def drop_nans(
@@ -7838,6 +8485,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Drop all rows that contain one or more NaN values.
 
         The original order of the remaining rows is preserved.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -7928,6 +8577,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The original order of the remaining rows is preserved.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         See Also
         --------
         drop_nans
@@ -8013,9 +8664,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         aggregate_function: PivotAgg | Expr | None = None,
         maintain_order: bool = False,
         separator: str = "_",
+        column_naming: Literal["auto", "combine"] = "auto",
     ) -> LazyFrame:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
+
+        .. engine-support:: in-memory, partially-streaming
 
         Parameters
         ----------
@@ -8047,6 +8701,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         separator
             Used as separator/delimiter in generated column names in case of multiple
             `values` columns.
+        column_naming : {'auto', 'combine'}
+            How resulting column names will be constructed.
+
+            * 'auto': The default; combine with separator if there are multiple
+                      `values` columns, otherwise just use the `on_columns` names.
+            * 'combine': Always combine the `values` columns' names with
+                      the `on_columns` names.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -8172,20 +8837,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
         """  # noqa: W505
-        if index is None and values is None:
+        on_selector = parse_list_into_selector(on)
+
+        if index is not None and values is not None:
+            index_selector = parse_list_into_selector(index)
+            values_selector = parse_list_into_selector(values)
+        elif index is not None:
+            index_selector = parse_list_into_selector(index)
+            values_selector = cs.all() - on_selector - index_selector
+        elif values is not None:
+            values_selector = parse_list_into_selector(values)
+            index_selector = cs.all() - on_selector - values_selector
+        else:
             msg = "`pivot` needs either `index or `values` needs to be specified"
             raise InvalidOperationError(msg)
-
-        on_selector = parse_list_into_selector(on)
-        if values is not None:
-            values_selector = parse_list_into_selector(values)
-        if index is not None:
-            index_selector = parse_list_into_selector(index)
-
-        if values is None:
-            values_selector = cs.all() - on_selector - index_selector
-        if index is None:
-            index_selector = cs.all() - on_selector - values_selector
 
         agg = F.element()
         if isinstance(aggregate_function, str):
@@ -8227,8 +8892,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             on_cols = on_columns
         elif isinstance(on_columns, pl.Series):
             on_cols = on_columns.to_frame()
+        elif isinstance(on_columns, str):
+            msg = f"invalid type for `on_columns` argument: {qualified_type_name(on_columns)!r}"
+            raise TypeError(msg)
         else:
-            on_cols = pl.Series(on_columns).to_frame()
+            on_cols = pl.Series(values=on_columns).to_frame()
 
         return self._from_pyldf(
             self._ldf.pivot(
@@ -8239,6 +8907,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 agg=agg._pyexpr,
                 maintain_order=maintain_order,
                 separator=separator,
+                column_naming=column_naming,
             )
         )
 
@@ -8260,6 +8929,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         columns are identifier variables (index) while all other columns, considered
         measured variables (on), are "unpivoted" to the row axis leaving just
         two non-identifier columns, 'variable' and 'value'.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -8335,10 +9006,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         function: Callable[[DataFrame], DataFrame],
         *,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        slice_pushdown: bool = True,
-        no_optimizations: bool = False,
+        predicate_pushdown: bool = False,
+        projection_pushdown: bool = False,
+        slice_pushdown: bool = False,
+        no_optimizations: bool | None = None,
         schema: None | SchemaDict = None,
         validate_output_schema: bool = True,
         streamable: bool = False,
@@ -8347,6 +9018,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Apply a custom function.
 
         It is important that the function returns a Polars DataFrame.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -8359,7 +9032,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown
             Allow slice pushdown optimization to pass this node.
         no_optimizations
-            Turn off all optimizations past this point.
+            .. deprecated:: 1.30.0
+                This parameter is deprecated and will be removed in a future version.
+                The `_pushdown` parameters now default to `False`, so this parameter
+                is no longer needed.
         schema
             Output schema of the function, if set to `None` we assume that the schema
             will remain unchanged by the applied function.
@@ -8417,10 +9093,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ -2      ┆ 199998 │
         └─────────┴────────┘
         """
-        if no_optimizations:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
+        if no_optimizations is not None:
+            issue_deprecation_warning(
+                "the `no_optimizations` parameter for `LazyFrame.map_batches` is deprecated."
+                " The `_pushdown` parameters now default to `False`, so this parameter is no longer needed.",
+                version="1.39.3",
+            )
 
         return self._from_pyldf(
             self._ldf.map_batches(
@@ -8439,6 +9117,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Interpolate intermediate values. The interpolation method is linear.
 
         Nulls at the beginning and end of the series remain null.
+
+        .. engine-support:: in-memory, streaming
 
         Examples
         --------
@@ -8466,7 +9146,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def unnest(
         self,
-        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
         *more_columns: ColumnNameOrSelector,
         separator: str | None = None,
     ) -> LazyFrame:
@@ -8475,6 +9155,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The new columns will be inserted into the DataFrame at the location of the
         struct column.
+
+        If no columns are provided, all struct columns are unnested.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -8518,6 +9202,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ foo    ┆ 1   ┆ a   ┆ true ┆ [1, 2]    ┆ baz   │
         │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
         └────────┴─────┴─────┴──────┴───────────┴───────┘
+
+        Unnest all struct columns by calling without arguments:
+
+        >>> df.unnest().collect()
+        shape: (2, 6)
+        ┌────────┬─────┬─────┬──────┬───────────┬───────┐
+        │ before ┆ t_a ┆ t_b ┆ t_c  ┆ t_d       ┆ after │
+        │ ---    ┆ --- ┆ --- ┆ ---  ┆ ---       ┆ ---   │
+        │ str    ┆ i64 ┆ str ┆ bool ┆ list[i64] ┆ str   │
+        ╞════════╪═════╪═════╪══════╪═══════════╪═══════╡
+        │ foo    ┆ 1   ┆ a   ┆ true ┆ [1, 2]    ┆ baz   │
+        │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
+        └────────┴─────┴─────┴──────┴───────────┴───────┘
+
         >>> df = pl.LazyFrame(
         ...     {
         ...         "before": ["foo", "bar"],
@@ -8543,28 +9241,47 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ bar    ┆ 2    ┆ b    ┆ null ┆ [3]       ┆ womp  │
         └────────┴──────┴──────┴──────┴───────────┴───────┘
         """
-        subset = parse_list_into_selector(columns) | parse_list_into_selector(
-            more_columns
-        )
+        if columns is None and not more_columns:
+            subset = cs.struct()
+        else:
+            subset = (
+                cs.empty() if columns is None else parse_list_into_selector(columns)
+            ) | parse_list_into_selector(more_columns)
+
         return self._from_pyldf(self._ldf.unnest(subset._pyselector, separator))
 
-    def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:
+    def merge_sorted(
+        self,
+        other: LazyFrame,
+        key: str | Sequence[str],
+        *,
+        maintain_order: bool = False,
+    ) -> LazyFrame:
         """
         Take two sorted DataFrames and merge them by the sorted key.
 
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
-        are sorted in ascending order by that key otherwise
-        the output will not make sense.
+        are sorted in ascending order by the key(s), with null
+        keys at the end, otherwise the order of the output
+        will not make sense.
 
         The schemas of both LazyFrames must be equal.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
         other
             Other DataFrame that must be merged
         key
-            Key that is sorted.
+            Key column(s) that the frames are sorted by. A single column name or a
+            sequence of column names can be passed. When multiple keys are given the
+            frames are merged as if sorted by those keys in order.
+        maintain_order
+            If ``True``, the output is guaranteed to have left-biased ordering
+            for equal keys: rows from the left frame appear before rows from
+            the right frame when their keys are equal.
 
         Examples
         --------
@@ -8613,15 +9330,38 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ elise  ┆ 44  │
         └────────┴─────┘
 
+        Multiple keys can be passed to merge frames sorted by a composite key. The
+        frames are merged as if sorted by ``key_1``, then ``key_2``.
+
+        >>> df0 = pl.LazyFrame({"key_1": [1, 1, 3], "key_2": [1, 4, 2]})
+        >>> df1 = pl.LazyFrame({"key_1": [1, 2, 3], "key_2": [2, 1, 1]})
+        >>> df0.merge_sorted(df1, key=["key_1", "key_2"]).collect()
+        shape: (6, 2)
+        ┌───────┬───────┐
+        │ key_1 ┆ key_2 │
+        │ ---   ┆ ---   │
+        │ i64   ┆ i64   │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 1     │
+        │ 1     ┆ 2     │
+        │ 1     ┆ 4     │
+        │ 2     ┆ 1     │
+        │ 3     ┆ 1     │
+        │ 3     ┆ 2     │
+        └───────┴───────┘
+
         Notes
         -----
-        No guarantee is given over the output row order when the key is equal
-        between the both dataframes.
+        Unless ``maintain_order=True``, no guarantee is given over the output
+        row order when the key is equal between the both dataframes.
 
-        The key must be sorted in ascending order.
+        The key(s) must be sorted in ascending order.
         """
         require_same_type(self, other)
-        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
+        keys = [key] if isinstance(key, str) else list(key)
+        return self._from_pyldf(
+            self._ldf.merge_sorted(other._ldf, keys, maintain_order)
+        )
 
     def set_sorted(
         self,
@@ -8634,6 +9374,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Flag a column as sorted.
 
         This can speed up future operations.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -8685,6 +9427,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> LazyFrame:
         """
         Update the values in this `LazyFrame` with the values in `other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -8826,11 +9570,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"`how` must be one of {{'left', 'inner', 'full'}}; found {how!r}"
             raise ValueError(msg)
 
-        row_index_used = False
+        row_index_name = None
         if on is None:
             if left_on is None and right_on is None:
                 # no keys provided--use row index
-                row_index_used = True
                 row_index_name = "__POLARS_ROW_INDEX"
                 self = self.with_row_index(row_index_name)
                 other = other.with_row_index(row_index_name)
@@ -8865,7 +9608,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # no need to join if *only* join columns are in other (inner/left update only)
         if how != "full" and len(right_schema) == len(right_on):
-            if row_index_used:
+            if row_index_name is not None:
                 return self.drop(row_index_name)
             return self
 
@@ -8907,7 +9650,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             .drop(drop_columns)
         )
-        if row_index_used:
+        if row_index_name is not None:
             result = result.drop(row_index_name)
 
         return self._from_pyldf(result._ldf)
@@ -8915,6 +9658,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def count(self) -> LazyFrame:
         """
         Return the number of non-null elements for each column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -8986,7 +9731,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @unstable()
     def remote(
         self,
-        context: pc.ComputeContext | None = None,
+        context: pc.ClientContext | None = None,
         *,
         plan_type: pc._typing.PlanTypePreference = "dot",
         n_retries: int = 0,
@@ -9027,7 +9772,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Run a query on a cloud instance.
 
         >>> lf = pl.LazyFrame([1, 2, 3]).sum()
-        >>> in_progress = lf.remote().collect()  # doctest: +SKIP
+        >>> in_progress = lf.remote().execute(blocking=False)  # doctest: +SKIP
         >>> # do some other work
         >>> in_progress.await_result()  # doctest: +SKIP
         shape: (1, 1)
@@ -9044,8 +9789,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = (
         ...     pl.scan_parquet("s3://my_bucket/").group_by("key").agg(pl.sum("values"))
         ... )
-        >>> in_progress = lf.remote().distributed().collect()  # doctest: +SKIP
-        >>> in_progress.await_result()  # doctest: +SKIP
+        >>> result = lf.remote().distributed().execute()  # doctest: +SKIP
         shape: (1, 1)
         ┌──────────┐
         │ column_0 │
@@ -9056,7 +9800,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────────┘
 
         """
-        return pc.LazyFrameRemote(lf=self, context=context, plan_type=plan_type)
+        return pc.LazyFrameRemote(
+            lf=self,
+            context=context,  # type: ignore[arg-type]
+            plan_type=plan_type,
+            n_retries=n_retries,
+            engine=engine,
+            scaling_mode=scaling_mode,
+        )
 
     @unstable()
     def match_to_schema(
@@ -9064,7 +9815,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         schema: SchemaDict | Schema,
         *,
         missing_columns: Literal["insert", "raise"]
-        | Mapping[str, Literal["insert", "raise"] | Expr] = "raise",
+        | Mapping[str, Literal["insert", "raise"] | Expr]
+        | Expr = "raise",
         missing_struct_fields: Literal["insert", "raise"]
         | Mapping[str, Literal["insert", "raise"]] = "raise",
         extra_columns: Literal["ignore", "raise"] = "raise",
@@ -9230,7 +9982,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             schema_prep = schema
 
         missing_columns_pyexpr: (
-            Literal["insert", "raise"] | dict[str, Literal["insert", "raise"] | PyExpr]
+            Literal["insert", "raise"]
+            | dict[str, Literal["insert", "raise"] | PyExpr]
+            | PyExpr
         )
         if isinstance(missing_columns, Mapping):
             missing_columns_pyexpr = {
@@ -9265,8 +10019,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         fmt_float: FloatFmt | None = None,
         fmt_str_lengths: int | None = None,
         fmt_table_cell_list_len: int | None = None,
-        tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
-        tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
+        tbl_cell_alignment: Alignment | None = None,
+        tbl_cell_numeric_alignment: Alignment | None = None,
         tbl_cols: int | None = None,
         tbl_column_data_type_inline: bool | None = None,
         tbl_dataframe_shape_below: bool | None = None,

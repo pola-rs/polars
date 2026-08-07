@@ -12,6 +12,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval, PolarsIntegerType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_rolling() -> None:
@@ -69,8 +70,10 @@ def test_rolling_group_by_overlapping_groups(dtype: PolarsIntegerType) -> None:
 # the thread pool, which implies prior to import. The test is only valid when
 # run in isolation, and invalid otherwise because of xdist import caching.
 # See GH issue #22070
-def test_rolling_group_by_overlapping_groups_21859_a(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+def test_rolling_group_by_overlapping_groups_21859_a(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
     # assert pl.thread_pool_size() == 1 # pending resolution, see TODO
     df = pl.select(
         pl.date_range(pl.date(2023, 1, 1), pl.date(2023, 1, 5))
@@ -92,8 +95,10 @@ def test_rolling_group_by_overlapping_groups_21859_a(monkeypatch: Any) -> None:
 # the thread pool, which implies prior to import. The test is only valid when
 # run in isolation, and invalid otherwise because of xdist import caching.
 # See GH issue #22070
-def test_rolling_group_by_overlapping_groups_21859_b(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
+def test_rolling_group_by_overlapping_groups_21859_b(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
     # assert pl.thread_pool_size() == 1 # pending resolution, see TODO
     df = pl.DataFrame({"a": [20, 30, 40]})
     out = (
@@ -184,7 +189,7 @@ def test_rolling_negative_offset_3914() -> None:
     assert result["matches"].to_list() == expected
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 def test_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
     df = pl.DataFrame(
         {
@@ -216,7 +221,7 @@ def test_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 @pytest.mark.parametrize(
     ("offset", "closed", "expected_values"),
     [
@@ -880,3 +885,82 @@ def test_rolling_with_slice() -> None:
     assert_frame_equal(lf.slice(5, 1).collect(), expected.slice(5, 1))
     assert_frame_equal(lf.slice(5, 0).collect(), expected.slice(5, 0))
     assert_frame_equal(lf.slice(2, 1).collect(), expected.slice(2, 1))
+
+
+@pytest.mark.parametrize("offset", [-3, -2, -1, 0, 1, 2, 3])
+@pytest.mark.parametrize("period", [1, 2, 3])
+def test_rolling_positive_offset_window_26717(period: int, offset: int) -> None:
+    df = pl.DataFrame(
+        {
+            "idx": [1, 2, 3, 4, 5, 6, 11, 12, 13, 21],
+            "a": [1 for _ in range(10)],
+            "g": [0 for _ in range(10)],
+        }
+    )
+
+    period_str = str(period) + "i"
+    offset_str = str(offset) + "i"
+
+    out_base = df.select(
+        sum=pl.sum("a").rolling(
+            index_column="idx", period=period_str, offset=offset_str
+        )
+    )
+
+    out_over = df.select(
+        sum=pl.sum("a")
+        .rolling(index_column="idx", period=period_str, offset=offset_str)
+        .over("g")
+    )
+
+    assert_frame_equal(out_base, out_over)
+
+
+def test_rolling_by_temporal_null_min_samples_27661() -> None:
+    df = pl.DataFrame(
+        {
+            "timestamp": pl.datetime_range(
+                datetime(year=2026, month=1, day=9, hour=5, minute=23, second=37),
+                datetime(year=2026, month=1, day=9, hour=5, minute=23, second=39),
+                interval="1s",
+                time_unit="ms",
+                eager=True,
+            ),
+            "power": [303, 498, None],
+        },
+    ).with_columns(
+        avg_power_2s=pl.col("power").rolling_mean_by(
+            "timestamp",
+            window_size="2s",
+            min_samples=2,
+        ),
+        avg_power_2i=pl.col("power").rolling_mean(
+            window_size=2,
+            min_samples=2,
+        ),
+    )
+    assert_series_equal(df["avg_power_2s"].alias("avg_power_2i"), df["avg_power_2i"])
+
+
+@pytest.mark.parametrize(
+    ("method", "expected"),
+    [
+        ("rolling_sum", [0.0, 0.0, 0.0]),
+        ("rolling_mean", [None, None, None]),
+        ("rolling_min", [None, None, None]),
+        ("rolling_max", [None, None, None]),
+        ("rolling_std", [None, None, None]),
+        ("rolling_var", [None, None, None]),
+        ("rolling_median", [None, None, None]),
+        ("rolling_skew", [None, None, None]),
+    ],
+)
+def test_rolling_window_size_zero_23434(
+    method: str, expected: list[float | None]
+) -> None:
+    """window_size=0 should match the aggregation of an empty series."""
+    s = pl.Series([1.0, 2.0, 3.0], dtype=pl.Float64)
+    assert_series_equal(
+        getattr(s, method)(window_size=0),
+        pl.Series(expected, dtype=pl.Float64),
+    )

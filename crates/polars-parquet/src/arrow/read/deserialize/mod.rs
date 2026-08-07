@@ -13,11 +13,13 @@ mod primitive;
 mod simple;
 mod utils;
 
+use std::io::Cursor;
+
 use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::{ArrowDataType, Field};
 use arrow::offset::Offsets;
-use polars_utils::mmap::MemReader;
+use polars_buffer::Buffer;
 use simple::page_iter_to_array;
 
 pub use self::nested_utils::{InitNested, NestedState, init_nested};
@@ -31,7 +33,7 @@ use crate::parquet::schema::types::PrimitiveType;
 /// Creates a new iterator of compressed pages.
 pub fn get_page_iterator(
     column_metadata: &ColumnChunkMetadata,
-    reader: MemReader,
+    reader: Cursor<Buffer<u8>>,
     buffer: Vec<u8>,
     max_header_size: usize,
 ) -> PolarsResult<PageReader> {

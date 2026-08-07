@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use futures::TryStreamExt;
 use object_store::path::Path;
-use polars_core::error::to_compute_err;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
@@ -210,7 +209,7 @@ impl Matcher {
 pub async fn glob(
     url: PlRefPath,
     cloud_options: Option<&CloudOptions>,
-) -> PolarsResult<Vec<String>> {
+) -> PolarsResult<Vec<(String, u64)>> {
     // Find the fixed prefix, up to the first '*'.
 
     let (
@@ -236,29 +235,24 @@ pub async fn glob(
     let path = Some(&path);
 
     let mut locations = store
-        .try_exec_rebuild_on_err(|store| {
-            let st = store.clone();
-
-            async {
-                let store = st;
-                store
-                    .list(path)
-                    .try_filter_map(|x| async move {
-                        let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
-                            .then_some(x.location);
-                        Ok(out)
-                    })
-                    .try_collect::<Vec<_>>()
-                    .await
-                    .map_err(to_compute_err)
-            }
+        .exec_with_rebuild_retry_on_err(|store| async move {
+            store
+                .list(path)
+                .try_filter_map(|x| async move {
+                    // Keep the LIST-reported byte size alongside the path.
+                    let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
+                        .then_some((x.location, x.size));
+                    Ok(out)
+                })
+                .try_collect::<Vec<_>>()
+                .await
         })
         .await?;
 
-    locations.sort_unstable();
+    locations.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     Ok(locations
         .into_iter()
-        .map(|l| full_url(scheme, &bucket, l))
+        .map(|(l, size)| (full_url(scheme, &bucket, l), size))
         .collect::<Vec<_>>())
 }
 

@@ -15,6 +15,7 @@ mod utils;
 use std::fs::File;
 
 use dictionary::DecodedDictPage;
+use polars_buffer::Buffer;
 use polars_parquet::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
 use polars_parquet::parquet::metadata::ColumnChunkMetadata;
@@ -24,7 +25,6 @@ use polars_parquet::parquet::schema::Repetition;
 use polars_parquet::parquet::schema::types::{GroupConvertedType, ParquetType};
 use polars_parquet::parquet::types::int96_to_i64_ns;
 use polars_parquet::read::PageReader;
-use polars_utils::mmap::MemReader;
 
 use super::*;
 
@@ -214,7 +214,7 @@ where
 }
 
 pub fn read_column(
-    mut reader: MemReader,
+    mut reader: Cursor<Buffer<u8>>,
     row_group: usize,
     field_name: &str,
 ) -> ParquetResult<(Array, Option<Statistics>)> {
@@ -237,7 +237,7 @@ pub fn read_column(
     let mut statistics = metadata.row_groups[row_group]
         .columns_under_root_iter(field.name())
         .unwrap()
-        .map(|column_meta| column_meta.statistics().transpose())
+        .map(|column_meta| column_meta.statistics(&metadata.footer_buf).transpose())
         .collect::<ParquetResult<Vec<_>>>()?;
 
     let array = columns_to_array(columns, field)?;
@@ -246,8 +246,8 @@ pub fn read_column(
 }
 
 fn get_column(path: &str, column: &str) -> ParquetResult<(Array, Option<Statistics>)> {
-    let file = File::open(path).unwrap();
-    let memreader = MemReader::from_reader(file).unwrap();
+    let file = std::fs::read(path).unwrap();
+    let memreader = Cursor::new(Buffer::from_vec(file));
     read_column(memreader, 0, column)
 }
 
@@ -324,7 +324,7 @@ fn timestamp_col() -> ParquetResult<()> {
     if let Array::Int96(array) = array {
         let a = array
             .into_iter()
-            .map(|x| x.map(int96_to_i64_ns))
+            .map(|x| x.and_then(int96_to_i64_ns))
             .collect::<Vec<_>>();
         assert_eq!(expected, a);
     } else {

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pyarrow as pa
@@ -29,6 +29,9 @@ from polars.interchange.protocol import (
 from polars.testing import assert_frame_equal, assert_series_equal
 
 NE = Endianness.NATIVE
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_from_dataframe_polars() -> None:
@@ -597,9 +600,9 @@ def test_construct_validity_buffer_from_bytemask_zero_copy_fails(
         )
 
 
-def test_interchange_protocol_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_interchange_protocol_fallback(plmonkeypatch: PlMonkeyPatch) -> None:
     df_pd = pd.DataFrame({"a": [1, 2, 3]})
-    monkeypatch.setattr(df_pd, "__arrow_c_stream__", lambda *args, **kwargs: 1 / 0)
+    plmonkeypatch.setattr(df_pd, "__arrow_c_stream__", lambda *args, **kwargs: 1 / 0)
     with pytest.warns(
         UserWarning, match="Falling back to Dataframe Interchange Protocol"
     ):

@@ -197,14 +197,14 @@ where
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i64>>()
                 .unwrap();
-            let func = match time_unit {
-                TimeUnit::Second => timestamp_s_to_datetime,
-                TimeUnit::Millisecond => timestamp_ms_to_datetime,
-                TimeUnit::Microsecond => timestamp_us_to_datetime,
-                TimeUnit::Nanosecond => timestamp_ns_to_datetime,
+            let func: fn(i64) -> Option<chrono::NaiveDateTime> = match time_unit {
+                TimeUnit::Second => timestamp_s_to_datetime_opt,
+                TimeUnit::Millisecond => timestamp_ms_to_datetime_opt,
+                TimeUnit::Microsecond => timestamp_us_to_datetime_opt,
+                TimeUnit::Nanosecond => timestamp_ns_to_datetime_opt,
             };
             Ok(PrimitiveArray::<O>::from_trusted_len_iter(
-                array.iter().map(|v| v.map(|x| op(func(*x)))),
+                array.iter().map(|v| v.and_then(|x| func(*x).map(&op))),
             ))
         },
         _ => unreachable!(),
@@ -296,46 +296,22 @@ where
     A: NativeType,
     F: Fn(chrono::DateTime<T>) -> A,
 {
-    match time_unit {
-        TimeUnit::Second => {
-            let op = |x| {
-                let datetime = timestamp_s_to_datetime(x);
+    let timestamp_to_datetime_opt: fn(i64) -> Option<chrono::NaiveDateTime> = match time_unit {
+        TimeUnit::Second => timestamp_s_to_datetime_opt,
+        TimeUnit::Millisecond => timestamp_ms_to_datetime_opt,
+        TimeUnit::Microsecond => timestamp_us_to_datetime_opt,
+        TimeUnit::Nanosecond => timestamp_ns_to_datetime_opt,
+    };
+
+    let iter = array.iter().map(|opt| {
+        opt.and_then(|&x| {
+            timestamp_to_datetime_opt(x).map(|datetime| {
                 let offset = timezone.offset_from_utc_datetime(&datetime);
                 extract(chrono::DateTime::<T>::from_naive_utc_and_offset(
                     datetime, offset,
                 ))
-            };
-            unary(array, op, A::PRIMITIVE.into())
-        },
-        TimeUnit::Millisecond => {
-            let op = |x| {
-                let datetime = timestamp_ms_to_datetime(x);
-                let offset = timezone.offset_from_utc_datetime(&datetime);
-                extract(chrono::DateTime::<T>::from_naive_utc_and_offset(
-                    datetime, offset,
-                ))
-            };
-            unary(array, op, A::PRIMITIVE.into())
-        },
-        TimeUnit::Microsecond => {
-            let op = |x| {
-                let datetime = timestamp_us_to_datetime(x);
-                let offset = timezone.offset_from_utc_datetime(&datetime);
-                extract(chrono::DateTime::<T>::from_naive_utc_and_offset(
-                    datetime, offset,
-                ))
-            };
-            unary(array, op, A::PRIMITIVE.into())
-        },
-        TimeUnit::Nanosecond => {
-            let op = |x| {
-                let datetime = timestamp_ns_to_datetime(x);
-                let offset = timezone.offset_from_utc_datetime(&datetime);
-                extract(chrono::DateTime::<T>::from_naive_utc_and_offset(
-                    datetime, offset,
-                ))
-            };
-            unary(array, op, A::PRIMITIVE.into())
-        },
-    }
+            })
+        })
+    });
+    PrimitiveArray::from_trusted_len_iter(iter)
 }

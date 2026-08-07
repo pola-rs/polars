@@ -1,3 +1,4 @@
+use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add};
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
@@ -44,14 +45,13 @@ impl SeriesWrap<DecimalChunked> {
         scalar
     }
 
-    fn agg_helper<F: Fn(&Int128Chunked) -> Series>(&self, f: F) -> Series {
+    fn agg_helper<F: Fn(&Int128Chunked) -> Series>(&self, f: F, precision: usize) -> Series {
         let agg_s = f(self.0.physical());
+        let scale = self.0.scale();
         match agg_s.dtype() {
             DataType::Int128 => {
                 let ca = agg_s.i128().unwrap();
                 let ca = ca.as_ref().clone();
-                let precision = self.0.precision();
-                let scale = self.0.scale();
                 ca.into_decimal_unchecked(precision, scale).into_series()
             },
             DataType::List(dtype) if matches!(dtype.as_ref(), DataType::Int128) => {
@@ -59,8 +59,6 @@ impl SeriesWrap<DecimalChunked> {
                 let ca = agg_s.list().unwrap();
                 let arr = ca.downcast_iter().next().unwrap();
                 // SAFETY: dtype is passed correctly
-                let precision = self.0.precision();
-                let scale = self.0.scale();
                 let s = unsafe {
                     Series::from_chunks_and_dtype_unchecked(
                         PlSmallStr::EMPTY,
@@ -151,22 +149,35 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
-        self.agg_helper(|ca| ca.agg_sum(groups))
+        self.agg_helper(
+            |ca| ca.agg_sum(groups),
+            polars_compute::decimal::DEC128_MAX_PREC,
+        )
     }
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
-        self.agg_helper(|ca| ca.agg_min(groups))
+        self.agg_helper(|ca| ca.agg_min(groups), self.0.precision())
     }
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
-        self.agg_helper(|ca| ca.agg_max(groups))
+        self.agg_helper(|ca| ca.agg_max(groups), self.0.precision())
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.physical().agg_arg_max(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
-        self.agg_helper(|ca| ca.agg_list(groups))
+        self.agg_helper(|ca| ca.agg_list(groups), self.0.precision())
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -336,6 +347,15 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .into_series()
     }
 
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.0
+            .physical()
+            .clone()
+            .with_validity(validity)
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series()
+    }
+
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.0
             .physical()
@@ -389,6 +409,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.physical().arg_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         ChunkUnique::unique_id(self.0.physical())
     }
@@ -419,14 +440,22 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn sum_reduce(&self) -> PolarsResult<Scalar> {
-        Ok(self.apply_physical(|ca| {
-            let sum = ca.sum();
-            let DataType::Decimal(prec, scale) = self.dtype() else {
-                unreachable!()
-            };
-            let av = AnyValue::Decimal(sum.unwrap(), *prec, *scale);
-            Scalar::new(self.dtype().clone(), av)
-        }))
+        let DataType::Decimal(_, scale) = self.dtype() else {
+            unreachable!()
+        };
+        let scale = *scale;
+        let prec = DEC128_MAX_PREC;
+        let sum = self
+            .0
+            .physical()
+            .iter()
+            .flatten()
+            .try_fold(0i128, |acc, v| {
+                dec128_add(acc, v, prec)
+                    .ok_or_else(|| polars_err!(ComputeError: "overflow in decimal addition in sum"))
+            })?;
+        let av = AnyValue::Decimal(sum, prec, scale);
+        Ok(Scalar::new(DataType::Decimal(prec, scale), av))
     }
 
     fn min_reduce(&self) -> PolarsResult<Scalar> {
@@ -505,6 +534,25 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .physical()
             .quantile_reduce(quantile, method)
             .map(|v| self.apply_scale(v))
+    }
+
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let result = self.0.physical().quantiles_reduce(quantiles, method)?;
+        if let AnyValue::List(float_s) = result.value() {
+            let scale_factor = self.scale_factor() as f64;
+            let float_ca = float_s.f64().unwrap();
+            let scaled_s = float_ca
+                .iter()
+                .map(|v: Option<f64>| v.map(|f| f / scale_factor))
+                .collect::<Float64Chunked>()
+                .into_series();
+            Ok(Scalar::new(
+                DataType::List(Box::new(self.dtype().clone())),
+                AnyValue::List(scaled_s),
+            ))
+        } else {
+            polars_bail!(ComputeError: "expected list scalar from quantiles_reduce")
+        }
     }
 
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {

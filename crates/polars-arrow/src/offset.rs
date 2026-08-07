@@ -3,10 +3,10 @@
 use std::hint::unreachable_unchecked;
 use std::ops::Deref;
 
+use polars_buffer::Buffer;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
 
 use crate::array::Splitable;
-use crate::buffer::Buffer;
 pub use crate::types::Offset;
 
 /// A wrapper type of [`Vec<O>`] representing the invariants of Arrow's offsets.
@@ -504,7 +504,7 @@ impl<O: Offset> OffsetsBuffer<O> {
     #[inline]
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(length > 0);
-        self.0.slice(offset, length);
+        self.0.slice_in_place(offset..offset + length);
     }
 
     /// Slices this [`OffsetsBuffer`] starting at `offset`.
@@ -513,7 +513,7 @@ impl<O: Offset> OffsetsBuffer<O> {
     /// The caller must ensure `offset + length <= self.len()`
     #[inline]
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
-        self.0.slice_unchecked(offset, length);
+        self.0.slice_in_place_unchecked(offset..offset + length);
     }
 
     /// Returns an iterator with the lengths of the offsets
@@ -664,8 +664,8 @@ impl<O: Offset> Splitable for OffsetsBuffer<O> {
         let mut lhs = self.0.clone();
         let mut rhs = self.0.clone();
 
-        lhs.slice(0, offset + 1);
-        rhs.slice(offset, self.0.len() - offset);
+        lhs.slice_in_place(..=offset);
+        rhs.slice_in_place(offset..);
 
         (Self(lhs), Self(rhs))
     }

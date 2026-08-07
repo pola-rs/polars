@@ -6,16 +6,16 @@ use arrow::io::ipc::read::{Dictionaries, ProjectionInfo};
 use arrow::io::ipc::write::KeyValueRef;
 use polars_core::chunked_array::flags::StatisticsFlags;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::PlHashMap;
 use polars_core::schema::Schema;
 use polars_core::utils::arrow::io::ipc::read::common::apply_projection;
 use polars_core::utils::arrow::io::ipc::read::{BlockReader, FileMetadata, read_batch};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_io::RowIndex;
 use polars_utils::IdxSize;
+use polars_utils::bool::UnsafeBool;
 
 use super::record_batch_data_fetch::RecordBatchData;
-use crate::nodes::io_sinks2::writers::interface::IPC_RW_RECORD_BATCH_FLAGS_KEY;
+use crate::nodes::io_sinks::writers::interface::IPC_RW_RECORD_BATCH_FLAGS_KEY;
 
 pub(super) struct RecordBatchDecoder {
     pub(super) file_metadata: Arc<FileMetadata>,
@@ -24,6 +24,7 @@ pub(super) struct RecordBatchDecoder {
     pub(super) dictionaries: Arc<Option<Dictionaries>>,
     pub(super) row_index: Option<RowIndex>,
     pub(super) read_statistics_flags: bool,
+    pub(super) checked: UnsafeBool,
 }
 
 impl RecordBatchDecoder {
@@ -38,7 +39,7 @@ impl RecordBatchDecoder {
         let pl_schema = self.pl_schema.clone();
         let projection_info = self.projection_info.as_ref().clone();
         let bytes = record_batch_data.fetched_bytes;
-        let block_index = record_batch_data.block_index;
+        let block_index = record_batch_data.record_batch_idx;
 
         let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
         let dictionaries = self.dictionaries.as_ref().as_ref().unwrap();
@@ -71,6 +72,7 @@ impl RecordBatchDecoder {
                 true,
                 &mut message_scratch,
                 &mut data_scratch,
+                self.checked,
             );
 
             // Apply projection.
@@ -147,7 +149,7 @@ fn get_flags(
 fn project_flags(
     flags: Option<Vec<Option<StatisticsFlags>>>,
     columns: &[usize],
-    map: &PlHashMap<usize, usize>,
+    map: &[usize],
 ) -> Option<Vec<Option<StatisticsFlags>>> {
     if let Some(inner) = flags {
         let cols: Vec<_> = columns.iter().map(|i| inner[*i]).collect();
@@ -156,8 +158,8 @@ fn project_flags(
         // NOTE. Because of the way the projection map is generated, the scenario
         // where old != new is not reachable at the time of writing, and therefore
         // not tested.
-        map.iter().for_each(|(old, new)| {
-            out[*new] = cols[*old];
+        map.iter().enumerate().for_each(|(old, new)| {
+            out[*new] = cols[old];
         });
         Some(out)
     } else {

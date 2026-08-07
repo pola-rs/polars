@@ -46,8 +46,11 @@ pub fn materialize_left_join_from_series(
 ) -> PolarsResult<(DataFrame, DataFrame)> {
     let mut s_left = s_left.clone();
     // Eagerly limit left if possible.
-    if let Some((offset, len)) = args.slice {
-        if offset == 0 {
+    if let Some((0, len)) = args.slice {
+        if !matches!(
+            args.maintain_order,
+            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
+        ) {
             left = left.slice(0, len);
             s_left = s_left.slice(0, len);
         }
@@ -85,7 +88,7 @@ pub fn materialize_left_join_from_series(
     } else {
         right.drop(s_right.name()).unwrap()
     };
-    try_raise_keyboard_interrupt();
+    try_raise_polars_abort();
 
     #[cfg(feature = "chunked_ids")]
     match (left_idx, right_idx) {
@@ -99,21 +102,21 @@ pub fn materialize_left_join_from_series(
                     args,
                 ))
             } else {
-                Ok(POOL.join(
+                Ok(RAYON.join(
                     || materialize_left_join_idx_left(&left, left_idx.as_slice(), args),
                     || materialize_left_join_idx_right(&right, right_idx.as_slice(), args),
                 ))
             }
         },
-        (ChunkJoinIds::Left(left_idx), ChunkJoinOptIds::Right(right_idx)) => Ok(POOL.join(
+        (ChunkJoinIds::Left(left_idx), ChunkJoinOptIds::Right(right_idx)) => Ok(RAYON.join(
             || materialize_left_join_idx_left(&left, left_idx.as_slice(), args),
             || materialize_left_join_chunked_right(&right, right_idx.as_slice(), args),
         )),
-        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Right(right_idx)) => Ok(POOL.join(
+        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Right(right_idx)) => Ok(RAYON.join(
             || materialize_left_join_chunked_left(&left, left_idx.as_slice(), args),
             || materialize_left_join_chunked_right(&right, right_idx.as_slice(), args),
         )),
-        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Left(right_idx)) => Ok(POOL.join(
+        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Left(right_idx)) => Ok(RAYON.join(
             || materialize_left_join_chunked_left(&left, left_idx.as_slice(), args),
             || materialize_left_join_idx_right(&right, right_idx.as_slice(), args),
         )),
@@ -129,7 +132,7 @@ pub fn materialize_left_join_from_series(
             args,
         ))
     } else {
-        Ok(POOL.join(
+        Ok(RAYON.join(
             || materialize_left_join_idx_left(&left, left_idx.as_slice(), args),
             || materialize_left_join_idx_right(&right, right_idx.as_slice(), args),
         ))
@@ -189,7 +192,7 @@ fn maintain_order_idx(
         .cont_slice()
         .unwrap();
 
-    POOL.join(
+    RAYON.join(
         || materialize_left_join_idx_left(left, join_tuples_left, args),
         || materialize_left_join_idx_right(other, bytemuck::cast_slice(join_tuples_right), args),
     )

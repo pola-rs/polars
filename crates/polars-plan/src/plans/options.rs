@@ -1,6 +1,7 @@
 use bitflags::bitflags;
 use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
+use polars_utils::bool::UnsafeBool;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -20,17 +21,6 @@ pub struct DistinctOptionsIR {
     pub keep_strategy: UniqueKeepStrategy,
     /// Take only a slice of the result
     pub slice: Option<(i64, usize)>,
-}
-
-// a boolean that can only be set to `false` safely
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct UnsafeBool(bool);
-impl Default for UnsafeBool {
-    fn default() -> Self {
-        UnsafeBool(true)
-    }
 }
 
 #[cfg(feature = "dsl-schema")]
@@ -127,6 +117,9 @@ bitflags!(
 
             /// Indicates that this expression does not produce any ordering into its output.
             const NON_ORDER_PRODUCING = 1 << 12;
+
+            /// Produces a RANGE based on its inputs.
+            const RANGE = 1 << 13;
         }
 );
 
@@ -167,6 +160,10 @@ impl FunctionFlags {
     pub fn returns_scalar(self) -> bool {
         self.contains(Self::RETURNS_SCALAR)
     }
+
+    pub fn is_range(self) -> bool {
+        self.contains(Self::RANGE)
+    }
 }
 
 impl Default for FunctionFlags {
@@ -190,7 +187,7 @@ impl CastingRules {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
 #[cfg_attr(any(feature = "serde"), derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct FunctionOptions {
@@ -207,10 +204,10 @@ pub struct FunctionOptions {
 impl FunctionOptions {
     #[cfg(feature = "fused")]
     pub(crate) unsafe fn no_check_lengths(&mut self) {
-        self.check_lengths = UnsafeBool(false);
+        unsafe { self.check_lengths = UnsafeBool::new_false() };
     }
     pub fn check_lengths(&self) -> bool {
-        self.check_lengths.0
+        *self.check_lengths
     }
 
     pub fn set_elementwise(&mut self) {
@@ -258,6 +255,7 @@ impl FunctionOptions {
         .with_flags(|f| f | FunctionFlags::LENGTH_PRESERVING)
     }
 
+    /// Will respect group boundaries. Shift, Reverse, etc.
     pub fn groupwise() -> FunctionOptions {
         FunctionOptions {
             ..Default::default()
@@ -287,16 +285,6 @@ impl FunctionOptions {
     pub fn with_flags(mut self, f: impl Fn(FunctionFlags) -> FunctionFlags) -> FunctionOptions {
         self.flags = f(self.flags);
         self
-    }
-}
-
-impl Default for FunctionOptions {
-    fn default() -> Self {
-        FunctionOptions {
-            check_lengths: UnsafeBool(true),
-            cast_options: Default::default(),
-            flags: Default::default(),
-        }
     }
 }
 

@@ -56,6 +56,7 @@ Delta Lake
    read_delta
    scan_delta
    DataFrame.write_delta
+   LazyFrame.sink_delta
 
 Excel / ODS
 ~~~~~~~~~~~
@@ -86,6 +87,7 @@ Iceberg
 
    scan_iceberg
    DataFrame.write_iceberg
+   LazyFrame.sink_iceberg
 
 JSON
 ~~~~
@@ -98,6 +100,14 @@ JSON
    DataFrame.write_json
    DataFrame.write_ndjson
    LazyFrame.sink_ndjson
+
+Lines
+~~~~~
+.. autosummary::
+   :toctree: api/
+
+   read_lines
+   scan_lines
 
 
 Partition
@@ -130,22 +140,14 @@ Parquet
    DataFrame.write_parquet
    LazyFrame.sink_parquet
 
-.. currentmodule:: polars.io.parquet
-
-.. autosummary::
-   :toctree: api/
-
-   ParquetFieldOverwrites
-
-.. currentmodule:: polars
-
-PyArrow Datasets
+Arrow Datasets
 ~~~~~~~~~~~~~~~~
 Connect to pyarrow datasets.
 
 .. autosummary::
    :toctree: api/
 
+   scan_arrow_c_stream
    scan_pyarrow_dataset
 
 Cloud Credentials

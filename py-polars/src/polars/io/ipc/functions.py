@@ -8,8 +8,12 @@ from typing import IO, TYPE_CHECKING, Any, Literal
 import polars._reexport as pl
 import polars.functions as F
 from polars._dependencies import import_optional
-from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars._utils.various import (
+    is_non_empty_sequence_of,
     is_str_sequence,
     normalize_filepath,
 )
@@ -35,7 +39,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from polars import DataFrame, DataType, LazyFrame
-    from polars._typing import SchemaDict
+    from polars._typing import SchemaDict, StorageOptionsDict
     from polars.io.cloud import CredentialProviderFunction
 
 
@@ -47,8 +51,8 @@ def read_ipc(
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
-    memory_map: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    memory_map: bool = False,
+    storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     rechunk: bool = True,
@@ -110,8 +114,13 @@ def read_ipc(
     Therefore always prefer `scan_ipc` if you want to work with `LazyFrame` s.
 
     If `memory_map` is set, the bytes on disk are mapped 1:1 to memory.
-    That means that you cannot write to the same filename.
-    E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")` will fail.
+        That means that:
+
+        - Arrow data in the file is not validated to be correct and invalid arrow
+          data is UB! Ensure this file is correct or set `memory_map=False`.
+        - You cannot write to the same filename.
+          E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")`
+          will fail.
     """
     if (
         # Check that it is not a BytesIO object
@@ -156,16 +165,37 @@ def read_ipc(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
         if use_pyarrow:
-            pyarrow_feather = import_optional(
-                "pyarrow.feather",
+            pyarrow_ipc = import_optional(
+                "pyarrow.ipc",
                 err_prefix="",
                 err_suffix="is required when using 'read_ipc(..., use_pyarrow=True)'",
             )
-            tbl = pyarrow_feather.read_table(
+
+            if columns is not None and is_non_empty_sequence_of(columns, str):
+                initial_pos: Any = None
+
+                if hasattr(data, "tell") and callable(data.tell):
+                    initial_pos = data.tell()
+
+                with pyarrow_ipc.open_file(data) as ipc_f:
+                    schema = ipc_f.schema
+
+                idx_lookup = {name: i for i, name in enumerate(schema.names)}
+                columns = [idx_lookup[name] for name in columns]
+
+                if (
+                    initial_pos is not None
+                    and hasattr(data, "seek")
+                    and callable(data.seek)
+                ):
+                    data.seek(initial_pos)
+
+            with pyarrow_ipc.open_file(
                 data,
-                memory_map=memory_map,
-                columns=columns,
-            )
+                options=pyarrow_ipc.IpcReadOptions(included_fields=columns),
+            ) as ipc_f:
+                tbl = ipc_f.read_all()
+
             df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
             if row_index_name is not None:
                 df = df.with_row_index(row_index_name, row_index_offset)
@@ -239,7 +269,7 @@ def read_ipc_stream(
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     rechunk: bool = True,
@@ -377,20 +407,21 @@ def scan_ipc(
     ),
     *,
     n_rows: int | None = None,
-    cache: bool = True,
+    cache: bool | None = None,
     rechunk: bool = False,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     glob: bool = True,
-    storage_options: dict[str, Any] | None = None,
+    storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     memory_map: bool = True,
-    retries: int = 2,
+    retries: int | None = None,
     file_cache_ttl: int | None = None,
     hive_partitioning: bool | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
     include_file_paths: str | None = None,
+    _record_batch_statistics: bool = False,
 ) -> LazyFrame:
     """
     Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
@@ -412,6 +443,9 @@ def scan_ipc(
         Stop reading from IPC file after reading `n_rows`.
     cache
         Cache the result after reading.
+
+        .. deprecated:: 1.40.0
+            File cache is no longer supported.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
     row_index_name
@@ -448,12 +482,21 @@ def scan_ipc(
         Try to memory map the file. This can greatly improve performance on repeated
         queries as the OS may cache pages.
         Only uncompressed IPC files can be memory mapped.
+
+        .. deprecated:: 1.40.0
+            Controlling memory map behavior is no longer supported.
     retries
         Number of retries if accessing a cloud instance fails.
+
+        .. deprecated:: 1.37.1
+            Pass {"max_retries": n} via `storage_options` instead.
     file_cache_ttl
         Amount of time to keep downloaded cloud files since their last access time,
         in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
         (which defaults to 1 hour) if not given.
+
+        .. deprecated:: 1.40.0
+            File cache is no longer supported.
     hive_partitioning
         Infer statistics and schema from Hive partitioned URL and use them
         to prune reads. This is unset by default (i.e. `None`), meaning it is
@@ -476,6 +519,18 @@ def scan_ipc(
 
     sources = get_sources(source)
 
+    if retries is not None:
+        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
+        issue_deprecation_warning(msg)
+        storage_options = storage_options or {}
+        storage_options["max_retries"] = retries
+
+    if file_cache_ttl is not None or cache is not None:
+        msg = "file cache is no longer supported as of 1.40.0."
+        issue_deprecation_warning(msg)
+
+    cache_deprecated = False
+
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, sources, storage_options, "scan_parquet"
     )
@@ -483,6 +538,7 @@ def scan_ipc(
 
     pylf = PyLazyFrame.new_from_ipc(
         sources=sources,
+        record_batch_statistics=_record_batch_statistics,
         scan_options=ScanOptions(
             row_index=(
                 (row_index_name, row_index_offset)
@@ -496,14 +552,10 @@ def scan_ipc(
             hive_schema=hive_schema,
             try_parse_hive_dates=try_parse_hive_dates,
             rechunk=rechunk,
-            cache=cache,
-            storage_options=(
-                list(storage_options.items()) if storage_options is not None else None
-            ),
+            cache=cache_deprecated,
+            storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            retries=retries,
         ),
-        file_cache_ttl=file_cache_ttl,
     )
 
     return wrap_ldf(pylf)

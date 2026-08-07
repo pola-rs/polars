@@ -30,7 +30,7 @@ impl PhysicalExpr for FieldExpr {
     }
 
     // In-memory engine only.
-    fn evaluate(&self, _df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, _df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let ca = state
             .with_fields
             .as_ref()
@@ -40,7 +40,7 @@ impl PhysicalExpr for FieldExpr {
     }
 
     // In-memory engine only.
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         _df: &DataFrame,
         _groups: &'a GroupPositions,
@@ -51,20 +51,31 @@ impl PhysicalExpr for FieldExpr {
             .as_ref()
             .ok_or_else(|| polars_err!(invalid_field_use))?;
 
-        let col = ac.flat_naive().clone();
-        let ca = col.struct_()?;
-        let out = ca.field_by_name(self.name.as_str()).map(Column::from)?;
+        let name = self.name.as_str();
+
+        let state = match ac.agg_state() {
+            AggState::AggregatedList(c) => {
+                let out = c
+                    .list()?
+                    .apply_to_inner(&|s| s.struct_()?.field_by_name(name))?;
+                AggState::AggregatedList(out.into_column())
+            },
+            AggState::NotAggregated(c) => {
+                AggState::NotAggregated(c.struct_()?.field_by_name(name)?.into_column())
+            },
+            AggState::AggregatedScalar(c) => {
+                AggState::AggregatedScalar(c.struct_()?.field_by_name(name)?.into_column())
+            },
+            AggState::LiteralScalar(c) => {
+                AggState::LiteralScalar(c.struct_()?.field_by_name(name)?.into_column())
+            },
+        };
 
         Ok(AggregationContext {
-            state: match ac.agg_state() {
-                AggState::AggregatedList(_) => AggState::AggregatedList(out),
-                AggState::NotAggregated(_) => AggState::NotAggregated(out),
-                AggState::AggregatedScalar(_) => AggState::AggregatedScalar(out),
-                AggState::LiteralScalar(_) => AggState::LiteralScalar(out),
-            },
+            state,
             groups: ac.groups.clone(),
             update_groups: ac.update_groups,
-            original_len: ac.original_len,
+            original_groups: ac.original_groups,
         })
     }
 

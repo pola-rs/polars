@@ -37,14 +37,15 @@ from polars._utils.parse import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
+    NO_DEFAULT,
+    _Omitted,
     extend_bool,
-    find_stacklevel,
-    no_default,
     normalize_filepath,
     sphinx_accessor,
     warn_null_comparison,
 )
 from polars._utils.wrap import wrap_expr, wrap_s
+from polars._warnings import find_stacklevel
 from polars.datatypes import (
     Decimal as PolarsDecimal,
 )
@@ -55,7 +56,6 @@ from polars.datatypes import (
 from polars.exceptions import (
     CustomUFuncWarning,
     OutOfBoundsError,
-    PolarsInefficientMapWarning,
 )
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
@@ -82,6 +82,9 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
 
+    # Typing aliases for builtin names shadowed by Expr accessors.
+    from builtins import list as list_
+    from builtins import str as str_
     from collections.abc import Callable, Iterable
     from io import IOBase
 
@@ -134,7 +137,7 @@ class Expr:
 
     # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
     _pyexpr: PyExpr = None  # type: ignore[assignment]
-    _accessors: ClassVar[set[str]] = {
+    _accessors: ClassVar[set[str_]] = {
         "arr",
         "bin",
         "cat",
@@ -147,16 +150,157 @@ class Expr:
         "struct",
     }
 
+    @property
+    def bin(self) -> ExprBinaryNameSpace:
+        """
+        Create an object namespace of all binary related methods.
+
+        See the individual method pages for full details
+        """
+        return ExprBinaryNameSpace(self)
+
+    @property
+    def cat(self) -> ExprCatNameSpace:
+        """
+        Create an object namespace of all categorical related methods.
+
+        See the individual method pages for full details
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": ["a", "b"]}).select(
+        ...     pl.col("values").cast(pl.Categorical)
+        ... )
+        >>> df.select(pl.col("values").cat.get_categories())
+        shape: (2, 1)
+        ┌────────┐
+        │ values │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │ a      │
+        │ b      │
+        └────────┘
+        """
+        return ExprCatNameSpace(self)
+
+    @property
+    def dt(self) -> ExprDateTimeNameSpace:
+        """Create an object namespace of all datetime related methods."""
+        return ExprDateTimeNameSpace(self)
+
+    @property
+    def list(self) -> ExprListNameSpace:
+        """
+        Create an object namespace of all list related methods.
+
+        See the individual method pages for full details.
+        """
+        return ExprListNameSpace(self)
+
+    @property
+    def arr(self) -> ExprArrayNameSpace:
+        """
+        Create an object namespace of all array related methods.
+
+        See the individual method pages for full details.
+        """
+        return ExprArrayNameSpace(self)
+
+    @property
+    def meta(self) -> ExprMetaNameSpace:
+        """
+        Create an object namespace of all meta related expression methods.
+
+        This can be used to modify and traverse existing expressions.
+        """
+        return ExprMetaNameSpace(self)
+
+    @property
+    def name(self) -> ExprNameNameSpace:
+        """
+        Create an object namespace of all expressions that modify expression names.
+
+        See the individual method pages for full details.
+        """
+        return ExprNameNameSpace(self)
+
+    @property
+    def str(self) -> ExprStringNameSpace:
+        """
+        Create an object namespace of all string related methods.
+
+        See the individual method pages for full details.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"letters": ["a", "b"]})
+        >>> df.select(pl.col("letters").str.to_uppercase())
+        shape: (2, 1)
+        ┌─────────┐
+        │ letters │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ A       │
+        │ B       │
+        └─────────┘
+        """
+        return ExprStringNameSpace(self)
+
+    @property
+    def struct(self) -> ExprStructNameSpace:
+        """
+        Create an object namespace of all struct related methods.
+
+        See the individual method pages for full details.
+
+        Examples
+        --------
+        >>> df = (
+        ...     pl.DataFrame(
+        ...         {
+        ...             "int": [1, 2],
+        ...             "str": ["a", "b"],
+        ...             "bool": [True, None],
+        ...             "list": [[1, 2], [3]],
+        ...         }
+        ...     )
+        ...     .to_struct("my_struct")
+        ...     .to_frame()
+        ... )
+        >>> df.select(pl.col("my_struct").struct.field("str"))
+        shape: (2, 1)
+        ┌─────┐
+        │ str │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ a   │
+        │ b   │
+        └─────┘
+        """
+        return ExprStructNameSpace(self)
+
+    @property
+    def ext(self) -> ExprExtensionNameSpace:
+        """
+        Create an object namespace of all extension type related expressions.
+
+        See the individual method pages for full details.
+        """
+        return ExprExtensionNameSpace(self)
+
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Expr:
         expr = cls.__new__(cls)
         expr._pyexpr = pyexpr
         return expr
 
-    def _repr_html_(self) -> str:
+    def _repr_html_(self) -> str_:
         return self._pyexpr.to_str()
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> str_:
         if self._pyexpr is not None:
             if len(expr_str := self._pyexpr.to_str()) > 30:
                 expr_str = f"{expr_str[:30]}…"
@@ -164,7 +308,7 @@ class Expr:
         else:
             return "only during sphinx"
 
-    def __str__(self) -> str:
+    def __str__(self) -> str_:
         if self._pyexpr is not None:
             return self._pyexpr.to_str()
         else:
@@ -314,11 +458,13 @@ class Expr:
         return self._pyexpr.__getstate__()
 
     def __setstate__(self, state: bytes) -> None:
-        self._pyexpr = F.lit(0)._pyexpr  # Initialize with a dummy
-        self._pyexpr.__setstate__(state)
+        # Initialize with a dummy
+        tmp = F.lit(0)._pyexpr
+        tmp.__setstate__(state)
+        self._pyexpr = tmp
 
     def __array_ufunc__(
-        self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
+        self, ufunc: Callable[..., Any], method: str_, *inputs: Any, **kwargs: Any
     ) -> Expr:
         """Numpy universal functions."""
         if method != "__call__":
@@ -385,7 +531,7 @@ class Expr:
     @classmethod
     def deserialize(
         cls,
-        source: str | Path | IOBase | bytes,
+        source: str_ | Path | IOBase | bytes,
         *,
         format: SerializationFormat = "binary",
     ) -> Expr:
@@ -459,6 +605,8 @@ class Expr:
 
         Other data types will be left unchanged.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Warnings
         --------
         The physical representations are an implementation detail
@@ -497,6 +645,8 @@ class Expr:
         Return whether any of the values in the column are `True`.
 
         Only works on columns of data type :class:`Boolean`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -553,6 +703,8 @@ class Expr:
 
         Only works on columns of data type :class:`Boolean`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         .. note::
             This method is not to be confused with the function :func:`polars.all`,
             which can be used to select all columns.
@@ -606,6 +758,47 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.all(ignore_nulls))
 
+    @unstable()
+    def is_empty(self, *, ignore_nulls: bool = False) -> Expr:
+        """
+        Return whether the column is empty.
+
+        .. engine-support:: in-memory, streaming
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        ignore_nulls
+            If true a column containing only nulls will also be considered empty.
+            The default is false.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [None, None]})
+        >>> df.select(
+        ...     a=pl.col.x.is_empty(),
+        ...     b=pl.col.x.drop_nulls().is_empty(),
+        ...     c=pl.col.x.is_empty(ignore_nulls=True),
+        ... )
+        shape: (1, 3)
+        ┌───────┬──────┬──────┐
+        │ a     ┆ b    ┆ c    │
+        │ ---   ┆ ---  ┆ ---  │
+        │ bool  ┆ bool ┆ bool │
+        ╞═══════╪══════╪══════╡
+        │ false ┆ true ┆ true │
+        └───────┴──────┴──────┘
+        """
+        return wrap_expr(self._pyexpr.is_empty(ignore_nulls))
+
     def arg_true(self) -> Expr:
         """
         Return indices where expression evaluates `True`.
@@ -640,6 +833,8 @@ class Expr:
         """
         Compute the square root of the elements.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
@@ -660,6 +855,8 @@ class Expr:
     def cbrt(self) -> Expr:
         """
         Compute the cube root of the elements.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -682,6 +879,8 @@ class Expr:
         """
         Compute the base 10 logarithm of the input array, element-wise.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
@@ -703,6 +902,8 @@ class Expr:
         """
         Compute the exponential, element-wise.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
@@ -720,9 +921,11 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.exp())
 
-    def alias(self, name: str) -> Expr:
+    def alias(self, name: str_) -> Expr:
         """
         Rename the expression.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -782,14 +985,16 @@ class Expr:
 
     def exclude(
         self,
-        columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
-        *more_columns: str | PolarsDataType,
+        columns: str_ | PolarsDataType | Collection[str_ | PolarsDataType],
+        *more_columns: str_ | PolarsDataType,
     ) -> Expr:
         """
         Exclude columns from a multi-column expression.
 
         Only works after a wildcard or regex column selection, and you cannot provide
         both string column names *and* dtypes (you may prefer to use selectors instead).
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -922,6 +1127,8 @@ class Expr:
         This has the effect of negating logical boolean expressions,
         but operates bitwise on integers.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -958,6 +1165,8 @@ class Expr:
         """
         Returns a boolean Series indicating which values are null.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -985,6 +1194,8 @@ class Expr:
     def is_not_null(self) -> Expr:
         """
         Returns a boolean Series indicating which values are not null.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -1016,6 +1227,8 @@ class Expr:
         """
         Returns a boolean Series indicating which values are finite.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1046,6 +1259,8 @@ class Expr:
         """
         Returns a boolean Series indicating which values are infinite.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1075,6 +1290,8 @@ class Expr:
     def is_nan(self) -> Expr:
         """
         Returns a boolean Series indicating which values are NaN.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Notes
         -----
@@ -1108,6 +1325,8 @@ class Expr:
     def is_not_nan(self) -> Expr:
         """
         Returns a boolean Series indicating which values are not NaN.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Notes
         -----
@@ -1204,6 +1423,8 @@ class Expr:
         """
         Return the number of non-null elements in the column.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1231,6 +1452,8 @@ class Expr:
     def len(self) -> Expr:
         """
         Return the number of elements in the column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Null values count towards the total.
 
@@ -1261,6 +1484,8 @@ class Expr:
     def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Expr:
         """
         Get a slice of this expression.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1301,6 +1526,8 @@ class Expr:
 
         This is done by adding the chunks of `other` to this `Series`.
 
+        .. engine-support:: in-memory
+
         Parameters
         ----------
         other
@@ -1330,6 +1557,11 @@ class Expr:
         other_pyexpr = parse_into_expression(other)
         return wrap_expr(self._pyexpr.append(other_pyexpr, upcast))
 
+    @deprecated(
+        "`Expr.rechunk()` is deprecated and will be removed in Polars 2.0. "
+        "Rechunking within a query is not well-defined. "
+        "Use `df.rechunk()` after collecting the results instead."
+    )
     def rechunk(self) -> Expr:
         """
         Create a single chunk of memory for this Series.
@@ -1360,6 +1592,8 @@ class Expr:
     def drop_nulls(self) -> Expr:
         """
         Drop all null values.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         The original order of the remaining elements is preserved.
 
@@ -1395,6 +1629,8 @@ class Expr:
 
         The original order of the remaining elements is preserved.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         See Also
         --------
         drop_nulls
@@ -1424,6 +1660,8 @@ class Expr:
     def cum_sum(self, *, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative sum computed at every element.
+
+        .. engine-support:: in-memory, partially-streaming
 
         Parameters
         ----------
@@ -1487,6 +1725,8 @@ class Expr:
         """
         Get an array with the cumulative product computed at every element.
 
+        .. engine-support:: in-memory, partially-streaming
+
         Parameters
         ----------
         reverse
@@ -1522,6 +1762,8 @@ class Expr:
         """
         Get an array with the cumulative min computed at every element.
 
+        .. engine-support:: in-memory, partially-streaming
+
         Parameters
         ----------
         reverse
@@ -1550,6 +1792,8 @@ class Expr:
     def cum_max(self, *, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative max computed at every element.
+
+        .. engine-support:: in-memory, partially-streaming
 
         Parameters
         ----------
@@ -1608,6 +1852,8 @@ class Expr:
         """
         Return the cumulative count of the non-null values in the column.
 
+        .. engine-support:: in-memory, partially-streaming
+
         Parameters
         ----------
         reverse
@@ -1640,6 +1886,13 @@ class Expr:
 
         Only works on floating point Series.
 
+        .. engine-support:: in-memory, streaming, distributed
+
+        See Also
+        --------
+        ceil : Round up to the nearest integer value.
+        round : Round to the nearest integer.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [0.3, 0.5, 1.0, 1.1]})
@@ -1664,6 +1917,13 @@ class Expr:
 
         Only works on floating point Series.
 
+        .. engine-support:: in-memory, streaming, distributed
+
+        See Also
+        --------
+        floor : Round down to the nearest integer.
+        round : Round to the nearest integer.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [0.3, 0.5, 1.0, 1.1]})
@@ -1686,19 +1946,44 @@ class Expr:
         """
         Round underlying floating point data by `decimals` digits.
 
-        The default rounding mode is "half to even" (also known as "bankers' rounding").
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
         decimals
             Number of decimals to round by.
-        mode : {'half_to_even', 'half_away_from_zero'}
-            RoundMode.
+        mode : {'half_to_even', 'half_away_from_zero', 'to_zero'}
+            The rounding strategy used. A "rounded value" is a value with at most
+            `decimals` decimal places (e.g. integers when ``decimals=0``, multiples
+            of 0.1 when ``decimals=1``, 0.01 when ``decimals=2``, and so on).
 
-            * *half_to_even*
-                round to the nearest even number
+            Strategies that start with ``half_`` round all values to the *nearest*
+            rounded value, only using the strategy to break ties when a value falls
+            exactly between two rounded values (e.g. 0.5 when ``decimals=0``, 0.05
+            when ``decimals=1``). Other rounding strategies specify explicitly
+            which rounded value is chosen and always apply (not just for tiebreaks).
+
+            * *half_to_even* (default)
+                Round to the nearest value; break ties by choosing the nearest
+                **even** value. For example, 0.5 rounds to 0, 1.5 rounds to 2,
+                2.5 rounds to 2. Also known as "banker's rounding"; this is the
+                default because it tends to minimise cumulative rounding bias.
             * *half_away_from_zero*
-                round to the nearest number away from zero
+                Round to the nearest value; break ties by rounding **away from
+                zero**. For example, 0.5 rounds to 1, -0.5 rounds to -1, 2.5
+                rounds to 3. Also known as "commercial rounding".
+            * *to_zero*
+                Always round (truncate) **towards zero**, discarding the fractional
+                part beyond `decimals`. For example, 0.9 rounds to 0, -0.9 rounds
+                to 0, 1.29 rounds to 1.2 (with ``decimals=1``). Equivalent to the
+                :meth:`truncate` method.
+
+        See Also
+        --------
+        ceil : Round up to the nearest integer.
+        floor : Round down to the nearest integer.
+        round_sig_figs : Round to a given number of significant figures.
+        truncate : Truncate to a given number of decimals.
 
         Examples
         --------
@@ -1749,10 +2034,19 @@ class Expr:
         """
         Round to a number of significant figures.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         digits
             Number of significant figures to round to.
+
+        See Also
+        --------
+        ceil : Round up to the nearest integer.
+        floor : Round down to the nearest integer.
+        round : Round to a given number of decimals.
+        truncate : Truncate to a given number of decimals.
 
         Examples
         --------
@@ -1771,9 +2065,64 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.round_sig_figs(digits))
 
-    def dot(self, other: Expr | str) -> Expr:
+    def truncate(self, decimals: int = 0) -> Expr:
+        """
+        Truncate numeric data toward zero to `decimals` number of decimal places.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        decimals
+            Number of decimal places to truncate to.
+
+        Notes
+        -----
+        * Truncation discards the fractional part beyond the given number of decimals.
+          For example, when rounding to 0 decimals 0.25, -0.25, 0.99, and -0.99 will
+          all round to 0. When rounding to 1 decimal 1.9999 rounds to 1.9 and -1.9999
+          rounds to -1.9. There is no tiebreak behaviour at midpoint values as there
+          is with :meth:`round` so 0.5 and -0.5 will also round to 0 when decimals=1.
+
+        * This method performs numeric truncation. For truncating temporal
+          data (dates/datetimes), use :func:`Expr.dt.truncate` instead.
+
+        See Also
+        --------
+        ceil : Round up to the nearest integer.
+        floor : Round down to the nearest integer.
+        round : Round to a given number of decimals.
+        round_sig_figs : Round to a given number of significant figures.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"n": [-9.9999, 0.12345, 1.0251, 8.8765]})
+        >>> df.with_columns(
+        ...     t0=pl.col("n").truncate(0),
+        ...     t1=pl.col("n").truncate(1),
+        ...     t2=pl.col("n").truncate(2),
+        ...     t3=pl.col("n").truncate(3),
+        ...     t4=pl.col("n").truncate(4),
+        ... )
+        shape: (4, 6)
+        ┌─────────┬──────┬──────┬───────┬────────┬─────────┐
+        │ n       ┆ t0   ┆ t1   ┆ t2    ┆ t3     ┆ t4      │
+        │ ---     ┆ ---  ┆ ---  ┆ ---   ┆ ---    ┆ ---     │
+        │ f64     ┆ f64  ┆ f64  ┆ f64   ┆ f64    ┆ f64     │
+        ╞═════════╪══════╪══════╪═══════╪════════╪═════════╡
+        │ -9.9999 ┆ -9.0 ┆ -9.9 ┆ -9.99 ┆ -9.999 ┆ -9.9999 │
+        │ 0.12345 ┆ 0.0  ┆ 0.1  ┆ 0.12  ┆ 0.123  ┆ 0.1234  │
+        │ 1.0251  ┆ 1.0  ┆ 1.0  ┆ 1.02  ┆ 1.025  ┆ 1.025   │
+        │ 8.8765  ┆ 8.0  ┆ 8.8  ┆ 8.87  ┆ 8.876  ┆ 8.8765  │
+        └─────────┴──────┴──────┴───────┴────────┴─────────┘
+        """
+        return wrap_expr(self._pyexpr.truncate(decimals))
+
+    def dot(self, other: Expr | str_) -> Expr:
         """
         Compute the dot/inner product between two Expressions.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1782,12 +2131,7 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 3, 5],
-        ...         "b": [2, 4, 6],
-        ...     }
-        ... )
+        >>> df = pl.DataFrame({"a": [1, 3, 5], "b": [2, 4, 6]})
         >>> df.select(pl.col("a").dot(pl.col("b")))
         shape: (1, 1)
         ┌─────┐
@@ -1806,6 +2150,8 @@ class Expr:
         Compute the most occurring value(s).
 
         Can return multiple Values.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -1841,6 +2187,8 @@ class Expr:
     ) -> Expr:
         r"""
         Cast between data types.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1887,6 +2235,8 @@ class Expr:
 
         When used in a projection/selection context, the whole column is sorted.
         When used in a group by context, the groups are sorted.
+
+        .. engine-support:: in-memory, partially-streaming
 
         Parameters
         ----------
@@ -1972,6 +2322,8 @@ class Expr:
 
         .. math:: O(n)
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         k
@@ -2027,6 +2379,8 @@ class Expr:
         This has time complexity:
 
         .. math:: O(n \log{n})
+
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
 
         .. versionchanged:: 1.0.0
             The `descending` parameter was renamed to `reverse`.
@@ -2148,6 +2502,8 @@ class Expr:
 
         .. math:: O(n)
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         k
@@ -2205,6 +2561,8 @@ class Expr:
         This has time complexity:
 
         .. math:: O(n \log{n})
+
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
 
         .. versionchanged:: 1.0.0
             The `descending` parameter was renamed `reverse`.
@@ -2318,6 +2676,8 @@ class Expr:
         """
         Get the index values that would sort this column.
 
+        .. engine-support:: in-memory
+
         Parameters
         ----------
         descending
@@ -2373,7 +2733,13 @@ class Expr:
 
     def arg_max(self) -> Expr:
         """
-        Get the index of the maximal value.
+        Get an index of a maximal value.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming
 
         Examples
         --------
@@ -2396,7 +2762,13 @@ class Expr:
 
     def arg_min(self) -> Expr:
         """
-        Get the index of the minimal value.
+        Get an index of a minimal value.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming
 
         Examples
         --------
@@ -2420,6 +2792,8 @@ class Expr:
     def index_of(self, element: IntoExpr) -> Expr:
         """
         Get the index of the first occurrence of a value, or ``None`` if it's not found.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -2467,6 +2841,8 @@ class Expr:
         Find indices where elements should be inserted to maintain order.
 
         .. math:: a[i-1] < v <= a[i]
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -2519,6 +2895,8 @@ class Expr:
     ) -> Expr:
         """
         Sort this column by the ordering of other columns.
+
+        .. engine-support:: in-memory, partially-streaming
 
         When used in a projection/selection context, the whole column is sorted.
         When used in a group by context, the groups are sorted.
@@ -2651,15 +3029,25 @@ class Expr:
         )
 
     def gather(
-        self, indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any]
+        self,
+        indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any],
+        *,
+        null_on_oob: bool = False,
     ) -> Expr:
         """
         Take values by index.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
         indices
             An expression that leads to a UInt32 dtyped Series.
+        null_on_oob
+            Behavior if an index is out of bounds:
+
+            - True  -> set the result to null
+            - False -> raise an error
 
         Returns
         -------
@@ -2697,6 +3085,21 @@ class Expr:
         │ one   ┆ [2, 98]   │
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
+
+        Use `null_on_oob=True` to return null for out-of-bounds indices.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").gather([0, 1, 10], null_on_oob=True))
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 1    │
+        │ 2    │
+        │ null │
+        └──────┘
         """
         if (isinstance(indices, Sequence) and not isinstance(indices, str)) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
@@ -2704,17 +3107,19 @@ class Expr:
             indices_lit_pyexpr = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
         else:
             indices_lit_pyexpr = parse_into_expression(indices)
-        return wrap_expr(self._pyexpr.gather(indices_lit_pyexpr))
+        return wrap_expr(self._pyexpr.gather(indices_lit_pyexpr, null_on_oob))
 
     def get(self, index: int | Expr, *, null_on_oob: bool = False) -> Expr:
         """
         Return a single value by index.
 
+        .. engine-support:: in-memory, partially-streaming
+
         Parameters
         ----------
         index
-            An expression that leads to a UInt32 index.
-            Negative indexing is supported.
+            An expression that evaluates to an integer.
+            Negative indexing is supported (will block streaming).
 
         null_on_oob
             Behavior if an index is out of bounds:
@@ -2761,6 +3166,8 @@ class Expr:
     ) -> Expr:
         """
         Shift values by the given number of indices.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -2845,6 +3252,8 @@ class Expr:
 
         To interpolate over null values see interpolate.
         See the examples below to fill nulls with an expression.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -2952,6 +3361,8 @@ class Expr:
         """
         Fill floating point NaN value with a fill value.
 
+        .. engine-support:: in-memory, streaming
+
         Parameters
         ----------
         value
@@ -2995,6 +3406,8 @@ class Expr:
 
         This is an alias of `.fill_null(strategy="forward")`.
 
+        .. engine-support:: in-memory, streaming
+
         Parameters
         ----------
         limit
@@ -3014,6 +3427,8 @@ class Expr:
 
         This is an alias of `.fill_null(strategy="backward")`.
 
+        .. engine-support:: in-memory, streaming
+
         Parameters
         ----------
         limit
@@ -3030,6 +3445,8 @@ class Expr:
     def reverse(self) -> Expr:
         """
         Reverse the selection.
+
+        .. engine-support:: in-memory
 
         Examples
         --------
@@ -3066,6 +3483,8 @@ class Expr:
         """
         Get standard deviation.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         ddof
@@ -3091,6 +3510,8 @@ class Expr:
     def var(self, ddof: int = 1) -> Expr:
         """
         Get variance.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3118,6 +3539,8 @@ class Expr:
         """
         Get maximum value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [-1.0, float("nan"), 1.0]})
@@ -3140,6 +3563,8 @@ class Expr:
 
         If the by expression has multiple values equal to the maximum it is not
         defined which value will be chosen.
+
+        .. engine-support:: in-memory, streaming
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3171,6 +3596,8 @@ class Expr:
         """
         Get minimum value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [-1.0, float("nan"), 1.0]})
@@ -3193,6 +3620,8 @@ class Expr:
 
         If the by expression has multiple values equal to the minimum it is not
         defined which value will be chosen.
+
+        .. engine-support:: in-memory, streaming
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -3227,6 +3656,8 @@ class Expr:
         This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [0.0, float("nan")]})
@@ -3249,6 +3680,8 @@ class Expr:
         This differs from numpy's `nanmax` as numpy defaults to propagating NaN values,
         whereas polars defaults to ignoring them.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [0.0, float("nan")]})
@@ -3267,6 +3700,8 @@ class Expr:
     def sum(self) -> Expr:
         """
         Get sum value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Notes
         -----
@@ -3296,6 +3731,8 @@ class Expr:
         """
         Get mean value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
@@ -3315,6 +3752,8 @@ class Expr:
         """
         Get median value using linear interpolation.
 
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
@@ -3333,6 +3772,8 @@ class Expr:
     def product(self) -> Expr:
         """
         Compute the product of an expression.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Notes
         -----
@@ -3359,6 +3800,8 @@ class Expr:
     def n_unique(self) -> Expr:
         """
         Count unique values.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Notes
         -----
@@ -3387,6 +3830,8 @@ class Expr:
         Approximate count of unique values.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -3420,6 +3865,8 @@ class Expr:
         """
         Count null values.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -3445,6 +3892,8 @@ class Expr:
         """
         Check whether the expression contains one or more null values.
 
+        .. engine-support:: in-memory, streaming
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -3464,11 +3913,13 @@ class Expr:
         │ true ┆ true ┆ false │
         └──────┴──────┴───────┘
         """
-        return self.null_count() > 0
+        return wrap_expr(self._pyexpr.has_nulls())
 
     def arg_unique(self) -> Expr:
         """
         Get index of first unique value.
+
+        .. engine-support:: in-memory, streaming
 
         Examples
         --------
@@ -3505,6 +3956,10 @@ class Expr:
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
         Get unique values of this expression.
+
+        `null` is considered to be a unique value for the purposes of this operation.
+
+        .. engine-support:: in-memory, streaming, partially-distributed
 
         Parameters
         ----------
@@ -3543,6 +3998,8 @@ class Expr:
         """
         Get the first value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         ignore_nulls
@@ -3578,6 +4035,8 @@ class Expr:
         """
         Get the last value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         ignore_nulls
@@ -3604,6 +4063,8 @@ class Expr:
     def item(self, *, allow_empty: bool = False) -> Expr:
         """
         Get the single value.
+
+        .. engine-support:: in-memory, streaming
 
         This raises an error if there is not exactly one value.
 
@@ -3633,6 +4094,7 @@ class Expr:
         Traceback (most recent call last):
         ...
         polars.exceptions.ComputeError: aggregation 'item' expected a single value, got 3 values
+        ...
         >>> df.head(0).select(pl.col("a").item(allow_empty=True))
         shape: (1, 1)
         ┌──────┐
@@ -3664,6 +4126,8 @@ class Expr:
         <https://www.postgresql.org/docs/current/tutorial-window.html>`_
         work in PostgreSQL.
 
+        .. engine-support:: in-memory
+
         Parameters
         ----------
         partition_by
@@ -3672,8 +4136,9 @@ class Expr:
         *more_exprs
             Additional columns to group by, specified as positional arguments.
         order_by
-            Order the window functions/aggregations with the partitioned groups by the
-            result of the expression passed to `order_by`.
+            Order rows within each partition group before evaluating the expression.
+            Useful for order-sensitive operations such as
+            :func:`cum_sum` or :func:`diff`.
         descending
             In case 'order_by' is given, indicate whether to order in
             ascending or descending order.
@@ -3684,9 +4149,9 @@ class Expr:
             - group_to_rows
                 If the aggregation results in multiple values per group, map them back
                 to their row position in the DataFrame. This can only be done if each
-                group yields the same elements before aggregation as after. If the
-                aggregation results in one scalar value per group, this value will be
-                mapped to every row.
+                group yields the same number of elements before aggregation as after. If
+                the aggregation results in one scalar value per group, this value will
+                be mapped to every row.
             - join
                 If the aggregation may result in multiple values per group, join the
                 values as 'List<group_dtype>' to each row position. Warning: this can be
@@ -3868,7 +4333,7 @@ class Expr:
                 partition_by_pyexprs,
                 order_by=order_by_pyexprs,
                 order_by_descending=descending,
-                order_by_nulls_last=False,  # does not work yet
+                order_by_nulls_last=nulls_last,
                 mapping_strategy=mapping_strategy,
             )
         )
@@ -3877,8 +4342,8 @@ class Expr:
         self,
         index_column: IntoExprColumn,
         *,
-        period: str | timedelta,
-        offset: str | timedelta | None = None,
+        period: str_ | timedelta,
+        offset: str_ | timedelta | None = None,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """
@@ -3921,6 +4386,8 @@ class Expr:
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -3985,6 +4452,8 @@ class Expr:
         """
         Get mask of unique values.
 
+        .. engine-support:: in-memory
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
@@ -4005,6 +4474,8 @@ class Expr:
     def is_first_distinct(self) -> Expr:
         """
         Return a boolean mask indicating the first occurrence of each distinct value.
+
+        .. engine-support:: in-memory, streaming
 
         Returns
         -------
@@ -4034,6 +4505,8 @@ class Expr:
         """
         Return a boolean mask indicating the last occurrence of each distinct value.
 
+        .. engine-support:: in-memory
+
         Returns
         -------
         Expr
@@ -4062,6 +4535,8 @@ class Expr:
         """
         Return a boolean mask indicating duplicated values.
 
+        .. engine-support:: in-memory
+
         Returns
         -------
         Expr
@@ -4088,6 +4563,8 @@ class Expr:
         """
         Get a boolean mask of the local maximum peaks.
 
+        .. engine-support:: in-memory
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
@@ -4111,6 +4588,8 @@ class Expr:
         """
         Get a boolean mask of the local minimum peaks.
 
+        .. engine-support:: in-memory
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [4, 1, 3, 2, 5]})
@@ -4132,16 +4611,21 @@ class Expr:
 
     def quantile(
         self,
-        quantile: float | Expr,
+        quantile: float | list_[float] | Expr,
         interpolation: QuantileMethod = "nearest",
     ) -> Expr:
         """
         Get quantile value.
 
+        .. engine-support:: in-memory
+
         Parameters
         ----------
         quantile
-            Quantile between 0.0 and 1.0.
+            Quantile(s) between 0.0 and 1.0. Can be a single float or a list of floats.
+
+            - If a single float, returns a single f64 value per row.
+            - If a list of floats, returns a list of f64 values per row (one value per quantile).
         interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear', 'equiprobable'}
             Interpolation method.
 
@@ -4193,6 +4677,15 @@ class Expr:
         ╞═════╡
         │ 1.5 │
         └─────┘
+        >>> df.select(pl.col("a").quantile([0.25, 0.75], interpolation="linear"))
+        shape: (1, 1)
+        ┌──────────────┐
+        │ a            │
+        │ ---          │
+        │ list[f64]    │
+        ╞══════════════╡
+        │ [1.25, 3.75] │
+        └──────────────┘
         """  # noqa: W505
         quantile_pyexpr = parse_into_expression(quantile)
         return wrap_expr(self._pyexpr.quantile(quantile_pyexpr, interpolation))
@@ -4202,12 +4695,14 @@ class Expr:
         self,
         breaks: Sequence[float],
         *,
-        labels: Sequence[str] | None = None,
+        labels: Sequence[str_] | None = None,
         left_closed: bool = False,
         include_breaks: bool = False,
     ) -> Expr:
         """
         Bin continuous values into discrete categories.
+
+        .. engine-support:: in-memory
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -4224,13 +4719,13 @@ class Expr:
             Set the intervals to be left-closed instead of right-closed.
         include_breaks
             Include a column with the right endpoint of the bin each observation falls
-            in. This will change the data type of the output from a
-            :class:`Categorical` to a :class:`Struct`.
+            in. This will change the data type of the output from an
+            :class:`Enum` to a :class:`Struct`.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`Categorical` if `include_breaks` is set to
+            Expression of data type :class:`Enum` if `include_breaks` is set to
             `False` (default), otherwise an expression of data type :class:`Struct`.
 
         See Also
@@ -4246,17 +4741,17 @@ class Expr:
         ...     pl.col("foo").cut([-1, 1], labels=["a", "b", "c"]).alias("cut")
         ... )
         shape: (5, 2)
-        ┌─────┬─────┐
-        │ foo ┆ cut │
-        │ --- ┆ --- │
-        │ i64 ┆ cat │
-        ╞═════╪═════╡
-        │ -2  ┆ a   │
-        │ -1  ┆ a   │
-        │ 0   ┆ b   │
-        │ 1   ┆ b   │
-        │ 2   ┆ c   │
-        └─────┴─────┘
+        ┌─────┬──────┐
+        │ foo ┆ cut  │
+        │ --- ┆ ---  │
+        │ i64 ┆ enum │
+        ╞═════╪══════╡
+        │ -2  ┆ a    │
+        │ -1  ┆ a    │
+        │ 0   ┆ b    │
+        │ 1   ┆ b    │
+        │ 2   ┆ c    │
+        └─────┴──────┘
 
         Add both the category and the breakpoint.
 
@@ -4267,7 +4762,7 @@ class Expr:
         ┌─────┬────────────┬────────────┐
         │ foo ┆ breakpoint ┆ category   │
         │ --- ┆ ---        ┆ ---        │
-        │ i64 ┆ f64        ┆ cat        │
+        │ i64 ┆ f64        ┆ enum       │
         ╞═════╪════════════╪════════════╡
         │ -2  ┆ -1.0       ┆ (-inf, -1] │
         │ -1  ┆ -1.0       ┆ (-inf, -1] │
@@ -4283,13 +4778,15 @@ class Expr:
         self,
         quantiles: Sequence[float] | int,
         *,
-        labels: Sequence[str] | None = None,
+        labels: Sequence[str_] | None = None,
         left_closed: bool = False,
         allow_duplicates: bool = False,
         include_breaks: bool = False,
     ) -> Expr:
         """
         Bin continuous values into discrete categories based on their quantiles.
+
+        .. engine-support:: in-memory
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -4402,6 +4899,8 @@ class Expr:
         Run-length encoding (RLE) encodes data by storing each *run* of identical values
         as a single value and its length.
 
+        .. engine-support:: in-memory, streaming
+
         Returns
         -------
         Expr
@@ -4438,6 +4937,8 @@ class Expr:
 
         The ID starts at 0 and increases by one each time the value of the column
         changes.
+
+        .. engine-support:: in-memory, streaming
 
         Returns
         -------
@@ -4495,6 +4996,8 @@ class Expr:
 
         Mostly useful in an aggregation context. If you want to filter on a DataFrame
         level, use `LazyFrame.filter`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -4616,6 +5119,8 @@ class Expr:
         custom function elementwise over single values, see :func:`map_elements`.
         A reasonable use case for `map` functions is transforming the values
         represented by an expression using a third-party library.
+
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
 
         Parameters
         ----------
@@ -4778,6 +5283,8 @@ Consider using {self}.implode() instead"""
             consider :meth:`.with_columns <polars.DataFrame.with_columns>`
             and :meth:`.with_fields <polars.Expr.struct.with_fields>`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         function
@@ -4903,7 +5410,7 @@ Consider using {self}.implode() instead"""
         ...     scaled=pl.col("val")
         ...     .implode()
         ...     .map_elements(lambda s: s * len(s), return_dtype=pl.List(pl.Int64))
-        ...     .explode()
+        ...     .explode(empty_as_null=False)
         ...     .over("key"),
         ... ).sort("key")
         shape: (6, 3)
@@ -4927,6 +5434,10 @@ Consider using {self}.implode() instead"""
         ... ).sort("key")  # doctest: +IGNORE_RESULT
 
         """
+        if returns_scalar:
+            msg = "the `returns_scalar` parameter was deprecated in 1.32.0"
+            issue_deprecation_warning(msg)
+
         if strategy == "threading":
             issue_unstable_warning(
                 "the 'threading' strategy for `map_elements` is considered unstable."
@@ -4947,24 +5458,27 @@ Consider using {self}.implode() instead"""
                 def inner(s: Series | Any) -> Series:  # pragma: no cover
                     if isinstance(s, pl.Series):
                         s = s.alias(x.name)
+
                     return function(s)
 
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientMapWarning)
-                    return x.map_elements(
-                        inner, return_dtype=return_dtype, skip_nulls=skip_nulls
-                    )
+                return x.map_elements(
+                    inner,
+                    return_dtype=return_dtype,
+                    skip_nulls=skip_nulls,
+                    _disable_inefficient_map_warning=True,
+                )
 
         else:
 
             def wrap_f(x: Series, **kwargs: Any) -> Series:  # pragma: no cover
                 return_dtype = kwargs["return_dtype"]
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientMapWarning)
 
-                    return x.map_elements(
-                        function, return_dtype=return_dtype, skip_nulls=skip_nulls
-                    )
+                return x.map_elements(
+                    function,
+                    return_dtype=return_dtype,
+                    skip_nulls=skip_nulls,
+                    _disable_inefficient_map_warning=True,
+                )
 
         if strategy == "thread_local":
             return self.map_batches(
@@ -5027,11 +5541,20 @@ Consider using {self}.implode() instead"""
             msg = f"strategy {strategy!r} is not supported"
             raise ValueError(msg)
 
+    @deprecated(
+        "`Expr.flatten()` is deprecated and will be removed in version 2.0. "
+        "Use `Expr.list.explode(keep_nulls=False, empty_as_null=False)` instead."
+    )
     def flatten(self) -> Expr:
         """
         Flatten a list or string column.
 
         Alias for :func:`Expr.list.explode`.
+
+        .. deprecated:: 1.38
+            `Expr.flatten()` is deprecated and will be removed in version 2.0.
+            Use `Expr.list.explode(keep_nulls=False, empty_as_null=False)` instead,
+            which provides the behavior you likely expect.
 
         Examples
         --------
@@ -5054,11 +5577,15 @@ Consider using {self}.implode() instead"""
         """
         return self.explode(empty_as_null=True, keep_nulls=True)
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
+    def explode(
+        self, *, empty_as_null: bool = _Omitted, keep_nulls: bool = True
+    ) -> Expr:
         """
         Explode a list expression.
 
         This means that every item is expanded to a new row.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5087,7 +5614,7 @@ Consider using {self}.implode() instead"""
         ...         ],
         ...     }
         ... )
-        >>> df.select(pl.col("values").explode())
+        >>> df.select(pl.col("values").explode(empty_as_null=False))
         shape: (4, 1)
         ┌────────┐
         │ values │
@@ -5100,15 +5627,30 @@ Consider using {self}.implode() instead"""
         │ 4      │
         └────────┘
         """
+        if empty_as_null is _Omitted:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
+
         return wrap_expr(
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
 
-    def implode(self) -> Expr:
+    def implode(self, *, maintain_order: bool = True) -> Expr:
         """
         Aggregate values into a list.
 
         The returned list itself is a scalar value of `list` dtype.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        maintain_order
+            Whether to preserve the order of elements in the list. Setting this
+            to `False` can improve performance, especially within `group_by`.
 
         Examples
         --------
@@ -5128,11 +5670,13 @@ Consider using {self}.implode() instead"""
         │ [1, 2, 3] ┆ [4, 5, 6] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.implode())
+        return wrap_expr(self._pyexpr.implode(maintain_order))
 
     def gather_every(self, n: int, offset: int = 0) -> Expr:
         """
         Take every nth value in the Series and return as a new Series.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -5174,6 +5718,8 @@ Consider using {self}.implode() instead"""
         """
         Get the first `n` rows.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -5200,6 +5746,8 @@ Consider using {self}.implode() instead"""
         """
         Get the last `n` rows.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -5222,9 +5770,13 @@ Consider using {self}.implode() instead"""
         """
         # This cast enables tail with expressions that return unsigned integers,
         # for which negate otherwise raises InvalidOperationError.
-        offset = -(
-            wrap_expr(parse_into_expression(n)).cast(
-                Int64, strict=False, wrap_numerical=True
+        offset = (
+            -n
+            if isinstance(n, int)
+            else -(
+                wrap_expr(parse_into_expression(n)).cast(
+                    Int64, strict=False, wrap_numerical=True
+                )
             )
         )
         return self.slice(offset, n)
@@ -5232,6 +5784,8 @@ Consider using {self}.implode() instead"""
     def limit(self, n: int | Expr = 10) -> Expr:
         """
         Get the first `n` rows (alias for :func:`Expr.head`).
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5261,6 +5815,8 @@ Consider using {self}.implode() instead"""
 
         This has the effect of combining logical boolean expressions,
         but operates bitwise on integers.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5327,6 +5883,8 @@ Consider using {self}.implode() instead"""
         This has the effect of combining logical boolean expressions,
         but operates bitwise on integers.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         *others
@@ -5388,6 +5946,8 @@ Consider using {self}.implode() instead"""
         """
         Method equivalent of equality operator `expr == other`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         other
@@ -5423,6 +5983,8 @@ Consider using {self}.implode() instead"""
         Method equivalent of equality operator `expr == other` where `None == None`.
 
         This differs from default `eq` where null values are propagated.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5462,6 +6024,8 @@ Consider using {self}.implode() instead"""
         """
         Method equivalent of "greater than or equal" operator `expr >= other`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         other
@@ -5495,6 +6059,8 @@ Consider using {self}.implode() instead"""
     def gt(self, other: Any) -> Expr:
         """
         Method equivalent of "greater than" operator `expr > other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5530,6 +6096,8 @@ Consider using {self}.implode() instead"""
         """
         Method equivalent of "less than or equal" operator `expr <= other`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         other
@@ -5564,6 +6132,8 @@ Consider using {self}.implode() instead"""
         """
         Method equivalent of "less than" operator `expr < other`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         other
@@ -5597,6 +6167,8 @@ Consider using {self}.implode() instead"""
     def ne(self, other: Any) -> Expr:
         """
         Method equivalent of inequality operator `expr != other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5633,6 +6205,8 @@ Consider using {self}.implode() instead"""
         Method equivalent of equality operator `expr != other` where `None == None`.
 
         This differs from default `ne` where null values are propagated.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5671,6 +6245,8 @@ Consider using {self}.implode() instead"""
     def add(self, other: Any) -> Expr:
         """
         Method equivalent of addition operator `expr + other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5717,6 +6293,8 @@ Consider using {self}.implode() instead"""
     def floordiv(self, other: Any) -> Expr:
         """
         Method equivalent of integer division operator `expr // other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5805,6 +6383,8 @@ Consider using {self}.implode() instead"""
         """
         Method equivalent of modulus operator `expr % other`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         other
@@ -5832,6 +6412,8 @@ Consider using {self}.implode() instead"""
     def mul(self, other: Any) -> Expr:
         """
         Method equivalent of multiplication operator `expr * other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5864,6 +6446,8 @@ Consider using {self}.implode() instead"""
         """
         Method equivalent of subtraction operator `expr - other`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         other
@@ -5895,6 +6479,8 @@ Consider using {self}.implode() instead"""
         """
         Method equivalent of unary minus operator `-expr`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [-1, 0, 2, None]})
@@ -5916,6 +6502,8 @@ Consider using {self}.implode() instead"""
     def truediv(self, other: Any) -> Expr:
         """
         Method equivalent of float division operator `expr / other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -5963,6 +6551,8 @@ Consider using {self}.implode() instead"""
 
         If the exponent is float, the result follows the dtype of exponent.
         Otherwise, it follows dtype of base.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -6013,6 +6603,8 @@ Consider using {self}.implode() instead"""
     def xor(self, other: Any) -> Expr:
         """
         Method equivalent of bitwise exclusive-or operator `expr ^ other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -6080,6 +6672,8 @@ Consider using {self}.implode() instead"""
         """
         Check if elements of this expression are present in the other Series.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         other
@@ -6115,9 +6709,11 @@ Consider using {self}.implode() instead"""
         other_pyexpr = parse_into_expression(other)
         return wrap_expr(self._pyexpr.is_in(other_pyexpr, nulls_equal))
 
-    def repeat_by(self, by: pl.Series | Expr | str | int) -> Expr:
+    def repeat_by(self, by: pl.Series | Expr | str_ | int) -> Expr:
         """
         Repeat the elements in this Series as specified in the given expression.
+
+        .. engine-support:: in-memory
 
         The repeated elements are expanded into a `List`.
 
@@ -6165,6 +6761,8 @@ Consider using {self}.implode() instead"""
     ) -> Expr:
         """
         Check if this expression is between the given lower and upper bounds.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -6287,6 +6885,8 @@ Consider using {self}.implode() instead"""
         .. math::
             |a-b| \le max \{ \text{rel_tol} \cdot max \{ |a|, |b| \}, \text{abs_tol} \}
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         other
@@ -6331,6 +6931,80 @@ Consider using {self}.implode() instead"""
             self._pyexpr.is_close(other_pyexpr, abs_tol, rel_tol, nans_equal)
         )
 
+    def is_sorted(
+        self,
+        *,
+        descending: bool | None = False,
+        nulls_last: bool | None = False,
+    ) -> Expr:
+        """
+        Checks if an expression is sorted.
+
+        If `descending` and/or `nulls_last` are None, it will check `True` and `False`
+        for the unspecified option(s), and return `True` if the expression is sorted
+        under any combination of those settings.
+
+
+        .. engine-support:: in-memory, streaming
+
+        Parameters
+        ----------
+        descending
+            Checks if the expression is sorted in descending order.
+            Defaults to False.
+        nulls_last
+            Consider null values as being ordered last when checking sortedness.
+            Defaults to False.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        Check if a column is sorted in ascending order.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
+        >>> df.select(pl.col("a").is_sorted())
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ bool │
+        ╞══════╡
+        │ true │
+        └──────┘
+
+        Check if a column is sorted in descending order.
+
+        >>> df = pl.DataFrame({"a": [4, 3, 2, 1]})
+        >>> df.select(pl.col("a").is_sorted(descending=True))
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ bool │
+        ╞══════╡
+        │ true │
+        └──────┘
+
+        Check if a column is sorted in either direction.
+
+        >>> df = pl.DataFrame({"a": [4, 3, 2, 1]})
+        >>> df.select(pl.col("a").is_sorted(descending=None))
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ bool │
+        ╞══════╡
+        │ true │
+        └──────┘
+
+        """
+        return wrap_expr(self._pyexpr.is_sorted(descending, nulls_last))
+
     def hash(
         self,
         seed: int = 0,
@@ -6342,6 +7016,8 @@ Consider using {self}.implode() instead"""
         Hash the elements in the selection.
 
         The hash value is of type `UInt64`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -6386,17 +7062,30 @@ Consider using {self}.implode() instead"""
         k3 = seed_3 if seed_3 is not None else seed
         return wrap_expr(self._pyexpr.hash(k0, k1, k2, k3))
 
-    def reinterpret(self, *, signed: bool = True) -> Expr:
+    def reinterpret(
+        self,
+        *,
+        signed: bool | None = None,
+        dtype: PolarsDataType | None = None,
+    ) -> Expr:
         """
-        Reinterpret the underlying bits as a signed/unsigned integer.
+        Reinterpret the underlying bits as a signed/unsigned integer or float.
 
-        This operation is only allowed for 64bit integers. For lower bits integers,
-        you can safely use that cast operation.
+        This operation is only allowed for numeric types of the same size.
+        For lower bits numbers, you can safely use the cast operation.
+
+        Either `signed` or `dtype` can be specified.
+        Defaults to `signed=True` otherwise.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
         signed
-            If True, reinterpret as `pl.Int64`. Otherwise, reinterpret as `pl.UInt64`.
+            If True, reinterpret as signed integer. Otherwise, reinterpret
+            as unsigned integer.
+        dtype
+            DataType to reinterpret to.
 
         Examples
         --------
@@ -6404,7 +7093,7 @@ Consider using {self}.implode() instead"""
         >>> df = pl.DataFrame([s])
         >>> df.select(
         ...     [
-        ...         pl.col("a").reinterpret(signed=True).alias("reinterpreted"),
+        ...         pl.col("a").reinterpret(dtype=pl.Int64).alias("reinterpreted"),
         ...         pl.col("a").alias("original"),
         ...     ]
         ... )
@@ -6419,11 +7108,17 @@ Consider using {self}.implode() instead"""
         │ 2             ┆ 2        │
         └───────────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.reinterpret(signed))
+        if (signed is None) == (dtype is None):
+            msg = "reinterpret requires exactly one of `signed` or `dtype` to be specified"
+            raise ValueError(msg)
 
-    def inspect(self, fmt: str = "{}") -> Expr:
+        return wrap_expr(self._pyexpr.reinterpret(signed, dtype))
+
+    def inspect(self, fmt: str_ = "{}") -> Expr:
         """
         Print the value that this expression evaluates to and pass on the value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -6459,6 +7154,8 @@ Consider using {self}.implode() instead"""
         Interpolate intermediate values.
 
         Nulls at the beginning and end of the series remain null.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -6539,6 +7236,8 @@ Consider using {self}.implode() instead"""
 
         Nulls at the beginning and end of the series remain null.
 
+        .. engine-support:: in-memory
+
         Parameters
         ----------
         by
@@ -6575,7 +7274,7 @@ Consider using {self}.implode() instead"""
     def rolling_min_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -6597,6 +7296,8 @@ Consider using {self}.implode() instead"""
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -6622,8 +7323,9 @@ Consider using {self}.implode() instead"""
             - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
+            (which may not be 24 hours, due to daylight savings - in cases of ambiguity,
+            we follow RFC-5545 and preserve the DST fold of the original datetime).
+            Similarly for "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
         min_samples
             The number of values in the window that should be non-null before computing
@@ -6703,7 +7405,7 @@ Consider using {self}.implode() instead"""
     def rolling_max_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -6725,6 +7427,8 @@ Consider using {self}.implode() instead"""
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -6750,8 +7454,9 @@ Consider using {self}.implode() instead"""
             - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
+            (which may not be 24 hours, due to daylight savings - in cases of ambiguity,
+            we follow RFC-5545 and preserve the DST fold of the original datetime).
+            Similarly for "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
         min_samples
             The number of values in the window that should be non-null before computing
@@ -6857,7 +7562,7 @@ Consider using {self}.implode() instead"""
     def rolling_mean_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -6879,6 +7584,8 @@ Consider using {self}.implode() instead"""
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -6904,8 +7611,9 @@ Consider using {self}.implode() instead"""
             - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
+            (which may not be 24 hours, due to daylight savings - in cases of ambiguity,
+            we follow RFC-5545 and preserve the DST fold of the original datetime).
+            Similarly for "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
         min_samples
             The number of values in the window that should be non-null before computing
@@ -7018,9 +7726,9 @@ Consider using {self}.implode() instead"""
     def rolling_sum_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
-        min_samples: int = 1,
+        min_samples: int = 0,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """
@@ -7040,6 +7748,8 @@ Consider using {self}.implode() instead"""
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -7061,8 +7771,9 @@ Consider using {self}.implode() instead"""
             - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
+            (which may not be 24 hours, due to daylight savings - in cases of ambiguity,
+            we follow RFC-5545 and preserve the DST fold of the original datetime).
+            Similarly for "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
         min_samples
             The number of values in the window that should be non-null before computing
@@ -7172,7 +7883,7 @@ Consider using {self}.implode() instead"""
     def rolling_std_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7195,6 +7906,8 @@ Consider using {self}.implode() instead"""
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -7220,8 +7933,9 @@ Consider using {self}.implode() instead"""
             - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
+            (which may not be 24 hours, due to daylight savings - in cases of ambiguity,
+            we follow RFC-5545 and preserve the DST fold of the original datetime).
+            Similarly for "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
         min_samples
             The number of values in the window that should be non-null before computing
@@ -7335,7 +8049,7 @@ Consider using {self}.implode() instead"""
     def rolling_var_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7358,6 +8072,8 @@ Consider using {self}.implode() instead"""
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -7383,8 +8099,9 @@ Consider using {self}.implode() instead"""
             - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
+            (which may not be 24 hours, due to daylight savings - in cases of ambiguity,
+            we follow RFC-5545 and preserve the DST fold of the original datetime).
+            Similarly for "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
         min_samples
             The number of values in the window that should be non-null before computing
@@ -7498,7 +8215,7 @@ Consider using {self}.implode() instead"""
     def rolling_median_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         min_samples: int = 1,
         closed: ClosedInterval = "right",
@@ -7520,6 +8237,8 @@ Consider using {self}.implode() instead"""
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -7545,8 +8264,9 @@ Consider using {self}.implode() instead"""
             - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
+            (which may not be 24 hours, due to daylight savings - in cases of ambiguity,
+            we follow RFC-5545 and preserve the DST fold of the original datetime).
+            Similarly for "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
         min_samples
             The number of values in the window that should be non-null before computing
@@ -7628,7 +8348,7 @@ Consider using {self}.implode() instead"""
     def rolling_quantile_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         *,
         quantile: float,
         interpolation: QuantileMethod = "nearest",
@@ -7652,6 +8372,8 @@ Consider using {self}.implode() instead"""
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -7681,8 +8403,9 @@ Consider using {self}.implode() instead"""
             - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
+            (which may not be 24 hours, due to daylight savings - in cases of ambiguity,
+            we follow RFC-5545 and preserve the DST fold of the original datetime).
+            Similarly for "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
         min_samples
             The number of values in the window that should be non-null before computing
@@ -7770,7 +8493,7 @@ Consider using {self}.implode() instead"""
     def rolling_rank_by(
         self,
         by: IntoExpr,
-        window_size: timedelta | str,
+        window_size: timedelta | str_,
         method: RankMethod = "average",
         *,
         seed: int | None = None,
@@ -7791,6 +8514,8 @@ Consider using {self}.implode() instead"""
             - (t_1 - window_size, t_1]
             - ...
             - (t_n - window_size, t_n]
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -7816,8 +8541,9 @@ Consider using {self}.implode() instead"""
             - 1i    (1 index count)
 
             By "calendar day", we mean the corresponding time on the next day
-            (which may not be 24 hours, due to daylight savings). Similarly for
-            "calendar week", "calendar month", "calendar quarter", and
+            (which may not be 24 hours, due to daylight savings - in cases of ambiguity,
+            we follow RFC-5545 and preserve the DST fold of the original datetime).
+            Similarly for "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
         method : {'average', 'min', 'max', 'dense', 'random'}
             The method used to assign ranks to tied elements.
@@ -7867,7 +8593,7 @@ Consider using {self}.implode() instead"""
     def rolling_min(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -7881,6 +8607,8 @@ Consider using {self}.implode() instead"""
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. engine-support:: in-memory
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -7977,7 +8705,7 @@ Consider using {self}.implode() instead"""
     def rolling_max(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -7991,6 +8719,8 @@ Consider using {self}.implode() instead"""
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. engine-support:: in-memory
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -8087,7 +8817,7 @@ Consider using {self}.implode() instead"""
     def rolling_mean(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8102,6 +8832,8 @@ Consider using {self}.implode() instead"""
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. engine-support:: in-memory
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -8199,7 +8931,7 @@ Consider using {self}.implode() instead"""
     def rolling_sum(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8213,6 +8945,8 @@ Consider using {self}.implode() instead"""
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. engine-support:: in-memory
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -8309,7 +9043,7 @@ Consider using {self}.implode() instead"""
     def rolling_std(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8325,6 +9059,8 @@ Consider using {self}.implode() instead"""
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. engine-support:: in-memory
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -8425,7 +9161,7 @@ Consider using {self}.implode() instead"""
     def rolling_var(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8441,6 +9177,8 @@ Consider using {self}.implode() instead"""
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. engine-support:: in-memory
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -8541,7 +9279,7 @@ Consider using {self}.implode() instead"""
     def rolling_median(
         self,
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8555,6 +9293,8 @@ Consider using {self}.implode() instead"""
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. engine-support:: in-memory
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -8653,7 +9393,7 @@ Consider using {self}.implode() instead"""
         quantile: float,
         interpolation: QuantileMethod = "nearest",
         window_size: int = 2,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -8667,6 +9407,8 @@ Consider using {self}.implode() instead"""
 
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
+
+        .. engine-support:: in-memory
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -8815,6 +9557,8 @@ Consider using {self}.implode() instead"""
         parameter. The resulting values will be the rank of the value that is
         at the end of the sliding window.
 
+        .. engine-support:: in-memory
+
         Parameters
         ----------
         window_size
@@ -8895,6 +9639,8 @@ Consider using {self}.implode() instead"""
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. engine-support:: in-memory
+
         Parameters
         ----------
         window_size
@@ -8959,6 +9705,8 @@ Consider using {self}.implode() instead"""
         The window at a given row will include the row itself, and the `window_size - 1`
         elements before it.
 
+        .. engine-support:: in-memory
+
         Parameters
         ----------
         window_size
@@ -9010,7 +9758,7 @@ Consider using {self}.implode() instead"""
         self,
         function: Callable[[Series], Any],
         window_size: int,
-        weights: list[float] | None = None,
+        weights: list_[float] | None = None,
         *,
         min_samples: int | None = None,
         center: bool = False,
@@ -9024,6 +9772,8 @@ Consider using {self}.implode() instead"""
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -9083,6 +9833,8 @@ Consider using {self}.implode() instead"""
 
         Same as `abs(expr)`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -9114,6 +9866,8 @@ Consider using {self}.implode() instead"""
     ) -> Expr:
         """
         Assign ranks to data, dealing with ties appropriately.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -9228,6 +9982,8 @@ Consider using {self}.implode() instead"""
         """
         Calculate the first discrete difference between shifted items.
 
+        .. engine-support:: in-memory, streaming
+
         Parameters
         ----------
         n
@@ -9290,6 +10046,8 @@ Consider using {self}.implode() instead"""
 
         Computes the change from the previous row by default.
 
+        .. engine-support:: in-memory
+
         Parameters
         ----------
         n
@@ -9334,8 +10092,9 @@ Consider using {self}.implode() instead"""
         function `skewtest` can be used to determine if the skewness value
         is close enough to zero, statistically speaking.
 
-
         See scipy.stats for more information.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -9389,6 +10148,8 @@ Consider using {self}.implode() instead"""
 
         See scipy.stats for more information
 
+        .. engine-support:: in-memory, streaming
+
         Parameters
         ----------
         fisher : bool, optional
@@ -9419,6 +10180,8 @@ Consider using {self}.implode() instead"""
     ) -> Expr:
         """
         Set values outside the given boundaries to the boundary value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -9506,6 +10269,8 @@ Consider using {self}.implode() instead"""
         Returns a unit Series with the lowest value possible for the dtype of this
         expression.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
@@ -9527,6 +10292,8 @@ Consider using {self}.implode() instead"""
 
         Returns a unit Series with the highest value possible for the dtype of this
         expression.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -9555,6 +10322,8 @@ Consider using {self}.implode() instead"""
 
         Null values are preserved as-is, and the dtype of the input is preserved.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [-9.0, -0.0, 0.0, 4.0, float("nan"), None]})
@@ -9579,22 +10348,43 @@ Consider using {self}.implode() instead"""
         """
         Compute the element-wise value for the sine.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
             Expression of data type :class:`Float64`.
 
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [0.0]})
+        >>> from math import pi
+        >>> df = pl.DataFrame({"a": [0.0, pi / 2]})
         >>> df.select(pl.col("a").sin())
-        shape: (1, 1)
+        shape: (2, 1)
         ┌─────┐
         │ a   │
         │ --- │
         │ f64 │
         ╞═════╡
         │ 0.0 │
+        │ 1.0 │
+        └─────┘
+        >>> df = pl.DataFrame({"a": [0.0, 90]})
+        >>> df.select(pl.col("a").radians().sin())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.0 │
+        │ 1.0 │
         └─────┘
         """
         return wrap_expr(self._pyexpr.sin())
@@ -9603,23 +10393,44 @@ Consider using {self}.implode() instead"""
         """
         Compute the element-wise value for the cosine.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
             Expression of data type :class:`Float64`.
 
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [0.0]})
+        >>> from math import pi
+        >>> df = pl.DataFrame({"a": [0.0, pi / 2]})
         >>> df.select(pl.col("a").cos())
-        shape: (1, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ f64 │
-        ╞═════╡
-        │ 1.0 │
-        └─────┘
+        shape: (2, 1)
+        ┌────────────┐
+        │ a          │
+        │ ---        │
+        │ f64        │
+        ╞════════════╡
+        │ 1.0        │
+        │ 6.1232e-17 │
+        └────────────┘
+        >>> df = pl.DataFrame({"a": [0.0, 90]})
+        >>> df.select(pl.col("a").radians().cos())
+        shape: (2, 1)
+        ┌────────────┐
+        │ a          │
+        │ ---        │
+        │ f64        │
+        ╞════════════╡
+        │ 1.0        │
+        │ 6.1232e-17 │
+        └────────────┘
         """
         return wrap_expr(self._pyexpr.cos())
 
@@ -9627,23 +10438,44 @@ Consider using {self}.implode() instead"""
         """
         Compute the element-wise value for the tangent.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
             Expression of data type :class:`Float64`.
 
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1.0]})
-        >>> df.select(pl.col("a").tan().round(2))
-        shape: (1, 1)
-        ┌──────┐
-        │ a    │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ 1.56 │
-        └──────┘
+        >>> from math import pi
+        >>> df = pl.DataFrame({"a": [0.0, pi / 4]})
+        >>> df.select(pl.col("a").tan())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.0 │
+        │ 1.0 │
+        └─────┘
+        >>> df = pl.DataFrame({"a": [0.0, 45]})
+        >>> df.select(pl.col("a").radians().tan())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ 0.0 │
+        │ 1.0 │
+        └─────┘
         """
         return wrap_expr(self._pyexpr.tan())
 
@@ -9651,23 +10483,44 @@ Consider using {self}.implode() instead"""
         """
         Compute the element-wise value for the cotangent.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
             Expression of data type :class:`Float64`.
 
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
+
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1.0]})
-        >>> df.select(pl.col("a").cot().round(2))
-        shape: (1, 1)
-        ┌──────┐
-        │ a    │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ 0.64 │
-        └──────┘
+        >>> from math import pi
+        >>> df = pl.DataFrame({"a": [0.0, pi / 4]})
+        >>> df.select(pl.col("a").cot())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ inf │
+        │ 1.0 │
+        └─────┘
+        >>> df = pl.DataFrame({"a": [0.0, 45]})
+        >>> df.select(pl.col("a").radians().cot())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f64 │
+        ╞═════╡
+        │ inf │
+        │ 1.0 │
+        └─────┘
         """
         return wrap_expr(self._pyexpr.cot())
 
@@ -9675,23 +10528,43 @@ Consider using {self}.implode() instead"""
         """
         Compute the element-wise value for the inverse sine.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
-            Expression of data type :class:`Float64`.
+            Expression of data type :class:`Float64`, measuring an angle in radians.
+
+        Notes
+        -----
+        To convert the result from radians to degrees,
+        call :meth:`.degrees() <polars.Expr.degrees>`.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df = pl.DataFrame({"a": [1.0, 0.5, 0]})
         >>> df.select(pl.col("a").arcsin())
-        shape: (1, 1)
+        shape: (3, 1)
         ┌──────────┐
         │ a        │
         │ ---      │
         │ f64      │
         ╞══════════╡
         │ 1.570796 │
+        │ 0.523599 │
+        │ 0.0      │
         └──────────┘
+        >>> df.select(pl.col("a").arcsin().degrees())
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 90.0 │
+        │ 30.0 │
+        │ 0.0  │
+        └──────┘
         """
         return wrap_expr(self._pyexpr.arcsin())
 
@@ -9699,23 +10572,43 @@ Consider using {self}.implode() instead"""
         """
         Compute the element-wise value for the inverse cosine.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
-            Expression of data type :class:`Float64`.
+            Expression of data type :class:`Float64`, measuring an angle in radians.
+
+        Notes
+        -----
+        To convert the result from radians to degrees,
+        call :meth:`.degrees() <polars.Expr.degrees>`.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [0.0]})
+        >>> df = pl.DataFrame({"a": [1.0, 0.5, 0]})
         >>> df.select(pl.col("a").arccos())
-        shape: (1, 1)
+        shape: (3, 1)
         ┌──────────┐
         │ a        │
         │ ---      │
         │ f64      │
         ╞══════════╡
+        │ 0.0      │
+        │ 1.047198 │
         │ 1.570796 │
         └──────────┘
+        >>> df.select(pl.col("a").arccos().degrees())
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 0.0  │
+        │ 60.0 │
+        │ 90.0 │
+        └──────┘
         """
         return wrap_expr(self._pyexpr.arccos())
 
@@ -9723,29 +10616,51 @@ Consider using {self}.implode() instead"""
         """
         Compute the element-wise value for the inverse tangent.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
-            Expression of data type :class:`Float64`.
+            Expression of data type :class:`Float64`, measuring an angle in radians.
+
+        Notes
+        -----
+        To convert the result from radians to degrees,
+        call :meth:`.degrees() <polars.Expr.degrees>`.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df = pl.DataFrame({"a": [float("Inf"), 1, 0]})
         >>> df.select(pl.col("a").arctan())
-        shape: (1, 1)
+        shape: (3, 1)
         ┌──────────┐
         │ a        │
         │ ---      │
         │ f64      │
         ╞══════════╡
+        │ 1.570796 │
         │ 0.785398 │
+        │ 0.0      │
         └──────────┘
+        >>> df.select(pl.col("a").arctan().degrees())
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 90.0 │
+        │ 45.0 │
+        │ 0.0  │
+        └──────┘
         """
         return wrap_expr(self._pyexpr.arctan())
 
     def sinh(self) -> Expr:
         """
         Compute the element-wise value for the hyperbolic sine.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -9771,6 +10686,8 @@ Consider using {self}.implode() instead"""
         """
         Compute the element-wise value for the hyperbolic cosine.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -9794,6 +10711,8 @@ Consider using {self}.implode() instead"""
     def tanh(self) -> Expr:
         """
         Compute the element-wise value for the hyperbolic tangent.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -9819,6 +10738,8 @@ Consider using {self}.implode() instead"""
         """
         Compute the element-wise value for the inverse hyperbolic sine.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -9842,6 +10763,8 @@ Consider using {self}.implode() instead"""
     def arccosh(self) -> Expr:
         """
         Compute the element-wise value for the inverse hyperbolic cosine.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -9867,6 +10790,8 @@ Consider using {self}.implode() instead"""
         """
         Compute the element-wise value for the inverse hyperbolic tangent.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -9890,6 +10815,8 @@ Consider using {self}.implode() instead"""
     def degrees(self) -> Expr:
         """
         Convert from radians to degrees.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -9924,6 +10851,8 @@ Consider using {self}.implode() instead"""
         """
         Convert from degrees to radians.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -9955,6 +10884,8 @@ Consider using {self}.implode() instead"""
     def reshape(self, dimensions: tuple[int, ...]) -> Expr:
         """
         Reshape this Expr to a flat column or an Array column.
+
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
 
         Parameters
         ----------
@@ -10018,6 +10949,8 @@ Consider using {self}.implode() instead"""
         Note this is shuffled independently of any other column or Expression. If you
         want each row to stay the same use df.sample(shuffle=True)
 
+        .. engine-support:: in-memory
+
         Parameters
         ----------
         seed
@@ -10047,11 +10980,13 @@ Consider using {self}.implode() instead"""
         *,
         fraction: float | IntoExprColumn | None = None,
         with_replacement: bool = False,
-        shuffle: bool = False,
+        shuffle: bool | None = None,
         seed: int | None = None,
     ) -> Expr:
         """
         Sample from this expression.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -10063,7 +10998,12 @@ Consider using {self}.implode() instead"""
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Determines the order of the sampled elements.
+            If True, sampled elements are explicitly shuffled.
+            If False, the relative order of the sampled elements is preserved.
+            (i.e. they appear in the same order as the original input).
+            If None (default), no ordering guarantee; uses the most performant
+            algorithm.
         seed
             Seed for the random number generator. If set to None (default), a
             random seed is generated for each sample operation.
@@ -10071,7 +11011,11 @@ Consider using {self}.implode() instead"""
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").sample(fraction=1.0, with_replacement=True, seed=1))
+        >>> df.select(
+        ...     pl.col("a").sample(
+        ...         fraction=1.0, with_replacement=True, shuffle=False, seed=1
+        ...     )
+        ... )
         shape: (3, 1)
         ┌─────┐
         │ a   │
@@ -10119,6 +11063,8 @@ Consider using {self}.implode() instead"""
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -10193,11 +11139,75 @@ Consider using {self}.implode() instead"""
             self._pyexpr.ewm_mean(alpha, adjust, min_samples, ignore_nulls)
         )
 
+    @unstable()
+    def ewm_sum(
+        self,
+        *,
+        com: float | None = None,
+        span: float | None = None,
+        half_life: float | None = None,
+        alpha: float | None = None,
+        min_samples: int = 1,
+        ignore_nulls: bool = False,
+    ) -> Expr:
+        r"""
+        Compute exponentially-weighted moving sum.
+
+        .. engine-support:: in-memory, streaming
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        com
+            Specify decay in terms of center of mass, :math:`\gamma`, with
+
+                .. math::
+                    \alpha = \frac{1}{1 + \gamma} \; \forall \; \gamma \geq 0
+        span
+            Specify decay in terms of span, :math:`\theta`, with
+
+                .. math::
+                    \alpha = \frac{2}{\theta + 1} \; \forall \; \theta \geq 1
+        half_life
+            Specify decay in terms of half-life, :math:`\tau`, with
+
+                .. math::
+                    \alpha = 1 - \exp \left\{ \frac{ -\ln(2) }{ \tau } \right\} \;
+                    \forall \; \tau > 0
+        alpha
+            Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
+        min_samples
+            Minimum number of observations in window required to have a value
+            (otherwise result is null).
+        ignore_nulls
+            Ignore missing values when calculating weights.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").ewm_sum(alpha=0.5))
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 1.0  │
+        │ 2.5  │
+        │ 4.25 │
+        └──────┘
+        """
+        alpha = _prepare_alpha(com, span, half_life, alpha)
+        return wrap_expr(self._pyexpr.ewm_sum(alpha, min_samples, ignore_nulls))
+
     def ewm_mean_by(
         self,
-        by: str | IntoExpr,
+        by: str_ | IntoExpr,
         *,
-        half_life: str | timedelta,
+        half_life: str_ | timedelta,
     ) -> Expr:
         r"""
         Compute time-based exponentially weighted moving average.
@@ -10215,6 +11225,8 @@ Consider using {self}.implode() instead"""
                 y_i &= \alpha_i x_i + (1 - \alpha_i) y_{i-1}; \quad i > 0
 
         where :math:`\tau` is the `half_life`.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -10286,6 +11298,71 @@ Consider using {self}.implode() instead"""
         half_life = parse_as_duration_string(half_life)
         return wrap_expr(self._pyexpr.ewm_mean_by(by_pyexpr, half_life))
 
+    @unstable()
+    def ewm_sum_by(
+        self,
+        by: str_ | IntoExpr,
+        *,
+        half_life: str_ | timedelta,
+    ) -> Expr:
+        r"""
+        Compute time-based exponentially-weighted moving sum.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
+        :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMS is calculated as
+
+            .. math::
+
+                y_0 &= x_0
+
+                \lambda_i &= \exp \left\{ \frac{ -\ln(2)(t_i-t_{i-1}) }
+                    { \tau } \right\}
+
+                y_i &= x_i + \lambda_i y_{i-1}; \quad i > 0
+
+        where :math:`\tau` is the `half_life`.
+
+        .. engine-support:: in-memory
+
+        Parameters
+        ----------
+        by
+            Column to use as reference for the time decay.
+        half_life
+            Half-life of the exponential decay.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "values": [1, 2, 3, 4, 5],
+        ...         "times": [0, 1, 2, 5, 6],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     pl.col("values").ewm_sum_by("times", half_life="1i"),
+        ... )
+        shape: (5, 1)
+        ┌──────────┐
+        │ values   │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 1.0      │
+        │ 2.5      │
+        │ 4.25     │
+        │ 4.53125  │
+        │ 7.265625 │
+        └──────────┘
+        """
+        by_pyexpr = parse_into_expression(by)
+        half_life = parse_as_duration_string(half_life)
+        return wrap_expr(self._pyexpr.ewm_sum_by(by_pyexpr, half_life))
+
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_std(
         self,
@@ -10301,6 +11378,8 @@ Consider using {self}.implode() instead"""
     ) -> Expr:
         r"""
         Compute exponentially-weighted moving standard deviation.
+
+        .. engine-support:: in-memory
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -10371,7 +11450,7 @@ Consider using {self}.implode() instead"""
         │ ---      │
         │ f64      │
         ╞══════════╡
-        │ 0.0      │
+        │ null     │
         │ 0.707107 │
         │ 0.963624 │
         └──────────┘
@@ -10396,6 +11475,8 @@ Consider using {self}.implode() instead"""
     ) -> Expr:
         r"""
         Compute exponentially-weighted moving variance.
+
+        .. engine-support:: in-memory
 
         .. versionchanged:: 1.21.0
             The `min_periods` parameter was renamed `min_samples`.
@@ -10466,7 +11547,7 @@ Consider using {self}.implode() instead"""
         │ ---      │
         │ f64      │
         ╞══════════╡
-        │ 0.0      │
+        │ null     │
         │ 0.5      │
         │ 0.928571 │
         └──────────┘
@@ -10479,6 +11560,8 @@ Consider using {self}.implode() instead"""
     def extend_constant(self, value: IntoExpr, n: int | IntoExprColumn) -> Expr:
         """
         Extremely fast method for extending the Series with 'n' copies of a value.
+
+        .. engine-support:: in-memory
 
         Parameters
         ----------
@@ -10514,11 +11597,13 @@ Consider using {self}.implode() instead"""
         *,
         sort: bool = False,
         parallel: bool = False,
-        name: str | None = None,
+        name: str_ | None = None,
         normalize: bool = False,
     ) -> Expr:
         """
         Count the occurrence of unique values.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -10664,6 +11749,8 @@ Consider using {self}.implode() instead"""
         This method differs from `value_counts` in that it does not return the
         values, only the counts and might be faster
 
+        .. engine-support:: in-memory, streaming
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -10720,6 +11807,8 @@ Consider using {self}.implode() instead"""
         """
         Compute the logarithm to a given base.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         base
@@ -10749,6 +11838,8 @@ Consider using {self}.implode() instead"""
 
         This computes `log(1 + x)` but is more numerically stable for `x` close to zero.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
@@ -10771,6 +11862,8 @@ Consider using {self}.implode() instead"""
         Computes the entropy.
 
         Uses the formula `-sum(pk * log(pk))` where `pk` are discrete probabilities.
+
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
@@ -10808,6 +11901,8 @@ Consider using {self}.implode() instead"""
     def cumulative_eval(self, expr: Expr, *, min_samples: int = 1) -> Expr:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
+
+        .. engine-support:: in-memory, partially-streaming
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -10854,16 +11949,22 @@ Consider using {self}.implode() instead"""
         """
         return wrap_expr(self._pyexpr.cumulative_eval(expr._pyexpr, min_samples))
 
-    def set_sorted(self, *, descending: bool = False) -> Expr:
+    def set_sorted(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Flags the expression as 'sorted'.
 
-        Enables downstream code to user fast paths for sorted arrays.
+        Enables downstream code to user fast paths for sorted arrays. It is
+        recommended to also set whether `nulls_last` is `True` or `False`, as
+        this enables many internal optimizations.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
         descending
             Whether the `Series` order is descending.
+        nulls_last
+            Whether the nulls are at the end.
 
         Warnings
         --------
@@ -10883,7 +11984,7 @@ Consider using {self}.implode() instead"""
         │ 3      │
         └────────┘
         """
-        return wrap_expr(self._pyexpr.set_sorted_flag(descending))
+        return wrap_expr(self._pyexpr.set_sorted_flag(descending, nulls_last))
 
     @deprecated(
         "`Expr.shrink_dtype` is deprecated and is a no-op; use `Series.shrink_dtype` instead."
@@ -10940,6 +12041,8 @@ Consider using {self}.implode() instead"""
     ) -> Expr:
         """
         Bin values into buckets and count their occurrences.
+
+        .. engine-support:: in-memory
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -11004,13 +12107,15 @@ Consider using {self}.implode() instead"""
     def replace(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
-        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
+        new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
         *,
-        default: IntoExpr | NoDefault = no_default,
+        default: IntoExpr | NoDefault = NO_DEFAULT,
         return_dtype: PolarsDataType | None = None,
     ) -> Expr:
         """
         Replace the given values by different values of the same data type.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -11047,10 +12152,6 @@ Consider using {self}.implode() instead"""
         --------
         replace_strict
         str.replace
-
-        Notes
-        -----
-        The global string cache must be enabled when replacing categorical values.
 
         Examples
         --------
@@ -11147,7 +12248,7 @@ Consider using {self}.implode() instead"""
                 " Use `replace_strict` instead to set a return data type while replacing values.",
                 version="1.0.0",
             )
-        if default is not no_default:
+        if default is not NO_DEFAULT:
             issue_deprecation_warning(
                 "the `default` parameter for `replace` is deprecated."
                 " Use `replace_strict` instead to set a default while replacing values.",
@@ -11157,7 +12258,7 @@ Consider using {self}.implode() instead"""
                 old, new, default=default, return_dtype=return_dtype
             )
 
-        if new is no_default:
+        if new is NO_DEFAULT:
             if not isinstance(old, Mapping):
                 msg = (
                     "`new` argument is required if `old` argument is not a Mapping type"
@@ -11184,13 +12285,15 @@ Consider using {self}.implode() instead"""
     def replace_strict(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
-        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
+        new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
         *,
-        default: IntoExpr | NoDefault = no_default,
+        default: IntoExpr | NoDefault = NO_DEFAULT,
         return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
     ) -> Expr:
         """
         Replace all values by different values.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -11223,10 +12326,6 @@ Consider using {self}.implode() instead"""
         --------
         replace
         str.replace
-
-        Notes
-        -----
-        The global string cache must be enabled when replacing categorical values.
 
         Examples
         --------
@@ -11353,7 +12452,7 @@ Consider using {self}.implode() instead"""
         │ 3   ┆ 1.0 ┆ 10.0     │
         └─────┴─────┴──────────┘
         """  # noqa: W505
-        if new is no_default:
+        if new is NO_DEFAULT:
             if not isinstance(old, Mapping):
                 msg = (
                     "`new` argument is required if `old` argument is not a Mapping type"
@@ -11373,7 +12472,7 @@ Consider using {self}.implode() instead"""
 
         default_pyexpr = (
             None
-            if default is no_default
+            if default is NO_DEFAULT
             else parse_into_expression(default, str_as_lit=True)
         )
 
@@ -11384,31 +12483,51 @@ Consider using {self}.implode() instead"""
         )
 
     def bitwise_count_ones(self) -> Expr:
-        """Evaluate the number of set bits."""
+        """Evaluate the number of set bits.
+
+        .. engine-support:: in-memory, streaming, distributed
+        """
         return wrap_expr(self._pyexpr.bitwise_count_ones())
 
     def bitwise_count_zeros(self) -> Expr:
-        """Evaluate the number of unset bits."""
+        """Evaluate the number of unset bits.
+
+        .. engine-support:: in-memory, streaming, distributed
+        """
         return wrap_expr(self._pyexpr.bitwise_count_zeros())
 
     def bitwise_leading_ones(self) -> Expr:
-        """Evaluate the number most-significant set bits before seeing an unset bit."""
+        """Evaluate the number most-significant set bits before seeing an unset bit.
+
+        .. engine-support:: in-memory, streaming, distributed
+        """
         return wrap_expr(self._pyexpr.bitwise_leading_ones())
 
     def bitwise_leading_zeros(self) -> Expr:
-        """Evaluate the number most-significant unset bits before seeing a set bit."""
+        """Evaluate the number most-significant unset bits before seeing a set bit.
+
+        .. engine-support:: in-memory, streaming, distributed
+        """
         return wrap_expr(self._pyexpr.bitwise_leading_zeros())
 
     def bitwise_trailing_ones(self) -> Expr:
-        """Evaluate the number least-significant set bits before seeing an unset bit."""
+        """Evaluate the number least-significant set bits before seeing an unset bit.
+
+        .. engine-support:: in-memory, streaming, distributed
+        """
         return wrap_expr(self._pyexpr.bitwise_trailing_ones())
 
     def bitwise_trailing_zeros(self) -> Expr:
-        """Evaluate the number least-significant unset bits before seeing a set bit."""
+        """Evaluate the number least-significant unset bits before seeing a set bit.
+
+        .. engine-support:: in-memory, streaming, distributed
+        """
         return wrap_expr(self._pyexpr.bitwise_trailing_zeros())
 
     def bitwise_and(self) -> Expr:
         """Perform an aggregation of bitwise ANDs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -11441,6 +12560,8 @@ Consider using {self}.implode() instead"""
     def bitwise_or(self) -> Expr:
         """Perform an aggregation of bitwise ORs.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"n": [-1, 0, 1]})
@@ -11471,6 +12592,8 @@ Consider using {self}.implode() instead"""
 
     def bitwise_xor(self) -> Expr:
         """Perform an aggregation of bitwise XORs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -11507,9 +12630,9 @@ Consider using {self}.implode() instead"""
     def register_plugin(
         self,
         *,
-        lib: str,
-        symbol: str,
-        args: list[IntoExpr] | None = None,
+        lib: str_,
+        symbol: str_,
+        args: list_[IntoExpr] | None = None,
         kwargs: dict[Any, Any] | None = None,
         is_elementwise: bool = False,
         input_wildcard_expansion: bool = False,
@@ -11601,7 +12724,7 @@ Consider using {self}.implode() instead"""
 
     def _row_decode(
         self,
-        names: Sequence[str],
+        names: Sequence[str_],
         dtypes: Sequence[pl.DataTypeExpr | PolarsDataType],
         *,
         unordered: bool = False,
@@ -11625,7 +12748,7 @@ Consider using {self}.implode() instead"""
         return wrap_expr(result)
 
     @classmethod
-    def from_json(cls, value: str) -> Expr:
+    def from_json(cls, value: str_) -> Expr:
         """
         Read an expression from a JSON encoded string to construct an Expression.
 
@@ -11646,150 +12769,6 @@ Consider using {self}.implode() instead"""
             version="0.20.11",
         )
         return cls.deserialize(StringIO(value), format="json")
-
-    @property
-    def bin(self) -> ExprBinaryNameSpace:
-        """
-        Create an object namespace of all binary related methods.
-
-        See the individual method pages for full details
-        """
-        return ExprBinaryNameSpace(self)
-
-    @property
-    def cat(self) -> ExprCatNameSpace:
-        """
-        Create an object namespace of all categorical related methods.
-
-        See the individual method pages for full details
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"values": ["a", "b"]}).select(
-        ...     pl.col("values").cast(pl.Categorical)
-        ... )
-        >>> df.select(pl.col("values").cat.get_categories())
-        shape: (2, 1)
-        ┌────────┐
-        │ values │
-        │ ---    │
-        │ str    │
-        ╞════════╡
-        │ a      │
-        │ b      │
-        └────────┘
-        """
-        return ExprCatNameSpace(self)
-
-    @property
-    def dt(self) -> ExprDateTimeNameSpace:
-        """Create an object namespace of all datetime related methods."""
-        return ExprDateTimeNameSpace(self)
-
-    # Keep the `list` and `str` properties below at the end of the definition of Expr,
-    # as to not confuse mypy with the type annotation `str` and `list`
-
-    @property
-    def list(self) -> ExprListNameSpace:
-        """
-        Create an object namespace of all list related methods.
-
-        See the individual method pages for full details.
-        """
-        return ExprListNameSpace(self)
-
-    @property
-    def arr(self) -> ExprArrayNameSpace:
-        """
-        Create an object namespace of all array related methods.
-
-        See the individual method pages for full details.
-        """
-        return ExprArrayNameSpace(self)
-
-    @property
-    def meta(self) -> ExprMetaNameSpace:
-        """
-        Create an object namespace of all meta related expression methods.
-
-        This can be used to modify and traverse existing expressions.
-        """
-        return ExprMetaNameSpace(self)
-
-    @property
-    def name(self) -> ExprNameNameSpace:
-        """
-        Create an object namespace of all expressions that modify expression names.
-
-        See the individual method pages for full details.
-        """
-        return ExprNameNameSpace(self)
-
-    @property
-    def str(self) -> ExprStringNameSpace:
-        """
-        Create an object namespace of all string related methods.
-
-        See the individual method pages for full details.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"letters": ["a", "b"]})
-        >>> df.select(pl.col("letters").str.to_uppercase())
-        shape: (2, 1)
-        ┌─────────┐
-        │ letters │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ A       │
-        │ B       │
-        └─────────┘
-        """
-        return ExprStringNameSpace(self)
-
-    @property
-    def struct(self) -> ExprStructNameSpace:
-        """
-        Create an object namespace of all struct related methods.
-
-        See the individual method pages for full details.
-
-        Examples
-        --------
-        >>> df = (
-        ...     pl.DataFrame(
-        ...         {
-        ...             "int": [1, 2],
-        ...             "str": ["a", "b"],
-        ...             "bool": [True, None],
-        ...             "list": [[1, 2], [3]],
-        ...         }
-        ...     )
-        ...     .to_struct("my_struct")
-        ...     .to_frame()
-        ... )
-        >>> df.select(pl.col("my_struct").struct.field("str"))
-        shape: (2, 1)
-        ┌─────┐
-        │ str │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ a   │
-        │ b   │
-        └─────┘
-        """
-        return ExprStructNameSpace(self)
-
-    @property
-    def ext(self) -> ExprExtensionNameSpace:
-        """
-        Create an object namespace of all extension type related expressions.
-
-        See the individual method pages for full details.
-        """
-        return ExprExtensionNameSpace(self)
 
     def _skip_batch_predicate(self, schema: SchemaDict) -> Expr | None:
         result = self._pyexpr.skip_batch_predicate(schema)

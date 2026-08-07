@@ -3,7 +3,7 @@ use std::io::{Read, Seek};
 use std::sync::Arc;
 
 use polars_error::{PolarsResult, polars_bail, polars_err};
-use polars_utils::aliases::PlHashMap;
+use polars_utils::bool::UnsafeBool;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::Dictionaries;
@@ -87,6 +87,7 @@ pub fn read_record_batch<R: Read + Seek>(
     reader: &mut R,
     block_offset: u64,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     assert_eq!(fields.len(), ipc_schema.fields.len());
     let buffers = batch
@@ -130,6 +131,7 @@ pub fn read_record_batch<R: Read + Seek>(
                     limit,
                     version,
                     scratch,
+                    checked,
                 )?)),
                 ProjectionResult::NotSelected((field, _)) => {
                     skip(
@@ -164,6 +166,7 @@ pub fn read_record_batch<R: Read + Seek>(
                     limit,
                     version,
                     scratch,
+                    checked,
                 )
             })
             .collect::<PolarsResult<Vec<_>>>()?
@@ -255,6 +258,7 @@ pub fn read_dictionary<R: Read + Seek>(
     reader: &mut R,
     block_offset: u64,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<()> {
     if batch
         .is_delta()
@@ -301,6 +305,7 @@ pub fn read_dictionary<R: Read + Seek>(
         reader,
         block_offset,
         scratch,
+        checked,
     )?;
 
     dictionaries.insert(id, chunk.into_arrays().pop().unwrap());
@@ -311,7 +316,7 @@ pub fn read_dictionary<R: Read + Seek>(
 #[derive(Clone)]
 pub struct ProjectionInfo {
     pub columns: Vec<usize>,
-    pub map: PlHashMap<usize, usize>,
+    pub map: Vec<usize>,
     pub schema: ArrowSchema,
 }
 
@@ -324,16 +329,8 @@ pub fn prepare_projection(schema: &ArrowSchema, mut projection: Vec<usize>) -> P
         })
         .collect();
 
-    // todo: find way to do this more efficiently
-    let mut indices = (0..projection.len()).collect::<Vec<_>>();
-    indices.sort_unstable_by_key(|&i| &projection[i]);
-    let map = indices.iter().copied().enumerate().fold(
-        PlHashMap::default(),
-        |mut acc, (index, new_index)| {
-            acc.insert(index, new_index);
-            acc
-        },
-    );
+    let mut map = (0..projection.len()).collect::<Vec<_>>();
+    map.sort_unstable_by_key(|&i| &projection[i]);
     projection.sort_unstable();
 
     // check unique
@@ -358,7 +355,7 @@ pub fn prepare_projection(schema: &ArrowSchema, mut projection: Vec<usize>) -> P
 
 pub fn apply_projection(
     chunk: RecordBatchT<Box<dyn Array>>,
-    map: &PlHashMap<usize, usize>,
+    map: &[usize],
 ) -> RecordBatchT<Box<dyn Array>> {
     let length = chunk.len();
 
@@ -367,14 +364,14 @@ pub fn apply_projection(
     let mut new_schema = schema.as_ref().clone();
     let mut new_arrays = arrays.clone();
 
-    map.iter().for_each(|(old, new)| {
-        let (old_name, old_field) = schema.get_at_index(*old).unwrap();
+    map.iter().enumerate().for_each(|(old, new)| {
+        let (old_name, old_field) = schema.get_at_index(old).unwrap();
         let (new_name, new_field) = new_schema.get_at_index_mut(*new).unwrap();
 
         *new_name = old_name.clone();
         *new_field = old_field.clone();
 
-        new_arrays[*new] = arrays[*old].clone();
+        new_arrays[*new] = arrays[old].clone();
     });
 
     RecordBatchT::new(length, Arc::new(new_schema), new_arrays)

@@ -17,10 +17,15 @@ use crate::windows::group_by::{ClosedWindow, group_by_values_iter};
 pub(crate) trait RollingAggWindow<T: NativeType, Out: NativeType> {
     /// # Safety
     /// `start` and `end` must be in bounds of `slice` and associated structures.
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out>;
+    unsafe fn update(&mut self, start: usize, end: usize);
+
+    /// Get the aggregate of the current window relative to the value at `idx`.
+    fn get_agg(&self, idx: usize) -> Option<Out>;
 
     /// Returns the length of the underlying input.
     fn slice_len(&self) -> usize;
+
+    fn is_valid(&self, min_periods: usize) -> bool;
 }
 
 #[repr(transparent)]
@@ -31,26 +36,42 @@ pub(crate) struct RollingAggWindowNullsWrapper<T>(pub T);
 impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNoNulls<T, Out>> RollingAggWindow<T, Out>
     for RollingAggWindowNoNullsWrapper<Agg>
 {
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out> {
+    unsafe fn update(&mut self, start: usize, end: usize) {
         // SAFETY: Caller MUST uphold function safety contract.
         unsafe { self.0.update(start, end) }
     }
 
+    fn get_agg(&self, idx: usize) -> Option<Out> {
+        self.0.get_agg(idx)
+    }
+
     fn slice_len(&self) -> usize {
         self.0.slice_len()
+    }
+
+    fn is_valid(&self, _min_periods: usize) -> bool {
+        true
     }
 }
 
 impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNulls<T, Out>> RollingAggWindow<T, Out>
     for RollingAggWindowNullsWrapper<Agg>
 {
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<Out> {
+    unsafe fn update(&mut self, start: usize, end: usize) {
         // SAFETY: Caller MUST uphold function safety contract.
         unsafe { self.0.update(start, end) }
     }
 
+    fn get_agg(&self, idx: usize) -> Option<Out> {
+        self.0.get_agg(idx)
+    }
+
     fn slice_len(&self) -> usize {
         self.0.slice_len()
+    }
+
+    fn is_valid(&self, min_periods: usize) -> bool {
+        self.0.is_valid(min_periods)
     }
 }
 
@@ -97,7 +118,8 @@ where
     Out: NativeType,
 {
     let out = offsets
-        .map(|result| {
+        .enumerate()
+        .map(|(idx, result)| {
             result.map(|(start, len)| {
                 let end = start + len;
 
@@ -109,6 +131,11 @@ where
                 } else {
                     // SAFETY: we are in bounds
                     unsafe { agg_window.update(start as usize, end as usize) }
+                    if agg_window.is_valid(min_periods) {
+                        agg_window.get_agg(idx)
+                    } else {
+                        None
+                    }
                 }
             })
         })
@@ -143,7 +170,12 @@ where
         if len >= (min_periods as IdxSize) {
             // SAFETY:
             // we are in bound
-            let res = unsafe { agg_window.update(start as usize, end as usize) };
+            unsafe { agg_window.update(start as usize, end as usize) };
+            let res = if agg_window.is_valid(min_periods) {
+                agg_window.get_agg(*out_idx as usize)
+            } else {
+                None
+            };
 
             if let Some(res) = res {
                 // SAFETY: `idx` is in bounds because `sorting_indices` was just taken from

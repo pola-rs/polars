@@ -103,6 +103,17 @@ impl ChunkFullNull for BinaryOffsetChunked {
 
 impl ChunkFull<&Series> for ListChunked {
     fn full(name: PlSmallStr, value: &Series, length: usize) -> ListChunked {
+        if value.len() == 1 && !value.dtype().is_nested() {
+            let out = value
+                .new_from_index(0, length)
+                .reshape_list(&[
+                    ReshapeDimension::Infer,
+                    ReshapeDimension::Specified(Dimension::new(1)),
+                ])
+                .unwrap();
+            return out.list().unwrap().clone();
+        }
+
         let mut builder = get_list_builder(value.dtype(), value.len() * length, length, name);
         for _ in 0..length {
             builder.append_series(value).unwrap();
@@ -220,17 +231,25 @@ impl<T: PolarsObject> ChunkFull<T> for ObjectChunked<T> {
     where
         Self: Sized,
     {
-        let mut ca: Self = (0..length).map(|_| Some(value.clone())).collect();
-        ca.rename(name);
-        ca
+        use crate::chunked_array::object::registry::run_with_gil;
+
+        run_with_gil(|| {
+            let mut ca: Self = (0..length).map(|_| Some(value.clone())).collect();
+            ca.rename(name);
+            ca
+        })
     }
 }
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkFullNull for ObjectChunked<T> {
     fn full_null(name: PlSmallStr, length: usize) -> ObjectChunked<T> {
-        let mut ca: Self = (0..length).map(|_| None).collect();
-        ca.rename(name);
-        ca
+        use crate::chunked_array::object::registry::run_with_gil;
+
+        run_with_gil(|| {
+            let mut ca: Self = (0..length).map(|_| None).collect();
+            ca.rename(name);
+            ca
+        })
     }
 }

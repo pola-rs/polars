@@ -5,7 +5,7 @@ use crate::bitmap::BitmapBuilder;
 use crate::compute::concatenate;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::array::is_nested_null;
-use crate::legacy::prelude::*;
+use crate::legacy::prelude::convert_inner_type;
 use crate::offset::Offsets;
 
 pub struct AnonymousBuilder<'a> {
@@ -152,7 +152,7 @@ impl<'a> AnonymousBuilder<'a> {
                 (dtype.clone(), values)
             } else {
                 let values = concatenate::concatenate(&self.arrays)?;
-                (inner_dtype.clone(), values)
+                (values.dtype().clone(), values)
             }
         };
         let dtype = ListArray::<i64>::default_datatype(inner_dtype);

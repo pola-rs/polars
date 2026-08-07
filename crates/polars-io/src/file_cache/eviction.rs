@@ -2,13 +2,12 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use fs4::fs_std::FileExt;
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsError, PolarsResult};
 use polars_utils::pl_path::PlRefPath;
 
 use super::cache_lock::{GLOBAL_FILE_CACHE_LOCK, GlobalFileCacheGuardExclusive};
 use super::metadata::EntryMetadata;
-use crate::pl_async;
 
 #[derive(Debug, Clone)]
 pub(super) struct EvictionCandidate {
@@ -122,7 +121,7 @@ impl EvictionCandidate {
         {
             let file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
 
-            if file.try_lock_exclusive().is_err() {
+            if file.try_lock().is_err() {
                 if verbose {
                     eprintln!(
                         "[EvictionManager] evict_files: skipping {} (file is locked)",
@@ -151,7 +150,7 @@ impl EvictionManager {
     /// The following directories exist:
     /// * `self.data_dir`
     /// * `self.metadata_dir`
-    pub(super) fn run_in_background(mut self) {
+    pub(super) fn run_in_background(&'static mut self) {
         let verbose = false;
 
         if verbose {
@@ -161,32 +160,33 @@ impl EvictionManager {
             );
         }
 
-        pl_async::get_runtime().spawn(async move {
+        ASYNC.spawn(async move {
             // Give some time at startup for other code to run.
             tokio::time::sleep(Duration::from_secs(3)).await;
             let mut last_eviction_time;
+            let mut slf = self;
 
             loop {
-                let this: &'static mut Self = unsafe { std::mem::transmute(&mut self) };
-
-                let result = tokio::task::spawn_blocking(|| this.update_file_list())
+                let result;
+                (result, slf) = ASYNC
+                    .spawn_blocking(|| (slf.update_file_list(), slf))
                     .await
                     .unwrap();
 
                 last_eviction_time = Instant::now();
 
                 match result {
-                    Ok(_) if self.files_to_remove.as_ref().unwrap().is_empty() => {},
+                    Ok(_) if slf.files_to_remove.as_ref().unwrap().is_empty() => {},
                     Ok(_) => loop {
                         if let Some(guard) = GLOBAL_FILE_CACHE_LOCK.try_lock_eviction() {
                             if verbose {
                                 eprintln!(
                                     "[EvictionManager] got exclusive cache lock, evicting {} files",
-                                    self.files_to_remove.as_ref().unwrap().len()
+                                    slf.files_to_remove.as_ref().unwrap().len()
                                 );
                             }
 
-                            tokio::task::block_in_place(|| self.evict_files(&guard));
+                            ASYNC.block_in_place(|| slf.evict_files(&guard));
                             break;
                         }
                         tokio::time::sleep(Duration::from_secs(7)).await;
@@ -199,7 +199,7 @@ impl EvictionManager {
                 }
 
                 loop {
-                    let min_ttl = self.min_ttl.load(std::sync::atomic::Ordering::Relaxed);
+                    let min_ttl = slf.min_ttl.load(std::sync::atomic::Ordering::Relaxed);
                     let sleep_interval = std::cmp::max(min_ttl / 4, {
                         #[cfg(debug_assertions)]
                         {
@@ -217,7 +217,7 @@ impl EvictionManager {
                     let sleep_interval = Duration::from_secs(sleep_interval);
 
                     tokio::select! {
-                        _ = self.notify_ttl_updated.notified() => {
+                        _ = slf.notify_ttl_updated.notified() => {
                             continue;
                         }
                         _ = tokio::time::sleep(sleep_interval) => {

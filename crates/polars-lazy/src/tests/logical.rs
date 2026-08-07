@@ -26,7 +26,7 @@ fn test_duration() -> PolarsResult<()> {
             (col("datetime") - col("datetime").first()).alias("datetime"),
         ])
         .explode(
-            by_name(["date", "datetime"], true),
+            by_name(["date", "datetime"], true, false),
             ExplodeOptions {
                 empty_as_null: true,
                 keep_nulls: true,

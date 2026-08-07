@@ -77,18 +77,23 @@ pub fn concat_df_horizontal(
     dfs: &[DataFrame],
     check_duplicates: bool,
     strict: bool,
+    unit_length_as_scalar: bool,
 ) -> PolarsResult<DataFrame> {
-    let output_height = dfs
-        .iter()
-        .map(|df| df.height())
-        .max()
-        .ok_or_else(|| polars_err!(ComputeError: "cannot concat empty dataframes"))?;
+    if dfs.is_empty() {
+        return Err(polars_err!(ComputeError: "cannot concat empty dataframes"));
+    }
+    let heights = || dfs.iter().map(|df| df.height());
+    let output_height = if unit_length_as_scalar {
+        heights().filter(|h| *h != 1).max().unwrap_or(1)
+    } else {
+        heights().max().unwrap()
+    };
 
     let owned_df;
 
     let mut out_width = 0;
 
-    let all_equal_height = dfs.iter().all(|df| {
+    let all_equal_height = dfs.iter().filter(|df| df.shape() != (0, 0)).all(|df| {
         out_width += df.width();
         df.height() == output_height
     });
@@ -104,19 +109,32 @@ pub fn concat_df_horizontal(
 
         owned_df = dfs
             .iter()
+            .filter(|df| df.shape() != (0, 0))
             .cloned()
             .map(|mut df| {
                 out_width += df.width();
+                let h = df.height();
 
-                if df.height() != output_height {
-                    let diff = output_height - df.height();
+                if h != output_height {
+                    if unit_length_as_scalar && h == 1 {
+                        // SAFETY: We extend each scalar column length to
+                        // `output_height`. Then, we set the height of the resulting dataframe.
+                        unsafe { df.columns_mut() }.iter_mut().for_each(|c| {
+                            let Column::Scalar(s) = c else {
+                                panic!("only supported for scalars");
+                            };
 
-                    // SAFETY: We extend each column with nulls to the point of being of length
-                    // `output_height`. Then, we set the height of the resulting dataframe.
-                    unsafe { df.columns_mut() }.iter_mut().for_each(|c| {
-                        *c = c.extend_constant(AnyValue::Null, diff).unwrap();
-                    });
+                            *c = Column::Scalar(s.resize(output_height));
+                        });
+                    } else {
+                        let diff = output_height - h;
 
+                        // SAFETY: We extend each column with nulls to the point of being of length
+                        // `output_height`. Then, we set the height of the resulting dataframe.
+                        unsafe { df.columns_mut() }.iter_mut().for_each(|c| {
+                            *c = c.extend_constant(AnyValue::Null, diff).unwrap();
+                        });
+                    }
                     unsafe {
                         df.set_height(output_height);
                     }
@@ -163,8 +181,29 @@ mod tests {
             matches!(result, Err(PolarsError::ShapeMismatch(_))),
             "expected shape mismatch error"
         );
-
         // Ensure the DataFrame is not mutated in the error case.
         assert_eq!(df.width(), 0);
+    }
+
+    #[test]
+    fn test_scalar_broadcast_over_empty_frame() {
+        use crate::prelude::*;
+
+        // Unit-length "scalar" frame broadcast against zero-row frame should yield zero rows
+        let empty = df!["a" => Vec::<i64>::new()].unwrap();
+        let scalar = df!["b" => [1i64]].unwrap();
+        let out = super::concat_df_horizontal(&[empty, scalar], true, false, true).unwrap();
+        assert_eq!(out.height(), 0);
+        assert_eq!(out.width(), 2);
+
+        // Non-empty frame must still broadcast the scalar across all its rows
+        let non_empty = df!["a" => [10i64, 20, 30]].unwrap();
+        let scalar = df!["b" => [1i64]].unwrap();
+        let out = super::concat_df_horizontal(&[non_empty, scalar], true, false, true).unwrap();
+        assert_eq!(out.height(), 3);
+        assert_eq!(
+            out.column("b").unwrap().as_materialized_series(),
+            &Series::new("b".into(), [1i64, 1, 1])
+        );
     }
 }

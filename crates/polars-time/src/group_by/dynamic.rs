@@ -1,6 +1,6 @@
 use arrow::legacy::time_zone::Tz;
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_par;
 use polars_ops::series::SeriesMethods;
@@ -346,12 +346,12 @@ impl Wrap<&DataFrame> {
                 ))
             });
 
-            let res = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+            let res = RAYON.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
             let groups = res.iter().map(|g| &g.0).collect_vec();
             let lower = res.iter().map(|g| &g.1).collect_vec();
             let upper = res.iter().map(|g| &g.2).collect_vec();
 
-            let ((groups, upper), lower) = POOL.install(|| {
+            let ((groups, upper), lower) = RAYON.install(|| {
                 rayon::join(
                     || rayon::join(|| flatten_par(&groups), || flatten_par(&upper)),
                     || flatten_par(&lower),
@@ -459,8 +459,8 @@ impl Wrap<&DataFrame> {
                 )
             });
 
-            let groups = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
-            let groups = POOL.install(|| flatten_par(&groups));
+            let groups = RAYON.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+            let groups = RAYON.install(|| flatten_par(&groups));
             PolarsResult::Ok(GroupsType::new_slice(groups, true, true))
         } else {
             // a requirement for the index

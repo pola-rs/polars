@@ -285,3 +285,28 @@ def test_err_nested_object() -> None:
 
     with pytest.raises(ComputeError):
         df.select(pl.col("obj").map_elements(mapper, return_dtype=pl.List(pl.Object)))
+
+
+def test_allow_object_after_cache_26182() -> None:
+    _ = pl.Series("b", [object])
+    with pytest.raises(TypeError):
+        (
+            pl.DataFrame({"a": [2]}).rolling(index_column="a", period="2i").agg(str)  # type: ignore[arg-type]
+        )
+
+
+def test_group_by_agg_object_raises_28182() -> None:
+    df = pl.DataFrame({"group": ["a", "a", "b"], "obj": [object(), object(), object()]})
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
+        df.group_by("group").agg(pl.col("obj"))
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
+        df.lazy().group_by("group").agg(pl.col("obj")).collect()
+
+
+def test_implode_object_raises() -> None:
+    df = pl.DataFrame({"obj": [object(), object()]})
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
+        df.select(pl.col("obj").implode())

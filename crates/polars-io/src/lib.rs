@@ -41,28 +41,7 @@ pub use cloud::glob as async_glob;
 pub use options::*;
 pub use path_utils::*;
 pub use shared::*;
+pub mod metrics;
 
+pub mod configs;
 pub mod hive;
-
-pub fn get_upload_chunk_size() -> usize {
-    use std::sync::LazyLock;
-
-    return *UPLOAD_CHUNK_SIZE;
-
-    static UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
-        let v = std::env::var("POLARS_UPLOAD_CHUNK_SIZE")
-            .map(|x| {
-                x.parse::<usize>()
-                    .ok()
-                    .filter(|x| *x > 0)
-                    .unwrap_or_else(|| panic!("invalid value for POLARS_UPLOAD_CHUNK_SIZE: {x}"))
-            })
-            .unwrap_or(64 * 1024 * 1024);
-
-        if polars_core::config::verbose() {
-            eprintln!("async upload_chunk_size: {v}")
-        }
-
-        v
-    });
-}

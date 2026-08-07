@@ -74,10 +74,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:bitwise]
 
     // --8<-- [start:count]
+    use rand::SeedableRng;
     use rand::distr::{Distribution, Uniform};
-    use rand::rng;
+    use rand::rngs::StdRng;
 
-    let mut rng = rng();
+    let mut rng = StdRng::seed_from_u64(42);
     let between = Uniform::new_inclusive(0, 100_000).unwrap();
     let arr: Vec<u32> = between.sample_iter(&mut rng).take(100_100).collect();
 

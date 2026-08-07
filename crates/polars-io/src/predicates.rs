@@ -118,7 +118,8 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
 
 #[cfg(feature = "parquet")]
 fn cast_to_parquet_scalar(scalar: Scalar) -> Option<ParquetScalar> {
-    use {AnyValue as A, ParquetScalar as P};
+    use AnyValue as A;
+    use ParquetScalar as P;
 
     Some(match scalar.into_value() {
         A::Null => P::Null,

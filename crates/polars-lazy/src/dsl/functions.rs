@@ -50,7 +50,7 @@ pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
 /// Concat [LazyFrame]s horizontally.
 pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
     inputs: L,
-    args: UnionArgs,
+    options: HConcatOptions,
 ) -> PolarsResult<LazyFrame> {
     let lfs = inputs.as_ref();
     let (opt_state, cached_arena) = lfs
@@ -60,10 +60,6 @@ pub fn concat_lf_horizontal<L: AsRef<[LazyFrame]>>(
             || polars_err!(NoData: "Require at least one LazyFrame for horizontal concatenation"),
         )?;
 
-    let options = HConcatOptions {
-        parallel: args.parallel,
-        strict: args.strict,
-    };
     let lp = DslPlan::HConcat {
         inputs: lfs.iter().map(|lf| lf.logical_plan.clone()).collect(),
         options,

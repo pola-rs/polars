@@ -26,6 +26,7 @@ Miscellaneous
     align_frames
     concat
     union
+    merge_sorted
     defer
     escape_regex
 

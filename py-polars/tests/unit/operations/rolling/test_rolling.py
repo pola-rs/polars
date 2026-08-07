@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-import sys
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -33,6 +32,7 @@ if TYPE_CHECKING:
         RankMethod,
         TimeUnit,
     )
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -74,7 +74,6 @@ def test_rolling_kernels_and_rolling(
         pl.col("values")
         .rolling_quantile_by("dt", period, quantile=0.2, closed=closed)
         .alias("quantile"),
-        pl.col("values").rolling_rank_by("dt", period, closed=closed).alias("rank"),
     )
     out2 = (
         example_df.set_sorted("dt")
@@ -86,11 +85,41 @@ def test_rolling_kernels_and_rolling(
                 pl.col("values").mean().alias("mean"),
                 pl.col("values").std().alias("std"),
                 pl.col("values").quantile(quantile=0.2).alias("quantile"),
-                pl.col("values").rank().last().alias("rank"),
             ]
         )
     )
     assert_frame_equal(out1, out2)
+
+
+@pytest.mark.parametrize(
+    "period",
+    ["1d", "2d", "3d", timedelta(days=1), timedelta(days=2), timedelta(days=3)],
+)
+@pytest.mark.parametrize("closed", ["right", "both"])
+def test_rolling_rank_kernels_and_rolling(
+    example_df: pl.DataFrame, period: str | timedelta, closed: ClosedInterval
+) -> None:
+    out1 = example_df.set_sorted("dt").select(
+        pl.col("dt"),
+        pl.col("values").rolling_rank_by("dt", period, closed=closed).alias("rank"),
+    )
+    out2 = (
+        example_df.set_sorted("dt")
+        .rolling("dt", period=period, closed=closed)
+        .agg([pl.col("values").rank().last().alias("rank")])
+    )
+    assert_frame_equal(out1, out2)
+
+
+@pytest.mark.parametrize("closed", ["left", "none"])
+def test_rolling_rank_needs_closed_right(
+    example_df: pl.DataFrame, closed: ClosedInterval
+) -> None:
+    pat = r"`rolling_rank_by` window needs to be closed on the right side \(i.e., `closed` must be `right` or `both`\)"
+    with pytest.raises(InvalidOperationError, match=pat):
+        example_df.set_sorted("dt").select(
+            pl.col("values").rolling_rank_by("dt", "2d", closed=closed).alias("rank"),
+        )
 
 
 @pytest.mark.parametrize(
@@ -238,17 +267,17 @@ def test_rolling_kurtosis() -> None:
     )
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values", "expected_dtype"),
     [
-        ("rolling_mean_by", [None, 1.0, 2.0, 3.0, 4.0, 5.0], pl.Float64),
-        ("rolling_sum_by", [None, 1, 2, 3, 4, 5], pl.Int64),
-        ("rolling_min_by", [None, 1, 2, 3, 4, 5], pl.Int64),
-        ("rolling_max_by", [None, 1, 2, 3, 4, 5], pl.Int64),
+        ("rolling_mean_by", [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], pl.Float64),
+        ("rolling_sum_by", [1, 2, 3, 4, 5, 6], pl.Int64),
+        ("rolling_min_by", [1, 2, 3, 4, 5, 6], pl.Int64),
+        ("rolling_max_by", [1, 2, 3, 4, 5, 6], pl.Int64),
         ("rolling_std_by", [None, None, None, None, None, None], pl.Float64),
         ("rolling_var_by", [None, None, None, None, None, None], pl.Float64),
-        ("rolling_rank_by", [None, 1.0, 1.0, 1.0, 1.0, 1.0], pl.Float64),
+        ("rolling_rank_by", [1.0, 1.0, 1.0, 1.0, 1.0, 1.0], pl.Float64),
     ],
 )
 def test_rolling_crossing_dst(
@@ -263,7 +292,7 @@ def test_rolling_crossing_dst(
     df = pl.DataFrame({"ts": ts, "value": [1, 2, 3, 4, 5, 6]})
 
     result = df.with_columns(
-        getattr(pl.col("value"), rolling_fn)(by="ts", window_size="1d", closed="left")
+        getattr(pl.col("value"), rolling_fn)(by="ts", window_size="1d", closed="right")
     )
 
     expected = pl.DataFrame(
@@ -715,7 +744,7 @@ def test_rolling_cov_corr() -> None:
         pl.rolling_corr("x", "y", window_size=3).alias("corr"),
     ).to_dict(as_series=False)
     assert res["cov"][2:] == pytest.approx([0.0, 0.0, 5.333333333333336])
-    assert res["corr"][2:] == pytest.approx([nan, 0.0, 0.9176629354822473], nan_ok=True)
+    assert res["corr"][2:] == pytest.approx([nan, nan, 0.9176629354822473], nan_ok=True)
     assert res["cov"][:2] == [None] * 2
     assert res["corr"][:2] == [None] * 2
 
@@ -1262,10 +1291,13 @@ def test_rolling_with_dst() -> None:
     df = pl.DataFrame(
         {"a": [datetime(2020, 10, 26, 1), datetime(2020, 10, 26)], "b": [1, 2]}
     ).with_columns(pl.col("a").dt.replace_time_zone("Europe/London"))
-    with pytest.raises(ComputeError, match="is ambiguous"):
-        df.select(pl.col("b").rolling_sum_by("a", "1d"))
-    with pytest.raises(ComputeError, match="is ambiguous"):
-        df.sort("a").select(pl.col("b").rolling_sum_by("a", "1d"))
+    result = df.select(pl.col("b").rolling_sum_by("a", "1d"))
+    expected = pl.DataFrame({"b": [3, 2]})
+    assert_frame_equal(result, expected)
+
+    result = df.sort("a").select(pl.col("b").rolling_sum_by("a", "1d"))
+    expected = pl.DataFrame({"b": [2, 3]})
+    assert_frame_equal(result, expected)
 
 
 def interval_defs() -> SearchStrategy[ClosedInterval]:
@@ -1410,11 +1442,8 @@ def test_rolling_aggs(
             )
         )
         expected_dict["ts"].append(ts)
-        if window.is_empty():
-            expected_dict["value"].append(None)
-        else:
-            value = getattr(window["value"], aggregation)()
-            expected_dict["value"].append(value)
+        value = getattr(window["value"], aggregation)()
+        expected_dict["value"].append(value)
     expected = pl.DataFrame(expected_dict).select(
         pl.col("ts").cast(pl.Datetime(time_unit)),
         pl.col("value").cast(result["value"].dtype),
@@ -1935,7 +1964,6 @@ def test_rolling_sum_non_finite_23115(with_nulls: bool) -> None:
         ("dense", get_index_type()),
     ],
 )
-@pytest.mark.parametrize("center", [False, True])
 @given(
     s=series(
         name="a",
@@ -1950,7 +1978,6 @@ def test_rolling_rank(
     window_size: int,
     method: RankMethod,
     out_dtype: pl.DataType,
-    center: bool,
 ) -> None:
     df = pl.DataFrame({"a": s})
     expected = (
@@ -1962,31 +1989,15 @@ def test_rolling_rank(
             .list.last()
             .cast(out_dtype)
         )
-        .with_columns(
-            a=pl.when(pl.col("index") < window_size - 1)
-            .then(None)
-            .otherwise(pl.col("a"))
-        )
         .drop("index")
     )
-    if center:
-        expected = expected.with_columns(a=pl.col("a").shift(-((window_size - 1) // 2)))
     actual = df.lazy().select(
-        pl.col("a").rolling_rank(window_size=window_size, method=method, center=center)
-    )
-
-    try:
-        assert actual.collect_schema() == actual.collect().schema, (
-            f"expected {actual.collect_schema()}, got {actual.collect().schema}"
+        pl.col("a").rolling_rank(
+            window_size=window_size, method=method, seed=0, min_samples=1
         )
-        assert_frame_equal(actual.collect(), expected)
-        print("PASS", file=sys.stderr)
-    except AssertionError:
-        print("FAIL", file=sys.stderr)
-        print(f"{actual.collect() = }", file=sys.stderr)
-        print(f"{expected = }", file=sys.stderr)
-        print(f"{s = }", file=sys.stderr)
-        raise
+    )
+    assert actual.collect_schema() == actual.collect().schema
+    assert_frame_equal(actual.collect(), expected)
 
 
 @pytest.mark.parametrize("center", [False, True])
@@ -2316,3 +2327,125 @@ def test_rolling_midpoint_25793() -> None:
         pl.col.x.cumulative_eval(pl.element().quantile(0.5, interpolation="midpoint"))
     )
     assert_frame_equal(out, expected)
+
+
+def test_rolling_rank_closed_left_26147() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [datetime(2025, 1, 1), datetime(2025, 1, 1)],
+            "x": [0, 1],
+            "x_flipped": [1, 0],
+        }
+    )
+    actual = df.with_columns(
+        x_ranked=pl.col("x").rolling_rank_by("date", "2d"),
+        x_flipped_ranked=pl.col("x_flipped").rolling_rank_by("date", "2d"),
+    )
+    expected = df.with_columns(
+        x_ranked=pl.Series([1.0, 2.0]),
+        x_flipped_ranked=pl.Series([2.0, 1.0]),
+    )
+    assert_frame_equal(actual, expected)
+
+
+def test_rolling_cov_no_panic_26741() -> None:
+    result = (
+        pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1, 2, 3]})
+        .cast({"x": pl.Float64, "y": pl.Int8})
+        .with_columns(z=pl.rolling_cov("x", "y", window_size=2).fill_null(0))
+    )
+    expected = pl.DataFrame(
+        {"x": [1.0, 2.0, 3.0], "y": [1, 2, 3], "z": [0.0, 0.5, 0.5]},
+        schema={"x": pl.Float64, "y": pl.Int8, "z": pl.Float64},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_rolling_corr_no_panic_26741() -> None:
+    result = (
+        pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1, 2, 3]})
+        .cast({"x": pl.Float32, "y": pl.Int8})
+        .with_columns(z=pl.rolling_corr("x", "y", window_size=2).fill_null(0))
+    )
+    expected = pl.DataFrame(
+        {"x": [1.0, 2.0, 3.0], "y": [1, 2, 3], "z": [0.0, 1.0, 1.0]},
+        schema={"x": pl.Float32, "y": pl.Int8, "z": pl.Float32},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_rolling_cov_corr_float32_26741() -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1.0, 2.0, 3.0]}).cast(
+        {"x": pl.Float32, "y": pl.Float32}
+    )
+    assert (
+        df.with_columns(z=pl.rolling_cov("x", "y", window_size=2).fill_null(0))[
+            "z"
+        ].dtype
+        == pl.Float32
+    )
+    assert (
+        df.with_columns(z=pl.rolling_corr("x", "y", window_size=2).fill_null(0))[
+            "z"
+        ].dtype
+        == pl.Float32
+    )
+
+
+def test_rolling_empty_windows_streaming_26732() -> None:
+    df = pl.DataFrame({"idx": [1, 2, 3], "a": [1, 1, 1]})
+    expected = pl.DataFrame({"idx": [1, 2, 3], "a": [1, 1, 1], "sum": [0, 0, 0]})
+
+    result = (
+        df.lazy()
+        .with_columns(
+            sum=pl.sum("a").rolling(index_column="idx", period="1i", offset="5i")
+        )
+        .collect(engine="streaming")
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_rolling_corr_ddof_invariant_27013() -> None:
+    x = [1.0, 2.0, 3.0, 4.0, 5.0]
+    y = [10.0, 20.0, 30.0, 40.0, 50.0]
+    df = pl.DataFrame({"x": x, "y": y})
+
+    r1 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5))["x"][-1]
+    assert r1 == pytest.approx(1.0)
+
+    with pytest.warns(DeprecationWarning, match="ddof"):
+        r0 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5, ddof=0))[
+            "x"
+        ][-1]
+    with pytest.warns(DeprecationWarning, match="ddof"):
+        r2 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5, ddof=2))[
+            "x"
+        ][-1]
+
+    assert r0 == pytest.approx(1.0)
+    assert r2 == pytest.approx(1.0)
+
+
+def test_rolling_streaming_ensures_sorted_27231(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+    df = pl.LazyFrame({"index": [1, 4, 2, 3], "values": [1, 2, 3, 4]})
+    q = df.rolling("index", period="2i").agg(pl.col("values"))
+    with pytest.raises(
+        InvalidOperationError,
+        match="argument in operation 'rolling' is not sorted",
+    ):
+        q.collect(engine="streaming")
+
+
+def test_rolling_rank_min_samples_28102() -> None:
+    s = pl.Series("a", [None, 1.0, 2.0, 3.0, 4.0])
+    out = s.rolling_rank(
+        window_size=3,
+        method="max",
+        min_samples=3,
+    )
+    assert_series_equal(
+        out, pl.Series("a", [None, None, None, 3, 3], dtype=pl.get_index_type())
+    )

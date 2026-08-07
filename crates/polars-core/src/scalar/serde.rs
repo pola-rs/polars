@@ -249,7 +249,7 @@ impl TryFrom<Scalar> for SerializableScalar {
 
                 Self::Struct(
                     avs.into_iter()
-                        .zip(fields.into_iter())
+                        .zip(fields)
                         .map(|(av, field)| {
                             PolarsResult::Ok((
                                 field.name,

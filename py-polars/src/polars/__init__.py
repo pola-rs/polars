@@ -38,7 +38,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # https://github.com/pola-rs/polars/pull/21829.
     import os
 
-    jemalloc_conf = "dirty_decay_ms:500,muzzy_decay_ms:-1"
+    jemalloc_conf = "dirty_decay_ms:500,muzzy_decay_ms:1000"
     if os.environ.get("POLARS_THP") == "1":
         jemalloc_conf += ",thp:always,metadata_thp:always"
     if override := os.environ.get("_RJEM_MALLOC_CONF"):
@@ -48,8 +48,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # Initialize polars on the rust side. This function is highly
     # unsafe and should only be called once.
     from polars._plr import __register_startup_deps
+    from polars._warnings import _polars_warn
 
-    __register_startup_deps()
+    __register_startup_deps(_polars_warn)
 
 from typing import TYPE_CHECKING, Any
 
@@ -172,6 +173,7 @@ from polars.functions import (
     len,
     linear_space,
     linear_spaces,
+    list,
     lit,
     map_batches,
     map_groups,
@@ -180,6 +182,7 @@ from polars.functions import (
     mean,
     mean_horizontal,
     median,
+    merge_sorted,
     min,
     min_horizontal,
     n_unique,
@@ -227,15 +230,18 @@ from polars.io import (
     read_ipc_schema,
     read_ipc_stream,
     read_json,
+    read_lines,
     read_ndjson,
     read_ods,
     read_parquet,
     read_parquet_metadata,
     read_parquet_schema,
+    scan_arrow_c_stream,
     scan_csv,
     scan_delta,
     scan_iceberg,
     scan_ipc,
+    scan_lines,
     scan_ndjson,
     scan_parquet,
     scan_pyarrow_dataset,
@@ -343,15 +349,18 @@ __all__ = [
     "read_ipc_schema",
     "read_ipc_stream",
     "read_json",
+    "read_lines",
     "read_ndjson",
     "read_ods",
     "read_parquet",
     "read_parquet_metadata",
     "read_parquet_schema",
+    "scan_arrow_c_stream",
     "scan_csv",
     "scan_delta",
     "scan_iceberg",
     "scan_ipc",
+    "scan_lines",
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
@@ -385,6 +394,7 @@ __all__ = [
     "datetime_range",
     "datetime_ranges",
     "element",
+    "merge_sorted",
     "ones",
     "repeat",
     "self_dtype",
@@ -444,6 +454,7 @@ __all__ = [
     "linear_space",
     "linear_spaces",
     "lit",
+    "list",
     "map_batches",
     "map_groups",
     "mean",

@@ -1,6 +1,7 @@
 use std::cell::LazyCell;
 use std::sync::Arc;
 
+use arrow::bitmap::Bitmap;
 use polars_core::config;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet};
@@ -8,18 +9,19 @@ use polars_core::schema::Schema;
 use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::default_values::{
-    DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
-};
+use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    FileScanIR, Operator, PredicateFileSkip, ScanSources, TableStatistics, UnifiedScanArgs,
+    Operator, PredicateFileSkip, ScanSources, TableStatistics, UnifiedScanArgs,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
+use polars_plan::plans::predicates::{
+    aexpr_to_column_predicates, aexpr_to_skip_batch_predicate, null_count_dtype,
+};
 use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, MintermIter};
 use polars_plan::utils::aexpr_to_leaf_names_iter;
+use polars_utils::aliases::PlIndexMapHashable;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
@@ -41,10 +43,9 @@ pub fn create_scan_predicate(
     let mut hive_predicate = None;
     let mut hive_predicate_is_full_predicate = false;
 
-    #[expect(clippy::never_loop)]
-    loop {
+    'set_scan_predicate: {
         let Some(hive_schema) = hive_schema else {
-            break;
+            break 'set_scan_predicate;
         };
 
         let mut hive_predicate_parts = vec![];
@@ -61,12 +62,12 @@ pub fn create_scan_predicate(
         }
 
         if hive_predicate_parts.is_empty() {
-            break;
+            break 'set_scan_predicate;
         }
 
         if non_hive_predicate_parts.is_empty() {
             hive_predicate_is_full_predicate = true;
-            break;
+            break 'set_scan_predicate;
         }
 
         {
@@ -103,8 +104,6 @@ pub fn create_scan_predicate(
 
             predicate = ExprIR::from_node(node, expr_arena);
         }
-
-        break;
     }
 
     let phys_predicate = create_physical_expr(&predicate, expr_arena, schema, state)?;
@@ -138,7 +137,7 @@ pub fn create_scan_predicate(
 
                 skip_batch_schema.insert(format_pl_smallstr!("{col}_min"), dtype.clone());
                 skip_batch_schema.insert(format_pl_smallstr!("{col}_max"), dtype.clone());
-                skip_batch_schema.insert(format_pl_smallstr!("{col}_nc"), IDX_DTYPE);
+                skip_batch_schema.insert(format_pl_smallstr!("{col}_nc"), null_count_dtype(dtype));
             }
 
             skip_batch_predicate = Some(create_physical_expr(
@@ -211,89 +210,121 @@ pub fn create_scan_predicate(
 pub fn initialize_scan_predicate<'a>(
     predicate: Option<&'a ScanIOPredicate>,
     hive_parts: Option<&HivePartitionsDf>,
-    table_statsitics: Option<&TableStatistics>,
+    table_statistics: Option<&TableStatistics>,
     verbose: bool,
 ) -> PolarsResult<(Option<SkipFilesMask>, Option<&'a ScanIOPredicate>)> {
-    #[expect(clippy::never_loop)]
-    loop {
-        let Some(predicate) = predicate else {
-            break;
-        };
+    let Some(predicate) = predicate else {
+        return Ok((None, None));
+    };
 
-        let expected_mask_len: usize;
+    let mut hive_inclusion: Option<Bitmap> = None;
+    let mut stats_exclusion: Option<Bitmap> = None;
 
-        let (skip_files_mask, send_predicate_to_readers) = if let Some(hive_parts) = hive_parts
-            && let Some(hive_predicate) = &predicate.hive_predicate
-        {
-            if verbose {
-                eprintln!(
-                    "initialize_scan_predicate: Source filter mask initialization via hive partitions"
-                );
-            }
+    // Hive partitioning pruning.
+    if let Some(hive_parts) = hive_parts
+        && let Some(hive_predicate) = &predicate.hive_predicate
+    {
+        if verbose {
+            eprintln!(
+                "initialize_scan_predicate: Source filter mask initialization via hive partitions"
+            );
+        }
 
-            expected_mask_len = hive_parts.df().height();
+        let hive_inclusion_bitmap = hive_predicate
+            .evaluate_io(hive_parts.df())?
+            .bool()?
+            .rechunk()
+            .into_owned()
+            .downcast_into_iter()
+            .next()
+            .unwrap()
+            .values()
+            .clone();
 
-            let inclusion_mask = hive_predicate
-                .evaluate_io(hive_parts.df())?
-                .bool()?
-                .rechunk()
-                .into_owned()
-                .downcast_into_iter()
-                .next()
-                .unwrap()
-                .values()
-                .clone();
+        let hive_len = hive_parts.df().height();
+        let mask_len = hive_inclusion_bitmap.len();
 
-            (
-                SkipFilesMask::Inclusion(inclusion_mask),
-                !predicate.hive_predicate_is_full_predicate,
-            )
-        } else if let Some(table_statsitics) = table_statsitics
-            && let Some(skip_batch_predicate) = &predicate.skip_batch_predicate
-        {
-            if verbose {
-                eprintln!(
-                    "initialize_scan_predicate: Source filter mask initialization via table statistics"
-                );
-            }
-
-            expected_mask_len = table_statsitics.0.height();
-
-            let exclusion_mask = skip_batch_predicate.evaluate_with_stat_df(&table_statsitics.0)?;
-
-            (SkipFilesMask::Exclusion(exclusion_mask), true)
-        } else {
-            break;
-        };
-
-        if skip_files_mask.len() != expected_mask_len {
+        if hive_len != mask_len {
             polars_warn!(
                 "WARNING: \
-                initialize_scan_predicate: \
-                filter mask length mismatch (length: {}, expected: {}). Files \
-                will not be skipped. This is a bug; please open an issue with \
-                a reproducible example if possible.",
-                skip_files_mask.len(),
-                expected_mask_len
+            initialize_scan_predicate: \
+            filter mask length mismatch \
+            (mask: {}, hive: {:?}). \
+            Files will not be skipped. This is a bug; \
+            please open an issue with a reproducible example if possible.",
+                mask_len,
+                hive_len
             );
             return Ok((None, Some(predicate)));
         }
 
+        if predicate.hive_predicate_is_full_predicate {
+            let skip_files_mask = SkipFilesMask::Inclusion(hive_inclusion_bitmap);
+            if verbose {
+                eprintln!(
+                    "initialize_scan_predicate: Predicate pushdown allows skipping {} / {} files",
+                    skip_files_mask.num_skipped_files(),
+                    skip_files_mask.len(),
+                );
+            }
+            return Ok((Some(skip_files_mask), None));
+        }
+
+        hive_inclusion = Some(hive_inclusion_bitmap);
+    }
+
+    // Non-hive table statistics pruning.
+    if let Some(table_statistics) = table_statistics
+        && let Some(skip_batch_predicate) = &predicate.skip_batch_predicate
+    {
         if verbose {
             eprintln!(
-                "initialize_scan_predicate: Predicate pushdown allows skipping {} / {} files",
-                skip_files_mask.num_skipped_files(),
-                skip_files_mask.len()
+                "initialize_scan_predicate: Source filter mask initialization via table statistics"
             );
         }
 
-        return Ok((
-            Some(skip_files_mask),
-            send_predicate_to_readers.then_some(predicate),
-        ));
+        let stats_exclusion_bitmap =
+            skip_batch_predicate.evaluate_with_stat_df(&table_statistics.0)?;
+
+        let stats_len = table_statistics.0.height();
+        let mask_len = stats_exclusion_bitmap.len();
+
+        if stats_len != mask_len {
+            polars_warn!(
+                "WARNING: \
+            initialize_scan_predicate: \
+            filter mask length mismatch \
+            (mask: {}, stats: {:?}). \
+            Files will not be skipped. This is a bug; \
+            please open an issue with a reproducible example if possible.",
+                mask_len,
+                stats_len
+            );
+            return Ok((None, Some(predicate)));
+        }
+
+        stats_exclusion = Some(stats_exclusion_bitmap);
     }
 
-    Ok((None, predicate))
+    // Merge masks.
+    let skip_files_mask = match (hive_inclusion, stats_exclusion) {
+        (Some(ref hive_inclusion), Some(ref stats_exclusion)) => {
+            SkipFilesMask::Exclusion(&!hive_inclusion | stats_exclusion)
+        },
+        (Some(hive_inclusion), None) => SkipFilesMask::Inclusion(hive_inclusion),
+        (None, Some(stats_exclusion)) => SkipFilesMask::Exclusion(stats_exclusion),
+        (None, None) => return Ok((None, Some(predicate))),
+    };
+
+    if verbose {
+        eprintln!(
+            "initialize_scan_predicate: Predicate pushdown allows skipping {} / {} files",
+            skip_files_mask.num_skipped_files(),
+            skip_files_mask.len(),
+        );
+    }
+
+    Ok((Some(skip_files_mask), Some(predicate)))
 }
 
 /// Filters the list of files in an `IR::Scan` based on the contained predicate. This is possible
@@ -378,7 +409,7 @@ pub fn apply_scan_predicate_to_scan_ir(
         *predicate_file_skip_applied = Some(predicate_file_skip);
 
         if skip_files_mask.num_skipped_files() > 0 {
-            filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter())
+            filter_scan_ir(scan_ir, skip_files_mask.non_skipped_files_idx_iter(), false)
         }
     }
 
@@ -392,7 +423,7 @@ pub fn apply_scan_predicate_to_scan_ir(
 ///
 /// # Panics
 /// Panics if `scan_ir` is not `IR::Scan`.
-pub fn filter_scan_ir<I>(scan_ir: &mut IR, selected_path_indices: I)
+pub fn filter_scan_ir<I>(scan_ir: &mut IR, selected_path_indices: I, allow_pre_slice: bool)
 where
     I: Iterator<Item = usize> + Clone,
 {
@@ -438,63 +469,35 @@ where
         projection: _,
         column_mapping: _,
         default_values,
-        // Ensure these are None.
-        row_index: None,
-        pre_slice: None,
+        row_index,
+        pre_slice,
         cast_columns_policy: _,
         missing_columns_policy: _,
         extra_columns_policy: _,
         include_file_paths: _,
-        table_statistics,
         deletion_files,
+        table_statistics,
         row_count,
-    } = unified_scan_args.as_mut()
-    else {
-        panic!("{unified_scan_args:?}")
-    };
+    } = unified_scan_args.as_mut();
 
+    // Ensure these are None.
+    assert!(row_index.is_none(), "{unified_scan_args:?}");
+    // In cloud this is allowed.
+    assert!(
+        pre_slice.is_none() | allow_pre_slice,
+        "{unified_scan_args:?}"
+    );
+
+    // Reconcile pre-decoded state with the filter: clear what's stale,
+    // gather what survives.
     *row_count = None;
 
-    if selected_path_indices.clone().next() != Some(0) {
+    let first_surviving_idx = selected_path_indices.clone().next();
+    let first_file_dropped = first_surviving_idx != Some(0);
+    if first_file_dropped {
         *reader_schema = None;
-
-        // Ensure the metadata is unset, otherwise it may incorrectly be used at
-        // scan. This is especially important for Parquet as it requires the
-        // correct `is_nullable` in the arrow field.
-        match scan_type.as_mut() {
-            #[cfg(feature = "parquet")]
-            FileScanIR::Parquet {
-                options: _,
-                metadata,
-            } => *metadata = None,
-
-            #[cfg(feature = "ipc")]
-            FileScanIR::Ipc {
-                options: _,
-                metadata,
-            } => *metadata = None,
-
-            #[cfg(feature = "csv")]
-            FileScanIR::Csv { options: _ } => {},
-
-            #[cfg(feature = "json")]
-            FileScanIR::NDJson { options: _ } => {},
-
-            #[cfg(feature = "python")]
-            FileScanIR::PythonDataset {
-                dataset_object: _,
-                cached_ir,
-            } => *cached_ir.lock().unwrap() = None,
-
-            #[cfg(feature = "scan_lines")]
-            FileScanIR::Lines { name: _ } => {},
-
-            FileScanIR::Anonymous {
-                options: _,
-                function: _,
-            } => {},
-        }
     }
+    scan_type.gather_after_filter(first_file_dropped, selected_path_indices.clone());
 
     let selected_path_indices_idxsize = LazyCell::new(|| {
         selected_path_indices
@@ -503,14 +506,16 @@ where
             .collect::<Vec<_>>()
     });
 
-    *deletion_files = deletion_files.as_ref().and_then(|x| match x {
+    *deletion_files = deletion_files.take().and_then(|x| match x {
         DeletionFilesList::IcebergPositionDelete(deletions) => {
             let mut out = None;
 
             for (out_idx, source_idx) in selected_path_indices.clone().enumerate() {
                 if let Some(v) = deletions.get(&source_idx) {
                     out.get_or_insert_with(|| {
-                        PlIndexMap::with_capacity(selected_path_indices.size_hint().0 - out_idx)
+                        PlIndexMap::with_capacity(
+                            selected_path_indices.size_hint().0.saturating_sub(out_idx),
+                        )
                     })
                     .insert(out_idx, v.clone());
                 }
@@ -518,6 +523,9 @@ where
 
             out.map(|x| DeletionFilesList::IcebergPositionDelete(Arc::new(x)))
         },
+        // No-op - Delta takes scan paths at the execution stage.
+        #[cfg(feature = "python")]
+        DeletionFilesList::Delta(provider) => Some(DeletionFilesList::Delta(provider)),
     });
 
     *table_statistics = table_statistics.as_ref().map(|x| {
@@ -552,11 +560,18 @@ where
 
     *default_values = default_values.as_ref().map(|x| match x {
         DefaultFieldValues::Iceberg(v) => {
-            let mut out = PlIndexMap::with_capacity(v.len());
-            let mut gather_indices = PlHashMap::with_capacity(v.len());
+            let IcebergDefaultFieldValues {
+                identity_transformed_partition_fields,
+                initial_defaults,
+            } = v.as_ref();
 
-            for (k, v) in v.iter() {
-                out.insert(
+            let mut new_identity_transformed_partition_fields =
+                PlIndexMap::with_capacity(identity_transformed_partition_fields.len());
+            let mut gather_indices =
+                PlHashMap::with_capacity(identity_transformed_partition_fields.len());
+
+            for (k, v) in identity_transformed_partition_fields.iter() {
+                new_identity_transformed_partition_fields.insert(
                     *k,
                     v.as_ref().map_err(Clone::clone).map(|partition_values| {
                         if !gather_indices.contains_key(&partition_values.len()) {
@@ -581,7 +596,12 @@ where
                 );
             }
 
-            DefaultFieldValues::Iceberg(Arc::new(IcebergIdentityTransformedPartitionFields(out)))
+            DefaultFieldValues::Iceberg(Arc::new(IcebergDefaultFieldValues {
+                identity_transformed_partition_fields: PlIndexMapHashable(
+                    new_identity_transformed_partition_fields,
+                ),
+                initial_defaults: initial_defaults.clone(),
+            }))
         },
     });
 }

@@ -57,6 +57,13 @@ def test_df_item_with_single_index(df: pl.DataFrame) -> None:
         df.item(None, 0)
 
 
+def test_df_item_empty_struct_null() -> None:
+    df = pl.DataFrame([{"a": None}], {"a": pl.Struct(())})
+
+    assert df.item() is None
+    assert df["a"].item() is None
+
+
 @pytest.mark.parametrize(
     ("row", "col"), [(0, 10), (10, 0), (10, 10), (-10, 0), (-10, 10)]
 )

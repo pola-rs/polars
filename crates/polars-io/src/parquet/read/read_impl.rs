@@ -2,11 +2,13 @@ use std::borrow::Cow;
 
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowSchemaRef;
+use polars_buffer::Buffer;
 use polars_core::chunked_array::builder::NullChunkedBuilder;
+use polars_core::config;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical;
-use polars_core::{POOL, config};
 use polars_parquet::read::{self, ColumnChunkMetadata, FileMetadata, Filter, RowGroupMetadata};
 use rayon::prelude::*;
 
@@ -240,7 +242,7 @@ fn rg_to_dfs_optionally_par_over_columns(
         };
 
         let columns = if let ParallelStrategy::Columns = parallel {
-            POOL.install(|| {
+            RAYON.install(|| {
                 projection
                     .par_iter()
                     .map(f)
@@ -338,7 +340,7 @@ fn rg_to_dfs_par_over_rg(
         row_groups.push((rg_md, rg_slice, row_count_start));
     }
 
-    let dfs = POOL.install(|| {
+    let dfs = RAYON.install(|| {
         // Set partitioned fields to prevent quadratic behavior.
         // Ensure all row groups are partitioned.
         row_groups
@@ -434,7 +436,8 @@ pub fn read_parquet<R: MmapBytesReader>(
         .unwrap_or_else(|| Cow::Owned((0usize..reader_schema.len()).collect::<Vec<_>>()));
 
     if ParallelStrategy::Auto == parallel {
-        if n_row_groups > materialized_projection.len() || n_row_groups > POOL.current_num_threads()
+        if n_row_groups > materialized_projection.len()
+            || n_row_groups > RAYON.current_num_threads()
         {
             parallel = ParallelStrategy::RowGroups;
         } else {
@@ -447,34 +450,33 @@ pub fn read_parquet<R: MmapBytesReader>(
     }
 
     let reader = ReaderBytes::from(&mut reader);
-    let store = mmap::ColumnStore::Local(unsafe {
-        std::mem::transmute::<ReaderBytes<'_>, ReaderBytes<'static>>(reader).to_memslice()
-    });
-
-    let dfs = rg_to_dfs(
-        &store,
-        &mut 0,
-        0,
-        n_row_groups,
-        pre_slice,
-        &file_metadata,
-        reader_schema,
-        row_index.clone(),
-        parallel,
-        &materialized_projection,
-        hive_partition_columns,
-    )?;
-
-    if dfs.is_empty() {
-        Ok(materialize_empty_df(
-            projection,
+    Buffer::with_slice(&reader, |buf| {
+        let store = mmap::ColumnStore::Local(buf);
+        let dfs = rg_to_dfs(
+            &store,
+            &mut 0,
+            0,
+            n_row_groups,
+            pre_slice,
+            &file_metadata,
             reader_schema,
+            row_index.clone(),
+            parallel,
+            &materialized_projection,
             hive_partition_columns,
-            row_index.as_ref(),
-        ))
-    } else {
-        accumulate_dataframes_vertical(dfs)
-    }
+        )?;
+
+        if dfs.is_empty() {
+            Ok(materialize_empty_df(
+                projection,
+                reader_schema,
+                hive_partition_columns,
+                row_index.as_ref(),
+            ))
+        } else {
+            accumulate_dataframes_vertical(dfs)
+        }
+    })
 }
 
 pub fn calc_prefilter_cost(mask: &arrow::bitmap::Bitmap) -> f64 {

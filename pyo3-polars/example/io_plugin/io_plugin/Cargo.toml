@@ -2,6 +2,7 @@
 name = "io_plugin"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
@@ -14,4 +15,4 @@ polars = { workspace = true, features = ["full"] }
 polars-python = { workspace = true, features = ["full", "allow_unused"] }
 pyo3 = { workspace = true, features = [] }
 pyo3-polars = { workspace = true, features = ["derive", "lazy"] }
-rand = { version = "0.8.5", features = [] }
+rand = { version = "0.10.1", features = [] }

@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from polars import functions as F
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
+from polars._utils.various import _Omitted
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -24,6 +27,8 @@ class ExprArrayNameSpace:
     def len(self) -> Expr:
         """
         Return the number of elements in each array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -53,6 +58,8 @@ class ExprArrayNameSpace:
     ) -> Expr:
         """
         Slice every subarray.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -104,6 +111,8 @@ class ExprArrayNameSpace:
         """
         Get the first `n` elements of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -148,6 +157,8 @@ class ExprArrayNameSpace:
     def tail(self, n: int | str | Expr = 5, *, as_array: bool = False) -> Expr:
         """
         Slice the last `n` values of every sublist.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -195,6 +206,8 @@ class ExprArrayNameSpace:
         """
         Compute the min values of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -217,6 +230,8 @@ class ExprArrayNameSpace:
     def max(self) -> Expr:
         """
         Compute the max values of the sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -241,6 +256,8 @@ class ExprArrayNameSpace:
         """
         Compute the sum values of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -263,6 +280,8 @@ class ExprArrayNameSpace:
     def std(self, ddof: int = 1) -> Expr:
         """
         Compute the std of the values of the sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -287,6 +306,8 @@ class ExprArrayNameSpace:
         """
         Compute the var of the values of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -309,6 +330,8 @@ class ExprArrayNameSpace:
     def mean(self) -> Expr:
         """
         Compute the mean of the values of the sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -333,6 +356,8 @@ class ExprArrayNameSpace:
         """
         Compute the median of the values of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -354,7 +379,9 @@ class ExprArrayNameSpace:
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
-        Get the unique/distinct values in the array.
+        Get the unique/distinct values in every sub-array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -365,25 +392,30 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [[1, 1, 2]],
+        ...         "a": [[1, 1, 2], [1, 3, 3]],
         ...     },
         ...     schema={"a": pl.Array(pl.Int64, 3)},
         ... )
         >>> df.select(pl.col("a").arr.unique())
-        shape: (1, 1)
+        shape: (2, 1)
         ┌───────────┐
         │ a         │
         │ ---       │
         │ list[i64] │
         ╞═══════════╡
         │ [1, 2]    │
+        │ [1, 3]    │
         └───────────┘
         """
-        return wrap_expr(self._pyexpr.arr_unique(maintain_order))
+        return self.eval(
+            F.element().unique(maintain_order=maintain_order), as_list=True
+        )
 
     def n_unique(self) -> Expr:
         """
         Count the number of unique values in every sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -404,11 +436,13 @@ class ExprArrayNameSpace:
         │ [2, 3, 4]     ┆ 3        │
         └───────────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.arr_n_unique())
+        return self.agg(F.element().n_unique())
 
     def to_list(self) -> Expr:
         """
         Convert an Array column into a List column with the same inner data type.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -434,9 +468,22 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_to_list())
 
-    def any(self) -> Expr:
+    def any(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether any boolean value is true for every subarray.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Examples
         --------
@@ -466,11 +513,24 @@ class ExprArrayNameSpace:
         │ null           ┆ null  │
         └────────────────┴───────┘
         """
-        return wrap_expr(self._pyexpr.arr_any())
+        return self.agg(F.element().any(ignore_nulls=ignore_nulls))
 
-    def all(self) -> Expr:
+    def all(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether all boolean values are true for every subarray.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Examples
         --------
@@ -500,11 +560,13 @@ class ExprArrayNameSpace:
         │ null           ┆ null  │
         └────────────────┴───────┘
         """
-        return wrap_expr(self._pyexpr.arr_all())
+        return self.agg(F.element().all(ignore_nulls=ignore_nulls))
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
-        Sort the arrays in this column.
+        Sort every sub-array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -546,7 +608,9 @@ class ExprArrayNameSpace:
 
     def reverse(self) -> Expr:
         """
-        Reverse the arrays in this column.
+        Reverse the sub-arrays in this column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -567,11 +631,17 @@ class ExprArrayNameSpace:
         │ [9, 1, 2]     ┆ [2, 1, 9]     │
         └───────────────┴───────────────┘
         """
-        return wrap_expr(self._pyexpr.arr_reverse())
+        return self.eval(F.element().reverse())
 
     def arg_min(self) -> Expr:
         """
-        Retrieve the index of the minimal value in every sub-array.
+        Retrieve an index of a minimal value in every sub-array.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -602,7 +672,13 @@ class ExprArrayNameSpace:
 
     def arg_max(self) -> Expr:
         """
-        Retrieve the index of the maximum value in every sub-array.
+        Retrieve an index of a maximum value in every sub-array.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -639,6 +715,8 @@ class ExprArrayNameSpace:
         and index `-1` would return the last item of every sublist
         if an index is out of bounds, it will return a `None`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         index
@@ -673,6 +751,8 @@ class ExprArrayNameSpace:
         """
         Get the first value of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -696,6 +776,8 @@ class ExprArrayNameSpace:
     def last(self) -> Expr:
         """
         Get the last value of the sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -722,6 +804,8 @@ class ExprArrayNameSpace:
         Join all string items in a sub-array and place a separator between them.
 
         This errors if inner type of array `!= String`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -761,9 +845,13 @@ class ExprArrayNameSpace:
         separator_pyexpr = parse_into_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_join(separator_pyexpr, ignore_nulls))
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
+    def explode(
+        self, *, empty_as_null: bool = _Omitted, keep_nulls: bool = True
+    ) -> Expr:
         """
         Returns a column with a separate row for every array element.
+
+        .. engine-support:: in-memory, streaming, partially-distributed
 
         Parameters
         ----------
@@ -782,7 +870,7 @@ class ExprArrayNameSpace:
         >>> df = pl.DataFrame(
         ...     {"a": [[1, 2, 3], [4, 5, 6]]}, schema={"a": pl.Array(pl.Int64, 3)}
         ... )
-        >>> df.select(pl.col("a").arr.explode())
+        >>> df.select(pl.col("a").arr.explode(empty_as_null=False))
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -797,6 +885,13 @@ class ExprArrayNameSpace:
         │ 6   │
         └─────┘
         """
+        if empty_as_null is _Omitted:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
+
         return wrap_expr(
             self._pyexpr.arr_explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
@@ -804,6 +899,8 @@ class ExprArrayNameSpace:
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
         Check if sub-arrays contain the given item.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -841,6 +938,8 @@ class ExprArrayNameSpace:
     def count_matches(self, element: IntoExpr) -> Expr:
         """
         Count how often the value produced by `element` occurs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -922,12 +1021,19 @@ class ExprArrayNameSpace:
             pyexpr = self._pyexpr.arr_to_struct(None)
             return wrap_expr(pyexpr).struct.rename_fields(field_names)
         else:
+            if callable(fields):
+                issue_deprecation_warning(
+                    "arr.to_struct() with a callable is deprecated. Please pass a list "
+                    "of field names."
+                )
             pyexpr = self._pyexpr.arr_to_struct(fields)
             return wrap_expr(pyexpr)
 
     def shift(self, n: int | IntoExprColumn = 1) -> Expr:
         """
         Shift array values by the given number of indices.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -978,6 +1084,8 @@ class ExprArrayNameSpace:
         """
         Run any polars expression against the arrays' elements.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         expr
@@ -1011,6 +1119,8 @@ class ExprArrayNameSpace:
     def agg(self, expr: Expr) -> Expr:
         """
         Run any polars aggregation expression against the arrays' elements.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------

@@ -2,6 +2,11 @@ use std::sync::Arc;
 
 use polars_core::prelude::PlIndexMap;
 
+#[cfg(feature = "python")]
+pub use super::python_delta_dv_provider::{
+    DELTA_DV_PROVIDER_VTABLE, DeltaDeletionVectorProvider, DeltaDeletionVectorProviderVTable,
+};
+
 // Note, there are a lot of single variant enums here, but the intention is that we'll support
 // Delta deletion vectors as well at some point in the future.
 
@@ -13,13 +18,16 @@ pub enum DeletionFilesList {
     // * There may be data files without deletion files.
     // * A single data file may have multiple associated deletion files.
     //
-    // Note that this uses `PlIndexMap` instead of `PlHashMap` for schemars compatibility.
+    // Note that this uses `PlIndexMap` instead of `PlIndexMap` for schemars compatibility.
     //
     // Other possible options:
     // * ListArray(inner: Utf8Array)
     //
     /// Iceberg positional deletes
     IcebergPositionDelete(Arc<PlIndexMap<usize, Arc<[String]>>>),
+    /// Delta deletion vector
+    #[cfg(feature = "python")]
+    Delta(DeltaDeletionVectorProvider),
 }
 
 impl DeletionFilesList {
@@ -31,15 +39,20 @@ impl DeletionFilesList {
             Some(IcebergPositionDelete(paths)) => {
                 (!paths.is_empty()).then_some(IcebergPositionDelete(paths))
             },
+            #[cfg(feature = "python")]
+            Some(Delta(provider)) => Some(Delta(provider)),
             None => None,
         }
     }
 
-    pub fn num_files_with_deletions(&self) -> usize {
+    /// Returns the number of files with deletions, but only if known at plan time.
+    pub fn num_files_with_deletions(&self) -> Option<usize> {
         use DeletionFilesList::*;
 
         match self {
-            IcebergPositionDelete(paths) => paths.len(),
+            IcebergPositionDelete(paths) => Some(paths.len()),
+            #[cfg(feature = "python")]
+            Delta(_) => None,
         }
     }
 }
@@ -58,6 +71,8 @@ impl std::hash::Hash for DeletionFilesList {
 
                 addr.hash(state)
             },
+            #[cfg(feature = "python")]
+            Delta(provider) => provider.hash(state),
         }
     }
 }
@@ -70,6 +85,10 @@ impl std::fmt::Display for DeletionFilesList {
             IcebergPositionDelete(paths) => {
                 let s = if paths.len() == 1 { "" } else { "s" };
                 write!(f, "iceberg-position-delete: {} source{s}", paths.len())?;
+            },
+            #[cfg(feature = "python")]
+            Delta(_) => {
+                write!(f, "delta-deletion-vector-python-callback")?;
             },
         }
 

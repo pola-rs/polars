@@ -18,6 +18,7 @@ chrono-tz = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 libloading = { workspace = true, optional = true }
 num-traits = { workspace = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-io = { workspace = true, features = ["lazy"] }
@@ -131,8 +132,6 @@ string_normalize = ["polars-plan/string_normalize"]
 string_reverse = ["polars-plan/string_reverse"]
 string_to_integer = ["polars-plan/string_to_integer"]
 list_sets = ["polars-plan/list_sets", "polars-ops/list_sets"]
-list_any_all = ["polars-ops/list_any_all", "polars-plan/list_any_all"]
-array_any_all = ["polars-ops/array_any_all", "polars-plan/array_any_all", "dtype-array"]
 list_drop_nulls = ["polars-ops/list_drop_nulls", "polars-plan/list_drop_nulls"]
 list_sample = ["polars-ops/list_sample", "polars-plan/list_sample"]
 list_filter = ["polars-ops/list_filter", "polars-plan/list_filter"]

@@ -1,5 +1,4 @@
 use super::*;
-use crate::chunked_array::comparison::*;
 use crate::prelude::*;
 
 unsafe impl<T: PolarsCategoricalType> IntoSeries for CategoricalChunked<T> {
@@ -16,7 +15,7 @@ unsafe impl<T: PolarsCategoricalType> IntoSeries for CategoricalChunked<T> {
 impl<T: PolarsCategoricalType> SeriesWrap<CategoricalChunked<T>> {
     unsafe fn apply_on_phys<F>(&self, apply: F) -> CategoricalChunked<T>
     where
-        F: Fn(&ChunkedArray<T::PolarsPhysical>) -> ChunkedArray<T::PolarsPhysical>,
+        F: FnOnce(&ChunkedArray<T::PolarsPhysical>) -> ChunkedArray<T::PolarsPhysical>,
     {
         let cats = apply(self.0.physical());
         unsafe { CategoricalChunked::from_cats_and_dtype_unchecked(cats, self.0.dtype().clone()) }
@@ -24,7 +23,9 @@ impl<T: PolarsCategoricalType> SeriesWrap<CategoricalChunked<T>> {
 
     unsafe fn try_apply_on_phys<F>(&self, apply: F) -> PolarsResult<CategoricalChunked<T>>
     where
-        F: Fn(&ChunkedArray<T::PolarsPhysical>) -> PolarsResult<ChunkedArray<T::PolarsPhysical>>,
+        F: FnOnce(
+            &ChunkedArray<T::PolarsPhysical>,
+        ) -> PolarsResult<ChunkedArray<T::PolarsPhysical>>,
     {
         let cats = apply(self.0.physical())?;
         unsafe {
@@ -55,10 +56,6 @@ macro_rules! impl_cat_series {
                 self.0.set_flags(flags)
             }
 
-            unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-                self.0.physical().equal_element(idx_self, idx_other, other)
-            }
-
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
                 polars_ensure!(self.dtype() == other.dtype(), SchemaMismatch: "expected '{}' found '{}'", self.dtype(), other.dtype());
@@ -86,8 +83,7 @@ macro_rules! impl_cat_series {
                 random_state: PlSeedableRandomStateQuality,
                 buf: &mut Vec<u64>,
             ) -> PolarsResult<()> {
-                self.0.physical().vec_hash(random_state, buf)?;
-                Ok(())
+                self.0.vec_hash(random_state, buf)
             }
 
             fn vec_hash_combine(
@@ -95,14 +91,13 @@ macro_rules! impl_cat_series {
                 build_hasher: PlSeedableRandomStateQuality,
                 hashes: &mut [u64],
             ) -> PolarsResult<()> {
-                self.0.physical().vec_hash_combine(build_hasher, hashes)?;
-                Ok(())
+                self.0.vec_hash_combine(build_hasher, hashes)
             }
 
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    unimplemented!()
+                    unsafe { self.0.agg_min(groups) }
                 } else {
                     self.apply_on_phys(|phys| phys.agg_min(groups).$ca_fn().unwrap().clone())
                         .into_series()
@@ -112,12 +107,31 @@ macro_rules! impl_cat_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    unimplemented!()
+                    unsafe { self.0.agg_max(groups) }
                 } else {
                     self.apply_on_phys(|phys| phys.agg_max(groups).$ca_fn().unwrap().clone())
                         .into_series()
                 }
             }
+
+            #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+                if self.0.uses_lexical_ordering() {
+                    unsafe { self.0.agg_arg_min(groups) }
+                } else {
+                    self.0.physical().agg_arg_min(groups)
+                }
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+                if self.0.uses_lexical_ordering() {
+                    unsafe { self.0.agg_arg_max(groups) }
+                } else {
+                    self.0.physical().agg_arg_max(groups)
+                }
+            }
+
 
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
@@ -235,6 +249,10 @@ macro_rules! impl_cat_series {
                 unsafe { self.apply_on_phys(|cats| cats.rechunk().into_owned()).into_series() }
             }
 
+            fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+                unsafe { self.apply_on_phys(move |cats| cats.clone().with_validity(validity)).into_series() }
+            }
+
             fn new_from_index(&self, index: usize, length: usize) -> Series {
                 unsafe { self.apply_on_phys(|cats| cats.new_from_index(index, length)).into_series() }
             }
@@ -284,6 +302,7 @@ macro_rules! impl_cat_series {
                 self.0.physical().arg_unique()
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
                 ChunkUnique::unique_id(self.0.physical())
             }

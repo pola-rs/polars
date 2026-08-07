@@ -2,7 +2,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::arity::unary_elementwise_values;
 use polars_core::prelude::*;
 use polars_ops::prelude::lst_get;
-use polars_ops::series::convert_to_unsigned_index;
+use polars_ops::series::convert_and_bound_index;
 use polars_utils::index::ToIdx;
 
 use super::*;
@@ -21,19 +21,16 @@ impl PhysicalExpr for GatherExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.phys_expr.evaluate(df, state)?;
         let idx = self.idx.evaluate(df, state)?;
-        let idx = convert_to_unsigned_index(
-            idx.as_materialized_series(),
-            series.len(),
-            self.null_on_oob,
-        )?;
+        let idx =
+            convert_and_bound_index(idx.as_materialized_series(), series.len(), self.null_on_oob)?;
         series.take(&idx)
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -54,7 +51,7 @@ impl PhysicalExpr for GatherExpr {
             let idx = idx.flat_naive();
             let idx = idx.cast(&DataType::Int64)?;
             let idx = idx.i64().unwrap();
-            let taken = lst_get(ac_list.as_ref(), idx, true)?;
+            let taken = lst_get(ac_list.as_ref(), idx, self.null_on_oob)?;
 
             ac.with_values_and_args(taken, true, Some(&self.expr), false, true)?;
             ac.with_update_groups(UpdateGroups::No);

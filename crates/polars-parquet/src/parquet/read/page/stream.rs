@@ -2,8 +2,8 @@ use std::io::SeekFrom;
 
 use async_stream::try_stream;
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream};
+use polars_buffer::Buffer;
 use polars_parquet_format::thrift::protocol::TCompactInputStreamProtocol;
-use polars_utils::mmap::MemSlice;
 
 use super::reader::{PageMetaData, finish_page};
 use crate::parquet::compression::Compression;
@@ -97,7 +97,7 @@ fn _get_page_stream<R: AsyncRead + Unpin + Send>(
 
             yield finish_page(
                 page_header,
-                MemSlice::from_vec(std::mem::take(&mut scratch)),
+                Buffer::from_vec(std::mem::take(&mut scratch)),
                 compression,
                 &descriptor,
             )?;

@@ -42,7 +42,7 @@ def test_date_ranges_lazy_with_literals() -> None:
     assert (
         df.rows()[0][1]
         == pd.date_range(
-            date(2000, 1, 1), date(2023, 12, 31), freq="987d"
+            date(2000, 1, 1), date(2023, 12, 31), freq="987D"
         ).date.tolist()
     )
 

@@ -1,6 +1,5 @@
 use std::ops::RangeInclusive;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use arrow::bitmap::bitmask::nth_set_bit_u32;
 #[cfg(feature = "dtype-categorical")]
@@ -10,8 +9,6 @@ use proptest::prelude::*;
 use proptest::strategy::BoxedStrategy;
 
 use crate::datatypes::{PolarsObjectSafe, pf16};
-#[cfg(feature = "dtype-categorical")]
-use crate::prelude::CategoricalMapping;
 use crate::prelude::{
     AnyValue, ArrowDataType, ArrowField, DataType, Field, OwnedObject, PolarsObject, StructArray,
     TimeUnit,
@@ -582,7 +579,12 @@ fn av_decimal_strategy(
     decimal_precision_range: RangeInclusive<usize>,
 ) -> impl Strategy<Value = AnyValue<'static>> {
     decimal_precision_range
-        .prop_flat_map(|precision| (any::<i128>(), Just(precision), 0..=precision))
+        .prop_flat_map(|precision| {
+            let max_value = 10_i128.pow(precision as u32) - 1;
+            let min_value = -max_value;
+
+            (min_value..=max_value, Just(precision), 0..=precision)
+        })
         .prop_map(|(value, precision, scale)| AnyValue::Decimal(value, precision, scale))
 }
 
@@ -593,16 +595,15 @@ fn av_categorical_enum_strategy(
     categories_range
         .prop_flat_map(|n_categories| (0..n_categories as u32, Just(n_categories)))
         .prop_map(|(cat_size, n_categories)| {
-            let mapping = CategoricalMapping::new(n_categories.max(1));
+            let cat = Categories::random(PlSmallStr::EMPTY, CategoricalPhysical::U32);
+            let mapping = cat.mapping();
 
             for i in 0..n_categories {
                 let category_name = format!("category{i}");
                 mapping.insert_cat(&category_name).unwrap();
             }
 
-            let leaked_mapping: &'static Arc<CategoricalMapping> =
-                Box::leak(Box::new(Arc::new(mapping)));
-
+            let leaked_mapping = Box::leak(Box::new(mapping));
             AnyValue::Categorical(cat_size, leaked_mapping)
         })
 }
@@ -614,16 +615,15 @@ fn av_categorical_enum_owned_strategy(
     categories_range
         .prop_flat_map(|n_categories| (0..n_categories as u32, Just(n_categories)))
         .prop_map(|(cat_size, n_categories)| {
-            let mapping = CategoricalMapping::new(n_categories.max(1));
+            let cat = Categories::random(PlSmallStr::EMPTY, CategoricalPhysical::U32);
+            let mapping = cat.mapping();
 
             for i in 0..n_categories {
                 let category_name = format!("category{i}");
                 mapping.insert_cat(&category_name).unwrap();
             }
 
-            let arc_mapping = Arc::new(mapping);
-
-            AnyValue::CategoricalOwned(cat_size, arc_mapping)
+            AnyValue::CategoricalOwned(cat_size, mapping)
         })
 }
 

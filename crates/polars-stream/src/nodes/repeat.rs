@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::schema::Schema;
 
 use super::compute_node_prelude::*;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 pub enum RepeatNode {
@@ -116,8 +116,11 @@ impl ComputeNode for RepeatNode {
                     let wait_group = WaitGroup::default();
                     while *repeats_left > 0 && !source_token.stop_requested() {
                         let height = morsel_size.min(*repeats_left);
-                        let df = value.new_from_index(0, height);
-                        let mut morsel = Morsel::new(df, *seq, source_token.clone());
+                        let mut morsel = Morsel::new_unregistered(
+                            value.new_from_index(0, height),
+                            *seq,
+                            source_token.clone(),
+                        );
                         morsel.set_consume_token(wait_group.token());
 
                         *seq = seq.successor();

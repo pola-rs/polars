@@ -136,7 +136,7 @@ fn collect_lambda_ret_with_rows_output<'py>(
         if retval.is_none() {
             Ok(&null_row)
         } else {
-            let tuple = retval.cast::<PyTuple>().map_err(|_| polars_err!(ComputeError: format!("expected tuple, got {}", retval.get_type().qualname().unwrap())))?;
+            let tuple = retval.cast::<PyTuple>().map_err(|_| polars_err!(ComputeError: "expected tuple, got {}", retval.get_type().qualname().unwrap()))?;
             row_buf.0.clear();
             for v in tuple {
                 let v = v.extract::<Wrap<AnyValue>>().unwrap().0;

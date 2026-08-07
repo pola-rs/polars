@@ -26,7 +26,6 @@ pub use crate::chunked_array::builder::{
     ListStringChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, StringChunkedBuilder,
 };
 pub use crate::chunked_array::collect::{ChunkedCollectInferIterExt, ChunkedCollectIterExt};
-pub use crate::chunked_array::iterator::PolarsIterator;
 #[cfg(feature = "dtype-categorical")]
 pub use crate::chunked_array::logical::categorical::*;
 #[cfg(feature = "ndarray")]
@@ -40,9 +39,9 @@ pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
 pub use crate::datatypes::{ArrayCollectIterExt, *};
-pub use crate::error::signals::try_raise_keyboard_interrupt;
+pub use crate::error::abort::try_raise_polars_abort;
 pub use crate::error::{
-    PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn,
+    PolarsContext, PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn,
 };
 pub use crate::frame::column::{Column, IntoColumn};
 pub use crate::frame::explode::UnpivotArgsIR;

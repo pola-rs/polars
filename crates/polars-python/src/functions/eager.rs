@@ -28,7 +28,7 @@ pub fn concat_df(dfs: &Bound<'_, PyAny>, py: Python) -> PyResult<PyDataFrame> {
     let identity = || Ok(identity_df.clone());
 
     py.enter_polars_df(|| {
-        polars_core::POOL.install(|| {
+        polars_core::runtime::RAYON.install(|| {
             rdfs.into_par_iter()
                 .fold(identity, |acc: PolarsResult<DataFrame>, df| {
                     let mut acc: DataFrame = acc?;
@@ -85,6 +85,7 @@ pub fn concat_df_horizontal(dfs: &Bound<'_, PyAny>, strict: bool) -> PyResult<Py
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let df = functions::concat_df_horizontal(&dfs, true, strict).map_err(PyPolarsErr::from)?;
+    let df =
+        functions::concat_df_horizontal(&dfs, true, strict, false).map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }

@@ -2,49 +2,15 @@ use std::borrow::Cow;
 
 use arrow::array::PrimitiveArray;
 use num_traits::Zero;
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add};
+use polars_core::error::constants::LENGTH_LIMIT_MSG;
+use polars_core::prelude::sum_output_dtype;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
-#[cfg(feature = "dtype-f16")]
-use polars_utils::float16::pf16;
+use polars_utils::index::{idxsize_to_u64, idxsize_try_from};
 
 use super::*;
-
-pub trait SumCast: Sized {
-    type Sum: NumericNative + From<Self>;
-}
-
-macro_rules! impl_sum_cast {
-    ($($x:ty),*) => {
-        $(impl SumCast for $x { type Sum = $x; })*
-    };
-    ($($from:ty as $to:ty),*) => {
-        $(impl SumCast for $from { type Sum = $to; })*
-    };
-}
-
-impl_sum_cast!(
-    bool as IdxSize,
-    u8 as i64,
-    u16 as i64,
-    i8 as i64,
-    i16 as i64
-);
-impl_sum_cast!(u32, u64, i32, i64, f32, f64);
-#[cfg(feature = "dtype-f16")]
-impl_sum_cast!(pf16);
-#[cfg(feature = "dtype-i128")]
-impl_sum_cast!(i128);
-#[cfg(feature = "dtype-u128")]
-impl_sum_cast!(u128);
-
-fn out_dtype(in_dtype: &DataType) -> DataType {
-    use DataType::*;
-    match in_dtype {
-        Boolean => IDX_DTYPE,
-        Int8 | UInt8 | Int16 | UInt16 => Int64,
-        dt => dt.clone(),
-    }
-}
 
 pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
     // TODO: Move the error checks up and make this function infallible
@@ -58,7 +24,7 @@ pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReducti
             })
         },
         #[cfg(feature = "dtype-decimal")]
-        Decimal(_, _) => Box::new(VGR::new(dtype, NumSumReducer::<Int128Type>(PhantomData))),
+        Decimal(_, _) => Box::new(VGR::new(dtype, DecimalSumReducer)),
         Duration(_) => Box::new(VGR::new(dtype, NumSumReducer::<Int64Type>(PhantomData))),
         Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
             DataType::Null,
@@ -136,7 +102,174 @@ where
         assert!(m.is_none());
         let arr = Box::new(PrimitiveArray::from_vec(v));
         Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr], &out_dtype(dtype))
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![arr],
+                &sum_output_dtype(dtype),
+            )
+        })
+    }
+}
+
+/// Sums Decimal128 values with overflow checking. `i128::MIN` marks an
+/// overflowed group (it is never a valid decimal physical value), which
+/// raises a `ComputeError` on `finish()`.
+#[cfg(feature = "dtype-decimal")]
+const DECIMAL_SUM_OVERFLOW: i128 = i128::MIN;
+
+#[cfg(feature = "dtype-decimal")]
+#[derive(Clone)]
+struct DecimalSumReducer;
+
+#[cfg(feature = "dtype-decimal")]
+impl Reducer for DecimalSumReducer {
+    type Dtype = Int128Type;
+    type Value = i128;
+
+    #[inline(always)]
+    fn init(&self) -> Self::Value {
+        0
+    }
+
+    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
+        s.to_physical_repr()
+    }
+
+    #[inline(always)]
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+        *a = if *a == DECIMAL_SUM_OVERFLOW || *b == DECIMAL_SUM_OVERFLOW {
+            DECIMAL_SUM_OVERFLOW
+        } else {
+            dec128_add(*a, *b, DEC128_MAX_PREC).unwrap_or(DECIMAL_SUM_OVERFLOW)
+        };
+    }
+
+    #[inline(always)]
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<i128>, _seq_id: u64) {
+        if *a != DECIMAL_SUM_OVERFLOW {
+            *a = dec128_add(*a, b.unwrap_or(0), DEC128_MAX_PREC).unwrap_or(DECIMAL_SUM_OVERFLOW);
+        }
+    }
+
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
+        if *v != DECIMAL_SUM_OVERFLOW {
+            *v = ca
+                .iter()
+                .flatten()
+                .try_fold(*v, |acc, x| dec128_add(acc, x, DEC128_MAX_PREC))
+                .unwrap_or(DECIMAL_SUM_OVERFLOW);
+        }
+    }
+
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
+        assert!(m.is_none());
+        polars_ensure!(
+            !v.contains(&DECIMAL_SUM_OVERFLOW),
+            ComputeError: "overflow in decimal addition in sum"
+        );
+        let arr = Box::new(PrimitiveArray::from_vec(v));
+        Ok(unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![arr],
+                &sum_output_dtype(dtype),
+            )
+        })
+    }
+}
+
+/// Reduces as u64. Converts to IdxSize on `finish()`, raising bigidx error if the
+/// result doesn't fit into the configured `IdxSize`.
+#[derive(Default)]
+pub struct IdxTypeCheckedSumReducer(PhantomData<(IdxType, UInt64Type)>);
+
+impl IdxTypeCheckedSumReducer {
+    pub fn new_grouped_reduction() -> VecGroupedReduction<Self> {
+        VecGroupedReduction::new(DataType::IDX_DTYPE, Self::default())
+    }
+}
+
+impl Clone for IdxTypeCheckedSumReducer {
+    fn clone(&self) -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl Reducer for IdxTypeCheckedSumReducer {
+    type Dtype = IdxType;
+    type Value = <<UInt64Type as PolarsNumericType>::Native as SumCast>::Sum;
+
+    #[inline(always)]
+    fn init(&self) -> Self::Value {
+        Zero::zero()
+    }
+
+    fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
+        s.to_physical_repr()
+    }
+
+    #[inline(always)]
+    fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
+        *a += *b;
+    }
+
+    #[inline(always)]
+    fn reduce_one(
+        &self,
+        a: &mut Self::Value,
+        b: Option<<Self::Dtype as PolarsNumericType>::Native>,
+        _seq_id: u64,
+    ) {
+        *a += b.map(idxsize_to_u64).unwrap_or(0);
+    }
+
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
+        for arr in ca.downcast_iter() {
+            if arr.has_nulls() {
+                for x in arr.iter() {
+                    *v += x.copied().map(idxsize_to_u64).unwrap_or(0);
+                }
+            } else {
+                for x in arr.values_iter().copied() {
+                    *v += idxsize_to_u64(x);
+                }
+            }
+        }
+    }
+
+    fn finish(
+        &self,
+        v: Vec<Self::Value>,
+        m: Option<Bitmap>,
+        dtype: &DataType,
+    ) -> PolarsResult<Series> {
+        assert!(m.is_none());
+
+        let len = v.len();
+        let v: Vec<IdxSize> = v
+            .into_iter()
+            .filter_map(|x| idxsize_try_from(x).ok())
+            .collect();
+
+        polars_ensure!(
+            v.len() == len,
+            ComputeError:
+            LENGTH_LIMIT_MSG
+        );
+
+        let arr = PrimitiveArray::from_vec(v);
+
+        Ok(unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![Box::new(arr)],
+                &sum_output_dtype(dtype),
+            )
         })
     }
 }

@@ -8,7 +8,7 @@ types = (
 type_enum = pl.Enum(types)
 # then let's load some csv data with information about pokemon
 pokemon = pl.read_csv(
-    "https://gist.githubusercontent.com/ritchie46/cac6b337ea52281aa23c049250a4ff03/raw/89a957ff3919d90e6ef2d34235e6bf22304f3366/pokemon.csv",
+    "docs/assets/data/pokemon.csv",
 ).cast({"Type 1": type_enum, "Type 2": type_enum})
 print(pokemon.head())
 # --8<-- [end:pokemon]
@@ -42,7 +42,7 @@ result = (
         pl.col("Speed").rank("dense", descending=True).alias("Speed rank"),
     )
     .select(pl.col("Name"), pl.col("Type 1"), pl.col("Speed rank"))
-    .explode("Name", "Speed rank")
+    .explode("Name", "Speed rank", empty_as_null=False)
 )
 
 print(result)

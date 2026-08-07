@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Coroutine, Sequence
+from collections.abc import Coroutine, Iterable, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from polars import functions as F
 from polars._utils.various import parse_version, qualified_type_name
-from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT
 from polars.exceptions import (
     DuplicateError,
@@ -16,13 +15,17 @@ from polars.exceptions import (
     UnsuitableSQLError,
 )
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
-from polars.io.database._cursor_proxies import ODBCCursorProxy, SurrealDBCursorProxy
+from polars.io.database._cursor_proxies import (
+    ODBCCursorProxy,
+    OracleCursorProxy,
+    SurrealDBCursorProxy,
+)
 from polars.io.database._inference import dtype_from_cursor_description
 from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterator
     from types import TracebackType
 
     import pyarrow as pa
@@ -86,6 +89,8 @@ class ConnectionExecutor:
         )
         if self.driver_name == "surrealdb":
             connection = SurrealDBCursorProxy(client=connection)
+        elif self.driver_name == "oracledb" and hasattr(connection, "fetch_df_all"):
+            connection = OracleCursorProxy(connection)
 
         self.cursor = self._normalise_cursor(connection)
         self.result: Any = None
@@ -156,7 +161,12 @@ class ConnectionExecutor:
         fetch_batches = driver_properties["fetch_batches"]
         if not iter_batches or fetch_batches is None:
             fetch_method = driver_properties["fetch_all"]
-            yield getattr(self.result, fetch_method)()
+            res = getattr(self.result, fetch_method)()
+
+            if isinstance(res, Iterable):
+                yield from res
+            else:
+                yield res
         else:
             size = [batch_size] if driver_properties["exact_batch_size"] else []
             repeat_batch_calls = driver_properties["repeat_batch_calls"]
@@ -199,7 +209,7 @@ class ConnectionExecutor:
         batch_size: int | None,
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
-        infer_schema_length: int | None,
+        infer_schema_length: int | None,  # noqa: ARG002
     ) -> DataFrame | Iterator[DataFrame] | None:
         """Return resultset data in Arrow format for frame init."""
         from polars import DataFrame
@@ -238,7 +248,7 @@ class ConnectionExecutor:
                 frames = (
                     self._apply_overrides(batch, (schema_overrides or {}))
                     if isinstance(batch, DataFrame)
-                    else from_arrow(batch, schema_overrides=schema_overrides)
+                    else DataFrame(batch)
                     for batch in self._fetch_arrow(
                         driver_properties,
                         iter_batches=iter_batches,
@@ -345,7 +355,7 @@ class ConnectionExecutor:
                 msg = f"column {nm!r} appears more than once in the query/result cursor"
                 raise DuplicateError(msg)
             elif desc is not None and nm not in schema_overrides:
-                dtype = dtype_from_cursor_description(self.cursor, desc)
+                dtype = dtype_from_cursor_description(desc)
                 if dtype is not None:
                     schema_overrides[nm] = dtype  # type: ignore[index]
             dupe_check.add(nm)
@@ -429,6 +439,13 @@ class ConnectionExecutor:
                 elif conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
                     return conn
+                elif conn.engine.driver == "oracledb" and hasattr(
+                    raw_conn := conn.engine.raw_connection().driver_connection,
+                    "fetch_df_all",
+                ):
+                    self.driver_name = "oracledb"
+                    self.can_close_cursor = True
+                    return cast("Cursor", OracleCursorProxy(raw_conn))
                 elif self._is_alchemy_engine(conn):
                     # note: if we create it, we can close it
                     self.can_close_cursor = True
@@ -438,7 +455,9 @@ class ConnectionExecutor:
 
         elif hasattr(conn, "cursor"):
             # connection has a dedicated cursor; prefer over direct execute
-            cursor = cursor() if callable(cursor := conn.cursor) else cursor
+            cursor = (
+                cast("Cursor", cursor()) if callable(cursor := conn.cursor) else cursor
+            )
             self.can_close_cursor = True
             return cursor
 
@@ -553,7 +572,7 @@ class ConnectionExecutor:
         # note: some cursors execute in-place, some access results via a property
         result = self.cursor if (result is None or result is True) else result
         if self.driver_name == "duckdb" and self._is_alchemy_result(result):
-            result = result.cursor
+            result = result.cursor  # type: ignore[union-attr]
 
         self.result = result
         return self
@@ -593,13 +612,8 @@ class ConnectionExecutor:
             )
             if frame is not None:
                 if defer_cursor_close:
-                    frame = (
-                        df
-                        for df in CloseAfterFrameIter(
-                            frame,
-                            cursor=self.result,
-                        )
-                    )
+                    frame_cursor = CloseAfterFrameIter(frame, cursor=self.cursor)
+                    frame = (df for df in frame_cursor)
                 return frame
 
         msg = (

@@ -1,3 +1,5 @@
+use polars_error::{PolarsResult, polars_ensure};
+
 // Formatting environment variables (typically referenced/set from the python-side Config object)
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 pub(crate) const FMT_MAX_COLS: &str = "POLARS_FMT_MAX_COLS";
@@ -28,17 +30,13 @@ pub(crate) const FMT_TABLE_ROUNDED_CORNERS: &str = "POLARS_FMT_TABLE_ROUNDED_COR
 pub(crate) const FMT_TABLE_CELL_LIST_LEN: &str = "POLARS_FMT_TABLE_CELL_LIST_LEN";
 
 pub fn verbose() -> bool {
-    std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1"
-}
-
-pub fn get_engine_affinity() -> String {
-    std::env::var("POLARS_ENGINE_AFFINITY").unwrap_or_else(|_| "auto".to_string())
+    polars_config::config().verbose()
 }
 
 /// Prints a log message if sensitive verbose logging has been enabled.
 pub fn verbose_print_sensitive<F: Fn() -> String>(create_log_message: F) {
     fn do_log(create_log_message: &dyn Fn() -> String) {
-        if std::env::var("POLARS_VERBOSE_SENSITIVE").as_deref() == Ok("1") {
+        if polars_config::config().verbose_sensitive() {
             // Force the message to be a single line.
             let msg = create_log_message().replace('\n', " ");
             eprintln!("[SENSITIVE]: {msg}")
@@ -48,8 +46,15 @@ pub fn verbose_print_sensitive<F: Fn() -> String>(create_log_message: F) {
     do_log(&create_log_message)
 }
 
-pub fn force_async() -> bool {
-    std::env::var("POLARS_FORCE_ASYNC")
-        .map(|value| value == "1")
-        .unwrap_or_default()
+pub fn check_allow_importing_interval_as_struct(type_name: &'static str) -> PolarsResult<()> {
+    polars_ensure!(
+        polars_config::config().import_interval_as_struct(),
+        ComputeError:
+        "could not import from `{type_name}` type. \
+        Hint: This can be imported by setting \
+        POLARS_IMPORT_INTERVAL_AS_STRUCT=1 in the environment. \
+        Note however that this is unstable functionality \
+        that may change at any time."
+    );
+    Ok(())
 }

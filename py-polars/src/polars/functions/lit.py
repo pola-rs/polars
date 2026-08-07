@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import enum
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
 import polars._reexport as pl
@@ -16,6 +16,7 @@ from polars._dependencies import (
 )
 from polars._dependencies import numpy as np
 from polars._utils.wrap import wrap_expr
+from polars.datatype_expr import DataTypeExpr
 from polars.datatypes import BaseExtension, Date, Datetime, Duration, Object
 from polars.datatypes.convert import DataTypeMappings
 
@@ -28,7 +29,10 @@ if TYPE_CHECKING:
 
 
 def lit(
-    value: Any, dtype: PolarsDataType | None = None, *, allow_object: bool = False
+    value: Any,
+    dtype: PolarsDataType | DataTypeExpr | None = None,
+    *,
+    allow_object: bool = False,
 ) -> Expr:
     """
     Return an expression representing a literal value.
@@ -83,6 +87,8 @@ def lit(
     elif isinstance(dtype, type) and issubclass(dtype, BaseExtension):
         msg = f"dtype '{dtype}' is a BaseExtension class, it should be an instance"
         raise TypeError(msg)
+    elif isinstance(dtype, DataTypeExpr):
+        return lit(value).cast(dtype)
     elif dtype == Object:
         value_s = pl.Series("literal", [value], dtype=dtype)
         return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))
@@ -93,7 +99,8 @@ def lit(
 
         # parse time unit
         if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
-            time_unit = tu  # type: ignore[assignment]
+            tu = cast("TimeUnit", tu)
+            time_unit = tu
         else:
             time_unit = "us"
 
@@ -146,6 +153,7 @@ def lit(
     elif isinstance(value, timedelta):
         value_s = pl.Series("literal", [value])
         if dtype is not None and (tu := getattr(dtype, "time_unit", None)) is not None:
+            tu = cast("TimeUnit", tu)
             value_s = value_s.cast(Duration(tu))
         expr = wrap_expr(plr.lit(value_s._s, allow_object=False, is_scalar=True))
         return expr

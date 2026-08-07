@@ -38,6 +38,9 @@ pub fn function_expr_to_udf(func: IRBinaryFunction) -> SpecialEq<Arc<dyn Columns
         Tail => {
             map_as_slice!(bin_tail)
         },
+        Get(null_on_oob) => {
+            map_as_slice!(bin_get, null_on_oob)
+        },
     }
 }
 
@@ -132,4 +135,10 @@ pub(super) fn bin_tail(s: &mut [Column]) -> PolarsResult<Column> {
         .bin_tail(&s[1])?
         .with_name(ca.name().clone())
         .into_column())
+}
+
+pub(super) fn bin_get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Column> {
+    let ca = s[0].binary()?;
+    let index = s[1].cast(&DataType::Int64)?;
+    polars_ops::prelude::bin_get(ca, index.i64()?, null_on_oob)
 }

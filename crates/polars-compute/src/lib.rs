@@ -6,6 +6,7 @@ pub mod arithmetic;
 pub mod arity;
 pub mod binview_index_map;
 pub mod bitwise;
+pub mod boolean;
 #[cfg(feature = "approx_unique")]
 pub mod cardinality;
 #[cfg(feature = "cast")]

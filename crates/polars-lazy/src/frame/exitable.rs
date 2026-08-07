@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, channel};
 
-use polars_core::POOL;
+use polars_core::runtime::RAYON;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::*;
@@ -16,7 +16,7 @@ impl LazyFrame {
         if physical_plan.is_cache_prefiller() {
             #[cfg(feature = "async")]
             {
-                polars_io::pl_async::get_runtime().spawn_blocking(move || {
+                polars_core::runtime::ASYNC.spawn_blocking(move || {
                     let result = physical_plan.execute(&mut state);
                     tx.send(result).unwrap();
                 });
@@ -29,7 +29,7 @@ impl LazyFrame {
                 });
             }
         } else {
-            POOL.spawn_fifo(move || {
+            RAYON.spawn_fifo(move || {
                 let result = physical_plan.execute(&mut state);
                 tx.send(result).unwrap();
             });

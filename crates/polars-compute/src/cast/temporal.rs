@@ -6,6 +6,7 @@ pub use arrow::temporal_conversions::{
 };
 use arrow::temporal_conversions::{parse_offset, parse_offset_tz};
 use chrono::format::{Parsed, StrftimeItems};
+use chrono::{Datelike, NaiveDate, NaiveTime, Timelike};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -139,4 +140,30 @@ pub fn utf8_to_naive_timestamp_scalar(value: &str, fmt: &str, tu: &TimeUnit) -> 
             TimeUnit::Nanosecond => x.and_utc().timestamp_nanos_opt().unwrap(),
         })
         .ok()
+}
+
+/// Parses an ISO-8601 date (`YYYY-MM-DD`) into days since the Unix
+/// epoch; non-parsable values return `None`.
+#[inline]
+pub fn utf8_to_naive_date_scalar(value: &str) -> Option<i32> {
+    value
+        .parse::<NaiveDate>()
+        .ok()
+        .map(|d| d.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
+}
+
+/// Parses an ISO-8601 time (`HH:MM:SS[.fff]`) into elapsed time since
+/// midnight in the given `TimeUnit`; non-parsable values return `None`.
+#[inline]
+pub fn utf8_to_naive_time_scalar(value: &str, tu: TimeUnit) -> Option<i64> {
+    value.parse::<NaiveTime>().ok().map(|t| {
+        let secs = t.num_seconds_from_midnight() as i64;
+        let nanos = t.nanosecond() as i64;
+        match tu {
+            TimeUnit::Second => secs,
+            TimeUnit::Millisecond => secs * MILLISECONDS + nanos / 1_000_000,
+            TimeUnit::Microsecond => secs * MICROSECONDS + nanos / 1_000,
+            TimeUnit::Nanosecond => secs * NANOSECONDS + nanos,
+        }
+    })
 }

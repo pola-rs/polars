@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -9,6 +9,9 @@ from dateutil.tz import tzoffset
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_literal_scalar_list_18686() -> None:
@@ -134,3 +137,52 @@ def test_literal_object_25679() -> None:
 
     assert res.schema == {"colx": pl.Object()}
     assert res["colx"].to_list() == [0, 0, 1, 2, 0, 3, 3, 0]
+
+
+@pytest.mark.parametrize(
+    ("numerator", "divisor", "floordiv", "mod"),
+    [
+        (10, 3, 3, 1),
+        (10, 2, 5, 0),
+        (1, 2, 0, 1),
+        (0, 10, 0, 0),
+        (1, 0, None, None),
+    ],
+)
+@pytest.mark.parametrize(
+    ("numerator_dtype", "divisor_dtype"),
+    [
+        (x, y)
+        for x in [pl.Int8, pl.UInt8, None]
+        for y in [pl.Int8, pl.UInt8, None]
+        if x == y or x is None or y is None
+    ],
+)
+def test_floordiv_mod(
+    numerator: int,
+    divisor: int,
+    floordiv: int | None,
+    mod: int | None,
+    numerator_dtype: PolarsDataType | None,
+    divisor_dtype: PolarsDataType | None,
+) -> None:
+    assert_frame_equal(
+        pl.select(
+            pl.lit(numerator, dtype=numerator_dtype)
+            // pl.lit(divisor, dtype=divisor_dtype)
+        ),
+        pl.DataFrame(
+            {"literal": [floordiv]},
+            schema={"literal": numerator_dtype or divisor_dtype or pl.Int32},
+        ),
+    )
+    assert_frame_equal(
+        pl.select(
+            pl.lit(numerator, dtype=numerator_dtype)
+            % pl.lit(divisor, dtype=divisor_dtype)
+        ),
+        pl.DataFrame(
+            {"literal": [mod]},
+            schema={"literal": numerator_dtype or divisor_dtype or pl.Int32},
+        ),
+    )

@@ -30,6 +30,8 @@ class ExprBinaryNameSpace:
         r"""
         Check if binaries in Series contain a binary substring.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         literal
@@ -77,6 +79,8 @@ class ExprBinaryNameSpace:
         r"""
         Check if string values end with a binary substring.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         suffix
@@ -123,6 +127,8 @@ class ExprBinaryNameSpace:
     def starts_with(self, prefix: IntoExpr) -> Expr:
         r"""
         Check if values start with a binary substring.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -173,6 +179,8 @@ class ExprBinaryNameSpace:
         r"""
         Decode values using the provided encoding.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         encoding : {'hex', 'base64'}
@@ -220,6 +228,8 @@ class ExprBinaryNameSpace:
         r"""
         Encode a value using the provided encoding.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         encoding : {'hex', 'base64'}
@@ -264,6 +274,8 @@ class ExprBinaryNameSpace:
         r"""
         Get the size of binary values in the given unit.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         unit : {'b', 'kb', 'mb', 'gb', 'tb'}
@@ -305,6 +317,8 @@ class ExprBinaryNameSpace:
 
         Supported types are numerical or temporal dtypes, or an ``Array`` of
         these dtypes.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -351,6 +365,8 @@ class ExprBinaryNameSpace:
         r"""
         Slice the binary values.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         offset
@@ -393,6 +409,8 @@ class ExprBinaryNameSpace:
     def head(self, n: int | IntoExpr = 5) -> Expr:
         r"""
         Take the first `n` bytes of the binary values.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -440,6 +458,8 @@ class ExprBinaryNameSpace:
         r"""
         Take the last `n` bytes of the binary values.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -481,3 +501,42 @@ class ExprBinaryNameSpace:
         """
         n_pyexpr = parse_into_expression(n, str_as_lit=False)
         return wrap_expr(self._pyexpr.bin_tail(n_pyexpr))
+
+    def get(self, index: int | IntoExpr, *, null_on_oob: bool = False) -> Expr:
+        r"""
+        Get the byte value at the given index.
+
+        For example, index `0` would return the first byte of every binary value
+        and index `-1` would return the last byte of every binary value.
+        The behavior if an index is out of bounds is determined by the argument
+        `null_on_oob`.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        index
+            Index to return per binary value
+        null_on_oob
+            Behavior if an index is out of bounds:
+
+            * True -> set as null
+            * False -> raise an error
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [b"\x01\x02\x03", b"", b"\x04\x05"]})
+        >>> df.with_columns(get=pl.col("a").bin.get(0, null_on_oob=True))
+        shape: (3, 2)
+        ┌─────────────────┬──────┐
+        │ a               ┆ get  │
+        │ ---             ┆ ---  │
+        │ binary          ┆ u8   │
+        ╞═════════════════╪══════╡
+        │ b"\x01\x02\x03" ┆ 1    │
+        │ b""             ┆ null │
+        │ b"\x04\x05"     ┆ 4    │
+        └─────────────────┴──────┘
+        """
+        index_pyexpr = parse_into_expression(index)
+        return wrap_expr(self._pyexpr.bin_get(index_pyexpr, null_on_oob))

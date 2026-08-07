@@ -1,5 +1,5 @@
 use std::simd::prelude::*;
-use std::simd::{LaneCount, SimdElement, SupportedLaneCount};
+use std::simd::{Select, SimdElement};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
@@ -28,7 +28,6 @@ fn fold_agg_kernel<const N: usize, T, F>(
 where
     T: SimdElement + NativeType,
     F: FnMut(Simd<T, N>, Simd<T, N>) -> Simd<T, N>,
-    LaneCount<N>: SupportedLaneCount,
 {
     if arr.is_empty() {
         return None;
@@ -46,7 +45,7 @@ where
         let mask = BitMask::from_bitmap(valid);
         let mut offset = 0;
         for c in arr_chunks.by_ref() {
-            let m: Mask<_, N> = mask.get_simd(offset);
+            let m: Mask<T::Mask, N> = mask.get_simd(offset);
             state = simd_f(state, m.select(Simd::from_slice(c), identity));
             offset += N;
         }
@@ -54,7 +53,7 @@ where
             let mut rest: [T; N] = identity.to_array();
             let arr_rest = arr_chunks.remainder();
             rest[..arr_rest.len()].copy_from_slice(arr_rest);
-            let m: Mask<_, N> = mask.get_simd(offset);
+            let m: Mask<T::Mask, N> = mask.get_simd(offset);
             state = simd_f(state, m.select(Simd::from_array(rest), identity));
         }
     } else {
@@ -82,7 +81,6 @@ fn fold_agg_min_max_kernel<const N: usize, T, F>(
 where
     T: SimdElement + NativeType,
     F: FnMut((Simd<T, N>, Simd<T, N>), (Simd<T, N>, Simd<T, N>)) -> (Simd<T, N>, Simd<T, N>),
-    LaneCount<N>: SupportedLaneCount,
 {
     if arr.is_empty() {
         return None;
@@ -101,7 +99,7 @@ where
         let mask = BitMask::from_bitmap(valid);
         let mut offset = 0;
         for c in arr_chunks.by_ref() {
-            let m: Mask<_, N> = mask.get_simd(offset);
+            let m: Mask<T::Mask, N> = mask.get_simd(offset);
             let slice = Simd::from_slice(c);
             state = simd_f(
                 state,
@@ -117,7 +115,7 @@ where
             min_rest[..arr_rest.len()].copy_from_slice(arr_rest);
             max_rest[..arr_rest.len()].copy_from_slice(arr_rest);
 
-            let m: Mask<_, N> = mask.get_simd(offset);
+            let m: Mask<T::Mask, N> = mask.get_simd(offset);
 
             let min_rest = Simd::from_array(min_rest);
             let max_rest = Simd::from_array(max_rest);
