@@ -863,6 +863,6 @@ def test_append_no_upcast_27345() -> None:
         ("where", "use `filter` instead"),
     ],
 )
-def test_expr_removed_items(name: str, match: str) -> None:
+def test_expr_removed_methods(name: str, match: str) -> None:
     with pytest.raises(AttributeRemovedError, match=re.escape(match)):
         getattr(pl.col("a"), name)
