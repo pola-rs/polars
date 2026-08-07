@@ -273,7 +273,6 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         } => {
             map_as_slice!(misc::hist, bin_count, include_category, include_breakpoint)
         },
-        F::Rechunk => map!(misc::rechunk),
         F::ShiftAndFill => {
             map_as_slice!(shift_and_fill::shift_and_fill)
         },
