@@ -161,15 +161,10 @@ pub fn lower_ir(
     expr_cache: &mut ExprCache,
     cache_nodes: &mut PlHashMap<UniqueId, PhysStream>,
     ctx: StreamingLowerIRContext<'_>,
-    mut disable_morsel_split: Option<bool>,
 ) -> PolarsResult<PhysStream> {
     // Helper macro to simplify recursive calls.
     macro_rules! lower_ir {
         ($input:expr) => {{
-            // Disable for remaining execution graph if it wasn't explicitly set
-            // by the current IR.
-            disable_morsel_split.get_or_insert(false);
-
             lower_ir(
                 $input,
                 ir_arena,
@@ -179,21 +174,14 @@ pub fn lower_ir(
                 expr_cache,
                 cache_nodes,
                 ctx,
-                disable_morsel_split,
             )
         }};
-    }
-
-    // Require the code below to explicitly set this to `true`
-    if disable_morsel_split == Some(true) {
-        disable_morsel_split.take();
     }
 
     let ir_node = ir_arena.get(node);
     let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
-            disable_morsel_split.get_or_insert(true);
             let columns = columns
                 .iter_names_cloned()
                 .map(|c| (c.clone(), c))
@@ -207,16 +195,6 @@ pub fn lower_ir(
 
         IR::Select { input, expr, .. } => {
             let selectors = expr.clone();
-
-            if selectors.iter().all(|e| {
-                matches!(
-                    expr_arena.get(e.node()),
-                    AExpr::Len | AExpr::Column(_) | AExpr::Eval { .. } | AExpr::StructField(_)
-                )
-            }) {
-                disable_morsel_split.get_or_insert(true);
-            }
-
             let phys_input = lower_ir!(*input)?;
             return build_select_stream(
                 phys_input, &selectors, expr_arena, phys_sm, expr_cache, ctx,
@@ -253,7 +231,7 @@ pub fn lower_ir(
             let schema = schema.clone(); // This is initially the schema of df, but can change with the projection.
             let mut node_kind = PhysNodeKind::InMemorySource {
                 df: df.clone(),
-                disable_morsel_split: disable_morsel_split.unwrap_or(true),
+                disable_morsel_split: false,
             };
 
             // Do we need to apply a projection?
@@ -281,7 +259,6 @@ pub fn lower_ir(
 
         IR::Sink { input, payload } => match payload {
             SinkTypeIR::Memory => {
-                disable_morsel_split.get_or_insert(true);
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::InMemorySink { input: phys_input }
             },
@@ -290,7 +267,6 @@ pub fn lower_ir(
                 maintain_order,
                 chunk_size,
             }) => {
-                disable_morsel_split.get_or_insert(true);
                 let function = function.clone();
                 let maintain_order = *maintain_order;
                 let chunk_size = *chunk_size;
@@ -307,7 +283,6 @@ pub fn lower_ir(
                 // Defer to the chunk-aware morsel splitting strategy in morsel_resize_pipeline.
                 // This cannot currently be done by the InMemorySource as the morsel splitting
                 // is done against a configured TargetSinkMorselSize.
-                disable_morsel_split.get_or_insert(true);
                 let options = options.clone();
                 let input = lower_ir!(*input)?;
                 PhysNodeKind::FileSink { input, options }
@@ -321,7 +296,6 @@ pub fn lower_ir(
         },
 
         IR::SinkMultiple { inputs } => {
-            disable_morsel_split.get_or_insert(true);
             let mut sinks = Vec::with_capacity(inputs.len());
             for input in inputs.clone() {
                 let phys_node_stream = match ir_arena.get(input) {
@@ -668,7 +642,7 @@ pub fn lower_ir(
                 // schema.
                 PhysNodeKind::InMemorySource {
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
-                    disable_morsel_split: disable_morsel_split.unwrap_or(true),
+                    disable_morsel_split: false,
                 }
             } else if output_schema.is_empty()
                 && let Some((physical_rows, deleted_rows)) = unified_scan_args.row_count
@@ -689,7 +663,7 @@ pub fn lower_ir(
 
                 PhysNodeKind::InMemorySource {
                     df: Arc::new(DataFrame::empty_with_height(num_rows)),
-                    disable_morsel_split: disable_morsel_split.unwrap_or(true),
+                    disable_morsel_split: false,
                 }
             } else if let FileScanIR::ExpandedPaths { name: _ } = &*scan_type {
                 let unsupported_parameter = if unified_scan_args.pre_slice.is_some() {
@@ -745,7 +719,7 @@ pub fn lower_ir(
 
                 PhysNodeKind::InMemorySource {
                     df: Arc::new(df),
-                    disable_morsel_split: disable_morsel_split.unwrap_or(true),
+                    disable_morsel_split: false,
                 }
             } else {
                 let file_reader_builder: Arc<dyn FileReaderBuilder> = match &*scan_type {
@@ -881,7 +855,6 @@ pub fn lower_ir(
                     );
 
                     let pre_slice = unified_scan_args.pre_slice.clone();
-                    let disable_morsel_split = disable_morsel_split.unwrap_or(true);
 
                     // Set to None if empty for performance.
                     let deletion_files = unified_scan_args
@@ -906,7 +879,7 @@ pub fn lower_ir(
                         deletion_files,
                         table_statistics: unified_scan_args.table_statistics,
                         file_schema,
-                        disable_morsel_split,
+                        disable_morsel_split: false,
                     };
 
                     let PhysNodeKind::MultiScan {
