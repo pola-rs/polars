@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import operator
+import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
@@ -26,6 +27,7 @@ from polars.datatypes import (
     Unknown,
 )
 from polars.exceptions import (
+    AttributeRemovedError,
     DuplicateError,
     InvalidOperationError,
     PolarsInefficientMapWarning,
@@ -2561,3 +2563,23 @@ def test_series_temporal_arithmetic_raises_19135(
     b = pl.Series("b", [], dtype=pl.Int32)
     with pytest.raises(InvalidOperationError):
         op(a, b)
+
+
+def test_removed_classmethods() -> None:
+    match = "use `_import_arrow_from_c` instead. "
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        pl.Series._import_arrow_from_c
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        (
+            "has_validity",
+            "use `has_nulls` instead to check for the presence of null values.",
+        ),
+    ],
+)
+def test_removed_methods(name: str, match: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(pl.Series, name)
