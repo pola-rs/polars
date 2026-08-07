@@ -33,6 +33,7 @@ mod trigonometry;
 
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroU32;
 
 #[cfg(feature = "dtype-array")]
 pub use array::ArrayFunction;
@@ -180,6 +181,9 @@ pub enum FunctionExpr {
         seed: Option<u64>,
     },
     Repeat,
+    NTile {
+        n: NonZeroU32,
+    },
     #[cfg(feature = "round_series")]
     Clip {
         has_min: bool,
@@ -541,6 +545,7 @@ impl Hash for FunctionExpr {
                 b.hash(state);
             },
             Repeat => {},
+            NTile { n } => n.hash(state),
             #[cfg(feature = "rank")]
             Rank { options, seed } => {
                 options.hash(state);
@@ -777,6 +782,7 @@ impl Display for FunctionExpr {
             MaxBy => "max_by",
             Product => "product",
             Repeat => "repeat",
+            NTile { .. } => "ntile",
             #[cfg(feature = "rank")]
             Rank { .. } => "rank",
             #[cfg(feature = "round_series")]

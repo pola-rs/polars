@@ -2899,3 +2899,66 @@ def row_index(name: str = "index") -> pl.Expr:
         F.len(),
         dtype=get_index_type(),
     ).alias(name)
+
+
+@unstable()
+def ntile(n: int) -> Expr:
+    """
+    Split an ordered window partition into `n` buckets, numbered 1 to `n`.
+
+    Bucket sizes differ by at most one row, with larger buckets first.
+    If `n` exceeds the number of rows, each row gets its own bucket and
+    the trailing buckets are empty.
+
+    Buckets are assigned by row position and values are never compared,
+    so rows with tied ordering values may land in different buckets.
+
+    Use :meth:`Expr.over` to define the partitioning and ordering.
+
+    Parameters
+    ----------
+    n
+        Number of buckets; must be greater than zero.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"value": [10, 20, 30, 40, 50]})
+    >>> df.with_columns(
+    ...     nt1=pl.ntile(2).over(order_by="value"),
+    ...     nt2=pl.ntile(3).over(order_by="value", descending=True),
+    ... )
+    shape: (5, 3)
+    ┌───────┬─────┬─────┐
+    │ value ┆ nt1 ┆ nt2 │
+    │ ---   ┆ --- ┆ --- │
+    │ i64   ┆ u32 ┆ u32 │
+    ╞═══════╪═════╪═════╡
+    │ 10    ┆ 1   ┆ 3   │
+    │ 20    ┆ 1   ┆ 2   │
+    │ 30    ┆ 1   ┆ 2   │
+    │ 40    ┆ 2   ┆ 1   │
+    │ 50    ┆ 2   ┆ 1   │
+    └───────┴─────┴─────┘
+
+    Bucket within partitions:
+
+    >>> df = pl.DataFrame({"lbl": ["A", "A", "A", "B", "B"], "value": [3, 1, 2, 9, 4]})
+    >>> df.with_columns(
+    ...     nt1=pl.ntile(2).over("lbl", order_by="value"),
+    ...     nt2=pl.ntile(5).over("lbl", order_by="value"),
+    ...     nt3=pl.ntile(5).over("value", order_by="lbl"),
+    ... ).sort("lbl", "value")
+    shape: (5, 5)
+    ┌─────┬───────┬─────┬─────┬─────┐
+    │ lbl ┆ value ┆ nt1 ┆ nt2 ┆ nt3 │
+    │ --- ┆ ---   ┆ --- ┆ --- ┆ --- │
+    │ str ┆ i64   ┆ u32 ┆ u32 ┆ u32 │
+    ╞═════╪═══════╪═════╪═════╪═════╡
+    │ A   ┆ 1     ┆ 1   ┆ 1   ┆ 1   │
+    │ A   ┆ 2     ┆ 1   ┆ 2   ┆ 1   │
+    │ A   ┆ 3     ┆ 2   ┆ 3   ┆ 1   │
+    │ B   ┆ 4     ┆ 1   ┆ 1   ┆ 1   │
+    │ B   ┆ 9     ┆ 2   ┆ 2   ┆ 1   │
+    └─────┴───────┴─────┴─────┴─────┘
+    """
+    return wrap_expr(plr.ntile(n))

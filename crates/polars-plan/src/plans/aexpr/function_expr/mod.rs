@@ -41,6 +41,7 @@ mod trigonometry;
 
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroU32;
 
 #[cfg(feature = "dtype-array")]
 pub use array::IRArrayFunction;
@@ -190,6 +191,9 @@ pub enum IRFunctionExpr {
         seed: Option<u64>,
     },
     Repeat,
+    NTile {
+        n: NonZeroU32,
+    },
     #[cfg(feature = "round_series")]
     Clip {
         has_min: bool,
@@ -562,6 +566,7 @@ impl Hash for IRFunctionExpr {
                 b.hash(state);
             },
             Repeat => {},
+            NTile { n } => n.hash(state),
             #[cfg(feature = "rank")]
             Rank { options, seed } => {
                 options.hash(state);
@@ -798,6 +803,7 @@ impl Display for IRFunctionExpr {
             MaxBy => "max_by",
             Product => "product",
             Repeat => "repeat",
+            NTile { .. } => "ntile",
             #[cfg(feature = "rank")]
             Rank { .. } => "rank",
             #[cfg(feature = "round_series")]
@@ -1133,6 +1139,8 @@ impl IRFunctionExpr {
             F::Repeat => {
                 FunctionOptions::groupwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
+            F::NTile { .. } => FunctionOptions::groupwise()
+                .with_flags(|f| f | FunctionFlags::ALLOW_RENAME | FunctionFlags::RANGE),
             #[cfg(feature = "round_series")]
             F::Clip { .. } => FunctionOptions::elementwise(),
             F::AsList => FunctionOptions::elementwise()

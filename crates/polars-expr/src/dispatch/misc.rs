@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use polars_core::prelude::*;
@@ -1117,6 +1119,15 @@ pub fn repeat(args: &[Column]) -> PolarsResult<Column> {
     )?;
 
     Ok(c.new_from_index(0, n))
+}
+
+pub fn ntile(args: &[Column], n: NonZeroU32) -> PolarsResult<Column> {
+    let first_value = args[0].get(0)?;
+    let rows = first_value.extract::<IdxSize>().ok_or_else(
+        || polars_err!(ComputeError: "could not parse value '{}' as a row count.", first_value),
+    )?;
+
+    Ok(polars_ops::series::ntile(rows, n).into_column())
 }
 
 pub fn dynamic_pred(columns: &[Column], pred: &DynamicPredWeakRef) -> PolarsResult<Column> {
