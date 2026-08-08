@@ -60,6 +60,7 @@ getrandom = "0.4"
 half = { version = "2.7.1", features = ["num-traits"] }
 hashbrown = { version = "0.17.1", features = ["rayon", "serde"] }
 hex = "0.4.3"
+hwlocality-sys = { version = "0.7.1", features = ["vendored", "hwloc-2_12_1"] }
 indexmap = { version = "2.12", features = ["std", "serde"] }
 itoa = "1.0.6"
 libc = "0.2"

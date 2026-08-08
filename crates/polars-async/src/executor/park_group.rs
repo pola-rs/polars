@@ -83,8 +83,10 @@ impl ParkGroup {
     /// Unparks an idle worker if there is no recruiter.
     ///
     /// Also cancels in-progress park attempts.
-    pub fn unpark_one(&self) {
-        self.inner.unpark_one();
+    ///
+    /// Returns whether there was at least one idle worker.
+    pub fn unpark_one(&self) -> bool {
+        self.inner.unpark_one()
     }
 }
 
@@ -122,21 +124,23 @@ impl ParkGroupWorker {
 
     /// You should call this function after finding work to recruit the next
     /// worker if this worker was a recruiter.
-    pub fn recruit_next(&mut self) {
+    ///
+    /// Returns whether there was an idle worker to recruit, if we were a recruiter.
+    pub fn recruit_next(&mut self) -> Option<bool> {
         if !self.recruiter {
-            return;
+            return None;
         }
 
         // Recruit the next idle worker or mark that there is no recruiter anymore.
-        let mut recruit_next = false;
+        let mut has_idle = false;
         let _ = self
             .inner
             .state
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |state| {
                 debug_assert!(state & ACTIVE_RECRUITER_BIT != 0);
 
-                recruit_next = state_num_idle(state) > 0;
-                let bit = if recruit_next {
+                has_idle = state_num_idle(state) > 0;
+                let bit = if has_idle {
                     IDLE_UNIT
                 } else {
                     ACTIVE_RECRUITER_BIT
@@ -144,10 +148,11 @@ impl ParkGroupWorker {
                 Some(state - bit)
             });
 
-        if recruit_next {
+        if has_idle {
             self.inner.unpark_one_slow_as_recruiter();
         }
         self.recruiter = false;
+        Some(has_idle)
     }
 }
 
@@ -192,12 +197,14 @@ impl ParkAttempt<'_> {
 }
 
 impl ParkGroupInner {
-    fn unpark_one(&self) {
+    fn unpark_one(&self) -> bool {
+        let mut has_idle = false;
         let mut should_unpark = false;
         let _ = self
             .state
             .fetch_update(Ordering::Release, Ordering::SeqCst, |state| {
-                should_unpark = state_num_idle(state) > 0 && state & ACTIVE_RECRUITER_BIT == 0;
+                has_idle = state_num_idle(state) > 0;
+                should_unpark = has_idle && state & ACTIVE_RECRUITER_BIT == 0;
                 if should_unpark {
                     Some(state - IDLE_UNIT + ACTIVE_RECRUITER_BIT)
                 } else if state & PREPARING_TO_PARK_BIT == PREPARING_TO_PARK_BIT {
@@ -210,6 +217,8 @@ impl ParkGroupInner {
         if should_unpark {
             self.unpark_one_slow_as_recruiter();
         }
+
+        has_idle
     }
 
     #[cold]

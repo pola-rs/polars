@@ -1,5 +1,6 @@
 #![allow(clippy::disallowed_types)]
 
+mod numa;
 mod park_group;
 mod task;
 
@@ -16,6 +17,7 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::{Receiver, Sender};
 use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
 use crossbeam_utils::CachePadded;
+use numa::{NumaRegionId, num_numa_regions};
 use park_group::ParkGroup;
 use parking_lot::Mutex;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -25,12 +27,15 @@ use rand::{Rng, RngExt, SeedableRng};
 use slotmap::SlotMap;
 use task::{Cancellable, DynTask, Runnable};
 
+use crate::executor::numa::{cpu_idx_to_numa_region, pin_thread_to_numa_region};
+
 thread_local! {
     pub static ALLOW_RAYON_THREADS: Cell<bool> = const { Cell::new(true) };
     pub static THREAD_SPAWNED_BY_POLARS_EXECUTOR: Cell<bool> = const { Cell::new(false) };
 
-    /// Used to store which executor thread this is.
+    /// Used to store which executor thread this is, and in which NUMA region it is supposed to run.
     static TLS_THREAD_ID: Cell<usize> = const { Cell::new(usize::MAX) };
+    static TLS_NUMA_REGION: Cell<usize> = const { Cell::new(usize::MAX) };
 }
 
 /// Returns whether this thread is actively used for scheduling tasks.
@@ -175,17 +180,33 @@ struct ThreadLocalTaskList {
 unsafe impl Sync for ThreadLocalTaskList {}
 
 struct Executor {
-    park_group: ParkGroup,
+    thread_numa_regions: Vec<NumaRegionId>,
     thread_task_lists: Vec<CachePadded<ThreadLocalTaskList>>,
     global_high_prio_task_queue: Injector<ReadyTask>,
     global_low_prio_task_queue: Injector<ReadyTask>,
-    thread_id_send: Sender<Arc<AtomicUsize>>,
-    thread_id_recv: Receiver<Arc<AtomicUsize>>,
     thread_name_idx: AtomicUsize,
-    num_runners_without_identity: AtomicUsize,
+
+    // These three are tracked per NUMA region.
+    park_groups: Vec<ParkGroup>,
+    thread_id_send: Vec<Sender<Arc<AtomicUsize>>>,
+    thread_id_recv: Vec<Receiver<Arc<AtomicUsize>>>,
+    num_runners_without_identity: Vec<AtomicUsize>,
 }
 
 impl Executor {
+    fn unpark_one_worker_random_numa_region(&self) {
+        if self.park_groups.len() == 1 {
+            self.park_groups[0].unpark_one();
+        } else {
+            let mut rng = rand::rng();
+            for index in random_permutation(self.park_groups.len() as u32, &mut rng) {
+                if self.park_groups[index as usize].unpark_one() {
+                    break;
+                }
+            }
+        }
+    }
+
     fn schedule_task(&self, task: ReadyTask) {
         let thread = TLS_THREAD_ID.get();
         let meta = task.metadata();
@@ -198,15 +219,18 @@ impl Executor {
         }
 
         if use_global_queue {
-            // Scheduled from an unknown thread, add to global queue.
+            // Scheduled from an unknown thread, add to global queue and wake
+            // a worker in a random NUMA region.
             if meta.priority == TaskPriority::High {
                 self.global_high_prio_task_queue.push(task);
             } else {
                 self.global_low_prio_task_queue.push(task);
             }
-            self.park_group.unpark_one();
+
+            self.unpark_one_worker_random_numa_region();
         } else {
             let ttl = opt_ttl.unwrap();
+            let numa = self.thread_numa_regions[thread];
             // SAFETY: this slot may only be accessed from the local thread, which we are.
             let slot = unsafe { &mut *ttl.local_slot.get() };
 
@@ -219,7 +243,9 @@ impl Executor {
                 };
 
                 ttl.high_prio_tasks.push(task);
-                self.park_group.unpark_one();
+                if !self.park_groups[numa.0].unpark_one() && self.park_groups.len() > 1 {
+                    self.unpark_one_worker_random_numa_region();
+                }
             } else {
                 // Optimization: while this is a low priority task we have no
                 // high priority tasks on this thread so we'll execute this one.
@@ -227,7 +253,9 @@ impl Executor {
                     *slot = Some(task);
                 } else {
                     self.global_low_prio_task_queue.push(task);
-                    self.park_group.unpark_one();
+                    if !self.park_groups[numa.0].unpark_one() && self.park_groups.len() > 1 {
+                        self.unpark_one_worker_random_numa_region();
+                    }
                 }
             }
         }
@@ -253,12 +281,24 @@ impl Executor {
 
         // Try to steal tasks.
         let ttl = &self.thread_task_lists[thread];
-        for _ in 0..4 {
+        let steal_iters = 4;
+        for steal_idx in 0..steal_iters {
+            // For the first few steal attempts try to limit ourselves to our
+            // own NUMA region, then on the last attempt try globally.
+            let limit_to_numa_region = steal_idx != steal_iters - 1;
+
             let mut retry = true;
             while retry {
                 retry = false;
 
                 for idx in random_permutation(self.thread_task_lists.len() as u32, rng) {
+                    if limit_to_numa_region
+                        && self.thread_numa_regions[thread]
+                            != self.thread_numa_regions[idx as usize]
+                    {
+                        continue;
+                    }
+
                     let foreign_ttl = &self.thread_task_lists[idx as usize];
                     match foreign_ttl
                         .high_prio_tasks_stealer
@@ -277,19 +317,22 @@ impl Executor {
         None
     }
 
-    fn runner(&self, initial_thread_id: Option<usize>) {
+    fn runner(&self, initial_thread_id: Option<usize>, numa_region: NumaRegionId) {
         TLS_THREAD_ID.set(initial_thread_id.unwrap_or(usize::MAX));
+        TLS_NUMA_REGION.set(numa_region.0);
         ALLOW_RAYON_THREADS.set(false);
         THREAD_SPAWNED_BY_POLARS_EXECUTOR.set(true);
 
+        pin_thread_to_numa_region(numa_region);
+
         let mut rng = SmallRng::from_rng(&mut rand::rng());
-        let mut worker = self.park_group.new_worker();
+        let mut worker = self.park_groups[numa_region.0].new_worker();
 
         loop {
             // If we're a runner without an assigned thread id, get one.
             let mut thread_id = TLS_THREAD_ID.get();
             if thread_id == usize::MAX {
-                if let Some(tid) = self.acquire_thread_identity() {
+                if let Some(tid) = self.acquire_thread_identity(numa_region) {
                     TLS_THREAD_ID.set(tid);
                     thread_id = tid;
                 } else {
@@ -327,7 +370,12 @@ impl Executor {
             })();
 
             if let Some(task) = task {
-                worker.recruit_next();
+                // Try to recruit another worker, and if there's no idle workers
+                // left in this NUMA region, one from another.
+                if worker.recruit_next() == Some(false) && self.park_groups.len() > 1 {
+                    self.unpark_one_worker_random_numa_region();
+                }
+
                 if let Some(metrics) = task.metadata().metrics.clone() {
                     let start = Instant::now();
                     task.run();
@@ -345,65 +393,59 @@ impl Executor {
         }
     }
 
-    fn spawn_runner_without_identity(&self) {
-        self.num_runners_without_identity
-            .fetch_add(1, Ordering::AcqRel);
+    fn spawn_runner_without_identity(&self, numa_region: NumaRegionId) {
+        self.num_runners_without_identity[numa_region.0].fetch_add(1, Ordering::AcqRel);
         let t = self.thread_name_idx.fetch_add(1, Ordering::Relaxed);
         std::thread::Builder::new()
             .name(format!("async-executor-{t}"))
-            .spawn(move || Self::global().runner(None))
+            .spawn(move || Self::global().runner(None, numa_region))
             .unwrap();
     }
 
-    fn acquire_thread_identity(&self) -> Option<usize> {
+    fn acquire_thread_identity(&self, numa_region: NumaRegionId) -> Option<usize> {
         loop {
-            match self.thread_id_recv.recv_timeout(Duration::from_secs(10)) {
+            match self.thread_id_recv[numa_region.0].recv_timeout(Duration::from_secs(10)) {
                 Ok(tid_msg) => {
                     let thread_id = tid_msg.swap(usize::MAX, Ordering::AcqRel);
                     if thread_id != usize::MAX {
                         // Important: we check queue again after reducing count.
-                        let num_left = self
-                            .num_runners_without_identity
+                        let num_left = self.num_runners_without_identity[numa_region.0]
                             .fetch_sub(1, Ordering::AcqRel)
                             - 1;
                         if num_left == 0 && !self.thread_id_recv.is_empty() {
-                            self.spawn_runner_without_identity();
+                            self.spawn_runner_without_identity(numa_region);
                         }
                         return Some(thread_id);
                     }
                 },
                 Err(_) => {
                     // Important: we check queue again after reducing count.
-                    self.num_runners_without_identity
-                        .fetch_sub(1, Ordering::AcqRel);
+                    self.num_runners_without_identity[numa_region.0].fetch_sub(1, Ordering::AcqRel);
                     if self.thread_id_recv.is_empty() {
                         return None;
                     }
-                    self.num_runners_without_identity
-                        .fetch_add(1, Ordering::AcqRel);
+                    self.num_runners_without_identity[numa_region.0].fetch_add(1, Ordering::AcqRel);
                 },
             }
         }
     }
 
-    fn ensure_runner_without_identity_exists(&self) {
-        if self
-            .num_runners_without_identity
-            .fetch_add(0, Ordering::AcqRel)
-            == 0
-        {
-            self.spawn_runner_without_identity();
+    fn ensure_runner_without_identity_exists(&self, numa_region: NumaRegionId) {
+        if self.num_runners_without_identity[numa_region.0].fetch_add(0, Ordering::AcqRel) == 0 {
+            self.spawn_runner_without_identity(numa_region);
         }
     }
 
     fn global() -> &'static Executor {
         GLOBAL_SCHEDULER.get_or_init(|| {
             let n_threads = polars_config::config().max_threads();
+            let thread_numa_regions: Vec<_> = (0..n_threads).map(cpu_idx_to_numa_region).collect();
             let thread_task_lists = (0..n_threads)
                 .map(|t| {
+                    let numa_region = thread_numa_regions[t];
                     std::thread::Builder::new()
                         .name(format!("async-executor-{t}"))
-                        .spawn(move || Self::global().runner(Some(t)))
+                        .spawn(move || Self::global().runner(Some(t), numa_region))
                         .unwrap();
 
                     let high_prio_tasks = WorkQueue::new_lifo();
@@ -414,16 +456,22 @@ impl Executor {
                     })
                 })
                 .collect();
-            let (thread_id_send, thread_id_recv) = crossbeam_channel::unbounded();
+            let (thread_id_send, thread_id_recv) = (0..num_numa_regions())
+                .map(|_| crossbeam_channel::unbounded())
+                .unzip();
+            let park_groups = (0..num_numa_regions()).map(|_| ParkGroup::new()).collect();
             Self {
-                park_group: ParkGroup::new(),
+                park_groups,
+                thread_numa_regions,
                 thread_task_lists,
                 global_high_prio_task_queue: Injector::new(),
                 global_low_prio_task_queue: Injector::new(),
                 thread_id_send,
                 thread_id_recv,
                 thread_name_idx: AtomicUsize::new(n_threads),
-                num_runners_without_identity: AtomicUsize::new(0),
+                num_runners_without_identity: (0..num_numa_regions())
+                    .map(|_| AtomicUsize::new(0))
+                    .collect(),
             }
         })
     }
@@ -562,12 +610,15 @@ pub fn block_in_place<R, F: FnOnce() -> R>(f: F) -> R {
     if thread_id == usize::MAX {
         return f();
     }
+    let numa_region = TLS_NUMA_REGION.get();
 
     // Send off our thread id to another runner, we just become an ordinary thread.
     let executor = Executor::global();
     let msg = Arc::new(AtomicUsize::new(thread_id));
-    executor.thread_id_send.send(msg.clone()).unwrap();
-    executor.ensure_runner_without_identity_exists(); // Important: *after* sending in channel.
+    executor.thread_id_send[numa_region]
+        .send(msg.clone())
+        .unwrap();
+    executor.ensure_runner_without_identity_exists(NumaRegionId(numa_region)); // Important: *after* sending in channel.
 
     // Try to steal our thread id back afterwards, even if f panics. If we can't
     // steal our thread id back we become a runner without identity.
@@ -576,9 +627,7 @@ pub fn block_in_place<R, F: FnOnce() -> R>(f: F) -> R {
         if thread_id != usize::MAX {
             TLS_THREAD_ID.set(thread_id);
         } else {
-            executor
-                .num_runners_without_identity
-                .fetch_add(1, Ordering::AcqRel);
+            executor.num_runners_without_identity[numa_region].fetch_add(1, Ordering::AcqRel);
         }
     });
 
