@@ -13,16 +13,17 @@ use crate::utils::EnterPolarsExt;
 #[pymethods]
 impl PyDataFrame {
     #[staticmethod]
-    #[pyo3(signature = (data, schema=None, infer_schema_length=None))]
+    #[pyo3(signature = (data, schema=None, strict=true, infer_schema_length=None ))]
     pub fn from_rows(
         py: Python<'_>,
         data: Vec<Wrap<Row>>,
         schema: Option<Wrap<Schema>>,
+        strict: bool,
         infer_schema_length: Option<usize>,
     ) -> PyResult<Self> {
         let data = vec_extract_wrapped(data);
         let schema = schema.map(|wrap| wrap.0);
-        py.enter_polars(move || finish_from_rows(data, schema, None, infer_schema_length))
+        py.enter_polars(move || finish_from_rows(data, schema, None, infer_schema_length, strict))
     }
 
     #[staticmethod]
@@ -66,7 +67,7 @@ impl PyDataFrame {
             ))
         });
         py.enter_polars(move || {
-            finish_from_rows(rows, schema, schema_overrides, infer_schema_length)
+            finish_from_rows(rows, schema, schema_overrides, infer_schema_length, strict)
         })
     }
 
@@ -86,6 +87,7 @@ fn finish_from_rows(
     schema: Option<Schema>,
     schema_overrides: Option<Schema>,
     infer_schema_length: Option<usize>,
+    strict: bool,
 ) -> PyResult<PyDataFrame> {
     let schema = if let Some(mut schema) = schema {
         resolve_schema_overrides(&mut schema, schema_overrides);
@@ -95,7 +97,31 @@ fn finish_from_rows(
         rows_to_schema_supertypes(&rows, infer_schema_length).map_err(PyPolarsErr::from)?
     };
 
-    let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
+    let num_rows = rows.len();
+
+    if strict && !rows.windows(2).all(|w| w[0].0.len() == w[1].0.len()) {
+        return Err(PyPolarsErr::from(polars_err!(
+            ComputeError: "rows must be of equal length"
+        ))
+        .into());
+    }
+
+    let columns: Vec<Column> = schema
+        .iter()
+        .enumerate()
+        .map(|(col_idx, (name, dtype))| {
+            let column_values: Vec<AnyValue> = rows
+                .iter()
+                .map(|row| row.0.get(col_idx).cloned().unwrap_or(AnyValue::Null))
+                .collect();
+
+            Series::from_any_values_and_dtype(name.clone(), &column_values, dtype, strict)
+                .map(|s| s.into_column())
+        })
+        .collect::<PolarsResult<Vec<_>>>()
+        .map_err(PyPolarsErr::from)?;
+
+    let df = DataFrame::new(num_rows, columns).map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }
 
