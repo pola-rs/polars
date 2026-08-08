@@ -13,6 +13,7 @@ use polars_utils::slice_enum::Slice;
 
 use super::{NO_SLICE, SLICE_ENDED};
 use crate::nodes::MorselSeq;
+use crate::nodes::io_sources::shared::pipeline_budget::{PipelineBudget, PipelinePermit};
 use crate::utils::tokio_handle_ext;
 
 pub(super) struct LineBatch {
@@ -23,6 +24,32 @@ pub(super) struct LineBatch {
     /// Position of this chunk relative to the start of the file according to CountLines.
     pub(super) row_offset: usize,
     pub(super) morsel_seq: MorselSeq,
+    pub(super) input_permit: PipelinePermit,
+}
+
+struct PendingLineBatch {
+    mem_slice: Buffer<u8>,
+    n_lines: usize,
+    slice: (usize, usize),
+    row_offset: usize,
+    morsel_seq: MorselSeq,
+}
+
+impl PendingLineBatch {
+    fn n_bytes(&self) -> usize {
+        self.mem_slice.len()
+    }
+
+    fn with_permit(self, input_permit: PipelinePermit) -> LineBatch {
+        LineBatch {
+            mem_slice: self.mem_slice,
+            n_lines: self.n_lines,
+            slice: self.slice,
+            row_offset: self.row_offset,
+            morsel_seq: self.morsel_seq,
+            input_permit,
+        }
+    }
 }
 
 pub(super) struct LineBatchSource {
@@ -30,6 +57,7 @@ pub(super) struct LineBatchSource {
     pub(super) reader: ByteSourceReader<ReaderSource>,
     pub(super) line_counter: CountLines,
     pub(super) line_batch_tx: distributor_channel::Sender<LineBatch>,
+    pub(super) line_batch_budget: PipelineBudget,
     pub(super) pre_slice: Option<Slice>,
     pub(super) needs_full_row_count: bool,
     pub(super) use_async_prefetch: bool,
@@ -63,9 +91,15 @@ impl LineBatchSource {
             use_l2_prefetch,
         );
         let mut line_batch_tx = self.line_batch_tx;
+        let line_batch_budget = self.line_batch_budget;
 
-        while let Some(batch) = producer.next_batch()? {
-            if line_batch_tx.send(batch).await.is_err() {
+        while let Some(pending_batch) = producer.next_batch()? {
+            let input_permit = line_batch_budget.acquire(pending_batch.n_bytes()).await;
+            if line_batch_tx
+                .send(pending_batch.with_permit(input_permit))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -79,6 +113,7 @@ impl LineBatchSource {
     async fn run_async(self) -> PolarsResult<usize> {
         let verbose = self.verbose;
         let mut line_batch_tx = self.line_batch_tx;
+        let line_batch_budget = self.line_batch_budget;
 
         let read_loop_handle =
             tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn_blocking(move || {
@@ -97,9 +132,14 @@ impl LineBatchSource {
                     use_l2_prefetch,
                 );
 
-                while let Some(batch) = producer.next_batch()? {
+                while let Some(pending_batch) = producer.next_batch()? {
+                    let input_permit =
+                        ASYNC.block_on(line_batch_budget.acquire(pending_batch.n_bytes()));
                     // Effectively, this is `blocking_send`.
-                    if ASYNC.block_on(line_batch_tx.send(batch)).is_err() {
+                    if ASYNC
+                        .block_on(line_batch_tx.send(pending_batch.with_permit(input_permit)))
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -164,7 +204,7 @@ impl LineBatchProducer {
     }
 
     /// Returns the next LineBatch, or None if the source is exhausted.
-    fn next_batch(&mut self) -> PolarsResult<Option<LineBatch>> {
+    fn next_batch(&mut self) -> PolarsResult<Option<PendingLineBatch>> {
         if self.finished {
             return Ok(None);
         }
@@ -228,7 +268,7 @@ impl LineBatchProducer {
 
             self.morsel_seq = self.morsel_seq.successor();
 
-            let batch = LineBatch {
+            let batch = PendingLineBatch {
                 mem_slice: batch_slice,
                 n_lines,
                 slice,
