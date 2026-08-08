@@ -239,23 +239,34 @@ fn is_sorted_rec(
             predicate: _,
         } => rec!(*input),
         IR::Scan { .. } => None,
-        IR::DataFrameScan { df, .. } => {
+        IR::DataFrameScan {
+            df, output_schema, ..
+        } => {
             let last_is_null = |c: &Column| Some(c.get(c.len().checked_sub(1)?).ok()?.is_null());
             let sorted_cols = df
                 .columns()
                 .iter()
-                .filter_map(|c| match c.is_sorted_flag() {
-                    IsSorted::Not => None,
-                    IsSorted::Ascending => Some(Sorted {
-                        column: c.name().clone(),
-                        descending: Some(false),
-                        nulls_last: Some(last_is_null(c).unwrap_or(false)),
-                    }),
-                    IsSorted::Descending => Some(Sorted {
-                        column: c.name().clone(),
-                        descending: Some(true),
-                        nulls_last: Some(last_is_null(c).unwrap_or(false)),
-                    }),
+                .filter_map(|c| {
+                    if !output_schema
+                        .as_ref()
+                        .is_none_or(|schema| schema.contains(c.name()))
+                    {
+                        return None;
+                    }
+
+                    match c.is_sorted_flag() {
+                        IsSorted::Not => None,
+                        IsSorted::Ascending => Some(Sorted {
+                            column: c.name().clone(),
+                            descending: Some(false),
+                            nulls_last: Some(last_is_null(c).unwrap_or(false)),
+                        }),
+                        IsSorted::Descending => Some(Sorted {
+                            column: c.name().clone(),
+                            descending: Some(true),
+                            nulls_last: Some(last_is_null(c).unwrap_or(false)),
+                        }),
+                    }
                 })
                 .collect_vec();
             (!sorted_cols.is_empty()).then(|| IRSorted(sorted_cols.into()))
