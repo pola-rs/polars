@@ -329,7 +329,7 @@ def duration(
     `Expr.dt.offset_by('1d')` means "1 calendar day", which could sometimes be
     23 hours or 25 hours depending on Daylight Savings Time.
     For non-fixed durations such as "calendar month" or "calendar day",
-    please use :meth:`polars.Expr.dt.offset_by` instead.
+    please use :meth:`~polars.Expr.dt.offset_by` instead.
 
     Examples
     --------
@@ -368,7 +368,7 @@ def duration(
     │ 2022-01-16 00:00:00 ┆ 2022-01-04 00:00:00 ┆ 2022-01-02 00:00:02 ┆ 2022-01-02 00:00:00.002 ┆ 2022-01-02 02:00:00 │
     └─────────────────────┴─────────────────────┴─────────────────────┴─────────────────────────┴─────────────────────┘
 
-    If you need to add non-fixed durations, you should use :meth:`polars.Expr.dt.offset_by` instead:
+    If you need to add non-fixed durations, you should use :meth:`~polars.Expr.dt.offset_by` instead:
 
     >>> with pl.Config(tbl_width_chars=120):
     ...     df.select(

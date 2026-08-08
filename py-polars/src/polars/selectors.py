@@ -125,7 +125,7 @@ def expand_selector(
     target
         A Polars DataFrame, LazyFrame or Schema.
     selector
-        An arbitrary polars selector (or compound selector).
+        An arbitrary Polars selector (or compound selector).
     strict
         Setting False additionally allows for a broader range of column selection
         expressions (such as bare columns or use of `.exclude()`) to be expanded,

@@ -33,17 +33,18 @@ def read_delta(
     pyarrow_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     """
-    Reads into a DataFrame from a Delta lake table.
+    Reads into a DataFrame from a Delta Lake table.
 
     Parameters
     ----------
     source
-        DeltaTable or a Path or URI to the root of the Delta lake table.
+        :class:`~deltalake.table.DeltaTable` or a Path or URI to the root of the
+        Delta Lake table.
 
         Note: For Local filesystem, absolute and relative paths are supported but
         for the supported object storages - GCS, Azure and S3 full URI must be provided.
     version
-        Numerical version or timestamp version of the Delta lake table.
+        Numerical version or timestamp version of the Delta Lake table.
 
         Note: If `version` is not provided, the latest version of delta lake
         table is read.
@@ -67,11 +68,11 @@ def read_delta(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     delta_table_options
-        Additional keyword arguments while reading a Delta lake Table.
+        Additional keyword arguments while reading a Delta Lake Table.
     use_pyarrow
-        Flag to enable pyarrow dataset reads.
+        Flag to enable PyArrow dataset reads.
     pyarrow_options
-        Keyword arguments while converting a Delta lake Table to pyarrow table.
+        Keyword arguments while converting a Delta Lake Table to PyArrow table.
 
     Returns
     -------
@@ -171,17 +172,18 @@ def scan_delta(
     rechunk: bool | None = None,
 ) -> LazyFrame:
     """
-    Lazily read from a Delta lake table.
+    Lazily read from a Delta Lake table.
 
     Parameters
     ----------
     source
-        DeltaTable or a Path or URI to the root of the Delta lake table.
+        :class:`~deltalake.table.DeltaTable` or a Path or URI to the root of the
+        Delta Lake table.
 
         Note: For Local filesystem, absolute and relative paths are supported but
         for the supported object storages - GCS, Azure and S3 full URI must be provided.
     version
-        Numerical version or timestamp version of the Delta lake table.
+        Numerical version or timestamp version of the Delta Lake table.
 
         Note: If `version` is not provided, the latest version of delta lake
         table is read.
@@ -200,11 +202,11 @@ def scan_delta(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     delta_table_options
-        Additional keyword arguments while reading a Delta lake Table.
+        Additional keyword arguments while reading a Delta Lake Table.
     use_pyarrow
-        Flag to enable pyarrow dataset reads.
+        Flag to enable PyArrow dataset reads.
     pyarrow_options
-        Keyword arguments while converting a Delta lake Table to pyarrow table.
+        Keyword arguments while converting a Delta Lake Table to PyArrow table.
         Use this parameter when filtering on partitioned columns or to read
         from a 'fsspec' supported filesystem.
     rechunk

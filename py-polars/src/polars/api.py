@@ -325,7 +325,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
 
 def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     """
-    Decorator for registering custom functionality with a polars Series.
+    Decorator for registering custom functionality with a Polars Series.
 
     Parameters
     ----------
