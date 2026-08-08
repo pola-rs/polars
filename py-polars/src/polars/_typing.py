@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._dependencies import numpy as np
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
-    from polars.lazyframe.engine_config import GPUEngine
+    from polars.lazyframe.engine_config import GPUEngine, RemoteEngine
     from polars.selectors import Selector
 
 
@@ -437,9 +437,8 @@ SingleColSelector: TypeAlias = SingleIndexSelector | SingleNameSelector
 MultiColSelector: TypeAlias = MultiIndexSelector | MultiNameSelector | BooleanMask
 
 # LazyFrame engine selection
-EngineType: TypeAlias = Union[
-    Literal["auto", "in-memory", "streaming", "gpu"], "GPUEngine"
-]
+EngineTypeName: TypeAlias = Literal["auto", "in-memory", "streaming", "gpu"]
+EngineType: TypeAlias = Union[EngineTypeName, "GPUEngine", "RemoteEngine"]
 
 PlanStage: TypeAlias = Literal["ir", "physical"]
 
@@ -494,6 +493,7 @@ __all__ = [
     "DeprecationType",
     "Endianness",
     "EngineType",
+    "EngineTypeName",
     "EpochTimeUnit",
     "ExcelSpreadsheetEngine",
     "ExplainFormat",

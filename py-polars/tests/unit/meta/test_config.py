@@ -11,6 +11,7 @@ import polars as pl
 import polars._plr as plr
 from polars._utils.unstable import issue_unstable_warning
 from polars.config import _POLARS_CFG_ENV_VARS
+from polars.lazyframe.engine_config import get_engine_affinity_override
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -1012,3 +1013,95 @@ def test_unset_config_env_vars(
 
     with pl.Config(**{config_setting: None}):  # type: ignore[arg-type]
         assert environment_variable not in os.environ
+
+
+def _default_credential_provider() -> Any:
+    import polars.io.cloud.credential_provider._builder as builder
+
+    return builder.DEFAULT_CREDENTIAL_PROVIDER
+
+
+def test_config_engine_affinity_object() -> None:
+    engine = pl.GPUEngine(device=1)
+
+    pl.Config.set_engine_affinity(engine)
+    assert get_engine_affinity_override() is engine
+    # an object affinity is not representable as an environment variable
+    assert "POLARS_ENGINE_AFFINITY" not in os.environ
+
+    # setting a named engine clears it again
+    pl.Config.set_engine_affinity("streaming")
+    assert get_engine_affinity_override() is None
+    assert os.environ["POLARS_ENGINE_AFFINITY"] == "streaming"
+
+
+def test_config_engine_affinity_object_is_scoped() -> None:
+    initial_state = pl.Config.state()
+    original = pl.GPUEngine(device=0)
+    scoped = pl.GPUEngine(device=1)
+    pl.Config.set_engine_affinity(original)
+
+    with pl.Config(engine_affinity=scoped):
+        assert get_engine_affinity_override() is scoped
+
+    assert get_engine_affinity_override() is original
+    assert pl.Config.state() == initial_state
+
+
+def test_config_default_credential_provider_is_scoped() -> None:
+    """A default credential provider used to leak out of its `Config` scope."""
+    initial_state = pl.Config.state()
+    assert _default_credential_provider() == "auto"
+
+    def original_provider() -> Any: ...
+
+    pl.Config.set_default_credential_provider(original_provider)
+
+    with pl.Config(default_credential_provider=None):
+        assert _default_credential_provider() is None
+
+    assert _default_credential_provider() is original_provider
+    assert pl.Config.state() == initial_state
+
+    def scoped_provider() -> Any: ...
+
+    with pl.Config():
+        pl.Config.set_default_credential_provider(scoped_provider)
+        assert _default_credential_provider() is scoped_provider
+
+    assert _default_credential_provider() is original_provider
+
+
+def test_config_restore_defaults_resets_runtime_vars() -> None:
+    pl.Config.set_engine_affinity(pl.GPUEngine())
+    pl.Config.set_default_credential_provider(None)
+
+    pl.Config.restore_defaults()
+
+    assert get_engine_affinity_override() is None
+    assert _default_credential_provider() == "auto"
+
+
+def test_config_save_ignores_runtime_vars() -> None:
+    saved = pl.Config.save()
+
+    def provider() -> Any: ...
+
+    engine = pl.RemoteEngine(scaling_mode="distributed", max_workers=2)
+    pl.Config.set_engine_affinity(engine)
+    pl.Config.set_default_credential_provider(provider)
+
+    assert pl.Config.save() == saved
+
+
+def test_config_load_replaces_runtime_engine_affinity() -> None:
+    saved = pl.Config.save()
+
+    def provider() -> Any: ...
+
+    pl.Config.set_engine_affinity(pl.GPUEngine(device=1))
+    pl.Config.set_default_credential_provider(provider)
+    pl.Config.load(saved)
+
+    assert get_engine_affinity_override() is None
+    assert _default_credential_provider() is provider

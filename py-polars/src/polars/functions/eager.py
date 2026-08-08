@@ -274,7 +274,7 @@ def concat(
         lf = lf.sort(by=common_cols, maintain_order=True).select(*output_column_order)
 
         eager = isinstance(elems[0], pl.DataFrame)
-        return lf.collect() if eager else lf  # type: ignore[return-value]
+        return lf._collect_local() if eager else lf  # type: ignore[return-value]
 
     out: Series | DataFrame | LazyFrame | Expr
 
@@ -589,7 +589,7 @@ def union(
         lf = lf.sort(by=common_cols, maintain_order=False).select(*output_column_order)
 
         eager = isinstance(elems[0], pl.DataFrame)
-        return lf.collect() if eager else lf  # type: ignore[return-value]
+        return lf._collect_local() if eager else lf  # type: ignore[return-value]
 
     out: Series | DataFrame | LazyFrame | Expr
 
@@ -777,7 +777,7 @@ def merge_sorted(
 
     lf = reduce_balanced(reduce_fn, frames)
     eager = isinstance(elems[0], pl.DataFrame)
-    return lf.collect() if eager else lf  # type: ignore[return-value]
+    return lf._collect_local() if eager else lf  # type: ignore[return-value]
 
 
 def _alignment_join(

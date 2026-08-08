@@ -3,21 +3,27 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Literal, TypedDict, get_args
+from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict, get_args
 
 from polars._dependencies import json
-from polars._typing import EngineType
+from polars._typing import EngineTypeName
 from polars._utils.deprecation import deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
-from polars.lazyframe.engine_config import GPUEngine
+from polars.lazyframe.engine_config import (
+    GPUEngine,
+    RemoteEngine,
+    get_engine_affinity_override,
+    set_engine_affinity_override,
+)
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Callable
     from types import TracebackType
     from typing import TypeAlias
 
-    from polars._typing import Alignment, FloatFmt
+    from polars._typing import Alignment, EngineType, FloatFmt
     from polars.io.cloud.credential_provider._providers import (
         CredentialProviderFunction,
     )
@@ -95,6 +101,48 @@ with contextlib.suppress(ImportError, NameError):
     }
 
 
+def _get_default_credential_provider() -> Any:
+    import polars.io.cloud.credential_provider._builder as builder
+
+    return builder.DEFAULT_CREDENTIAL_PROVIDER
+
+
+def _set_default_credential_provider(provider: Any) -> None:
+    import polars.io.cloud.credential_provider._builder as builder
+
+    builder.DEFAULT_CREDENTIAL_PROVIDER = provider
+
+
+# Runtime-only options hold arbitrary Python objects, so they cannot be represented
+# by environment variables or persisted by `Config.save`. They are snapshotted by
+# reference to give them the same context-manager semantics as other options.
+_POLARS_CFG_RUNTIME_VARS: dict[
+    str, tuple[Callable[[], Any], Callable[[Any], None], Any]
+] = {
+    "set_engine_affinity": (
+        get_engine_affinity_override,
+        set_engine_affinity_override,
+        None,
+    ),
+    "set_default_credential_provider": (
+        _get_default_credential_provider,
+        _set_default_credential_provider,
+        "auto",
+    ),
+}
+
+
+def _snapshot_runtime_vars() -> dict[str, Any]:
+    """Capture the current value of every runtime-only option, by reference."""
+    return {name: get() for name, (get, _, _) in _POLARS_CFG_RUNTIME_VARS.items()}
+
+
+def _restore_runtime_vars(snapshot: dict[str, Any]) -> None:
+    """Restore runtime-only options from a `_snapshot_runtime_vars` result."""
+    for name, (_, set_, default) in _POLARS_CFG_RUNTIME_VARS.items():
+        set_(snapshot.get(name, default))
+
+
 class ConfigParameters(TypedDict, total=False):
     """Parameters supported by the polars Config."""
 
@@ -122,6 +170,8 @@ class ConfigParameters(TypedDict, total=False):
     trim_decimal_zeros: bool | None
     verbose: bool | None
     expr_depth_warning: int
+    engine_affinity: EngineType | None
+    default_credential_provider: CredentialProviderFunction | Literal["auto"] | None
 
     set_ascii_tables: bool | None
     set_auto_structify: bool | None
@@ -148,6 +198,7 @@ class ConfigParameters(TypedDict, total=False):
     set_verbose: bool | None
     set_expr_depth_warning: int
     set_engine_affinity: EngineType | None
+    set_default_credential_provider: CredentialProviderFunction | Literal["auto"] | None
 
 
 class Config(contextlib.ContextDecorator):
@@ -181,6 +232,7 @@ class Config(contextlib.ContextDecorator):
 
     _context_options: ConfigParameters | None = None
     _original_state: str = ""
+    _original_runtime_state: dict[str, Any] | None = None
 
     def __init__(
         self,
@@ -264,6 +316,7 @@ class Config(contextlib.ContextDecorator):
         """
         # save original state _before_ any changes are made
         self._original_state = self.save()
+        self._original_runtime_state = _snapshot_runtime_vars()
         if restore_defaults:
             self.restore_defaults()
 
@@ -278,6 +331,8 @@ class Config(contextlib.ContextDecorator):
     def __enter__(self) -> Self:
         """Support setting Config options that are reset on scope exit."""
         self._original_state = self._original_state or self.save()
+        if self._original_runtime_state is None:
+            self._original_runtime_state = _snapshot_runtime_vars()
         if self._context_options:
             self._set_config_params(**self._context_options)
         return self
@@ -290,7 +345,10 @@ class Config(contextlib.ContextDecorator):
     ) -> None:
         """Reset any Config options that were set within the scope."""
         self.restore_defaults().load(self._original_state)
+        if self._original_runtime_state is not None:
+            _restore_runtime_vars(self._original_runtime_state)
         self._original_state = ""
+        self._original_runtime_state = None
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Config):
@@ -334,6 +392,9 @@ class Config(contextlib.ContextDecorator):
 
         cfg_load = Config()
         opts = options.get("environment", {})
+        if "POLARS_ENGINE_AFFINITY" in opts:
+            # A persisted named affinity replaces any process-local object affinity.
+            set_engine_affinity_override(None)
         for key, opt in opts.items():
             if opt is None:
                 os.environ.pop(key, None)
@@ -391,6 +452,10 @@ class Config(contextlib.ContextDecorator):
         # reset all 'direct' defaults
         for method in _POLARS_CFG_DIRECT_VARS:
             getattr(cls, method)(None)
+
+        # reset all runtime-only options
+        for _, set_, default in _POLARS_CFG_RUNTIME_VARS.values():
+            set_(default)
 
         plr.config_reload_env_vars()
         return cls
@@ -1503,6 +1568,12 @@ class Config(contextlib.ContextDecorator):
             when calling `.collect()`. However, the query is not
             guaranteed to execute with the specified engine.
 
+            A :class:`~.GPUEngine` or :class:`~.RemoteEngine` object may also be
+            given, to make a *configured* engine the default. Note that unlike the
+            engine names, which are stored in the `POLARS_ENGINE_AFFINITY`
+            environment variable, these are held in Python-level state and are not
+            included in :meth:`Config.save`.
+
         Examples
         --------
         >>> pl.Config.set_engine_affinity("streaming")  # doctest: +SKIP
@@ -1531,15 +1602,24 @@ class Config(contextlib.ContextDecorator):
         │ 3   ┆ 6   │
         └─────┴─────┘
 
+        Set a configured engine as the default:
+
+        >>> pl.Config.set_engine_affinity(
+        ...     pl.RemoteEngine(ctx, scaling_mode="distributed")
+        ... )  # doctest: +SKIP
+
         Raises
         ------
         ValueError: if engine is not recognised.
-        NotImplementedError: if engine is a GPUEngine object
         """
-        if isinstance(engine, GPUEngine):
-            msg = "GPU engine with non-defaults not yet supported"
-            raise NotImplementedError(msg)
-        supported_engines = get_args(get_args(EngineType)[0])
+        if isinstance(engine, (GPUEngine, RemoteEngine)):
+            # cannot be represented as an environment variable; hold it Python-side
+            os.environ.pop("POLARS_ENGINE_AFFINITY", None)
+            set_engine_affinity_override(engine)
+            plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
+            return cls
+
+        supported_engines = get_args(EngineTypeName)
         if engine not in {*supported_engines, None}:
             msg = "invalid engine"
             raise ValueError(msg)
@@ -1547,6 +1627,7 @@ class Config(contextlib.ContextDecorator):
             os.environ.pop("POLARS_ENGINE_AFFINITY", None)
         else:
             os.environ["POLARS_ENGINE_AFFINITY"] = engine
+        set_engine_affinity_override(None)
         plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
         return cls
 
@@ -1584,14 +1665,10 @@ class Config(contextlib.ContextDecorator):
         ... )
         <class 'polars.config.Config'>
         """
-        import polars.io.cloud.credential_provider._builder
-
         if isinstance(credential_provider, str) and credential_provider != "auto":
             raise ValueError(credential_provider)
 
-        polars.io.cloud.credential_provider._builder.DEFAULT_CREDENTIAL_PROVIDER = (
-            credential_provider
-        )
+        _set_default_credential_provider(credential_provider)
 
         return cls
 

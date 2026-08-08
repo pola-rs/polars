@@ -5504,7 +5504,7 @@ Consider using {self}.implode() instead"""
                 df = x.to_frame("x")
 
                 if x.len() == 0:
-                    return get_lazy_promise(df).collect().to_series()
+                    return get_lazy_promise(df)._collect_local().to_series()
 
                 n_threads = thread_pool_size()
                 chunk_size = x.len() // n_threads

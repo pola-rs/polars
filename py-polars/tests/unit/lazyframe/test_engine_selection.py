@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+from polars.lazyframe.engine_config import _select_engine, _select_plan_engine
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -52,3 +53,28 @@ def test_engine_import_error_raises(df: pl.LazyFrame, engine: EngineType) -> Non
         match="GPU engine requested",
     ):
         df.collect(engine=engine)
+
+
+def test_engine_affinity_object_is_selected(df: pl.LazyFrame) -> None:
+    engine = pl.GPUEngine(device=1)
+    with pl.Config(engine_affinity=engine):
+        assert _select_engine("auto") is engine
+        # an explicit engine still wins over the affinity
+        assert _select_engine("streaming") == "streaming"
+        with pytest.raises(ImportError, match="GPU engine requested"):
+            df.collect()
+
+
+def test_engine_affinity_name_is_selected(df: pl.LazyFrame) -> None:
+    with pl.Config(engine_affinity="streaming"):
+        assert _select_engine("auto") == "streaming"
+
+
+def test_collect_local_ignores_object_affinity(df: pl.LazyFrame) -> None:
+    with pl.Config(engine_affinity=pl.RemoteEngine()):
+        assert df._collect_local().height == 3
+
+
+def test_remote_plan_engine_does_not_inherit_local_affinity() -> None:
+    with pl.Config(engine_affinity="streaming"):
+        assert _select_plan_engine(pl.RemoteEngine()) == "auto"

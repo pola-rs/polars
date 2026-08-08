@@ -156,7 +156,7 @@ def read_delta(
 
     if columns is not None:
         df = df.select(columns)
-    return df.collect()
+    return df._collect_local()
 
 
 def scan_delta(

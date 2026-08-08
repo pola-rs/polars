@@ -98,7 +98,15 @@ from polars.datatypes import (
 from polars.datatypes.group import DataTypeGroup
 from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.interchange.protocol import CompatLevel
-from polars.lazyframe.engine_config import GPUEngine
+from polars.lazyframe.engine_config import (
+    GPUEngine,
+    RemoteEngine,
+    _default_local_engine,
+    _select_collect_engine,
+    _select_engine,
+    _select_local_engine,
+    _select_plan_engine,
+)
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
@@ -107,7 +115,7 @@ from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars._plr import PyLazyFrame, get_engine_affinity
+    from polars._plr import PyLazyFrame
 
 if TYPE_CHECKING:
     import sys
@@ -185,10 +193,6 @@ if TYPE_CHECKING:
 
 
 _COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
-
-
-def _select_engine(engine: EngineType) -> EngineType:
-    return get_engine_affinity() if engine == "auto" else engine
 
 
 def _to_sink_target(
@@ -1431,7 +1435,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if tree_format:
                 format = "tree"
 
-        engine = _select_engine(engine)
+        engine = _select_plan_engine(engine)
 
         if optimized:
             optimizations = optimizations.__copy__()
@@ -1625,7 +1629,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).show_graph(plan_stage="ir")  # doctest: +SKIP
         """
-        engine = _select_engine(engine)
+        engine = _select_plan_engine(engine)
 
         optimizations = optimizations.__copy__()
         optimizations._pyoptflags.streaming = engine == "streaming"
@@ -2231,7 +2235,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ):
                 error_msg = f"profile() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
-        engine = _select_engine(engine)
+        engine = _select_local_engine(engine, "LazyFrame.profile")
 
         optimizations = optimizations.__copy__()
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
@@ -2285,6 +2289,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             plt.show()
 
         return df, timings
+
+    def _collect_local(self, **kwargs: Any) -> DataFrame:
+        """
+        Collect locally, ignoring any object-valued engine affinity.
+
+        For eager entry points built on `.lazy()...collect()`, which must never be
+        redirected to a remote engine.
+        """
+        return self.collect(engine=_default_local_engine(), **kwargs)
 
     @unstable()
     def execute(
@@ -2383,6 +2396,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Collect in GPU mode
 
         """
+        engine = _select_engine(engine)
+        if isinstance(engine, RemoteEngine):
+            return engine._execute(self, optimizations)
         df = self.collect(optimizations=optimizations, engine=engine)
         return SingleNodeQueryResult(df)
 
@@ -2628,7 +2644,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
 
-        engine = _select_engine(engine)
+        engine = _select_collect_engine(engine, eager=optimizations._pyoptflags.eager)
 
         callback = _gpu_engine_callback(
             engine,
@@ -2768,7 +2784,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
-        engine = _select_engine(engine)
+        engine = _select_local_engine(engine, "LazyFrame.collect_async")
 
         if engine == "streaming":
             issue_unstable_warning("streaming mode is considered unstable.")
@@ -3066,6 +3082,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         PartitionBy
         """
         engine = _select_engine(engine)
+        if isinstance(engine, RemoteEngine):
+            engine._sink(self, "sink_parquet", locals())
+            return None
+
         if metadata is not None:
             msg = "`metadata` parameter is considered experimental"
             issue_unstable_warning(msg)
@@ -3720,6 +3740,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         PartitionBy
         """
         engine = _select_engine(engine)
+        if isinstance(engine, RemoteEngine):
+            engine._sink(self, "sink_ipc", locals())
+            return None
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
@@ -4084,6 +4107,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if not null_value:
             null_value = None
         engine = _select_engine(engine)
+        if isinstance(engine, RemoteEngine):
+            engine._sink(self, "sink_csv", locals())
+            return None
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
@@ -4346,7 +4372,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         PartitionBy
         """
-        engine = _select_engine(engine)
+        engine = _select_local_engine(engine, "LazyFrame.sink_ndjson")
 
         from polars.io.cloud.credential_provider._builder import (
             _init_credential_provider_builder,
@@ -4482,6 +4508,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_batches(lambda df: print(df))  # doctest: +SKIP
         """
+        engine = _select_local_engine(engine, "LazyFrame.sink_batches")
 
         def _wrap(pydf: plr.PyDataFrame) -> bool:
             df = wrap_df(pydf)
@@ -4565,7 +4592,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
         """
-        engine = _select_engine(engine)
+        engine = _select_local_engine(engine, "LazyFrame.collect_batches")
 
         if engine == "auto":
             engine = "streaming"
