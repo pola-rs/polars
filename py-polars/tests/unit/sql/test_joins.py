@@ -948,7 +948,41 @@ def test_nulls_equal_19624() -> None:
     assert_frame_equal(res_df, expected_df)
 
 
-def test_join_on_literal_string_comparison() -> None:
+@pytest.mark.parametrize(
+    ("extra_condition", "expected_rows"),
+    [
+        # left-table column = literal (and reversed / unqualified)
+        (
+            "df1.role = 'admin'",
+            [("adam", "admin", "SEC"), ("alice", "admin", "IT")],
+        ),
+        (
+            "'admin' = df1.role",
+            [("adam", "admin", "SEC"), ("alice", "admin", "IT")],
+        ),
+        (
+            "role = 'admin'",
+            [("adam", "admin", "SEC"), ("alice", "admin", "IT")],
+        ),
+        # right-table column = literal (and reversed / unqualified)
+        # ref: https://github.com/pola-rs/polars/issues/28641
+        (
+            "df2.dept = 'IT'",
+            [("alice", "admin", "IT"), ("charlie", "user", "IT")],
+        ),
+        (
+            "'IT' = df2.dept",
+            [("alice", "admin", "IT"), ("charlie", "user", "IT")],
+        ),
+        (
+            "dept = 'IT'",
+            [("alice", "admin", "IT"), ("charlie", "user", "IT")],
+        ),
+    ],
+)
+def test_join_on_literal_string_comparison(
+    extra_condition: str, expected_rows: list[tuple[str, str, str]]
+) -> None:
     df1 = pl.DataFrame(
         {
             "name": ["alice", "bob", "adam", "charlie"],
@@ -961,14 +995,14 @@ def test_join_on_literal_string_comparison() -> None:
             "dept": ["IT", "HR", "IT", "SEC"],
         }
     )
-    query = """
+    query = f"""
         SELECT df1.name, df1.role, df2.dept
         FROM df1
-        INNER JOIN df2 ON df1.name = df2.name AND df1.role = 'admin'
+        INNER JOIN df2 ON df1.name = df2.name AND {extra_condition}
         ORDER BY df1.name
     """
     df_expected = pl.DataFrame(
-        data=[("adam", "admin", "SEC"), ("alice", "admin", "IT")],
+        data=expected_rows,
         schema={"name": str, "role": str, "dept": str},
         orient="row",
     )
