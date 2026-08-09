@@ -702,7 +702,8 @@ def test_scan_csv_new_columns_28343() -> None:
 
 @pytest.mark.write_disk
 def test_scan_csv_infer_schema_length_zero_on_wide_csv(
-    plmonkeypatch: PlMonkeyPatch, tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "wide.csv"
