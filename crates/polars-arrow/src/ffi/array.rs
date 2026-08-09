@@ -103,6 +103,8 @@ impl ArrowArray {
     pub(crate) fn new(mut array: Box<dyn Array>) -> Self {
         if let Some(struct_array) = array.as_any_mut().downcast_mut::<StructArray>() {
             *struct_array = struct_array.to_ffi_aligned();
+        } else if let Some(fsl_array) = array.as_any_mut().downcast_mut::<FixedSizeListArray>() {
+            *fsl_array = fsl_array.to_ffi_aligned();
         }
 
         #[allow(unused_mut)]

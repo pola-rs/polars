@@ -13,7 +13,6 @@ use polars::prelude::PlRefPath;
 use polars::prelude::file::{Writable, WritableTrait};
 use polars_buffer::{Buffer, SharedStorage};
 use polars_error::polars_err;
-use polars_utils::create_file;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -448,9 +447,9 @@ fn get_either_buffer_or_path(
         if let Ok(s) = py_f.extract::<Cow<str>>() {
             let file_path = resolve_homedir(s.as_ref());
             let f = if write {
-                create_file(&file_path).map_err(PyPolarsErr::from)?
+                polars_utils::io::create_file(&file_path).map_err(PyPolarsErr::from)?
             } else {
-                polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
+                polars_utils::io::open_file(&file_path).map_err(PyPolarsErr::from)?
             };
             Ok((
                 EitherRustPythonFile::Rust(f.into()),

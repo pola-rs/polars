@@ -1,4 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -42,9 +43,15 @@ pub struct CsvReadOptions {
     pub skip_lines: usize,
     pub skip_rows_after_header: usize,
     pub infer_schema_length: Option<usize>,
+    #[cfg_attr(feature = "serde", serde(default = "nonzero_usize_max"))]
+    pub infer_schema_files: NonZeroUsize,
     pub raise_if_empty: bool,
     pub ignore_errors: bool,
     pub fields_to_cast: Vec<Field>,
+}
+
+const fn nonzero_usize_max() -> NonZeroUsize {
+    NonZeroUsize::MAX
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -89,6 +96,7 @@ impl Default for CsvReadOptions {
             skip_lines: 0,
             skip_rows_after_header: 0,
             infer_schema_length: Some(100),
+            infer_schema_files: const { NonZeroUsize::new(10).unwrap() },
             raise_if_empty: true,
             ignore_errors: false,
             fields_to_cast: vec![],
@@ -244,6 +252,11 @@ impl CsvReadOptions {
     /// Setting to [None] will do a full table scan, which is very slow.
     pub fn with_infer_schema_length(mut self, infer_schema_length: Option<usize>) -> Self {
         self.infer_schema_length = infer_schema_length;
+        self
+    }
+
+    pub fn with_infer_schema_files(mut self, infer_schema_files: NonZeroUsize) -> Self {
+        self.infer_schema_files = infer_schema_files;
         self
     }
 
