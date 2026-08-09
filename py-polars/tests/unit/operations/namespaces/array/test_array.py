@@ -700,7 +700,6 @@ def test_array_get_broadcast_26217() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.debug
 def test_array_idx_size_limit_eval(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
