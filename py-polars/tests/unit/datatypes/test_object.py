@@ -80,7 +80,6 @@ def test_nullable_object_13538() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming  # dtype is not set
 @pytest.mark.may_fail_cloud  # reason: eager
 def test_nullable_object_17936() -> None:
     class Custom:

@@ -28,7 +28,6 @@ def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
 
 
 @pytest.mark.may_fail_cloud
-@pytest.mark.may_fail_auto_streaming
 @given(
     s=series(
         min_size=6,

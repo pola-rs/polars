@@ -375,7 +375,6 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
     assert len(res.out) > 0
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_fetch(fruits_cars: pl.DataFrame) -> None:
     with pytest.warns(
         DeprecationWarning,
