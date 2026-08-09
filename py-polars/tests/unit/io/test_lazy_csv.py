@@ -712,7 +712,7 @@ def test_scan_csv_infer_schema_length_zero_on_wide_csv(
     # Create a very wide CSV
     num_cols = 20000
     csv_content = {f"c{i}": f"val{i}" for i in range(num_cols)}
-    
+
     df = pl.DataFrame(csv_content)
     df.lazy().sink_csv(file_path)
 
@@ -720,7 +720,6 @@ def test_scan_csv_infer_schema_length_zero_on_wide_csv(
         file_path,
         infer_schema_length=0,
     ).collect()
-
     assert df.width == 20_000
 
 
