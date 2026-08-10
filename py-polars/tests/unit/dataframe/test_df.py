@@ -2016,14 +2016,6 @@ def test_with_row_index_bad_offset_lazy() -> None:
         lf.with_row_index(offset=2**64)
 
 
-def test_with_row_count_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
-
-    with pytest.deprecated_call():
-        out = df.lazy().with_row_count().collect()
-    assert out["row_nr"].to_list() == [0, 1, 2]
-
-
 @pytest.mark.may_fail_cloud
 def test_filter_with_all_expansion() -> None:
     df = pl.DataFrame(
