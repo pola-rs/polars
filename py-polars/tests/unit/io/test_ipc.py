@@ -440,7 +440,7 @@ def test_read_ipc_only_loads_selected_columns(
     memory_usage_without_pyarrow.reset_tracking()
 
     # Only load one column:
-    df = read_ipc(stream, str(file_path), columns=["b"], rechunk=False)
+    df = read_ipc(stream, str(file_path), columns=["b"])
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 32_000_000 at least, but there's some overhead.

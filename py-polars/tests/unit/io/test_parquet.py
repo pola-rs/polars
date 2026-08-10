@@ -143,7 +143,11 @@ def test_read_parquet_respects_rechunk_16416(
     buf.seek(0)
 
     rechunk, expected_chunks = rechunk_and_expected_chunks
-    result = pl.read_parquet(buf, use_pyarrow=use_pyarrow, rechunk=rechunk)
+    result = pl.read_parquet(buf, use_pyarrow=use_pyarrow)
+
+    if rechunk:
+        result = result.rechunk()
+
     assert result.n_chunks() == expected_chunks
 
 
