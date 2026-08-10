@@ -49,10 +49,12 @@ _run_close_loop = True
 
 class _CancelledHandle:
     """Placeholder for a ready callback that a nested loop run already executed."""
+
     _cancelled = True
 
     def _run(self):
         pass
+
 
 class _ReentrantReady(deque):
     """A queue that returns a dummy cancelled handle on empty pop rather than erroring."""
