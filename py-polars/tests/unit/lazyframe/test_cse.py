@@ -1670,6 +1670,46 @@ def test_cspe_with_pushable_filters_scan_19479(tmp_path: Path) -> None:
     assert "CACHE[id:" not in result.explain()
 
 
+def test_cspe_cache_removal_keeps_nested_caches(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # Removing a cache because the predicates above it are pushable must not also
+    # delete caches nested *below* it. Those have their own predicates and get their
+    # own decision; deleting them here duplicates their subplan without ever
+    # evaluating them.
+    plmonkeypatch.setenv("POLARS_ALLOW_NESTED_CSPE", "1")
+
+    src = pl.LazyFrame(
+        {"k": ["a", "b"], "cat": ["5", "7"], "from": [1, 2], "to": [3, 4]}
+    )
+    # `src` is used 3x, so it is cached even when a single branch is optimized alone.
+    base = src.join(src.select("k", pl.col("to").alias("t2")), on="k").join(
+        src.select("k", pl.col("from").alias("f2")), on="k"
+    )
+
+    # The two branches differ only by a pushable predicate directly above `base`, which
+    # makes the *outer* cache eligible for removal.
+    branches = [
+        base.filter(pl.col("cat") == c).select("k", "from", "to") for c in ("5", "7")
+    ]
+    q = pl.concat(
+        [
+            lf.select("k", pl.col(c).alias("v"))
+            for lf in branches
+            for c in ["from", "to"]
+        ]
+    )
+
+    # The nested cache over `src` survives and stays shared across both branches.
+    cache_ids = set(re.findall(r"CACHE\[id: ([0-9a-f-]+)\]", q.explain()))
+    assert len(cache_ids) == 3
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+
+
 def test_cse_single_scalar_does_not_broadcast_28407() -> None:
     e = pl.lit(5).abs()
     q = pl.LazyFrame({"a": [1, 2, 3]}).select((e + e).alias("o"))
