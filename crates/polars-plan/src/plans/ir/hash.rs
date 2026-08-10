@@ -167,7 +167,7 @@ impl IR {
             } => {
                 hash_exprs(left_on, state);
                 hash_exprs(right_on, state);
-                options.hash(state);
+                options.shallow_hash(state, expr_hash);
             },
             IR::Gather {
                 input: _,

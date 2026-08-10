@@ -322,8 +322,8 @@ pub(super) async fn parquet_file_info(
     } else {
         use polars_config::ResolveMode;
 
-        // The strided footer sample; `Some` only when it does not already
-        // span every source (a spanning wave routes through the `Full` arm).
+        // Indices of the footers to be sampled. Value is `Some` only when
+        // file coverage is incomplete.
         let partial_sample = matches!(mode, ResolveMode::Sampled)
             .then(|| {
                 // Default cap: the IO concurrency budget floored at
@@ -613,9 +613,15 @@ pub fn max_metadata_scan_cached() -> usize {
             v.parse::<usize>()
                 .expect("invalid `POLARS_MAX_CACHED_METADATA_SCANS` value")
         });
+
         if value == 0 {
             return usize::MAX;
         }
+
+        if polars_config::config().verbose() {
+            eprintln!("parquet max cached metadata scans: {value}")
+        };
+
         value
     });
     *MAX_SCANS_METADATA_CACHED
@@ -1193,8 +1199,8 @@ impl SourcesToFileInfo {
                         let first_scan_source = require_first_source(
                             "failed to retrieve first file schema (parquet)",
                             "\
-passing a schema can allow \
-this scan to succeed with an empty DataFrame.",
+    passing a schema can allow \
+    this scan to succeed with an empty DataFrame.",
                         )?;
 
                         if verbose() {
@@ -1204,6 +1210,8 @@ this scan to succeed with an empty DataFrame.",
                             )
                         }
 
+                        // TODO: Reconcile the `resolve` strategy with the cache capacity to
+                        // avoid throwaway work and control it here.
                         let (mut file_info, mut metadata_per_source) = scans::parquet_file_info(
                             sources,
                             unified_scan_args.row_index.as_ref(),

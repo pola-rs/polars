@@ -28,6 +28,8 @@ class ExprArrayNameSpace:
         """
         Return the number of elements in each array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -56,6 +58,8 @@ class ExprArrayNameSpace:
     ) -> Expr:
         """
         Slice every subarray.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -107,6 +111,8 @@ class ExprArrayNameSpace:
         """
         Get the first `n` elements of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -151,6 +157,8 @@ class ExprArrayNameSpace:
     def tail(self, n: int | str | Expr = 5, *, as_array: bool = False) -> Expr:
         """
         Slice the last `n` values of every sublist.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -198,6 +206,8 @@ class ExprArrayNameSpace:
         """
         Compute the min values of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -220,6 +230,8 @@ class ExprArrayNameSpace:
     def max(self) -> Expr:
         """
         Compute the max values of the sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -244,6 +256,8 @@ class ExprArrayNameSpace:
         """
         Compute the sum values of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -266,6 +280,8 @@ class ExprArrayNameSpace:
     def std(self, ddof: int = 1) -> Expr:
         """
         Compute the std of the values of the sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -290,6 +306,8 @@ class ExprArrayNameSpace:
         """
         Compute the var of the values of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -312,6 +330,8 @@ class ExprArrayNameSpace:
     def mean(self) -> Expr:
         """
         Compute the mean of the values of the sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -336,6 +356,8 @@ class ExprArrayNameSpace:
         """
         Compute the median of the values of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -357,7 +379,9 @@ class ExprArrayNameSpace:
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
-        Get the unique/distinct values in the array.
+        Get the unique/distinct values in every sub-array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -368,18 +392,19 @@ class ExprArrayNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [[1, 1, 2]],
+        ...         "a": [[1, 1, 2], [1, 3, 3]],
         ...     },
         ...     schema={"a": pl.Array(pl.Int64, 3)},
         ... )
         >>> df.select(pl.col("a").arr.unique())
-        shape: (1, 1)
+        shape: (2, 1)
         ┌───────────┐
         │ a         │
         │ ---       │
         │ list[i64] │
         ╞═══════════╡
         │ [1, 2]    │
+        │ [1, 3]    │
         └───────────┘
         """
         return self.eval(
@@ -389,6 +414,8 @@ class ExprArrayNameSpace:
     def n_unique(self) -> Expr:
         """
         Count the number of unique values in every sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -414,6 +441,8 @@ class ExprArrayNameSpace:
     def to_list(self) -> Expr:
         """
         Convert an Array column into a List column with the same inner data type.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -442,6 +471,8 @@ class ExprArrayNameSpace:
     def any(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether any boolean value is true for every subarray.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -488,6 +519,8 @@ class ExprArrayNameSpace:
         """
         Evaluate whether all boolean values are true for every subarray.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         ignore_nulls
@@ -531,7 +564,9 @@ class ExprArrayNameSpace:
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
-        Sort the arrays in this column.
+        Sort every sub-array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -573,7 +608,9 @@ class ExprArrayNameSpace:
 
     def reverse(self) -> Expr:
         """
-        Reverse the arrays in this column.
+        Reverse the sub-arrays in this column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -603,6 +640,8 @@ class ExprArrayNameSpace:
         When multiple values are equal to the minimum, this function may arbitrarily
         return the index of any of the minimum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -639,6 +678,8 @@ class ExprArrayNameSpace:
         return the index of any of the maximum values. In this case, the returned index
         is not guaranteed to be the same across multiple runs.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -674,6 +715,8 @@ class ExprArrayNameSpace:
         and index `-1` would return the last item of every sublist
         if an index is out of bounds, it will return a `None`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         index
@@ -708,6 +751,8 @@ class ExprArrayNameSpace:
         """
         Get the first value of the sub-arrays.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -731,6 +776,8 @@ class ExprArrayNameSpace:
     def last(self) -> Expr:
         """
         Get the last value of the sub-arrays.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -757,6 +804,8 @@ class ExprArrayNameSpace:
         Join all string items in a sub-array and place a separator between them.
 
         This errors if inner type of array `!= String`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -801,6 +850,8 @@ class ExprArrayNameSpace:
     ) -> Expr:
         """
         Returns a column with a separate row for every array element.
+
+        .. engine-support:: in-memory, streaming, partially-distributed
 
         Parameters
         ----------
@@ -849,6 +900,8 @@ class ExprArrayNameSpace:
         """
         Check if sub-arrays contain the given item.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         item
@@ -885,6 +938,8 @@ class ExprArrayNameSpace:
     def count_matches(self, element: IntoExpr) -> Expr:
         """
         Count how often the value produced by `element` occurs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -978,6 +1033,8 @@ class ExprArrayNameSpace:
         """
         Shift array values by the given number of indices.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         n
@@ -1027,6 +1084,8 @@ class ExprArrayNameSpace:
         """
         Run any polars expression against the arrays' elements.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         expr
@@ -1060,6 +1119,8 @@ class ExprArrayNameSpace:
     def agg(self, expr: Expr) -> Expr:
         """
         Run any polars aggregation expression against the arrays' elements.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------

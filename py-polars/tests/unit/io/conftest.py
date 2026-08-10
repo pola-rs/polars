@@ -33,13 +33,3 @@ def normalize_path_separator_pl(s: Any) -> Any:
         return s.str.replace_all("\\", "/", literal=True)
 
     return s
-
-
-@pytest.fixture(scope="session")
-def duckdb_delta_ext(tmp_path_factory: pytest.TempPathFactory) -> None:
-    import duckdb
-    from filelock import FileLock
-
-    shared = tmp_path_factory.getbasetemp().parent  # .parent == shared across workers
-    with FileLock(shared / "duckdb_delta_install.lock"):
-        duckdb.connect().execute("INSTALL delta")

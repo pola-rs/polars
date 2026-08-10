@@ -44,7 +44,7 @@ impl IRStructFunction {
                             Deprecation,
                             "struct.rename_fields() argument has a different number of fields than the struct it operates on ({} vs {}).\n\
                             This silently drops the last {dropped_str}, and it will become an error in Polars 2.0.\n\
-                            To replicate the old behavior and suppress this warning, use struct.drop_fields() to drop the trailing struct fields first (if any) and then call struct.rename_fields() normally.",
+                            To replicate the old behavior and suppress this warning, use struct.drop() to drop the trailing struct fields first (if any) and then call struct.rename_fields() normally.",
                             names.len(), fields.len(),
                         )
                     }
