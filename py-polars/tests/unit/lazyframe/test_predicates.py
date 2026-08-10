@@ -1844,3 +1844,42 @@ def test_predicate_simplification_stable_28267() -> None:
     plan = q.explain()
 
     assert plan.find("is_between") > plan.find("&")
+
+
+def test_or_factoring_skips_udf_conjunct() -> None:
+    # A UDF is opaque, so factoring it out of the OR would collapse two evaluations
+    # into one. Unlike CSE, OR factoring makes no exception for same-identity UDFs.
+    lf = pl.LazyFrame(
+        {"a": [1, 2, 3], "b": [True, False, True], "c": [False, True, True]}
+    )
+    udf = pl.col("a").map_elements(lambda x: bool(hash(x) % 2), return_dtype=pl.Boolean)
+    query = lf.filter((udf & pl.col("b")) | (udf & pl.col("c")))
+
+    plan = query.explain()
+    assert plan.count("python_udf") == 2, plan
+
+    assert_frame_equal(
+        query.collect(),
+        query.collect(
+            optimizations=pl.QueryOptFlags(
+                simplify_expression=False, predicate_pushdown=False
+            )
+        ),
+    )
+
+
+def test_or_factoring_skips_nondeterminism_in_eval_body() -> None:
+    # `list.eval` bodies are part of an expression's identity, so non-determinism
+    # inside one must block factoring just like non-determinism outside it.
+    lf = pl.LazyFrame(
+        {
+            "x": [[1, 2], [3, 4]],
+            "b": [True, False],
+            "c": [False, True],
+        }
+    )
+    nondet = pl.col("x").list.eval(pl.element().shuffle()).list.first() % 2 == 0
+    query = lf.filter((nondet & pl.col("b")) | (nondet & pl.col("c")))
+
+    plan = query.explain()
+    assert plan.count("shuffle") == 2, plan
