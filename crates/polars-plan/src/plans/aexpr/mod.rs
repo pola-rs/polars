@@ -16,7 +16,10 @@ mod traverse;
 use std::hash::{Hash, Hasher};
 
 pub use canonical::{CanonicalExprId, CanonicalExprMap};
-pub use determinism::{is_inherently_nondeterministic, is_inherently_nondeterministic_top_level};
+pub use determinism::{
+    is_inherently_nondeterministic, is_inherently_nondeterministic_excluding_udfs_top_level,
+    is_inherently_nondeterministic_top_level,
+};
 pub use function_expr::*;
 pub use minterm_iter::MintermIter;
 use polars_core::chunked_array::cast::CastOptions;

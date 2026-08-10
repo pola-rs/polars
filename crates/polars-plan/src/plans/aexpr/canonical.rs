@@ -12,6 +12,10 @@ use slotmap::SlotMap;
 
 #[cfg(feature = "cse")]
 use crate::plans::ExpressionHasher;
+use crate::plans::aexpr::{
+    is_inherently_nondeterministic_excluding_udfs_top_level,
+    is_inherently_nondeterministic_top_level,
+};
 use crate::plans::{AExpr, ExprIR, ExpressionComparator};
 
 slotmap::new_key_type! {
@@ -24,6 +28,10 @@ slotmap::new_key_type! {
 struct CanonicalExprClass {
     members: PlHashSet<Node>,
     child_ids: Vec<CanonicalExprId>,
+    /// Whether the subtree may produce a different value on each evaluation
+    is_nondeterministic: bool,
+    /// Like [`is_nondeterministic`], but excludes UDFs
+    is_nondeterministic_excluding_udfs: bool,
 }
 
 impl CanonicalExprClass {
@@ -78,6 +86,14 @@ impl CanonicalExprMap {
     /// Returns a representative node for `id`.
     pub fn representative(&self, id: CanonicalExprId) -> Node {
         self.eq_classes[id].representative()
+    }
+
+    pub fn is_nondeterministic(&self, id: CanonicalExprId) -> bool {
+        self.eq_classes[id].is_nondeterministic
+    }
+
+    pub fn is_nondeterministic_excluding_udfs(&self, id: CanonicalExprId) -> bool {
+        self.eq_classes[id].is_nondeterministic_excluding_udfs
     }
 
     /// Returns the id of `node`, resolving its children recursively.
@@ -148,9 +164,22 @@ impl CanonicalExprMap {
                 id
             },
             Entry::Vacant(entry) => {
+                let ae = expr_arena.get(node);
+                let is_nondeterministic = is_inherently_nondeterministic_top_level(ae)
+                    || child_ids
+                        .iter()
+                        .any(|&child| eq_classes[child].is_nondeterministic);
+                let is_nondeterministic_excluding_udfs =
+                    is_inherently_nondeterministic_excluding_udfs_top_level(ae)
+                        || child_ids
+                            .iter()
+                            .any(|&child| eq_classes[child].is_nondeterministic_excluding_udfs);
+
                 let id = eq_classes.insert(CanonicalExprClass {
                     members: PlHashSet::from_iter([node]),
                     child_ids,
+                    is_nondeterministic,
+                    is_nondeterministic_excluding_udfs,
                 });
                 entry.insert(id);
                 id

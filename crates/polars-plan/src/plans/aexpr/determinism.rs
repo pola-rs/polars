@@ -46,6 +46,17 @@ pub fn is_inherently_nondeterministic_top_level(ae: &AExpr) -> bool {
     }
 }
 
+/// Similar to [`is_inherently_nondeterministic_top_level`], but allows caching UDFs
+pub fn is_inherently_nondeterministic_excluding_udfs_top_level(ae: &AExpr) -> bool {
+    if matches!(
+        ae,
+        AExpr::AnonymousFunction { .. } | AExpr::AnonymousAgg { .. }
+    ) {
+        return false;
+    }
+    is_inherently_nondeterministic_top_level(ae)
+}
+
 /// Returns `true` if evaluating `root`'s subtree may produce different
 /// values across calls for a fundamental reason: random draws, opaque
 /// user UDFs, FFI plugins, runtime-injected predicates.

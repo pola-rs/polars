@@ -71,14 +71,16 @@ struct IDState {
     hits: usize,
     replacement_ir: Option<IR>,
     output_state_entry_idx: usize,
+    is_nondeterministic_excluding_udfs: bool,
 }
 
-impl Default for IDState {
-    fn default() -> Self {
+impl IDState {
+    fn new(is_nondeterministic_excluding_udfs: bool) -> Self {
         Self {
             hits: 1,
             replacement_ir: None,
             output_state_entry_idx: usize::MAX,
+            is_nondeterministic_excluding_udfs,
         }
     }
 }
@@ -130,7 +132,9 @@ impl NodeVisitor for IDGeneratorVisitor<'_, '_> {
             Entry::Vacant(e) => {
                 let idx = e.index();
 
-                e.insert(IDState::default());
+                e.insert(IDState::new(
+                    self.canonical_ir_map.is_nondeterministic_excluding_udfs(id),
+                ));
 
                 idx
             },
@@ -199,7 +203,15 @@ impl NodeVisitor for InsertCachesVisitor<'_> {
             return ControlFlow::Continue(SubtreeVisit::Skip);
         }
 
-        if curr_state.hits > output_state.hits {
+        // We never want to cache a non-deterministic node or its outputs/ancestors
+        let output_hits = if output_state.is_nondeterministic_excluding_udfs {
+            1
+        } else {
+            output_state.hits
+        };
+
+        // Cache the topmost deterministic node
+        if !curr_state.is_nondeterministic_excluding_udfs && curr_state.hits > output_hits {
             let replacement_ir = match storage.get(key) {
                 ir @ IR::Cache { .. } => ir.clone(),
                 _ => {
