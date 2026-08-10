@@ -2386,88 +2386,122 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
     )
 
 
-@given(
-    df=dataframes(
-        min_size=1,
-        include_cols=[column(name="key", dtype=pl.UInt8, allow_null=False)],
-    ),
-)
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("expr", "check_order", "returns_scalar", "length_preserving", "is_window"),
     [
-        (pl.Expr.unique, False, False, False, False),
-        (lambda e: e.unique(maintain_order=True), True, False, False, False),
-        (pl.Expr.drop_nans, True, False, False, False),
-        (pl.Expr.drop_nulls, True, False, False, False),
-        (pl.Expr.null_count, True, False, False, False),
-        (pl.Expr.n_unique, True, True, False, False),
-        (
+        pytest.param(pl.Expr.unique, False, False, False, False, id="unique"),
+        pytest.param(
+            lambda e: e.unique(maintain_order=True),
+            True,
+            False,
+            False,
+            False,
+            id="unique_maintain_order",
+        ),
+        pytest.param(pl.Expr.drop_nans, True, False, False, False, id="drop_nans"),
+        pytest.param(pl.Expr.drop_nulls, True, False, False, False, id="drop_nulls"),
+        pytest.param(pl.Expr.null_count, True, False, False, False, id="null_count"),
+        pytest.param(pl.Expr.n_unique, True, True, False, False, id="n_unique"),
+        pytest.param(
             lambda e: e.filter(pl.int_range(0, e.len()) % 3 == 0),
             True,
             False,
             False,
             False,
+            id="filter",
         ),
-        (pl.Expr.shift, True, False, True, False),
-        (pl.Expr.forward_fill, True, False, True, False),
-        (pl.Expr.backward_fill, True, False, True, False),
-        (pl.Expr.reverse, True, False, True, False),
-        (
+        pytest.param(pl.Expr.shift, True, False, True, False, id="shift"),
+        pytest.param(pl.Expr.forward_fill, True, False, True, False, id="forward_fill"),
+        pytest.param(
+            pl.Expr.backward_fill, True, False, True, False, id="backward_fill"
+        ),
+        pytest.param(pl.Expr.reverse, True, False, True, False, id="reverse"),
+        pytest.param(
             lambda e: (pl.int_range(e.len() - e.len(), e.len()) % 3 == 0).any(),
             True,
             True,
             False,
             False,
+            id="any",
         ),
-        (
+        pytest.param(
             lambda e: (pl.int_range(e.len() - e.len(), e.len()) % 3 == 0).all(),
             True,
             True,
             False,
             False,
+            id="all",
         ),
-        (lambda e: e.head(2), True, False, False, False),
-        (pl.Expr.first, True, True, False, False),
-        (pl.Expr.mode, False, False, False, False),
-        (lambda e: e.fill_null(e.first()).over(e), True, False, True, True),
-        (lambda e: e.first().over(e), True, False, True, True),
-        (
+        pytest.param(lambda e: e.head(2), True, False, False, False, id="head"),
+        pytest.param(pl.Expr.first, True, True, False, False, id="first"),
+        pytest.param(pl.Expr.mode, False, False, False, False, id="mode"),
+        pytest.param(
+            lambda e: e.fill_null(e.first()).over(e),
+            True,
+            False,
+            True,
+            True,
+            id="fill_null_over",
+        ),
+        pytest.param(
+            lambda e: e.first().over(e), True, False, True, True, id="first_over"
+        ),
+        pytest.param(
             lambda e: e.fill_null(e.first()).over(e, mapping_strategy="join"),
             True,
             False,
             True,
             True,
+            id="fill_null_over_join",
         ),
-        (
+        pytest.param(
             lambda e: e.fill_null(e.first()).over(e, mapping_strategy="explode"),
             True,
             False,
             False,
             True,
+            id="fill_null_over_explode",
         ),
-        (
+        pytest.param(
             lambda e: e.fill_null(strategy="forward").over([e]),
             True,
             False,
             True,
             True,
+            id="fill_null_forward_over",
         ),
-        (lambda e: e.fill_null(e.first()).over(e, order_by=e), True, False, True, True),
-        (
+        pytest.param(
+            lambda e: e.fill_null(e.first()).over(e, order_by=e),
+            True,
+            False,
+            True,
+            True,
+            id="fill_null_over_order_by",
+        ),
+        pytest.param(
             lambda e: e.fill_null(e.first()).over(e, order_by=e, descending=True),
             True,
             False,
             True,
             True,
+            id="fill_null_over_order_by_descending",
         ),
-        (
+        pytest.param(
             lambda e: e.gather(pl.int_range(0, e.len()).slice(1, 3)),
             True,
             False,
             False,
             False,
+            id="gather",
         ),
     ],
+)
+@given(
+    df=dataframes(
+        min_size=1,
+        include_cols=[column(name="key", dtype=pl.UInt8, allow_null=False)],
+    ),
 )
 def test_grouped_agg_parametric(
     df: pl.DataFrame,
