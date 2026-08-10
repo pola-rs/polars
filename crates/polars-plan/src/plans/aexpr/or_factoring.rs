@@ -129,7 +129,8 @@ fn try_factor_or(
         // Skip inherently non-deterministic candidates: factoring them out of
         // `(A ∧ X) ∨ (A ∧ Y) → A ∧ (X ∨ Y)` would evaluate `A` once instead of
         // twice per row, which is unsound when the two evaluations could disagree.
-        // TODO: This should be computed by `CanonicalExprMap`
+        // TODO: This should be computed by `CanonicalExprMap` once it can handle nondeterminism
+        // properly (https://github.com/pola-rs/polars/issues/28733)
         if is_inherently_nondeterministic(cand, expr_arena) {
             continue;
         }
