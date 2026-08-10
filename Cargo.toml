@@ -167,7 +167,7 @@ question_mark = "allow" # https://github.com/rust-lang/rust-clippy/issues/17384
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
 # custom DNS resolver - ref https://github.com/apache/arrow-rs-object-store/pull/728
 object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", rev = "f50a6e5c564b2b5933eca15cd20ff9b5614374a1" }
-color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "bb62ccf1e9eb1f6b7af5f16acff1fd7151a876dd" }
+color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "20f5eea183563bb4cfac9a4d65901d4a1002cde2" }
 
 # https://github.com/tikv/jemallocator/pull/168
 tikv-jemalloc-sys = { git = "https://github.com/pola-rs/jemallocator", rev = "0d683dfb157097e2075d5e0eaf25f71f514a7552" }
