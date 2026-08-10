@@ -247,9 +247,10 @@ fn is_sorted_rec(
                 .columns()
                 .iter()
                 .filter_map(|c| {
-                    if !output_schema
+                    // Skip projected-out columns.
+                    if output_schema
                         .as_ref()
-                        .is_none_or(|schema| schema.contains(c.name()))
+                        .is_some_and(|schema| !schema.contains(c.name()))
                     {
                         return None;
                     }
