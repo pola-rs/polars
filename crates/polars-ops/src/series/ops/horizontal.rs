@@ -6,8 +6,8 @@ use polars_core::runtime::RAYON;
 use polars_core::series::arithmetic::coerce_lhs_rhs;
 use polars_core::utils::dtypes_to_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_utils::min_max::MinMax;
 use polars_utils::broadcast::broadcast_len;
+use polars_utils::min_max::MinMax;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 pub trait MinMaxHorizontal {
