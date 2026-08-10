@@ -354,6 +354,7 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                             && !has_aggregation(*falsy)
                             && !has_aggregation(*predicate)
                     },
+                    Filter { input, by } => !has_aggregation(*input) && !has_aggregation(*by),
                     Literal(lv) => lv.is_scalar(),
                     Column(_) | Len | Cast { .. } => true,
                     _ => false,
