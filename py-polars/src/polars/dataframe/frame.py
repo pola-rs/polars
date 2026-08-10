@@ -5424,8 +5424,13 @@ class DataFrame:
         False. As a result, these rows will not be retained. Ensure that null values
         are handled appropriately to avoid unexpected behaviour (see examples below).
 
+        To retain rows based on whether their values occur in another DataFrame, use
+        a semi join instead of passing the other frame to `Expr.is_in`.
+
         See Also
         --------
+        join
+            Join with another DataFrame; use `how="semi"` to filter by matching rows.
         remove
 
         Examples
