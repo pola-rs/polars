@@ -13397,18 +13397,20 @@ class DataFrame:
             )
         ).to_series()
 
-    def __getattr__(self, name: str) -> Any:
-        raise_for_removed_attributes(
-            self,
-            name,
-            {
-                "melt": "use `DataFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
-                "with_row_count": "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
-                "approx_n_unique": "use `select(pl.all().approx_n_unique())` instead.",
-            },
-            version="2.0",
-        )
-        return getattr_fallback(self, super(), name)
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "melt": "use `DataFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+                    "with_row_count": "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
+                    "approx_n_unique": "use `select(pl.all().approx_n_unique())` instead.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
