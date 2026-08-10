@@ -13,9 +13,13 @@
 //! trade-off: final result is unchanged, error-reporting order may differ
 //! as it would with a `.filter(...).filter(...)` chain.
 
+use polars_utils::aliases::{InitHashMaps, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
+use polars_utils::scratch_vec::ScratchVec;
 
-use crate::plans::aexpr::{AExpr, CanonicalExprMap};
+use crate::plans::aexpr::{
+    AExpr, CanonicalExprId, CanonicalExprMap, MintermIter, is_inherently_nondeterministic,
+};
 use crate::prelude::Operator;
 
 /// Walk the AExpr tree bottom-up, applying OR factoring at every OR node.
@@ -79,11 +83,6 @@ fn try_factor_or(
     canonical_exprs: &mut CanonicalExprMap,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<AExpr> {
-    use polars_utils::aliases::{InitHashMaps, PlIndexMap};
-    use polars_utils::scratch_vec::ScratchVec;
-
-    use crate::plans::aexpr::{CanonicalExprId, MintermIter, is_inherently_nondeterministic};
-
     let mut branches = Vec::new();
     collect_or_branches(or_node, expr_arena, &mut branches);
     if branches.len() < 2 {
