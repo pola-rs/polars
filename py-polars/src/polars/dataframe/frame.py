@@ -578,7 +578,6 @@ class DataFrame:
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
-        rechunk: bool = True,
     ) -> DataFrame:
         """
         Construct a DataFrame from an Arrow table.
@@ -603,15 +602,13 @@ class DataFrame:
         schema_overrides : dict, default None
             Support type specification or override of one or more columns; note that
             any dtypes inferred from the columns param will be overridden.
-        rechunk : bool, default True
-            Make sure that all data is in contiguous memory.
         """
         return cls._from_pydf(
             arrow_to_pydf(
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
-                rechunk=rechunk,
+                rechunk=False,
             )
         )
 
