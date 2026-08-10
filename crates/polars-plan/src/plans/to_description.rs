@@ -1,20 +1,23 @@
 use std::collections::VecDeque;
 
 use polars_core::prelude::SortMultipleOptions;
+#[cfg(feature = "python")]
+use polars_descriptions::PythonPredicateDescription;
 use polars_descriptions::{
-    IrNodeDescription, IrPropsDescription, PredicateFileSkipDescription,
-    PythonPredicateDescription, SinkDestDescription, SortColumnDescription,
+    IrNodeDescription, IrPropsDescription, PredicateFileSkipDescription, SinkDestDescription,
+    SortColumnDescription,
 };
 use polars_ops::frame::JoinType;
+#[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 use polars_utils::aliases::{InitHashMaps, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::index::idxsize_to_u64;
 
-use crate::dsl::{
-    GroupbyOptions, HConcatOptions, JoinTypeOptionsIR, SinkTypeIR, UnifiedScanArgs, UnionOptions,
-};
-use crate::plans::{AExpr, ArrowPredicate, ExprIR, IR, PythonOptions, PythonPredicate};
+use crate::dsl::{HConcatOptions, JoinTypeOptionsIR, SinkTypeIR, UnifiedScanArgs, UnionOptions};
+use crate::plans::{AExpr, ExprIR, IR};
+#[cfg(feature = "python")]
+use crate::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
 use crate::prelude::{DistinctOptionsIR, ProjectionOptions};
 
 pub fn ir_plan_to_description(
@@ -95,15 +98,11 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             options,
             ..
         } => {
-            let GroupbyOptions {
-                dynamic,
-                rolling,
-                slice,
-            } = options.as_ref();
-
+            let slice = options.slice;
             let keys = fmt_exprs(keys, expr_arena);
             let aggs = fmt_exprs(aggs, expr_arena);
 
+            #[cfg(feature = "dynamic_group_by")]
             if let Some(DynamicGroupOptions {
                 index_column,
                 every,
@@ -113,7 +112,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 include_boundaries,
                 closed_window,
                 start_by,
-            }) = dynamic
+            }) = &options.dynamic
             {
                 IrPropsDescription::DynamicGroupBy {
                     index_column: index_column.to_string(),
@@ -132,7 +131,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 period,
                 offset,
                 closed_window,
-            }) = rolling
+            }) = &options.rolling
             {
                 IrPropsDescription::RollingGroupBy {
                     keys,
@@ -141,15 +140,23 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                     period: period.to_string(),
                     offset: offset.to_string(),
                     closed_window: format!("{:?}", closed_window),
-                    slice: *slice,
+                    slice,
                 }
             } else {
                 IrPropsDescription::GroupBy {
                     keys,
                     aggs,
                     maintain_order: *maintain_order,
-                    slice: *slice,
+                    slice,
                 }
+            }
+
+            #[cfg(not(feature = "dynamic_group_by"))]
+            IrPropsDescription::GroupBy {
+                keys,
+                aggs,
+                maintain_order: *maintain_order,
+                slice,
             }
         },
         IR::HConcat {
@@ -405,6 +412,7 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             maintain_order: *maintain_order,
             slice: *slice,
         },
+        #[cfg(feature = "python")]
         IR::PythonScan {
             options:
                 PythonOptions {

@@ -39,7 +39,7 @@ polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["partition_by"] }
-polars-descriptions = { workspace = true, optional = true }
+polars-descriptions = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true, features = ["rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
 polars-io = { workspace = true, features = ["async", "file_cache"] }
@@ -143,7 +143,6 @@ python = [
   "pyo3",
   "dep:serde",
   "dep:serde_json",
-  "dep:polars-descriptions",
   "polars-plan/python",
   "polars-mem-engine/python",
   "polars-error/python",

@@ -3,9 +3,11 @@ use std::collections::VecDeque;
 use polars_core::prelude::SortMultipleOptions;
 #[cfg(feature = "iejoin")]
 use polars_descriptions::InequalityOperatorDescription;
+#[cfg(feature = "python")]
+use polars_descriptions::PythonPredicateDescription;
 use polars_descriptions::{
     FileProviderDescription, PhysicalNodeDescription, PhysicalPropsDescription,
-    PredicateFileSkipDescription, PythonPredicateDescription, SortColumnDescription,
+    PredicateFileSkipDescription, SortColumnDescription,
 };
 use polars_ops::frame::JoinType;
 #[cfg(feature = "iejoin")]
@@ -13,8 +15,11 @@ use polars_plan::dsl::JoinTypeOptionsIR;
 use polars_plan::dsl::{
     FileSinkOptions, PartitionStrategyIR, PartitionedSinkOptionsIR, UnifiedSinkArgs,
 };
+use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::{AExpr, ArrowPredicate, PythonOptions, PythonPredicate};
+#[cfg(feature = "python")]
+use polars_plan::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
+#[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;
 use polars_utils::aliases::{InitHashMaps, PlIndexSet};
 use polars_utils::arena::Arena;
