@@ -5,7 +5,6 @@ pub(super) fn process_group_by(
     opt: &mut PredicatePushDown,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    canonical_exprs: &mut CanonicalExprMap,
     input: Node,
     keys: Vec<ExprIR>,
     aggs: Vec<ExprIR>,
@@ -34,13 +33,7 @@ pub(super) fn process_group_by(
             maintain_order,
             options,
         };
-        return opt.no_pushdown_restart_opt(
-            lp,
-            acc_predicates,
-            canonical_exprs,
-            lp_arena,
-            expr_arena,
-        );
+        return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
     }
 
     // If the predicate only resolves to the keys we can push it down, on the condition
@@ -91,13 +84,7 @@ pub(super) fn process_group_by(
         }
     }
 
-    opt.pushdown_and_assign(
-        input,
-        new_acc_predicates,
-        canonical_exprs,
-        lp_arena,
-        expr_arena,
-    )?;
+    opt.pushdown_and_assign(input, new_acc_predicates, lp_arena, expr_arena)?;
 
     let lp = hive::rewrite_hive(
         IR::GroupBy {
@@ -112,7 +99,6 @@ pub(super) fn process_group_by(
         opt,
         lp_arena,
         expr_arena,
-        canonical_exprs,
     )?;
 
     let rewrote_to_union = matches!(lp, IR::Union { .. });

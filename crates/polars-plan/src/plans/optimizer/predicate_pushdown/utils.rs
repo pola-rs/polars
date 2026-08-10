@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_utils::aliases::ScratchIndexSet;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;
 use polars_utils::unitvec;
@@ -6,6 +7,14 @@ use polars_utils::unitvec;
 use super::keys::*;
 use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
 use crate::prelude::*;
+
+/// Scratch state for [`insert_predicate_dedup`], held for the duration of a pushdown pass.
+#[derive(Default)]
+pub(super) struct PredicateDedupState {
+    canonical_exprs: CanonicalExprMap,
+    min_terms: ScratchIndexSet<CanonicalExprId>,
+}
+
 fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
     arena.add(AExpr::BinaryExpr {
         left,
@@ -21,19 +30,25 @@ fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
 /// the existing node already contains.
 pub(super) fn insert_predicate_dedup(
     acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
-    canonical_exprs: &mut CanonicalExprMap,
     predicate: &ExprIR,
     expr_arena: &mut Arena<AExpr>,
+    dedup: &mut PredicateDedupState,
 ) {
     let name = predicate_to_key(predicate.node(), expr_arena);
 
     acc_predicates
         .entry(name)
         .and_modify(|existing_predicate| {
-            let existing_min_terms: PlIndexSet<CanonicalExprId> =
+            let PredicateDedupState {
+                canonical_exprs,
+                min_terms,
+            } = dedup;
+
+            let existing_min_terms = min_terms.get();
+            existing_min_terms.extend(
                 MintermIter::new(existing_predicate.node(), expr_arena)
-                    .map(|min_term| canonical_exprs.resolve(min_term, expr_arena))
-                    .collect();
+                    .map(|min_term| canonical_exprs.resolve(min_term, expr_arena)),
+            );
 
             let mut new_min_terms: UnitVec<Node> = unitvec![];
             new_min_terms.extend(MintermIter::new(predicate.node(), expr_arena));

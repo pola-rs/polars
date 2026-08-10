@@ -24,6 +24,7 @@ pub struct PredicatePushDown {
     // Normally this is 0. Only needed for CSPE.
     caches_pass_allowance: u32,
     nodes_scratch: ScratchUnitVec<Node>,
+    dedup_state: PredicateDedupState,
     pub(crate) streaming: bool,
     // Controls pushing filters past fallible projections
     maintain_errors: bool,
@@ -39,6 +40,7 @@ impl PredicatePushDown {
         Self {
             caches_pass_allowance: 0,
             nodes_scratch: ScratchUnitVec::default(),
+            dedup_state: PredicateDedupState::default(),
             streaming,
             maintain_errors,
             hive_rewrite_active: false,
@@ -73,12 +75,11 @@ impl PredicatePushDown {
         &mut self,
         input: Node,
         acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
-        canonical_exprs: &mut CanonicalExprMap,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<()> {
         let alp = lp_arena.take(input);
-        let lp = self.push_down(alp, acc_predicates, canonical_exprs, lp_arena, expr_arena)?;
+        let lp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
         lp_arena.replace(input, lp);
         Ok(())
     }
@@ -88,7 +89,6 @@ impl PredicatePushDown {
         &mut self,
         lp: IR,
         mut acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
-        canonical_exprs: &mut CanonicalExprMap,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         has_projections: bool,
@@ -126,13 +126,7 @@ impl PredicatePushDown {
                     out
                 },
                 PushdownEligibility::NoPushdown => {
-                    return self.no_pushdown_restart_opt(
-                        lp,
-                        acc_predicates,
-                        canonical_exprs,
-                        lp_arena,
-                        expr_arena,
-                    );
+                    return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
                 },
             };
 
@@ -143,7 +137,7 @@ impl PredicatePushDown {
             }
 
             let alp = lp_arena.take(input);
-            let alp = self.push_down(alp, acc_predicates, canonical_exprs, lp_arena, expr_arena)?;
+            let alp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
             lp_arena.replace(input, alp);
 
             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
@@ -166,9 +160,9 @@ impl PredicatePushDown {
                         if check_input_node(predicate.node(), &input_schema, expr_arena) {
                             insert_predicate_dedup(
                                 &mut pushdown_predicates,
-                                canonical_exprs,
                                 predicate,
                                 expr_arena,
+                                &mut self.dedup_state,
                             )
                         }
                         // we cannot pushdown the predicate we do it here
@@ -178,13 +172,7 @@ impl PredicatePushDown {
                     }
 
                     let alp = lp_arena.take(node);
-                    let alp = self.push_down(
-                        alp,
-                        pushdown_predicates,
-                        canonical_exprs,
-                        lp_arena,
-                        expr_arena,
-                    )?;
+                    let alp = self.push_down(alp, pushdown_predicates, lp_arena, expr_arena)?;
                     lp_arena.replace(node, alp);
                     Ok(node)
                 })
@@ -200,7 +188,6 @@ impl PredicatePushDown {
         &mut self,
         lp: IR,
         mut acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
-        canonical_exprs: &mut CanonicalExprMap,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
@@ -217,7 +204,6 @@ impl PredicatePushDown {
                 let alp = self.push_down(
                     alp,
                     reuse_hashmap.take().unwrap_or_else(|| init_indexmap(None)),
-                    canonical_exprs,
                     lp_arena,
                     expr_arena,
                 )?;
@@ -258,7 +244,6 @@ impl PredicatePushDown {
         &mut self,
         lp: IR,
         mut acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
-        canonical_exprs: &mut CanonicalExprMap,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
@@ -317,15 +302,14 @@ impl PredicatePushDown {
                 if let Some(predicate) = acc_predicates.swap_remove(&tmp_key) {
                     insert_predicate_dedup(
                         &mut acc_predicates,
-                        canonical_exprs,
                         &predicate,
                         expr_arena,
+                        &mut self.dedup_state,
                     );
                 }
 
                 let alp = lp_arena.take(input);
-                let new_input =
-                    self.push_down(alp, acc_predicates, canonical_exprs, lp_arena, expr_arena)?;
+                let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
 
                 // TODO!
                 // If a predicates result would be influenced by earlier applied
@@ -440,13 +424,7 @@ impl PredicatePushDown {
             Distinct { input, options } => {
                 if options.slice.is_some() {
                     let lp = Distinct { input, options };
-                    return self.no_pushdown_restart_opt(
-                        lp,
-                        acc_predicates,
-                        canonical_exprs,
-                        lp_arena,
-                        expr_arena,
-                    );
+                    return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
                 }
 
                 let subset = if let Some(ref subset) = options.subset {
@@ -476,13 +454,7 @@ impl PredicatePushDown {
                     },
                 };
 
-                self.pushdown_and_assign(
-                    input,
-                    acc_predicates,
-                    canonical_exprs,
-                    lp_arena,
-                    expr_arena,
-                )?;
+                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                 let lp = Distinct { input, options };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             },
@@ -497,7 +469,6 @@ impl PredicatePushDown {
                 self,
                 lp_arena,
                 expr_arena,
-                canonical_exprs,
                 input_left,
                 input_right,
                 left_on,
@@ -523,7 +494,6 @@ impl PredicatePushDown {
                             let lp = self.pushdown_and_continue(
                                 lp,
                                 acc_predicates,
-                                canonical_exprs,
                                 lp_arena,
                                 expr_arena,
                                 false,
@@ -550,7 +520,6 @@ impl PredicatePushDown {
                             let lp = self.pushdown_and_continue(
                                 lp,
                                 acc_predicates,
-                                canonical_exprs,
                                 lp_arena,
                                 expr_arena,
                                 false,
@@ -576,7 +545,6 @@ impl PredicatePushDown {
                             let lp = self.pushdown_and_continue(
                                 lp,
                                 acc_predicates,
-                                canonical_exprs,
                                 lp_arena,
                                 expr_arena,
                                 false,
@@ -591,20 +559,13 @@ impl PredicatePushDown {
                         _ => self.pushdown_and_continue(
                             lp,
                             acc_predicates,
-                            canonical_exprs,
                             lp_arena,
                             expr_arena,
                             false,
                         ),
                     }
                 } else {
-                    self.no_pushdown_restart_opt(
-                        lp,
-                        acc_predicates,
-                        canonical_exprs,
-                        lp_arena,
-                        expr_arena,
-                    )
+                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
                 }
             },
             GroupBy {
@@ -619,7 +580,6 @@ impl PredicatePushDown {
                 self,
                 lp_arena,
                 expr_arena,
-                canonical_exprs,
                 input,
                 keys,
                 aggs,
@@ -632,23 +592,10 @@ impl PredicatePushDown {
             Union { inputs, options } => {
                 if options.slice.is_some() {
                     let lp = Union { inputs, options };
-                    self.no_pushdown_restart_opt(
-                        lp,
-                        acc_predicates,
-                        canonical_exprs,
-                        lp_arena,
-                        expr_arena,
-                    )
+                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
                 } else {
                     let lp = Union { inputs, options };
-                    self.pushdown_and_continue(
-                        lp,
-                        acc_predicates,
-                        canonical_exprs,
-                        lp_arena,
-                        expr_arena,
-                        false,
-                    )
+                    self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
                 }
             },
             Sort {
@@ -674,9 +621,9 @@ impl PredicatePushDown {
                         let predicate = ExprIR::from_node(dyn_pred_node, expr_arena);
                         insert_predicate_dedup(
                             &mut acc_predicates,
-                            canonical_exprs,
                             &predicate,
                             expr_arena,
+                            &mut self.dedup_state,
                         );
                     }
                 }
@@ -687,14 +634,8 @@ impl PredicatePushDown {
                     slice,
                     sort_options,
                 };
-                let lp = self.pushdown_and_continue(
-                    lp,
-                    acc_predicates,
-                    canonical_exprs,
-                    lp_arena,
-                    expr_arena,
-                    true,
-                )?;
+                let lp =
+                    self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)?;
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             },
             lp @ Sink { .. } => {
@@ -704,55 +645,33 @@ impl PredicatePushDown {
                 WithDrop::new(self, |slf| slf.streaming = orig_streaming).pushdown_and_continue(
                     lp,
                     acc_predicates,
-                    canonical_exprs,
                     lp_arena,
                     expr_arena,
                     false,
                 )
             },
-            lp @ SinkMultiple { .. } => self.pushdown_and_continue(
-                lp,
-                acc_predicates,
-                canonical_exprs,
-                lp_arena,
-                expr_arena,
-                false,
-            ),
+            lp @ SinkMultiple { .. } => {
+                self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
+            },
             // Pushed down passed these nodes
             lp @ HStack { .. }
             | lp @ Select { .. }
             | lp @ SimpleProjection { .. }
-            | lp @ ExtContext { .. } => self.pushdown_and_continue(
-                lp,
-                acc_predicates,
-                canonical_exprs,
-                lp_arena,
-                expr_arena,
-                true,
-            ),
+            | lp @ ExtContext { .. } => {
+                self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
+            },
             // NOT Pushed down passed these nodes
             // predicates influence slice sizes / indices
-            lp @ (Slice { .. } | Gather { .. } | HConcat { .. }) => self.no_pushdown_restart_opt(
-                lp,
-                acc_predicates,
-                canonical_exprs,
-                lp_arena,
-                expr_arena,
-            ),
+            lp @ (Slice { .. } | Gather { .. } | HConcat { .. }) => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
             // Caches will run predicate push-down in the `cache_states` run.
             Cache { .. } => {
                 if self.caches_pass_allowance == 0 {
                     self.no_pushdown(lp, acc_predicates, lp_arena, expr_arena)
                 } else {
                     self.caches_pass_allowance = self.caches_pass_allowance.saturating_sub(1);
-                    self.pushdown_and_continue(
-                        lp,
-                        acc_predicates,
-                        canonical_exprs,
-                        lp_arena,
-                        expr_arena,
-                        false,
-                    )
+                    self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
                 }
             },
             #[cfg(feature = "python")]
@@ -792,21 +711,12 @@ impl PredicatePushDown {
                 Ok(PythonScan { options })
             },
             #[cfg(feature = "merge_sorted")]
-            lp @ MergeSorted { .. } => self.pushdown_and_continue(
-                lp,
-                acc_predicates,
-                canonical_exprs,
-                lp_arena,
-                expr_arena,
-                false,
-            ),
-            UnoptimizedDispatch { .. } => self.no_pushdown_restart_opt(
-                lp,
-                acc_predicates,
-                canonical_exprs,
-                lp_arena,
-                expr_arena,
-            ),
+            lp @ MergeSorted { .. } => {
+                self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
+            },
+            UnoptimizedDispatch { .. } => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
             Invalid => unreachable!(),
         }
     }
@@ -819,16 +729,10 @@ impl PredicatePushDown {
     ) -> PolarsResult<IR> {
         let acc_predicates = init_indexmap(None);
 
-        // A single `CanonicalExprMap` for the entire optimization pass, we can do it because we
-        // never rewrite expressions in place
-        let mut canonical_exprs = CanonicalExprMap::new();
+        // It is possible that expressions have changed in the arena, so canonical expression ids
+        // are no longer valid
+        self.dedup_state = PredicateDedupState::default();
 
-        self.push_down(
-            logical_plan,
-            acc_predicates,
-            &mut canonical_exprs,
-            lp_arena,
-            expr_arena,
-        )
+        self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }
 }
