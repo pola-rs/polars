@@ -43,8 +43,6 @@ class DeltaDataset:
     use_pyarrow: bool
     pyarrow_options: dict[str, Any] | None
 
-    rechunk: bool
-
     #
     # PythonDatasetProvider interface functions
     #
@@ -223,7 +221,6 @@ class DeltaDataset:
             extra_columns="ignore",
             storage_options=self.storage_options,
             credential_provider=self.credential_provider_builder,  # type: ignore[arg-type]
-            rechunk=self.rechunk,
             _table_statistics=table_statistics,
             _deletion_files=deletion_files,
         ), version_key
