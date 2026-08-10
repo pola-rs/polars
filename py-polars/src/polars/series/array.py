@@ -85,17 +85,15 @@ class ArrayNameSpace:
         An input with one row is broadcast against the other input.
         A Python sequence or one-dimensional NumPy array is treated as a one-row
         Array query.
-        Products containing an inner null are ignored. An outer null row produces
-        a null.
+        If either input Array is null for a row, the result for that row is null.
 
         Notes
         -----
-        Coordinates are paired strictly by position; no label alignment is
-        performed.
+        Elements are paired by position.
 
-        Coordinate pairs containing an inner null are skipped. If a non-null row
-        has no valid coordinate pairs, the result is ``0.0``. Similarity pipelines
-        should validate or fill inner nulls when zero must mean orthogonality.
+        Pairs where either element is null do not contribute to the sum. If a
+        non-null row has no pairs where both elements are valid, the result is
+        ``0.0``.
 
         Accumulation and output use the common floating-point data type. NaN and
         infinity follow floating-point multiplication and addition semantics.
