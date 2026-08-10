@@ -61,6 +61,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Convert a String column into a Date column.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         format
@@ -108,6 +110,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     ) -> Expr:
         """
         Convert a String column into a Datetime column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -188,6 +192,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Convert a String column into a Time column.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         format
@@ -227,6 +233,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     ) -> Expr:
         """
         Convert a String column into a Date/Datetime/Time column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -329,6 +337,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Convert a String column into a Decimal column.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
@@ -381,6 +391,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Return the length of each string as the number of bytes.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -421,6 +433,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def len_chars(self) -> Expr:
         """
         Return the length of each string as the number of characters.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -468,6 +482,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Modify strings to their uppercase equivalent.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"foo": ["cat", "dog"]})
@@ -488,6 +504,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Modify strings to their lowercase equivalent.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"foo": ["CAT", "DOG"]})
@@ -507,6 +525,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def to_titlecase(self) -> Expr:
         """
         Modify strings to their titlecase equivalent.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Notes
         -----
@@ -544,6 +564,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def strip_chars(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove leading and trailing characters.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -601,6 +623,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def strip_chars_start(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove leading characters.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. note::
             This method strips any characters present in `characters` from the
@@ -670,6 +694,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def strip_chars_end(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove trailing characters.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. note::
             This method strips any characters present in `characters` from the
@@ -752,6 +778,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Remove prefix.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         The prefix will be removed from the string exactly once, if found.
 
         .. note::
@@ -791,6 +819,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def strip_suffix(self, suffix: IntoExpr) -> Expr:
         """
         Remove suffix.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         The suffix will be removed from the string exactly once, if found.
 
@@ -832,6 +862,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Pad the start of the string until it reaches the given length.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         length
@@ -870,6 +902,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def pad_end(self, length: int | IntoExprColumn, fill_char: str = " ") -> Expr:
         """
         Pad the end of the string until it reaches the given length.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -913,6 +947,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
 
         A sign prefix (`-`) is handled by inserting the padding after the sign
         character rather than before.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -971,6 +1007,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     ) -> Expr:
         """
         Check if the string contains a substring that matches a pattern.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1043,6 +1081,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         Return the bytes offset of the first substring matching a pattern.
 
         If the pattern is not found, returns None.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1133,6 +1173,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Check if string values end with a substring.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         suffix
@@ -1195,6 +1237,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def starts_with(self, prefix: str | Expr) -> Expr:
         """
         Check if string values start with a substring.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1266,6 +1310,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
 
         Throws an error if invalid JSON strings are encountered.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         dtype
@@ -1323,6 +1369,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         Documentation on the JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         json_path
@@ -1368,6 +1416,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             Raise an error if the underlying value cannot be decoded,
             otherwise mask out with a null value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1405,6 +1455,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         encoding : {'hex', 'base64'}
             The encoding to use.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -1436,6 +1488,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def extract(self, pattern: IntoExprColumn, group_index: int = 1) -> Expr:
         r"""
         Extract the target capture group from provided patterns.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1523,6 +1577,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         Extract each successive non-overlapping regex match in an individual string
         as a list. If the haystack string is `null`, `null` is returned.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         pattern
@@ -1605,6 +1661,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def extract_groups(self, pattern: str) -> Expr:
         r"""
         Extract all capture groups for the given regex pattern.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1696,6 +1754,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         r"""
         Count all successive non-overlapping regex matches.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         pattern
@@ -1759,6 +1819,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     ) -> Expr:
         r"""
         Split the string by a substring.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1879,6 +1941,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
 
         If it cannot make `n` splits, the remaining field elements will be null.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         by
@@ -1947,6 +2011,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         elements will be null. If the number of possible splits is `n-1` or greater,
         the last (nth) substring will contain the remainder of the string.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         by
@@ -2010,6 +2076,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     ) -> Expr:
         r"""
         Replace first matching regex/literal substring with a new string value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2128,6 +2196,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     ) -> Expr:
         r"""
         Replace all matching regex/literal substrings with a new string value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2249,6 +2319,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Returns string values in reversed order.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"text": ["foo", "bar", "man\u0303ana"]})
@@ -2271,6 +2343,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     ) -> Expr:
         """
         Extract a substring from each string value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2337,6 +2411,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def head(self, n: int | IntoExprColumn) -> Expr:
         """
         Return the first n characters of each string in a String Series.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2410,6 +2486,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def tail(self, n: int | IntoExprColumn) -> Expr:
         """
         Return the last n characters of each string in a String Series.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2527,6 +2605,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Convert a String column into an Int64 column with base radix.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         base
@@ -2593,6 +2673,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
 
         Determines if any of the patterns are contained in the string.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         patterns
@@ -2648,6 +2730,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     ) -> Expr:
         """
         Use the Aho-Corasick algorithm to replace many matches.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -2854,6 +2938,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         """
         Use the Aho-Corasick algorithm to extract many matches.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         patterns
@@ -2945,6 +3031,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         The function will return the bytes offset of the start of each match.
         The return type will be `List<UInt32>`
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         patterns
@@ -3024,6 +3112,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
     def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Expr:
         """
         Vertically concatenate the string values in the column to a single string value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -3123,6 +3213,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         r"""
         Returns string values with all regular expression meta characters escaped.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
@@ -3146,6 +3238,8 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         Returns the Unicode normal form of the string values.
 
         This uses the forms described in Unicode Standard Annex 15: <https://www.unicode.org/reports/tr15/>.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
