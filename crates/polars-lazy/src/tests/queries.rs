@@ -1984,6 +1984,68 @@ fn test_sort_maintain_order_true() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "dtype-struct")]
+fn test_over_order_by_multiple_nulls_last() -> PolarsResult<()> {
+    // https://github.com/pola-rs/polars/issues/27819
+    // `over(order_by=[...], nulls_last=True)` with MULTIPLE order-by columns must
+    // apply `nulls_last`/`descending` per order-by column (like `sort_by`), not to a
+    // packed struct as a whole.
+    let df = df![
+        "v" => [1i64, 2, 3, 4],
+        "o1" => [None, Some(2i64), Some(1), Some(2)],
+        "o2" => [Some(1i64), None, None, Some(-1)],
+    ]?;
+
+    let nulls_first_opts = SortOptions {
+        nulls_last: false,
+        ..Default::default()
+    };
+    let nulls_last_opts = SortOptions {
+        nulls_last: true,
+        ..Default::default()
+    };
+
+    let out = df
+        .lazy()
+        .select([
+            col("v")
+                .first()
+                .over_with_options(
+                    Option::<[Expr; 2]>::None,
+                    Some(([col("o1"), col("o2")], nulls_first_opts)),
+                    WindowMapping::GroupsToRows,
+                )?
+                .alias("nulls_first"),
+            col("v")
+                .first()
+                .over_with_options(
+                    Option::<[Expr; 2]>::None,
+                    Some(([col("o1"), col("o2")], nulls_last_opts)),
+                    WindowMapping::GroupsToRows,
+                )?
+                .alias("nulls_last"),
+        ])
+        .collect()?;
+
+    // Cross-check against the equivalent `sort_by(...).first()`.
+    let nulls_first: Vec<i64> = out
+        .column("nulls_first")?
+        .i64()?
+        .into_no_null_iter()
+        .collect();
+    let nulls_last: Vec<i64> = out
+        .column("nulls_last")?
+        .i64()?
+        .into_no_null_iter()
+        .collect();
+
+    assert_eq!(nulls_first, vec![1, 1, 1, 1]);
+    assert_eq!(nulls_last, vec![3, 3, 3, 3]);
+
+    Ok(())
+}
+
+#[test]
 fn test_over_with_options_empty_join() -> PolarsResult<()> {
     let empty_df = DataFrame::new_infer_height(vec![
         Series::new_empty("a".into(), &DataType::Int32).into(),

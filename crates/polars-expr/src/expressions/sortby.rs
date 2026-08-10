@@ -70,6 +70,44 @@ pub(super) fn update_groups_sort_by(
     Ok(GroupsType::Idx(groups))
 }
 
+/// Sort the groups by *multiple* `order_by` columns.
+///
+/// A multi-column `order_by` (e.g. `over(order_by=[a, b], nulls_last=...)`) is packed into a single
+/// struct upstream. Sorting that struct as a whole only applies `nulls_last`/`descending` to the
+/// struct's outer validity, not to each inner field, which produces incorrect orderings (see
+/// <https://github.com/pola-rs/polars/issues/27819>). This routes the individual order-by columns
+/// through the multi-key `arg_sort_multiple` path instead, mirroring `sort_by`'s per-column
+/// semantics by broadcasting the single `descending`/`nulls_last` flag to every column.
+pub(super) fn update_groups_sort_by_multiple(
+    groups: &GroupsType,
+    sort_by_s: &[Series],
+    options: &SortOptions,
+) -> PolarsResult<GroupsType> {
+    // Will trigger a gather for every group, so rechunk before.
+    let by = sort_by_s.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
+    let descending = vec![options.descending; by.len()];
+    let nulls_last = vec![options.nulls_last; by.len()];
+
+    let groups = RAYON.install(|| {
+        groups
+            .par_iter()
+            .map(|indicator| {
+                sort_by_groups_multiple_by(
+                    indicator,
+                    &by,
+                    &descending,
+                    &nulls_last,
+                    // We are already in a par iter.
+                    false,
+                    options.maintain_order,
+                )
+            })
+            .collect::<PolarsResult<_>>()
+    })?;
+
+    Ok(GroupsType::Idx(groups))
+}
+
 fn sort_by_groups_single_by(
     indicator: GroupsIndicator,
     sort_by_s: &Series,
