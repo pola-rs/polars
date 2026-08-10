@@ -1005,7 +1005,7 @@ def test_read_parquet_only_loads_selected_columns_15098(
     memory_usage_without_pyarrow.reset_tracking()
 
     # Only load one column:
-    df = pl.read_parquet([file_path], columns=["b"], rechunk=False)
+    df = pl.read_parquet([file_path], columns=["b"])
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 16_000_000 at least, but there's some overhead.
