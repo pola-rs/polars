@@ -22,10 +22,11 @@ pub(super) fn infer_file_schema_impl(
     column_names_overwrite: Option<&[PlSmallStr]>,
     schema_overwrite: Option<&Schema>,
 ) -> PolarsResult<Schema> {
-    let mut headers = header_line
-        .as_ref()
-        .map(|line| infer_headers(line, parse_options))
-        .unwrap_or_else(|| Vec::with_capacity(8));
+    let mut headers = if let Some(header_line) = header_line {
+        infer_headers(header_line, parse_options)?
+    } else {
+        Vec::with_capacity(8)
+    };
 
     let extend_header_with_unknown_column = header_line.is_none();
 
@@ -67,7 +68,10 @@ pub(super) fn infer_file_schema_impl(
     Ok(build_schema(&headers, &column_types, schema_overwrite))
 }
 
-fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec<PlSmallStr> {
+fn infer_headers(
+    mut header_line: &[u8],
+    parse_options: &CsvParseOptions,
+) -> PolarsResult<Vec<PlSmallStr>> {
     let len = header_line.len();
 
     if header_line.last().copied() == Some(b'\r') {
@@ -92,20 +96,40 @@ fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec
         })
         .collect::<Vec<_>>();
 
-    let mut deduplicated_headers = Vec::with_capacity(headers.len());
+    let mut deduplicated_headers = PlIndexSet::with_capacity(headers.len());
     let mut header_names = PlHashMap::with_capacity(headers.len());
 
     for name in &headers {
         let count = header_names.entry(name.as_ref()).or_insert(0usize);
-        if *count != 0 {
-            deduplicated_headers.push(format_pl_smallstr!("{}_duplicated_{}", name, *count - 1))
+        let duplicated = *count != 0;
+        let deduplicated_name = if duplicated {
+            format_pl_smallstr!("{}_duplicated_{}", name, *count - 1)
         } else {
-            deduplicated_headers.push(PlSmallStr::from_str(name))
+            PlSmallStr::from_str(name)
+        };
+
+        if !deduplicated_headers.insert(deduplicated_name.clone()) {
+            let (deduplicated_from, nth_duplicated) = if duplicated {
+                (name.as_ref(), 1 + *count)
+            } else {
+                let i = deduplicated_name.rfind("_duplicated_").unwrap();
+                (
+                    &deduplicated_name[..i],
+                    2 + deduplicated_name[i + 12..].parse::<usize>().unwrap(),
+                )
+            };
+
+            polars_bail!(
+                Duplicate:
+                "de-duplication of occurrence #{nth_duplicated} of column name '{deduplicated_from}' \
+                failed; the name '{deduplicated_name}' also exists in the file."
+            )
         }
+
         *count += 1;
     }
 
-    deduplicated_headers
+    Ok(Vec::from_iter(deduplicated_headers))
 }
 
 fn infer_types_from_line(

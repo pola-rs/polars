@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::prelude::SeriesSealed;
 
-#[derive(Copy, Clone, Debug, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum RankMethod {
@@ -22,7 +22,7 @@ pub enum RankMethod {
 }
 
 // We might want to add a `nulls_last` or `null_behavior` field.
-#[derive(Copy, Clone, Debug, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct RankOptions {

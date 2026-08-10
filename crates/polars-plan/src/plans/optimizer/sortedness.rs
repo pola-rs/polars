@@ -68,7 +68,7 @@ impl IRPlanSorted {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Debug, Default, PartialEq, Clone, Copy, Hash)]
+#[derive(Debug, Default, PartialEq, Clone, Copy, Hash, Eq)]
 pub struct AExprSorted {
     /// If `Some(true)`, the expression is sorted in descending order.
     /// If `Some(false)`, the expression is sorted in ascending order.
@@ -748,15 +748,8 @@ pub fn function_expr_sortedness(
                 return None;
             };
 
-            let mut sortedness = rec_ae!(e.node())?;
-
-            if let Some(d) = &mut sortedness.descending {
-                *d = !*d;
-            }
-            if let Some(n) = &mut sortedness.nulls_last {
-                *n ^= !*n;
-            }
-            Some(sortedness)
+            let sortedness = rec_ae!(e.node())?;
+            Some(sortedness.reverse())
         },
 
         #[cfg(all(feature = "strings", feature = "concat_str"))]

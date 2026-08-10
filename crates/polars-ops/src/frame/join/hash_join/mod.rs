@@ -154,15 +154,10 @@ pub trait JoinDispatch: IntoDf {
             s_left.hash_join_outer(s_right, args.validation, args.nulls_equal)?;
 
         try_raise_polars_abort();
-        if let Some((offset, len)) = args.slice {
-            let (offset, len) = slice_offsets(offset, len, join_idx_l.len());
-            join_idx_l.slice(offset, len);
-            join_idx_r.slice(offset, len);
-        }
-        let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l);
-        let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);
 
         let (df_left, df_right) = if args.maintain_order != MaintainOrderJoin::None {
+            let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l);
+            let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);
             let mut df = unsafe {
                 DataFrame::new_unchecked_infer_height(vec![
                     idx_ca_l.into_series().into(),
@@ -185,6 +180,11 @@ pub trait JoinDispatch: IntoDf {
 
             df.sort_in_place(columns, options)?;
 
+            // If the order is maintained, we can only slice after sorting
+            if let Some((offset, len)) = args.slice {
+                df = df.slice(offset, len);
+            }
+
             let join_tuples_left = df.column("a").unwrap().idx().unwrap();
             let join_tuples_right = df.column("b").unwrap().idx().unwrap();
             RAYON.join(
@@ -192,6 +192,13 @@ pub trait JoinDispatch: IntoDf {
                 || unsafe { other.take_unchecked(join_tuples_right) },
             )
         } else {
+            if let Some((offset, len)) = args.slice {
+                let (offset, len) = slice_offsets(offset, len, join_idx_l.len());
+                join_idx_l.slice(offset, len);
+                join_idx_r.slice(offset, len);
+            }
+            let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l);
+            let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);
             RAYON.join(
                 || unsafe { df_self.take_unchecked(&idx_ca_l) },
                 || unsafe { other.take_unchecked(&idx_ca_r) },

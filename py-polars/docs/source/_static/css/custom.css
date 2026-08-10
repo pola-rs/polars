@@ -81,3 +81,76 @@ a:visited {
 pre {
     box-shadow: 0 .2rem .5rem var(--pst-color-shadow), 0 0 .0625rem var(--pst-color-shadow) !important;
 }
+
+/* engine-support badges, set via the `.. engine-support::` directive */
+.engine-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.5rem 0 1rem;
+}
+
+.engine-tags-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--pst-color-text-muted);
+}
+
+.engine-tag {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.4;
+    color: #ffffff;
+}
+
+.engine-tag--in-memory {
+    background-color: #6b7280;
+}
+
+.engine-tag--streaming {
+    background-color: #0075ff;
+}
+
+.engine-tag--partially-streaming {
+    background-color: #38bdf8;
+}
+
+.engine-tag--distributed {
+    background-color: #8a4fff;
+}
+
+.engine-tag--partially-distributed {
+    background-color: #c084fc;
+}
+
+.engine-tag--gpu {
+    background-color: #16a34a;
+}
+
+html[data-theme="dark"] .engine-tag--in-memory {
+    background-color: #8b93a1;
+}
+
+html[data-theme="dark"] .engine-tag--streaming {
+    background-color: #3d94ff;
+}
+
+html[data-theme="dark"] .engine-tag--partially-streaming {
+    background-color: #67cbfa;
+}
+
+html[data-theme="dark"] .engine-tag--distributed {
+    background-color: #a877ff;
+}
+
+html[data-theme="dark"] .engine-tag--partially-distributed {
+    background-color: #d3a4fd;
+}
+
+html[data-theme="dark"] .engine-tag--gpu {
+    background-color: #34d066;
+}

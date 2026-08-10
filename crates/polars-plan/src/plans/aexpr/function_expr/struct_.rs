@@ -7,6 +7,7 @@ use super::*;
 pub enum IRStructFunction {
     FieldByName(PlSmallStr),
     RenameFields(Arc<[PlSmallStr]>),
+    DropFields(Arc<[PlSmallStr]>, bool),
     PrefixFields(PlSmallStr),
     SuffixFields(PlSmallStr),
     #[cfg(feature = "json")]
@@ -32,6 +33,21 @@ impl IRStructFunction {
             }),
             RenameFields(names) => mapper.map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
+                    if names.len() != fields.len() {
+                        let dropped_str = match fields.len() as isize - names.len() as isize {
+                            1 => String::from("field of the struct"),
+                            -1 => String::from("name of the argument"),
+                            n if n > 0 => format!("{n} fields of the struct"),
+                            n  => format!("{n} names of the argument"),
+                        };
+                        polars_warn!(
+                            Deprecation,
+                            "struct.rename_fields() argument has a different number of fields than the struct it operates on ({} vs {}).\n\
+                            This silently drops the last {dropped_str}, and it will become an error in Polars 2.0.\n\
+                            To replicate the old behavior and suppress this warning, use struct.drop() to drop the trailing struct fields first (if any) and then call struct.rename_fields() normally.",
+                            names.len(), fields.len(),
+                        )
+                    }
                     let fields = fields
                         .iter()
                         .zip(names.as_ref())
@@ -48,6 +64,21 @@ impl IRStructFunction {
                         .map(|name| Field::new(name.clone(), dt.clone()))
                         .collect(),
                 ),
+            }),
+            DropFields(names, strict) => mapper.try_map_dtype(|dt| match dt{
+                DataType::Struct(fields)=> {
+                    // Use PlIndexSets to prevent quadratic behavior
+                    if *strict {
+                        let fields_set = PlIndexSet::from_iter(fields.iter().map(|fld| fld.name()));
+                        for name in names.iter() {
+                            polars_ensure!(fields_set.contains(name), StructFieldNotFound: "{name}");
+                        }
+                    }
+                    let names_set = PlIndexSet::from_iter(names.iter());
+                    let fields = fields.iter().filter(|fld| !names_set.contains(fld.name())).cloned().collect();
+                    Ok(DataType::Struct(fields))
+                },
+                _ => polars_bail!(op = "struct.drop", got = dt, expected = "Struct"),
             }),
             PrefixFields(prefix) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Struct(fields) => {
@@ -100,7 +131,7 @@ impl IRStructFunction {
             S::FieldByName(_) => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::ALLOW_RENAME)
             },
-            S::RenameFields(_) | S::PrefixFields(_) | S::SuffixFields(_) => {
+            S::RenameFields(_) | S::DropFields(..) | S::PrefixFields(_) | S::SuffixFields(_) => {
                 FunctionOptions::elementwise()
             },
             #[cfg(feature = "json")]
@@ -116,6 +147,8 @@ impl Display for IRStructFunction {
         match self {
             FieldByName(name) => write!(f, "struct.field_by_name({name})"),
             RenameFields(names) => write!(f, "struct.rename_fields({names:?})"),
+            DropFields(names, false) => write!(f, "struct.drop({names:?}, strict=False)"),
+            DropFields(names, true) => write!(f, "struct.drop({names:?})"),
             PrefixFields(_) => write!(f, "name.prefix_fields"),
             SuffixFields(_) => write!(f, "name.suffixFields"),
             #[cfg(feature = "json")]

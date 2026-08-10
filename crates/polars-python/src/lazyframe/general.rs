@@ -1640,9 +1640,11 @@ impl PyCollectBatches {
         requested_schema: Option<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
         let mut ldf = self.ldf.clone();
-        let schema = ldf
-            .collect_schema()
-            .map_err(PyPolarsErr::from)?
+        // Resolving the schema can call back into Python from another thread (e.g. a
+        // `PythonDataset` scan, as produced by `scan_delta` / `scan_iceberg`). Holding
+        // the GIL across that deadlocks, so release it for the duration.
+        let schema = py
+            .enter_polars(move || ldf.collect_schema())?
             .to_arrow(CompatLevel::newest());
 
         let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());

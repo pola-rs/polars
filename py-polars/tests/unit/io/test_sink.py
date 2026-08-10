@@ -752,3 +752,36 @@ def test_sink_upload_chunk_size_config_partitioned(
         .lstrip()
         .startswith("Some(13579)")
     )
+
+
+@pytest.mark.write_disk
+def test_sink_max_blocking_threads_28526(tmp_path: Path) -> None:
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import sys
+
+import polars as pl
+
+(_, path) = sys.argv
+
+pl.DataFrame(
+    {
+        "a": range(10000),
+        "b": range(10000, 20000),
+    }
+).write_parquet(path, row_group_size=2500)
+
+print("OK", end="")
+""",
+            format_file_uri(tmp_path / "a.parquet"),
+        ],
+        env={
+            **os.environ,
+            "POLARS_MAX_BLOCKING_THREAD_COUNT": "5",
+        },
+    )
+
+    assert out == b"OK"
