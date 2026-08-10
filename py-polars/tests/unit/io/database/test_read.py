@@ -1296,10 +1296,10 @@ def test_sqlalchemy_row_init(sqlite_engine: Engine) -> None:
             assert_series_equal(expected_series, s)
 
 
-@patch("polars.io.database._utils.from_arrow")
+@patch("polars.DataFrame")
 @patch("polars.io.database._utils.import_optional")
 def test_read_database_uri_pre_execution_query_success(
-    import_mock: Mock, from_arrow_mock: Mock
+    import_mock: Mock, DataFrame_mock: Mock
 ) -> None:
     cx_mock = Mock()
     cx_mock.__version__ = "0.4.2"
@@ -1343,10 +1343,10 @@ def test_read_database_uri_pre_execution_not_supported_exception(
         )
 
 
-@patch("polars.io.database._utils.from_arrow")
+@patch("polars.DataFrame")
 @patch("polars.io.database._utils.import_optional")
 def test_read_database_uri_pre_execution_query_not_supported_success(
-    import_mock: Mock, from_arrow_mock: Mock
+    import_mock: Mock, DataFrame_mock: Mock
 ) -> None:
     cx_mock = Mock()
     cx_mock.__version__ = "0.4.0"

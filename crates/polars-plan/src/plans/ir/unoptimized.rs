@@ -12,7 +12,7 @@ use crate::prelude::*;
 /// These IR nodes are generated to dispatch to specific functionality in the
 /// streaming engine, and aren't optimized across. They should not be generated
 /// directly by operations, only lowered to post-optimization.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum UnoptimizedOperation {
     /// Calls the given IRFunctionExpr with the columns selected from the inputs.
@@ -102,7 +102,7 @@ impl fmt::Display for UnoptimizedOperation {
 pub type InputIdx = usize;
 pub type ColumnIdx = usize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct FunctionArgMap {
     /// Mapping from function args to input columns

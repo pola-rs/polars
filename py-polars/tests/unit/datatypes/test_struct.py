@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import operator
+import re
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import TYPE_CHECKING, Any
@@ -262,7 +263,6 @@ def test_from_dicts_struct() -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: eager construct
-@pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
     with pytest.warns(DeprecationWarning, match="to_struct"):
@@ -1102,6 +1102,17 @@ def test_struct_null_zip() -> None:
     )
 
 
+def test_rename_fields_len_mismatch_deprecated() -> None:
+    s = pl.Series("s", [{"a": 1, "b": 2}])
+    s.struct.rename_fields(["x"])  # Should not warn
+
+    msg = "struct.rename_fields() argument has a different number of fields than the struct it operates on"
+    with pytest.warns(DeprecationWarning, match=re.escape(f"{msg} (1 vs 2)")):
+        s.struct.rename_fields(["x"])
+    with pytest.warns(DeprecationWarning, match=re.escape(f"{msg} (3 vs 2)")):
+        s.struct.rename_fields(["x", "y", "z"])
+
+
 @pytest.mark.may_fail_cloud  # reason: ZFS
 @pytest.mark.parametrize("size", [0, 1, 2, 5, 9, 13, 42])
 def test_zfs_construction(size: int) -> None:
@@ -1185,11 +1196,7 @@ def test_zfs_struct_fns() -> None:
     a = pl.Series("a", [{}], pl.Struct([]))
 
     assert a.struct.fields == []
-
-    # @TODO: This should really throw an error as per #19132
-    assert a.struct.rename_fields(["a"]).struct.unnest().shape == (1, 0)
     assert a.struct.rename_fields([]).struct.unnest().shape == (1, 0)
-
     assert_series_equal(a.struct.json_encode(), pl.Series("a", ["{}"], pl.String))
 
 
@@ -1222,7 +1229,6 @@ def test_zfs_row_encoding(size: int) -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: eager construct
-@pytest.mark.may_fail_auto_streaming
 def test_list_to_struct_19208() -> None:
     df = pl.DataFrame(
         {
@@ -1930,3 +1936,81 @@ def test_with_fields_optimize_expr_fused_multiply_add_27233() -> None:
         strict=True,
     )
     assert_frame_equal(out.unnest("s"), expected)
+
+
+def test_with_fields_agglist_in_over_unary_28674() -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": ["a", "a", "b", "a", "b", "b"],
+            "x": [1, 2, 10, 3, 20, 30],
+        }
+    )
+
+    s = pl.struct(v=pl.col("x").cum_sum())
+    ext = s.struct.with_fields(pl.field("v").abs().alias("abs"))
+
+    out = lf.select("g", ext.over("g")).collect()
+
+    ref = pl.struct(s.struct.field("v"), s.struct.field("v").abs().alias("abs"))
+    expected = lf.select("g", ref.over("g")).collect()
+
+    assert_frame_equal(out, expected)
+
+
+def test_with_fields_agglist_in_over_binary_28674() -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": ["a", "a", "b", "a", "b", "b"],
+            "x": [1, 2, 10, 3, 20, 30],
+        }
+    )
+
+    s = pl.struct(v=pl.col("x").cum_sum())
+    ext = s.struct.with_fields((pl.field("v") * 2).alias("double"))
+
+    out = lf.select("g", ext.over("g")).collect()
+
+    ref = pl.struct(s.struct.field("v"), (s.struct.field("v") * 2).alias("double"))
+    expected = lf.select("g", ref.over("g")).collect()
+
+    assert_frame_equal(out, expected)
+
+
+def test_struct_with_fields_agglist_nulls_28674() -> None:
+
+    lf = pl.LazyFrame({"g": ["a", "b", "a", "b"], "x": [1, None, None, 20]})
+    s = pl.struct(v=pl.col("x").cum_sum())
+    ext = s.struct.with_fields(pl.field("v").abs().alias("abs"))
+
+    out = lf.select("g", ext.over("g").alias("m")).collect().unnest("m")
+    expected = pl.DataFrame(
+        {
+            "g": ["a", "b", "a", "b"],
+            "v": [1, None, None, 20],
+            "abs": [1, None, None, 20],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        lambda x: x.sqrt(),
+        lambda x: x.cbrt(),
+        lambda x: x.pct_change(),
+        lambda x: x.ewm_mean(alpha=0.5),
+        lambda x: x.ewm_std(alpha=0.5),
+        lambda x: x.ewm_var(alpha=0.5),
+        lambda x: x.ewm_sum(alpha=0.5),
+    ],
+    ids=["sqrt", "cbrt", "pct_change", "ewm_mean", "ewm_std", "ewm_var", "ewm_sum"],
+)
+def test_numeric_op_on_struct_raises_28563(op: Any) -> None:
+    with pytest.raises(InvalidOperationError):
+        op(pl.Series("a", [{"x": 1}]))
+
+    lf = pl.LazyFrame({"meta": [{"id": 1}, {"id": 2}]})
+    with pytest.raises(InvalidOperationError):
+        lf.select(op(pl.col("meta"))).collect()
