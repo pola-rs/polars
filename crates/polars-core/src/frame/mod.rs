@@ -1153,7 +1153,11 @@ impl DataFrame {
                 Ok(self.clear())
             }
         } else {
-            let new_columns: Vec<Column> = self.try_apply_columns_par(|s| s.filter(mask))?;
+            // Unconditionally rechunk to avoid O(n*m) overhead, where n = number of chunks,
+            // and m = number of columns.
+            let mask = mask.rechunk();
+            let new_columns: Vec<Column> =
+                self.try_apply_columns_par(|s| s.filter(mask.as_ref()))?;
             let out = unsafe {
                 DataFrame::new_unchecked(new_columns[0].len(), new_columns).with_schema_from(self)
             };
@@ -1173,7 +1177,10 @@ impl DataFrame {
                 Ok(self.clear())
             }
         } else {
-            let new_columns: Vec<Column> = self.try_apply_columns(|s| s.filter(mask))?;
+            // Unconditionally rechunk to avoid O(n*m) overhead, where n = number of chunks,
+            // and m = number of columns.
+            let mask = mask.rechunk();
+            let new_columns: Vec<Column> = self.try_apply_columns(|s| s.filter(mask.as_ref()))?;
             let out = unsafe {
                 DataFrame::new_unchecked(new_columns[0].len(), new_columns).with_schema_from(self)
             };
