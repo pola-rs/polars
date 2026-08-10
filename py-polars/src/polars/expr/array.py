@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._dependencies import _check_for_numpy
@@ -283,9 +283,9 @@ class ExprArrayNameSpace:
         """
         Compute row-wise dot product with another Array expression.
 
-        Both inputs must contain equal-width arrays with matching ``Float32`` or
-        ``Float64`` inner dtypes.
-        Input with one row is broadcast against other input.
+        Both inputs must contain equal-width arrays. Their inner data types are cast
+        to a common supertype, which must be ``Float32`` or ``Float64``.
+        An input with one row is broadcast against the other input.
         Products containing an inner null are ignored. An outer null row produces
         a null.
 
@@ -294,9 +294,7 @@ class ExprArrayNameSpace:
         other
             Array expression or query vector to compute dot product with.
             A Python sequence or one-dimensional NumPy array is treated as a
-            one-row query and cast to the data type of the input expression.
-            A one-row Series is broadcast and retains its data type.
-            Expression and Series inputs must have matching Array data types.
+            one-row Array query. A one-row Series is also broadcast.
 
         Notes
         -----
@@ -307,7 +305,7 @@ class ExprArrayNameSpace:
         has no valid coordinate pairs, the result is ``0.0``. Similarity pipelines
         should validate or fill inner nulls when zero must mean orthogonality.
 
-        Accumulation and output use the input floating-point data type. NaN and
+        Accumulation and output use the common floating-point data type. NaN and
         infinity follow floating-point multiplication and addition semantics.
         Results are not guaranteed to be bitwise identical to mathematically
         equivalent expressions that use a different reduction path.
@@ -351,23 +349,15 @@ class ExprArrayNameSpace:
         """
         if isinstance(other, Sequence) and not isinstance(other, (str, bytes)):
             other = list(other)
-            is_raw_vector = True
+            other = F.lit(other).list.to_array(len(other))
         elif _check_for_numpy(other) and isinstance(other, np.ndarray):
             if other.ndim != 1:
                 msg = "arr.dot query vector must be one-dimensional"
                 raise ValueError(msg)
-            other = other.tolist()
-            is_raw_vector = True
-        else:
-            is_raw_vector = False
+            other = F.lit(other).implode().list.to_array(other.size)
 
-        other_pyexpr = parse_into_expression(cast("IntoExpr", other))
-        return wrap_expr(
-            self._pyexpr.arr_dot(
-                other_pyexpr,
-                cast_to_lhs_dtype=is_raw_vector,
-            )
-        )
+        other_pyexpr = parse_into_expression(other)
+        return wrap_expr(self._pyexpr.arr_dot(other_pyexpr))
 
     def std(self, ddof: int = 1) -> Expr:
         """

@@ -1,4 +1,4 @@
-use polars_core::utils::slice_offsets;
+use polars_core::utils::{slice_offsets, try_get_supertype};
 use polars_ops::chunked_array::array::*;
 
 use super::*;
@@ -94,19 +94,15 @@ impl IRArrayFunction {
                     ShapeMismatch:
                     "arr.dot requires equal array widths, got {lhs_width} and {rhs_width}"
                 );
+                let inner_dtype = try_get_supertype(lhs_inner, rhs_inner)?;
                 polars_ensure!(
-                    lhs_inner == rhs_inner,
-                    SchemaMismatch:
-                    "arr.dot requires matching inner dtypes, got {lhs_inner} and {rhs_inner}"
-                );
-                polars_ensure!(
-                    matches!(lhs_inner, DataType::Float32 | DataType::Float64),
+                    matches!(inner_dtype, DataType::Float32 | DataType::Float64),
                     InvalidOperation:
-                    "arr.dot supports Float32 and Float64 arrays, got {}",
-                    args[0].dtype()
+                    "arr.dot supports inputs with a Float32 or Float64 supertype, got {} and {}",
+                    args[0].dtype(), args[1].dtype()
                 );
 
-                mapper.with_dtype(lhs_inner.clone())
+                mapper.with_dtype(inner_dtype)
             },
             ToList => mapper
                 .ensure_is_array()?
@@ -159,11 +155,12 @@ impl IRArrayFunction {
             A::CountMatches => FunctionOptions::elementwise(),
             A::Concat => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
+            A::Dot => FunctionOptions::elementwise()
+                .with_casting_rules(CastingRules::cast_to_supertypes()),
             A::Length
             | A::Min
             | A::Max
             | A::Sum
-            | A::Dot
             | A::ToList
             | A::Std(_)
             | A::Var(_)

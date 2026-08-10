@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import io
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -139,26 +138,33 @@ def test_arr_dot_expr_broadcast() -> None:
 
 
 @pytest.mark.parametrize(
-    "query",
+    ("query", "expected_dtype"),
     [
-        pytest.param([10.0, 20.0], id="list"),
+        pytest.param([10.0, 20.0], pl.Float64, id="list"),
         pytest.param(
             pl.Series(
                 "query",
                 [[10.0, 20.0]],
                 dtype=pl.Array(pl.Float32, 2),
             ),
+            pl.Float32,
             id="one-row-series",
         ),
     ],
 )
-def test_arr_dot_query_vector_streaming(query: Any) -> None:
+def test_arr_dot_query_vector_streaming(
+    query: Any,
+    expected_dtype: pl.DataType,
+) -> None:
     df = pl.DataFrame(
         {"embedding": [[1.0, 2.0], [3.0, 4.0]]},
         schema={"embedding": pl.Array(pl.Float32, 2)},
     )
     q = df.lazy().select(score=pl.col("embedding").arr.dot(query))
-    expected = pl.DataFrame({"score": [50.0, 110.0]}, schema={"score": pl.Float32})
+    expected = pl.DataFrame(
+        {"score": [50.0, 110.0]},
+        schema={"score": expected_dtype},
+    )
 
     assert_frame_equal(q.collect(engine="streaming"), expected)
     physical_plan = q.show_graph(
@@ -176,7 +182,7 @@ def test_arr_dot_query_vector(dtype: pl.DataType) -> None:
         [[1.0, 2.0], [3.0, 4.0]],
         dtype=pl.Array(dtype, 2),
     )
-    expected = pl.Series("embedding", [50.0, 110.0], dtype=dtype)
+    expected = pl.Series("embedding", [50.0, 110.0], dtype=pl.Float64)
 
     for query in (
         [10.0, 20.0],
@@ -199,68 +205,46 @@ def test_arr_dot_query_vector_expansion() -> None:
             "other": pl.Int64,
         },
     )
-    expected = pl.DataFrame(
-        {"f32": [50.0, 110.0], "f64": [170.0, 230.0]},
-        schema={"f32": pl.Float32, "f64": pl.Float64},
-    )
+    queries: list[tuple[Any, pl.DataFrame]] = [
+        (
+            [10.0, 20.0],
+            pl.DataFrame(
+                {"f32": [50.0, 110.0], "f64": [170.0, 230.0]},
+                schema={"f32": pl.Float64, "f64": pl.Float64},
+            ),
+        ),
+        (
+            np.array([10.0, 20.0], dtype=np.float32),
+            pl.DataFrame(
+                {"f32": [50.0, 110.0], "f64": [170.0, 230.0]},
+                schema={"f32": pl.Float32, "f64": pl.Float64},
+            ),
+        ),
+    ]
 
     for columns in (pl.col("f32", "f64"), cs.by_dtype(pl.Array)):
-        for query in ([10.0, 20.0], np.array([10.0, 20.0])):
+        for query, expected in queries:
             result = df.lazy().select(columns.arr.dot(query)).collect()
             assert_frame_equal(result, expected)
 
 
-def test_arr_dot_literal_expr_preserves_dtype() -> None:
-    df = pl.DataFrame(
-        {"lhs": [[1.0, 2.0], [3.0, 4.0]]},
-        schema={"lhs": pl.Array(pl.Float64, 2)},
-    )
-    rhs = pl.Series(
-        "rhs",
-        [[10.0, 20.0], [30.0, 40.0]],
-        dtype=pl.Array(pl.Float32, 2),
-    )
-
-    for other in (
-        pl.lit(rhs),
-        pl.Series(
-            "query",
-            [[10.0, 20.0]],
-            dtype=pl.Array(pl.Float32, 2),
-        ),
-        pl.lit([10.0, 20.0], dtype=pl.Array(pl.Float32, 2)),
-    ):
-        with pytest.raises(pl.exceptions.SchemaError, match="matching inner dtypes"):
-            df.select(pl.col("lhs").arr.dot(other))
-
-    with pytest.raises(InvalidOperationError, match="expects Array inputs"):
-        df.select(pl.col("lhs").arr.dot(pl.lit([10.0, 20.0])))
-
-
-def test_arr_dot_query_vector_expr_serde() -> None:
+def test_arr_dot_supertype_coercion() -> None:
     df = pl.DataFrame(
         {
-            "f32": [[1.0, 2.0]],
-            "f64": [[3.0, 4.0]],
+            "f32": [[1.0, 2.0], [3.0, 4.0]],
+            "f64": [[10.0, 20.0], [30.0, 40.0]],
         },
         schema={
             "f32": pl.Array(pl.Float32, 2),
             "f64": pl.Array(pl.Float64, 2),
         },
     )
-    expected = pl.DataFrame(
-        {"f32": [50.0], "f64": [110.0]},
-        schema={"f32": pl.Float32, "f64": pl.Float64},
+    expected = pl.Series("f32", [50.0, 250.0], dtype=pl.Float64)
+    assert_series_equal(df.select(pl.col("f32").arr.dot("f64")).to_series(), expected)
+    assert_series_equal(
+        df.select(pl.col("f64").arr.dot("f32")).to_series(),
+        expected.rename("f64"),
     )
-    expr = cs.by_dtype(pl.Array).arr.dot([10.0, 20.0])
-
-    binary = expr.meta.serialize(format="binary")
-    binary_expr = pl.Expr.deserialize(io.BytesIO(binary), format="binary")
-    assert_frame_equal(df.select(binary_expr), expected)
-
-    json = expr.meta.serialize(format="json")
-    json_expr = pl.Expr.deserialize(io.StringIO(json), format="json")
-    assert_frame_equal(df.select(json_expr), expected)
 
 
 def test_arr_dot_query_vector_must_be_one_dimensional() -> None:
@@ -273,7 +257,7 @@ def test_arr_dot_query_vector_must_be_one_dimensional() -> None:
     with pytest.raises(ValueError, match="query vector must be one-dimensional"):
         embedding.arr.dot(np.array([[1.0, 2.0]]))
 
-    with pytest.raises(ComputeError, match="specified width 2"):
+    with pytest.raises(pl.exceptions.ShapeError, match="equal array widths"):
         embedding.arr.dot([1.0, 2.0, 3.0])
 
 
@@ -423,16 +407,21 @@ def test_arr_dot_wide(
 
 def test_arr_dot_errors() -> None:
     ints = pl.Series("a", [[1, 2]], dtype=pl.Array(pl.Int64, 2))
-    with pytest.raises(InvalidOperationError, match="supports Float32 and Float64"):
+    with pytest.raises(
+        InvalidOperationError,
+        match="supports inputs with a Float32 or Float64 supertype",
+    ):
         ints.arr.dot(ints)
     empty_ints = pl.Series("a", [], dtype=pl.Array(pl.Int64, 2))
-    with pytest.raises(InvalidOperationError, match="supports Float32 and Float64"):
+    with pytest.raises(
+        InvalidOperationError,
+        match="supports inputs with a Float32 or Float64 supertype",
+    ):
         empty_ints.arr.dot(empty_ints)
 
     lhs = pl.Series("a", [[1.0, 2.0]], dtype=pl.Array(pl.Float64, 2))
-    float32 = pl.Series("b", [[1.0, 2.0]], dtype=pl.Array(pl.Float32, 2))
-    with pytest.raises(pl.exceptions.SchemaError, match="matching inner dtypes"):
-        lhs.arr.dot(float32)
+    with pytest.raises(InvalidOperationError, match="expects Array inputs"):
+        lhs.to_frame().select(pl.col("a").arr.dot(pl.lit([1.0, 2.0])))
 
     different_width = pl.Series("b", [[1.0, 2.0, 3.0]], dtype=pl.Array(pl.Float64, 3))
     with pytest.raises(pl.exceptions.ShapeError, match="equal array widths"):

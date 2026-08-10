@@ -309,9 +309,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Min => A::Min,
                 IA::Max => A::Max,
                 IA::Sum => A::Sum,
-                IA::Dot => A::Dot {
-                    cast_to_lhs_dtype: false,
-                },
+                IA::Dot => A::Dot,
                 IA::ToList => A::ToList,
                 IA::Std(v) => A::Std(v),
                 IA::Var(v) => A::Var(v),

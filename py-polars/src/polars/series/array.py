@@ -80,13 +80,11 @@ class ArrayNameSpace:
         """
         Compute row-wise dot product with another Array Series or query vector.
 
-        Both inputs must contain equal-width arrays with matching ``Float32`` or
-        ``Float64`` inner dtypes.
-        Series with one row is broadcast against other Series.
+        Both inputs must contain equal-width arrays. Their inner data types are cast
+        to a common supertype, which must be ``Float32`` or ``Float64``.
+        An input with one row is broadcast against the other input.
         A Python sequence or one-dimensional NumPy array is treated as a one-row
-        query and cast to this Series' data type.
-        Explicit expression and Series operands retain their data type and must
-        already match.
+        Array query.
         Products containing an inner null are ignored. An outer null row produces
         a null.
 
@@ -99,7 +97,7 @@ class ArrayNameSpace:
         has no valid coordinate pairs, the result is ``0.0``. Similarity pipelines
         should validate or fill inner nulls when zero must mean orthogonality.
 
-        Accumulation and output use the input floating-point data type. NaN and
+        Accumulation and output use the common floating-point data type. NaN and
         infinity follow floating-point multiplication and addition semantics.
         Results are not guaranteed to be bitwise identical to mathematically
         equivalent expressions that use a different reduction path.

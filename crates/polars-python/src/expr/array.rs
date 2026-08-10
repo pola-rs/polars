@@ -24,12 +24,8 @@ impl PyExpr {
         self.inner.clone().arr().sum().into()
     }
 
-    fn arr_dot(&self, other: PyExpr, cast_to_lhs_dtype: bool) -> Self {
-        self.inner
-            .clone()
-            .arr()
-            .dot_with_options(other.inner, cast_to_lhs_dtype)
-            .into()
+    fn arr_dot(&self, other: PyExpr) -> Self {
+        self.inner.clone().arr().dot(other.inner).into()
     }
 
     fn arr_std(&self, ddof: u8) -> Self {

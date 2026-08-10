@@ -33,18 +33,12 @@ impl ArrayNameSpace {
 
     /// Compute the row-wise dot product with another equal-width float array expression.
     ///
-    /// Both arrays must have matching `Float32` or `Float64` inner dtypes. Inner null
-    /// products are ignored. An outer null row produces a null.
+    /// Both arrays are cast to a common supertype, which must be `Float32` or
+    /// `Float64`. Pairs containing an inner null do not contribute to the sum. An
+    /// outer null row produces a null.
     pub fn dot(self, other: Expr) -> Expr {
-        self.dot_with_options(other, false)
-    }
-
-    #[doc(hidden)]
-    pub fn dot_with_options(self, other: Expr, cast_to_lhs_dtype: bool) -> Expr {
-        self.0.map_binary(
-            FunctionExpr::ArrayExpr(ArrayFunction::Dot { cast_to_lhs_dtype }),
-            other,
-        )
+        self.0
+            .map_binary(FunctionExpr::ArrayExpr(ArrayFunction::Dot), other)
     }
 
     /// Compute the std of the items in every subarray.
