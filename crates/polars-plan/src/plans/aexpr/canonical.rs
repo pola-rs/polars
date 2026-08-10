@@ -1,8 +1,12 @@
+// We don't care about the iteration order in the various caching structures, so we can use
+// PlHashMap/PlHashSet
+#![allow(clippy::disallowed_types)]
+
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
-use polars_utils::aliases::{InitHashMaps as _, PlIndexMap, PlIndexSet};
+use polars_utils::aliases::{InitHashMaps as _, PlHashMap, PlHashSet};
 use polars_utils::arena::{Arena, Node};
 use slotmap::SlotMap;
 
@@ -18,14 +22,25 @@ slotmap::new_key_type! {
 
 /// Equivalence class of structurally equal expression nodes.
 struct CanonicalExprClass {
-    members: PlIndexSet<Node>,
+    members: PlHashSet<Node>,
     child_ids: Vec<CanonicalExprId>,
+}
+
+impl CanonicalExprClass {
+    /// An arbitrary member.
+    fn representative(&self) -> Node {
+        *self
+            .members
+            .iter()
+            .next()
+            .expect("the equivalence class should be nonempty or dropped altogether")
+    }
 }
 
 /// Assigns [`CanonicalExprId`]s to `AExpr` nodes.
 pub struct CanonicalExprMap {
     deduplication_map: HashTable<CanonicalExprId>,
-    cache: PlIndexMap<Node, CanonicalExprId>,
+    cache: PlHashMap<Node, CanonicalExprId>,
     eq_classes: SlotMap<CanonicalExprId, CanonicalExprClass>,
 }
 
@@ -33,7 +48,7 @@ impl CanonicalExprMap {
     pub fn new() -> Self {
         Self {
             deduplication_map: HashTable::new(),
-            cache: PlIndexMap::new(),
+            cache: PlHashMap::new(),
             eq_classes: SlotMap::with_key(),
         }
     }
@@ -41,13 +56,13 @@ impl CanonicalExprMap {
     /// Forgets `node`, dropping its equivalence class if `node` was its last member.
     /// The caller must ensure that no ancestors of `node` are present in the map.
     pub fn remove(&mut self, node: Node, expr_arena: &Arena<AExpr>) {
-        let Some(id) = self.cache.swap_remove(&node) else {
+        let Some(id) = self.cache.remove(&node) else {
             return;
         };
 
         let eq_class = &mut self.eq_classes[id];
-        let hash = combined_hash(eq_class.members[0], &eq_class.child_ids, expr_arena);
-        eq_class.members.swap_remove(&node);
+        let hash = combined_hash(eq_class.representative(), &eq_class.child_ids, expr_arena);
+        eq_class.members.remove(&node);
 
         if eq_class.members.is_empty() {
             self.eq_classes.remove(id);
@@ -60,10 +75,9 @@ impl CanonicalExprMap {
         }
     }
 
-    /// Returns the representative node for `id`: an arbitrary member of its structural
-    /// equivalence class.
+    /// Returns a representative node for `id`.
     pub fn representative(&self, id: CanonicalExprId) -> Node {
-        self.eq_classes[id].members[0]
+        self.eq_classes[id].representative()
     }
 
     /// Returns the id of `node`, resolving its children recursively.
@@ -119,11 +133,11 @@ impl CanonicalExprMap {
                 child_ids == other.child_ids
                     && expr_arena
                         .get(node)
-                        .is_expr_equal_shallow(expr_arena.get(other.members[0]))
+                        .is_expr_equal_shallow(expr_arena.get(other.representative()))
             },
             |&other| {
                 let other = &eq_classes[other];
-                combined_hash(other.members[0], &other.child_ids, expr_arena)
+                combined_hash(other.representative(), &other.child_ids, expr_arena)
             },
         );
 
@@ -135,7 +149,7 @@ impl CanonicalExprMap {
             },
             Entry::Vacant(entry) => {
                 let id = eq_classes.insert(CanonicalExprClass {
-                    members: PlIndexSet::from_iter([node]),
+                    members: PlHashSet::from_iter([node]),
                     child_ids,
                 });
                 entry.insert(id);
