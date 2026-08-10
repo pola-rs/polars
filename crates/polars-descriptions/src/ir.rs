@@ -181,17 +181,6 @@ pub enum IrPropsDescription {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::IntoStaticStr)]
-#[serde(tag = "partition_type")]
-pub enum PartitioningModelDescription {
-    RoundRobin,
-    Local,
-    Single,
-    Broadcast,
-    Hash { by: String },
-    Range,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, strum_macros::IntoStaticStr)]
 pub enum SinkDestDescription {
     Memory,
     Callback,

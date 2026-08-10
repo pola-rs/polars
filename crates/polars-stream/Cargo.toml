@@ -141,8 +141,6 @@ physical_plan_visualization_schema = [
 ]
 python = [
   "pyo3",
-  "dep:serde",
-  "dep:serde_json",
   "polars-plan/python",
   "polars-mem-engine/python",
   "polars-error/python",
