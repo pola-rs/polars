@@ -14,6 +14,7 @@ pub(super) fn process_join(
     opt: &mut PredicatePushDown,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    canonical_exprs: &mut CanonicalExprMap,
     mut input_left: Node,
     mut input_right: Node,
     mut left_on: Vec<ExprIR>,
@@ -36,12 +37,14 @@ pub(super) fn process_join(
             opt,
             lp_arena,
             expr_arena,
+            canonical_exprs,
         )?;
         // Ensures we don't trigger the hive rewrite again.
         if matches!(ir, IR::Union { .. }) {
             opt.hive_rewrite_active = true;
         }
-        let result = opt.no_pushdown_restart_opt(ir, acc_predicates, lp_arena, expr_arena);
+        let result =
+            opt.no_pushdown_restart_opt(ir, acc_predicates, canonical_exprs, lp_arena, expr_arena);
         return result;
     }
 
@@ -52,6 +55,7 @@ pub(super) fn process_join(
         opt,
         lp_arena,
         expr_arena,
+        canonical_exprs,
         &mut input_left,
         &mut input_right,
         &schema_left,
@@ -70,6 +74,7 @@ pub(super) fn process_join(
         &mut left_on,
         &mut right_on,
         &mut acc_predicates,
+        canonical_exprs,
         expr_arena,
         streaming,
     )?;
@@ -94,6 +99,7 @@ pub(super) fn process_join(
             opt,
             lp_arena,
             expr_arena,
+            canonical_exprs,
         )?;
 
         let rewrote_to_union = matches!(lp, IR::Union { .. });
@@ -103,7 +109,8 @@ pub(super) fn process_join(
         let lp =
             apply_join_key_reduction_select(lp, opt_join_key_reduction_select.take(), lp_arena);
 
-        let result = opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
+        let result =
+            opt.no_pushdown_restart_opt(lp, acc_predicates, canonical_exprs, lp_arena, expr_arena);
         return result;
     }
 
@@ -377,7 +384,7 @@ pub(super) fn process_join(
         if push_left {
             let mut predicate = predicate.clone();
             map_column_references(&mut predicate, expr_arena, &output_key_to_left_input_map);
-            insert_predicate_dedup(&mut pushdown_left, &predicate, expr_arena);
+            insert_predicate_dedup(&mut pushdown_left, canonical_exprs, &predicate, expr_arena);
         }
 
         if push_right {
@@ -389,12 +396,24 @@ pub(super) fn process_join(
                 &schema_right,
                 options.args.suffix(),
             );
-            insert_predicate_dedup(&mut pushdown_right, &predicate, expr_arena);
+            insert_predicate_dedup(&mut pushdown_right, canonical_exprs, &predicate, expr_arena);
         }
     }
 
-    opt.pushdown_and_assign(input_left, pushdown_left, lp_arena, expr_arena)?;
-    opt.pushdown_and_assign(input_right, pushdown_right, lp_arena, expr_arena)?;
+    opt.pushdown_and_assign(
+        input_left,
+        pushdown_left,
+        canonical_exprs,
+        lp_arena,
+        expr_arena,
+    )?;
+    opt.pushdown_and_assign(
+        input_right,
+        pushdown_right,
+        canonical_exprs,
+        lp_arena,
+        expr_arena,
+    )?;
 
     let lp = rewrite_hive(
         IR::Join {
@@ -408,6 +427,7 @@ pub(super) fn process_join(
         opt,
         lp_arena,
         expr_arena,
+        canonical_exprs,
     )?;
 
     let lp = opt.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena);
@@ -458,6 +478,7 @@ fn try_reduce_redundant_join_keys(
     opt: &mut PredicatePushDown,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    canonical_exprs: &mut CanonicalExprMap,
     input_left: &mut Node,
     input_right: &mut Node,
     schema_left: &SchemaRef,
@@ -501,6 +522,7 @@ fn try_reduce_redundant_join_keys(
             &mut remove_key,
             &mut pushdown_left,
             expr_arena,
+            canonical_exprs,
         );
     }
 
@@ -512,6 +534,7 @@ fn try_reduce_redundant_join_keys(
             &mut remove_key,
             &mut pushdown_right,
             expr_arena,
+            canonical_exprs,
         );
     }
 
@@ -522,10 +545,22 @@ fn try_reduce_redundant_join_keys(
     debug_assert!(remove_key.iter().any(|remove| !*remove));
 
     if !pushdown_left.is_empty() {
-        opt.pushdown_and_assign(*input_left, pushdown_left, lp_arena, expr_arena)?;
+        opt.pushdown_and_assign(
+            *input_left,
+            pushdown_left,
+            canonical_exprs,
+            lp_arena,
+            expr_arena,
+        )?;
     }
     if !pushdown_right.is_empty() {
-        opt.pushdown_and_assign(*input_right, pushdown_right, lp_arena, expr_arena)?;
+        opt.pushdown_and_assign(
+            *input_right,
+            pushdown_right,
+            canonical_exprs,
+            lp_arena,
+            expr_arena,
+        )?;
     }
 
     let original_schema = output_schema.clone();
@@ -574,6 +609,7 @@ fn collect_redundant_join_key_filters(
     remove_key: &mut [bool],
     pushdown: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
+    canonical_exprs: &mut CanonicalExprMap,
 ) {
     let op = if nulls_equal {
         Operator::EqValidity
@@ -622,7 +658,7 @@ fn collect_redundant_join_key_filters(
                 right: rhs,
             });
             let predicate = ExprIR::from_node(predicate, expr_arena);
-            insert_predicate_dedup(pushdown, &predicate, expr_arena);
+            insert_predicate_dedup(pushdown, canonical_exprs, &predicate, expr_arena);
         }
     }
 }

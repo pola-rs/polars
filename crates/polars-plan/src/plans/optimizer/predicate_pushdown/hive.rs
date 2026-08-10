@@ -60,6 +60,7 @@ pub fn rewrite_hive(
     opt: &mut PredicatePushDown,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    canonical_exprs: &mut CanonicalExprMap,
 ) -> PolarsResult<IR> {
     #[cfg(not(feature = "is_in"))]
     return Ok(ir);
@@ -121,8 +122,14 @@ pub fn rewrite_hive(
                         let branch = deep_clone_ir(input, ir_arena);
 
                         let mut acc_new = init_indexmap(Some(1));
-                        insert_predicate_dedup(&mut acc_new, &pred, expr_arena);
-                        opt.pushdown_and_assign(branch, acc_new, ir_arena, expr_arena)?;
+                        insert_predicate_dedup(&mut acc_new, canonical_exprs, &pred, expr_arena);
+                        opt.pushdown_and_assign(
+                            branch,
+                            acc_new,
+                            canonical_exprs,
+                            ir_arena,
+                            expr_arena,
+                        )?;
 
                         branches.push(ir_arena.add(IR::GroupBy {
                             input: branch,
@@ -232,12 +239,29 @@ pub fn rewrite_hive(
 
                         // TODO: this goes into the branch twice. We could optimize for a single pass.
                         let mut acc_left = init_indexmap(Some(1));
-                        insert_predicate_dedup(&mut acc_left, &l_pred, expr_arena);
-                        opt.pushdown_and_assign(input_left, acc_left, ir_arena, expr_arena)?;
+                        insert_predicate_dedup(&mut acc_left, canonical_exprs, &l_pred, expr_arena);
+                        opt.pushdown_and_assign(
+                            input_left,
+                            acc_left,
+                            canonical_exprs,
+                            ir_arena,
+                            expr_arena,
+                        )?;
 
                         let mut acc_right = init_indexmap(Some(1));
-                        insert_predicate_dedup(&mut acc_right, &r_pred, expr_arena);
-                        opt.pushdown_and_assign(input_right, acc_right, ir_arena, expr_arena)?;
+                        insert_predicate_dedup(
+                            &mut acc_right,
+                            canonical_exprs,
+                            &r_pred,
+                            expr_arena,
+                        );
+                        opt.pushdown_and_assign(
+                            input_right,
+                            acc_right,
+                            canonical_exprs,
+                            ir_arena,
+                            expr_arena,
+                        )?;
                     } else {
                         let chunks = get_partitions(&partitions);
 
@@ -262,12 +286,34 @@ pub fn rewrite_hive(
                             let branch_right = deep_clone_ir(input_right, ir_arena);
 
                             let mut acc_left = init_indexmap(Some(1));
-                            insert_predicate_dedup(&mut acc_left, &l_pred, expr_arena);
-                            opt.pushdown_and_assign(branch_left, acc_left, ir_arena, expr_arena)?;
+                            insert_predicate_dedup(
+                                &mut acc_left,
+                                canonical_exprs,
+                                &l_pred,
+                                expr_arena,
+                            );
+                            opt.pushdown_and_assign(
+                                branch_left,
+                                acc_left,
+                                canonical_exprs,
+                                ir_arena,
+                                expr_arena,
+                            )?;
 
                             let mut acc_right = init_indexmap(Some(1));
-                            insert_predicate_dedup(&mut acc_right, &r_pred, expr_arena);
-                            opt.pushdown_and_assign(branch_right, acc_right, ir_arena, expr_arena)?;
+                            insert_predicate_dedup(
+                                &mut acc_right,
+                                canonical_exprs,
+                                &r_pred,
+                                expr_arena,
+                            );
+                            opt.pushdown_and_assign(
+                                branch_right,
+                                acc_right,
+                                canonical_exprs,
+                                ir_arena,
+                                expr_arena,
+                            )?;
 
                             branches.push(ir_arena.add(IR::Join {
                                 input_left: branch_left,

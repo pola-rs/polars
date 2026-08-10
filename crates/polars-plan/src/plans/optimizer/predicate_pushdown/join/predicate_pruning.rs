@@ -92,6 +92,7 @@ pub fn take_iejoin_compatible_filters(
 #[cfg(feature = "iejoin")]
 pub fn take_double_bounded_range_join_filter(
     acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
+    canonical_exprs: &mut CanonicalExprMap,
     expr_arena: &mut Arena<AExpr>,
     schema_left: &Schema,
     schema_right: &Schema,
@@ -146,6 +147,7 @@ pub fn take_double_bounded_range_join_filter(
         for pred in ie_join_filters.into_iter() {
             insert_predicate_dedup(
                 acc_predicates,
+                canonical_exprs,
                 &ExprIR::from_node(pred.source_node, expr_arena),
                 expr_arena,
             );
@@ -163,6 +165,7 @@ pub fn take_double_bounded_range_join_filter(
         } else {
             insert_predicate_dedup(
                 acc_predicates,
+                canonical_exprs,
                 &ExprIR::from_node(pred.source_node, expr_arena),
                 expr_arena,
             );
@@ -295,6 +298,7 @@ pub fn try_rewrite_join_type(
     left_on: &mut Vec<ExprIR>,
     right_on: &mut Vec<ExprIR>,
     acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
+    canonical_exprs: &mut CanonicalExprMap,
     expr_arena: &mut Arena<AExpr>,
     streaming: bool,
 ) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
@@ -326,7 +330,7 @@ pub fn try_rewrite_join_type(
                     unreachable!()
                 };
 
-                insert_predicate_dedup(acc_predicates, &predicate, expr_arena);
+                insert_predicate_dedup(acc_predicates, canonical_exprs, &predicate, expr_arena);
             },
 
             #[cfg(feature = "iejoin")]
@@ -370,6 +374,7 @@ pub fn try_rewrite_join_type(
         {
             let range_predicate = take_double_bounded_range_join_filter(
                 acc_predicates,
+                canonical_exprs,
                 expr_arena,
                 schema_left,
                 schema_right,
@@ -458,6 +463,7 @@ pub fn try_rewrite_join_type(
                     // Important: Place these back into acc_predicates.
                     insert_predicate_dedup(
                         acc_predicates,
+                        canonical_exprs,
                         &ExprIR::from_node(source_node, expr_arena),
                         expr_arena,
                     );

@@ -21,6 +21,7 @@ fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
 /// the existing node already contains.
 pub(super) fn insert_predicate_dedup(
     acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
+    canonical_exprs: &mut CanonicalExprMap,
     predicate: &ExprIR,
     expr_arena: &mut Arena<AExpr>,
 ) {
@@ -29,7 +30,6 @@ pub(super) fn insert_predicate_dedup(
     acc_predicates
         .entry(name)
         .and_modify(|existing_predicate| {
-            let mut canonical_exprs = CanonicalExprMap::new();
             let existing_min_terms: PlIndexSet<CanonicalExprId> =
                 MintermIter::new(existing_predicate.node(), expr_arena)
                     .map(|min_term| canonical_exprs.resolve(min_term, expr_arena))
