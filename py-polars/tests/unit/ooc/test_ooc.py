@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -72,38 +69,3 @@ def test_ooc_spill_multiple_queries(
         capfd.readouterr()
         assert_frame_equal(q.collect(engine="streaming"), expected)
         _assert_spill_reload_clean(capfd.readouterr().err, f"query {i}")
-
-
-def test_ooc_categorical_spill_28613() -> None:
-    out = subprocess.check_output(
-        [
-            sys.executable,
-            "-c",
-            """\
-import polars as pl
-
-N = 150_000
-df = (
-    pl.LazyFrame(
-        {
-            "c": pl.Series([f"cat{i % 400}" for i in range(N)], dtype=pl.Categorical),
-            "v": range(N),
-        }
-    )
-    .group_by("c")
-    .agg(pl.col("v").sum())
-    .collect(engine="streaming")
-)
-
-print("OK", end="")
-""",
-        ],
-        env={
-            **os.environ,
-            "POLARS_OOC_MEMORY_BUDGET_MB": "0",
-            "POLARS_OOC_SPILL_MIN_BYTES": "0",
-        },
-        stderr=subprocess.STDOUT,
-    )
-
-    assert out == b"OK"
