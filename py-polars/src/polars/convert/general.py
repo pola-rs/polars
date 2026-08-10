@@ -470,7 +470,7 @@ def from_arrow(
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
-    rechunk: bool = True,
+    rechunk: bool = False,
 ) -> DataFrame | Series:
     """
     Create a DataFrame or Series from an Arrow Table or Array.

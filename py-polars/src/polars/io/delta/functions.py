@@ -4,7 +4,6 @@ import importlib
 import importlib.util
 from typing import TYPE_CHECKING, Any
 
-from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.wrap import wrap_ldf
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.delta._dataset import DeltaDataset
@@ -26,7 +25,6 @@ def read_delta(
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
-    rechunk: bool | None = None,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     delta_table_options: dict[str, Any] | None = None,
@@ -50,12 +48,6 @@ def read_delta(
         table is read.
     columns
         Columns to select. Accepts a list of column names.
-    rechunk
-        Make sure that all columns are contiguous in memory by
-        aggregating the chunks into a single array.
-
-        .. deprecated:: 1.43.2
-            Call rechunk on the returned DataFrame.
     storage_options
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
@@ -147,16 +139,6 @@ def read_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... )  # doctest: +SKIP
     """
-    if rechunk is not None:
-        issue_deprecation_warning(
-            "`rechunk` parameter on read_delta() will be removed. "
-            "Consider calling "
-            "df.rechunk() on the result.",
-            version="1.43.2",
-        )
-    else:
-        rechunk = False
-
     lf = scan_delta(
         source=source,
         version=version,
@@ -170,12 +152,7 @@ def read_delta(
     if columns is not None:
         lf = lf.select(columns)
 
-    ret = lf._collect_eager()
-
-    if rechunk:
-        ret = ret.rechunk()
-
-    return ret
+    return lf._collect_eager()
 
 
 def scan_delta(
@@ -187,7 +164,6 @@ def scan_delta(
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
-    rechunk: bool | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a Delta lake table.
@@ -226,12 +202,6 @@ def scan_delta(
         Keyword arguments while converting a Delta lake Table to pyarrow table.
         Use this parameter when filtering on partitioned columns or to read
         from a 'fsspec' supported filesystem.
-    rechunk
-        Make sure that all columns are contiguous in memory by
-        aggregating the chunks into a single array.
-
-        .. deprecated:: 1.43.2
-            Collect into a DataFrame first, then call rechunk on the returned DataFrame.
 
     Returns
     -------
@@ -334,14 +304,6 @@ def scan_delta(
 
     del credential_provider
 
-    if rechunk is not None:
-        issue_deprecation_warning(
-            "`rechunk` parameter on scan_delta() will be removed. "
-            "Consider first collecting the scan to a DataFrame, then calling "
-            "df.rechunk() on the result.",
-            version="1.43.2",
-        )
-
     if table is not None and (
         table._storage_options is not None or storage_options is not None
     ):
@@ -359,7 +321,6 @@ def scan_delta(
         delta_table_options=delta_table_options,
         use_pyarrow=use_pyarrow,
         pyarrow_options=pyarrow_options,
-        rechunk=rechunk,
     )
 
     return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))
