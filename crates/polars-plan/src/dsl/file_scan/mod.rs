@@ -119,6 +119,8 @@ pub enum MetadataPerSource {
 pub struct PartialMetadata {
     /// Source indices of the resolved footers, ascending.
     /// Invariant: the first index points to source 0 in the ScanSources list.
+    /// TODO: Refactor `first_metadata` semantics and the invariant to enable
+    /// best-effort retention when filtering.
     indices: Vec<usize>,
     /// Dense footers: `metadata[j]` is the footer of source `indices[j]`.
     metadata: Vec<FileMetadataRef>,
@@ -128,7 +130,7 @@ pub struct PartialMetadata {
 impl PartialMetadata {
     fn new(indices: Vec<usize>, metadata: Vec<FileMetadataRef>) -> Self {
         assert!(!indices.is_empty());
-        assert!(indices.len() == metadata.len());
+        assert_eq!(indices.len(), metadata.len());
         assert_eq!(indices.first().unwrap(), &0, "Partial must retain source 0");
 
         Self { indices, metadata }
@@ -156,8 +158,12 @@ impl MetadataPerSource {
         } else if entries.len() == n_sources {
             Self::Full(entries.into_iter().map(|(_, m)| m).collect())
         } else {
-            let (indices, metadata) = entries.into_iter().unzip();
-            Self::Partial(Arc::new(PartialMetadata::new(indices, metadata)))
+            let (indices, metadata): (Vec<_>, Vec<_>) = entries.into_iter().unzip();
+            match indices[0] {
+                0 => Self::Partial(Arc::new(PartialMetadata::new(indices, metadata))),
+                // Silently degrade when the invariant is not met.
+                _ => Self::Unresolved,
+            }
         }
     }
 
@@ -175,13 +181,36 @@ impl MetadataPerSource {
 
     /// Re-index to the sources surviving a filter.
     ///
-    /// `surviving` yields ascending pre-filter source indices.
-    fn gather_full(&self, surviving: impl Iterator<Item = usize>) -> Self {
+    /// The `surviving` yields ascending pre-filter source indices.
+    fn gather_reindex(&self, surviving: impl Iterator<Item = usize>) -> Self {
         match self {
-            // A sampled subset is not worth renumbering across a filter;
-            // per-source estimates re-derive from the byte sizes.
-            // TODO: Apply filter to Partial.
-            Self::Unresolved | Self::Partial(_) => Self::Unresolved,
+            Self::Unresolved => Self::Unresolved,
+            Self::Partial(partial) => {
+                // Intersect with the filter, then renumber to post-filter positions.
+                let mut resolved = partial
+                    .indices
+                    .iter()
+                    .copied()
+                    .zip(partial.metadata.iter())
+                    .peekable();
+                let mut kept = Vec::new();
+                let mut n_surviving = 0usize;
+                for old_idx in surviving {
+                    while resolved.peek().is_some_and(|&(i, _)| i < old_idx) {
+                        resolved.next();
+                    }
+                    if let Some(&(i, m)) = resolved.peek() {
+                        if i == old_idx {
+                            kept.push((n_surviving, m.clone()));
+                            resolved.next();
+                        }
+                    }
+                    n_surviving += 1;
+                }
+                // Note: may degrade to Unresolved if the invariant (first source index == 0)
+                // cannot be uphold.
+                Self::new(kept, n_surviving)
+            },
             Self::Full(s) => {
                 let gathered: Vec<FileMetadataRef> = surviving.map(|i| s[i].clone()).collect();
                 if gathered.is_empty() {
@@ -348,7 +377,8 @@ impl FileScanIR {
                 metadata_per_source,
                 bytes_per_source,
             } => {
-                *metadata_per_source = metadata_per_source.gather_full(surviving_indices.clone());
+                *metadata_per_source =
+                    metadata_per_source.gather_reindex(surviving_indices.clone());
                 if let Some(slice) = bytes_per_source {
                     *slice = surviving_indices.map(|i| slice[i]).collect();
                 }
