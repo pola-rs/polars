@@ -3196,6 +3196,7 @@ def test_group_by_f16_agg_28353(agg: str, args: list[float]) -> None:
     assert_frame_equal(out16, out64, check_row_order=False, rel_tol=1e-3, abs_tol=1e-4)
 
 
+@pytest.mark.may_fail_auto_streaming  # n_chunks is an implementation detail for in-memory
 @pytest.mark.parametrize("agg", ["any", "all"])
 @pytest.mark.parametrize("ignore_nulls", [True, False])
 @pytest.mark.parametrize("null_frac", [0.0, 0.3])
