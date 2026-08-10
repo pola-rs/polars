@@ -67,7 +67,6 @@ def read_parquet(
     schema: SchemaDict | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
-    rechunk: bool = False,
     low_memory: bool = False,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
@@ -138,9 +137,6 @@ def read_parquet(
             at any point without it being considered a breaking change.
     try_parse_hive_dates
         Whether to try parsing hive values as date/datetime types.
-    rechunk
-        Make sure that all columns are contiguous in memory by
-        aggregating the chunks into a single array.
     low_memory
         Reduce memory pressure at the expense of performance.
     storage_options
@@ -242,7 +238,6 @@ def read_parquet(
             storage_options=storage_options,
             pyarrow_options=pyarrow_options,
             memory_map=memory_map,
-            rechunk=rechunk,
         )
 
         if row_index is not None:
@@ -281,12 +276,7 @@ def read_parquet(
         name, offset = row_index
         lf = lf.with_row_index(name, offset)
 
-    ret = lf._collect_eager()
-
-    if rechunk:
-        ret = ret.rechunk()
-
-    return ret
+    return lf._collect_eager()
 
 
 def _read_parquet_with_pyarrow(
@@ -303,7 +293,6 @@ def _read_parquet_with_pyarrow(
     storage_options: StorageOptionsDict | None = None,
     pyarrow_options: dict[str, Any] | None = None,
     memory_map: bool = True,
-    rechunk: bool = True,
 ) -> DataFrame:
     pyarrow_parquet = import_optional(
         "pyarrow.parquet",
@@ -347,7 +336,7 @@ def _read_parquet_with_pyarrow(
                 columns=resolved_columns,
                 **pyarrow_options,
             )
-        result = from_arrow(pa_table, rechunk=rechunk)
+        result = from_arrow(pa_table)
         results.append(result)  # type: ignore[arg-type]
 
     if len(results) == 1:
@@ -474,7 +463,6 @@ def scan_parquet(
     schema: SchemaDict | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
-    rechunk: bool = False,
     low_memory: bool = False,
     cache: bool = True,
     storage_options: StorageOptionsDict | None = None,
@@ -567,9 +555,6 @@ def scan_parquet(
             at any point without it being considered a breaking change.
     try_parse_hive_dates
         Whether to try parsing hive values as date/datetime types.
-    rechunk
-        In case of reading multiple files via a glob pattern rechunk the final DataFrame
-        into contiguous memory chunks.
     low_memory
         Reduce memory pressure at the expense of performance.
     cache
@@ -723,7 +708,7 @@ def scan_parquet(
             hive_partitioning=hive_partitioning,
             hive_schema=hive_schema,
             try_parse_hive_dates=try_parse_hive_dates,
-            rechunk=rechunk,
+            rechunk=False,
             cache=cache,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,

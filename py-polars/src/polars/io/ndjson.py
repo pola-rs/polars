@@ -42,7 +42,6 @@ def read_ndjson(
     batch_size: int | None = 1024,
     n_rows: int | None = None,
     low_memory: bool = False,
-    rechunk: bool = False,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     ignore_errors: bool = False,
@@ -84,8 +83,6 @@ def read_ndjson(
         Stop reading from JSON file after reading `n_rows`.
     low_memory
         Reduce memory pressure at the expense of performance.
-    rechunk
-        Reallocate to contiguous memory when all chunks/ files are parsed.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -175,7 +172,6 @@ def read_ndjson(
         batch_size=batch_size,
         n_rows=n_rows,
         low_memory=low_memory,
-        rechunk=rechunk,
         row_index_name=row_index_name,
         row_index_offset=row_index_offset,
         ignore_errors=ignore_errors,
@@ -208,7 +204,6 @@ def scan_ndjson(
     batch_size: int | None = 1024,
     n_rows: int | None = None,
     low_memory: bool = False,
-    rechunk: bool = False,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     ignore_errors: bool = False,
@@ -254,8 +249,6 @@ def scan_ndjson(
         Stop reading from JSON file after reading `n_rows`.
     low_memory
         Reduce memory pressure at the expense of performance.
-    rechunk
-        Reallocate to contiguous memory when all chunks/ files are parsed.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -343,7 +336,7 @@ def scan_ndjson(
         batch_size=batch_size,
         n_rows=n_rows,
         low_memory=low_memory,
-        rechunk=rechunk,
+        rechunk=False,
         row_index=parse_row_index_args(row_index_name, row_index_offset),
         ignore_errors=ignore_errors,
         include_file_paths=include_file_paths,

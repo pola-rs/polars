@@ -84,7 +84,6 @@ def read_csv(
     n_rows: int | None = None,
     encoding: CsvEncoding | str = "utf8",
     low_memory: bool = False,
-    rechunk: bool = False,
     skip_rows_after_header: int = 0,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -198,8 +197,6 @@ def read_csv(
         characters. Defaults to "utf8".
     low_memory
         Reduce memory pressure at the expense of performance.
-    rechunk
-        Reallocate to contiguous memory when all chunks/ files are parsed.
     skip_rows_after_header
         Skip this number of rows when the header is parsed.
     row_index_name
@@ -440,7 +437,7 @@ def read_csv(
             # fetched every column; pick out the requested positions now.
             tbl = tbl.select(list(projection))
 
-        df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
+        df = pl.DataFrame._from_arrow(tbl)
 
         if new_columns:
             return _update_columns(df, new_columns)
@@ -448,9 +445,6 @@ def read_csv(
         if row_index is not None:
             name, offset = row_index
             df = df.with_row_index(name, offset)
-
-        if rechunk:
-            df = df.rechunk()
 
         return df
 
@@ -475,7 +469,6 @@ def read_csv(
             n_rows=n_rows,
             encoding=encoding,  # type: ignore[arg-type]
             low_memory=low_memory,
-            rechunk=rechunk,
             skip_rows_after_header=skip_rows_after_header,
             try_parse_dates=try_parse_dates,
             eol_char=eol_char,
@@ -514,12 +507,7 @@ def read_csv(
         name, offset = row_index
         lf = lf.with_row_index(name, offset)
 
-    ret = lf._collect_eager()
-
-    if rechunk:
-        ret = ret.rechunk()
-
-    return ret
+    return lf._collect_eager()
 
 
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
@@ -557,7 +545,6 @@ def scan_csv(
     n_rows: int | None = None,
     encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
-    rechunk: bool = False,
     skip_rows_after_header: int = 0,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -669,8 +656,6 @@ def scan_csv(
         characters. Defaults to "utf8".
     low_memory
         Reduce memory pressure at the expense of performance.
-    rechunk
-        Reallocate to contiguous memory when all chunks/ files are parsed.
     skip_rows_after_header
         Skip this number of rows when the header is parsed.
     row_index_name
@@ -906,7 +891,7 @@ def scan_csv(
         infer_schema_files=infer_schema_files,
         new_columns=new_columns,
         with_schema_modify=with_column_names,
-        rechunk=rechunk,
+        rechunk=False,
         skip_rows_after_header=skip_rows_after_header,
         encoding=encoding,
         row_index=parse_row_index_args(row_index_name, row_index_offset),

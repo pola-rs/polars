@@ -25,7 +25,6 @@ def read_delta(
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
-    rechunk: bool | None = None,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     delta_table_options: dict[str, Any] | None = None,
@@ -49,9 +48,6 @@ def read_delta(
         table is read.
     columns
         Columns to select. Accepts a list of column names.
-    rechunk
-        Make sure that all columns are contiguous in memory by
-        aggregating the chunks into a single array.
     storage_options
         Extra options for the storage backends supported by `deltalake`.
         For cloud storages, this may include configurations for authentication etc.
@@ -151,7 +147,6 @@ def read_delta(
         delta_table_options=delta_table_options,
         use_pyarrow=use_pyarrow,
         pyarrow_options=pyarrow_options,
-        rechunk=rechunk,
     )
 
     if columns is not None:
@@ -168,7 +163,6 @@ def scan_delta(
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
-    rechunk: bool | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a Delta lake table.
@@ -207,9 +201,6 @@ def scan_delta(
         Keyword arguments while converting a Delta lake Table to pyarrow table.
         Use this parameter when filtering on partitioned columns or to read
         from a 'fsspec' supported filesystem.
-    rechunk
-        Make sure that all columns are contiguous in memory by
-        aggregating the chunks into a single array.
 
     Returns
     -------
@@ -329,7 +320,6 @@ def scan_delta(
         delta_table_options=delta_table_options,
         use_pyarrow=use_pyarrow,
         pyarrow_options=pyarrow_options,
-        rechunk=rechunk or False,
     )
 
     return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))

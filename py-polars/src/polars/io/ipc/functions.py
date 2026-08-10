@@ -49,7 +49,6 @@ def read_ipc(
     storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-    rechunk: bool = True,
 ) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC (Feather v2) file.
@@ -86,8 +85,6 @@ def read_ipc(
     row_index_offset
         Start the row index at this offset. Cannot be negative.
         Only used if `row_index_name` is set.
-    rechunk
-        Make sure that all data is contiguous.
 
     Returns
     -------
@@ -163,7 +160,7 @@ def read_ipc(
             ) as ipc_f:
                 tbl = ipc_f.read_all()
 
-            df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
+            df = pl.DataFrame._from_arrow(tbl)
 
             if n_rows is not None:
                 df = df.head(n_rows)
@@ -189,12 +186,7 @@ def read_ipc(
         name, offset = row_index
         lf = lf.with_row_index(name, offset)
 
-    df = lf._collect_eager()
-
-    if rechunk:
-        df = df.rechunk()
-
-    return df
+    return lf._collect_eager()
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -208,7 +200,6 @@ def read_ipc_stream(
     storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-    rechunk: bool = True,
 ) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC record batch stream.
@@ -244,8 +235,6 @@ def read_ipc_stream(
     row_index_offset
         Start the row index at this offset. Cannot be negative.
         Only used if `row_index_name` is set.
-    rechunk
-        Make sure that all data is contiguous.
 
     Returns
     -------
@@ -262,7 +251,7 @@ def read_ipc_stream(
             )
             with pyarrow_ipc.RecordBatchStreamReader(data) as reader:
                 tbl = reader.read_all()
-                df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
+                df = pl.DataFrame._from_arrow(tbl)
                 if row_index_name is not None:
                     df = df.with_row_index(row_index_name, row_index_offset)
                 if n_rows is not None:
@@ -275,7 +264,6 @@ def read_ipc_stream(
             n_rows=n_rows,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
-            rechunk=rechunk,
         )
 
 
@@ -286,7 +274,6 @@ def _read_ipc_stream_impl(
     n_rows: int | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-    rechunk: bool = True,
 ) -> DataFrame:
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
@@ -300,7 +287,7 @@ def _read_ipc_stream_impl(
         projection,
         n_rows,
         parse_row_index_args(row_index_name, row_index_offset),
-        rechunk,
+        rechunk=False,
     )
     return wrap_df(pydf)
 
@@ -344,7 +331,6 @@ def scan_ipc(
     *,
     n_rows: int | None = None,
     cache: bool | None = None,
-    rechunk: bool = False,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     glob: bool = True,
@@ -381,8 +367,6 @@ def scan_ipc(
 
         .. deprecated:: 1.40.0
             File cache is no longer supported.
-    rechunk
-        Reallocate to contiguous memory when all chunks/ files are parsed.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -476,7 +460,7 @@ def scan_ipc(
             hive_partitioning=hive_partitioning,
             hive_schema=hive_schema,
             try_parse_hive_dates=try_parse_hive_dates,
-            rechunk=rechunk,
+            rechunk=False,
             cache=cache_deprecated,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,
