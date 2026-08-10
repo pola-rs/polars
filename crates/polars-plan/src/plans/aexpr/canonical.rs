@@ -1,36 +1,32 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use hashbrown::HashTable;
-use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
+use hashbrown::hash_table::Entry;
+use polars_utils::aliases::{InitHashMaps as _, PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
+use slotmap::SlotMap;
 
 #[cfg(feature = "cse")]
 use crate::plans::ExpressionHasher;
 use crate::plans::{AExpr, ExprIR, ExpressionComparator};
 
-/// Identifies an `AExpr` up to structural equality: two nodes get the same
-/// `CanonicalExprId` if and only if they represent the same expression.
-#[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct CanonicalExprId(u32);
-
-impl CanonicalExprId {
-    fn as_u32(self) -> u32 {
-        self.0
-    }
+slotmap::new_key_type! {
+    /// Identifies an `AExpr` up to structural equality: two nodes get the same
+    /// `CanonicalExprId` if and only if they represent the same expression.
+    pub struct CanonicalExprId;
 }
 
-struct CanonicalExprEntry {
-    representative: Node,
+/// Equivalence class of structurally equal expression nodes.
+struct CanonicalExprClass {
+    members: PlIndexSet<Node>,
     child_ids: Vec<CanonicalExprId>,
-    id: CanonicalExprId,
 }
 
 /// Assigns [`CanonicalExprId`]s to `AExpr` nodes.
 pub struct CanonicalExprMap {
-    deduplication_map: HashTable<CanonicalExprEntry>,
+    deduplication_map: HashTable<CanonicalExprId>,
     cache: PlIndexMap<Node, CanonicalExprId>,
-    representatives: Vec<Node>,
+    eq_classes: SlotMap<CanonicalExprId, CanonicalExprClass>,
 }
 
 impl CanonicalExprMap {
@@ -38,28 +34,36 @@ impl CanonicalExprMap {
         Self {
             deduplication_map: HashTable::new(),
             cache: PlIndexMap::new(),
-            representatives: Vec::new(),
+            eq_classes: SlotMap::with_key(),
         }
     }
 
-    /// Forgets all resolved expressions, retaining the allocated capacity.
-    ///
-    /// This must be called whenever nodes are rewritten in place in the expression arena the map was
-    /// populated from, as the cached ids no longer describe those nodes. Adding nodes to the arena is
-    /// fine. All previously returned [`CanonicalExprId`]s become meaningless.
-    pub fn clear(&mut self) {
-        self.deduplication_map.clear();
-        self.cache.clear();
-        self.representatives.clear();
+    /// Forgets `node`, dropping its equivalence class if `node` was its last member.
+    /// The caller must ensure that no ancestors of `node` are present in the map.
+    pub fn remove(&mut self, node: Node, expr_arena: &Arena<AExpr>) {
+        let Some(id) = self.cache.swap_remove(&node) else {
+            return;
+        };
+
+        let eq_class = &mut self.eq_classes[id];
+        let hash = combined_hash(eq_class.members[0], &eq_class.child_ids, expr_arena);
+        eq_class.members.swap_remove(&node);
+
+        if eq_class.members.is_empty() {
+            self.eq_classes.remove(id);
+            if let Ok(entry) = self
+                .deduplication_map
+                .find_entry(hash, |&other| other == id)
+            {
+                entry.remove();
+            }
+        }
     }
 
-    /// Returns the representative node for `id`: the first node of its structural equivalence
-    /// class that was passed to [`Self::resolve`].
+    /// Returns the representative node for `id`: an arbitrary member of its structural
+    /// equivalence class.
     pub fn representative(&self, id: CanonicalExprId) -> Node {
-        let index =
-            id.0.checked_sub(1)
-                .expect("canonical expression IDs start at one") as usize;
-        self.representatives[index]
+        self.eq_classes[id].members[0]
     }
 
     /// Returns the id of `node`, resolving its children recursively.
@@ -101,32 +105,43 @@ impl CanonicalExprMap {
         child_ids: Vec<CanonicalExprId>,
         expr_arena: &Arena<AExpr>,
     ) -> CanonicalExprId {
-        let hash = combined_hash(node, &child_ids, expr_arena);
-        let next_id = CanonicalExprId(1 + self.deduplication_map.len() as u32);
-        let id = self
-            .deduplication_map
-            .entry(
-                hash,
-                |other| {
-                    child_ids == other.child_ids
-                        && expr_arena
-                            .get(node)
-                            .is_expr_equal_shallow(expr_arena.get(other.representative))
-                },
-                |other| combined_hash(other.representative, &other.child_ids, expr_arena),
-            )
-            .or_insert(CanonicalExprEntry {
-                representative: node,
-                child_ids,
-                id: next_id,
-            })
-            .get()
-            .id;
+        let Self {
+            deduplication_map,
+            eq_classes,
+            ..
+        } = self;
 
-        if id == next_id {
-            self.representatives.push(node);
+        let hash = combined_hash(node, &child_ids, expr_arena);
+        let entry = deduplication_map.entry(
+            hash,
+            |&other| {
+                let other = &eq_classes[other];
+                child_ids == other.child_ids
+                    && expr_arena
+                        .get(node)
+                        .is_expr_equal_shallow(expr_arena.get(other.members[0]))
+            },
+            |&other| {
+                let other = &eq_classes[other];
+                combined_hash(other.members[0], &other.child_ids, expr_arena)
+            },
+        );
+
+        match entry {
+            Entry::Occupied(entry) => {
+                let id = *entry.get();
+                eq_classes[id].members.insert(node);
+                id
+            },
+            Entry::Vacant(entry) => {
+                let id = eq_classes.insert(CanonicalExprClass {
+                    members: PlIndexSet::from_iter([node]),
+                    child_ids,
+                });
+                entry.insert(id);
+                id
+            },
         }
-        id
     }
 
     fn get(&self, node: Node) -> CanonicalExprId {
@@ -152,7 +167,7 @@ impl ExpressionComparator for CanonicalExprMap {
 #[cfg(feature = "cse")]
 impl ExpressionHasher for CanonicalExprMap {
     fn hash_expr<H: Hasher>(&self, expr: &ExprIR, state: &mut H) {
-        state.write_u32(self.get(expr.node()).as_u32());
+        self.get(expr.node()).hash(state);
         expr.output_name_inner().hash(state);
     }
 }
@@ -163,7 +178,7 @@ fn combined_hash(node: Node, child_ids: &[CanonicalExprId], expr_arena: &Arena<A
     let mut hasher = DefaultHasher::new();
     expr_arena.get(node).hash(&mut hasher);
     for child_id in child_ids {
-        hasher.write_u32(child_id.as_u32());
+        child_id.hash(&mut hasher);
     }
     hasher.finish()
 }

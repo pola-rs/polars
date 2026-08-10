@@ -50,9 +50,9 @@ pub(crate) fn factor_or_in_aexpr(node: Node, expr_arena: &mut Arena<AExpr>) {
             }
         ) {
             if let Some(factored) = try_factor_or(n, &mut canonical_exprs, expr_arena) {
+                // Fine to remove because we have not visited the parent of `n` yet
+                canonical_exprs.remove(n, expr_arena);
                 expr_arena.replace(n, factored);
-                // Invalidate because we modified a node in-place
-                canonical_exprs.clear();
             }
         }
     }
