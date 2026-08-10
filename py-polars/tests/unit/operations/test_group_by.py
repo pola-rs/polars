@@ -3226,3 +3226,29 @@ def test_group_by_f16_agg_28353(agg: str, args: list[float]) -> None:
     df16 = df64.with_columns(pl.col.x.cast(pl.Float16))
     out16 = df16.group_by("g").agg(getattr(pl.col.x, agg)(*args).cast(pl.Float64))
     assert_frame_equal(out16, out64, check_row_order=False, rel_tol=1e-3, abs_tol=1e-4)
+
+
+@pytest.mark.may_fail_auto_streaming  # n_chunks is an implementation detail for in-memory
+@pytest.mark.parametrize("agg", ["any", "all"])
+@pytest.mark.parametrize("ignore_nulls", [True, False])
+@pytest.mark.parametrize("null_frac", [0.0, 0.3])
+def test_group_by_bool_agg_single_chunk_28684(
+    agg: str, ignore_nulls: bool, null_frac: float
+) -> None:
+    # must be large enough to trigger chunk fragmentation
+    n = 20_000
+    rng = np.random.default_rng(0)
+
+    vals = rng.random(n) < 0.5
+    nulls = rng.random(n) < null_frac
+    b = [None if is_null else bool(v) for v, is_null in zip(vals, nulls, strict=True)]
+    df = pl.DataFrame({"g": np.arange(n), "b": pl.Series(b, dtype=pl.Boolean)})
+
+    out = df.group_by("g", maintain_order=True).agg(
+        getattr(pl.col("b"), agg)(ignore_nulls=ignore_nulls)
+    )
+
+    assert out["b"].n_chunks() == 1
+
+    expected = df["b"] if not ignore_nulls else df["b"].fill_null(agg == "all")
+    assert_series_equal(out["b"], expected, check_names=False)
