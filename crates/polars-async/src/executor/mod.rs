@@ -33,8 +33,9 @@ thread_local! {
     pub static ALLOW_RAYON_THREADS: Cell<bool> = const { Cell::new(true) };
     pub static THREAD_SPAWNED_BY_POLARS_EXECUTOR: Cell<bool> = const { Cell::new(false) };
 
-    /// Used to store which executor thread this is, and in which NUMA region it is supposed to run.
+    /// Used to store which executor thread this is.
     static TLS_THREAD_ID: Cell<usize> = const { Cell::new(usize::MAX) };
+    /// In which NUMA region is this executor thread supposed to run.
     static TLS_NUMA_REGION: Cell<usize> = const { Cell::new(usize::MAX) };
 }
 
@@ -412,7 +413,7 @@ impl Executor {
                         let num_left = self.num_runners_without_identity[numa_region.0]
                             .fetch_sub(1, Ordering::AcqRel)
                             - 1;
-                        if num_left == 0 && !self.thread_id_recv.is_empty() {
+                        if num_left == 0 && !self.thread_id_recv[numa_region.0].is_empty() {
                             self.spawn_runner_without_identity(numa_region);
                         }
                         return Some(thread_id);
@@ -421,7 +422,7 @@ impl Executor {
                 Err(_) => {
                     // Important: we check queue again after reducing count.
                     self.num_runners_without_identity[numa_region.0].fetch_sub(1, Ordering::AcqRel);
-                    if self.thread_id_recv.is_empty() {
+                    if self.thread_id_recv[numa_region.0].is_empty() {
                         return None;
                     }
                     self.num_runners_without_identity[numa_region.0].fetch_add(1, Ordering::AcqRel);
