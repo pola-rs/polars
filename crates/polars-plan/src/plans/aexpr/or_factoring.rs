@@ -28,15 +28,16 @@ pub(crate) fn factor_or_in_aexpr(node: Node, expr_arena: &mut Arena<AExpr>) {
     // Iterative pre-order into a Vec, then iterate reversed so descendants
     // are visited before ancestors. Matches `MintermIter`.
     let mut work = vec![node];
-    let mut post_order = Vec::new();
+    let mut pre_order = Vec::new();
     while let Some(n) = work.pop() {
-        post_order.push(n);
+        pre_order.push(n);
         expr_arena.get(n).children_rev(&mut work);
     }
 
     let mut canonical_exprs = CanonicalExprMap::new();
 
-    for &n in post_order.iter().rev() {
+    // Iterate in post-order
+    for &n in pre_order.iter().rev() {
         if matches!(
             expr_arena.get(n),
             AExpr::BinaryExpr {
