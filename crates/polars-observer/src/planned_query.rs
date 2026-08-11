@@ -9,22 +9,14 @@ pub struct PlannedQuery {
 }
 
 impl PlannedQuery {
-    pub fn builder(ir: Vec<IrNodeDescription>) -> PlannedQueryBuilder {
-        PlannedQueryBuilder {
+    pub fn new(ir: Vec<IrNodeDescription>) -> Self {
+        PlannedQuery {
             ir,
             physical: None,
             metrics_snapshotter: None,
         }
     }
-}
 
-pub struct PlannedQueryBuilder {
-    ir: Vec<IrNodeDescription>,
-    physical: Option<Vec<PhysicalNodeDescription>>,
-    metrics_snapshotter: Option<Box<dyn QueryMetricsSnapshotter>>,
-}
-
-impl PlannedQueryBuilder {
     pub fn with_physical(mut self, physical: Vec<PhysicalNodeDescription>) -> Self {
         self.physical = Some(physical);
         self
@@ -36,13 +28,5 @@ impl PlannedQueryBuilder {
     ) -> Self {
         self.metrics_snapshotter = Some(snapshotter);
         self
-    }
-
-    pub fn build(self) -> PlannedQuery {
-        PlannedQuery {
-            ir: self.ir,
-            physical: self.physical,
-            metrics_snapshotter: self.metrics_snapshotter,
-        }
     }
 }

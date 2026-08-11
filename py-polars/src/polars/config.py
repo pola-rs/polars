@@ -1574,6 +1574,8 @@ class Config(contextlib.ContextDecorator):
         sets the engine affinity to ``"streaming"``. Disabling it does not restore
         the previous engine affinity.
 
+        .. engine-support:: streaming
+
         Parameters
         ----------
         active

@@ -69,11 +69,11 @@ impl StreamingQuery {
         let ir = ir_plan_to_description(&[ir_node], ir_arena, expr_arena);
         let physical =
             physical_plan_to_description(&[self.root_phys_node], &self.phys_sm, expr_arena);
-        let mut builder = PlannedQuery::builder(ir).with_physical(physical);
+        let mut query = PlannedQuery::new(ir).with_physical(physical);
         if let Some(snapshotter) = StreamingQueryMetricsSnapshotter::from_query(self) {
-            builder = builder.with_metrics_snapshotter(snapshotter);
+            query = query.with_metrics_snapshotter(snapshotter);
         }
-        builder.build()
+        query
     }
 }
 

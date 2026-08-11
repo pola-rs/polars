@@ -2456,7 +2456,7 @@ fn run_in_memory_query(
 
 fn to_planned_query(node: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> PlannedQuery {
     let ir = ir_plan_to_description(&[node], ir_arena, expr_arena);
-    PlannedQuery::builder(ir).build()
+    PlannedQuery::new(ir)
 }
 
 pub struct CollectBatches {
