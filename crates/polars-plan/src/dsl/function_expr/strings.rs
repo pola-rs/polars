@@ -174,7 +174,13 @@ impl Display for StringFunction {
             #[cfg(feature = "string_pad")]
             PadStart { .. } => "pad_start",
             #[cfg(feature = "regex")]
-            Replace { .. } => "replace",
+            Replace { n, literal: _ } => {
+                if *n < 0 {
+                    "replace_all"
+                } else {
+                    "replace"
+                }
+            },
             #[cfg(feature = "string_normalize")]
             Normalize { .. } => "normalize",
             #[cfg(feature = "string_reverse")]

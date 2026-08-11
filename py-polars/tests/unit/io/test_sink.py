@@ -673,6 +673,7 @@ def test_sink_upload_chunk_size_config(
                 "max_retries": 0,
                 "aws_endpoint_url": "https://localhost:333",
             },
+            credential_provider=None,
         )
     capture = capfd.readouterr().err
 
@@ -727,6 +728,7 @@ def test_sink_upload_chunk_size_config_partitioned(
                 "max_retries": 0,
                 "aws_endpoint_url": "https://localhost:333",
             },
+            credential_provider=None,
         )
     capture = capfd.readouterr().err
 
