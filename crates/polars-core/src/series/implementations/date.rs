@@ -8,8 +8,6 @@
 //! (depending on the result) cast back to the original type
 //!
 use super::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 
 unsafe impl IntoSeries for DateChunked {

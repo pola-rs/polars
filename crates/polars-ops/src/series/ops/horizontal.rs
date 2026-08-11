@@ -6,23 +6,9 @@ use polars_core::runtime::RAYON;
 use polars_core::series::arithmetic::coerce_lhs_rhs;
 use polars_core::utils::dtypes_to_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::min_max::MinMax;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
-
-fn validate_column_lengths(cs: &[Column]) -> PolarsResult<()> {
-    let mut length = 1;
-    for c in cs {
-        let len = c.len();
-        if len != 1 && len != length {
-            if length == 1 {
-                length = len;
-            } else {
-                polars_bail!(ShapeMismatch: "cannot evaluate two Series of different lengths ({len} and {length})");
-            }
-        }
-    }
-    Ok(())
-}
 
 pub trait MinMaxHorizontal {
     /// Aggregate the column horizontally to their min values.
@@ -137,7 +123,7 @@ fn min_max_binary_columns(left: &Column, right: &Column, min: bool) -> PolarsRes
 }
 
 pub fn max_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
-    validate_column_lengths(columns)?;
+    broadcast_len(columns.iter()).context("max_horizontal")?;
 
     let max_fn = |acc: &Column, s: &Column| min_max_binary_columns(acc, s, false);
 
@@ -163,7 +149,7 @@ pub fn max_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
 }
 
 pub fn min_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
-    validate_column_lengths(columns)?;
+    broadcast_len(columns.iter()).context("min_horizontal")?;
 
     let min_fn = |acc: &Column, s: &Column| min_max_binary_columns(acc, s, true);
 
@@ -192,7 +178,7 @@ pub fn sum_horizontal(
     columns: &[Column],
     null_strategy: NullStrategy,
 ) -> PolarsResult<Option<Column>> {
-    validate_column_lengths(columns)?;
+    broadcast_len(columns.iter()).context("sum_horizontal")?;
     let ignore_nulls = null_strategy == NullStrategy::Ignore;
 
     let apply_null_strategy = |s: Series| -> PolarsResult<Series> {
@@ -272,7 +258,7 @@ pub fn mean_horizontal(
     columns: &[Column],
     null_strategy: NullStrategy,
 ) -> PolarsResult<Option<Column>> {
-    validate_column_lengths(columns)?;
+    broadcast_len(columns.iter()).context("mean_horizontal")?;
 
     let (numeric_columns, non_numeric_columns): (Vec<_>, Vec<_>) = columns.iter().partition(|s| {
         let dtype = s.dtype();
