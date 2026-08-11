@@ -5,7 +5,7 @@ use polars_core::SINGLE_LOCK;
 use polars_core::query_result::QueryResult;
 use polars_observer::{
     NoopQueryMetrics, PlannedQuery, QueryMetrics, QueryObserver, QueryObserverFactory,
-    set_query_observer_factory,
+    register_query_observer_factory,
 };
 
 use super::*;
@@ -97,7 +97,7 @@ fn run_observed_on(
 ) -> (PolarsResult<QueryResult>, Vec<Event>) {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let log: Log = Arc::new(Mutex::new(Vec::new()));
-    set_query_observer_factory(Some(Arc::new(ObserverMock { log: log.clone() })));
+    register_query_observer_factory(Some(Arc::new(ObserverMock { log: log.clone() })));
 
     let lf = if monitor {
         let flags = lf.get_current_optimizations() | OptFlags::QUERY_MONITORING;
@@ -107,7 +107,7 @@ fn run_observed_on(
     };
     let res = lf.collect_with_engine(engine);
 
-    set_query_observer_factory(None);
+    register_query_observer_factory(None);
     let events = log.lock().unwrap().clone();
     (res, events)
 }

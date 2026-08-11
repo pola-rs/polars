@@ -17,7 +17,7 @@ mod observer_metrics;
 pub use observer_metrics::StreamingQueryMetrics;
 pub use polars_observer::{
     QueryMetrics, QueryObserver, QueryObserverFactory, new_query_observer,
-    set_query_observer_factory,
+    register_query_observer_factory,
 };
 mod morsel;
 mod nodes;

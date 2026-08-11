@@ -4,7 +4,7 @@ use std::sync::Arc;
 use polars_error::PolarsError;
 use polars_observer::{
     NoopQueryMetrics, PlannedQuery, QueryExecutionGuard, QueryMetrics, QueryObserver,
-    QueryObserverFactory, set_query_observer_factory,
+    QueryObserverFactory, register_query_observer_factory,
 };
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -134,7 +134,7 @@ impl QueryObserver for PolarsCloudObserver {
 #[pyfunction]
 pub fn set_query_monitoring(py: Python<'_>, enable: bool) -> PyResult<()> {
     if !enable {
-        set_query_observer_factory(None);
+        register_query_observer_factory(None);
         return Ok(());
     }
 
@@ -161,7 +161,7 @@ pub fn set_query_monitoring(py: Python<'_>, enable: bool) -> PyResult<()> {
         })?
         .unbind();
 
-    set_query_observer_factory(Some(Arc::new(CloudObserverFactory {
+    register_query_observer_factory(Some(Arc::new(CloudObserverFactory {
         observer: Arc::new(observer),
     })));
     Ok(())

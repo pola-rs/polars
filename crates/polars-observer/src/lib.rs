@@ -34,11 +34,14 @@ pub trait QueryObserverFactory: Send + Sync {
 
 static QUERY_OBSERVER_FACTORY: RwLock<Option<Arc<dyn QueryObserverFactory>>> = RwLock::new(None);
 
-pub fn set_query_observer_factory(factory: Option<Arc<dyn QueryObserverFactory>>) {
+pub fn register_query_observer_factory(factory: Option<Arc<dyn QueryObserverFactory>>) {
     *QUERY_OBSERVER_FACTORY.write() = factory;
 }
 
 /// Creates a 'unique' instances of the [QueryObserver] for each query.
 pub fn new_query_observer() -> Option<Box<dyn QueryObserver>> {
-    QUERY_OBSERVER_FACTORY.read().as_ref().map(|f| f.new_observer())
+    QUERY_OBSERVER_FACTORY
+        .read()
+        .as_ref()
+        .map(|f| f.new_observer())
 }
