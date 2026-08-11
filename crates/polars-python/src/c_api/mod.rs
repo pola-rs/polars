@@ -130,12 +130,12 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyArrowCStreamReader>().unwrap();
 
     #[cfg(feature = "pymethods")]
-    m.add_class::<crate::cloud_observer::CloudStreamingMetricsHandle>()
+    m.add_class::<crate::polars_cloud_observer::CloudStreamingMetricsHandle>()
         .unwrap();
 
     #[cfg(feature = "pymethods")]
     m.add_wrapped(wrap_pyfunction!(
-        crate::cloud_observer::set_query_monitoring
+        crate::polars_cloud_observer::set_query_monitoring
     ))
     .unwrap();
 

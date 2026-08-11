@@ -661,7 +661,7 @@ impl LazyFrame {
         let observer = self
             .opt_state
             .query_monitoring()
-            .then(polars_observer::observer)
+            .then(polars_observer::new_query_observer)
             .flatten();
 
         if let Some(o) = observer.as_ref() {

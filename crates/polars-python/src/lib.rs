@@ -14,8 +14,6 @@
 pub mod catalog;
 #[cfg(feature = "polars_cloud_client")]
 pub mod cloud_client;
-#[cfg(feature = "pymethods")]
-pub mod cloud_observer;
 #[cfg(feature = "polars_cloud_server")]
 pub mod cloud_server;
 pub mod conversion;
@@ -36,6 +34,8 @@ pub mod io;
 pub mod lazyframe;
 pub mod lazygroupby;
 pub mod map;
+#[cfg(feature = "pymethods")]
+pub mod polars_cloud_observer;
 
 #[cfg(feature = "object")]
 pub mod object;

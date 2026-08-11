@@ -47,9 +47,11 @@ pub fn run_query(
         },
     )?;
 
+    /// if the query fails, [`observer::on_query_failed`] needs to be called before [`_guard`] is dropped
     let _guard = observer
         .as_ref()
         .map(|o| o.on_query_planned(query.to_planned_query(node, ir_arena, expr_arena)));
+
     query.execute().inspect_err(|err| {
         if let Some(o) = observer.as_ref() {
             o.on_query_failed(err)
@@ -67,9 +69,9 @@ impl StreamingQuery {
         let ir = ir_plan_to_description(&[ir_node], ir_arena, expr_arena);
         let physical =
             physical_plan_to_description(&[self.root_phys_node], &self.phys_sm, expr_arena);
-        let mut builder = PlannedQuery::builder(ir).physical(physical);
+        let mut builder = PlannedQuery::builder(ir).with_physical(physical);
         if let Some(metrics) = StreamingQueryMetrics::from_query(self) {
-            builder = builder.metrics(metrics);
+            builder = builder.with_metrics(metrics);
         }
         builder.build()
     }

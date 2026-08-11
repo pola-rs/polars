@@ -1,0 +1,45 @@
+use polars_descriptions::{IrNodeDescription, PhysicalNodeDescription};
+
+use crate::metrics::QueryMetrics;
+
+pub struct PlannedQuery {
+    pub ir: Vec<IrNodeDescription>,
+    pub physical: Option<Vec<PhysicalNodeDescription>>,
+    pub metrics: Option<Box<dyn QueryMetrics>>,
+}
+
+impl PlannedQuery {
+    pub fn builder(ir: Vec<IrNodeDescription>) -> PlannedQueryBuilder {
+        PlannedQueryBuilder {
+            ir,
+            physical: None,
+            metrics: None,
+        }
+    }
+}
+
+pub struct PlannedQueryBuilder {
+    ir: Vec<IrNodeDescription>,
+    physical: Option<Vec<PhysicalNodeDescription>>,
+    metrics: Option<Box<dyn QueryMetrics>>,
+}
+
+impl PlannedQueryBuilder {
+    pub fn with_physical(mut self, physical: Vec<PhysicalNodeDescription>) -> Self {
+        self.physical = Some(physical);
+        self
+    }
+
+    pub fn with_metrics(mut self, metrics: Box<dyn QueryMetrics>) -> Self {
+        self.metrics = Some(metrics);
+        self
+    }
+
+    pub fn build(self) -> PlannedQuery {
+        PlannedQuery {
+            ir: self.ir,
+            physical: self.physical,
+            metrics: self.metrics,
+        }
+    }
+}
