@@ -1942,7 +1942,15 @@ fn lower_exprs_with_ctx(
             #[cfg(feature = "top_k")]
             AExpr::Function {
                 input: inner_exprs,
-                function: function @ (IRFunctionExpr::TopK { .. } | IRFunctionExpr::TopKBy { .. }),
+                function:
+                    function @ (IRFunctionExpr::TopK {
+                        maintain_order: false,
+                        ..
+                    }
+                    | IRFunctionExpr::TopKBy {
+                        maintain_order: false,
+                        ..
+                    }),
                 options: _,
             } => {
                 // Select our inputs.
@@ -1961,11 +1969,12 @@ fn lower_exprs_with_ctx(
                 let out_col_node = ctx.expr_arena.add(AExpr::Column(out_name.clone()));
                 let out_col_expr = ExprIR::new(out_col_node, OutputName::Alias(out_name));
                 let (by_column, reverse) = match function {
-                    IRFunctionExpr::TopK { descending } => {
+                    IRFunctionExpr::TopK { descending, .. } => {
                         (vec![out_col_expr.clone()], vec![descending])
                     },
                     IRFunctionExpr::TopKBy {
                         descending: reverse,
+                        ..
                     } => {
                         let by_column = by_names
                             .into_iter()

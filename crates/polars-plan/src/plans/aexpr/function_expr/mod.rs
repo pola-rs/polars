@@ -201,10 +201,12 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "top_k")]
     TopK {
         descending: bool,
+        maintain_order: bool,
     },
     #[cfg(feature = "top_k")]
     TopKBy {
         descending: Vec<bool>,
+        maintain_order: bool,
     },
     #[cfg(feature = "cum_agg")]
     CumCount {
@@ -573,7 +575,13 @@ impl Hash for IRFunctionExpr {
                 has_max.hash(state);
             },
             #[cfg(feature = "top_k")]
-            TopK { descending } => descending.hash(state),
+            TopK {
+                descending,
+                maintain_order,
+            } => {
+                descending.hash(state);
+                maintain_order.hash(state);
+            },
             #[cfg(feature = "cum_agg")]
             CumCount { reverse } => reverse.hash(state),
             #[cfg(feature = "cum_agg")]
@@ -703,7 +711,13 @@ impl Hash for IRFunctionExpr {
             Reinterpret(dtype) => dtype.hash(state),
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
-            TopKBy { descending } => descending.hash(state),
+            TopKBy {
+                descending,
+                maintain_order,
+            } => {
+                descending.hash(state);
+                maintain_order.hash(state);
+            },
 
             RowEncode(dts, variants) => {
                 dts.hash(state);
@@ -811,15 +825,23 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
-            TopK { descending } => {
-                if *descending {
-                    "bottom_k"
-                } else {
-                    "top_k"
-                }
+            TopK {
+                descending,
+                maintain_order,
+            } => match (*descending, *maintain_order) {
+                (true, true) => "bottom_k_stable",
+                (true, false) => "bottom_k",
+                (false, true) => "top_k_stable",
+                (false, false) => "top_k",
             },
             #[cfg(feature = "top_k")]
-            TopKBy { .. } => "top_k_by",
+            TopKBy { maintain_order, .. } => {
+                if *maintain_order {
+                    "top_k_by_stable"
+                } else {
+                    "top_k_by"
+                }
+            },
             Shift => "shift",
             #[cfg(feature = "cum_agg")]
             CumCount { .. } => "cum_count",
