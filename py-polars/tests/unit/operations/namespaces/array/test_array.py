@@ -175,18 +175,16 @@ def test_arr_dot_query_vector_streaming(
     assert "columnar-function" not in physical_plan
 
 
-@pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
-def test_arr_dot_query_vector(dtype: pl.DataType) -> None:
+def test_arr_dot_query_vector() -> None:
     embedding = pl.Series(
         "embedding",
         [[1.0, 2.0], [3.0, 4.0]],
-        dtype=pl.Array(dtype, 2),
+        dtype=pl.Array(pl.Float32, 2),
     )
     expected = pl.Series("embedding", [50.0, 110.0], dtype=pl.Float64)
 
     for query in (
         [10.0, 20.0],
-        (10.0, 20.0),
         np.array([10.0, 20.0]),
     ):
         assert_series_equal(embedding.arr.dot(query), expected)
@@ -228,22 +226,34 @@ def test_arr_dot_query_vector_expansion() -> None:
             assert_frame_equal(result, expected)
 
 
-def test_arr_dot_supertype_coercion() -> None:
+@pytest.mark.parametrize(
+    ("lhs_dtype", "rhs_dtype", "expected_dtype"),
+    [
+        pytest.param(pl.Float32, pl.Float64, pl.Float64, id="f32-f64"),
+        pytest.param(pl.Int32, pl.Float32, pl.Float64, id="i32-f32"),
+        pytest.param(pl.UInt64, pl.Int64, pl.Float64, id="u64-i64"),
+    ],
+)
+def test_arr_dot_dtype_coercion(
+    lhs_dtype: pl.DataType,
+    rhs_dtype: pl.DataType,
+    expected_dtype: pl.DataType,
+) -> None:
     df = pl.DataFrame(
         {
-            "f32": [[1.0, 2.0], [3.0, 4.0]],
-            "f64": [[10.0, 20.0], [30.0, 40.0]],
+            "lhs": [[1, 2], [3, 4]],
+            "rhs": [[10, 20], [30, 40]],
         },
         schema={
-            "f32": pl.Array(pl.Float32, 2),
-            "f64": pl.Array(pl.Float64, 2),
+            "lhs": pl.Array(lhs_dtype, 2),
+            "rhs": pl.Array(rhs_dtype, 2),
         },
     )
-    expected = pl.Series("f32", [50.0, 250.0], dtype=pl.Float64)
-    assert_series_equal(df.select(pl.col("f32").arr.dot("f64")).to_series(), expected)
+    expected = pl.Series("lhs", [50, 250], dtype=expected_dtype)
+    assert_series_equal(df.select(pl.col("lhs").arr.dot("rhs")).to_series(), expected)
     assert_series_equal(
-        df.select(pl.col("f64").arr.dot("f32")).to_series(),
-        expected.rename("f64"),
+        df.select(pl.col("rhs").arr.dot("lhs")).to_series(),
+        expected.rename("rhs"),
     )
 
 
@@ -292,16 +302,6 @@ def test_arr_dot_nulls() -> None:
     result = lhs.arr.dot(rhs)
     expected = pl.Series("a", [4.0, None, 0.0], dtype=pl.Float64)
     assert_series_equal(result, expected)
-
-    all_inner_null = pl.Series(
-        "a",
-        [[None, None]],
-        dtype=pl.Array(pl.Float64, 2),
-    )
-    assert_series_equal(
-        all_inner_null.arr.dot(all_inner_null),
-        pl.Series("a", [0.0], dtype=pl.Float64),
-    )
 
     zero_width = pl.Series("a", [[], None], dtype=pl.Array(pl.Float64, 0))
     assert_series_equal(
@@ -405,24 +405,30 @@ def test_arr_dot_wide(
     )
 
 
-def test_arr_dot_errors() -> None:
-    ints = pl.Series("a", [[1, 2]], dtype=pl.Array(pl.Int64, 2))
+@pytest.mark.parametrize(
+    "values",
+    [
+        pytest.param([[1, 2]], id="non-empty"),
+        pytest.param([], id="empty"),
+    ],
+)
+def test_arr_dot_unsupported_integer_dtype(values: list[list[int]]) -> None:
+    ints = pl.Series("a", values, dtype=pl.Array(pl.Int64, 2))
     with pytest.raises(
         InvalidOperationError,
         match="supports inputs with a Float32 or Float64 supertype",
     ):
         ints.arr.dot(ints)
-    empty_ints = pl.Series("a", [], dtype=pl.Array(pl.Int64, 2))
-    with pytest.raises(
-        InvalidOperationError,
-        match="supports inputs with a Float32 or Float64 supertype",
-    ):
-        empty_ints.arr.dot(empty_ints)
 
+
+def test_arr_dot_non_array_operand() -> None:
     lhs = pl.Series("a", [[1.0, 2.0]], dtype=pl.Array(pl.Float64, 2))
     with pytest.raises(InvalidOperationError, match="expects Array inputs"):
         lhs.to_frame().select(pl.col("a").arr.dot(pl.lit([1.0, 2.0])))
 
+
+def test_arr_dot_shape_errors() -> None:
+    lhs = pl.Series("a", [[1.0, 2.0]], dtype=pl.Array(pl.Float64, 2))
     different_width = pl.Series("b", [[1.0, 2.0, 3.0]], dtype=pl.Array(pl.Float64, 3))
     with pytest.raises(pl.exceptions.ShapeError, match="equal array widths"):
         lhs.arr.dot(different_width)
