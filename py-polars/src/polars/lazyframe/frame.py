@@ -62,7 +62,7 @@ from polars._utils.various import (
     qualified_type_name,
     require_same_type,
 )
-from polars._utils.wrap import wrap_expr
+from polars._utils.wrap import wrap_df, wrap_expr
 from polars._warnings import find_stacklevel, issue_warning
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
@@ -95,6 +95,7 @@ from polars.datatypes import (
 )
 from polars.datatypes.group import DataTypeGroup
 from polars.exceptions import InvalidOperationError, PerformanceWarning
+from polars.lazyframe.engine import GPUEngine
 from polars.lazyframe.engine_config import _select_engine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
@@ -2166,15 +2167,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ):
                 error_msg = f"profile() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
-        engine_ = _select_engine(engine)
+        engine = _select_engine(engine)
 
         optimizations = optimizations.__copy__()
-        df, timings = engine_.profile(
-            self,
-            optimizations=optimizations,
-            # Only for testing
-            post_opt_callback=_kwargs.get("post_opt_callback"),
+        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
+
+        callback = (
+            engine._post_opt_callback(background=False, eager=False)
+            if isinstance(engine, GPUEngine)
+            else None
         )
+        if _kwargs.get("post_opt_callback") is not None:
+            # Only for testing
+            callback = _kwargs.get("post_opt_callback")
+        df_py, timings_py = ldf.profile(callback)
+        (df, timings) = wrap_df(df_py), wrap_df(timings_py)
 
         if show_plot:
             import_optional(
@@ -3005,6 +3012,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
+        engine: EngineType = ...,
         optimizations: QueryOptFlags = ...,
     ) -> None: ...
 
@@ -3017,6 +3025,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_merge_options: dict[str, Any],
+        engine: EngineType = ...,
         optimizations: QueryOptFlags = ...,
     ) -> deltalake.table.TableMerger: ...
 
@@ -3032,6 +3041,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         delta_write_options: dict[str, Any] | None = None,
         delta_merge_options: dict[str, Any] | None = None,
+        engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> deltalake.table.TableMerger | None:
         """
@@ -3281,7 +3291,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             else None
         )
         stream = self.collect_batches(
-            engine="streaming",
+            engine=engine,
             maintain_order=False,
             chunk_size=None,
             lazy=True,
@@ -3322,6 +3332,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | polars.io.iceberg.IcebergCatalogConfig
         | None = None,
         storage_options: StorageOptionsDict | None = None,
+        engine: EngineType = "auto",
     ) -> pl.DataFrame:
         """
         Sink a LazyFrame to an Iceberg table.
@@ -3347,6 +3358,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             For cloud storages, this may include configurations for authentication etc.
 
             More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+        engine
+            Select the engine used to produce the rows that are written. The rows are
+            written by `pyiceberg` in this process, so the engine must be able to
+            deliver them here.
 
         Returns
         -------
@@ -3362,7 +3377,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             storage_options=storage_options,
         )
 
-        sink_state.attach_sink(self).collect(engine="streaming")
+        sink_state.attach_sink(self).collect(engine=engine)
 
         return sink_state.commit_result_df.get()  # type: ignore[return-value]
 

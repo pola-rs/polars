@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Literal, TypedDict, get_args
+from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict, get_args
 
 from polars._dependencies import json
 from polars._utils.deprecation import deprecated
@@ -18,6 +18,7 @@ from polars.lazyframe.engine_config import (
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Callable
     from types import TracebackType
     from typing import TypeAlias
 
@@ -99,6 +100,49 @@ with contextlib.suppress(ImportError, NameError):
     }
 
 
+def _get_default_credential_provider() -> Any:
+    import polars.io.cloud.credential_provider._builder as builder
+
+    return builder.DEFAULT_CREDENTIAL_PROVIDER
+
+
+def _set_default_credential_provider(provider: Any) -> None:
+    import polars.io.cloud.credential_provider._builder as builder
+
+    builder.DEFAULT_CREDENTIAL_PROVIDER = provider
+
+
+# Runtime-only options hold arbitrary Python objects, so they can be neither
+# represented as environment variables nor persisted by `Config.save`. They are
+# registered here as (getter, setter, default) so that `restore_defaults` and the
+# context manager give them the same semantics as every other option.
+_POLARS_CFG_RUNTIME_VARS: Final[
+    dict[str, tuple[Callable[[], Any], Callable[[Any], None], Any]]
+] = {
+    "set_engine_affinity": (
+        get_engine_affinity_override,
+        set_engine_affinity_override,
+        None,
+    ),
+    "set_default_credential_provider": (
+        _get_default_credential_provider,
+        _set_default_credential_provider,
+        "auto",
+    ),
+}
+
+
+def _snapshot_runtime_vars() -> dict[str, Any]:
+    """Capture the current value of every runtime-only option, by reference."""
+    return {name: get() for name, (get, _, _) in _POLARS_CFG_RUNTIME_VARS.items()}
+
+
+def _restore_runtime_vars(snapshot: dict[str, Any]) -> None:
+    """Restore runtime-only options from a `_snapshot_runtime_vars` result."""
+    for name, (_, set_, default) in _POLARS_CFG_RUNTIME_VARS.items():
+        set_(snapshot.get(name, default))
+
+
 class ConfigParameters(TypedDict, total=False):
     """Parameters supported by the polars Config."""
 
@@ -127,6 +171,7 @@ class ConfigParameters(TypedDict, total=False):
     verbose: bool | None
     expr_depth_warning: int
     engine_affinity: EngineType | None
+    default_credential_provider: CredentialProviderFunction | Literal["auto"] | None
 
     set_ascii_tables: bool | None
     set_auto_structify: bool | None
@@ -186,10 +231,9 @@ class Config(contextlib.ContextDecorator):
 
     _context_options: ConfigParameters | None = None
     _original_state: str = ""
-    # `save()` cannot represent an object-valued engine affinity, so the context
-    # manager snapshots it separately (by reference).
-    _original_engine_affinity: Engine | None = None
-    _has_original_engine_affinity: bool = False
+    # `save()` cannot represent runtime-only options, so they are snapshotted
+    # separately.
+    _original_runtime_state: dict[str, Any] | None = None
 
     def __init__(
         self,
@@ -273,7 +317,7 @@ class Config(contextlib.ContextDecorator):
         """
         # save original state _before_ any changes are made
         self._original_state = self.save()
-        self._snapshot_engine_affinity()
+        self._original_runtime_state = _snapshot_runtime_vars()
         if restore_defaults:
             self.restore_defaults()
 
@@ -285,15 +329,11 @@ class Config(contextlib.ContextDecorator):
             self._set_config_params(**options)
             self._context_options = None
 
-    def _snapshot_engine_affinity(self) -> None:
-        self._original_engine_affinity = get_engine_affinity_override()
-        self._has_original_engine_affinity = True
-
     def __enter__(self) -> Self:
         """Support setting Config options that are reset on scope exit."""
         self._original_state = self._original_state or self.save()
-        if not self._has_original_engine_affinity:
-            self._snapshot_engine_affinity()
+        if self._original_runtime_state is None:
+            self._original_runtime_state = _snapshot_runtime_vars()
         if self._context_options:
             self._set_config_params(**self._context_options)
         return self
@@ -306,11 +346,10 @@ class Config(contextlib.ContextDecorator):
     ) -> None:
         """Reset any Config options that were set within the scope."""
         self.restore_defaults().load(self._original_state)
-        if self._has_original_engine_affinity:
-            set_engine_affinity_override(self._original_engine_affinity)
+        if self._original_runtime_state is not None:
+            _restore_runtime_vars(self._original_runtime_state)
         self._original_state = ""
-        self._original_engine_affinity = None
-        self._has_original_engine_affinity = False
+        self._original_runtime_state = None
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Config):
@@ -415,8 +454,9 @@ class Config(contextlib.ContextDecorator):
         for method in _POLARS_CFG_DIRECT_VARS:
             getattr(cls, method)(None)
 
-        # not representable as an environment variable, so cleared separately
-        set_engine_affinity_override(None)
+        # not representable as environment variables, so reset separately
+        for _, set_, default in _POLARS_CFG_RUNTIME_VARS.values():
+            set_(default)
 
         plr.config_reload_env_vars()
         return cls
@@ -1626,14 +1666,10 @@ class Config(contextlib.ContextDecorator):
         ... )
         <class 'polars.config.Config'>
         """
-        import polars.io.cloud.credential_provider._builder
-
         if isinstance(credential_provider, str) and credential_provider != "auto":
             raise ValueError(credential_provider)
 
-        polars.io.cloud.credential_provider._builder.DEFAULT_CREDENTIAL_PROVIDER = (
-            credential_provider
-        )
+        _set_default_credential_provider(credential_provider)
 
         return cls
 

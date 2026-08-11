@@ -208,9 +208,23 @@ def test_gpu_engine_stays_hashable_and_picklable() -> None:
 # ------------------------------------------------------------------------------------
 
 
-class _CountingEngine(_LocalEngine):
-    """A minimal engine: the abstract contract, with sinks inherited."""
+class _CountingEngine(pl.Engine):
+    def __init__(self) -> None:
+        self.collected = 0
 
+    @property
+    def name(self) -> str:
+        return "counting"
+
+    def collect(self, lf: pl.LazyFrame, **kwargs: Any) -> Any:
+        self.collected += 1
+        return pl.InMemoryEngine().collect(lf, **kwargs)
+
+    def execute(self, lf: pl.LazyFrame, **kwargs: Any) -> Any:
+        return pl.InMemoryEngine().execute(lf, **kwargs)
+
+
+class _LocalCountingEngine(_LocalEngine):
     def __init__(self) -> None:
         self.collected = 0
 
@@ -223,46 +237,39 @@ class _CountingEngine(_LocalEngine):
         return super().collect(lf, **kwargs)
 
 
-def test_engine_forces_backends_to_implement_the_core_contract() -> None:
+def test_engine_core_contract_is_three_members() -> None:
+    # `name`/`collect`/`execute` are what every backend must answer for. Everything
+    # else -- including the sinks -- is a capability a backend may not have, so it
+    # raises rather than blocking construction.
+    assert {"name", "collect", "execute"} == set(pl.Engine.__abstractmethods__)
+
     class Incomplete(pl.Engine):
         @property
         def name(self) -> str:
             return "incomplete"
 
-        def collect(self, lf: pl.LazyFrame, **kwargs: Any) -> Any:
-            raise AssertionError
-
-    # the sinks are abstract, so this fails at construction rather than mid-query
-    with pytest.raises(TypeError, match=r"abstract methods.*sink_"):
+    with pytest.raises(TypeError, match=r"abstract methods.*collect"):
         Incomplete()  # type: ignore[abstract]
 
-    assert {
-        "name",
-        "collect",
-        "execute",
-        "sink_parquet",
-        "sink_csv",
-        "sink_ipc",
-        "sink_ndjson",
-        "sink_batches",
-    } == set(pl.Engine.__abstractmethods__)
 
-
-def test_minimal_engine_supports_collect_execute_and_sinks(
-    tmp_path: Path, lf: pl.LazyFrame
-) -> None:
+def test_minimal_engine_supports_collect_and_execute(lf: pl.LazyFrame) -> None:
     engine = _CountingEngine()
     expected = lf.collect()
 
     assert_frame_equal(lf.collect(engine=engine), expected)
-    # `execute` is the one operation the base class can express in terms of `collect`
     assert_frame_equal(lf.execute(engine=engine).lazy().collect(), expected)
+    assert engine.collected == 1
 
+
+def test_in_process_engine_inherits_working_sinks(
+    tmp_path: Path, lf: pl.LazyFrame
+) -> None:
+    engine = _LocalCountingEngine()
     path = tmp_path / "out.parquet"
     lf.sink_parquet(path, engine=engine)
-    assert_frame_equal(pl.read_parquet(path), expected)
 
-    assert engine.collected == 3
+    assert_frame_equal(pl.read_parquet(path), lf.collect())
+    assert engine.collected == 1
 
 
 @pytest.mark.parametrize(
@@ -271,20 +278,16 @@ def test_minimal_engine_supports_collect_execute_and_sinks(
         ("collect_batches", lambda lf, e: lf.collect_batches(engine=e)),
         ("collect_async", lambda lf, e: lf.collect_async(engine=e)),
         ("collect_all", lambda lf, e: pl.collect_all([lf], engine=e)),
+        ("sink_parquet", lambda lf, e: lf.sink_parquet("out.parquet", engine=e)),
+        ("sink_csv", lambda lf, e: lf.sink_csv("out.csv", engine=e)),
+        ("sink_batches", lambda lf, e: lf.sink_batches(print, engine=e)),
     ],
 )
 def test_capability_gated_operations_raise(
     lf: pl.LazyFrame, operation: str, call: Callable[[pl.LazyFrame, pl.Engine], Any]
 ) -> None:
-    class BareEngine(_CountingEngine):
-        # drop the in-process implementations to get back to the base-class defaults
-        profile = pl.Engine.profile
-        collect_batches = pl.Engine.collect_batches
-        collect_async = pl.Engine.collect_async
-        collect_all = pl.Engine.collect_all
-
-    engine = BareEngine()
-    with pytest.raises(NotImplementedError, match=rf"`{operation}`.*BareEngine"):
+    engine = _CountingEngine()
+    with pytest.raises(NotImplementedError, match=rf"`{operation}`.*_CountingEngine"):
         call(lf, engine)
 
 
@@ -454,3 +457,35 @@ def test_object_engine_affinity_drives_collect(lf: pl.LazyFrame) -> None:
         pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).collect(engine="in-memory"),
     )
     assert calls == ["collect"]
+
+
+def test_runtime_only_options_are_scoped_by_config() -> None:
+    # `Config.save()` records environment variables only, so options holding Python
+    # objects are snapshotted separately by `_POLARS_CFG_RUNTIME_VARS`. The default
+    # credential provider used to leak out of its scope.
+    import polars.io.cloud.credential_provider._builder as builder
+
+    assert builder.DEFAULT_CREDENTIAL_PROVIDER == "auto"
+    with pl.Config(default_credential_provider=None):
+        assert builder.DEFAULT_CREDENTIAL_PROVIDER is None
+    assert builder.DEFAULT_CREDENTIAL_PROVIDER == "auto"
+
+    gpu = pl.GPUEngine(device=1)
+    pl.Config.set_engine_affinity(gpu)
+    try:
+        with pl.Config(engine_affinity=pl.StreamingEngine()):
+            assert _select_engine("auto").name == "streaming"
+        assert _select_engine("auto") is gpu
+    finally:
+        pl.Config.restore_defaults()
+
+
+def test_restore_defaults_resets_runtime_only_options() -> None:
+    import polars.io.cloud.credential_provider._builder as builder
+
+    pl.Config.set_engine_affinity(pl.StreamingEngine())
+    pl.Config.set_default_credential_provider(None)
+    pl.Config.restore_defaults()
+
+    assert _select_engine("auto").name == "auto"
+    assert builder.DEFAULT_CREDENTIAL_PROVIDER == "auto"

@@ -96,36 +96,12 @@ class Engine(ABC):
     """
     Base class for query execution engines.
 
-    Subclass this to plug a new backend into Polars. :attr:`name`, :meth:`collect`,
-    :meth:`execute` and the ``sink_*`` methods are all abstract, so a backend that
-    forgets one fails at construction rather than part-way through a query.
-
-    Nothing is defaulted in terms of anything else. :meth:`collect` guarantees a
-    host ``DataFrame``; :meth:`execute` deliberately does not, so deriving one from
-    the other would either impose a transfer the caller did not ask for or promise
-    a locality the engine cannot deliver. The sinks are abstract for a related
-    reason: building a sink plan goes through ``PyLazyFrame``, which is in-process
-    execution the base class cannot assume. Engines that do run in this process
-    inherit all of these rather than reimplementing them.
-
-    The remaining operations -- :meth:`profile`, :meth:`collect_async`,
-    :meth:`collect_batches`, :meth:`collect_all` and :meth:`collect_all_async` --
-    are capability-gated: they need a profiler, an async runtime or a batch protocol
-    that not every backend has. They carry their full signatures but raise
-    :exc:`NotImplementedError` until a backend provides them.
+    Subclass this to plug a new backend into Polars.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed
         at any point without it being considered a breaking change.
     """
-
-    # NOTE: deliberately no `__enter__`/`__exit__`. cudf-polars ships `GPUEngine`
-    # subclasses (RayEngine, DaskEngine, SPMDEngine) that are used as context
-    # managers; defining them here would shadow those implementations.
-    #
-    # NOTE: deliberately no `__eq__`/`__hash__`, and not a dataclass. Defining
-    # `__eq__` without `__hash__` sets `__hash__ = None`, which would make
-    # `GPUEngine` unhashable and break downstream code that keys on engine objects.
 
     @property
     @abstractmethod
@@ -134,8 +110,6 @@ class Engine(ABC):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}()"
-
-    # -- Execution ----------------------------------------------------------------
 
     @abstractmethod
     def collect(
@@ -174,17 +148,6 @@ class Engine(ABC):
         Not defaulted to ``collect``, which would force exactly the transfer this
         method exists to avoid.
         """
-
-    def profile(
-        self,
-        lf: LazyFrame,
-        *,
-        optimizations: QueryOptFlags,
-        post_opt_callback: PostOptCallback | None = None,
-    ) -> tuple[DataFrame, DataFrame]:
-        """Execute `lf` and return its result alongside per-node timings."""
-        msg = f"`profile` is not supported by {type(self).__name__}"
-        raise NotImplementedError(msg)
 
     def collect_async(
         self,
@@ -228,13 +191,6 @@ class Engine(ABC):
         msg = f"`collect_all_async` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
 
-    # -- Sinks --------------------------------------------------------------------
-    #
-    # Abstract rather than defaulted: building a sink plan goes through
-    # `PyLazyFrame`, which is in-process execution the base class cannot assume.
-    # `_LocalEngine` supplies these for engines that do run in this process.
-
-    @abstractmethod
     def sink_parquet(
         self,
         lf: LazyFrame,
@@ -257,15 +213,9 @@ class Engine(ABC):
         optimizations: QueryOptFlags,
         _sinked_paths_callback: SinkedPathsCallback | None,
     ) -> LazyFrame | None:
-        """
-        Evaluate `lf` and write the result to a Parquet file.
+        msg = f"`sink_parquet` is not supported by {type(self).__name__}"
+        raise NotImplementedError(msg)
 
-        See Also
-        --------
-        polars.LazyFrame.sink_parquet : Argument semantics.
-        """
-
-    @abstractmethod
     def sink_ipc(
         self,
         lf: LazyFrame,
@@ -284,15 +234,9 @@ class Engine(ABC):
         optimizations: QueryOptFlags,
         _record_batch_statistics: bool,
     ) -> LazyFrame | None:
-        """
-        Evaluate `lf` and write the result to an IPC file.
+        msg = f"`sink_ipc` is not supported by {type(self).__name__}"
+        raise NotImplementedError(msg)
 
-        See Also
-        --------
-        polars.LazyFrame.sink_ipc : Argument semantics.
-        """
-
-    @abstractmethod
     def sink_csv(
         self,
         lf: LazyFrame,
@@ -324,15 +268,9 @@ class Engine(ABC):
         lazy: bool,
         optimizations: QueryOptFlags,
     ) -> LazyFrame | None:
-        """
-        Evaluate `lf` and write the result to a CSV file.
+        msg = f"`sink_csv` is not supported by {type(self).__name__}"
+        raise NotImplementedError(msg)
 
-        See Also
-        --------
-        polars.LazyFrame.sink_csv : Argument semantics.
-        """
-
-    @abstractmethod
     def sink_ndjson(
         self,
         lf: LazyFrame,
@@ -350,15 +288,9 @@ class Engine(ABC):
         lazy: bool,
         optimizations: QueryOptFlags,
     ) -> LazyFrame | None:
-        """
-        Evaluate `lf` and write the result to an NDJSON file.
+        msg = f"`sink_ndjson` is not supported by {type(self).__name__}"
+        raise NotImplementedError(msg)
 
-        See Also
-        --------
-        polars.LazyFrame.sink_ndjson : Argument semantics.
-        """
-
-    @abstractmethod
     def sink_batches(
         self,
         lf: LazyFrame,
@@ -369,25 +301,16 @@ class Engine(ABC):
         lazy: bool,
         optimizations: QueryOptFlags,
     ) -> LazyFrame | None:
-        """
-        Evaluate `lf`, passing the result to `function` in batches.
-
-        See Also
-        --------
-        polars.LazyFrame.sink_batches : Argument semantics.
-        """
+        msg = f"`sink_batches` is not supported by {type(self).__name__}"
+        raise NotImplementedError(msg)
 
 
 class _LocalEngine(Engine):
     """
     Base class for engines that execute in this process, through `PyLazyFrame`.
-
-    Private on purpose: `GPUEngine` derives from it, so making it public would pin
-    `_post_opt_callback` and the rest of its shape as downstream API.
     """
 
     def execute(self, lf: LazyFrame, *, optimizations: QueryOptFlags) -> QueryResult:
-        """Execute `lf`; the result of an in-process query is already local."""
         df = self.collect(lf, optimizations=optimizations)
         return SingleNodeQueryResult(df)  # type: ignore[arg-type]
 
@@ -397,7 +320,6 @@ class _LocalEngine(Engine):
         background: bool,  # noqa: ARG002
         eager: bool,  # noqa: ARG002
     ) -> PostOptCallback | None:
-        """Callback invoked by the engine after query optimization."""
         return None
 
     def collect(
@@ -420,23 +342,6 @@ class _LocalEngine(Engine):
         if post_opt_callback is not None:
             callback = post_opt_callback
         return wrap_df(ldf.collect(self.name, callback))
-
-    def profile(
-        self,
-        lf: LazyFrame,
-        *,
-        optimizations: QueryOptFlags,
-        post_opt_callback: PostOptCallback | None = None,
-    ) -> tuple[DataFrame, DataFrame]:
-        # `PyLazyFrame.profile` takes no engine; the GPU engine reaches it purely
-        # through the post-optimization callback.
-        callback = self._post_opt_callback(background=False, eager=False)
-        if post_opt_callback is not None:
-            callback = post_opt_callback
-
-        ldf = lf._ldf.with_optimizations(optimizations._pyoptflags)
-        df_py, timings_py = ldf.profile(callback)
-        return wrap_df(df_py), wrap_df(timings_py)
 
     def collect_async(
         self,
@@ -504,8 +409,6 @@ class _LocalEngine(Engine):
             result._callback_all,
         )
         return result
-
-    # -- Sinks --------------------------------------------------------------------
 
     def _finish_sink(
         self, ldf_py: PyLazyFrame, *, lazy: bool, optimizations: QueryOptFlags
@@ -843,46 +746,20 @@ class _CollectBatches:
 
 
 class _AutoEngine(_LocalEngine):
-    """
-    Let Polars pick the engine.
-
-    Private: `"auto"` is resolved by Rust, which also handles `POLARS_FORCE_STREAMING`,
-    so this must keep forwarding the name rather than resolving it here.
-    """
-
     @property
     def name(self) -> str:
-        """Name of the engine."""
         return "auto"
 
 
 class InMemoryEngine(_LocalEngine):
-    """
-    The in-memory execution engine.
-
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
-    """
-
     @property
     def name(self) -> str:
-        """Name of the engine."""
         return "in-memory"
 
 
 class StreamingEngine(_LocalEngine):
-    """
-    The streaming execution engine.
-
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
-    """
-
     @property
     def name(self) -> str:
-        """Name of the engine."""
         return "streaming"
 
 
@@ -940,7 +817,6 @@ class GPUEngine(_LocalEngine):
 
     @property
     def name(self) -> str:
-        """Name of the engine."""
         return "gpu"
 
     def _post_opt_callback(
