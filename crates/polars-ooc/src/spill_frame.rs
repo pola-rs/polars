@@ -3,8 +3,9 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use polars_async::ASYNC;
+use polars_core::datatypes::CompatLevel;
 use polars_core::frame::DataFrame;
-use polars_io::ipc::{IpcCompression, IpcReader, IpcWriter};
+use polars_io::ipc::{IpcCompression, IpcStreamReader, IpcStreamWriter};
 use polars_io::{SerReader, SerWriter};
 use polars_utils::compression::ZstdLevel;
 
@@ -29,7 +30,7 @@ impl Spillable for DataFrame {
         // Encode in the current task (on computational executor).
         let mut buf = Vec::new();
 
-        let mut writer = IpcWriter::new(&mut buf).with_parallel(false);
+        let mut writer = IpcStreamWriter::new(&mut buf).with_compat_level(CompatLevel::newest());
         let clvl = polars_config::config().ooc_spill_compression_level();
         if clvl > 0 {
             let zstd_lvl = ZstdLevel::try_new(clvl.try_into().unwrap()).unwrap();
@@ -74,7 +75,7 @@ impl Spillable for DataFrame {
                 let file = std::fs::File::open(&path).unwrap_or_else(|e| {
                     panic!("failed to open spill file {:?}: {e}", path.display())
                 });
-                IpcReader::new(file).finish().unwrap_or_else(|e| {
+                IpcStreamReader::new(file).finish().unwrap_or_else(|e| {
                     panic!("failed to read spill file {:?}: {e}", path.display())
                 })
             })

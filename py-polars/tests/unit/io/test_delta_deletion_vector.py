@@ -535,7 +535,7 @@ def test_scan_delta_dv_normalize_scheme(
 @pytest.mark.parametrize(
     ("n_rows", "dv"),
     [
-        # (1, []), # Temporarily disabled for CI, edge case
+        (1, []),
         (1, [0]),
         (5, [2]),
         (5, [0]),
@@ -572,7 +572,7 @@ def test_scan_delta_dv_single(
     import duckdb
 
     conn = duckdb.connect()
-
+    conn.execute("INSTALL delta;")
     conn.execute("LOAD delta;")
 
     df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
@@ -683,6 +683,7 @@ def test_scan_delta_dv_multiple(
     import duckdb
 
     conn = duckdb.connect()
+    conn.execute("INSTALL delta;")
     conn.execute("LOAD delta;")
 
     df_duckdb = conn.execute(f"SELECT * FROM delta_scan('{path}')").pl()
@@ -757,6 +758,7 @@ def test_scan_delta_dv_multiple_with_predicate_pushdown(
 
         # duckdb cross-check
         conn = duckdb.connect()
+        conn.execute("INSTALL delta;")
         conn.execute("LOAD delta;")
         df_duckdb = (
             conn.execute(f"SELECT * FROM delta_scan('{path}')").pl().filter(expr)

@@ -101,7 +101,6 @@ ignore-missing-imports = [
   "IPython.*",
   "altair.*",
   "duckdb.*",
-  "filelock.*",
   "pyiceberg.*",
 ]
 # pyrefly equivalent of mypy's `follow_imports = "skip"`
@@ -153,7 +152,6 @@ module = [
   "dateutil.*",
   "deltalake.*",
   "duckdb.*",
-  "filelock.*",
   "fsspec.*",
   "gevent",
   "great_tables",
@@ -284,6 +282,7 @@ addopts = [
   "--strict-config",
   "--strict-markers",
   "--import-mode=importlib",
+  "--dist=loadgroup",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
   "-m not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only",
 ]

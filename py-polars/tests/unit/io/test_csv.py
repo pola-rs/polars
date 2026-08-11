@@ -2570,7 +2570,6 @@ def test_csv_invalid_quoted_comment_line(chunk_override: None) -> None:
     ).to_dict(as_series=False) == {"ColA": [1], "ColB": [2]}
 
 
-@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_csv_compressed_new_columns_19916(chunk_override: None) -> None:
     n_rows = 100
 

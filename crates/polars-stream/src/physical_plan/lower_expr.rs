@@ -2009,6 +2009,7 @@ fn lower_exprs_with_ctx(
                 let kind = PhysNodeKind::Filter {
                     input: select_stream,
                     predicate,
+                    projection: None,
                 };
                 let output_schema = select_stream.output_schema(ctx.phys_sm).clone();
                 let filter_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
