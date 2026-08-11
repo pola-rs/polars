@@ -2,7 +2,6 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::ControlFlow;
 
 use hashbrown::HashTable;
-use hashbrown::hash_table::Entry;
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 
@@ -110,9 +109,8 @@ impl CanonicalIRMap {
             },
         );
 
-        let id = match entry {
-            Entry::Occupied(entry) => *entry.get(),
-            Entry::Vacant(entry) => {
+        let id = *entry
+            .or_insert_with(|| {
                 let is_nondeterministic_excluding_udfs = exprs_are_nondeterministic
                     || child_ids
                         .iter()
@@ -124,10 +122,9 @@ impl CanonicalIRMap {
                     child_ids,
                     is_nondeterministic_excluding_udfs,
                 });
-                entry.insert(id);
                 id
-            },
-        };
+            })
+            .get();
 
         cache.insert(node, id);
         id
