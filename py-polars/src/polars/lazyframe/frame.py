@@ -6,7 +6,7 @@ import warnings
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
-from functools import lru_cache, partial, reduce
+from functools import lru_cache, reduce
 from io import BytesIO, StringIO
 from operator import and_
 from pathlib import Path
@@ -34,7 +34,6 @@ from polars._dependencies import pyarrow as pa
 from polars._typing import (
     ParquetMetadata,
 )
-from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
@@ -42,7 +41,6 @@ from polars._utils.deprecation import (
     deprecated,
     issue_deprecation_warning,
 )
-from polars._utils.parquet import wrap_parquet_metadata_callback
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
@@ -64,7 +62,7 @@ from polars._utils.various import (
     qualified_type_name,
     require_same_type,
 )
-from polars._utils.wrap import wrap_df, wrap_expr
+from polars._utils.wrap import wrap_expr
 from polars._warnings import find_stacklevel, issue_warning
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
@@ -97,17 +95,14 @@ from polars.datatypes import (
 )
 from polars.datatypes.group import DataTypeGroup
 from polars.exceptions import InvalidOperationError, PerformanceWarning
-from polars.interchange.protocol import CompatLevel
-from polars.lazyframe.engine_config import GPUEngine
+from polars.lazyframe.engine_config import _select_engine
 from polars.lazyframe.group_by import LazyGroupBy
-from polars.lazyframe.in_process import InProcessQuery
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
-from polars.lazyframe.query_result import SingleNodeQueryResult
 from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars._plr import PyLazyFrame, get_engine_affinity
+    from polars._plr import PyLazyFrame
 
 if TYPE_CHECKING:
     import sys
@@ -128,7 +123,7 @@ if TYPE_CHECKING:
         from polars._plr import PyExpr, PySelector
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
-        import polars._plr as plr
+        pass
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -166,8 +161,11 @@ if TYPE_CHECKING:
         SyncOnCloseMethod,
         UniqueKeepStrategy,
     )
+    from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
     from polars.config import TableFormatNames
+    from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
+    from polars.lazyframe.in_process import InProcessQuery
     from polars.lazyframe.query_result import QueryResult
 
     if sys.version_info >= (3, 11):
@@ -185,69 +183,6 @@ if TYPE_CHECKING:
 
 
 _COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
-
-
-def _select_engine(engine: EngineType) -> EngineType:
-    return get_engine_affinity() if engine == "auto" else engine
-
-
-def _to_sink_target(
-    path: str | Path | IO[bytes] | IO[str] | PartitionBy,
-) -> str | Path | IO[bytes] | IO[str] | PartitionBy:
-    from polars.io.partition import PartitionBy
-
-    if isinstance(path, (str, Path)):
-        return normalize_filepath(path)
-    elif isinstance(path, io.IOBase):
-        return path
-    elif isinstance(path, PartitionBy):
-        return path
-    elif callable(getattr(path, "write", None)):
-        # This allows for custom writers
-        return path
-    else:
-        msg = f"`path` argument has invalid type {qualified_type_name(path)!r}, and cannot be turned into a sink target"
-        raise TypeError(msg)
-
-
-def _gpu_engine_callback(
-    engine: EngineType,
-    *,
-    background: bool,
-    _eager: bool,
-) -> Callable[[Any, int | None], None] | None:
-    is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
-    if not (
-        is_config_obj or engine in ("auto", "cpu", "in-memory", "streaming", "gpu")
-    ):
-        msg = f"Invalid engine argument {engine=}"
-        raise ValueError(msg)
-    if background and is_gpu:
-        issue_warning(
-            "GPU engine does not support background collection, disabling GPU engine.",
-            category=UserWarning,
-        )
-        is_gpu = False
-    if _eager:
-        # Don't run on GPU in _eager mode (but don't warn)
-        is_gpu = False
-
-    if not is_gpu:
-        return None
-    cudf_polars = import_optional(
-        "cudf_polars",
-        err_prefix="GPU engine requested, but required package",
-        install_message=(
-            "Please install using the command "
-            "`pip install cudf-polars-cu12` "
-            "(CUDA 12 is required for RAPIDS cuDF v25.08 and later). "
-            "If your system has a CUDA 11 driver, install with "
-            "`pip install cudf-polars-cu11==25.06` "
-        ),
-    )
-    if not is_config_obj:
-        engine = GPUEngine()
-    return partial(cudf_polars.execute_with_cudf, config=engine)
 
 
 class LazyFrame:
@@ -1431,11 +1366,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if tree_format:
                 format = "tree"
 
-        engine = _select_engine(engine)
+        engine_ = _select_engine(engine)
 
         if optimized:
             optimizations = optimizations.__copy__()
-            optimizations._pyoptflags.streaming = engine == "streaming"
+            optimizations._pyoptflags.streaming = engine_.name == "streaming"
             ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
             if format == "tree":
                 return ldf.describe_optimized_plan_tree()
@@ -1625,10 +1560,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).show_graph(plan_stage="ir")  # doctest: +SKIP
         """
-        engine = _select_engine(engine)
+        engine_ = _select_engine(engine)
 
         optimizations = optimizations.__copy__()
-        optimizations._pyoptflags.streaming = engine == "streaming"
+        optimizations._pyoptflags.streaming = engine_.name == "streaming"
         _ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
         if plan_stage is None:
@@ -1643,7 +1578,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if plan_stage == "ir":
             dot = _ldf.to_dot(optimized)
         elif plan_stage == "physical":
-            if engine == "streaming":
+            if engine_.name == "streaming":
                 dot = _ldf.to_dot_streaming_phys(optimized)
             else:
                 dot = _ldf.to_dot(optimized)
@@ -2231,21 +2166,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ):
                 error_msg = f"profile() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
-        engine = _select_engine(engine)
+        engine_ = _select_engine(engine)
 
         optimizations = optimizations.__copy__()
-        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
-
-        callback = _gpu_engine_callback(
-            engine,
-            background=False,
-            _eager=False,
-        )
-        if _kwargs.get("post_opt_callback") is not None:
+        df, timings = engine_.profile(
+            self,
+            optimizations=optimizations,
             # Only for testing
-            callback = _kwargs.get("post_opt_callback")
-        df_py, timings_py = ldf.profile(callback)
-        (df, timings) = wrap_df(df_py), wrap_df(timings_py)
+            post_opt_callback=_kwargs.get("post_opt_callback"),
+        )
 
         if show_plot:
             import_optional(
@@ -2383,8 +2312,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Collect in GPU mode
 
         """
-        df = self.collect(optimizations=optimizations, engine=engine)
-        return SingleNodeQueryResult(df)
+        return _select_engine(engine).execute(self, optimizations=optimizations)
 
     @overload
     def collect(
@@ -2628,25 +2556,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
 
-        engine = _select_engine(engine)
-
-        callback = _gpu_engine_callback(
-            engine,
+        return _select_engine(engine).collect(  # type: ignore[return-value]
+            self,
+            optimizations=optimizations,
             background=background,
-            _eager=optimizations._pyoptflags.eager,
+            # Only for testing purposes
+            post_opt_callback=_kwargs.get("post_opt_callback"),
         )
-
-        if isinstance(engine, GPUEngine):
-            engine = "gpu"
-
-        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
-        if background:
-            issue_unstable_warning("background mode is considered unstable.")
-            return InProcessQuery(ldf.collect_concurrently())
-
-        # Only for testing purposes
-        callback = _kwargs.get("post_opt_callback", callback)
-        return wrap_df(ldf.collect(engine, callback))
 
     @overload
     def collect_async(
@@ -2768,17 +2684,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
-        engine = _select_engine(engine)
-
-        if engine == "streaming":
-            issue_unstable_warning("streaming mode is considered unstable.")
-
-        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
-
         result: _GeventDataFrameResult[DataFrame] | _AioDataFrameResult[DataFrame] = (
-            _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+            _select_engine(engine).collect_async(
+                self, optimizations=optimizations, gevent=gevent
+            )
         )
-        ldf.collect_with_callback(engine, result._callback)
         return result
 
     def collect_schema(self) -> Schema:
@@ -3065,87 +2975,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         PartitionBy
         """
-        engine = _select_engine(engine)
-        if metadata is not None:
-            msg = "`metadata` parameter is considered experimental"
-            issue_unstable_warning(msg)
-
-        if arrow_schema is not None:
-            msg = "`arrow_schema` parameter is considered unstable"
-            issue_unstable_warning(msg)
-
-        if isinstance(statistics, bool) and statistics:
-            statistics = {
-                "min": True,
-                "max": True,
-                "distinct_count": False,
-                "null_count": True,
-            }
-        elif isinstance(statistics, bool) and not statistics:
-            statistics = {}
-        elif statistics == "full":
-            statistics = {
-                "min": True,
-                "max": True,
-                "distinct_count": True,
-                "null_count": True,
-            }
-
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
-        )
-
-        if retries is not None:
-            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-            issue_deprecation_warning(msg)
-            storage_options = storage_options or {}
-            storage_options["max_retries"] = retries
-
-        credential_provider_builder = _init_credential_provider_builder(
-            credential_provider, path, storage_options, "sink_parquet"
-        )
-        del credential_provider
-
-        target = _to_sink_target(path)
-
-        if isinstance(metadata, dict):
-            if metadata:
-                metadata = list(metadata.items())  # type: ignore[assignment]
-            else:
-                # Handle empty dict input
-                metadata = None
-        elif callable(metadata):
-            metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
-
-        from polars.io.partition import _SinkOptions
-
-        sink_options = _SinkOptions(
-            mkdir=mkdir,
-            maintain_order=maintain_order,
-            sync_on_close=sync_on_close,
-            storage_options=storage_options,
-            credential_provider=credential_provider_builder,
-            sinked_paths_callback=_sinked_paths_callback,
-        )
-
-        ldf_py = self._ldf.sink_parquet(
-            target=target,
-            sink_options=sink_options,
+        return _select_engine(engine).sink_parquet(
+            self,
+            path,
             compression=compression,
             compression_level=compression_level,
             statistics=statistics,
             row_group_size=row_group_size,
             data_page_size=data_page_size,
+            maintain_order=maintain_order,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
+            sync_on_close=sync_on_close,
             metadata=metadata,
             arrow_schema=arrow_schema,
+            mkdir=mkdir,
+            lazy=lazy,
+            optimizations=optimizations,
+            _sinked_paths_callback=_sinked_paths_callback,
         )
-
-        if not lazy:
-            ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
-            ldf = LazyFrame._from_pyldf(ldf_py)
-            ldf.collect(engine=engine)
-            return None
-        return LazyFrame._from_pyldf(ldf_py)
 
     @overload
     def sink_delta(
@@ -3719,62 +3568,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         PartitionBy
         """
-        engine = _select_engine(engine)
-
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
-        )
-
-        if retries is not None:
-            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-            issue_deprecation_warning(msg)
-            storage_options = storage_options or {}
-            storage_options["max_retries"] = retries
-
-        credential_provider_builder = _init_credential_provider_builder(
-            credential_provider, path, storage_options, "sink_ipc"
-        )
-        del credential_provider
-
-        target = _to_sink_target(path)
-
-        compat_level_py: int | bool
-        if compat_level is None:
-            compat_level_py = True
-        elif isinstance(compat_level, CompatLevel):
-            compat_level_py = compat_level._version
-        else:
-            msg = f"`compat_level` has invalid type: {qualified_type_name(compat_level)!r}"
-            raise TypeError(msg)
-
-        if compression is None:
-            compression = "uncompressed"
-
-        from polars.io.partition import _SinkOptions
-
-        sink_options = _SinkOptions(
-            mkdir=mkdir,
-            maintain_order=maintain_order,
-            sync_on_close=sync_on_close,
-            storage_options=storage_options,
-            credential_provider=credential_provider_builder,
-        )
-
-        ldf_py = self._ldf.sink_ipc(
-            target=target,
-            sink_options=sink_options,
+        return _select_engine(engine).sink_ipc(
+            self,
+            path,
             compression=compression,
-            compat_level=compat_level_py,
+            compat_level=compat_level,
             record_batch_size=record_batch_size,
-            record_batch_statistics=_record_batch_statistics,
+            maintain_order=maintain_order,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
+            sync_on_close=sync_on_close,
+            mkdir=mkdir,
+            lazy=lazy,
+            optimizations=optimizations,
+            _record_batch_statistics=_record_batch_statistics,
         )
-
-        if not lazy:
-            ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
-            ldf = LazyFrame._from_pyldf(ldf_py)
-            ldf.collect(engine=engine)
-            return None
-        return LazyFrame._from_pyldf(ldf_py)
 
     @overload
     def sink_csv(
@@ -4077,52 +3886,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         PartitionBy
         """
-        from polars.io.csv._utils import _check_arg_is_1byte
-
-        _check_arg_is_1byte("separator", separator, can_be_empty=False)
-        _check_arg_is_1byte("quote_char", quote_char, can_be_empty=False)
-        if not null_value:
-            null_value = None
-        engine = _select_engine(engine)
-
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
-        )
-
-        credential_provider_builder = _init_credential_provider_builder(
-            credential_provider, path, storage_options, "sink_csv"
-        )
-        del credential_provider
-
-        target = _to_sink_target(path)
-
-        from polars.io.partition import _SinkOptions
-
-        if retries is not None:
-            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-            issue_deprecation_warning(msg)
-            storage_options = storage_options or {}
-            storage_options["max_retries"] = retries
-
-        sink_options = _SinkOptions(
-            mkdir=mkdir,
-            maintain_order=maintain_order,
-            sync_on_close=sync_on_close,
-            storage_options=storage_options,
-            credential_provider=credential_provider_builder,
-        )
-
-        ldf_py = self._ldf.sink_csv(
-            target=target,
-            sink_options=sink_options,
+        return _select_engine(engine).sink_csv(
+            self,
+            path,
             include_bom=include_bom,
             compression=compression,
             compression_level=compression_level,
             check_extension=check_extension,
             include_header=include_header,
-            separator=ord(separator),
+            separator=separator,
             line_terminator=line_terminator,
-            quote_char=ord(quote_char),
+            quote_char=quote_char,
             batch_size=batch_size,
             datetime_format=datetime_format,
             date_format=date_format,
@@ -4132,14 +3906,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             decimal_comma=decimal_comma,
             null_value=null_value,
             quote_style=quote_style,
+            maintain_order=maintain_order,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
+            sync_on_close=sync_on_close,
+            mkdir=mkdir,
+            lazy=lazy,
+            optimizations=optimizations,
         )
-
-        if not lazy:
-            ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
-            ldf = LazyFrame._from_pyldf(ldf_py)
-            ldf.collect(engine=engine)
-            return None
-        return LazyFrame._from_pyldf(ldf_py)
 
     @overload
     def sink_ndjson(
@@ -4346,49 +4121,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         PartitionBy
         """
-        engine = _select_engine(engine)
-
-        from polars.io.cloud.credential_provider._builder import (
-            _init_credential_provider_builder,
-        )
-
-        if retries is not None:
-            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-            issue_deprecation_warning(msg)
-            storage_options = storage_options or {}
-            storage_options["max_retries"] = retries
-
-        credential_provider_builder = _init_credential_provider_builder(
-            credential_provider, path, storage_options, "sink_ndjson"
-        )
-        del credential_provider
-
-        target = _to_sink_target(path)
-
-        from polars.io.partition import _SinkOptions
-
-        sink_options = _SinkOptions(
-            mkdir=mkdir,
-            maintain_order=maintain_order,
-            sync_on_close=sync_on_close,
-            storage_options=storage_options,
-            credential_provider=credential_provider_builder,
-        )
-
-        ldf_py = self._ldf.sink_ndjson(
-            target=target,
+        return _select_engine(engine).sink_ndjson(
+            self,
+            path,
             compression=compression,
             compression_level=compression_level,
             check_extension=check_extension,
-            sink_options=sink_options,
+            maintain_order=maintain_order,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
+            sync_on_close=sync_on_close,
+            mkdir=mkdir,
+            lazy=lazy,
+            optimizations=optimizations,
         )
-
-        if not lazy:
-            ldf_py = ldf_py.with_optimizations(optimizations._pyoptflags)
-            ldf = LazyFrame._from_pyldf(ldf_py)
-            ldf.collect(engine=engine)
-            return None
-        return LazyFrame._from_pyldf(ldf_py)
 
     @overload
     def sink_batches(
@@ -4482,23 +4229,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_batches(lambda df: print(df))  # doctest: +SKIP
         """
-
-        def _wrap(pydf: plr.PyDataFrame) -> bool:
-            df = wrap_df(pydf)
-            return bool(function(df))
-
-        ldf = self._ldf.sink_batches(
-            function=_wrap,
-            maintain_order=maintain_order,
+        return _select_engine(engine).sink_batches(
+            self,
+            function,
             chunk_size=chunk_size,
+            maintain_order=maintain_order,
+            lazy=lazy,
+            optimizations=optimizations,
         )
-
-        if not lazy:
-            ldf = ldf.with_optimizations(optimizations._pyoptflags)
-            lf = LazyFrame._from_pyldf(ldf)
-            lf.collect(engine=engine)
-            return None
-        return LazyFrame._from_pyldf(ldf)
 
     @unstable()
     def collect_batches(
@@ -4565,35 +4303,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> for df in lf.collect_batches():
         ...     print(df)  # doctest: +SKIP
         """
-        engine = _select_engine(engine)
+        engine_ = _select_engine(engine)
 
-        if engine == "auto":
-            engine = "streaming"
+        if engine_.name == "auto":
+            engine_ = _select_engine("streaming")
 
-        class CollectBatches:
-            def __init__(self, inner: Any) -> None:
-                self._inner = inner
-
-            def __iter__(self) -> CollectBatches:
-                return self
-
-            def __next__(self) -> DataFrame:
-                pydf = next(self._inner)
-                return pl.DataFrame._from_pydf(pydf)
-
-            def __arrow_c_stream__(
-                self, requested_schema: object | None = None
-            ) -> object:
-                return self._inner.__arrow_c_stream__(requested_schema)
-
-        ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
-        inner = ldf.collect_batches(
-            engine=engine,
+        return engine_.collect_batches(  # type: ignore[no-any-return]
+            self,
+            optimizations=optimizations,
             maintain_order=maintain_order,
             chunk_size=chunk_size,
             lazy=lazy,
         )
-        return CollectBatches(inner)
 
     @deprecated(
         "`LazyFrame.fetch` is deprecated; use `LazyFrame.collect` "

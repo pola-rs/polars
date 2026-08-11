@@ -18,7 +18,8 @@ if TYPE_CHECKING:
     from decimal import Decimal
     from typing import TypeAlias
 
-    from sqlalchemy.engine import Connection, Engine
+    from sqlalchemy.engine import Connection
+    from sqlalchemy.engine import Engine as AlchemyEngine
     from sqlalchemy.ext.asyncio import (
         AsyncConnection,
         AsyncEngine,
@@ -31,7 +32,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._dependencies import numpy as np
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
-    from polars.lazyframe.engine_config import GPUEngine
+    from polars.lazyframe.engine import Engine
     from polars.selectors import Selector
 
 
@@ -404,7 +405,7 @@ class Cursor(BasicCursor):
         """Fetch results in batches."""
 
 
-AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
+AlchemyConnection: TypeAlias = Union["Connection", "AlchemyEngine", "Session"]
 AlchemyAsyncConnection: TypeAlias = Union[
     "AsyncConnection", "AsyncEngine", "AsyncSession", "async_sessionmaker[AsyncSession]"
 ]
@@ -437,9 +438,8 @@ SingleColSelector: TypeAlias = SingleIndexSelector | SingleNameSelector
 MultiColSelector: TypeAlias = MultiIndexSelector | MultiNameSelector | BooleanMask
 
 # LazyFrame engine selection
-EngineType: TypeAlias = Union[
-    Literal["auto", "in-memory", "streaming", "gpu"], "GPUEngine"
-]
+EngineTypeName: TypeAlias = Literal["auto", "in-memory", "streaming", "gpu"]
+EngineType: TypeAlias = Union[EngineTypeName, "Engine"]
 
 PlanStage: TypeAlias = Literal["ir", "physical"]
 
@@ -494,6 +494,7 @@ __all__ = [
     "DeprecationType",
     "Endianness",
     "EngineType",
+    "EngineTypeName",
     "EpochTimeUnit",
     "ExcelSpreadsheetEngine",
     "ExplainFormat",
