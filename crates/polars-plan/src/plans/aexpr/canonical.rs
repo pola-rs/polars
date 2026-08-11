@@ -1,12 +1,10 @@
-// We don't care about the iteration order in the various caching structures, so we can use
-// PlHashMap/PlHashSet
-#![allow(clippy::disallowed_types)]
-
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
-use polars_utils::aliases::{InitHashMaps as _, PlHashMap, PlHashSet};
+#[allow(clippy::disallowed_types)]
+use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{InitHashMaps as _, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use slotmap::SlotMap;
 
@@ -22,29 +20,27 @@ slotmap::new_key_type! {
 
 /// Equivalence class of structurally equal expression nodes.
 struct CanonicalExprClass {
-    members: PlHashSet<Node>,
+    members: PlIndexSet<Node>,
     child_ids: Vec<CanonicalExprId>,
 }
 
 impl CanonicalExprClass {
     /// An arbitrary member.
     fn representative(&self) -> Node {
-        *self
-            .members
-            .iter()
-            .next()
-            .expect("the equivalence class should be nonempty or dropped altogether")
+        self.members[0]
     }
 }
 
 /// Assigns [`CanonicalExprId`]s to `AExpr` nodes.
 pub struct CanonicalExprMap {
     deduplication_map: HashTable<CanonicalExprId>,
+    #[allow(clippy::disallowed_types)] // We don't iterate over the cache.
     cache: PlHashMap<Node, CanonicalExprId>,
     eq_classes: SlotMap<CanonicalExprId, CanonicalExprClass>,
 }
 
 impl CanonicalExprMap {
+    #[allow(clippy::disallowed_types)]
     pub fn new() -> Self {
         Self {
             deduplication_map: HashTable::new(),
@@ -62,7 +58,7 @@ impl CanonicalExprMap {
 
         let eq_class = &mut self.eq_classes[id];
         let hash = combined_hash(eq_class.representative(), &eq_class.child_ids, expr_arena);
-        eq_class.members.remove(&node);
+        eq_class.members.swap_remove(&node);
 
         if eq_class.members.is_empty() {
             self.eq_classes.remove(id);
@@ -149,7 +145,7 @@ impl CanonicalExprMap {
             },
             Entry::Vacant(entry) => {
                 let id = eq_classes.insert(CanonicalExprClass {
-                    members: PlHashSet::from_iter([node]),
+                    members: PlIndexSet::from_iter([node]),
                     child_ids,
                 });
                 entry.insert(id);
