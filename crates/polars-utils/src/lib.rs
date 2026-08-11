@@ -16,6 +16,7 @@ pub mod arg_min_max;
 pub mod array;
 pub mod binary_search;
 pub mod bool;
+pub mod broadcast;
 pub mod cache;
 pub mod calc_morsel_split;
 pub mod cardinality_sketch;
