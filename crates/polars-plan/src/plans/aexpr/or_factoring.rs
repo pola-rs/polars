@@ -17,9 +17,7 @@ use polars_utils::aliases::{InitHashMaps, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 
-use crate::plans::aexpr::{
-    AExpr, CanonicalExprId, CanonicalExprMap, MintermIter, is_inherently_nondeterministic,
-};
+use crate::plans::aexpr::{AExpr, CanonicalExprId, CanonicalExprMap, MintermIter};
 use crate::prelude::Operator;
 
 /// Walk the AExpr tree bottom-up, applying OR factoring at every OR node.
@@ -126,15 +124,14 @@ fn try_factor_or(
     let mut other_matches: ScratchVec<usize> = ScratchVec::default();
 
     for (cand_idx, &cand) in branch_terms[0].iter().enumerate() {
+        let cand_id = branch_ids[0][cand_idx];
+
         // Skip inherently non-deterministic candidates: factoring them out of
         // `(A ∧ X) ∨ (A ∧ Y) → A ∧ (X ∨ Y)` would evaluate `A` once instead of
         // twice per row, which is unsound when the two evaluations could disagree.
-        // TODO: This should be computed by `CanonicalExprMap` once it can handle nondeterminism
-        // properly (https://github.com/pola-rs/polars/issues/28733)
-        if is_inherently_nondeterministic(cand, expr_arena) {
+        if canonical_exprs.is_nondeterministic(cand_id) {
             continue;
         }
-        let cand_id = branch_ids[0][cand_idx];
 
         let other_matches = other_matches.get();
         let all_matched = (1..branch_terms.len()).all(|b_idx| {
