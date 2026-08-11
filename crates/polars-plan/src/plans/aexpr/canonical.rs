@@ -57,10 +57,10 @@ impl CanonicalExprMap {
         };
 
         let eq_class = &mut self.eq_classes[id];
-        let hash = combined_hash(eq_class.representative(), &eq_class.child_ids, expr_arena);
         eq_class.members.swap_remove(&node);
 
         if eq_class.members.is_empty() {
+            let hash = combined_hash(node, &eq_class.child_ids, expr_arena);
             self.eq_classes.remove(id);
             if let Ok(entry) = self
                 .deduplication_map
