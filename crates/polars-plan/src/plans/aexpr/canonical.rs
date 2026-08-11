@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use hashbrown::HashTable;
@@ -167,17 +168,35 @@ impl Default for CanonicalExprMap {
     }
 }
 
-impl ExpressionComparator for CanonicalExprMap {
+pub struct CanonicalExprMapWithArena<'a> {
+    map: RefCell<&'a mut CanonicalExprMap>,
+    arena: &'a Arena<AExpr>,
+}
+
+impl<'a> CanonicalExprMapWithArena<'a> {
+    pub fn new(map: &'a mut CanonicalExprMap, arena: &'a Arena<AExpr>) -> Self {
+        Self {
+            map: RefCell::new(map),
+            arena,
+        }
+    }
+}
+
+impl<'a> ExpressionComparator for CanonicalExprMapWithArena<'a> {
     fn equals(&self, lhs: &ExprIR, rhs: &ExprIR) -> bool {
-        self.get(lhs.node()) == self.get(rhs.node())
+        let mut map = self.map.borrow_mut();
+        map.resolve(lhs.node(), self.arena) == map.resolve(rhs.node(), self.arena)
             && lhs.output_name_inner() == rhs.output_name_inner()
     }
 }
 
 #[cfg(feature = "cse")]
-impl ExpressionHasher for CanonicalExprMap {
+impl<'a> ExpressionHasher for CanonicalExprMapWithArena<'a> {
     fn hash_expr<H: Hasher>(&self, expr: &ExprIR, state: &mut H) {
-        self.get(expr.node()).hash(state);
+        self.map
+            .borrow_mut()
+            .resolve(expr.node(), self.arena)
+            .hash(state);
         expr.output_name_inner().hash(state);
     }
 }
