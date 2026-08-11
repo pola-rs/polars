@@ -5,7 +5,7 @@ use hashbrown::HashTable;
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 
-use crate::plans::{AExpr, CanonicalExprMap, IR};
+use crate::plans::{AExpr, CanonicalExprMap, CanonicalExprMapWithArena, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::tree_traversal::tree_traversal;
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
@@ -34,7 +34,7 @@ pub struct CanonicalIRMap {
     cache: PlIndexMap<Node, CanonicalIRId>,
     /// Indexed by [`CanonicalIRId`], which are handed out densely.
     eq_classes: Vec<CanonicalIRClass>,
-    expr_cmp: CanonicalExprMap,
+    expr_map: CanonicalExprMap,
 }
 
 impl CanonicalIRMap {
@@ -43,7 +43,7 @@ impl CanonicalIRMap {
             deduplication_map: HashTable::new(),
             cache: PlIndexMap::new(),
             eq_classes: Vec::new(),
-            expr_cmp: CanonicalExprMap::new(),
+            expr_map: CanonicalExprMap::new(),
         }
     }
 
@@ -82,18 +82,19 @@ impl CanonicalIRMap {
         expr_arena: &Arena<AExpr>,
     ) -> CanonicalIRId {
         let exprs_are_nondeterministic = lp_arena.get(node).exprs().any(|expr| {
-            let expr_id = self.expr_cmp.resolve(expr.node(), expr_arena);
-            self.expr_cmp.is_nondeterministic_excluding_udfs(expr_id)
+            let expr_id = self.expr_map.resolve(expr.node(), expr_arena);
+            self.expr_map.is_nondeterministic_excluding_udfs(expr_id)
         });
 
         let Self {
             deduplication_map,
             cache,
             eq_classes,
-            expr_cmp,
+            expr_map,
         } = self;
 
-        let hash = combined_hash(node, &child_ids, lp_arena, expr_cmp);
+        let expr_cmp = CanonicalExprMapWithArena::new(expr_map, expr_arena);
+        let hash = combined_hash(node, &child_ids, lp_arena, &expr_cmp);
         let entry = deduplication_map.entry(
             hash,
             |&other| {
@@ -101,11 +102,11 @@ impl CanonicalIRMap {
                 child_ids == other.child_ids
                     && lp_arena
                         .get(node)
-                        .is_ir_equal_shallow(lp_arena.get(other.representative), expr_cmp)
+                        .is_ir_equal_shallow(lp_arena.get(other.representative), &expr_cmp)
             },
             |&other| {
                 let other = &eq_classes[other.index()];
-                combined_hash(other.representative, &other.child_ids, lp_arena, expr_cmp)
+                combined_hash(other.representative, &other.child_ids, lp_arena, &expr_cmp)
             },
         );
 
@@ -205,7 +206,7 @@ fn combined_hash(
     node: Node,
     child_ids: &[CanonicalIRId],
     lp_arena: &Arena<IR>,
-    expr_cmp: &CanonicalExprMap,
+    expr_cmp: &CanonicalExprMapWithArena,
 ) -> u64 {
     let mut hasher = DefaultHasher::new();
     lp_arena

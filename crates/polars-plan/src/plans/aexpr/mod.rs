@@ -15,7 +15,7 @@ mod traverse;
 
 use std::hash::{Hash, Hasher};
 
-pub use canonical::{CanonicalExprId, CanonicalExprMap};
+pub use canonical::{CanonicalExprId, CanonicalExprMap, CanonicalExprMapWithArena};
 pub use determinism::{
     is_inherently_nondeterministic, is_inherently_nondeterministic_excluding_udfs_top_level,
     is_inherently_nondeterministic_top_level,

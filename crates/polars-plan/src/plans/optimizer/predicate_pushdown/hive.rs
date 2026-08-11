@@ -1,4 +1,5 @@
 use polars_core::utils::split_df_as_ref;
+use polars_ops::frame::DataFrameJoinOps;
 
 use super::*;
 use crate::plans::hive::HivePartitionsDf;

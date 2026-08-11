@@ -1,12 +1,11 @@
-// We don't care about the iteration order in the various caching structures, so we can use
-// PlHashMap/PlHashSet
-#![allow(clippy::disallowed_types)]
-
+use std::cell::RefCell;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
-use polars_utils::aliases::{InitHashMaps as _, PlHashMap, PlHashSet};
+#[allow(clippy::disallowed_types)]
+use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::{InitHashMaps as _, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use slotmap::SlotMap;
 
@@ -26,7 +25,7 @@ slotmap::new_key_type! {
 
 /// Equivalence class of structurally equal expression nodes.
 struct CanonicalExprClass {
-    members: PlHashSet<Node>,
+    members: PlIndexSet<Node>,
     child_ids: Vec<CanonicalExprId>,
     /// Whether the subtree may produce a different value on each evaluation
     is_nondeterministic: bool,
@@ -37,22 +36,20 @@ struct CanonicalExprClass {
 impl CanonicalExprClass {
     /// An arbitrary member.
     fn representative(&self) -> Node {
-        *self
-            .members
-            .iter()
-            .next()
-            .expect("the equivalence class should be nonempty or dropped altogether")
+        self.members[0]
     }
 }
 
 /// Assigns [`CanonicalExprId`]s to `AExpr` nodes.
 pub struct CanonicalExprMap {
     deduplication_map: HashTable<CanonicalExprId>,
+    #[allow(clippy::disallowed_types)] // We don't iterate over the cache.
     cache: PlHashMap<Node, CanonicalExprId>,
     eq_classes: SlotMap<CanonicalExprId, CanonicalExprClass>,
 }
 
 impl CanonicalExprMap {
+    #[allow(clippy::disallowed_types)]
     pub fn new() -> Self {
         Self {
             deduplication_map: HashTable::new(),
@@ -69,10 +66,10 @@ impl CanonicalExprMap {
         };
 
         let eq_class = &mut self.eq_classes[id];
-        let hash = combined_hash(eq_class.representative(), &eq_class.child_ids, expr_arena);
-        eq_class.members.remove(&node);
+        eq_class.members.swap_remove(&node);
 
         if eq_class.members.is_empty() {
+            let hash = combined_hash(node, &eq_class.child_ids, expr_arena);
             self.eq_classes.remove(id);
             if let Ok(entry) = self
                 .deduplication_map
@@ -176,7 +173,7 @@ impl CanonicalExprMap {
                             .any(|&child| eq_classes[child].is_nondeterministic_excluding_udfs);
 
                 let id = eq_classes.insert(CanonicalExprClass {
-                    members: PlHashSet::from_iter([node]),
+                    members: PlIndexSet::from_iter([node]),
                     child_ids,
                     is_nondeterministic,
                     is_nondeterministic_excluding_udfs,
@@ -200,17 +197,35 @@ impl Default for CanonicalExprMap {
     }
 }
 
-impl ExpressionComparator for CanonicalExprMap {
+pub struct CanonicalExprMapWithArena<'a> {
+    map: RefCell<&'a mut CanonicalExprMap>,
+    arena: &'a Arena<AExpr>,
+}
+
+impl<'a> CanonicalExprMapWithArena<'a> {
+    pub fn new(map: &'a mut CanonicalExprMap, arena: &'a Arena<AExpr>) -> Self {
+        Self {
+            map: RefCell::new(map),
+            arena,
+        }
+    }
+}
+
+impl<'a> ExpressionComparator for CanonicalExprMapWithArena<'a> {
     fn equals(&self, lhs: &ExprIR, rhs: &ExprIR) -> bool {
-        self.get(lhs.node()) == self.get(rhs.node())
+        let mut map = self.map.borrow_mut();
+        map.resolve(lhs.node(), self.arena) == map.resolve(rhs.node(), self.arena)
             && lhs.output_name_inner() == rhs.output_name_inner()
     }
 }
 
 #[cfg(feature = "cse")]
-impl ExpressionHasher for CanonicalExprMap {
+impl<'a> ExpressionHasher for CanonicalExprMapWithArena<'a> {
     fn hash_expr<H: Hasher>(&self, expr: &ExprIR, state: &mut H) {
-        self.get(expr.node()).hash(state);
+        self.map
+            .borrow_mut()
+            .resolve(expr.node(), self.arena)
+            .hash(state);
         expr.output_name_inner().hash(state);
     }
 }
