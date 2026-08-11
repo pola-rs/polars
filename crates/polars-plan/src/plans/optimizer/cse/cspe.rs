@@ -203,15 +203,15 @@ impl NodeVisitor for InsertCachesVisitor<'_> {
             return ControlFlow::Continue(SubtreeVisit::Skip);
         }
 
-        // We never want to cache a non-deterministic node or its outputs/ancestors
-        let output_hits = if output_state.is_nondeterministic_excluding_udfs {
-            1
-        } else {
-            output_state.hits
-        };
-
         // Cache the topmost deterministic node
-        if !curr_state.is_nondeterministic_excluding_udfs && curr_state.hits > output_hits {
+        let should_cache = !curr_state.is_nondeterministic_excluding_udfs
+            && if output_state.is_nondeterministic_excluding_udfs {
+                curr_state.hits > 1
+            } else {
+                curr_state.hits > output_state.hits
+            };
+
+        if should_cache {
             let replacement_ir = match storage.get(key) {
                 ir @ IR::Cache { .. } => ir.clone(),
                 _ => {
