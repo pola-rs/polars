@@ -67,12 +67,11 @@ pub fn is_inherently_nondeterministic_excluding_udfs_top_level(ae: &AExpr) -> bo
 /// may freely factor those out.
 ///
 /// Used as a correctness gate by rewrites that change the per-row
-/// evaluation count of a subexpression, for example OR factoring
-/// `(A ∧ X) ∨ (A ∧ Y) → A ∧ (X ∨ Y)`, which is sound only when `A`
-/// is not inherently non-deterministic. A newly added `AExpr` or
-/// `IRFunctionExpr` variant fails to compile here until explicitly
-/// classified, so the helper cannot silently misclassify an unfamiliar
-/// variant.
+/// evaluation count of a subexpression, for example collapsing
+/// `A ∧ ¬A` to `false`, which is sound only when `A` is not inherently
+/// non-deterministic. A newly added `AExpr` or `IRFunctionExpr` variant
+/// fails to compile here until explicitly classified, so the helper
+/// cannot silently misclassify an unfamiliar variant.
 pub fn is_inherently_nondeterministic(root: Node, arena: &Arena<AExpr>) -> bool {
     let mut stack: UnitVec<Node> = unitvec![];
     let mut ae = arena.get(root);
@@ -80,7 +79,7 @@ pub fn is_inherently_nondeterministic(root: Node, arena: &Arena<AExpr>) -> bool 
         if is_inherently_nondeterministic_top_level(ae) {
             return true;
         }
-        ae.inputs_rev(&mut stack);
+        ae.children_rev(&mut stack);
         let Some(node) = stack.pop() else {
             return false;
         };

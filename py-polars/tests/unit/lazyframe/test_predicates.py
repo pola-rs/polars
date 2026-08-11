@@ -1635,6 +1635,16 @@ def test_filter_contradiction_fallible_error_handling(
         lf.collect()
 
 
+def test_filter_contradiction_keeps_nondeterministic_eval_body() -> None:
+    lf = pl.LazyFrame({"x": [[1, -1]] * 10})
+    first = pl.col("x").list.eval(pl.element().shuffle()).list.first()
+    q = lf.filter((first > 0) & (first <= 0))
+
+    plan = q.explain()
+    assert "FILTER" in plan, plan
+    assert plan.count("shuffle") == 2, plan
+
+
 def test_filter_range_tightening() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
 
