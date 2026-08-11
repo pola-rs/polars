@@ -1783,6 +1783,10 @@ def test_cspe_nondeterministic_not_cached_28733(expr: pl.Expr) -> None:
     df = copied.collect()
     assert_frame_not_equal(df.slice(0, n), df.slice(n, n))
 
+    # SELECT is what appears next to shuffle/sample/rank
+    plan = copied.explain()
+    assert plan.count("SELECT") == 2, plan
+
 
 def test_cspe_nondeterministic_still_caches_inputs_28733() -> None:
     n = 100
@@ -1798,5 +1802,8 @@ def test_cspe_nondeterministic_still_caches_inputs_28733() -> None:
     df = copied.collect()
     assert_frame_not_equal(df.slice(0, n), df.slice(n, n))
 
-    # The deterministic subplan it reads from is cached
-    assert copied.explain().count("CACHE[id:") == 2
+    # We can't just check if CACHE exists in the plan, because even the initial LazyFrame scan
+    # DF ["a"]; PROJECT */1 COLUMNS
+    # can be cached
+    plan = copied.explain()
+    assert plan.count("WITH_COLUMNS") == 1, plan
