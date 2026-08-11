@@ -14,9 +14,9 @@ pub use skeleton::StreamingQuery;
 mod metrics;
 pub use metrics::{GraphMetrics, NodeMetrics};
 mod observer_metrics;
-pub use observer_metrics::StreamingQueryMetrics;
+pub use observer_metrics::StreamingQueryMetricsSnapshotter;
 pub use polars_observer::{
-    QueryMetrics, QueryObserver, QueryObserverFactory, new_query_observer,
+    QueryMetricsSnapshotter, QueryObserver, QueryObserverFactory, new_query_observer,
     register_query_observer_factory,
 };
 mod morsel;

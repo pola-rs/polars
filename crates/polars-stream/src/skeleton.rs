@@ -17,7 +17,7 @@ use slotmap::{SecondaryMap, SlotMap};
 
 use crate::graph::{Graph, GraphNodeKey};
 use crate::metrics::GraphMetrics;
-use crate::observer_metrics::StreamingQueryMetrics;
+use crate::observer_metrics::StreamingQueryMetricsSnapshotter;
 use crate::physical_plan::{
     PhysNode, PhysNodeKey, PhysNodeKind, StreamingLowerIRContext, physical_plan_to_description,
 };
@@ -70,8 +70,8 @@ impl StreamingQuery {
         let physical =
             physical_plan_to_description(&[self.root_phys_node], &self.phys_sm, expr_arena);
         let mut builder = PlannedQuery::builder(ir).with_physical(physical);
-        if let Some(metrics) = StreamingQueryMetrics::from_query(self) {
-            builder = builder.with_metrics(metrics);
+        if let Some(snapshotter) = StreamingQueryMetricsSnapshotter::from_query(self) {
+            builder = builder.with_metrics_snapshotter(snapshotter);
         }
         builder.build()
     }

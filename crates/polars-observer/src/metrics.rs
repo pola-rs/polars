@@ -1,12 +1,12 @@
 use polars_descriptions::NodeMetricsDescription;
 
-pub trait QueryMetrics: Send + Sync {
+pub trait QueryMetricsSnapshotter: Send + Sync {
     fn snapshot(&self) -> Vec<NodeMetricsDescription>;
 }
 
 pub struct NoopQueryMetrics;
 
-impl QueryMetrics for NoopQueryMetrics {
+impl QueryMetricsSnapshotter for NoopQueryMetrics {
     fn snapshot(&self) -> Vec<NodeMetricsDescription> {
         Vec::new()
     }

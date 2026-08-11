@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use polars_core::SINGLE_LOCK;
 use polars_core::query_result::QueryResult;
 use polars_observer::{
-    NoopQueryMetrics, PlannedQuery, QueryMetrics, QueryObserver, QueryObserverFactory,
+    NoopQueryMetrics, PlannedQuery, QueryMetricsSnapshotter, QueryObserver, QueryObserverFactory,
     register_query_observer_factory,
 };
 
@@ -56,7 +56,7 @@ impl QueryObserver for ObserverMock {
         }));
         Box::new(CloseGuard {
             log: self.log.clone(),
-            metrics: query.metrics,
+            metrics: query.metrics_snapshotter,
         })
     }
 
@@ -70,7 +70,7 @@ impl QueryObserver for ObserverMock {
 
 struct CloseGuard {
     log: Log,
-    metrics: Option<Box<dyn QueryMetrics>>,
+    metrics: Option<Box<dyn QueryMetricsSnapshotter>>,
 }
 
 impl Drop for CloseGuard {

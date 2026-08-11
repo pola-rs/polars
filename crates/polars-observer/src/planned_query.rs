@@ -1,11 +1,11 @@
 use polars_descriptions::{IrNodeDescription, PhysicalNodeDescription};
 
-use crate::metrics::QueryMetrics;
+use crate::metrics::QueryMetricsSnapshotter;
 
 pub struct PlannedQuery {
     pub ir: Vec<IrNodeDescription>,
     pub physical: Option<Vec<PhysicalNodeDescription>>,
-    pub metrics: Option<Box<dyn QueryMetrics>>,
+    pub metrics_snapshotter: Option<Box<dyn QueryMetricsSnapshotter>>,
 }
 
 impl PlannedQuery {
@@ -13,7 +13,7 @@ impl PlannedQuery {
         PlannedQueryBuilder {
             ir,
             physical: None,
-            metrics: None,
+            metrics_snapshotter: None,
         }
     }
 }
@@ -21,7 +21,7 @@ impl PlannedQuery {
 pub struct PlannedQueryBuilder {
     ir: Vec<IrNodeDescription>,
     physical: Option<Vec<PhysicalNodeDescription>>,
-    metrics: Option<Box<dyn QueryMetrics>>,
+    metrics_snapshotter: Option<Box<dyn QueryMetricsSnapshotter>>,
 }
 
 impl PlannedQueryBuilder {
@@ -30,8 +30,11 @@ impl PlannedQueryBuilder {
         self
     }
 
-    pub fn with_metrics(mut self, metrics: Box<dyn QueryMetrics>) -> Self {
-        self.metrics = Some(metrics);
+    pub fn with_metrics_snapshotter(
+        mut self,
+        snapshotter: Box<dyn QueryMetricsSnapshotter>,
+    ) -> Self {
+        self.metrics_snapshotter = Some(snapshotter);
         self
     }
 
@@ -39,7 +42,7 @@ impl PlannedQueryBuilder {
         PlannedQuery {
             ir: self.ir,
             physical: self.physical,
-            metrics: self.metrics,
+            metrics_snapshotter: self.metrics_snapshotter,
         }
     }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_error::PolarsError;
 use polars_observer::{
-    NoopQueryMetrics, PlannedQuery, QueryExecutionGuard, QueryMetrics, QueryObserver,
+    NoopQueryMetrics, PlannedQuery, QueryExecutionGuard, QueryMetricsSnapshotter, QueryObserver,
     QueryObserverFactory, register_query_observer_factory,
 };
 use pyo3::exceptions::PyRuntimeError;
@@ -22,7 +22,7 @@ type PolarsCloudQueryFinishedGuard = Py<PyAny>;
 /// This wrapper is passed back to polars_cloud to expose the [CloudStreamingMetricsHandle::snapshot_query_metrics] function to allow for metric polling.
 #[pyclass(name = "CloudStreamingMetricsHandle")]
 pub struct CloudStreamingMetricsHandle {
-    metrics: Box<dyn QueryMetrics>,
+    metrics: Box<dyn QueryMetricsSnapshotter>,
 }
 
 #[pymethods]
@@ -71,9 +71,9 @@ impl Drop for CloudObserverGuard {
             return;
         };
         Python::attach(|py| {
-            if let Err(err) = guard.call_method0(py, "close") {
-                err.print(py);
-            }
+            let _ = guard.call_method0(py, "close").inspect_err(|err| {
+                eprintln!("[PolarsCloudObserver]: query finished guard close failed: {err}");
+            });
         });
     }
 }
@@ -81,12 +81,12 @@ impl Drop for CloudObserverGuard {
 impl QueryObserver for PolarsCloudObserver {
     fn on_query_started(&self) {
         Python::attach(|py| {
-            if let Err(err) = self
+            let _ = self
                 .observer
                 .call_method1(py, "on_query_started", (self.query_id,))
-            {
-                err.print(py);
-            }
+                .inspect_err(|err| {
+                    eprintln!("[PolarsCloudObserver]: on_query_started failed: {err}");
+                });
         });
     }
 
@@ -97,7 +97,9 @@ impl QueryObserver for PolarsCloudObserver {
         let py_guard: Option<PolarsCloudQueryFinishedGuard> =
             Python::attach(|py| -> PyResult<Option<PolarsCloudQueryFinishedGuard>> {
                 let metric_poller_handle = CloudStreamingMetricsHandle {
-                    metrics: query.metrics.unwrap_or_else(|| Box::new(NoopQueryMetrics)),
+                    metrics: query
+                        .metrics_snapshotter
+                        .unwrap_or_else(|| Box::new(NoopQueryMetrics)),
                 };
 
                 let ir_py = PyBytes::new(py, &ir_bytes);
@@ -112,7 +114,7 @@ impl QueryObserver for PolarsCloudObserver {
                 Ok((!ret.is_none(py)).then_some(ret))
             })
             .unwrap_or_else(|err| {
-                Python::attach(|py| err.print(py));
+                eprintln!("[PolarsCloudObserver]: on_query_planned failed: {err}");
                 None
             });
 
@@ -121,12 +123,12 @@ impl QueryObserver for PolarsCloudObserver {
 
     fn on_query_failed(&self, err: &PolarsError) {
         Python::attach(|py| {
-            if let Err(err) =
-                self.observer
-                    .call_method1(py, "on_query_failed", (self.query_id, err.to_string()))
-            {
-                err.print(py);
-            }
+            let _ = self
+                .observer
+                .call_method1(py, "on_query_failed", (self.query_id, err.to_string()))
+                .inspect_err(|err| {
+                    eprintln!("[PolarsCloudObserver]: on_query_failed failed: {err}");
+                });
         });
     }
 }

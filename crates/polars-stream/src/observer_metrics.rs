@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_descriptions::NodeMetricsDescription;
-use polars_observer::QueryMetrics;
+use polars_observer::QueryMetricsSnapshotter;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use crate::graph::GraphNodeKey;
@@ -11,14 +11,14 @@ use crate::physical_plan::PhysNodeKey;
 use crate::skeleton::StreamingQuery;
 use crate::{LogicalPipe, LogicalPipeKey};
 
-pub struct StreamingQueryMetrics {
+pub struct StreamingQueryMetricsSnapshotter {
     pub metrics: Arc<Mutex<GraphMetrics>>,
     pub pipes: SlotMap<LogicalPipeKey, LogicalPipe>,
     pub phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
 }
 
-impl StreamingQueryMetrics {
-    pub fn from_query(query: &StreamingQuery) -> Option<Box<dyn QueryMetrics>> {
+impl StreamingQueryMetricsSnapshotter {
+    pub fn from_query(query: &StreamingQuery) -> Option<Box<dyn QueryMetricsSnapshotter>> {
         let metrics = query.metrics.clone()?;
         Some(Box::new(Self {
             metrics,
@@ -28,7 +28,7 @@ impl StreamingQueryMetrics {
     }
 }
 
-impl QueryMetrics for StreamingQueryMetrics {
+impl QueryMetricsSnapshotter for StreamingQueryMetricsSnapshotter {
     fn snapshot(&self) -> Vec<NodeMetricsDescription> {
         let mut metrics = { self.metrics.lock().clone() };
         metrics.flush(&self.pipes);
