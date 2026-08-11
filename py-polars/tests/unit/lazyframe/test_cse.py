@@ -1802,8 +1802,9 @@ def test_cspe_nondeterministic_still_caches_inputs_28733() -> None:
     df = copied.collect()
     assert_frame_not_equal(df.slice(0, n), df.slice(n, n))
 
-    # We can't just check if CACHE exists in the plan, because even the initial LazyFrame scan
-    # DF ["a"]; PROJECT */1 COLUMNS
+    # We can't just check if CACHE exists in the plan, because even the initial
+    # LazyFrame scan
+    #  DF ["a"]; PROJECT */1 COLUMNS
     # can be cached
     plan = copied.explain()
     assert plan.count("WITH_COLUMNS") == 1, plan
