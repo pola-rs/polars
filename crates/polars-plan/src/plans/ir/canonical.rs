@@ -5,8 +5,7 @@ use hashbrown::HashTable;
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 
-use super::canonical_expr::CanonicalExprMap;
-use crate::plans::{AExpr, IR};
+use crate::plans::{AExpr, CanonicalExprMap, CanonicalExprMapWithArena, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::tree_traversal::tree_traversal;
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
@@ -33,7 +32,7 @@ struct CanonicalIREntry {
 pub struct CanonicalIRMap {
     deduplication_map: HashTable<CanonicalIREntry>,
     cache: PlIndexMap<Node, CanonicalIRId>,
-    expr_cmp: CanonicalExprMap,
+    expr_map: CanonicalExprMap,
 }
 
 impl CanonicalIRMap {
@@ -41,7 +40,7 @@ impl CanonicalIRMap {
         Self {
             deduplication_map: HashTable::new(),
             cache: PlIndexMap::new(),
-            expr_cmp: CanonicalExprMap::new(),
+            expr_map: CanonicalExprMap::new(),
         }
     }
 
@@ -75,17 +74,14 @@ impl CanonicalIRMap {
         lp_arena: &Arena<IR>,
         expr_arena: &Arena<AExpr>,
     ) -> CanonicalIRId {
-        for expr in lp_arena.get(node).exprs() {
-            self.expr_cmp.resolve(expr.node(), expr_arena);
-        }
-
         let Self {
             deduplication_map,
             cache,
-            expr_cmp,
+            expr_map,
         } = self;
 
-        let hash = combined_hash(node, &child_ids, lp_arena, expr_cmp);
+        let expr_cmp = CanonicalExprMapWithArena::new(expr_map, expr_arena);
+        let hash = combined_hash(node, &child_ids, lp_arena, &expr_cmp);
         let next_id = CanonicalIRId(1 + deduplication_map.len() as u32);
         let id = deduplication_map
             .entry(
@@ -94,9 +90,9 @@ impl CanonicalIRMap {
                     child_ids == other.child_ids
                         && lp_arena
                             .get(node)
-                            .is_ir_equal_shallow(lp_arena.get(other.representative), expr_cmp)
+                            .is_ir_equal_shallow(lp_arena.get(other.representative), &expr_cmp)
                 },
-                |other| combined_hash(other.representative, &other.child_ids, lp_arena, expr_cmp),
+                |other| combined_hash(other.representative, &other.child_ids, lp_arena, &expr_cmp),
             )
             .or_insert(CanonicalIREntry {
                 representative: node,
@@ -185,7 +181,7 @@ fn combined_hash(
     node: Node,
     child_ids: &[CanonicalIRId],
     lp_arena: &Arena<IR>,
-    expr_cmp: &CanonicalExprMap,
+    expr_cmp: &CanonicalExprMapWithArena,
 ) -> u64 {
     let mut hasher = DefaultHasher::new();
     lp_arena

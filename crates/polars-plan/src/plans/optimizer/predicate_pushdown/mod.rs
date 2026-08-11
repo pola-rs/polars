@@ -23,6 +23,7 @@ pub struct PredicatePushDown {
     // Normally this is 0. Only needed for CSPE.
     caches_pass_allowance: u32,
     nodes_scratch: ScratchUnitVec<Node>,
+    dedup_state: PredicateDedupState,
     pub(crate) streaming: bool,
     // Controls pushing filters past fallible projections
     maintain_errors: bool,
@@ -38,6 +39,7 @@ impl PredicatePushDown {
         Self {
             caches_pass_allowance: 0,
             nodes_scratch: ScratchUnitVec::default(),
+            dedup_state: PredicateDedupState::default(),
             streaming,
             maintain_errors,
             hive_rewrite_active: false,
@@ -155,7 +157,12 @@ impl PredicatePushDown {
                     for (_, predicate) in acc_predicates.iter() {
                         // we can pushdown the predicate
                         if check_input_node(predicate.node(), &input_schema, expr_arena) {
-                            insert_predicate_dedup(&mut pushdown_predicates, predicate, expr_arena)
+                            insert_predicate_dedup(
+                                &mut pushdown_predicates,
+                                predicate,
+                                expr_arena,
+                                &mut self.dedup_state,
+                            )
                         }
                         // we cannot pushdown the predicate we do it here
                         else {
@@ -292,7 +299,12 @@ impl PredicatePushDown {
                 };
 
                 if let Some(predicate) = acc_predicates.swap_remove(&tmp_key) {
-                    insert_predicate_dedup(&mut acc_predicates, &predicate, expr_arena);
+                    insert_predicate_dedup(
+                        &mut acc_predicates,
+                        &predicate,
+                        expr_arena,
+                        &mut self.dedup_state,
+                    );
                 }
 
                 let alp = lp_arena.take(input);
@@ -606,7 +618,12 @@ impl PredicatePushDown {
                         slice = Some((offset, len, Some(pred)));
 
                         let predicate = ExprIR::from_node(dyn_pred_node, expr_arena);
-                        insert_predicate_dedup(&mut acc_predicates, &predicate, expr_arena);
+                        insert_predicate_dedup(
+                            &mut acc_predicates,
+                            &predicate,
+                            expr_arena,
+                            &mut self.dedup_state,
+                        );
                     }
                 }
 
@@ -710,6 +727,11 @@ impl PredicatePushDown {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let acc_predicates = init_indexmap(None);
+
+        // It is possible that expressions have changed in the arena, so canonical expression ids
+        // are no longer valid
+        self.dedup_state = PredicateDedupState::default();
+
         self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }
 }
