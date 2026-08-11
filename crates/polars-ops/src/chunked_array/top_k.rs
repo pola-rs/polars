@@ -148,7 +148,7 @@ fn top_k_binary_impl(
     ChunkedArray::with_chunk_like(ca, arr)
 }
 
-pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
+pub fn top_k(s: &[Column], descending: bool, maintain_order: bool) -> PolarsResult<Column> {
     fn extract_target_and_k(s: &[Column]) -> PolarsResult<(usize, &Column)> {
         let k_s = &s[1];
         polars_ensure!(
@@ -168,6 +168,10 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
 
     if src.is_empty() {
         return Ok(src.clone());
+    }
+
+    if maintain_order {
+        return top_k_by_impl(k, src, std::slice::from_ref(src), vec![descending], true);
     }
 
     let sorted_flag = src.is_sorted_flag();
@@ -199,7 +203,7 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
     // Categoricals sort lexically, but their physical codes are in first-appearance order
     // so the numeric fast path below would return incorrect results.
     if origin_dtype.is_categorical() {
-        return top_k_by_impl(k, src, std::slice::from_ref(src), vec![descending]);
+        return top_k_by_impl(k, src, std::slice::from_ref(src), vec![descending], false);
     }
 
     let s = src.to_physical_repr();
@@ -223,12 +227,12 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
         },
         _ => {
             // Fallback to more generic impl.
-            top_k_by_impl(k, src, std::slice::from_ref(src), vec![descending])
+            top_k_by_impl(k, src, std::slice::from_ref(src), vec![descending], false)
         },
     }
 }
 
-pub fn top_k_by(s: &[Column], descending: Vec<bool>) -> PolarsResult<Column> {
+pub fn top_k_by(s: &[Column], descending: Vec<bool>, maintain_order: bool) -> PolarsResult<Column> {
     /// Return (k, src, by)
     fn extract_parameters(s: &[Column]) -> PolarsResult<(usize, &Column, &[Column])> {
         let k_s = &s[1];
@@ -265,7 +269,7 @@ pub fn top_k_by(s: &[Column], descending: Vec<bool>) -> PolarsResult<Column> {
         }
     }
 
-    top_k_by_impl(k, src, by, descending)
+    top_k_by_impl(k, src, by, descending, maintain_order)
 }
 
 fn top_k_by_impl(
@@ -273,6 +277,7 @@ fn top_k_by_impl(
     src: &Column,
     by: &[Column],
     descending: Vec<bool>,
+    maintain_order: bool,
 ) -> PolarsResult<Column> {
     if src.is_empty() {
         return Ok(src.clone());
@@ -283,15 +288,13 @@ fn top_k_by_impl(
         descending: descending.into_iter().map(|x| !x).collect(),
         nulls_last: vec![true; by.len()],
         multithreaded,
-        maintain_order: false,
+        maintain_order,
         limit: None,
     };
 
-    let idx = _arg_bottom_k(k, by, &mut sort_options)?;
+    let idx = _arg_bottom_k(k, by, &mut sort_options)?.into_inner();
+    let idx = if maintain_order { idx.sort(false) } else { idx };
 
-    let result = unsafe {
-        src.as_materialized_series()
-            .take_unchecked(&idx.into_inner())
-    };
+    let result = unsafe { src.as_materialized_series().take_unchecked(&idx) };
     Ok(result.into())
 }
