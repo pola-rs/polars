@@ -3590,7 +3590,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plugin"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "polars-arrow",
  "polars-config",
@@ -3604,7 +3604,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plugin-derive"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
