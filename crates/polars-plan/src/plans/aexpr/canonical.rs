@@ -23,6 +23,14 @@ slotmap::new_key_type! {
     pub struct CanonicalExprId;
 }
 
+impl CanonicalExprId {
+    /// Opaque integer representation, unique within a single [`CanonicalExprMap`].
+    /// Only intended for generating unique names.
+    pub fn as_u64(self) -> u64 {
+        slotmap::Key::data(&self).as_ffi()
+    }
+}
+
 /// Equivalence class of structurally equal expression nodes.
 struct CanonicalExprClass {
     members: PlIndexSet<Node>,
