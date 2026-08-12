@@ -63,29 +63,15 @@ fn cse_column_name(id: CanonicalExprId) -> PlSmallStr {
 /// Canonical expression id maps to the number of occurrences in the current plan node.
 type SubExprCount = PlIndexMap<CanonicalExprId, u32>;
 
-#[derive(Debug)]
-enum VisitRecord {
-    /// entered a new expression
-    Entered,
-    /// Every visited sub-expression pushes whether it is valid to the stack.
-    // This can be `AND` accumulated by the lineage of the expression to determine
-    // of the whole expression can be added.
-    // For instance a in a group_by we only want to use elementwise operation in cse:
-    // - `(col("a") * 2).sum(), (col("a") * 2)` -> we want to do `col("a") * 2` on a `with_columns`
-    // - `col("a").sum() * col("a").sum()` -> we don't want `sum` to run on `with_columns`
-    // as that doesn't have groups context. If we encounter a `sum` it should be flagged as `false`
-    //
-    // This should have the following stack
-    // id        valid
-    // col(a)   true
-    // sum      false
-    // col(a)   true
-    // sum      false
-    // binary   true
-    // -------------- accumulated
-    //          false
-    SubExprValid(bool),
-}
+/// One validity frame per node that has been entered but not yet left.
+///
+/// A frame records whether everything below that node permits it to be a CSE candidate. A node
+/// that cannot take part clears its parent's frame, which propagates the `AND` up the lineage.
+/// For instance, in a group_by we only want to use elementwise operations in cse:
+/// - `(col("a") * 2).sum(), (col("a") * 2)` -> we want to do `col("a") * 2` on a `with_columns`
+/// - `col("a").sum() * col("a").sum()` -> we don't want `sum` to run on `with_columns`
+///   as that doesn't have groups context, so `sum` clears the frame of the enclosing `binary`.
+type ValidityStack = Vec<bool>;
 
 fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) -> bool {
     match ae {
@@ -112,49 +98,31 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) 
 
 /// Records a [`CanonicalExprId`] for every valid CSE candidate.
 ///
-/// The visitor uses a `visit_stack` to track traversal order.
-///
 /// # Entering a node
-/// When `pre-visit` is called we enter a new (sub)-expression and
-/// we add `Entered` to the stack.
+/// `pre_visit` pushes a [`ValidityStack`] frame for the node, or invalidates the parent and
+/// stops descending if the node cannot take part in cse at all.
 /// # Leaving a node
-/// On `post_visit`, we pop and combine the validity records belonging to the node's descendants.
-/// This determines whether its subtree permits the node to be considered as a CSE candidate.
+/// `post_visit` pops the node's own frame. That frame tells us whether the node's subtree
+/// permits it to be a CSE candidate. If the node itself cannot take part, it invalidates the
+/// parent's frame in turn.
 //
 // # Example (this is not a docstring as clippy complains about spacing)
-// Say we have the expression: `(col("f00").min() * col("bar")).sum()`
-// with the following call tree:
+// In a group_by, `col("a").sum() * 2` must not be extracted, because `sum` needs the group
+// context. Frames are listed innermost-last.
 //
-//     sum
-//
-//       |
-//
-//     binary: *
-//
-//       |              |
-//
-//     col(bar)         min
-//
-//                      |
-//
-//                      col(f00)
-//
-// # call order
-// function-called              stack                stack-after(pop until E, push V)
-// pre-visit: sum                E                        -
-// pre-visit: binary: *          EE                       -
-// pre-visit: col(bar)           EEE                      -
-// post-visit: col(bar)	         EEE                      EEV
-// pre-visit: min                EEVE                     -
-// pre-visit: col(f00)           EEVEE                    -
-// post-visit: col(f00)	         EEVEE                    EEVEV
-// post-visit: min	             EEVEV                    EEVV
-// post-visit: binary: *         EEVV                     EV
-// post-visit: sum               EV                       V
+// function-called              frames        role      effect
+// pre-visit:  binary: *        [T]           -         push a frame
+// pre-visit:  sum              [T, T]        -         push a frame
+// pre-visit:  col(a)           [T, T, T]     -         push a frame
+// post-visit: col(a)           [T, T]        member    pop; may take part, parent untouched
+// post-visit: sum              [F]           refuse    pop; invalidates the parent's frame
+// pre-visit:  literal 2        [F, T]        -         push a frame
+// post-visit: literal 2        [F]           member    pop; may take part, parent untouched
+// post-visit: binary: *        []            -         pop; subtree invalid, not a candidate
 struct ExprCandidateVisitor<'a> {
     canonical_map: &'a mut CanonicalExprMap,
     se_count: &'a mut SubExprCount,
-    visit_stack: &'a mut Vec<VisitRecord>,
+    validity_stack: &'a mut ValidityStack,
     // During aggregation we only identify element-wise operations
     is_group_by: bool,
     //
@@ -165,34 +133,26 @@ impl ExprCandidateVisitor<'_> {
     fn new<'a>(
         canonical_map: &'a mut CanonicalExprMap,
         se_count: &'a mut SubExprCount,
-        visit_stack: &'a mut Vec<VisitRecord>,
+        validity_stack: &'a mut ValidityStack,
         is_group_by: bool,
         element_wise_select_only: bool,
     ) -> ExprCandidateVisitor<'a> {
         ExprCandidateVisitor {
             canonical_map,
             se_count,
-            visit_stack,
+            validity_stack,
             is_group_by,
             element_wise_only: element_wise_select_only,
         }
     }
 
-    /// Pop all visit-records until an `Entered` is found. We `AND` accumulate the validity of
-    /// all `SubExprValid`s and return it.
-    /// This works due to the stack.
-    /// If we traverse another expression in the mean time, it will get popped of the stack first
-    /// so the returned validity belongs to a single sub-expression
-    fn pop_until_entered(&mut self) -> bool {
-        let mut is_valid_accumulated = true;
-
-        while let Some(item) = self.visit_stack.pop() {
-            match item {
-                VisitRecord::Entered => return is_valid_accumulated,
-                VisitRecord::SubExprValid(valid) => is_valid_accumulated &= valid,
-            }
+    /// Record that the enclosing node's subtree cannot be a CSE candidate.
+    ///
+    /// A no-op at the root of an expression.
+    fn invalidate_parent(&mut self) {
+        if let Some(frame) = self.validity_stack.last_mut() {
+            *frame = false;
         }
-        unreachable!()
     }
 
     /// return `None` -> node is accepted
@@ -274,12 +234,12 @@ impl Visitor for ExprCandidateVisitor<'_> {
             self.is_group_by,
             self.element_wise_only,
         ) {
-            // Still add to the stack so that a parent becomes invalidated.
-            self.visit_stack.push(VisitRecord::SubExprValid(false));
+            // No frame is pushed for this node, so invalidate the parent directly.
+            self.invalidate_parent();
             return Ok(VisitRecursion::Skip);
         }
 
-        self.visit_stack.push(VisitRecord::Entered);
+        self.validity_stack.push(true);
 
         Ok(VisitRecursion::Continue)
     }
@@ -291,30 +251,23 @@ impl Visitor for ExprCandidateVisitor<'_> {
     ) -> PolarsResult<VisitRecursion> {
         let ae = node.to_aexpr(arena);
 
-        let is_valid_accumulated = self.pop_until_entered();
+        let subtree_is_valid = self.validity_stack.pop().unwrap();
 
-        if !is_valid_accumulated {
-            self.visit_stack.push(VisitRecord::SubExprValid(false));
+        if !subtree_is_valid {
+            self.invalidate_parent();
             return Ok(VisitRecursion::Continue);
         }
 
-        // If we don't store this node
-        // we only push the visit_stack, so the parents know the trail.
+        // If we don't store this node we only record whether the parent may still take part.
         if let Some((recurse, local_is_valid)) = self.accept_node_post_visit(ae) {
-            self.visit_stack
-                .push(VisitRecord::SubExprValid(local_is_valid));
+            if !local_is_valid {
+                self.invalidate_parent();
+            }
             return Ok(recurse);
         }
 
         let id = self.canonical_map.resolve(node.node(), arena);
-
-        // We popped until entered, push this node's validity on the stack so the trail
-        // is available for the parent expression.
-        self.visit_stack.push(VisitRecord::SubExprValid(true));
-
-        let se_count = self.se_count.entry(id).or_insert(0);
-
-        *se_count += 1;
+        *self.se_count.entry(id).or_insert(0) += 1;
 
         Ok(VisitRecursion::Continue)
     }
@@ -443,7 +396,7 @@ pub(crate) struct CommonSubExprOptimizer {
     se_count: SubExprCount,
     replaced_identifiers: PlIndexSet<CanonicalExprId>,
     // these are cleared per expr node
-    visit_stack: Vec<VisitRecord>,
+    validity_stack: ValidityStack,
     // Set by the streaming engine
     // Only supports element-wise CSEE
     // on SELECT/HSTACK
@@ -458,7 +411,7 @@ impl CommonSubExprOptimizer {
         Self {
             canonical_map: CanonicalExprMap::new(),
             se_count: Default::default(),
-            visit_stack: Default::default(),
+            validity_stack: Default::default(),
             replaced_identifiers: Default::default(),
             element_wise_select_only,
             nodes_scratch: ScratchVec::default(),
@@ -475,7 +428,7 @@ impl CommonSubExprOptimizer {
         let mut visitor = ExprCandidateVisitor::new(
             &mut self.canonical_map,
             &mut self.se_count,
-            &mut self.visit_stack,
+            &mut self.validity_stack,
             is_group_by,
             self.element_wise_select_only,
         );
@@ -511,8 +464,9 @@ impl CommonSubExprOptimizer {
     ) -> PolarsResult<Option<ProjectionExprs>> {
         // First get all cse's.
         for e in expr {
-            // An early return may leave records from the previous expression on the stack.
-            self.visit_stack.clear();
+            // A balanced traversal leaves the stack empty, but an early return from a
+            // previous expression might not
+            self.validity_stack.clear();
 
             // Visit expressions and collect sub-expression counts.
             let ae_node = AexprNode::new(e.node());
