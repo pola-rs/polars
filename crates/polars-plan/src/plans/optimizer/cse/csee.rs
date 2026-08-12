@@ -537,69 +537,6 @@ impl CommonSubExprOptimizer {
                 } else {
                     out_e.set_node(out_node);
 
-                    // Ensure the function ExprIR's have the proper names.
-                    // This is needed for structs to get the proper field
-                    // This mutates reconstructed nodes in place. They were freshly allocated by
-                    // the rewriter and have not been resolved by `canonical_map`.
-                    let mut scratch = vec![];
-                    let mut stack = vec![(e.node(), out_node)];
-                    while let Some((original, new)) = stack.pop() {
-                        // Don't follow identical nodes.
-                        if original == new {
-                            continue;
-                        }
-                        scratch.clear();
-                        let aes = expr_arena.get_disjoint_mut([original, new]);
-
-                        // Only follow paths that are the same.
-                        if std::mem::discriminant(aes[0]) != std::mem::discriminant(aes[1]) {
-                            continue;
-                        }
-
-                        aes[0].inputs_rev(&mut scratch);
-                        let offset = scratch.len();
-                        aes[1].inputs_rev(&mut scratch);
-
-                        // If they have a different number of inputs, we don't follow the nodes.
-                        if scratch.len() != offset * 2 {
-                            continue;
-                        }
-
-                        for i in 0..scratch.len() / 2 {
-                            stack.push((scratch[i], scratch[i + offset]));
-                        }
-
-                        match expr_arena.get_disjoint_mut([original, new]) {
-                            [
-                                AExpr::Function {
-                                    input: input_original,
-                                    ..
-                                },
-                                AExpr::Function {
-                                    input: input_new, ..
-                                },
-                            ] => {
-                                for (new, original) in input_new.iter_mut().zip(input_original) {
-                                    new.set_alias(original.output_name().clone());
-                                }
-                            },
-                            [
-                                AExpr::AnonymousFunction {
-                                    input: input_original,
-                                    ..
-                                },
-                                AExpr::AnonymousFunction {
-                                    input: input_new, ..
-                                },
-                            ] => {
-                                for (new, original) in input_new.iter_mut().zip(input_original) {
-                                    new.set_alias(original.output_name().clone());
-                                }
-                            },
-                            _ => {},
-                        }
-                    }
-
                     // If we don't end with an alias we add an alias. Because the normal left-hand
                     // rule we apply for determining the name will not work we now refer to
                     // intermediate temporary names starting with the `CSE_REPLACED` constant.
