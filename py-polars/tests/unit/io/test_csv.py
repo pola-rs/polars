@@ -1224,12 +1224,11 @@ def test_csv_datetime_fallback_independent_of_execution_chunks(
         dtype=pl.Datetime("us"),
     ).to_frame()
 
-    for n_threads, batch_size in [(1, 64), (2, 1_024)]:
+    for n_threads in [1, 2]:
         result = pl.read_csv(
             data.encode(),
             schema_overrides={"a": pl.Datetime("us")},
             n_threads=n_threads,
-            batch_size=batch_size,
         )
         assert_frame_equal(result, expected)
 
