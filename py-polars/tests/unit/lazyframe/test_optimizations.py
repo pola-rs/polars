@@ -1289,3 +1289,19 @@ def test_predicate_pushdown_with_cse_sink_cross_filter_28287(
     f = io.BytesIO()
     lf.sink_parquet(f, engine=engine)  # type: ignore[call-overload]
     assert_frame_equal(pl.read_parquet(f), pl.DataFrame({"x": 2, "y": 20}))
+
+
+def test_projection_pushdown_select_prune_expr_28729() -> None:
+    q = (
+        pl.LazyFrame({"x": [0, 1, 2]})
+        .join(
+            pl.LazyFrame({"x": [1, 1]}).select(pl.min("x").alias("x_rhs_sum")),
+            how="cross",
+        )
+        .select("x")
+    )
+
+    assert_frame_equal(
+        q.collect().sort("x"),
+        pl.DataFrame({"x": [0, 1, 2]}),
+    )
