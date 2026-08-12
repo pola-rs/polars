@@ -3469,6 +3469,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         target: str | pyiceberg.table.Table,
         *,
         mode: Literal["append", "overwrite"],
+        schema_mode: Literal["merge", "overwrite"] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
         | None = None,
@@ -3490,6 +3491,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             - If 'append', will add new data.
             - If 'overwrite', will replace table with new data.
+        schema_mode : {'merge', 'overwrite'}
+            How to handle differences between the incoming and table schemas.
+
+            - If 'merge', evolve the table schema with incoming fields and
+              compatible type promotions.
+            - If 'overwrite', replace the table schema with the incoming schema.
+              This requires ``mode='overwrite'``.
+            - If None, require the schemas to match.
         catalog
             PyIceberg catalog to load the table from if the provided `target`
             was a table identifier.
@@ -3509,6 +3518,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sink_state = IcebergSinkState.new(
             target,
             mode=mode,
+            schema_mode=schema_mode,
             catalog=catalog,
             storage_options=storage_options,
         )
