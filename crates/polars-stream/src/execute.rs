@@ -332,6 +332,11 @@ pub fn execute_graph(
         }
         graph.update_all_states(&state, metrics.as_deref())?;
 
+        #[cfg(debug_assertions)]
+        if let Some(m) = metrics.as_ref() {
+            m.lock().flush(&graph.pipes);
+        }
+
         ASYNC.block_in_place_on(async {
             // TODO: track this in metrics.
             while let Ok(handle) = subphase_tasks_recv.try_recv() {
