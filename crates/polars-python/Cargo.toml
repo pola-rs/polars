@@ -279,6 +279,7 @@ nightly = ["polars/nightly"]
 pymethods = []
 allow_unused = []
 
+numa = ["polars/numa"]
 fast_alloc = ["polars-ooc/fast_alloc"]
 
 full_functionality = [
