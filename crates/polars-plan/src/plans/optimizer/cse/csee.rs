@@ -21,14 +21,23 @@ use crate::plans::{
 use crate::prelude::ProjectionOptions;
 use crate::prelude::visitor::AexprNode;
 
-type Accepted = Option<(VisitRecursion, bool)>;
-// Don't allow this node in a cse.
-const REFUSE_NO_MEMBER: Accepted = Some((VisitRecursion::Continue, false));
-// Don't allow this node, but allow as a member of a cse.
-const REFUSE_ALLOW_MEMBER: Accepted = Some((VisitRecursion::Continue, true));
-const REFUSE_SKIP: Accepted = Some((VisitRecursion::Skip, false));
-// Accept this node.
-const ACCEPT: Accepted = None;
+/// How a visited node participates in CSE.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NodeRole {
+    /// Invalidates its enclosing expression, but descendants may still be candidates.
+    Refuse,
+    /// May occur within a candidate but is not a candidate itself.
+    Member,
+    /// May be extracted as a common subexpression.
+    Candidate,
+}
+
+impl NodeRole {
+    /// Whether this node allows the subexpression enclosing it to be a candidate.
+    fn permits_enclosing(self) -> bool {
+        matches!(self, NodeRole::Member | NodeRole::Candidate)
+    }
+}
 
 #[derive(Debug, Clone)]
 struct ProjectionExprs {
@@ -63,14 +72,7 @@ fn cse_column_name(id: CanonicalExprId) -> PlSmallStr {
 /// Canonical expression id maps to the number of occurrences in the current plan node.
 type SubExprCount = PlIndexMap<CanonicalExprId, u32>;
 
-/// One validity frame per node that has been entered but not yet left.
-///
-/// A frame records whether everything below that node permits it to be a CSE candidate. A node
-/// that cannot take part clears its parent's frame, which propagates the `AND` up the lineage.
-/// For instance, in a group_by we only want to use elementwise operations in cse:
-/// - `(col("a") * 2).sum(), (col("a") * 2)` -> we want to do `col("a") * 2` on a `with_columns`
-/// - `col("a").sum() * col("a").sum()` -> we don't want `sum` to run on `with_columns`
-///   as that doesn't have groups context, so `sum` clears the frame of the enclosing `binary`.
+/// One frame per active node; `false` means its subtree was invalidated.
 type ValidityStack = Vec<bool>;
 
 fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) -> bool {
@@ -96,29 +98,7 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) 
     }
 }
 
-/// Records a [`CanonicalExprId`] for every valid CSE candidate.
-///
-/// # Entering a node
-/// `pre_visit` pushes a [`ValidityStack`] frame for the node, or invalidates the parent and
-/// stops descending if the node cannot take part in cse at all.
-/// # Leaving a node
-/// `post_visit` pops the node's own frame. That frame tells us whether the node's subtree
-/// permits it to be a CSE candidate. If the node itself cannot take part, it invalidates the
-/// parent's frame in turn.
-//
-// # Example (this is not a docstring as clippy complains about spacing)
-// In a group_by, `col("a").sum() * 2` must not be extracted, because `sum` needs the group
-// context. Frames are listed innermost-last.
-//
-// function-called              frames        role      effect
-// pre-visit:  binary: *        [T]           -         push a frame
-// pre-visit:  sum              [T, T]        -         push a frame
-// pre-visit:  col(a)           [T, T, T]     -         push a frame
-// post-visit: col(a)           [T, T]        member    pop; may take part, parent untouched
-// post-visit: sum              [F]           refuse    pop; invalidates the parent's frame
-// pre-visit:  literal 2        [F, T]        -         push a frame
-// post-visit: literal 2        [F]           member    pop; may take part, parent untouched
-// post-visit: binary: *        []            -         pop; subtree invalid, not a candidate
+/// Counts valid CSE candidates while propagating subtree validity to their ancestors.
 struct ExprCandidateVisitor<'a> {
     canonical_map: &'a mut CanonicalExprMap,
     se_count: &'a mut SubExprCount,
@@ -146,77 +126,62 @@ impl ExprCandidateVisitor<'_> {
         }
     }
 
-    /// Record that the enclosing node's subtree cannot be a CSE candidate.
-    ///
-    /// A no-op at the root of an expression.
+    /// Invalidates the enclosing node, if any.
     fn invalidate_parent(&mut self) {
         if let Some(frame) = self.validity_stack.last_mut() {
             *frame = false;
         }
     }
+}
 
-    /// return `None` -> node is accepted
-    /// return `Some(_)` node is not accepted and apply the given recursion operation
-    /// `Some(_, true)` don't accept this node, but can be a member of a cse.
-    /// `Some(_,  false)` don't accept this node, and don't allow as a member of a cse.
-    fn accept_node_post_visit(&self, ae: &AExpr) -> Accepted {
-        match ae {
-            // window expressions should `evaluate_on_groups`, not `evaluate`
-            // so we shouldn't cache the children as they are evaluated incorrectly
-            #[cfg(feature = "dynamic_group_by")]
-            AExpr::Rolling { .. } => REFUSE_SKIP,
-            AExpr::Over { .. } => REFUSE_SKIP,
-            // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
-            // TODO! Add a typed null
-            AExpr::Literal(LiteralValue::Scalar(sc)) if sc.is_null() => REFUSE_NO_MEMBER,
-            AExpr::Literal(s) => {
-                match s {
-                    LiteralValue::Series(s) => {
-                        let dtype = s.dtype();
+/// Classifies how a visited node may participate in CSE.
+fn classify(ae: &AExpr, is_group_by: bool) -> NodeRole {
+    match ae {
+        // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
+        // TODO! Add a typed null
+        AExpr::Literal(LiteralValue::Scalar(sc)) if sc.is_null() => NodeRole::Refuse,
+        AExpr::Literal(LiteralValue::Series(s)) => {
+            let dtype = s.dtype();
 
-                        // Object and nested types are harder to hash and compare.
-                        let allow = !(dtype.is_nested() | dtype.is_object());
+            // Object and nested types are harder to hash and compare.
+            let allow = !(dtype.is_nested() | dtype.is_object());
 
-                        if s.len() < CHEAP_SERIES_HASH_LIMIT && allow {
-                            REFUSE_ALLOW_MEMBER
-                        } else {
-                            REFUSE_NO_MEMBER
-                        }
-                    },
-                    _ => REFUSE_ALLOW_MEMBER,
+            if s.len() < CHEAP_SERIES_HASH_LIMIT && allow {
+                NodeRole::Member
+            } else {
+                NodeRole::Refuse
+            }
+        },
+        AExpr::Literal(_) => NodeRole::Member,
+        AExpr::Column(_) => NodeRole::Member,
+        AExpr::Len => {
+            if is_group_by {
+                NodeRole::Refuse
+            } else {
+                NodeRole::Member
+            }
+        },
+        ae if is_inherently_nondeterministic_excluding_udfs_top_level(ae) => NodeRole::Refuse,
+        #[cfg(feature = "rolling_window")]
+        AExpr::Function {
+            function: IRFunctionExpr::RollingExpr { .. },
+            ..
+        } => NodeRole::Refuse,
+        _ => {
+            // Group-by temporaries are evaluated before aggregation, so only elementwise
+            // expressions have the correct length.
+            if is_group_by {
+                if !ae.is_elementwise_top_level() {
+                    return NodeRole::Refuse;
                 }
-            },
-            AExpr::Column(_) => REFUSE_ALLOW_MEMBER,
-            AExpr::Len => {
-                if self.is_group_by {
-                    REFUSE_NO_MEMBER
-                } else {
-                    REFUSE_ALLOW_MEMBER
+                match ae {
+                    AExpr::Cast { .. } => NodeRole::Member,
+                    _ => NodeRole::Candidate,
                 }
-            },
-            ae if is_inherently_nondeterministic_excluding_udfs_top_level(ae) => REFUSE_NO_MEMBER,
-            #[cfg(feature = "rolling_window")]
-            AExpr::Function {
-                function: IRFunctionExpr::RollingExpr { .. },
-                ..
-            } => REFUSE_NO_MEMBER,
-            _ => {
-                // During aggregation we only store elementwise operation in the state
-                // other operations we cannot add to the state as they have the output size of the
-                // groups, not the original dataframe
-                if self.is_group_by {
-                    if !ae.is_elementwise_top_level() {
-                        return REFUSE_NO_MEMBER;
-                    }
-                    match ae {
-                        AExpr::Cast { .. } => REFUSE_ALLOW_MEMBER,
-                        _ => ACCEPT,
-                    }
-                } else {
-                    ACCEPT
-                }
-            },
-        }
+            } else {
+                NodeRole::Candidate
+            }
+        },
     }
 }
 
@@ -250,24 +215,18 @@ impl Visitor for ExprCandidateVisitor<'_> {
         arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
         let ae = node.to_aexpr(arena);
-
         let subtree_is_valid = self.validity_stack.pop().unwrap();
 
-        if !subtree_is_valid {
+        let role = classify(ae, self.is_group_by);
+
+        if !subtree_is_valid || !role.permits_enclosing() {
             self.invalidate_parent();
-            return Ok(VisitRecursion::Continue);
         }
 
-        // If we don't store this node we only record whether the parent may still take part.
-        if let Some((recurse, local_is_valid)) = self.accept_node_post_visit(ae) {
-            if !local_is_valid {
-                self.invalidate_parent();
-            }
-            return Ok(recurse);
+        if subtree_is_valid && role == NodeRole::Candidate {
+            let id = self.canonical_map.resolve(node.node(), arena);
+            *self.se_count.entry(id).or_insert(0) += 1;
         }
-
-        let id = self.canonical_map.resolve(node.node(), arena);
-        *self.se_count.entry(id).or_insert(0) += 1;
 
         Ok(VisitRecursion::Continue)
     }
@@ -373,8 +332,6 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         mut node: Self::Node,
         arena: &mut Self::Arena,
     ) -> PolarsResult<Self::Node> {
-        // `mutate` is only reached through `MutateAndStop`, so this is the very node `pre_visit`
-        // accepted, and it still carries its original arena node.
         let (id, count) = self
             .candidate(node.node())
             .expect("mutated node was not a CSE candidate");
