@@ -3469,6 +3469,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         target: str | pyiceberg.table.Table,
         *,
         mode: Literal["append", "overwrite"],
+        snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
         | None = None,
@@ -3490,6 +3491,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             - If 'append', will add new data.
             - If 'overwrite', will replace table with new data.
+        snapshot_properties
+            Custom properties to add to the Iceberg snapshot summary.
         catalog
             PyIceberg catalog to load the table from if the provided `target`
             was a table identifier.
@@ -3509,6 +3512,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sink_state = IcebergSinkState.new(
             target,
             mode=mode,
+            snapshot_properties=snapshot_properties,
             catalog=catalog,
             storage_options=storage_options,
         )
