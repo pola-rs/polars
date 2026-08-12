@@ -107,6 +107,7 @@ nav:
     - Releases:
       - Upgrade guides:
         - releases/upgrade/index.md
+        - releases/upgrade/2.md
         - releases/upgrade/1.md
         - releases/upgrade/0.20.md
         - releases/upgrade/0.19.md
