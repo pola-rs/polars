@@ -366,3 +366,41 @@ def test_ewm_methods(
             ewm_var_pl = s.ewm_var(bias=bias, **pl_params).fill_nan(None)
             ewm_var_pd = pl.Series(p.ewm(**pd_params).var(bias=bias))
             assert_series_equal(ewm_var_pl, ewm_var_pd, abs_tol=1e-07)
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Date, pl.Datetime("us"), pl.Time, pl.Duration("us")],
+)
+def test_ewm_mean_std_schema_temporal_28564(dtype: pl.DataType) -> None:
+    # The ewm kernels reduce over the physical representation, so temporal input
+    # produces a float rather than a temporal value.
+    lf = pl.LazyFrame({"a": pl.Series([1, 2, 3]).cast(dtype)}).select(
+        mean=pl.col("a").ewm_mean(alpha=0.5),
+        std=pl.col("a").ewm_std(alpha=0.5),
+    )
+    schema = lf.collect_schema()
+    assert schema["mean"] == pl.Float64
+    assert schema["std"] == pl.Float64
+    assert schema == lf.collect().schema
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Date, pl.Datetime("us"), pl.Time],
+)
+def test_ewm_var_schema_temporal_28564(dtype: pl.DataType) -> None:
+    # `Duration` is excluded: `ewm_var` rejects it at plan time already.
+    lf = pl.LazyFrame({"a": pl.Series([1, 2, 3]).cast(dtype)}).select(
+        pl.col("a").ewm_var(alpha=0.5)
+    )
+    assert lf.collect_schema()["a"] == pl.Float64
+    assert lf.collect_schema() == lf.collect().schema
+
+
+def test_ewm_sum_schema_temporal_28564() -> None:
+    lf = pl.LazyFrame({"a": pl.Series([1, 2, 3]).cast(pl.Date)}).select(
+        pl.col("a").ewm_sum(alpha=0.5)
+    )
+    assert lf.collect_schema()["a"] == pl.Float64
+    assert lf.collect_schema() == lf.collect().schema

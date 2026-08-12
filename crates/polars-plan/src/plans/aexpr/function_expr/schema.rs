@@ -65,8 +65,9 @@ impl IRFunctionExpr {
                 use IRRollingFunction::*;
                 match function {
                     Min | Max => mapper.with_same_dtype(),
-                    Mean | Quantile | Std => mapper.moment_dtype(),
-                    Var => mapper.var_dtype(),
+                    Mean | Quantile => mapper.moment_dtype(),
+                    Std => mapper.moment_dtype().map(temporal_to_float),
+                    Var => mapper.var_dtype().map(temporal_to_float),
                     Sum => mapper.sum_dtype(),
                     Rank => match options.fn_params {
                         Some(RollingFnParams::Rank {
@@ -109,8 +110,9 @@ impl IRFunctionExpr {
                 use IRRollingFunctionBy::*;
                 match function_by {
                     MinBy | MaxBy => mapper.with_same_dtype(),
-                    MeanBy | QuantileBy | StdBy => mapper.moment_dtype(),
-                    VarBy => mapper.var_dtype(),
+                    MeanBy | QuantileBy => mapper.moment_dtype(),
+                    StdBy => mapper.moment_dtype().map(temporal_to_float),
+                    VarBy => mapper.var_dtype().map(temporal_to_float),
                     SumBy => mapper.sum_dtype(),
                     RankBy => match options.fn_params {
                         Some(RollingFnParams::Rank {
@@ -428,17 +430,23 @@ impl IRFunctionExpr {
                 f
             }),
             #[cfg(feature = "ewma")]
-            EwmMean { .. } => mapper.map_numeric_to_float_dtype(true),
+            EwmMean { .. } => mapper
+                .map_numeric_to_float_dtype(true)
+                .map(temporal_to_float),
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma")]
-            EwmSum { .. } => mapper.map_numeric_to_float_dtype(true),
+            EwmSum { .. } => mapper
+                .map_numeric_to_float_dtype(true)
+                .map(temporal_to_float),
             #[cfg(feature = "ewma_by")]
             EwmSumBy { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma")]
-            EwmStd { .. } => mapper.map_numeric_to_float_dtype(true),
+            EwmStd { .. } => mapper
+                .map_numeric_to_float_dtype(true)
+                .map(temporal_to_float),
             #[cfg(feature = "ewma")]
-            EwmVar { .. } => mapper.var_dtype(),
+            EwmVar { .. } => mapper.var_dtype().map(temporal_to_float),
             #[cfg(feature = "replace")]
             Replace => mapper.with_same_dtype(),
             #[cfg(feature = "replace")]
@@ -482,6 +490,20 @@ impl IRFunctionExpr {
             _ => false,
         }
     }
+}
+
+/// Coerce a temporal dtype to `Float64`.
+///
+/// Reductions such as `rolling_std` and `ewm_mean` compute over the physical
+/// representation of their input, so temporal input yields a plain float rather
+/// than a temporal value: there is no meaningful standard deviation *as a
+/// `Date`*. `moment_dtype` keeps the temporal type because it also serves
+/// `mean` and `median`, where that is the correct result.
+fn temporal_to_float(mut field: Field) -> Field {
+    if field.dtype().is_temporal() {
+        field.coerce(DataType::Float64);
+    }
+    field
 }
 
 pub struct FieldsMapper<'a> {

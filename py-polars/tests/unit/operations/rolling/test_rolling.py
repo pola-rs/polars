@@ -2449,3 +2449,43 @@ def test_rolling_rank_min_samples_28102() -> None:
     assert_series_equal(
         out, pl.Series("a", [None, None, None, 3, 3], dtype=pl.get_index_type())
     )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Date, pl.Datetime("us"), pl.Time, pl.Duration("us")],
+)
+def test_rolling_std_schema_temporal_28564(dtype: PolarsDataType) -> None:
+    # `rolling_std` reduces over the physical representation, so temporal input
+    # produces a float rather than a temporal value.
+    lf = pl.LazyFrame({"a": pl.Series([1, 2, 3]).cast(dtype)}).select(
+        pl.col("a").rolling_std(2)
+    )
+    assert lf.collect_schema()["a"] == pl.Float64
+    assert lf.collect_schema() == lf.collect().schema
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [pl.Date, pl.Datetime("us"), pl.Time],
+)
+def test_rolling_var_schema_temporal_28564(dtype: PolarsDataType) -> None:
+    # `Duration` is excluded: `rolling_var` rejects it at plan time already.
+    lf = pl.LazyFrame({"a": pl.Series([1, 2, 3]).cast(dtype)}).select(
+        pl.col("a").rolling_var(2)
+    )
+    assert lf.collect_schema()["a"] == pl.Float64
+    assert lf.collect_schema() == lf.collect().schema
+
+
+def test_rolling_std_var_by_schema_temporal_28564() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": pl.Series([1, 2, 3]).cast(pl.Date),
+            "t": pl.Series([1, 2, 3]).cast(pl.Datetime("us")),
+        }
+    ).select(
+        std=pl.col("a").rolling_std_by("t", "2d"),
+        var=pl.col("a").rolling_var_by("t", "2d"),
+    )
+    assert lf.collect_schema() == lf.collect().schema
