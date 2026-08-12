@@ -443,6 +443,10 @@ EngineType: TypeAlias = Union[EngineTypeName, "Engine"]
 
 PlanStage: TypeAlias = Literal["ir", "physical"]
 
+# Remote execution on Polars Cloud; mirrors `polars_cloud._typing`
+ScalingMode: TypeAlias = Literal["auto", "single-node", "distributed"]
+PlanTypePreference: TypeAlias = Literal["dot", "plain"]
+
 FileSource: TypeAlias = (
     str
     | Path
@@ -530,6 +534,7 @@ __all__ = [
     "ParametricProfileNames",
     "ParquetCompression",
     "PivotAgg",
+    "PlanTypePreference",
     "PolarsDataType",
     "PolarsIntegerType",
     "PolarsTemporalType",
@@ -540,6 +545,7 @@ __all__ = [
     "RankMethod",
     "Roll",
     "RowTotalsDefinition",
+    "ScalingMode",
     "SchemaDefinition",
     "SchemaDict",
     "SearchSortedSide",

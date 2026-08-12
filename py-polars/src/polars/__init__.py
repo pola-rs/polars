@@ -260,6 +260,7 @@ from polars.lazyframe import (
     InMemoryEngine,
     LazyFrame,
     QueryOptFlags,
+    RemoteEngine,
     StreamingEngine,
 )
 from polars.meta import (
@@ -297,6 +298,7 @@ __all__ = [
     "Engine",
     "GPUEngine",
     "InMemoryEngine",
+    "RemoteEngine",
     "StreamingEngine",
     # schema
     "Schema",

@@ -48,7 +48,7 @@ rt64 = ["polars-runtime-64 == 1.43.2"]
 rtcompat = ["polars-runtime-compat == 1.43.2"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-polars_cloud = ["polars_cloud >= 0.4.0"]
+polars_cloud = ["polars_cloud >= 0.9.0"]
 # Interop
 numpy = ["numpy >= 1.16.0"]
 pandas = ["pandas", "polars[pyarrow]"]
