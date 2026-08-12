@@ -40,6 +40,7 @@ hashbrown = { workspace = true }
 hex = { workspace = true }
 indexmap = { workspace = true }
 memmap = { workspace = true }
+murmur3 = { workspace = true }
 num-traits = { workspace = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }

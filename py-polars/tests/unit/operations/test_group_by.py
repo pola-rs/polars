@@ -2386,88 +2386,122 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
     )
 
 
-@given(
-    df=dataframes(
-        min_size=1,
-        include_cols=[column(name="key", dtype=pl.UInt8, allow_null=False)],
-    ),
-)
+@pytest.mark.slow
 @pytest.mark.parametrize(
     ("expr", "check_order", "returns_scalar", "length_preserving", "is_window"),
     [
-        (pl.Expr.unique, False, False, False, False),
-        (lambda e: e.unique(maintain_order=True), True, False, False, False),
-        (pl.Expr.drop_nans, True, False, False, False),
-        (pl.Expr.drop_nulls, True, False, False, False),
-        (pl.Expr.null_count, True, False, False, False),
-        (pl.Expr.n_unique, True, True, False, False),
-        (
+        pytest.param(pl.Expr.unique, False, False, False, False, id="unique"),
+        pytest.param(
+            lambda e: e.unique(maintain_order=True),
+            True,
+            False,
+            False,
+            False,
+            id="unique_maintain_order",
+        ),
+        pytest.param(pl.Expr.drop_nans, True, False, False, False, id="drop_nans"),
+        pytest.param(pl.Expr.drop_nulls, True, False, False, False, id="drop_nulls"),
+        pytest.param(pl.Expr.null_count, True, False, False, False, id="null_count"),
+        pytest.param(pl.Expr.n_unique, True, True, False, False, id="n_unique"),
+        pytest.param(
             lambda e: e.filter(pl.int_range(0, e.len()) % 3 == 0),
             True,
             False,
             False,
             False,
+            id="filter",
         ),
-        (pl.Expr.shift, True, False, True, False),
-        (pl.Expr.forward_fill, True, False, True, False),
-        (pl.Expr.backward_fill, True, False, True, False),
-        (pl.Expr.reverse, True, False, True, False),
-        (
+        pytest.param(pl.Expr.shift, True, False, True, False, id="shift"),
+        pytest.param(pl.Expr.forward_fill, True, False, True, False, id="forward_fill"),
+        pytest.param(
+            pl.Expr.backward_fill, True, False, True, False, id="backward_fill"
+        ),
+        pytest.param(pl.Expr.reverse, True, False, True, False, id="reverse"),
+        pytest.param(
             lambda e: (pl.int_range(e.len() - e.len(), e.len()) % 3 == 0).any(),
             True,
             True,
             False,
             False,
+            id="any",
         ),
-        (
+        pytest.param(
             lambda e: (pl.int_range(e.len() - e.len(), e.len()) % 3 == 0).all(),
             True,
             True,
             False,
             False,
+            id="all",
         ),
-        (lambda e: e.head(2), True, False, False, False),
-        (pl.Expr.first, True, True, False, False),
-        (pl.Expr.mode, False, False, False, False),
-        (lambda e: e.fill_null(e.first()).over(e), True, False, True, True),
-        (lambda e: e.first().over(e), True, False, True, True),
-        (
+        pytest.param(lambda e: e.head(2), True, False, False, False, id="head"),
+        pytest.param(pl.Expr.first, True, True, False, False, id="first"),
+        pytest.param(pl.Expr.mode, False, False, False, False, id="mode"),
+        pytest.param(
+            lambda e: e.fill_null(e.first()).over(e),
+            True,
+            False,
+            True,
+            True,
+            id="fill_null_over",
+        ),
+        pytest.param(
+            lambda e: e.first().over(e), True, False, True, True, id="first_over"
+        ),
+        pytest.param(
             lambda e: e.fill_null(e.first()).over(e, mapping_strategy="join"),
             True,
             False,
             True,
             True,
+            id="fill_null_over_join",
         ),
-        (
+        pytest.param(
             lambda e: e.fill_null(e.first()).over(e, mapping_strategy="explode"),
             True,
             False,
             False,
             True,
+            id="fill_null_over_explode",
         ),
-        (
+        pytest.param(
             lambda e: e.fill_null(strategy="forward").over([e]),
             True,
             False,
             True,
             True,
+            id="fill_null_forward_over",
         ),
-        (lambda e: e.fill_null(e.first()).over(e, order_by=e), True, False, True, True),
-        (
+        pytest.param(
+            lambda e: e.fill_null(e.first()).over(e, order_by=e),
+            True,
+            False,
+            True,
+            True,
+            id="fill_null_over_order_by",
+        ),
+        pytest.param(
             lambda e: e.fill_null(e.first()).over(e, order_by=e, descending=True),
             True,
             False,
             True,
             True,
+            id="fill_null_over_order_by_descending",
         ),
-        (
+        pytest.param(
             lambda e: e.gather(pl.int_range(0, e.len()).slice(1, 3)),
             True,
             False,
             False,
             False,
+            id="gather",
         ),
     ],
+)
+@given(
+    df=dataframes(
+        min_size=1,
+        include_cols=[column(name="key", dtype=pl.UInt8, allow_null=False)],
+    ),
 )
 def test_grouped_agg_parametric(
     df: pl.DataFrame,
@@ -3025,37 +3059,35 @@ def test_group_by_agg_get_oob_error_26747() -> None:
 
 
 def test_group_by_arg_max_boolean_26978() -> None:
-    # https://github.com/pola-rs/polars/issues/26978
+    def check_result(result: pl.DataFrame) -> None:
+        # max_by doesn't guarantee which tied row is returned, so extract the
+        # actual value and verify it is one of the valid True-indices (2, 3, 4).
+        idx_val = result["index"][0]
+        assert idx_val in {2, 3, 4}
+        assert_frame_equal(
+            result,
+            pl.DataFrame(
+                {
+                    "group": ["A", "A", "A", "A", "A"],
+                    "val": [False, False, True, True, True],
+                    "index": pl.Series([idx_val] * 5, dtype=pl.get_index_type()),
+                }
+            ),
+        )
+
     df = pl.DataFrame(
         {
             "group": ["A"] * 5,
             "val": [False, False, True, True, True],
         }
     )
-
-    result = df.group_by("group").agg(pl.col("val").arg_max())
-    assert_frame_equal(
-        result,
-        pl.DataFrame(
-            {"group": ["A"], "val": pl.Series([2], dtype=pl.get_index_type())}
-        ),
+    check_result(
+        df.with_row_index()
+        .group_by("group")
+        .agg(pl.col("val"), pl.col("index").max_by("val"))
+        .explode("val", empty_as_null=False)
     )
-
-    result = df.with_columns(pl.row_index().max_by("val").over("group"))
-    # max_by doesn't guarantee which tied row is returned, so extract the
-    # actual value and verify it is one of the valid True-indices (2, 3, 4).
-    idx_val = result["index"][0]
-    assert idx_val in {2, 3, 4}
-    assert_frame_equal(
-        result,
-        pl.DataFrame(
-            {
-                "group": ["A", "A", "A", "A", "A"],
-                "val": [False, False, True, True, True],
-                "index": pl.Series([idx_val] * 5, dtype=pl.get_index_type()),
-            }
-        ),
-    )
+    check_result(df.with_columns(pl.row_index().max_by("val").over("group")))
 
 
 def test_structify_keyword_27147() -> None:
@@ -3194,3 +3226,29 @@ def test_group_by_f16_agg_28353(agg: str, args: list[float]) -> None:
     df16 = df64.with_columns(pl.col.x.cast(pl.Float16))
     out16 = df16.group_by("g").agg(getattr(pl.col.x, agg)(*args).cast(pl.Float64))
     assert_frame_equal(out16, out64, check_row_order=False, rel_tol=1e-3, abs_tol=1e-4)
+
+
+@pytest.mark.may_fail_auto_streaming  # n_chunks is an implementation detail for in-memory
+@pytest.mark.parametrize("agg", ["any", "all"])
+@pytest.mark.parametrize("ignore_nulls", [True, False])
+@pytest.mark.parametrize("null_frac", [0.0, 0.3])
+def test_group_by_bool_agg_single_chunk_28684(
+    agg: str, ignore_nulls: bool, null_frac: float
+) -> None:
+    # must be large enough to trigger chunk fragmentation
+    n = 20_000
+    rng = np.random.default_rng(0)
+
+    vals = rng.random(n) < 0.5
+    nulls = rng.random(n) < null_frac
+    b = [None if is_null else bool(v) for v, is_null in zip(vals, nulls, strict=True)]
+    df = pl.DataFrame({"g": np.arange(n), "b": pl.Series(b, dtype=pl.Boolean)})
+
+    out = df.group_by("g", maintain_order=True).agg(
+        getattr(pl.col("b"), agg)(ignore_nulls=ignore_nulls)
+    )
+
+    assert out["b"].n_chunks() == 1
+
+    expected = df["b"] if not ignore_nulls else df["b"].fill_null(agg == "all")
+    assert_series_equal(out["b"], expected, check_names=False)

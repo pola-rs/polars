@@ -178,6 +178,7 @@ def new_iceberg_table(
     *,
     schema: IcebergSchema,
     name: str = "table",
+    properties: dict[str, str] | None = None,
 ) -> tuple[pyiceberg.table.Table, SqlCatalog]:
     catalog = SqlCatalog(
         "default",
@@ -187,7 +188,10 @@ def new_iceberg_table(
     namespace = uuid.uuid4().bytes.hex()
     catalog.create_namespace(namespace)
 
-    return catalog.create_table((namespace, name), schema), catalog
+    return (
+        catalog.create_table((namespace, name), schema, properties=properties or {}),
+        catalog,
+    )
 
 
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
@@ -544,6 +548,125 @@ def test_sink_iceberg_all_types(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("partitioned_paths", "custom_data_path"),
+    [
+        pytest.param(None, False, id="defaults"),
+        pytest.param(False, False, id="partitioned-paths-false"),
+        pytest.param(True, True, id="custom-data-path-trailing-slash"),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_iceberg_object_storage(
+    tmp_path: Path,
+    *,
+    partitioned_paths: bool | None,
+    custom_data_path: bool,
+) -> None:
+    from pyiceberg.table import TableProperties
+    from pyiceberg.table.locations import load_location_provider
+
+    properties = {TableProperties.OBJECT_STORE_ENABLED: "true"}
+    if partitioned_paths is not None:
+        properties[TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS] = (
+            "true" if partitioned_paths else "false"
+        )
+    if custom_data_path:
+        data_path = format_file_uri_iceberg(tmp_path / "custom-data")
+        properties[TableProperties.WRITE_DATA_PATH] = f"{data_path}/"
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+        properties=properties,
+    )
+
+    effective_partitioned_paths = (
+        TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT
+        if partitioned_paths is None
+        else partitioned_paths
+    )
+    location_provider = load_location_provider(
+        tbl.metadata.location, tbl.metadata.properties
+    )
+
+    def assert_data_file_paths_match_location_provider() -> list[str]:
+        file_paths = [task.file.file_path for task in tbl.scan().plan_files()]
+        assert len(file_paths) == len(set(file_paths))
+
+        for file_path in file_paths:
+            final_path_component = file_path.rsplit("/", 1)[-1]
+            file_name = (
+                final_path_component
+                if effective_partitioned_paths
+                else final_path_component.split("-", 1)[1]
+            )
+            assert file_path == location_provider.new_data_location(file_name)
+
+        return file_paths
+
+    pl.LazyFrame({"a": [1, 2]}).sink_iceberg(tbl, mode="append")
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("a"), pl.DataFrame({"a": [1, 2]})
+    )
+    first_append_paths = assert_data_file_paths_match_location_provider()
+    assert len(first_append_paths) == 1
+
+    pl.LazyFrame({"a": [3]}).sink_iceberg(tbl, mode="append")
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("a"), pl.DataFrame({"a": [1, 2, 3]})
+    )
+    second_append_paths = assert_data_file_paths_match_location_provider()
+    assert len(second_append_paths) == 2
+    assert set(first_append_paths) < set(second_append_paths)
+
+    pl.LazyFrame({"a": [4]}).sink_iceberg(tbl, mode="overwrite")
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), pl.DataFrame({"a": [4]}))
+    overwrite_paths = assert_data_file_paths_match_location_provider()
+    assert len(overwrite_paths) == 1
+    assert set(overwrite_paths).isdisjoint(second_append_paths)
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_object_storage_property_update(tmp_path: Path) -> None:
+    from pyiceberg.table import TableProperties
+    from pyiceberg.table.locations import load_location_provider
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+        properties={TableProperties.OBJECT_STORE_ENABLED: "true"},
+    )
+
+    pl.LazyFrame({"a": [1]}).sink_iceberg(tbl, mode="append")
+    [first_path] = [task.file.file_path for task in tbl.scan().plan_files()]
+    first_file_name = first_path.rsplit("/", 1)[-1]
+    initial_location_provider = load_location_provider(
+        tbl.metadata.location, tbl.metadata.properties
+    )
+    assert first_path == initial_location_provider.new_data_location(first_file_name)
+
+    with tbl.transaction() as tx:
+        tx.set_properties(
+            {TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS: "false"}
+        )
+
+    pl.LazyFrame({"a": [2]}).sink_iceberg(tbl, mode="append")
+    file_paths = {task.file.file_path for task in tbl.scan().plan_files()}
+    assert len(file_paths) == 2
+    assert first_path in file_paths
+    [second_path] = file_paths - {first_path}
+    second_file_name = second_path.rsplit("/", 1)[-1].split("-", 1)[1]
+    updated_location_provider = load_location_provider(
+        tbl.metadata.location, tbl.metadata.properties
+    )
+    assert second_path == updated_location_provider.new_data_location(second_file_name)
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("a"), pl.DataFrame({"a": [1, 2]})
+    )
+
+
 @pytest.mark.write_disk
 def test_sink_iceberg_raises_on_static_table(tmp_path: Path) -> None:
     tbl, _ = new_iceberg_table(
@@ -662,7 +785,9 @@ def test_sink_iceberg_internal_path_provider(tmp_path: Path) -> None:
     df.lazy().sink_parquet(
         pl.PartitionBy(
             tmp_path / "max-rows",
-            file_path_provider=PlIcebergPathProviderConfig(),
+            file_path_provider=PlIcebergPathProviderConfig(
+                object_storage_partitioned_paths=True
+            ),
             max_rows_per_file=1,
         )
     )
@@ -673,9 +798,11 @@ def test_sink_iceberg_internal_path_provider(tmp_path: Path) -> None:
     )
 
     assert (
-        _expand_paths(tmp_path / "max-rows/**/*0000000[01].parquet")
+        _expand_paths(tmp_path / "max-rows/**/*.parquet")
         .with_columns(
-            part_prefix=pl.col("path").str.extract(r"/(\w{32})0000000[01]\.parquet$"),
+            part_prefix=pl.col("path").str.extract(
+                r"/[01]{4}/[01]{4}/[01]{4}/[01]{8}/(\w{32})0000000[01]\.parquet$"
+            ),
         )
         .select(
             (pl.col("part_prefix").len() == 2)

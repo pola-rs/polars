@@ -80,13 +80,12 @@ impl InputHead {
 
     async fn take(&mut self, len: usize) -> DataFrame {
         let columns: Vec<Column> = if self.is_broadcast.unwrap() && self.shape() != (0, 0) {
-            self.morsels[0]
+            return self.morsels[0]
                 .df()
                 .await
-                .columns()
-                .iter()
-                .map(|s| s.new_from_index(0, len))
-                .collect()
+                .broadcast_to(len)
+                .unwrap()
+                .into_owned();
         } else if self.total_len > 0 {
             self.total_len -= len;
 

@@ -1,4 +1,3 @@
-use polars_core::prelude::*;
 use polars_ffi::version_0::SeriesExport;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
