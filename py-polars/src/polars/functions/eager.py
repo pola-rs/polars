@@ -274,7 +274,7 @@ def concat(
         lf = lf.sort(by=common_cols, maintain_order=True).select(*output_column_order)
 
         eager = isinstance(elems[0], pl.DataFrame)
-        return lf.collect() if eager else lf  # type: ignore[return-value]
+        return lf._collect_eager() if eager else lf  # type: ignore[return-value]
 
     out: Series | DataFrame | LazyFrame | Expr
 
@@ -589,7 +589,7 @@ def union(
         lf = lf.sort(by=common_cols, maintain_order=False).select(*output_column_order)
 
         eager = isinstance(elems[0], pl.DataFrame)
-        return lf.collect() if eager else lf  # type: ignore[return-value]
+        return lf._collect_eager() if eager else lf  # type: ignore[return-value]
 
     out: Series | DataFrame | LazyFrame | Expr
 
@@ -777,7 +777,7 @@ def merge_sorted(
 
     lf = reduce_balanced(reduce_fn, frames)
     eager = isinstance(elems[0], pl.DataFrame)
-    return lf.collect() if eager else lf  # type: ignore[return-value]
+    return lf._collect_eager() if eager else lf  # type: ignore[return-value]
 
 
 def _alignment_join(
@@ -812,7 +812,7 @@ def _alignment_join(
         by=align_on, descending=descending, maintain_order=True
     )
     if post_align_collect:
-        joined = joined.collect(optimizations=QueryOptFlags.none()).lazy()
+        joined = joined._collect_eager(optimizations=QueryOptFlags.none()).lazy()
     return joined
 
 
@@ -995,4 +995,9 @@ def align_frames(
             f = f.select(select)
         aligned_frames.append(f)
 
-    return F.collect_all(aligned_frames) if eager else aligned_frames  # type: ignore[return-value]
+    if not eager:
+        return aligned_frames  # type: ignore[return-value]
+
+    from polars.functions.lazy import _collect_all_eager
+
+    return _collect_all_eager(aligned_frames)  # type: ignore[return-value]

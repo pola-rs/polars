@@ -2016,6 +2016,22 @@ def arg_sort_by(
     )
 
 
+def _collect_all_eager(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+) -> list[DataFrame]:
+    """
+    `collect_all` for internal, eager work; see :meth:`Engine._collect_eager`.
+
+    Keeps the caller's optimizations: unlike the eager `DataFrame` methods, these
+    queries are ordinary lazy plans that merely have to be materialized here.
+    """
+    return _select_engine("auto")._collect_all_eager(
+        lazy_frames, optimizations=optimizations
+    )
+
+
 @overload
 def collect_all(
     lazy_frames: Iterable[LazyFrame],

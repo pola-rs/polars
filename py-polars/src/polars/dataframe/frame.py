@@ -6357,7 +6357,7 @@ class DataFrame:
         return (
             self.lazy()
             .top_k(k, by=by, reverse=reverse)
-            .collect(
+            ._collect_eager(
                 optimizations=QueryOptFlags(
                     projection_pushdown=False,
                     predicate_pushdown=False,
@@ -6446,7 +6446,7 @@ class DataFrame:
         return (
             self.lazy()
             .bottom_k(k, by=by, reverse=reverse)
-            .collect(
+            ._collect_eager(
                 optimizations=QueryOptFlags(
                     projection_pushdown=False,
                     predicate_pushdown=False,

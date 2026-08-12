@@ -1180,7 +1180,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 else self
             )
             .select(*metric_exprs)
-            .collect()
+            ._collect_eager()
         )
 
         # reshape wide result
@@ -1371,7 +1371,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if optimized:
             optimizations = optimizations.__copy__()
-            optimizations._pyoptflags.streaming = engine_.name == "streaming"
+            optimizations._pyoptflags.streaming = engine_.plan_engine == "streaming"
             ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
             if format == "tree":
                 return ldf.describe_optimized_plan_tree()
@@ -1564,7 +1564,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine_ = _select_engine(engine)
 
         optimizations = optimizations.__copy__()
-        optimizations._pyoptflags.streaming = engine_.name == "streaming"
+        optimizations._pyoptflags.streaming = engine_.plan_engine == "streaming"
         _ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
         if plan_stage is None:
@@ -1579,7 +1579,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if plan_stage == "ir":
             dot = _ldf.to_dot(optimized)
         elif plan_stage == "physical":
-            if engine_.name == "streaming":
+            if engine_.plan_engine == "streaming":
                 dot = _ldf.to_dot_streaming_phys(optimized)
             else:
                 dot = _ldf.to_dot(optimized)
@@ -2222,6 +2222,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return df, timings
 
+    def _collect_eager(
+        self,
+        *,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        **kwargs: Any,
+    ) -> DataFrame:
+        """
+        Collect an internal query whose result must be a local `DataFrame`.
+
+        Backs eager entry points that do not go through `QueryOptFlags._eager()`,
+        such as the `read_*` functions. See :meth:`Engine._collect_eager`.
+        """
+        engine = _select_engine("auto")
+        return engine._collect_eager(  # type: ignore[return-value]
+            self, optimizations=optimizations, **kwargs
+        )
+
     @unstable()
     def execute(
         self,
@@ -2563,7 +2580,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
 
-        return _select_engine(engine).collect(  # type: ignore[return-value]
+        engine_ = _select_engine(engine)
+        collect = (
+            engine_._collect_eager
+            if optimizations._pyoptflags.eager
+            else engine_.collect
+        )
+        return collect(  # type: ignore[return-value]
             self,
             optimizations=optimizations,
             background=background,
@@ -9950,4 +9973,4 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             lf = lf.select(columns)
 
-        return lf.collect()._to_metadata(stats=stats)
+        return lf._collect_eager()._to_metadata(stats=stats)

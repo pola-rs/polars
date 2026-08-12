@@ -108,6 +108,11 @@ class Engine(ABC):
     def name(self) -> str:
         """Name of the engine, as accepted by the `engine` argument."""
 
+    @property
+    def plan_engine(self) -> str:
+        """Name of the engine whose plan `explain` and `show_graph` should render."""
+        return self.name
+
     def __repr__(self) -> str:
         return f"{type(self).__name__}()"
 
@@ -148,6 +153,33 @@ class Engine(ABC):
         Not defaulted to ``collect``, which would force exactly the transfer this
         method exists to avoid.
         """
+
+    def _collect_eager(
+        self,
+        lf: LazyFrame,
+        *,
+        optimizations: QueryOptFlags,
+        background: bool = False,
+        post_opt_callback: PostOptCallback | None = None,
+    ) -> DataFrame | InProcessQuery:
+        """
+        Like `collect`, but used exclusively to implement eager `DataFrame` methods.
+
+        Should operate locally, because we do not want to do a remote call for
+        `DataFrame` methods implemented as `.lazy()....collect()`
+        """
+        return self.collect(
+            lf,
+            optimizations=optimizations,
+            background=background,
+            post_opt_callback=post_opt_callback,
+        )
+
+    def _collect_all_eager(
+        self, lfs: Iterable[LazyFrame], *, optimizations: QueryOptFlags
+    ) -> list[DataFrame]:
+        """`_collect_eager` for several queries; see :func:`polars.collect_all`."""
+        return self.collect_all(lfs, optimizations=optimizations)
 
     def collect_async(
         self,
@@ -213,6 +245,7 @@ class Engine(ABC):
         optimizations: QueryOptFlags,
         _sinked_paths_callback: SinkedPathsCallback | None,
     ) -> LazyFrame | None:
+        """See :meth:`polars.LazyFrame.sink_parquet`."""
         msg = f"`sink_parquet` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
 
@@ -234,6 +267,7 @@ class Engine(ABC):
         optimizations: QueryOptFlags,
         _record_batch_statistics: bool,
     ) -> LazyFrame | None:
+        """See :meth:`polars.LazyFrame.sink_ipc`."""
         msg = f"`sink_ipc` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
 
@@ -268,6 +302,7 @@ class Engine(ABC):
         lazy: bool,
         optimizations: QueryOptFlags,
     ) -> LazyFrame | None:
+        """See :meth:`polars.LazyFrame.sink_csv`."""
         msg = f"`sink_csv` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
 
@@ -288,6 +323,7 @@ class Engine(ABC):
         lazy: bool,
         optimizations: QueryOptFlags,
     ) -> LazyFrame | None:
+        """See :meth:`polars.LazyFrame.sink_ndjson`."""
         msg = f"`sink_ndjson` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
 
@@ -301,14 +337,13 @@ class Engine(ABC):
         lazy: bool,
         optimizations: QueryOptFlags,
     ) -> LazyFrame | None:
+        """See :meth:`polars.LazyFrame.sink_batches`."""
         msg = f"`sink_batches` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
 
 
 class _LocalEngine(Engine):
-    """
-    Base class for engines that execute in this process, through `PyLazyFrame`.
-    """
+    """Base class for engines executing in this process, through `PyLazyFrame`."""
 
     def execute(self, lf: LazyFrame, *, optimizations: QueryOptFlags) -> QueryResult:
         df = self.collect(lf, optimizations=optimizations)
@@ -752,14 +787,20 @@ class _AutoEngine(_LocalEngine):
 
 
 class InMemoryEngine(_LocalEngine):
+    """The in-memory engine."""
+
     @property
     def name(self) -> str:
+        """Name of the engine."""
         return "in-memory"
 
 
 class StreamingEngine(_LocalEngine):
+    """The streaming engine."""
+
     @property
     def name(self) -> str:
+        """Name of the engine."""
         return "streaming"
 
 
@@ -817,6 +858,7 @@ class GPUEngine(_LocalEngine):
 
     @property
     def name(self) -> str:
+        """Name of the engine."""
         return "gpu"
 
     def _post_opt_callback(

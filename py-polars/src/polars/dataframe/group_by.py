@@ -218,7 +218,7 @@ class GroupBy:
         )
         if self.predicates:
             lgb = lgb.having(self.predicates)
-        groups_df = lgb.agg(F.first().alias(temp_col)).collect(
+        groups_df = lgb.agg(F.first().alias(temp_col))._collect_eager(
             optimizations=QueryOptFlags.none()
         )
 
@@ -378,7 +378,7 @@ class GroupBy:
         return (
             self._lgb()
             .agg(*aggs, **named_aggs)
-            .collect(optimizations=QueryOptFlags.none())
+            ._collect_eager(optimizations=QueryOptFlags.none())
         )
 
     def map_groups(self, function: Callable[[DataFrame], DataFrame]) -> DataFrame:
@@ -504,7 +504,7 @@ class GroupBy:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self._lgb().head(n).collect(optimizations=QueryOptFlags._eager())
+        return self._lgb().head(n)._collect_eager(optimizations=QueryOptFlags._eager())
 
     def tail(self, n: int = 5) -> DataFrame:
         """
@@ -553,7 +553,7 @@ class GroupBy:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self._lgb().tail(n).collect(optimizations=QueryOptFlags.none())
+        return self._lgb().tail(n)._collect_eager(optimizations=QueryOptFlags.none())
 
     def all(self) -> DataFrame:
         """
@@ -995,7 +995,7 @@ class RollingGroupBy:
         if self.predicates:
             lgb = lgb.having(self.predicates)
 
-        groups_df = lgb.agg(F.first().alias(temp_col)).collect(
+        groups_df = lgb.agg(F.first().alias(temp_col))._collect_eager(
             optimizations=QueryOptFlags.none()
         )
 
@@ -1059,7 +1059,7 @@ class RollingGroupBy:
         if self.predicates:
             group_by = group_by.having(self.predicates)
 
-        return group_by.agg(*aggs, **named_aggs).collect(
+        return group_by.agg(*aggs, **named_aggs)._collect_eager(
             optimizations=QueryOptFlags.none()
         )
 
@@ -1108,7 +1108,7 @@ class RollingGroupBy:
                 group_by=self.group_by,
             )
             .map_groups(function, schema)
-            .collect(optimizations=QueryOptFlags.none())
+            ._collect_eager(optimizations=QueryOptFlags.none())
         )
 
 
@@ -1185,7 +1185,7 @@ class DynamicGroupBy:
         )
         if self.predicates:
             lgb = lgb.having(self.predicates)
-        groups_df = lgb.agg(F.first().alias(temp_col)).collect(
+        groups_df = lgb.agg(F.first().alias(temp_col))._collect_eager(
             optimizations=QueryOptFlags.none()
         )
 
@@ -1257,7 +1257,7 @@ class DynamicGroupBy:
         if self.predicates:
             group_by = group_by.having(self.predicates)
 
-        return group_by.agg(*aggs, **named_aggs).collect(
+        return group_by.agg(*aggs, **named_aggs)._collect_eager(
             optimizations=QueryOptFlags.none()
         )
 
@@ -1309,7 +1309,7 @@ class DynamicGroupBy:
                 start_by=self.start_by,
             )
             .map_groups(function, schema)
-            .collect(optimizations=QueryOptFlags.none())
+            ._collect_eager(optimizations=QueryOptFlags.none())
         )
 
 
