@@ -101,6 +101,11 @@ impl CanonicalExprMap {
         self.eq_classes[id].is_nondeterministic_excluding_udfs
     }
 
+    /// Returns the id of `node` if it was already resolved, without resolving it.
+    pub fn cached_id(&self, node: Node) -> Option<CanonicalExprId> {
+        self.cache.get(&node).copied()
+    }
+
     /// Returns the id of `node`, resolving its children recursively.
     pub fn resolve(&mut self, node: Node, expr_arena: &Arena<AExpr>) -> CanonicalExprId {
         if let Some(id) = self.cache.get(&node) {
