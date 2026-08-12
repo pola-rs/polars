@@ -60,8 +60,8 @@ fn cse_column_name(id: CanonicalExprId) -> PlSmallStr {
     format_pl_smallstr!("{}{:#x}", CSE_REPLACED, id.as_u64())
 }
 
-/// Canonical expression id maps to Expr Node and count.
-type SubExprCount = PlIndexMap<CanonicalExprId, (Node, u32)>;
+/// Canonical expression id maps to the number of occurrences in the current plan node.
+type SubExprCount = PlIndexMap<CanonicalExprId, u32>;
 
 #[derive(Debug)]
 enum VisitRecord {
@@ -315,7 +315,7 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         // is available for the parent expression.
         self.visit_stack.push(VisitRecord::SubExprValid(true));
 
-        let (_, se_count) = self.se_count.entry(id).or_insert((node.node(), 0));
+        let se_count = self.se_count.entry(id).or_insert(0);
 
         *se_count += 1;
         self.has_sub_expr |= *se_count > 1;
@@ -358,8 +358,8 @@ impl<'a> CommonSubExprRewriter<'a> {
     /// CSE candidate for the current plan node.
     fn candidate(&self, node: Node) -> Option<(CanonicalExprId, u32)> {
         let id = self.canonical_map.cached_id(node)?;
-        let (_, count) = self.sub_expr_map.get(&id)?;
-        Some((id, *count))
+        let count = *self.sub_expr_map.get(&id)?;
+        Some((id, count))
     }
 }
 
@@ -627,13 +627,13 @@ impl CommonSubExprOptimizer {
             }
             // Add the tmp columns
             for &id in self.replaced_identifiers.iter() {
-                let (node, _count) = self.se_count.get(&id).unwrap();
+                let node = self.canonical_map.representative(id);
 
                 // Avoid accidentally broadcasting <scalar literal>.<elementwise_ops..>
                 if self.element_wise_select_only
                     && !matches!(
                         aexpr_projection_height_rec(
-                            *node,
+                            node,
                             expr_arena,
                             &mut self.nodes_scratch,
                             &mut self.heights_scratch
@@ -644,7 +644,7 @@ impl CommonSubExprOptimizer {
                     return Ok(None);
                 }
 
-                let out_e = ExprIR::new(*node, OutputName::Alias(cse_column_name(id)));
+                let out_e = ExprIR::new(node, OutputName::Alias(cse_column_name(id)));
                 new_expr.push(out_e)
             }
             let expr = ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.len());
