@@ -16,7 +16,7 @@ polars-async = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-error = { workspace = true }
-polars-io = { workspace = true, features = ["ipc"] }
+polars-io = { workspace = true, features = ["ipc", "ipc_streaming"] }
 polars-utils = { workspace = true, features = ["sysinfo"] }
 rand = { workspace = true }
 rand_distr = { workspace = true }

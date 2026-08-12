@@ -1,6 +1,7 @@
 use polars_core::error::{PolarsResult, polars_bail};
 use polars_core::prelude::*;
 use polars_plan::plans::IRTemporalFunction;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
@@ -136,55 +137,31 @@ pub(super) fn datetime(
     let microsecond = &s[6];
     let ambiguous = &s[7];
 
-    let max_len = s.iter().map(|s| s.len()).max().unwrap();
+    let len = broadcast_len(s.iter())?;
 
-    let mut year = year.cast(&DataType::Int32)?;
-    if year.len() < max_len {
-        year = year.new_from_index(0, max_len)
-    }
+    let year = year.cast(&DataType::Int32)?.broadcast_owned_to(len)?;
     let year = year.i32()?;
 
-    let mut month = month.cast(&DataType::Int8)?;
-    if month.len() < max_len {
-        month = month.new_from_index(0, max_len);
-    }
+    let month = month.cast(&DataType::Int8)?.broadcast_owned_to(len)?;
     let month = month.i8()?;
 
-    let mut day = day.cast(&DataType::Int8)?;
-    if day.len() < max_len {
-        day = day.new_from_index(0, max_len);
-    }
+    let day = day.cast(&DataType::Int8)?.broadcast_owned_to(len)?;
     let day = day.i8()?;
 
-    let mut hour = hour.cast(&DataType::Int8)?;
-    if hour.len() < max_len {
-        hour = hour.new_from_index(0, max_len);
-    }
+    let hour = hour.cast(&DataType::Int8)?.broadcast_owned_to(len)?;
     let hour = hour.i8()?;
 
-    let mut minute = minute.cast(&DataType::Int8)?;
-    if minute.len() < max_len {
-        minute = minute.new_from_index(0, max_len);
-    }
+    let minute = minute.cast(&DataType::Int8)?.broadcast_owned_to(len)?;
     let minute = minute.i8()?;
 
-    let mut second = second.cast(&DataType::Int8)?;
-    if second.len() < max_len {
-        second = second.new_from_index(0, max_len);
-    }
+    let second = second.cast(&DataType::Int8)?.broadcast_owned_to(len)?;
     let second = second.i8()?;
 
-    let mut nanosecond = microsecond.cast(&DataType::Int32)? * 1_000;
-    if nanosecond.len() < max_len {
-        nanosecond = nanosecond.new_from_index(0, max_len);
-    }
+    let nanosecond = (microsecond.cast(&DataType::Int32)? * 1_000).broadcast_owned_to(len)?;
     let nanosecond = nanosecond.i32()?;
 
-    let mut _ambiguous = ambiguous.cast(&DataType::String)?;
-    if _ambiguous.len() < max_len {
-        _ambiguous = _ambiguous.new_from_index(0, max_len);
-    }
-    let ambiguous = _ambiguous.str()?;
+    let ambiguous = ambiguous.cast(&DataType::String)?.broadcast_owned_to(len)?;
+    let ambiguous = ambiguous.str()?;
 
     let ca = DatetimeChunked::new_from_parts(
         year,

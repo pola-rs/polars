@@ -54,17 +54,15 @@ fn cast_rhs(
             })?;
         }
 
-        if s.len() != length {
+        if allow_broadcast {
+            // broadcast JIT
+            s.broadcast_in_place_to(length)?;
+        } else {
             polars_ensure!(
-                s.len() == 1,
+                s.len() == length || s.len() == 1,
                 ShapeMismatch: "series length {} does not match expected length of {}",
                 s.len(), length
             );
-            if allow_broadcast {
-                // broadcast JIT
-                *s = s.new_from_index(0, length)
-            }
-            // else do nothing
         }
     }
     Ok(())
