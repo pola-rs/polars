@@ -254,7 +254,7 @@ from polars.io.cloud import (
     CredentialProviderFunctionReturn,
     CredentialProviderGCP,
 )
-from polars.lazyframe import GPUEngine, LazyFrame, QueryOptFlags
+from polars.lazyframe import GPUEngine, LazyFrame, QueryOptFlags, StreamingEngine
 from polars.meta import (
     build_info,
     get_index_type,
@@ -288,6 +288,7 @@ __all__ = [
     "Series",
     # Engine configuration
     "GPUEngine",
+    "StreamingEngine",
     # schema
     "Schema",
     # datatype_expr

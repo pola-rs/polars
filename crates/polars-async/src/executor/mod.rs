@@ -1,6 +1,12 @@
 #![allow(clippy::disallowed_types)]
 
+#[cfg(feature = "numa")]
 mod numa;
+
+#[cfg(not(feature = "numa"))]
+#[path = "numa/dummy.rs"]
+mod numa;
+
 mod park_group;
 mod task;
 
@@ -17,7 +23,7 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::{Receiver, Sender};
 use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
 use crossbeam_utils::CachePadded;
-use numa::{NumaRegionId, num_numa_regions};
+use numa::{NumaRegionId, cpu_idx_to_numa_region, num_numa_regions, pin_thread_to_numa_region};
 use park_group::ParkGroup;
 use parking_lot::Mutex;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -26,8 +32,6 @@ use rand::rngs::SmallRng;
 use rand::{Rng, RngExt, SeedableRng};
 use slotmap::SlotMap;
 use task::{Cancellable, DynTask, Runnable};
-
-use crate::executor::numa::{cpu_idx_to_numa_region, pin_thread_to_numa_region};
 
 thread_local! {
     pub static ALLOW_RAYON_THREADS: Cell<bool> = const { Cell::new(true) };

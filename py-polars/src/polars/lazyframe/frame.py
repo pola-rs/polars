@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import warnings
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -98,7 +99,7 @@ from polars.datatypes import (
 from polars.datatypes.group import DataTypeGroup
 from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.interchange.protocol import CompatLevel
-from polars.lazyframe.engine_config import GPUEngine
+from polars.lazyframe.engine_config import GPUEngine, StreamingEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
@@ -188,7 +189,25 @@ _COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
 
 
 def _select_engine(engine: EngineType) -> EngineType:
-    return get_engine_affinity() if engine == "auto" else engine
+    if engine == "auto":
+        return get_engine_affinity()
+    elif isinstance(engine, StreamingEngine):
+        return "streaming"
+    return engine
+
+
+def _engine_monitoring(engine: EngineType) -> bool:
+    """Whether this query should be monitored, registering the observer if so."""
+    monitor = (
+        engine.monitoring
+        if isinstance(engine, StreamingEngine)
+        else os.environ.get("POLARS_QUERY_MONITORING") == "1"
+    )
+    if monitor:
+        import polars._plr as plr
+
+        plr.set_query_monitoring(True)
+    return monitor
 
 
 def _to_sink_target(
@@ -2628,6 +2647,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
 
+        monitor = _engine_monitoring(engine)
         engine = _select_engine(engine)
 
         callback = _gpu_engine_callback(
@@ -2639,6 +2659,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(engine, GPUEngine):
             engine = "gpu"
 
+        optimizations = optimizations.__copy__()
+        optimizations._pyoptflags.query_monitoring = monitor
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
         if background:
             issue_unstable_warning("background mode is considered unstable.")
