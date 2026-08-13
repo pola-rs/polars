@@ -125,7 +125,7 @@ impl CanonicalExprMap {
             if post_visit {
                 children.clear();
                 expr_arena.get(node).children_rev(&mut children);
-                let child_ids = children.iter().map(|child| self.get(*child)).collect();
+                let child_ids = children.iter().map(|child| self.cache[child]).collect();
                 let id = self.resolve_single(node, child_ids, expr_arena);
                 self.cache.insert(node, id);
             } else {
@@ -136,7 +136,7 @@ impl CanonicalExprMap {
             }
         }
 
-        self.get(node)
+        self.cache[&node]
     }
 
     fn resolve_single(
@@ -195,12 +195,6 @@ impl CanonicalExprMap {
                 id
             },
         }
-    }
-
-    fn get(&self, node: Node) -> CanonicalExprId {
-        *self.cache.get(&node).unwrap_or_else(|| {
-            panic!("expression node {node:?} was not resolved by CanonicalExprMap")
-        })
     }
 }
 
