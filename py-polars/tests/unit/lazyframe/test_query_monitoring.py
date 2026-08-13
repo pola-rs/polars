@@ -124,7 +124,7 @@ def test_metrics_handle_snapshot() -> None:
 
     # The handle stays valid after the query, so snapshot reflects real work.
     handle = observer.on_query_planned.call_args.args[1]
-    rows = msgpack.unpackb(handle.snapshot(), raw=False)
+    rows = msgpack.unpackb(handle.snapshot_query_metrics(), raw=False)
 
     assert isinstance(rows, list)
     assert len(rows) > 0
