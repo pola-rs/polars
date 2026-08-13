@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 import polars._plr as plr
-from polars.lazyframe.engine_config import StreamingEngine
+from polars.lazyframe.engine import StreamingEngine
 from tests.unit.conftest import mock_module_import
 
 if TYPE_CHECKING:
