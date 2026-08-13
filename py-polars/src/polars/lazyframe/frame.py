@@ -1172,18 +1172,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 ]
             )
 
-        metrics_query = (
-            # if more than one quantile, sort the relevant columns to make them O(1)
-            # TODO: drop sort once we have efficient retrieval of multiple quantiles
-            self.with_columns(F.col(c).sort() for c in sort_cols) if sort_cols else self
-        ).select(*metric_exprs)
-
         # We want to compute the metrics using the selected engine, and once they have
         # been computed, we collect them eagerly for local consumption
-        engine = _select_engine("auto")
-        opt = DEFAULT_QUERY_OPT_FLAGS
-        lf_metrics = engine.execute(metrics_query, optimizations=opt).lazy()
-        df_metrics = engine._collect_eager(lf_metrics, optimizations=opt)
+        df_metrics = (
+            (
+                # if more than one quantile, sort the relevant columns to make them O(1)
+                # TODO: drop sort once we have efficient retrieval of multiple quantiles
+                self.with_columns(F.col(c).sort() for c in sort_cols)
+                if sort_cols
+                else self
+            )
+            .select(*metric_exprs)
+            .execute()
+            .lazy()
+            ._collect_eager()
+        )
 
         # reshape wide result
         n_metrics = len(metrics)
