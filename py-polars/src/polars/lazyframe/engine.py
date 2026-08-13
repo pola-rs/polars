@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Literal, TypeVar, Union, overload
+from typing import IO, TYPE_CHECKING, Any, Literal, overload
 
 from polars._dependencies import import_optional
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from polars._plr import PyCollectBatches, PyLazyFrame
     from polars._typing import (
         ArrowSchemaExportable,
+        AsyncResult,
         CsvQuoteStyle,
         IpcCompression,
         ParquetMetadata,
@@ -56,11 +57,6 @@ if TYPE_CHECKING:
 # The post-optimization callback receives the Rust node traverser, which has no
 # Python-side type, plus an optional node id.
 PostOptCallback: TypeAlias = Callable[[Any, int | None], None]
-
-# Result of an async collect, resolved either through asyncio or gevent.
-AsyncResult: TypeAlias = Union["_GeventDataFrameResult[T]", "_AioDataFrameResult[T]"]
-
-T = TypeVar("T")
 
 
 def _to_sink_target(
@@ -463,7 +459,7 @@ class _LocalEngine(Engine):
             issue_unstable_warning("streaming mode is considered unstable.")
 
         ldf = lf._ldf.with_optimizations(optimizations._pyoptflags)
-        result: _GeventDataFrameResult[DataFrame] | _AioDataFrameResult[DataFrame] = (
+        result: AsyncResult[DataFrame] = (
             _GeventDataFrameResult() if gevent else _AioDataFrameResult()
         )
         ldf.collect_with_callback(self.name, result._callback)
@@ -507,10 +503,9 @@ class _LocalEngine(Engine):
     ) -> AsyncResult[list[DataFrame]]:
         import polars._plr as plr
 
-        result: (
-            _GeventDataFrameResult[list[DataFrame]]
-            | _AioDataFrameResult[list[DataFrame]]
-        ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+        result: AsyncResult[list[DataFrame]] = (
+            _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+        )
         plr.collect_all_with_callback(
             [lf._ldf for lf in lfs],
             self.name,

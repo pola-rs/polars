@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import (
+        AsyncResult,
         CorrelationMethod,
         EngineType,
         EpochTimeUnit,
@@ -48,7 +49,7 @@ if TYPE_CHECKING:
         PolarsDataType,
         QuantileMethod,
     )
-    from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
+    from polars._utils.async_ import _GeventDataFrameResult
     from polars.lazyframe.opt_flags import (
         QueryOptFlags,
     )
@@ -2308,9 +2309,7 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
-    result: (
-        _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
-    ) = _select_engine(engine).collect_all_async(
+    result: AsyncResult[list[DataFrame]] = _select_engine(engine).collect_all_async(
         lazy_frames, optimizations=optimizations, gevent=gevent
     )
     return result

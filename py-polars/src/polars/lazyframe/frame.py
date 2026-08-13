@@ -131,6 +131,7 @@ if TYPE_CHECKING:
         Alignment,
         ArrowSchemaExportable,
         AsofJoinStrategy,
+        AsyncResult,
         ClosedInterval,
         ColumnNameOrSelector,
         CsvQuoteStyle,
@@ -162,7 +163,7 @@ if TYPE_CHECKING:
         SyncOnCloseMethod,
         UniqueKeepStrategy,
     )
-    from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
+    from polars._utils.async_ import _GeventDataFrameResult
     from polars.config import TableFormatNames
     from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
@@ -2716,10 +2717,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
         """
-        result: _GeventDataFrameResult[DataFrame] | _AioDataFrameResult[DataFrame] = (
-            _select_engine(engine).collect_async(
-                self, optimizations=optimizations, gevent=gevent
-            )
+        result: AsyncResult[DataFrame] = _select_engine(engine).collect_async(
+            self, optimizations=optimizations, gevent=gevent
         )
         return result
 

@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._dependencies import numpy as np
+    from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
     from polars.lazyframe.engine import Engine
     from polars.selectors import Selector
@@ -442,6 +443,12 @@ EngineTypeName: TypeAlias = Literal["auto", "in-memory", "streaming", "gpu"]
 EngineType: TypeAlias = Union[EngineTypeName, "Engine"]
 
 PlanStage: TypeAlias = Literal["ir", "physical"]
+
+# Result of an async collect, resolved either through asyncio or gevent.
+AsyncResultT = TypeVar("AsyncResultT")
+AsyncResult: TypeAlias = Union[
+    "_GeventDataFrameResult[AsyncResultT]", "_AioDataFrameResult[AsyncResultT]"
+]
 
 # Remote execution on Polars Cloud; mirrors `polars_cloud._typing`
 ScalingMode: TypeAlias = Literal["auto", "single-node", "distributed"]
