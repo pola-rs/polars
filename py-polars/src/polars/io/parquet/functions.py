@@ -470,7 +470,6 @@ def scan_parquet(
     retries: int | None = None,
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] = "raise",
-    allow_missing_columns: bool | None = None,
     extra_columns: Literal["ignore", "raise"] = "raise",
     cast_options: ScanCastOptions | None = None,
     _column_mapping: ColumnMapping | None = None,
@@ -488,9 +487,6 @@ def scan_parquet(
     .. versionchanged:: 0.20.4
         * The `row_count_name` parameter was renamed `row_index_name`.
         * The `row_count_offset` parameter was renamed `row_index_offset`.
-
-    .. versionchanged:: 1.30.0
-        * The `allow_missing_columns` is deprecated in favor of `missing_columns`.
 
     Parameters
     ----------
@@ -594,17 +590,6 @@ def scan_parquet(
 
         * `insert`: Inserts the missing columns using NULLs as the row values.
         * `raise`: Raises an error.
-
-    allow_missing_columns
-        When reading a list of parquet files, if a column existing in the first
-        file cannot be found in subsequent files, the default behavior is to
-        raise an error. However, if `allow_missing_columns` is set to
-        `True`, a full-NULL column is returned instead of erroring for the files
-        that do not contain the column.
-
-        .. deprecated:: 1.30.0
-            Use the parameter `missing_columns` instead and pass one of
-            `('insert', 'raise')`.
     extra_columns
         Configuration for behavior when extra columns outside of the
         defined schema are encountered in the data:
@@ -657,16 +642,6 @@ def scan_parquet(
     if hidden_file_prefix is not None:
         msg = "The `hidden_file_prefix` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
-
-    if allow_missing_columns is not None:
-        issue_deprecation_warning(
-            "the parameter `allow_missing_columns` for `scan_parquet` is deprecated. "
-            "Use the parameter `missing_columns` instead and pass one of "
-            "`('insert', 'raise')`.",
-            version="1.30.0",
-        )
-
-        missing_columns = "insert" if allow_missing_columns else "raise"
 
     if retries is not None:
         msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
