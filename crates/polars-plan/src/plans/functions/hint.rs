@@ -5,7 +5,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Debug, Clone, Hash, PartialEq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Sorted {
     pub column: PlSmallStr,
     /// None -> either way / unsure
@@ -20,7 +20,7 @@ pub struct Sorted {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Hash, strum_macros::IntoStaticStr)]
+#[derive(Clone, Hash, PartialEq, Eq, strum_macros::IntoStaticStr)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum HintIR {
     Sorted(Arc<[Sorted]>),

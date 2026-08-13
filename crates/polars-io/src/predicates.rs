@@ -2,6 +2,7 @@ use std::fmt;
 
 use arrow::array::Array;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::datatypes::ArrowDataType;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
@@ -30,6 +31,7 @@ pub enum SpecializedColumnPredicate {
 pub struct ColumnPredicateExpr {
     column_name: PlSmallStr,
     dtype: DataType,
+    source_arrow_dtype: ArrowDataType,
     #[cfg(feature = "parquet")]
     specialized: Option<SpecializedParquetColumnExpr>,
     expr: Arc<dyn PhysicalIoExpr>,
@@ -39,6 +41,7 @@ impl ColumnPredicateExpr {
     pub fn new(
         column_name: PlSmallStr,
         dtype: DataType,
+        source_arrow_dtype: ArrowDataType,
         expr: Arc<dyn PhysicalIoExpr>,
         specialized: Option<SpecializedColumnPredicate>,
     ) -> Self {
@@ -68,6 +71,7 @@ impl ColumnPredicateExpr {
         Self {
             column_name,
             dtype,
+            source_arrow_dtype,
             #[cfg(feature = "parquet")]
             specialized,
             expr,
@@ -82,9 +86,13 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
         assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
 
         // @TODO: Probably these unwraps should be removed.
-        let series =
-            Series::from_chunk_and_dtype(self.column_name.clone(), values.to_boxed(), &self.dtype)
-                .unwrap();
+        let series = predicate_values_to_series(
+            self.column_name.clone(),
+            values,
+            &self.dtype,
+            &self.source_arrow_dtype,
+        )
+        .unwrap();
         let column = series.into_column();
         let df = unsafe { DataFrame::new_unchecked(values.len(), vec![column]) };
 
@@ -113,6 +121,35 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
 
     fn as_specialized(&self) -> Option<&SpecializedParquetColumnExpr> {
         self.specialized.as_ref()
+    }
+}
+
+#[cfg(feature = "parquet")]
+fn predicate_values_to_series(
+    name: PlSmallStr,
+    values: &dyn Array,
+    dtype: &DataType,
+    source_arrow_dtype: &ArrowDataType,
+) -> PolarsResult<Series> {
+    // For example, Arrow seconds will be stored as Polars milliseconds, so we can not just
+    // zero-copy construct the predicate series
+    let timestamp_units_differ = matches!(
+        (source_arrow_dtype, dtype),
+        (
+            ArrowDataType::Timestamp(source_unit, _),
+            DataType::Datetime(target_unit, _),
+        ) if source_unit != &target_unit.to_arrow()
+    );
+
+    if timestamp_units_differ {
+        let values = polars_compute::cast::cast(
+            values,
+            source_arrow_dtype,
+            polars_compute::cast::CastOptionsImpl::default(),
+        )?;
+        Series::try_from((name, values))
+    } else {
+        Series::from_chunk_and_dtype(name, values.to_boxed(), dtype)
     }
 }
 

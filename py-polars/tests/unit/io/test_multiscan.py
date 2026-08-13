@@ -1212,25 +1212,30 @@ def test_hive_group_by_rewrite_maintain_order_disables_rewrite(
     )
 
 
-# This may fail streaming as the order is not defined in streaming.
-# We test the plans, not the engine.
 @pytest.mark.write_disk
-@pytest.mark.may_fail_auto_streaming
 def test_hive_join_rewrite_semi_join(tmp_path: Path) -> None:
-    left_root = tmp_path / "left"
-    right_root = tmp_path / "right"
+    # Test that hive prepartitioning is applied to semi-joins.
 
-    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+    left_root = tmp_path / "left.parquet"
+    right_root = tmp_path / "right.parquet"
+
+    pl.DataFrame({"foo": [1, 11, 21], "x": [10, 20, 30]}).write_parquet(
         left_root, partition_by="foo"
     )
-    pl.DataFrame({"bar": [1, 2], "y": [100, 200]}).write_parquet(
+    pl.DataFrame({"bar": [1, 11], "y": [100, 200]}).write_parquet(
         right_root, partition_by="bar"
     )
 
     left = pl.scan_parquet(left_root, hive_partitioning=True)
     right = pl.scan_parquet(right_root, hive_partitioning=True)
 
-    q = left.join(right, left_on="foo", right_on="bar", how="semi").slice(0, 1)
+    q = (
+        left.join(right, left_on="foo", right_on="bar", how="semi")
+        .slice(0, 1)
+        # Collapse the two results into the same value so that we don't have to care
+        # about the order of the result.
+        .with_columns(foo=pl.col("foo") % 10, x=pl.col("x") % 10)
+    )
     plan = q.explain()
 
     assert "UNION[maintain_order: false]" in plan
@@ -1239,8 +1244,8 @@ def test_hive_join_rewrite_semi_join(tmp_path: Path) -> None:
     assert "PLAN 2:" not in plan
     assert plan.count("SEMI JOIN:") == 2
     assert "foo=1" in plan
-    assert "foo=2" in plan
-    assert "foo=3" not in plan
+    assert "foo=11" in plan
+    assert "foo=21" not in plan
 
     out = q.sort("foo")
     result = out.collect().sort("foo")

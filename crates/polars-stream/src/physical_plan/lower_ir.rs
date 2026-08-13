@@ -109,6 +109,7 @@ pub fn build_filter_stream(
     let filter = PhysNodeKind::Filter {
         input: trans_input,
         predicate: trans_cols_and_predicate.last().unwrap().clone(),
+        projection: None,
     };
 
     let post_filter = phys_sm.insert(PhysNode::new(filter_schema, filter));
@@ -752,15 +753,15 @@ pub fn lower_ir(
                     #[cfg(feature = "parquet")]
                     FileScanIR::Parquet {
                         options,
-                        first_metadata,
-                        // Used at plan time (optimizer passes, cloud
-                        // scheduler). The streaming reader reads per-file
-                        // footers at scan time and only needs `first_metadata`.
-                        metadata_per_source: _,
+                        // The streaming reader reads per-file footers at scan
+                        // time; it only takes source 0's footer as its
+                        // initial hint.
+                        metadata_per_source,
+                        bytes_per_source: _,
                     } => Arc::new(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
                             options: Arc::new(options.clone()),
-                            first_metadata: first_metadata.clone(),
+                            first_metadata: metadata_per_source.first_metadata().cloned(),
                             pipeline_budget: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
                             io_metrics: std::sync::OnceLock::new(),

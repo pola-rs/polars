@@ -1,91 +1,31 @@
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use polars_utils::arena::{Arena, Node};
-
-use super::*;
+use crate::plans::{ExprIR, IR};
 #[cfg(feature = "python")]
-use crate::plans::PythonOptions;
-use crate::plans::{AExpr, IR, UnoptimizedOperation};
-use crate::prelude::aexpr::traverse_and_hash_aexpr;
-use crate::prelude::{ExprIR, PlanCallback};
+use crate::plans::{PythonOptions, PythonPredicate};
+use crate::prelude::{PlanCallback, UnoptimizedOperation};
 
-impl IRNode {
-    pub(crate) fn hashable_and_cmp<'a>(
-        &'a self,
-        lp_arena: &'a Arena<IR>,
-        expr_arena: &'a Arena<AExpr>,
-    ) -> IRHashWrap<'a> {
-        IRHashWrap {
-            node: self.node(),
-            lp_arena,
-            expr_arena,
-            hash_as_equality: false,
-        }
-    }
+pub trait ExpressionHasher {
+    fn hash_expr<H: Hasher>(&self, expr: &ExprIR, state: &mut H);
 }
 
-pub(crate) struct IRHashWrap<'a> {
-    node: Node,
-    lp_arena: &'a Arena<IR>,
-    expr_arena: &'a Arena<AExpr>,
-    hash_as_equality: bool,
-}
+impl IR {
+    /// Hash the contents of the enum, without descending into child IR nodes.
+    /// The user can choose how to hash the referenced ExprIR nodes by providing `expr_hash`
+    pub(crate) fn hash_excluding_inputs<H: Hasher>(
+        &self,
+        state: &mut H,
+        expr_hash: &impl ExpressionHasher,
+    ) {
+        let hash_exprs = |exprs: &[ExprIR], state: &mut H| {
+            for e in exprs {
+                expr_hash.hash_expr(e, state);
+            }
+        };
 
-impl<'a> IRHashWrap<'a> {
-    pub(crate) fn new(
-        node: Node,
-        lp_arena: &'a Arena<IR>,
-        expr_arena: &'a Arena<AExpr>,
-        hash_as_equality: bool,
-    ) -> Self {
-        Self {
-            node,
-            lp_arena,
-            expr_arena,
-            hash_as_equality,
-        }
-    }
-}
-
-fn hash_option_expr<H: Hasher>(expr: &Option<ExprIR>, expr_arena: &Arena<AExpr>, state: &mut H) {
-    if let Some(e) = expr {
-        e.traverse_and_hash(expr_arena, state)
-    }
-}
-
-fn hash_exprs<H: Hasher>(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, state: &mut H) {
-    for e in exprs {
-        e.traverse_and_hash(expr_arena, state);
-    }
-}
-
-/// Specialized Hash that dispatches to `ExprIR::traverse_and_hash` instead of just hashing
-/// the `Node`.
-#[cfg(feature = "python")]
-fn hash_python_predicate<H: Hasher>(
-    pred: &crate::prelude::PythonPredicate,
-    expr_arena: &Arena<AExpr>,
-    state: &mut H,
-) {
-    use crate::prelude::PythonPredicate;
-    std::mem::discriminant(pred).hash(state);
-    match pred {
-        PythonPredicate::None => {},
-        PythonPredicate::PyArrow(p) => {
-            format!("{:?}", p).hash(state);
-            p.has_residual.hash(state);
-        },
-        PythonPredicate::Polars(e) => e.traverse_and_hash(expr_arena, state),
-    }
-}
-
-impl Hash for IRHashWrap<'_> {
-    // This hashes the variant, not the whole plan
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        let alp = self.lp_arena.get(self.node);
-        std::mem::discriminant(alp).hash(state);
-        match alp {
+        std::mem::discriminant(self).hash(state);
+        match self {
             #[cfg(feature = "python")]
             IR::PythonScan {
                 options:
@@ -101,31 +41,28 @@ impl Hash for IRHashWrap<'_> {
                         is_pure,
                     },
             } => {
-                // Hash the Python function object using the pointer to the object
-                // This should be the same as calling id() in python, but we don't need the GIL
-
-                use std::sync::atomic::AtomicU64;
-                static UNIQUE_COUNT: AtomicU64 = AtomicU64::new(0);
+                // Hash the Python function object using the pointer to the object.
+                // This should be the same as calling id() in python, but we don't need the GIL.
                 if let Some(scan_fn) = scan_fn {
                     let ptr_addr = scan_fn.0.as_ptr() as usize;
                     ptr_addr.hash(state);
                 }
-                // Hash the stable fields
-                // We include the schema since it can be set by the user
+                // Hash the stable fields.
+                // We include the schema since it can be set by the user.
                 schema.hash(state);
                 output_schema.hash(state);
                 with_columns.hash(state);
                 python_source.hash(state);
                 n_rows.hash(state);
-                hash_python_predicate(predicate, self.expr_arena, state);
-                validate_schema.hash(state);
-
-                if self.hash_as_equality && !*is_pure {
-                    let val = UNIQUE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    val.hash(state)
-                } else {
-                    is_pure.hash(state)
+                std::mem::discriminant(predicate).hash(state);
+                match predicate {
+                    PythonPredicate::None => {},
+                    // A PyArrow predicate always compares as unequal, so we can hash it however we want
+                    PythonPredicate::PyArrow(p) => p.has_residual.hash(state),
+                    PythonPredicate::Polars(e) => expr_hash.hash_expr(e, state),
                 }
+                validate_schema.hash(state);
+                is_pure.hash(state);
             },
             IR::Slice {
                 offset,
@@ -139,7 +76,7 @@ impl Hash for IRHashWrap<'_> {
                 input: _,
                 predicate,
             } => {
-                predicate.traverse_and_hash(self.expr_arena, state);
+                expr_hash.hash_expr(predicate, state);
             },
             IR::Scan {
                 sources,
@@ -151,10 +88,13 @@ impl Hash for IRHashWrap<'_> {
                 scan_type,
                 unified_scan_args,
             } => {
-                // We don't have to traverse the schema, hive partitions etc. as they are derivative from the paths.
+                // We don't have to traverse the schema, hive partitions etc. as they are derivative
+                // from the paths.
                 scan_type.hash(state);
                 sources.hash(state);
-                hash_option_expr(predicate, self.expr_arena, state);
+                if let Some(predicate) = predicate {
+                    expr_hash.hash_expr(predicate, state);
+                }
                 unified_scan_args.hash(state);
             },
             IR::DataFrameScan {
@@ -175,7 +115,7 @@ impl Hash for IRHashWrap<'_> {
                 schema: _,
                 options,
             } => {
-                hash_exprs(expr, self.expr_arena, state);
+                hash_exprs(expr, state);
                 options.hash(state);
             },
             IR::Sort {
@@ -184,7 +124,7 @@ impl Hash for IRHashWrap<'_> {
                 slice,
                 sort_options,
             } => {
-                hash_exprs(by_column, self.expr_arena, state);
+                hash_exprs(by_column, state);
                 slice.hash(state);
                 sort_options.hash(state);
             },
@@ -197,8 +137,8 @@ impl Hash for IRHashWrap<'_> {
                 maintain_order,
                 options,
             } => {
-                hash_exprs(keys, self.expr_arena, state);
-                hash_exprs(aggs, self.expr_arena, state);
+                hash_exprs(keys, state);
+                hash_exprs(aggs, state);
 
                 if let Some(function) = apply {
                     true.hash(state);
@@ -225,9 +165,9 @@ impl Hash for IRHashWrap<'_> {
                 right_on,
                 options,
             } => {
-                hash_exprs(left_on, self.expr_arena, state);
-                hash_exprs(right_on, self.expr_arena, state);
-                options.hash(state);
+                hash_exprs(left_on, state);
+                hash_exprs(right_on, state);
+                options.shallow_hash(state, expr_hash);
             },
             IR::Gather {
                 input: _,
@@ -242,7 +182,7 @@ impl Hash for IRHashWrap<'_> {
                 schema: _,
                 options,
             } => {
-                hash_exprs(exprs, self.expr_arena, state);
+                hash_exprs(exprs, state);
                 options.hash(state);
             },
             IR::Distinct { input: _, options } => {
@@ -261,15 +201,11 @@ impl Hash for IRHashWrap<'_> {
             },
             IR::ExtContext {
                 input: _,
-                contexts,
+                contexts: _,
                 schema: _,
-            } => {
-                for node in contexts {
-                    traverse_and_hash_aexpr(*node, self.expr_arena, state);
-                }
-            },
+            } => {},
             IR::Sink { input: _, payload } => {
-                payload.traverse_and_hash(self.expr_arena, state);
+                payload.shallow_hash(state, expr_hash);
             },
             IR::SinkMultiple { inputs: _ } => {},
             IR::Cache { input: _, id } => {

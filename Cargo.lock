@@ -229,6 +229,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "autotools"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef941527c41b0fc0dd48511a8154cd5fc7e29200a0ff8b7203c5d777dbc795cf"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "avro-schema"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1015,8 +1024,8 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "color-backtrace"
-version = "0.7.2"
-source = "git+https://github.com/orlp/color-backtrace?rev=bb62ccf1e9eb1f6b7af5f16acff1fd7151a876dd#bb62ccf1e9eb1f6b7af5f16acff1fd7151a876dd"
+version = "0.7.4"
+source = "git+https://github.com/orlp/color-backtrace?rev=20f5eea183563bb4cfac9a4d65901d4a1002cde2#20f5eea183563bb4cfac9a4d65901d4a1002cde2"
 dependencies = [
  "btparse",
  "termcolor",
@@ -1452,7 +1461,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1540,6 +1549,16 @@ checksum = "c0b50bfb653653f9ca9095b427bed08ab8d75a137839d9ad64eb11810d5b6393"
 dependencies = [
  "rand_core 0.6.4",
  "subtle",
+]
+
+[[package]]
+name = "filetime"
+version = "0.2.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
+dependencies = [
+ "cfg-if",
+ "libc",
 ]
 
 [[package]]
@@ -1755,11 +1774,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
- "js-sys",
  "libc",
  "r-efi 5.3.0",
  "wasip2",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -1979,6 +1996,23 @@ name = "humantime"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
+
+[[package]]
+name = "hwlocality-sys"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "507b4c70a812b6ed5907db7d59726118f4e17708fbc09e32a872ac8e3b5bafaf"
+dependencies = [
+ "autotools",
+ "cmake",
+ "flate2",
+ "libc",
+ "pkg-config",
+ "sha3",
+ "tar",
+ "ureq",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "hybrid-array"
@@ -2307,6 +2341,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "keccak"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e24a010dd405bd7ed803e5253182815b41bf2e6a80cc3bfc066658e03a198aa"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.0",
+]
+
+[[package]]
 name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2503,6 +2547,12 @@ dependencies = [
  "wasi",
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "murmur3"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9252111cf132ba0929b6f8e030cac2a24b507f3a4d6db6fb2896f27b354c714b"
 
 [[package]]
 name = "native-tls"
@@ -2978,7 +3028,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "apache-avro",
  "avro-schema",
@@ -3011,7 +3061,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "async-stream",
  "atoi_simd",
@@ -3064,12 +3114,13 @@ dependencies = [
 
 [[package]]
 name = "polars-async"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "atomic-waker",
  "crossbeam-channel",
  "crossbeam-deque",
  "crossbeam-utils",
+ "hwlocality-sys",
  "parking_lot",
  "pin-project-lite",
  "polars-config",
@@ -3082,7 +3133,7 @@ dependencies = [
 
 [[package]]
 name = "polars-buffer"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "bytemuck",
  "either",
@@ -3094,7 +3145,7 @@ dependencies = [
 
 [[package]]
 name = "polars-compute"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "atoi_simd",
  "bigdecimal",
@@ -3123,7 +3174,7 @@ dependencies = [
 
 [[package]]
 name = "polars-config"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "polars-error",
  "serde",
@@ -3131,7 +3182,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "bincode",
  "bitflags",
@@ -3175,8 +3226,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-descriptions"
+version = "0.55.1"
+dependencies = [
+ "serde",
+ "strum_macros 0.28.0",
+]
+
+[[package]]
 name = "polars-doc-examples"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
@@ -3190,7 +3249,7 @@ dependencies = [
 
 [[package]]
 name = "polars-dtype"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "boxcar",
  "hashbrown 0.17.1",
@@ -3204,7 +3263,7 @@ dependencies = [
 
 [[package]]
 name = "polars-dylib"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "polars",
  "polars-arrow",
@@ -3218,7 +3277,7 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "avro-schema",
  "object_store",
@@ -3232,7 +3291,7 @@ dependencies = [
 
 [[package]]
 name = "polars-expr"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "bitflags",
  "chrono-tz",
@@ -3259,7 +3318,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ffi"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -3267,7 +3326,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "async-trait",
  "atoi_simd",
@@ -3322,7 +3381,7 @@ dependencies = [
 
 [[package]]
 name = "polars-json"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -3342,7 +3401,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "bitflags",
  "bytes",
@@ -3359,6 +3418,7 @@ dependencies = [
  "polars-io",
  "polars-json",
  "polars-mem-engine",
+ "polars-observer",
  "polars-ops",
  "polars-plan",
  "polars-stream",
@@ -3373,7 +3433,7 @@ dependencies = [
 
 [[package]]
 name = "polars-mem-engine"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "futures",
  "memmap2",
@@ -3394,8 +3454,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-observer"
+version = "0.55.1"
+dependencies = [
+ "parking_lot",
+ "polars-descriptions",
+ "polars-error",
+]
+
+[[package]]
 name = "polars-ooc"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "async-trait",
  "boxcar",
@@ -3417,7 +3486,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "aho-corasick",
  "argminmax",
@@ -3457,7 +3526,7 @@ dependencies = [
 
 [[package]]
 name = "polars-parquet"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "async-stream",
  "base64",
@@ -3503,7 +3572,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "bitflags",
  "blake3",
@@ -3519,6 +3588,7 @@ dependencies = [
  "indexmap",
  "libloading",
  "memmap2",
+ "murmur3",
  "num-traits",
  "percent-encoding",
  "polars-arrow",
@@ -3526,6 +3596,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-descriptions",
  "polars-error",
  "polars-ffi",
  "polars-io",
@@ -3550,7 +3621,7 @@ dependencies = [
 
 [[package]]
 name = "polars-python"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "arboard",
  "bincode",
@@ -3574,6 +3645,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-descriptions",
  "polars-dtype",
  "polars-error",
  "polars-expr",
@@ -3581,26 +3653,30 @@ dependencies = [
  "polars-io",
  "polars-lazy",
  "polars-mem-engine",
+ "polars-observer",
  "polars-ooc",
  "polars-ops",
  "polars-parquet",
  "polars-plan",
  "polars-row",
+ "polars-stream",
  "polars-testing",
  "polars-time",
  "polars-utils",
  "pyo3",
  "rayon",
  "recursive",
+ "rmp-serde",
  "serde",
  "serde_json",
+ "slotmap",
  "uuid",
  "version_check",
 ]
 
 [[package]]
 name = "polars-row"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "bitflags",
  "bytemuck",
@@ -3648,7 +3724,7 @@ dependencies = [
 
 [[package]]
 name = "polars-schema"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "indexmap",
  "polars-error",
@@ -3660,7 +3736,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "bitflags",
  "hex",
@@ -3678,7 +3754,7 @@ dependencies = [
 
 [[package]]
 name = "polars-stream"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -3699,11 +3775,13 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-descriptions",
  "polars-error",
  "polars-expr",
  "polars-io",
  "polars-json",
  "polars-mem-engine",
+ "polars-observer",
  "polars-ooc",
  "polars-ops",
  "polars-parquet",
@@ -3717,6 +3795,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slotmap",
+ "strum_macros 0.28.0",
  "tokio",
  "uuid",
  "version_check",
@@ -3724,7 +3803,7 @@ dependencies = [
 
 [[package]]
 name = "polars-testing"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "polars-core",
  "polars-ops",
@@ -3732,7 +3811,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "atoi_simd",
  "bytemuck",
@@ -3755,7 +3834,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.54.4"
+version = "0.55.1"
 dependencies = [
  "argminmax",
  "bincode",
@@ -3925,6 +4004,7 @@ dependencies = [
  "pyo3-build-config",
  "pyo3-ffi",
  "pyo3-macros",
+ "uuid",
 ]
 
 [[package]]
@@ -3972,7 +4052,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-polars"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "libc",
  "once_cell",
@@ -3994,7 +4074,7 @@ dependencies = [
 
 [[package]]
 name = "pyo3-polars-derive"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -4046,14 +4126,15 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.14"
+version = "0.11.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
+checksum = "2f4bfc015262b9df63c8845072ce59068853ff5872180c2ce2f13038b970e560"
 dependencies = [
  "bytes",
- "getrandom 0.3.4",
+ "getrandom 0.4.2",
  "lru-slab",
- "rand 0.9.4",
+ "rand 0.10.1",
+ "rand_pcg",
  "ring",
  "rustc-hash",
  "rustls",
@@ -4163,6 +4244,15 @@ checksum = "4d431c2703ccf129de4d45253c03f49ebb22b97d6ad79ee3ecfc7e3f4862c1d8"
 dependencies = [
  "num-traits",
  "rand 0.10.1",
+]
+
+[[package]]
+name = "rand_pcg"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
+dependencies = [
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -4419,7 +4509,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4429,6 +4519,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef86cd5876211988985292b91c96a8f2d298df24e75989a43a3c73f2d4d8168b"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
@@ -4733,6 +4824,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha3"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc9bad02c26382724b2d2692c6f179285e4b54eeecd7968f52a50059c3c11759"
+dependencies = [
+ "digest 0.11.3",
+ "keccak",
+ "sponge-cursor",
+]
+
+[[package]]
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4837,7 +4939,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4855,6 +4957,12 @@ dependencies = [
  "base64ct",
  "der",
 ]
+
+[[package]]
+name = "sponge-cursor"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a0219bd7d979d58245a4f41f695e1ac9f8befdffadd7f61f1bae9e39abc6620"
 
 [[package]]
 name = "sqlparser"
@@ -4894,7 +5002,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5029,6 +5137,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tar"
+version = "0.4.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
+dependencies = [
+ "filetime",
+ "libc",
+ "xattr",
+]
+
+[[package]]
 name = "target-lexicon"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5050,7 +5169,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5435,6 +5554,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
 
 [[package]]
+name = "ureq"
+version = "3.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dea7109cdcd5864d4eeb1b58a1648dc9bf520360d7af16ec26d0a9354bafcfc0"
+dependencies = [
+ "base64",
+ "flate2",
+ "log",
+ "percent-encoding",
+ "rustls",
+ "rustls-pki-types",
+ "ureq-proto",
+ "utf8-zero",
+ "webpki-roots",
+]
+
+[[package]]
+name = "ureq-proto"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e994ba84b0bd1b1b0cf92878b7ef898a5c1760108fe7b6010327e274917a808c"
+dependencies = [
+ "base64",
+ "http 1.4.1",
+ "httparse",
+ "log",
+]
+
+[[package]]
 name = "url"
 version = "2.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5451,6 +5599,12 @@ name = "urlencoding"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
+
+[[package]]
+name = "utf8-zero"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8c0a043c9540bae7c578c88f91dda8bd82e59ae27c21baca69c8b191aaf5a6e"
 
 [[package]]
 name = "utf8_iter"
@@ -5672,6 +5826,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "webpki-roots"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
+dependencies = [
+ "rustls-pki-types",
+]
+
+[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5693,7 +5856,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6090,6 +6253,16 @@ name = "x11rb-protocol"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
+
+[[package]]
+name = "xattr"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
+dependencies = [
+ "libc",
+ "rustix",
+]
 
 [[package]]
 name = "xmlparser"

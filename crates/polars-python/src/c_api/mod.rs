@@ -100,6 +100,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyTemporalFunction>().unwrap();
     m.add_class::<PyStructFunction>().unwrap();
     m.add_class::<PyListFunction>().unwrap();
+    m.add_class::<PyArrayFunction>().unwrap();
     m.add_class::<PyRollingFunction>().unwrap();
     m.add_class::<PyRollingFunctionBy>().unwrap();
     m.add_class::<PyEwmFunction>().unwrap();
@@ -127,6 +128,16 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PySQLContext>().unwrap();
     m.add_class::<PyCategories>().unwrap();
     m.add_class::<PyArrowCStreamReader>().unwrap();
+
+    #[cfg(feature = "pymethods")]
+    m.add_class::<crate::polars_cloud_observer::CloudStreamingMetricsHandle>()
+        .unwrap();
+
+    #[cfg(feature = "pymethods")]
+    m.add_wrapped(wrap_pyfunction!(
+        crate::polars_cloud_observer::set_query_monitoring
+    ))
+    .unwrap();
 
     // Submodules
     // LogicalPlan objects

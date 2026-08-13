@@ -4,8 +4,6 @@
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
-#[cfg(feature = "rolling_window_by")]
-pub(crate) use polars_time::prelude::*;
 
 mod arithmetic;
 mod arity;
@@ -271,12 +269,16 @@ impl Expr {
         self.map_unary(FunctionExpr::ArgUnique)
     }
 
-    /// Get the index value that has the minimum value.
+    /// Get an index of a minimal value.
+    ///
+    /// In the case of a tie, this may return the index of any of the minimum values.
     pub fn arg_min(self) -> Self {
         self.map_unary(FunctionExpr::ArgMin)
     }
 
-    /// Get the index value that has the maximum value.
+    /// Get an index of a maximum value.
+    ///
+    /// In the case of a tie, this may return the index of any of the maximum values.
     pub fn arg_max(self) -> Self {
         self.map_unary(FunctionExpr::ArgMax)
     }

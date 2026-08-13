@@ -17,7 +17,6 @@ use datetime::coerce_temporal_dt;
 #[cfg(all(feature = "range", feature = "dtype-datetime"))]
 use datetime::{ensure_datetime, ensure_int, temporal_range_output_type};
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::*;
 #[cfg(all(
     feature = "range",
     any(feature = "dtype-date", feature = "dtype-datetime")
@@ -672,6 +671,7 @@ impl OptimizationRule for TypeCoercionRule {
                 if dtype.is_float() {
                     return Ok(None);
                 }
+                polars_ensure!(!dtype.is_struct(), opq = ewm, dtype);
 
                 let new_function = match ewm_variant {
                     IRFunctionExpr::EwmMean { .. } => IRFunctionExpr::EwmMean {

@@ -28,8 +28,7 @@ use crate::error::PyPolarsErr;
 
 #[cfg(feature = "dtype-categorical")]
 pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
-    let s = obj.getattr(intern!(obj.py(), "_s"))?;
-    Ok(s.extract::<PySeries>()?.0)
+    Ok(obj.extract::<PySeries>()?.0)
 }
 
 #[repr(transparent)]

@@ -67,6 +67,7 @@ nightly = [
   "polars-sql?/nightly",
   "polars-expr/nightly",
 ]
+numa = ["polars-core/numa"]
 docs = ["polars-core/docs"]
 temporal = [
   "polars-core/temporal",
@@ -578,7 +579,7 @@ docs-selection = [
 
 bench = ["lazy"]
 
-# All features except python
+# All features except python, nightly and numa.
 full = ["docs-selection", "performant", "fmt"]
 allow_unused = [
   "polars-lazy?/allow_unused",
