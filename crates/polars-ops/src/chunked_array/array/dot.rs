@@ -44,7 +44,7 @@ where
         let lhs_idx = if lhs_broadcast { 0 } else { output_idx };
         let rhs_idx = if rhs_broadcast { 0 } else { output_idx };
         let outer_valid = unsafe {
-            lhs_array.is_valid_unchecked(lhs_idx) && rhs_array.is_valid_unchecked(rhs_idx)
+            !lhs_array.is_null_unchecked(lhs_idx) && !rhs_array.is_null_unchecked(rhs_idx)
         };
         output_validity.push(outer_valid);
 
