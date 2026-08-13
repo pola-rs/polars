@@ -32,13 +32,6 @@ enum NodeRole {
     Candidate,
 }
 
-impl NodeRole {
-    /// Whether this node allows the subexpression enclosing it to be a candidate.
-    fn permits_enclosing(self) -> bool {
-        matches!(self, NodeRole::Member | NodeRole::Candidate)
-    }
-}
-
 #[derive(Debug, Clone)]
 struct ProjectionExprs {
     expr: Vec<ExprIR>,
@@ -219,7 +212,7 @@ impl Visitor for ExprCandidateVisitor<'_> {
 
         let role = classify(ae, self.is_group_by);
 
-        if !subtree_is_valid || !role.permits_enclosing() {
+        if !subtree_is_valid || role == NodeRole::Refuse {
             self.invalidate_parent();
         }
 
