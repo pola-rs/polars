@@ -12,6 +12,9 @@ use tokio::sync::{Mutex as AsyncMutex, Semaphore as AsyncSemaphore};
 // for spillables.
 const EXPLORE_BEYOND_BEST_SCORE_THRESHOLD: f64 = 20.0;
 
+// Size in bytes of SpillFrame candidates we'll drain per attempt for a context.
+const SPILL_FRAME_BATCH_SIZE: u64 = 1024 * 1024 * 16;
+
 const MAX_PARALLEL_SPILL_TASKS: usize = 64;
 
 use crate::WeakSpillContext;
@@ -184,7 +187,7 @@ impl MemoryManager {
 
             let mut total_est_spill = 0;
             let mut candidates = Vec::new();
-            for (cand, reg_id) in ctx.0.pop() {
+            ctx.0.drain_while(|cand, reg_id| {
                 if cand.can_spill()
                     && let Some(sz) = cand.estimate_byte_size()
                     && sz as u64 >= min_spill
@@ -196,7 +199,8 @@ impl MemoryManager {
                         ctx.0.reinsert(&cand, reg_id, ctx.1);
                     }
                 }
-            }
+                total_est_spill < SPILL_FRAME_BATCH_SIZE
+            });
 
             if candidates.is_empty() {
                 strong.stats().finish_exploration_event(false);
