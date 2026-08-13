@@ -1,5 +1,4 @@
-from polars.lazyframe.engine import Engine, InMemoryEngine, StreamingEngine
-from polars.lazyframe.engine_config import GPUEngine
+from polars.lazyframe.engine import Engine, GPUEngine, InMemoryEngine, StreamingEngine
 from polars.lazyframe.engine_remote import RemoteEngine
 from polars.lazyframe.frame import LazyFrame
 from polars.lazyframe.opt_flags import QueryOptFlags
