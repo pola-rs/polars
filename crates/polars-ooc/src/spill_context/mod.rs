@@ -182,18 +182,15 @@ impl SpillContextInner {
         }
 
         match self.policy() {
-            SpillContextPolicy::MostRecent => staged_tokens.sort_by_key(|t| Reverse(t.timestamp)),
-            SpillContextPolicy::LeastRecent => staged_tokens.sort_by_key(|t| t.timestamp),
+            SpillContextPolicy::MostRecent | SpillContextPolicy::LeastRecent => {
+                staged_tokens.sort_by_key(|t| t.timestamp)
+            },
             SpillContextPolicy::Random => {},
         }
 
         for token in staged_tokens {
             if let Some(t) = token.token.upgrade() {
-                match self.policy() {
-                    SpillContextPolicy::MostRecent => queue.push_front(&t, token.registration_id),
-                    SpillContextPolicy::LeastRecent => queue.push_back(&t, token.registration_id),
-                    SpillContextPolicy::Random => queue.push_back(&t, token.registration_id),
-                }
+                queue.push_back(&t, token.registration_id);
             }
         }
     }
@@ -366,6 +363,9 @@ impl WeakSpillContext {
         let mut local = self.0.staging.get_or_default().lock().unwrap();
         if self.0.context_id() == self.1 {
             local.push(&dyn_arc, dyn_arc.register(self.clone(), param));
+            if self.0.staging_empty.load(Ordering::Relaxed) {
+                self.0.staging_empty.swap(false, Ordering::AcqRel);
+            }
         }
     }
 }
