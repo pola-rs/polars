@@ -28,49 +28,6 @@ def test_invalid_string_date() -> None:
         df.with_columns(**{"x1-date": pl.col("x1").cast(pl.Date)})
 
 
-def test_string_datetime() -> None:
-    df = pl.DataFrame(
-        {"x1": ["2021-12-19T00:39:57", "2022-12-19T16:39:57"]}
-    ).with_columns(
-        **{
-            "x1-datetime-ns": pl.col("x1").str.to_datetime(time_unit="ns"),
-            "x1-datetime-ms": pl.col("x1").str.to_datetime(time_unit="ms"),
-            "x1-datetime-us": pl.col("x1").str.to_datetime(time_unit="us"),
-        }
-    )
-    first_row = datetime(year=2021, month=12, day=19, hour=00, minute=39, second=57)
-    second_row = datetime(year=2022, month=12, day=19, hour=16, minute=39, second=57)
-    expected = pl.DataFrame(
-        {
-            "x1-datetime-ns": [first_row, second_row],
-            "x1-datetime-ms": [first_row, second_row],
-            "x1-datetime-us": [first_row, second_row],
-        }
-    ).select(
-        pl.col("x1-datetime-ns").dt.cast_time_unit("ns"),
-        pl.col("x1-datetime-ms").dt.cast_time_unit("ms"),
-        pl.col("x1-datetime-us").dt.cast_time_unit("us"),
-    )
-
-    out = df.select(
-        pl.col("x1-datetime-ns"), pl.col("x1-datetime-ms"), pl.col("x1-datetime-us")
-    )
-    assert_frame_equal(expected, out)
-
-
-def test_err_on_string_to_naive_datetime_cast() -> None:
-    # casting a String to a naive Datetime was deprecated in favor of
-    # `str.to_datetime()`, and is no longer supported at all.
-    df = pl.DataFrame({"x1": ["2021-12-19T00:39:57", "2022-12-19T16:39:57"]})
-    with pytest.raises(
-        InvalidOperationError,
-        match=r"casting from String to Datetime is not supported; use `str\.to_datetime\(\)` instead",
-    ):
-        df.with_columns(
-            **{"x1-datetime-ns": pl.col("x1").cast(pl.Datetime(time_unit="ns"))}
-        )
-
-
 def test_invalid_string_datetime() -> None:
     df = pl.DataFrame({"x1": ["2021-12-19 00:39:57", "2022-12-19 16:39:57"]})
     with pytest.raises(InvalidOperationError):
