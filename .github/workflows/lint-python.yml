@@ -59,3 +59,7 @@ jobs:
       - name: Run Pyrefly
         working-directory: py-polars
         run: pyrefly check
+
+      - name: Run Pyrefly coverage check
+        working-directory: py-polars
+        run: pyrefly coverage check --public-only src

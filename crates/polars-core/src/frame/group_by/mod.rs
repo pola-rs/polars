@@ -3,6 +3,7 @@ use std::hash::Hash;
 
 use num_traits::NumCast;
 use polars_compute::rolling::QuantileMethod;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::DirtyHash;
 use rayon::prelude::*;
@@ -42,16 +43,12 @@ impl DataFrame {
         let common_height = if self.width() > 0 {
             self.height()
         } else {
-            by.iter().map(|s| s.len()).max().expect("at least 1 key")
+            broadcast_len(by.iter()).context("group_by key")?
         };
         for by_key in by.iter_mut() {
-            if by_key.len() != common_height {
-                polars_ensure!(
-                    by_key.len() == 1,
-                    ShapeMismatch: "series used as keys should have the same length as the DataFrame"
-                );
-                *by_key = by_key.new_from_index(0, common_height)
-            }
+            by_key
+                .broadcast_in_place_to(common_height)
+                .context("group_by keys should have the same length as the DataFrame")?;
         }
 
         let groups = if by.len() == 1 {

@@ -1501,7 +1501,7 @@ def test_replace_many_invalid_inputs() -> None:
         df.select(pl.col("text").str.replace_many(["me"]))
 
     with pytest.raises(
-        InvalidOperationError,
+        ShapeError,
         match="expected the same amount of patterns as replacement strings",
     ):
         df.select(pl.col("text").str.replace_many(["a"], ["b", "c"]))
@@ -1515,7 +1515,7 @@ def test_replace_many_invalid_inputs() -> None:
         df.select(pl.col("text").str.replace_many(["me"]))
 
     with pytest.raises(
-        InvalidOperationError,
+        ShapeError,
         match="expected the same amount of patterns as replacement strings",
     ):
         s.str.replace_many(["a"], ["b", "c"])

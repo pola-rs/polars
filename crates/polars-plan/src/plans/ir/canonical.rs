@@ -1,12 +1,11 @@
-use std::hash::{DefaultHasher, Hasher};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::ControlFlow;
 
 use hashbrown::HashTable;
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 
-use super::canonical_expr::CanonicalExprMap;
-use crate::plans::{AExpr, IR};
+use crate::plans::{AExpr, CanonicalExprMap, CanonicalExprMapWithArena, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::tree_traversal::tree_traversal;
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
@@ -18,22 +17,24 @@ use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 pub struct CanonicalIRId(u32);
 
 impl CanonicalIRId {
-    fn as_u32(self) -> u32 {
-        self.0
+    fn index(self) -> usize {
+        self.0 as usize
     }
 }
 
-struct CanonicalIREntry {
+struct CanonicalIRClass {
     representative: Node,
     child_ids: Vec<CanonicalIRId>,
-    id: CanonicalIRId,
+    is_nondeterministic_excluding_udfs: bool,
 }
 
 /// Assigns [`CanonicalIRId`]s to `IR` nodes.
 pub struct CanonicalIRMap {
-    deduplication_map: HashTable<CanonicalIREntry>,
+    deduplication_map: HashTable<CanonicalIRId>,
     cache: PlIndexMap<Node, CanonicalIRId>,
-    expr_cmp: CanonicalExprMap,
+    /// Indexed by [`CanonicalIRId`], which are handed out densely.
+    eq_classes: Vec<CanonicalIRClass>,
+    expr_map: CanonicalExprMap,
 }
 
 impl CanonicalIRMap {
@@ -41,8 +42,13 @@ impl CanonicalIRMap {
         Self {
             deduplication_map: HashTable::new(),
             cache: PlIndexMap::new(),
-            expr_cmp: CanonicalExprMap::new(),
+            eq_classes: Vec::new(),
+            expr_map: CanonicalExprMap::new(),
         }
+    }
+
+    pub fn is_nondeterministic_excluding_udfs(&self, id: CanonicalIRId) -> bool {
+        self.eq_classes[id.index()].is_nondeterministic_excluding_udfs
     }
 
     /// Returns the id of `node`, resolving its children recursively
@@ -75,36 +81,51 @@ impl CanonicalIRMap {
         lp_arena: &Arena<IR>,
         expr_arena: &Arena<AExpr>,
     ) -> CanonicalIRId {
-        for expr in lp_arena.get(node).exprs() {
-            self.expr_cmp.resolve(expr.node(), expr_arena);
-        }
+        let exprs_are_nondeterministic = lp_arena.get(node).exprs().any(|expr| {
+            let expr_id = self.expr_map.resolve(expr.node(), expr_arena);
+            self.expr_map.is_nondeterministic_excluding_udfs(expr_id)
+        });
 
         let Self {
             deduplication_map,
             cache,
-            expr_cmp,
+            eq_classes,
+            expr_map,
         } = self;
 
-        let hash = combined_hash(node, &child_ids, lp_arena, expr_cmp);
-        let next_id = CanonicalIRId(1 + deduplication_map.len() as u32);
-        let id = deduplication_map
-            .entry(
-                hash,
-                |other| {
-                    child_ids == other.child_ids
-                        && lp_arena
-                            .get(node)
-                            .is_ir_equal_shallow(lp_arena.get(other.representative), expr_cmp)
-                },
-                |other| combined_hash(other.representative, &other.child_ids, lp_arena, expr_cmp),
-            )
-            .or_insert(CanonicalIREntry {
-                representative: node,
-                child_ids,
-                id: next_id,
+        let expr_cmp = CanonicalExprMapWithArena::new(expr_map, expr_arena);
+        let hash = combined_hash(node, &child_ids, lp_arena, &expr_cmp);
+        let entry = deduplication_map.entry(
+            hash,
+            |&other| {
+                let other = &eq_classes[other.index()];
+                child_ids == other.child_ids
+                    && lp_arena
+                        .get(node)
+                        .is_ir_equal_shallow(lp_arena.get(other.representative), &expr_cmp)
+            },
+            |&other| {
+                let other = &eq_classes[other.index()];
+                combined_hash(other.representative, &other.child_ids, lp_arena, &expr_cmp)
+            },
+        );
+
+        let id = *entry
+            .or_insert_with(|| {
+                let is_nondeterministic_excluding_udfs = exprs_are_nondeterministic
+                    || child_ids
+                        .iter()
+                        .any(|&child| eq_classes[child.index()].is_nondeterministic_excluding_udfs);
+
+                let id = CanonicalIRId(eq_classes.len() as u32);
+                eq_classes.push(CanonicalIRClass {
+                    representative: node,
+                    child_ids,
+                    is_nondeterministic_excluding_udfs,
+                });
+                id
             })
-            .get()
-            .id;
+            .get();
 
         cache.insert(node, id);
         id
@@ -185,14 +206,14 @@ fn combined_hash(
     node: Node,
     child_ids: &[CanonicalIRId],
     lp_arena: &Arena<IR>,
-    expr_cmp: &CanonicalExprMap,
+    expr_cmp: &CanonicalExprMapWithArena,
 ) -> u64 {
     let mut hasher = DefaultHasher::new();
     lp_arena
         .get(node)
         .hash_excluding_inputs(&mut hasher, expr_cmp);
     for child_id in child_ids {
-        hasher.write_u32(child_id.as_u32());
+        child_id.hash(&mut hasher);
     }
     hasher.finish()
 }

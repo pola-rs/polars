@@ -34,6 +34,8 @@ pub mod io;
 pub mod lazyframe;
 pub mod lazygroupby;
 pub mod map;
+#[cfg(feature = "pymethods")]
+pub mod polars_cloud_observer;
 
 #[cfg(feature = "object")]
 pub mod object;

@@ -59,3 +59,25 @@ class GPUEngine:
         # Avoids need for changes in cudf-polars
         kwargs["raise_on_fail"] = raise_on_fail
         self.config = kwargs
+
+
+class StreamingEngine:
+    """
+    Configuration options for the streaming execution engine.
+
+    Parameters
+    ----------
+    monitoring : bool, default False
+        Enable query monitoring.
+        Requires `polars_cloud` to be installed in the environment.
+
+    """
+
+    monitoring: bool
+
+    def __init__(
+        self,
+        *,
+        monitoring: bool = False,
+    ) -> None:
+        self.monitoring = monitoring

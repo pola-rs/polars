@@ -13,7 +13,7 @@ import pytest
 
 import polars as pl
 from polars.io.plugins import register_io_source
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -1762,3 +1762,49 @@ def test_cse_opaque_python_distinct_config_not_merged() -> None:
     # This proves that we must consider the various attributes when deduplicating Python
     # UDFs, because they can have an observable effect
     assert count_udf_calls(False, True) == 2
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("a").shuffle(),
+        pl.col("a").sample(fraction=1.0, with_replacement=True),
+        pl.col("a").rank(method="random"),
+    ],
+)
+def test_cspe_nondeterministic_not_cached_28733(expr: pl.Expr) -> None:
+    n = 100
+    # Values repeat so that the `random` rank tie-breaker has ties to break.
+    lf = pl.LazyFrame({"a": [i % 10 for i in range(n)]}).select(expr)
+    copied = pl.concat([lf, lf])
+
+    # Two occurrences of a non-deterministic subplan are two independent evaluations, so
+    # replacing them with one cached evaluation is not allowed.
+    df = copied.collect()
+    assert_frame_not_equal(df.slice(0, n), df.slice(n, n))
+
+    # SELECT is what appears next to shuffle/sample/rank
+    plan = copied.explain()
+    assert plan.count("SELECT") == 2, plan
+
+
+def test_cspe_nondeterministic_still_caches_inputs_28733() -> None:
+    n = 100
+    shared = (
+        pl.LazyFrame({"a": range(n)})
+        .filter(pl.col("a") >= 0)
+        .with_columns(b=pl.col("a") * 3)
+    )
+    lf = shared.select(pl.col("b").shuffle())
+    copied = pl.concat([lf, lf])
+
+    # The shuffle itself is not cached
+    df = copied.collect()
+    assert_frame_not_equal(df.slice(0, n), df.slice(n, n))
+
+    # We can't just check if CACHE exists in the plan, because even the initial
+    # LazyFrame scan
+    #  DF ["a"]; PROJECT */1 COLUMNS
+    # can be cached
+    plan = copied.explain()
+    assert plan.count("WITH_COLUMNS") == 1, plan
