@@ -95,19 +95,16 @@ pub(super) fn array_dot(lhs: &ArrayChunked, rhs: &ArrayChunked) -> PolarsResult<
         _ => unreachable!(),
     };
 
-    polars_ensure!(
-        lhs_width == rhs_width,
-        ShapeMismatch:
+    assert_eq!(
+        lhs_width, rhs_width,
         "arr.dot requires equal array widths, got {lhs_width} and {rhs_width}"
     );
-    polars_ensure!(
-        lhs_inner == rhs_inner,
-        SchemaMismatch:
+    assert_eq!(
+        lhs_inner, rhs_inner,
         "arr.dot requires matching inner dtypes, got {lhs_inner} and {rhs_inner}"
     );
-    polars_ensure!(
+    assert!(
         matches!(lhs_inner, DataType::Float32 | DataType::Float64),
-        InvalidOperation:
         "arr.dot supports Float32 and Float64 arrays, got array[{lhs_inner}, {lhs_width}]"
     );
 

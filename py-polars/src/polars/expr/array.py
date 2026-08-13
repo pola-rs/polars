@@ -283,6 +283,8 @@ class ExprArrayNameSpace:
         """
         Compute row-wise dot product with another Array expression.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Both inputs must contain equal-width arrays. Their inner data types are cast
         to a common supertype, which must be ``Float32`` or ``Float64``.
         An input with one row is broadcast against the other input.
