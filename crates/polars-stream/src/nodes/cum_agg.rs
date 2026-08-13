@@ -17,7 +17,7 @@ pub struct CumAggNode {
     kind: CumAggKind,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, strum_macros::IntoStaticStr)]
 pub enum CumAggKind {
     Min,
     Max,

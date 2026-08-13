@@ -13,6 +13,7 @@ polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
+polars-descriptions = { workspace = true, optional = true }
 polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
@@ -20,11 +21,13 @@ polars-ffi = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
 polars-mem-engine = { workspace = true, features = ["python"] }
+polars-observer = { workspace = true, optional = true }
 polars-ooc = { workspace = true, default-features = false }
 polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
 polars-row = { workspace = true }
+polars-stream = { workspace = true, optional = true }
 polars-testing = { workspace = true }
 polars-time = { workspace = true }
 polars-utils = { workspace = true, features = ["python"] }
@@ -46,11 +49,13 @@ ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true }
 parking_lot = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "chrono-tz", "multiple-pymethods"] }
+pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "chrono-tz", "multiple-pymethods", "uuid"] }
 rayon = { workspace = true }
 recursive = { workspace = true }
+rmp-serde = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true, optional = true }
+slotmap = { workspace = true }
 uuid = { workspace = true }
 
 [dependencies.polars]
@@ -144,7 +149,7 @@ is_in = ["polars/is_in"]
 json = [
   "polars/serde",
   "polars-buffer/serde",
-  "serde_json",
+  "dep:serde_json",
   "polars/json",
   "polars-utils/serde",
   "polars-mem-engine/json",
@@ -191,7 +196,13 @@ cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/htt
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]
-streaming = ["polars-lazy/streaming"]
+streaming = [
+  "polars-lazy/streaming",
+  "dep:polars-stream",
+  "dep:polars-descriptions",
+  "dep:polars-observer",
+  "dep:rmp-serde",
+]
 bitwise = ["polars/bitwise"]
 approx_unique = ["polars/approx_unique"]
 string_normalize = ["polars/string_normalize"]
