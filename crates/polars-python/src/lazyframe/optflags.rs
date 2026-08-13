@@ -48,6 +48,7 @@ macro_rules! flag_getter_setters {
 flag_getter_setters! {
     (TYPE_COERCION, get_type_coercion, set_type_coercion, clear=false)
     (TYPE_CHECK, get_type_check, set_type_check, clear=false)
+    (QUERY_MONITORING, get_query_monitoring, set_query_monitoring, clear=false)
 
     (PROJECTION_PUSHDOWN, get_projection_pushdown, set_projection_pushdown, clear=true)
     (PREDICATE_PUSHDOWN, get_predicate_pushdown, set_predicate_pushdown, clear=true)

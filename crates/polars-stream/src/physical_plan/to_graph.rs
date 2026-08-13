@@ -201,12 +201,23 @@ fn to_graph_rec<'a>(
             }
         },
 
-        Filter { predicate, input } => {
+        Filter {
+            predicate,
+            input,
+            projection,
+        } => {
             let input_schema = input.output_schema(ctx.phys_sm);
             let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
-                nodes::filter::FilterNode::new(phys_predicate_expr),
+                nodes::filter::FilterNode::new(
+                    phys_predicate_expr,
+                    projection.as_ref().map(|(x, _)| {
+                        x.iter()
+                            .map(|name| input_schema.index_of(name).unwrap())
+                            .collect()
+                    }),
+                ),
                 [(input_key, input.port)],
             )
         },

@@ -1,3 +1,4 @@
+use polars_buffer::Buffer;
 use polars_mem_engine::column_to_mask;
 
 use super::compute_node_prelude::*;
@@ -5,11 +6,15 @@ use crate::expression::StreamExpr;
 
 pub struct FilterNode {
     predicate: StreamExpr,
+    projection: Option<Buffer<usize>>,
 }
 
 impl FilterNode {
-    pub fn new(predicate: StreamExpr) -> Self {
-        Self { predicate }
+    pub fn new(predicate: StreamExpr, projection: Option<Buffer<usize>>) -> Self {
+        Self {
+            predicate,
+            projection,
+        }
     }
 }
 
@@ -46,12 +51,24 @@ impl ComputeNode for FilterNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
                     let morsel = morsel
-                        .async_try_map(|df| async move {
+                        .async_try_map(|mut df| async move {
                             let mask = slf
                                 .predicate
                                 .evaluate(&df, &state.in_memory_exec_state)
                                 .await?;
                             let mask = column_to_mask(&mask, df.height())?;
+
+                            if let Some(projection) = slf.projection.as_deref() {
+                                df = unsafe {
+                                    DataFrame::new_unchecked(
+                                        df.height(),
+                                        projection
+                                            .iter()
+                                            .map(|&i| df.columns()[i].clone())
+                                            .collect(),
+                                    )
+                                }
+                            }
 
                             // We already parallelize, call the sequential filter.
                             df.filter_seq(mask.as_ref())
