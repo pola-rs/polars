@@ -329,11 +329,11 @@ pub fn gather_and_postprocess(
             JoinType::Full => {
                 for (left_keycol, right_keycol) in Iterator::zip(left_on.iter(), right_on.iter()) {
                     let left_col = left.column(left_keycol).unwrap();
-                    let right_col = right.column(&right_keycol).unwrap();
+                    let right_col = right.column(right_keycol).unwrap();
                     let coalesced =
                         coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
                     left.replace(left_keycol, coalesced).unwrap();
-                    right.drop_in_place(&right_keycol).unwrap();
+                    right.drop_in_place(right_keycol).unwrap();
                 }
             },
             _ => unreachable!(),
