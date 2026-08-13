@@ -1364,7 +1364,7 @@ def test_parquet_pyarrow_map() -> None:
     assert_frame_equal(pl.read_parquet(f).explode(["x"]), expected)
 
     # Test for https://github.com/pola-rs/polars/issues/21317
-    # Specifying schema/allow_missing_columns
+    # Specifying schema/missing_columns
     for missing_columns in ["insert", "raise"]:
         f.seek(0)
         assert_frame_equal(
