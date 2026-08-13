@@ -36,7 +36,9 @@ if TYPE_CHECKING:
     from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.partition import PartitionBy, SinkedPathsCallback
+    from polars.lazyframe.engine import PostOptCallback
     from polars.lazyframe.frame import LazyFrame
+    from polars.lazyframe.in_process import InProcessQuery
     from polars.lazyframe.opt_flags import QueryOptFlags
     from polars.lazyframe.query_result import QueryResult
 
@@ -182,9 +184,14 @@ class RemoteEngine(Engine):
         """See :meth:`polars.LazyFrame.execute`."""
         return self._target(lf).execute(optimizations=optimizations)  # type: ignore[no-any-return]
 
-    def collect(
-        self, lf: LazyFrame, *, optimizations: QueryOptFlags, **kwargs: Any
-    ) -> DataFrame:
+    def collect(  # type: ignore[override]
+        self,
+        lf: LazyFrame,
+        *,
+        optimizations: QueryOptFlags,
+        background: bool = False,
+        post_opt_callback: PostOptCallback | None = None,
+    ) -> DataFrame | InProcessQuery:
         """
         See :meth:`polars.LazyFrame.collect`.
 
@@ -199,16 +206,23 @@ class RemoteEngine(Engine):
             category=UserWarning,
         )
         result = self.execute(lf, optimizations=optimizations)
-        return self._local_engine.collect(  # type: ignore[return-value]
-            result.lazy(), optimizations=optimizations, **kwargs
+        return self._local_engine.collect(
+            result.lazy(),
+            optimizations=optimizations,
+            background=background,
+            post_opt_callback=post_opt_callback,
         )
 
     def _collect_eager(
-        self, lf: LazyFrame, *, optimizations: QueryOptFlags, **kwargs: Any
+        self,
+        lf: LazyFrame,
+        *,
+        optimizations: QueryOptFlags,
+        post_opt_callback: PostOptCallback | None = None,
     ) -> DataFrame:
         """Eager work runs here: the data is already local, so sending it is waste."""
-        return self._local_engine.collect(  # type: ignore[return-value]
-            lf, optimizations=optimizations, **kwargs
+        return self._local_engine.collect(
+            lf, optimizations=optimizations, post_opt_callback=post_opt_callback
         )
 
     def _collect_all_eager(

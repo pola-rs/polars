@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Literal, TypeVar, Union
+from typing import IO, TYPE_CHECKING, Any, Literal, TypeVar, Union, overload
 
 from polars._dependencies import import_optional
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
@@ -117,6 +117,36 @@ class Engine(ABC):
     def __repr__(self) -> str:
         return f"{type(self).__name__}()"
 
+    @overload
+    def collect(
+        self,
+        lf: LazyFrame,
+        *,
+        optimizations: QueryOptFlags,
+        background: Literal[False] = ...,
+        post_opt_callback: PostOptCallback | None = ...,
+    ) -> DataFrame: ...
+
+    @overload
+    def collect(
+        self,
+        lf: LazyFrame,
+        *,
+        optimizations: QueryOptFlags,
+        background: Literal[True],
+        post_opt_callback: PostOptCallback | None = ...,
+    ) -> InProcessQuery: ...
+
+    @overload
+    def collect(
+        self,
+        lf: LazyFrame,
+        *,
+        optimizations: QueryOptFlags,
+        background: bool,
+        post_opt_callback: PostOptCallback | None = ...,
+    ) -> DataFrame | InProcessQuery: ...
+
     @abstractmethod
     def collect(
         self,
@@ -127,7 +157,7 @@ class Engine(ABC):
         post_opt_callback: PostOptCallback | None = None,
     ) -> DataFrame | InProcessQuery:
         """
-        Materialize `lf` into a `DataFrame`.
+        Materialize `lf` into a `DataFrame`, or an `InProcessQuery` if `background`.
 
         Parameters
         ----------
@@ -160,9 +190,8 @@ class Engine(ABC):
         lf: LazyFrame,
         *,
         optimizations: QueryOptFlags,
-        background: bool = False,
         post_opt_callback: PostOptCallback | None = None,
-    ) -> DataFrame | InProcessQuery:
+    ) -> DataFrame:
         """
         Like `collect`, but used exclusively to implement eager `DataFrame` methods.
 
@@ -170,10 +199,7 @@ class Engine(ABC):
         `DataFrame` methods implemented as `.lazy()....collect()`
         """
         return self.collect(
-            lf,
-            optimizations=optimizations,
-            background=background,
-            post_opt_callback=post_opt_callback,
+            lf, optimizations=optimizations, post_opt_callback=post_opt_callback
         )
 
     def _collect_all_eager(
@@ -373,6 +399,36 @@ class _LocalEngine(Engine):
         optimizations = optimizations.__copy__()
         optimizations._pyoptflags.query_monitoring = monitor
         return optimizations
+
+    @overload
+    def collect(
+        self,
+        lf: LazyFrame,
+        *,
+        optimizations: QueryOptFlags,
+        background: Literal[False] = ...,
+        post_opt_callback: PostOptCallback | None = ...,
+    ) -> DataFrame: ...
+
+    @overload
+    def collect(
+        self,
+        lf: LazyFrame,
+        *,
+        optimizations: QueryOptFlags,
+        background: Literal[True],
+        post_opt_callback: PostOptCallback | None = ...,
+    ) -> InProcessQuery: ...
+
+    @overload
+    def collect(
+        self,
+        lf: LazyFrame,
+        *,
+        optimizations: QueryOptFlags,
+        background: bool,
+        post_opt_callback: PostOptCallback | None = ...,
+    ) -> DataFrame | InProcessQuery: ...
 
     def collect(
         self,

@@ -1176,11 +1176,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self.with_columns(F.col(c).sort() for c in sort_cols) if sort_cols else self
         ).select(*metric_exprs)
 
-        # We want to compute the metrics using the selected engine, and once they have been computed, we collect
-        # them eagerly for local consumption
+        # We want to compute the metrics using the selected engine, and once they have
+        # been computed, we collect them eagerly for local consumption
         engine = _select_engine("auto")
-        lf_metrics = engine.execute(metrics_query).lazy()
-        df_metrics = engine._collect_eager(lf_metrics)
+        opt = DEFAULT_QUERY_OPT_FLAGS
+        lf_metrics = engine.execute(metrics_query, optimizations=opt).lazy()
+        df_metrics = engine._collect_eager(lf_metrics, optimizations=opt)
 
         # reshape wide result
         n_metrics = len(metrics)
@@ -2580,17 +2581,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 raise TypeError(error_msg)
 
         engine_ = _select_engine(engine)
-        collect = (
-            engine_._collect_eager
-            if optimizations._pyoptflags.eager
-            else engine_.collect
-        )
-        return collect(  # type: ignore[return-value]
+        # Only for testing purposes
+        post_opt_callback = _kwargs.get("post_opt_callback")
+
+        if optimizations._pyoptflags.eager:
+            # Eager entry points never background, so `background` does not apply.
+            return engine_._collect_eager(
+                self, optimizations=optimizations, post_opt_callback=post_opt_callback
+            )
+        return engine_.collect(
             self,
             optimizations=optimizations,
             background=background,
-            # Only for testing purposes
-            post_opt_callback=_kwargs.get("post_opt_callback"),
+            post_opt_callback=post_opt_callback,
         )
 
     @overload
