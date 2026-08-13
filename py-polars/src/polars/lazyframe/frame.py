@@ -123,9 +123,6 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars._plr import PyExpr, PySelector
 
-    with contextlib.suppress(ImportError):  # Module not available when building docs
-        pass
-
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
         Alignment,
