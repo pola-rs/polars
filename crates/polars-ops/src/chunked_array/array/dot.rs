@@ -43,7 +43,9 @@ where
     for output_idx in 0..output_len {
         let lhs_idx = if lhs_broadcast { 0 } else { output_idx };
         let rhs_idx = if rhs_broadcast { 0 } else { output_idx };
-        let outer_valid = lhs_array.is_valid(lhs_idx) && rhs_array.is_valid(rhs_idx);
+        let outer_valid = unsafe {
+            lhs_array.is_valid_unchecked(lhs_idx) && rhs_array.is_valid_unchecked(rhs_idx)
+        };
         output_validity.push(outer_valid);
 
         if !outer_valid {
@@ -53,8 +55,8 @@ where
 
         let lhs_offset = lhs_idx * width;
         let rhs_offset = rhs_idx * width;
-        let lhs_row = &lhs_slice[lhs_offset..lhs_offset + width];
-        let rhs_row = &rhs_slice[rhs_offset..rhs_offset + width];
+        let lhs_row = unsafe { lhs_slice.get_unchecked(lhs_offset..lhs_offset + width) };
+        let rhs_row = unsafe { rhs_slice.get_unchecked(rhs_offset..rhs_offset + width) };
 
         let value = if lhs_inner_validity.is_none() && rhs_inner_validity.is_none() {
             lhs_row
@@ -64,15 +66,15 @@ where
                 .sum()
         } else {
             let mut value = T::default();
-            for inner_idx in 0..width {
-                let lhs_value_idx = lhs_offset + inner_idx;
-                let rhs_value_idx = rhs_offset + inner_idx;
-                let lhs_valid =
-                    lhs_inner_validity.is_none_or(|validity| validity.get_bit(lhs_value_idx));
-                let rhs_valid =
-                    rhs_inner_validity.is_none_or(|validity| validity.get_bit(rhs_value_idx));
+            for (inner_idx, (&lhs, &rhs)) in lhs_row.iter().zip(rhs_row).enumerate() {
+                let lhs_valid = lhs_inner_validity.is_none_or(|validity| unsafe {
+                    validity.get_bit_unchecked(lhs_offset + inner_idx)
+                });
+                let rhs_valid = rhs_inner_validity.is_none_or(|validity| unsafe {
+                    validity.get_bit_unchecked(rhs_offset + inner_idx)
+                });
                 if lhs_valid && rhs_valid {
-                    value += lhs_row[inner_idx] * rhs_row[inner_idx];
+                    value += lhs * rhs;
                 }
             }
             value
