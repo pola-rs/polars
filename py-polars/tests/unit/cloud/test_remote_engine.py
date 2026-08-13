@@ -61,9 +61,6 @@ class FakeExecuteRemote:
             raise TypeError(msg)
         return self._sink("sink_ipc", uri, kwargs)
 
-    def sink_ndjson(self, uri: Any, **kwargs: Any) -> FakeQuery:
-        return self._sink("sink_ndjson", uri, kwargs)
-
 
 class FakeQueryResult:
     """Stands in for the `QueryResult` that Polars Cloud hands back."""
@@ -207,7 +204,6 @@ def test_collect_pulls_the_result_back_and_warns(
         ("sink_parquet", "s3://bucket/out/"),
         ("sink_csv", "s3://bucket/out.csv"),
         ("sink_ipc", "s3://bucket/out.ipc"),
-        ("sink_ndjson", "s3://bucket/out.ndjson"),
     ],
 )
 def test_sink_dispatches_and_blocks(
@@ -244,7 +240,6 @@ def test_sink_forwards_options(calls: list[tuple[Any, ...]], lf: pl.LazyFrame) -
         ("sink_csv", {"maintain_order": False}),
         ("sink_ipc", {"record_batch_size": 100}),
         ("sink_ipc", {"maintain_order": False}),
-        ("sink_ndjson", {"compression": "gzip"}),
     ],
 )
 def test_sink_rejects_unsupported_options(
@@ -279,6 +274,11 @@ def test_sink_rejects_non_uri_target(
         ("collect_all", lambda lf, e: pl.collect_all([lf], engine=e)),
         # a Python callback cannot run on a worker
         ("sink_batches", lambda lf, e: lf.sink_batches(print, engine=e)),
+        # Polars Cloud exposes no NDJSON sink
+        (
+            "sink_ndjson",
+            lambda lf, e: lf.sink_ndjson("s3://bucket/out.ndjson", engine=e),
+        ),
     ],
 )
 @pytest.mark.usefixtures("_stub_cloud")

@@ -17,7 +17,7 @@ from polars._warnings import issue_warning
 from polars.lazyframe.engine import Engine, StreamingEngine
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
     from pathlib import Path
 
     import polars_cloud as pc
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         CsvQuoteStyle,
         EngineType,
         IpcCompression,
+        ParquetCompression,
         ParquetMetadata,
         PlanTypePreference,
         StorageOptionsDict,
@@ -163,7 +164,7 @@ class RemoteEngine(Engine):
         """Plans are rendered for the engine the workers are asked to prefer."""
         return self.engine.name
 
-    def _target(self, lf: LazyFrame) -> Any:
+    def _target(self, lf: LazyFrame) -> pc.LazyFrameRemote | pc.ExecuteRemote:
         """Return the `polars_cloud` object that runs `lf` on this engine."""
         remote = lf.remote(
             self.context,
@@ -226,17 +227,16 @@ class RemoteEngine(Engine):
         )
 
     def _collect_all_eager(
-        self, lfs: Any, *, optimizations: QueryOptFlags
+        self, lfs: Iterable[LazyFrame], *, optimizations: QueryOptFlags
     ) -> list[DataFrame]:
         """See :meth:`Engine._collect_all_eager`."""
         return self._local_engine.collect_all(lfs, optimizations=optimizations)
 
     # -- Sinks --------------------------------------------------------------------
 
-    def _sink(
-        self, lf: LazyFrame, method: str, path: Any, kwargs: Mapping[str, Any]
-    ) -> None:
-        """Run a sink on Polars Cloud, blocking until it completes."""
+    @staticmethod
+    def _sink_uri(path: Any) -> str | PartitionBy:
+        """Narrow a sink target to the destinations Polars Cloud accepts."""
         from polars.io.partition import PartitionBy
 
         if not isinstance(path, (str, PartitionBy)):
@@ -245,7 +245,7 @@ class RemoteEngine(Engine):
                 f"{qualified_type_name(path)!r}"
             )
             raise TypeError(msg)
-        getattr(self._target(lf), method)(path, **kwargs).await_result()
+        return path
 
     @staticmethod
     def _reject_unsupported(**kwargs: Any) -> None:
@@ -260,7 +260,7 @@ class RemoteEngine(Engine):
         lf: LazyFrame,
         path: str | Path | IO[bytes] | PartitionBy,
         *,
-        compression: str,
+        compression: ParquetCompression,
         compression_level: int | None,
         statistics: bool | str | dict[str, bool],
         row_group_size: int | None,
@@ -285,24 +285,20 @@ class RemoteEngine(Engine):
             retries=retries,
             _sinked_paths_callback=_sinked_paths_callback,
         )
-        self._sink(
-            lf,
-            "sink_parquet",
-            path,
-            {
-                "compression": compression,
-                "compression_level": compression_level,
-                "statistics": statistics,
-                "row_group_size": row_group_size,
-                "data_page_size": data_page_size,
-                "maintain_order": maintain_order,
-                "storage_options": storage_options,
-                "credential_provider": credential_provider,
-                "metadata": metadata,
-                "arrow_schema": arrow_schema,
-                "optimizations": optimizations,
-            },
-        )
+        self._target(lf).sink_parquet(
+            self._sink_uri(path),
+            compression=compression,
+            compression_level=compression_level,
+            statistics=statistics,
+            row_group_size=row_group_size,
+            data_page_size=data_page_size,
+            maintain_order=maintain_order,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
+            metadata=metadata,
+            arrow_schema=arrow_schema,
+            optimizations=optimizations,
+        ).await_result()
         return None
 
     def sink_ipc(
@@ -334,18 +330,14 @@ class RemoteEngine(Engine):
             # `polars_cloud`'s sink_ipc does not accept it
             maintain_order=not maintain_order,
         )
-        self._sink(
-            lf,
-            "sink_ipc",
-            path,
-            {
-                "compression": compression,
-                "compat_level": compat_level,
-                "storage_options": storage_options,
-                "credential_provider": credential_provider,
-                "optimizations": optimizations,
-            },
-        )
+        self._target(lf).sink_ipc(
+            self._sink_uri(path),
+            compression=compression,
+            compat_level=compat_level,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
+            optimizations=optimizations,
+        ).await_result()
         return None
 
     def sink_csv(
@@ -391,68 +383,24 @@ class RemoteEngine(Engine):
             # `polars_cloud`'s sink_csv does not accept it
             maintain_order=not maintain_order,
         )
-        self._sink(
-            lf,
-            "sink_csv",
-            path,
-            {
-                "include_bom": include_bom,
-                "include_header": include_header,
-                "separator": separator,
-                "line_terminator": line_terminator,
-                "quote_char": quote_char,
-                "batch_size": batch_size,
-                "datetime_format": datetime_format,
-                "date_format": date_format,
-                "time_format": time_format,
-                "float_scientific": float_scientific,
-                "float_precision": float_precision,
-                "decimal_comma": decimal_comma,
-                "null_value": null_value,
-                "quote_style": quote_style,
-                "storage_options": storage_options,
-                "credential_provider": credential_provider,
-                "optimizations": optimizations,
-            },
-        )
-        return None
-
-    def sink_ndjson(
-        self,
-        lf: LazyFrame,
-        path: str | Path | IO[bytes] | IO[str] | PartitionBy,
-        *,
-        compression: Literal["uncompressed", "gzip", "zstd"],
-        compression_level: int | None,
-        check_extension: bool,
-        maintain_order: bool,
-        storage_options: StorageOptionsDict | None,
-        credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
-        sync_on_close: SyncOnCloseMethod | None,
-        mkdir: bool,
-        lazy: bool,
-        optimizations: QueryOptFlags,
-    ) -> None:
-        """See :meth:`polars.LazyFrame.sink_ndjson`."""
-        self._reject_unsupported(
-            lazy=lazy,
-            mkdir=mkdir,
-            sync_on_close=sync_on_close,
-            retries=retries,
-            compression=compression != "uncompressed",
-            compression_level=compression_level,
-            check_extension=not check_extension,
-        )
-        self._sink(
-            lf,
-            "sink_ndjson",
-            path,
-            {
-                "maintain_order": maintain_order,
-                "storage_options": storage_options,
-                "credential_provider": credential_provider,
-                "optimizations": optimizations,
-            },
-        )
+        self._target(lf).sink_csv(
+            self._sink_uri(path),
+            include_bom=include_bom,
+            include_header=include_header,
+            separator=separator,
+            line_terminator=line_terminator,
+            quote_char=quote_char,
+            batch_size=batch_size,
+            datetime_format=datetime_format,
+            date_format=date_format,
+            time_format=time_format,
+            float_scientific=float_scientific,
+            float_precision=float_precision,
+            decimal_comma=decimal_comma,
+            null_value=null_value,
+            quote_style=quote_style,
+            storage_options=storage_options,
+            credential_provider=credential_provider,
+            optimizations=optimizations,
+        ).await_result()
         return None
