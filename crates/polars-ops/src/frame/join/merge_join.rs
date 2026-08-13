@@ -352,7 +352,13 @@ pub fn gather_and_postprocess(
         });
     right.rename_many(renames).unwrap();
 
+    // Merge left and right and drop unused output columns.
     left.hstack_mut(right.columns())?;
+    for col in left_on {
+        if left.schema().contains(col) && !output_schema.contains(col) {
+            left.drop_in_place(col).unwrap();
+        }
+    }
 
     debug_assert_eq!(**left.schema(), *output_schema);
     Ok(left)
