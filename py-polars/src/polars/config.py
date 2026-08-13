@@ -83,6 +83,7 @@ _POLARS_CFG_ENV_VARS: Final[set[str]] = {
     "POLARS_VERBOSE",
     "POLARS_MAX_EXPR_DEPTH",
     "POLARS_ENGINE_AFFINITY",
+    "POLARS_QUERY_MONITORING",
 }
 
 # vars that set the rust env directly should declare themselves here as the Config
@@ -172,6 +173,7 @@ class ConfigParameters(TypedDict, total=False):
     expr_depth_warning: int
     engine_affinity: EngineType | None
     default_credential_provider: CredentialProviderFunction | Literal["auto"] | None
+    enable_monitoring: bool | None
 
     set_ascii_tables: bool | None
     set_auto_structify: bool | None
@@ -1630,6 +1632,56 @@ class Config(contextlib.ContextDecorator):
             os.environ["POLARS_ENGINE_AFFINITY"] = engine
         set_engine_affinity_override(None)
         plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
+
+        return cls
+
+    @classmethod
+    def enable_monitoring(cls, active: bool | None = True) -> type[Config]:
+        """
+        Enable runtime monitoring of query execution.
+
+        Query metrics are collected and sent to Polars Cloud, letting you inspect
+        the performance of your queries from the dashboard. This requires:
+
+        - A Polars Cloud account. Sign up at https://cloud.pola.rs/ (calling this
+          method triggers a browser-based login if you are not already
+          authenticated).
+        - The ``polars-cloud`` package installed in this environment
+          (``pip install polars-cloud``).
+
+        Monitoring is only supported by the streaming engine, so enabling it also
+        sets the engine affinity to ``"streaming"``. Disabling it does not restore
+        the previous engine affinity.
+
+        .. engine-support:: streaming
+
+        Parameters
+        ----------
+        active
+            Enable monitoring when True (the default), disable it when False.
+
+        Examples
+        --------
+        >>> pl.Config.enable_monitoring()  # doctest: +SKIP
+        """
+        if active:
+            try:
+                import polars_cloud as pc
+            except ImportError as e:
+                msg = (
+                    "query monitoring requires the `polars_cloud>=0.11.0` package, which could "
+                    "not be imported. Install it into this environment "
+                    f"(e.g. `pip install 'polars-cloud>=0.11.0'`). ({e})"
+                )
+                raise ModuleNotFoundError(msg) from e
+
+            pc.authenticate()
+
+            os.environ["POLARS_QUERY_MONITORING"] = "1"
+            cls.set_engine_affinity("streaming")
+        else:
+            os.environ.pop("POLARS_QUERY_MONITORING", None)
+
         return cls
 
     @classmethod

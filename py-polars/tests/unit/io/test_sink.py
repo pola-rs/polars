@@ -350,6 +350,7 @@ def test_sink_path_slicing_utf8_boundaries_26324(
 
 @pytest.mark.parametrize("file_format", ["parquet", "ipc", "csv", "ndjson"])
 @pytest.mark.parametrize("partitioned", [True, False])
+@pytest.mark.debug
 @pytest.mark.write_disk
 def test_sink_metrics(
     plmonkeypatch: PlMonkeyPatch,

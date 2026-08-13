@@ -2549,6 +2549,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "murmur3"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9252111cf132ba0929b6f8e030cac2a24b507f3a4d6db6fb2896f27b354c714b"
+
+[[package]]
 name = "native-tls"
 version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3220,6 +3226,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-descriptions"
+version = "0.55.1"
+dependencies = [
+ "serde",
+ "strum_macros 0.28.0",
+]
+
+[[package]]
 name = "polars-doc-examples"
 version = "0.55.1"
 dependencies = [
@@ -3404,6 +3418,7 @@ dependencies = [
  "polars-io",
  "polars-json",
  "polars-mem-engine",
+ "polars-observer",
  "polars-ops",
  "polars-plan",
  "polars-stream",
@@ -3436,6 +3451,15 @@ dependencies = [
  "rayon",
  "recursive",
  "tokio",
+]
+
+[[package]]
+name = "polars-observer"
+version = "0.55.1"
+dependencies = [
+ "parking_lot",
+ "polars-descriptions",
+ "polars-error",
 ]
 
 [[package]]
@@ -3564,6 +3588,7 @@ dependencies = [
  "indexmap",
  "libloading",
  "memmap2",
+ "murmur3",
  "num-traits",
  "percent-encoding",
  "polars-arrow",
@@ -3571,6 +3596,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-descriptions",
  "polars-error",
  "polars-ffi",
  "polars-io",
@@ -3619,6 +3645,7 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-descriptions",
  "polars-dtype",
  "polars-error",
  "polars-expr",
@@ -3626,19 +3653,23 @@ dependencies = [
  "polars-io",
  "polars-lazy",
  "polars-mem-engine",
+ "polars-observer",
  "polars-ooc",
  "polars-ops",
  "polars-parquet",
  "polars-plan",
  "polars-row",
+ "polars-stream",
  "polars-testing",
  "polars-time",
  "polars-utils",
  "pyo3",
  "rayon",
  "recursive",
+ "rmp-serde",
  "serde",
  "serde_json",
+ "slotmap",
  "uuid",
  "version_check",
 ]
@@ -3744,11 +3775,13 @@ dependencies = [
  "polars-compute",
  "polars-config",
  "polars-core",
+ "polars-descriptions",
  "polars-error",
  "polars-expr",
  "polars-io",
  "polars-json",
  "polars-mem-engine",
+ "polars-observer",
  "polars-ooc",
  "polars-ops",
  "polars-parquet",
@@ -3762,6 +3795,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slotmap",
+ "strum_macros 0.28.0",
  "tokio",
  "uuid",
  "version_check",
@@ -3970,6 +4004,7 @@ dependencies = [
  "pyo3-build-config",
  "pyo3-ffi",
  "pyo3-macros",
+ "uuid",
 ]
 
 [[package]]

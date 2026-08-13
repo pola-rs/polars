@@ -12,6 +12,7 @@ importing ``polars.lazyframe.frame``, which imports the selection code.
 from __future__ import annotations
 
 import io
+import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from functools import partial
@@ -357,6 +358,22 @@ class _LocalEngine(Engine):
     ) -> PostOptCallback | None:
         return None
 
+    def _monitoring(self) -> bool:
+        """Whether queries on this engine should report metrics to Polars Cloud."""
+        return os.environ.get("POLARS_QUERY_MONITORING") == "1"
+
+    def _with_monitoring(self, optimizations: QueryOptFlags) -> QueryOptFlags:
+        """Register the query observer, and flag `optimizations` accordingly."""
+        monitor = self._monitoring()
+        if monitor:
+            import polars._plr as plr
+
+            plr.set_query_monitoring(True)
+
+        optimizations = optimizations.__copy__()
+        optimizations._pyoptflags.query_monitoring = monitor
+        return optimizations
+
     def collect(
         self,
         lf: LazyFrame,
@@ -368,6 +385,7 @@ class _LocalEngine(Engine):
         callback = self._post_opt_callback(
             background=background, eager=optimizations._pyoptflags.eager
         )
+        optimizations = self._with_monitoring(optimizations)
 
         ldf = lf._ldf.with_optimizations(optimizations._pyoptflags)
         if background:
@@ -796,12 +814,29 @@ class InMemoryEngine(_LocalEngine):
 
 
 class StreamingEngine(_LocalEngine):
-    """The streaming engine."""
+    """
+    The streaming engine.
+
+    Parameters
+    ----------
+    monitoring : bool, default None
+        Enable query monitoring, overriding :meth:`Config.enable_monitoring`.
+        Requires `polars_cloud` to be installed in the environment.
+    """
+
+    monitoring: bool | None
+    """Whether to report query metrics to Polars Cloud, if set explicitly."""
+
+    def __init__(self, *, monitoring: bool | None = None) -> None:
+        self.monitoring = monitoring
 
     @property
     def name(self) -> str:
         """Name of the engine."""
         return "streaming"
+
+    def _monitoring(self) -> bool:
+        return super()._monitoring() if self.monitoring is None else self.monitoring
 
 
 class GPUEngine(_LocalEngine):
