@@ -53,7 +53,8 @@ jobs:
           command: build
           target: wasm32-unknown-emscripten
           args: >
-            --profile dev
             --manifest-path py-polars/runtime/polars-runtime-32/Cargo.toml
+            --profile dev
+            --features numa
             --interpreter python3.10
           maturin-version: 1.7.4

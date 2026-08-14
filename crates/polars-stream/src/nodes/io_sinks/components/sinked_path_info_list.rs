@@ -12,7 +12,7 @@ pub async fn call_sinked_paths_callback(
     let SinkedPathInfoList { path_info_list } = &sinked_path_info_list;
 
     path_info_list.lock().sort_unstable_by(
-        |SinkedPathInfo { path: l }, SinkedPathInfo { path: r }| PlRefPath::cmp(l, r),
+        |SinkedPathInfo { path: l, .. }, SinkedPathInfo { path: r, .. }| PlRefPath::cmp(l, r),
     );
 
     ASYNC
@@ -31,14 +31,45 @@ pub async fn call_sinked_paths_callback(
 
 #[derive(Default, Debug, Clone)]
 pub struct SinkedPathInfoList {
-    pub path_info_list: Arc<parking_lot::Mutex<Vec<SinkedPathInfo>>>,
+    path_info_list: Arc<parking_lot::Mutex<Vec<SinkedPathInfo>>>,
 }
 
 impl SinkedPathInfoList {
-    pub fn non_path_error(&self) -> PolarsError {
-        polars_err!(
-            ComputeError:
-            "paths callback was set but encountered non-path sink target"
-        )
+    pub fn new_entry(&self) -> SinkedPathInfoEntry {
+        let mut v = self.path_info_list.lock();
+        let entry_idx = v.len();
+        v.push(SinkedPathInfo::default());
+
+        SinkedPathInfoEntry {
+            path_info_list: self.clone(),
+            entry_idx,
+        }
+    }
+}
+
+pub fn requested_sinked_paths_callback_with_non_path_error() -> PolarsError {
+    polars_err!(
+        ComputeError:
+        "paths callback was set but encountered non-path sink target"
+    )
+}
+
+#[derive(Clone)]
+pub struct SinkedPathInfoEntry {
+    path_info_list: SinkedPathInfoList,
+    entry_idx: usize,
+}
+
+impl SinkedPathInfoEntry {
+    pub fn set_path(&self, path: PlRefPath) {
+        self.path_info_list.path_info_list.lock()[self.entry_idx].path = path;
+    }
+
+    pub fn set_num_rows(&self, num_rows: u64) {
+        self.path_info_list.path_info_list.lock()[self.entry_idx].num_rows = num_rows;
+    }
+
+    pub fn set_num_bytes(&self, num_bytes: u64) {
+        self.path_info_list.path_info_list.lock()[self.entry_idx].num_bytes = num_bytes;
     }
 }

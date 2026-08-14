@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import warnings
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -98,7 +99,7 @@ from polars.datatypes import (
 from polars.datatypes.group import DataTypeGroup
 from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.interchange.protocol import CompatLevel
-from polars.lazyframe.engine_config import GPUEngine
+from polars.lazyframe.engine_config import GPUEngine, StreamingEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
@@ -188,7 +189,25 @@ _COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
 
 
 def _select_engine(engine: EngineType) -> EngineType:
-    return get_engine_affinity() if engine == "auto" else engine
+    if engine == "auto":
+        return get_engine_affinity()
+    elif isinstance(engine, StreamingEngine):
+        return "streaming"
+    return engine
+
+
+def _engine_monitoring(engine: EngineType) -> bool:
+    """Whether this query should be monitored, registering the observer if so."""
+    monitor = (
+        engine.monitoring
+        if isinstance(engine, StreamingEngine)
+        else os.environ.get("POLARS_QUERY_MONITORING") == "1"
+    )
+    if monitor:
+        import polars._plr as plr
+
+        plr.set_query_monitoring(True)
+    return monitor
 
 
 def _to_sink_target(
@@ -2628,6 +2647,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
 
+        monitor = _engine_monitoring(engine)
         engine = _select_engine(engine)
 
         callback = _gpu_engine_callback(
@@ -2639,6 +2659,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(engine, GPUEngine):
             engine = "gpu"
 
+        optimizations = optimizations.__copy__()
+        optimizations._pyoptflags.query_monitoring = monitor
         ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
         if background:
             issue_unstable_warning("background mode is considered unstable.")
@@ -2841,7 +2863,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-        _sinked_paths_callback: SinkedPathsCallback | None = None,
+        sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> None: ...
 
     @overload
@@ -2867,7 +2889,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-        _sinked_paths_callback: SinkedPathsCallback | None = None,
+        sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
 
     def sink_parquet(
@@ -2892,7 +2914,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: bool = False,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-        _sinked_paths_callback: SinkedPathsCallback | None = None,
+        sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -3038,6 +3060,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
+        sinked_paths_callback
+            Callable that will be called with information on sinked paths.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -3117,6 +3145,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         elif callable(metadata):
             metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
 
+        if sinked_paths_callback is not None:
+            msg = "the `sinked_paths_callback` parameter of `sink_parquet` is considered unstable"
+            issue_unstable_warning(msg)
+
         from polars.io.partition import _SinkOptions
 
         sink_options = _SinkOptions(
@@ -3125,7 +3157,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             sync_on_close=sync_on_close,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            sinked_paths_callback=_sinked_paths_callback,
+            sinked_paths_callback=sinked_paths_callback,
         )
 
         ldf_py = self._ldf.sink_parquet(
@@ -3470,6 +3502,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         mode: Literal["append", "overwrite"],
         schema_mode: Literal["merge", "overwrite"] | None = None,
+        snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
         | None = None,
@@ -3499,6 +3532,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - If 'overwrite', replace the table schema with the incoming schema.
               This requires ``mode='overwrite'``.
             - If None, require the schemas to match.
+        snapshot_properties
+            Custom properties to add to the Iceberg snapshot summary.
         catalog
             PyIceberg catalog to load the table from if the provided `target`
             was a table identifier.
@@ -3519,6 +3554,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             target,
             mode=mode,
             schema_mode=schema_mode,
+            snapshot_properties=snapshot_properties,
             catalog=catalog,
             storage_options=storage_options,
         )
@@ -3547,6 +3583,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         _record_batch_statistics: bool = False,
+        sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> None: ...
 
     @overload
@@ -3569,6 +3606,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         _record_batch_statistics: bool = False,
+        sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
 
     def sink_ipc(
@@ -3590,6 +3628,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         _record_batch_statistics: bool = False,
+        sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to an IPC file.
@@ -3702,6 +3741,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
+        sinked_paths_callback
+            Callable that will be called with information on sinked paths.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -3760,6 +3805,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if compression is None:
             compression = "uncompressed"
 
+        if sinked_paths_callback is not None:
+            msg = "the `sinked_paths_callback` parameter of `sink_ipc` is considered unstable"
+            issue_unstable_warning(msg)
+
         from polars.io.partition import _SinkOptions
 
         sink_options = _SinkOptions(
@@ -3768,6 +3817,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             sync_on_close=sync_on_close,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,
+            sinked_paths_callback=sinked_paths_callback,
         )
 
         ldf_py = self._ldf.sink_ipc(

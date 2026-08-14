@@ -43,6 +43,7 @@ class IcebergSinkState:
     table_name: str
     mode: Literal["append", "overwrite"]
     schema_mode: Literal["merge", "overwrite"] | None
+    snapshot_properties: dict[str, str]
     iceberg_storage_properties: StorageOptionsDict
 
     sink_uuid_str: str
@@ -57,6 +58,7 @@ class IcebergSinkState:
         *,
         mode: Literal["append", "overwrite"] = "append",
         schema_mode: Literal["merge", "overwrite"] | None = None,
+        snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
         storage_options: StorageOptionsDict | None = None,
     ) -> IcebergSinkState:
@@ -98,6 +100,7 @@ class IcebergSinkState:
             table_name=target if isinstance(target, str) else ".".join(target.name()),
             mode=mode,
             schema_mode=schema_mode,
+            snapshot_properties=snapshot_properties or {},
             iceberg_storage_properties=storage_options or {},
             sink_uuid_str=gen_uuid_v7().hex(),
             table_=NoPickleOption(target if not isinstance(target, str) else None),
@@ -265,7 +268,7 @@ class IcebergSinkState:
             if self.mode == "overwrite":
                 from pyiceberg.expressions import AlwaysTrue
 
-                tx.delete(AlwaysTrue())
+                tx.delete(AlwaysTrue(), snapshot_properties=self.snapshot_properties)
 
             if verbose:
                 eprint("IcebergSinkState[commit]: begin add_files")
@@ -274,6 +277,7 @@ class IcebergSinkState:
 
             tx.add_files(
                 data_file_paths,
+                snapshot_properties=self.snapshot_properties,
                 check_duplicate_files=False,
             )
 

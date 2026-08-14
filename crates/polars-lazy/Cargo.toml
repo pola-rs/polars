@@ -20,6 +20,7 @@ polars-expr = { workspace = true }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
 polars-mem-engine = { workspace = true }
+polars-observer = { workspace = true }
 polars-ops = { workspace = true, features = ["chunked_ids"] }
 polars-plan = { workspace = true }
 polars-stream = { workspace = true, optional = true }

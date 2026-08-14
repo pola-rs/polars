@@ -6,15 +6,16 @@ use polars_async::primitives::connector;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
-use polars_plan::dsl::sink::SinkedPathInfo;
 use polars_plan::dsl::{SinkTarget, UnifiedSinkArgs};
+use polars_utils::index::idxsize_to_u64;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::execute::StreamingExecutionState;
 use crate::morsel::Morsel;
 use crate::nodes::io_sinks::components::morsel_resize_pipeline::MorselResizePipeline;
 use crate::nodes::io_sinks::components::sinked_path_info_list::{
-    SinkedPathInfoList, call_sinked_paths_callback,
+    SinkedPathInfoEntry, SinkedPathInfoList, call_sinked_paths_callback,
+    requested_sinked_paths_callback_with_non_path_error,
 };
 use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget};
 use crate::nodes::io_sinks::writers::create_file_writer_starter;
@@ -53,27 +54,30 @@ pub fn start_single_file_sink_pipeline(
         unreachable!()
     };
 
-    let sinked_path_info_list: Option<SinkedPathInfoList> = if sinked_paths_callback.is_some() {
+    let (sinked_path_info_list, sinked_path_info_entry): (
+        Option<SinkedPathInfoList>,
+        Option<SinkedPathInfoEntry>,
+    ) = if sinked_paths_callback.is_some() {
         let v = SinkedPathInfoList::default();
+        let entry = v.new_entry();
 
         match &target {
-            SinkTarget::Path(path) => v
-                .path_info_list
-                .lock()
-                .push(SinkedPathInfo { path: path.clone() }),
-            SinkTarget::Dyn(_) => return Err(v.non_path_error()),
+            SinkTarget::Path(path) => entry.set_path(path.clone()),
+            SinkTarget::Dyn(_) => return Err(requested_sinked_paths_callback_with_non_path_error()),
         };
 
-        Some(v)
+        Some((v, entry))
     } else {
         None
-    };
+    }
+    .unzip();
 
     let file_schema = input_schema;
     let verbose = polars_core::config::verbose();
 
     let file_open_task = {
         let io_metrics = io_metrics.clone();
+        let sinked_path_info_entry = sinked_path_info_entry.clone();
         tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
             target
                 .open_into_writable_async(
@@ -84,6 +88,12 @@ pub fn start_single_file_sink_pipeline(
                     io_metrics,
                 )
                 .await
+                .map(|x| {
+                    crate::nodes::io_sinks::components::writable::WriteTarget::new(
+                        x,
+                        sinked_path_info_entry,
+                    )
+                })
         }))
     };
     let file_open_task = FileOpenTaskHandle::new(file_open_task, sync_on_close);
@@ -143,6 +153,10 @@ pub fn start_single_file_sink_pipeline(
             }
 
             if let Some(sinked_paths_callback) = sinked_paths_callback {
+                sinked_path_info_entry
+                    .unwrap()
+                    .set_num_rows(idxsize_to_u64(sent_size.num_rows));
+
                 if verbose {
                     eprintln!("{node_name}: Call sinked path info callback");
                 }
