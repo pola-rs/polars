@@ -30,11 +30,6 @@ def lf() -> pl.LazyFrame:
     return pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
 
 
-# ------------------------------------------------------------------------------------
-# Behaviour that must survive the refactor unchanged.
-# ------------------------------------------------------------------------------------
-
-
 def test_explain_streaming_flag_reaches_optimizer() -> None:
     # `explain` uses the engine only to set `optflags.streaming`; a sort+head is one
     # of the few plans the streaming flag actually rewrites. This is the regression
@@ -55,13 +50,6 @@ def test_collect_async_streaming_warns_unstable(lf: pl.LazyFrame) -> None:
         asyncio.run(run())
     finally:
         pl.Config().warn_unstable(False)
-
-
-# ------------------------------------------------------------------------------------
-# Behaviour that the `Engine` refactor intentionally changes. Each of these pins the
-# *current* semantics so that the delta shows up in the diff; they get flipped in the
-# step that changes them.
-# ------------------------------------------------------------------------------------
 
 
 def test_sink_forwards_optimizations(tmp_path: Path, lf: pl.LazyFrame) -> None:
@@ -91,8 +79,6 @@ def test_sink_forwards_optimizations(tmp_path: Path, lf: pl.LazyFrame) -> None:
 def test_collect_all_async_honors_engine_affinity(
     monkeypatch: pytest.MonkeyPatch, lf: pl.LazyFrame
 ) -> None:
-    # `collect_all_async` used to skip `_select_engine` entirely, so it was the one
-    # entry point that ignored POLARS_ENGINE_AFFINITY and handed Rust a raw "auto".
     seen: list[Any] = []
     original = plr.collect_all_with_callback
 
@@ -113,18 +99,9 @@ def test_collect_all_async_honors_engine_affinity(
 
 
 def test_collect_batches_accepts_gpu_engine_object(lf: pl.LazyFrame) -> None:
-    # Previously only `collect` normalised a GPUEngine instance before handing the
-    # engine to Rust, so the object hit `Wrap<Engine>`'s string extractor and raised
-    # `TypeError`. Object and string spellings now agree. Note neither actually runs
-    # on the GPU here: the cudf callback only exists on the `collect` path.
     expected = lf.collect()
     assert_frame_equal(pl.concat(lf.collect_batches(engine=pl.GPUEngine())), expected)
     assert_frame_equal(pl.concat(lf.collect_batches(engine="gpu")), expected)
-
-
-# ------------------------------------------------------------------------------------
-# Engine resolution
-# ------------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -179,11 +156,6 @@ def test_engine_has_no_context_manager_protocol() -> None:
     assert not hasattr(pl.Engine, "__exit__")
 
 
-# ------------------------------------------------------------------------------------
-# GPUEngine invariants pinned by downstream code
-# ------------------------------------------------------------------------------------
-
-
 def test_gpu_engine_is_an_engine() -> None:
     assert isinstance(pl.GPUEngine(), pl.Engine)
     assert engine_config.GPUEngine is pl.GPUEngine
@@ -201,11 +173,6 @@ def test_gpu_engine_stays_hashable_and_picklable() -> None:
     engine = pl.GPUEngine(device=1)
     assert hash(engine) is not None
     assert pickle.loads(pickle.dumps(engine)).config == engine.config
-
-
-# ------------------------------------------------------------------------------------
-# A minimal third-party engine
-# ------------------------------------------------------------------------------------
 
 
 class _CountingEngine(pl.Engine):
@@ -291,11 +258,6 @@ def test_capability_gated_operations_raise(
         call(lf, engine)
 
 
-# ------------------------------------------------------------------------------------
-# String and object spellings must stay interchangeable
-# ------------------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize(
     ("name", "engine"),
     [("in-memory", pl.InMemoryEngine()), ("streaming", pl.StreamingEngine())],
@@ -322,22 +284,11 @@ def test_string_and_object_spellings_agree(
     assert_frame_equal(pl.read_parquet(by_name), pl.read_parquet(by_object))
 
 
-# ------------------------------------------------------------------------------------
-# Signature drift between `LazyFrame.sink_*` and `Engine.sink_*`
-# ------------------------------------------------------------------------------------
-
 SINKS = ["sink_parquet", "sink_csv", "sink_ipc", "sink_ndjson", "sink_batches"]
 
 
 @pytest.mark.parametrize("method_name", SINKS)
 def test_engine_sink_signature_matches_lazyframe(method_name: str) -> None:
-    # Annotations are deliberately not compared: `from __future__ import annotations`
-    # makes them raw strings, and the two modules legitimately spell the same types
-    # under different aliases. Names and kinds are the load-bearing part; annotation
-    # mismatches surface as mypy errors at the delegation call site.
-    #
-    # Defaults are asserted *absent* on the engine side: `LazyFrame` is the single
-    # place they are declared, and it always forwards every argument explicitly.
     lf_params = list(
         inspect.signature(getattr(pl.LazyFrame, method_name)).parameters.values()
     )
@@ -376,11 +327,6 @@ def test_engine_covers_every_lazyframe_sink() -> None:
         if name.startswith("sink_") and name not in {"sink_delta", "sink_iceberg"}
     }
     assert lf_sinks == set(SINKS)
-
-
-# ------------------------------------------------------------------------------------
-# Object-valued engine affinity
-# ------------------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -460,9 +406,6 @@ def test_object_engine_affinity_drives_collect(lf: pl.LazyFrame) -> None:
 
 
 def test_runtime_only_options_are_scoped_by_config() -> None:
-    # `Config.save()` records environment variables only, so options holding Python
-    # objects are snapshotted separately by `_POLARS_CFG_RUNTIME_VARS`. The default
-    # credential provider used to leak out of its scope.
     import polars.io.cloud.credential_provider._builder as builder
 
     assert builder.DEFAULT_CREDENTIAL_PROVIDER == "auto"

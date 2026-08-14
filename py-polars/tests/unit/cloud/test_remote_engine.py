@@ -2,8 +2,7 @@
 Tests for `RemoteEngine` dispatch.
 
 These stub out `polars_cloud` so they run without the package (and without a
-cluster). `RemoteEngine` reaches Polars Cloud only through `LazyFrame.remote`, so
-patching that seam is enough to observe everything it dispatches.
+cluster).
 """
 
 from __future__ import annotations
@@ -105,11 +104,6 @@ def lf() -> pl.LazyFrame:
     return pl.LazyFrame({"a": [1, 2, 3]})
 
 
-# ------------------------------------------------------------------------------------
-# Construction
-# ------------------------------------------------------------------------------------
-
-
 def test_requires_polars_cloud(monkeypatch: pytest.MonkeyPatch) -> None:
     # a `None` entry in `sys.modules` makes the import fail as if not installed
     monkeypatch.setitem(sys.modules, "polars_cloud", None)  # type: ignore[arg-type]
@@ -137,11 +131,6 @@ def test_is_an_engine_with_a_distinct_name() -> None:
     # plans render for the engine the workers are asked to prefer
     assert engine.plan_engine == "auto"
     assert pl.RemoteEngine(engine="streaming").plan_engine == "streaming"
-
-
-# ------------------------------------------------------------------------------------
-# Dispatch
-# ------------------------------------------------------------------------------------
 
 
 def test_execute_dispatches(calls: list[tuple[Any, ...]], lf: pl.LazyFrame) -> None:
@@ -191,11 +180,6 @@ def test_collect_pulls_the_result_back_and_warns(
 
     assert_frame_equal(result, pl.DataFrame({"a": [1, 2, 3]}))
     assert calls[1][:2] == ("auto", "execute")
-
-
-# ------------------------------------------------------------------------------------
-# Sinks
-# ------------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -260,11 +244,6 @@ def test_sink_rejects_non_uri_target(
         lf.sink_parquet(path, engine=pl.RemoteEngine())
 
 
-# ------------------------------------------------------------------------------------
-# Operations the cluster cannot serve
-# ------------------------------------------------------------------------------------
-
-
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
 @pytest.mark.parametrize(
     ("operation", "call"),
@@ -296,11 +275,6 @@ def test_plan_methods_never_reach_polars_cloud(lf: pl.LazyFrame) -> None:
     assert lf.show_graph(engine=engine, plan_stage="ir", raw_output=True)
     # the plan matches the engine the workers would use, not the remote engine
     assert lf.explain(engine=engine) == lf.explain(engine="streaming")
-
-
-# ------------------------------------------------------------------------------------
-# Eager work stays local
-# ------------------------------------------------------------------------------------
 
 
 @pytest.mark.usefixtures("_stub_cloud")
