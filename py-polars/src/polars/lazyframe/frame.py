@@ -1570,9 +1570,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... ).show_graph(plan_stage="ir")  # doctest: +SKIP
         """
         engine_ = _select_engine(engine)
+        # The auto engine plans (and, by default, executes) via the streaming
+        # engine, so the query-plan graph must be built and rendered as
+        # streaming. Its own `plan_engine` is the literal "auto", which would
+        # otherwise fall through to the in-memory plan here (see #28802).
+        plan_engine = (
+            "streaming" if engine_.plan_engine == "auto" else engine_.plan_engine
+        )
 
         optimizations = optimizations.__copy__()
-        optimizations._pyoptflags.streaming = engine_.plan_engine == "streaming"
+        optimizations._pyoptflags.streaming = plan_engine == "streaming"
         _ldf = self._ldf.with_optimizations(optimizations._pyoptflags)
 
         if plan_stage is None:
@@ -1587,13 +1594,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if plan_stage == "ir":
             dot = _ldf.to_dot(optimized)
         elif plan_stage == "physical":
-            if engine_.plan_engine == "streaming":
+            if plan_engine == "streaming":
                 dot = _ldf.to_dot_streaming_phys(optimized)
             else:
                 dot = _ldf.to_dot(optimized)
         else:
             error_msg = f"invalid plan stage '{plan_stage}'"
-            raise TypeError(error_msg)
+            raise ValueError(error_msg)
 
         return display_dot_graph(
             dot=dot,
