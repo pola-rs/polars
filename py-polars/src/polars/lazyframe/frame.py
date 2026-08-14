@@ -2230,10 +2230,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         **kwargs: Any,
     ) -> DataFrame:
-        """Like `collect()`, but executes locally.
-
-        See :meth:`Engine._collect_eager`.
-        """
+        """Collect an internal eager operation locally."""
         engine = _select_engine("auto")
         return engine._collect_eager(  # type: ignore[return-value]
             self, optimizations=optimizations, **kwargs
@@ -2585,7 +2582,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         post_opt_callback = _kwargs.get("post_opt_callback")
 
         if optimizations._pyoptflags.eager:
-            # Eager entry points never background, so `background` does not apply.
+            # Eager entry points cannot run in the background.
             return engine_._collect_eager(
                 self, optimizations=optimizations, post_opt_callback=post_opt_callback
             )
@@ -3382,9 +3379,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
         engine
-            Select the engine used to produce the rows that are written. The rows are
-            written by `pyiceberg` in this process, so the engine must be able to
-            deliver them here.
+            Engine used to produce rows for the local `pyiceberg` writer.
 
         Returns
         -------
