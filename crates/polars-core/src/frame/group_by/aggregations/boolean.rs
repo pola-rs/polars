@@ -8,7 +8,12 @@ pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &IdxVec)) -> Option<bool> + Send + Sync,
 {
-    let ca: BooleanChunked = RAYON.install(|| groups.into_par_iter().map(f).collect());
+    let ca: BooleanChunked = RAYON.install(|| {
+        let groups_len = groups.len();
+        let first = groups.first();
+        let all = groups.all();
+        collect_bool_opt_par(PlSmallStr::EMPTY, groups_len, |g| f((first[g], &all[g])))
+    });
     ca.into_series()
 }
 
@@ -16,7 +21,8 @@ pub fn _agg_helper_slice_bool<F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<bool> + Send + Sync,
 {
-    let ca: BooleanChunked = RAYON.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: BooleanChunked =
+        RAYON.install(|| collect_bool_opt_par(PlSmallStr::EMPTY, groups.len(), |g| f(groups[g])));
     ca.into_series()
 }
 

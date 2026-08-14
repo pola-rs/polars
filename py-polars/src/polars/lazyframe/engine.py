@@ -290,6 +290,7 @@ class Engine(ABC):
         lazy: bool,
         optimizations: QueryOptFlags,
         _record_batch_statistics: bool,
+        _sinked_paths_callback: SinkedPathsCallback | None,
     ) -> LazyFrame | None:
         """See :meth:`polars.LazyFrame.sink_ipc`."""
         msg = f"`sink_ipc` is not supported by {type(self).__name__}"
@@ -635,6 +636,7 @@ class _LocalEngine(Engine):
         lazy: bool,
         optimizations: QueryOptFlags,
         _record_batch_statistics: bool,
+        _sinked_paths_callback: SinkedPathsCallback | None,
     ) -> LazyFrame | None:
         from polars.interchange.protocol import CompatLevel
         from polars.io.cloud.credential_provider._builder import (
@@ -669,6 +671,7 @@ class _LocalEngine(Engine):
             sync_on_close=sync_on_close,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,
+            sinked_paths_callback=_sinked_paths_callback,
         )
 
         ldf_py = lf._ldf.sink_ipc(

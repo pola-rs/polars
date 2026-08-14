@@ -23,6 +23,14 @@ slotmap::new_key_type! {
     pub struct CanonicalExprId;
 }
 
+impl CanonicalExprId {
+    /// Opaque integer representation, unique within a single [`CanonicalExprMap`].
+    /// Only intended for generating unique names.
+    pub fn as_u64(self) -> u64 {
+        slotmap::Key::data(&self).as_ffi()
+    }
+}
+
 /// Equivalence class of structurally equal expression nodes.
 struct CanonicalExprClass {
     members: PlIndexSet<Node>,
@@ -93,6 +101,11 @@ impl CanonicalExprMap {
         self.eq_classes[id].is_nondeterministic_excluding_udfs
     }
 
+    /// Returns the id of `node` if it was already resolved, without resolving it.
+    pub fn cached_id(&self, node: Node) -> Option<CanonicalExprId> {
+        self.cache.get(&node).copied()
+    }
+
     /// Returns the id of `node`, resolving its children recursively.
     pub fn resolve(&mut self, node: Node, expr_arena: &Arena<AExpr>) -> CanonicalExprId {
         if let Some(id) = self.cache.get(&node) {
@@ -112,7 +125,7 @@ impl CanonicalExprMap {
             if post_visit {
                 children.clear();
                 expr_arena.get(node).children_rev(&mut children);
-                let child_ids = children.iter().map(|child| self.get(*child)).collect();
+                let child_ids = children.iter().map(|child| self.cache[child]).collect();
                 let id = self.resolve_single(node, child_ids, expr_arena);
                 self.cache.insert(node, id);
             } else {
@@ -123,7 +136,7 @@ impl CanonicalExprMap {
             }
         }
 
-        self.get(node)
+        self.cache[&node]
     }
 
     fn resolve_single(
@@ -182,12 +195,6 @@ impl CanonicalExprMap {
                 id
             },
         }
-    }
-
-    fn get(&self, node: Node) -> CanonicalExprId {
-        *self.cache.get(&node).unwrap_or_else(|| {
-            panic!("expression node {node:?} was not resolved by CanonicalExprMap")
-        })
     }
 }
 

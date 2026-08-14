@@ -318,6 +318,7 @@ class RemoteEngine(Engine):
         lazy: bool,
         optimizations: QueryOptFlags,
         _record_batch_statistics: bool,
+        _sinked_paths_callback: SinkedPathsCallback | None,
     ) -> None:
         """See :meth:`polars.LazyFrame.sink_ipc`."""
         self._reject_unsupported(
@@ -327,6 +328,7 @@ class RemoteEngine(Engine):
             retries=retries,
             record_batch_size=record_batch_size,
             _record_batch_statistics=_record_batch_statistics,
+            _sinked_paths_callback=_sinked_paths_callback,
             # `polars_cloud`'s sink_ipc does not accept it
             maintain_order=not maintain_order,
         )
