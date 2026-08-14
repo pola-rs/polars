@@ -507,7 +507,7 @@ where
     });
 
     *deletion_files = deletion_files.take().and_then(|x| match x {
-        DeletionFilesList::IcebergPositionDelete(deletions) => {
+        DeletionFilesList::Iceberg(deletions) => {
             let mut out = None;
 
             for (out_idx, source_idx) in selected_path_indices.clone().enumerate() {
@@ -521,7 +521,7 @@ where
                 }
             }
 
-            out.map(|x| DeletionFilesList::IcebergPositionDelete(Arc::new(x)))
+            out.map(|x| DeletionFilesList::Iceberg(Arc::new(x)))
         },
         // No-op - Delta takes scan paths at the execution stage.
         #[cfg(feature = "python")]
