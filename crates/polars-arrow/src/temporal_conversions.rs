@@ -353,6 +353,26 @@ pub fn timestamp_to_broken_down_time_opt(
     Some(tm)
 }
 
+/// Formats a timestamp in `time_unit` and `timezone` using `fmt`, degrading
+/// gracefully to the placeholder `"<out-of-range datetime>"` instead of
+/// panicking - both for a value too far out-of-range for
+/// [`timestamp_to_broken_down_time_opt`] to represent at all, and for one
+/// where formatting itself fails (see that function's docs for why the
+/// latter can happen even for an in-range value).
+///
+/// TODO: return a `PolarsResult` instead of a placeholder string, see
+/// https://github.com/pola-rs/polars/issues/13404
+pub fn format_timestamp_or_out_of_range(
+    timestamp: i64,
+    time_unit: TimeUnit,
+    timezone: &TimeZone,
+    fmt: &str,
+) -> String {
+    timestamp_to_broken_down_time_opt(timestamp, time_unit, timezone)
+        .and_then(|tm| tm.to_string(fmt).ok())
+        .unwrap_or_else(|| "<out-of-range datetime>".to_string())
+}
+
 /// Calculates the scale factor between two TimeUnits. The function returns the
 /// scale that should multiply the TimeUnit "b" to have the same time scale as
 /// the TimeUnit "a".

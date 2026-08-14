@@ -831,26 +831,14 @@ pub(super) fn serializer_for<'a>(
                 #[cfg(feature = "timezones")]
                 Some(time_zone) => {
                     let callback = move |item, buf: &mut Vec<u8>| {
-                        // Formatting must never panic, even for a physically
-                        // out-of-range value - degrade gracefully instead.
                         // We checked the format is valid above.
-                        match arrow::temporal_conversions::timestamp_to_broken_down_time_opt(
+                        let dt_str = arrow::temporal_conversions::format_timestamp_or_out_of_range(
                             item,
                             time_unit.to_arrow(),
                             &time_zone,
-                        ) {
-                            Some(tm) => {
-                                let _ = write!(
-                                    buf,
-                                    "{}",
-                                    tm.to_string(_datetime_format)
-                                        .unwrap_or_else(|_| "<out-of-range datetime>".to_string())
-                                );
-                            },
-                            None => {
-                                let _ = write!(buf, "<out-of-range datetime>");
-                            },
-                        }
+                            _datetime_format,
+                        );
+                        let _ = write!(buf, "{dt_str}");
                     };
                     date_and_time_final_serializer(array, callback, options)
                 },
