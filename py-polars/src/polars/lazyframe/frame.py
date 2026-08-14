@@ -2863,7 +2863,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-        _sinked_paths_callback: SinkedPathsCallback | None = None,
+        sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> None: ...
 
     @overload
@@ -2889,7 +2889,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-        _sinked_paths_callback: SinkedPathsCallback | None = None,
+        sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
 
     def sink_parquet(
@@ -2914,7 +2914,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: bool = False,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-        _sinked_paths_callback: SinkedPathsCallback | None = None,
+        sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -3060,6 +3060,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
+        sinked_paths_callback
+            Callable that will be called with information on sinked paths.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -3139,6 +3145,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         elif callable(metadata):
             metadata = wrap_parquet_metadata_callback(metadata)  # type: ignore[assignment]
 
+        if sinked_paths_callback is not None:
+            msg = "the `sinked_paths_callback` parameter of `sink_parquet` is considered unstable"
+            issue_unstable_warning(msg)
+
         from polars.io.partition import _SinkOptions
 
         sink_options = _SinkOptions(
@@ -3147,7 +3157,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             sync_on_close=sync_on_close,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            sinked_paths_callback=_sinked_paths_callback,
+            sinked_paths_callback=sinked_paths_callback,
         )
 
         ldf_py = self._ldf.sink_parquet(
