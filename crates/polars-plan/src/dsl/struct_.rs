@@ -71,10 +71,26 @@ impl StructNameSpace {
         self._rename_fields_impl(names.into_iter().map(|x| x.into()).collect())
     }
 
-    pub fn _rename_fields_impl(self, names: Arc<[PlSmallStr]>) -> Expr {
+    fn _rename_fields_impl(self, names: Arc<[PlSmallStr]>) -> Expr {
         self.0
             .map_unary(FunctionExpr::StructExpr(StructFunction::RenameFields(
                 names,
+            )))
+    }
+
+    /// Drop the given fields from the [`StructChunked`].
+    pub fn drop<I, S>(self, names: I, strict: bool) -> Expr
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<PlSmallStr>,
+    {
+        self._drop_impl(names.into_iter().map(|x| x.into()).collect(), strict)
+    }
+
+    fn _drop_impl(self, names: Arc<[PlSmallStr]>, strict: bool) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::StructExpr(StructFunction::Drop(
+                names, strict,
             )))
     }
 

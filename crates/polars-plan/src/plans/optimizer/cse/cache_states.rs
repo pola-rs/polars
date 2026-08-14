@@ -7,9 +7,8 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
 use crate::dsl::Expr;
-use crate::plans::deep_copy::deep_copy_ir_delete_caches;
+use crate::plans::deep_copy::deep_copy_ir_delete_cache_id;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
-use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::visitor::AexprNode;
 use crate::plans::{AExpr, ExprIR, IR, PredicatePushDown};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
@@ -178,7 +177,7 @@ pub(crate) fn set_cache_states(
         root,
         &mut FnVisitors::new(
             || streaming,
-            |key, storage: &mut IRTraversalStorage<'_>, edges| {
+            |key, storage: &mut Arena<IR>, edges| {
                 let streaming = streaming || edges.outputs().iter().any(|x| *x);
 
                 match storage.get(key) {
@@ -207,10 +206,7 @@ pub(crate) fn set_cache_states(
         ),
         &mut vec![],
         &mut vec![],
-        IRTraversalStorage {
-            arena: lp_arena,
-            skip_subtree: |_| false,
-        },
+        lp_arena,
     )
     .continue_value()
     .unwrap();
@@ -305,7 +301,7 @@ pub(crate) fn set_cache_states(
             PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive);
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
-        for v in cache_schema_and_children.into_values().rev() {
+        for (cache_id, v) in cache_schema_and_children.into_iter().rev() {
             pred_pd.streaming = v.streaming;
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple distinct predicates, the caches carry different filters
@@ -316,9 +312,14 @@ pub(crate) fn set_cache_states(
             // without any benefit. See #19479.
             //
             // We therefore only remove the caches if _every_ filter above them is actually pushed
-            // by predicate pushdown. We probe this on cache-free copies of the subplans, buffering
-            // the optimized copies. If any filter was not pushed we bail out, keeping the caches;
-            // otherwise we commit the buffered copies, removing the caches.
+            // by predicate pushdown. We probe this on copies of the subplans that have only *this*
+            // cache id removed, buffering the optimized copies. If any filter was not pushed we
+            // bail out, keeping the caches; otherwise we commit the buffered copies.
+            //
+            // Only the cache id under consideration is deleted from the copies. Caches nested
+            // below it have their own predicates and get their own decision in a later iteration;
+            // deleting them here would duplicate their subplan without any of them ever having
+            // been evaluated.
             if v.predicate_union.len() > 1 {
                 let mut replacements = Vec::with_capacity(v.cache_nodes.len());
                 let mut remove_caches = true;
@@ -345,8 +346,10 @@ pub(crate) fn set_cache_states(
                         predicate.clone()
                     });
 
-                    // Copy the subplan without caches and re-run predicate pushdown on the copy.
-                    let copied_node = deep_copy_ir_delete_caches(node, lp_arena, expr_arena);
+                    // Copy the subplan with this cache removed and re-run predicate pushdown on
+                    // the copy. Nested caches of other ids are preserved.
+                    let copied_node =
+                        deep_copy_ir_delete_cache_id(node, cache_id, lp_arena, expr_arena);
                     let lp = lp_arena.take(copied_node);
                     let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
 

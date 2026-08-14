@@ -181,8 +181,11 @@ fn arrow_field_to_iceberg_column_rec(
             if let ADT::Dictionary(_key_type, value_type, _is_ordered) = dtype
                 && !value_type.is_nested()
             {
-                let dtype =
-                    DataType::from_arrow_field(&ArrowField::new(name.clone(), dtype.clone(), true));
+                let mut new_field = ArrowField::new(name.clone(), dtype.clone(), true);
+                if let Some(metadata) = field.metadata.as_ref() {
+                    new_field = new_field.with_metadata((**metadata).clone());
+                }
+                let dtype = DataType::from_arrow_field(&new_field);
 
                 IcebergColumnType::Primitive { dtype }
             } else if let ADT::Extension(ext_type) = dtype

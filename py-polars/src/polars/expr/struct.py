@@ -27,6 +27,8 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
         """
         Return a struct field by name or by index.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         item
@@ -75,6 +77,8 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
     def field(self, name: str | list[str], *more_names: str) -> Expr:
         """
         Retrieve one or multiple `Struct` field(s) as a new Series.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -199,6 +203,8 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
 
         Alias for `Expr.struct.field("*")`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "aaa": [1, 2],
@@ -233,6 +239,8 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
     def rename_fields(self, names: Sequence[str]) -> Expr:
         """
         Rename the fields of the struct.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -294,9 +302,48 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.struct_rename_fields(names))
 
+    def drop(self, names: Sequence[str], *, strict: bool = True) -> Expr:
+        """
+        Drop one or more fields from the struct.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Parameters
+        ----------
+        names
+            Names of the fields to drop.
+        strict
+            If True, raise an error if any of the specified fields do not exist in the
+            struct.
+
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "aaa": [1, 2],
+        ...         "bbb": ["ab", "cd"],
+        ...         "ccc": [True, None],
+        ...     }
+        ... ).select(pl.struct("aaa", "bbb", "ccc").alias("struct_col"))
+        >>> df.select(pl.col("struct_col").struct.drop(["aaa"]))
+        shape: (2, 1)
+        ┌─────────────┐
+        │ struct_col  │
+        │ ---         │
+        │ struct[2]   │
+        ╞═════════════╡
+        │ {"ab",true} │
+        │ {"cd",null} │
+        └─────────────┘
+        """
+        return wrap_expr(self._pyexpr.struct_drop(names, strict))
+
     def json_encode(self) -> Expr:
         """
         Convert this struct to a string column with json values.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -325,7 +372,7 @@ class ExprStructNameSpace(_NamespaceSuggestMixin):
 
         This is similar to `with_columns` on `DataFrame`.
 
-        .. versionadded:: 0.20.27
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------

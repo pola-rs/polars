@@ -59,7 +59,7 @@ impl SortedGroupBy {
         let column = df.column(key).unwrap();
         rle_lengths(column, idxs).unwrap();
 
-        let windows_offset = windows_slice.0 as usize;
+        let windows_offset = (windows_slice.0 as usize).min(idxs.len());
         let windows_length = (windows_slice.1 as usize).min(idxs.len() - windows_offset);
 
         let df_offset = idxs[..windows_offset].iter().sum::<IdxSize>();

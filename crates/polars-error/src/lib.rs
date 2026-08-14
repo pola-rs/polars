@@ -142,7 +142,7 @@ impl Error for PolarsError {
 impl Display for PolarsError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         use PolarsError::*;
-        match self {
+        match self.clone().context_trace() {
             ComputeError(msg)
             | InvalidOperation(msg)
             | OutOfBounds(msg)
@@ -388,6 +388,27 @@ impl PolarsError {
             error: Box::new(self),
             expr,
         }
+    }
+}
+
+pub trait PolarsContext<T> {
+    fn context(self, ctx: &'static str) -> PolarsResult<T>;
+
+    fn with_context<F>(self, f: F) -> PolarsResult<T>
+    where
+        F: FnOnce() -> String;
+}
+
+impl<T> PolarsContext<T> for PolarsResult<T> {
+    fn context(self, ctx: &'static str) -> PolarsResult<T> {
+        self.map_err(|e| e.context(ErrString::new_static(ctx)))
+    }
+
+    fn with_context<F>(self, f: F) -> PolarsResult<T>
+    where
+        F: FnOnce() -> String,
+    {
+        self.map_err(|e| e.context(f().into()))
     }
 }
 

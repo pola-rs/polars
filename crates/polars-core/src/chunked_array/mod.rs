@@ -1,5 +1,6 @@
 //! The typed heart of every Series column.
 #![allow(unsafe_op_in_unsafe_fn)]
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use arrow::array::*;
@@ -7,6 +8,7 @@ use arrow::bitmap::Bitmap;
 use arrow::compute::concatenate::concatenate_unchecked;
 use arrow::compute::utils::combine_validities_and;
 use polars_compute::filter::filter_with_bitmap;
+use polars_utils::broadcast::BroadcastLength;
 
 use crate::prelude::{ChunkTakeUnchecked, *};
 
@@ -642,6 +644,43 @@ where
 impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
+    ChunkedArray<T>: ChunkExpandAtIndex<T>,
+{
+    /// Returns a ChunkedArray with the given length.
+    ///
+    /// Errors if this ChunkedArray's length is not 1 and also not equal to the requested length.
+    pub fn broadcast_to(&self, length: usize) -> PolarsResult<Cow<'_, Self>> {
+        let len = self.len();
+        if len == length {
+            Ok(Cow::Borrowed(self))
+        } else if len == 1 {
+            Ok(Cow::Owned(self.new_from_index(0, length)))
+        } else {
+            polars_bail!(
+                ShapeMismatch: "can't broadcast Series '{}' of length {len} to length {length}",
+                self.name()
+            );
+        }
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_in_place_to(&mut self, length: usize) -> PolarsResult<()> {
+        if let Cow::Owned(new) = self.broadcast_to(length)? {
+            *self = new;
+        }
+        Ok(())
+    }
+
+    /// See broadcast_to.
+    pub fn broadcast_owned_to(mut self, length: usize) -> PolarsResult<Self> {
+        self.broadcast_in_place_to(length)?;
+        Ok(self)
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
     ChunkedArray<T>: ChunkTakeUnchecked<[IdxSize]>,
 {
     /// Deposit values into nulls with a certain validity mask.
@@ -1077,6 +1116,16 @@ impl<T: PolarsDataType> Default for ChunkedArray<T> {
             length: 0,
             null_count: 0,
         }
+    }
+}
+
+impl<T: PolarsDataType> BroadcastLength for ChunkedArray<T> {
+    fn _broadcast_len(&self) -> usize {
+        self.len()
+    }
+
+    fn _column_name(&self) -> Option<&str> {
+        Some(self.name())
     }
 }
 

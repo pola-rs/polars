@@ -62,6 +62,28 @@ def test_str_slice_wrong_length() -> None:
         df.select(pl.col("num").str.slice(pl.Series([1, 2])))
 
 
+@pytest.mark.parametrize("descending", [False, True])
+def test_str_slice_sorted_flag(descending: bool) -> None:
+    s = pl.Series("a", ["xb", "ya", "zc"]).sort(descending=descending)
+    flag = "SORTED_DESC" if descending else "SORTED_ASC"
+    kept = ["z", "y", "x"] if descending else ["x", "y", "z"]
+    assert s.flags[flag]
+
+    # prefix -> order preserved, flag kept (in whichever direction it was set)
+    for prefix in (s.str.head(1), s.str.slice(0, 1)):
+        assert prefix.to_list() == kept
+        assert prefix.flags[flag]
+        assert prefix.min() == "x"
+        assert prefix.max() == "z"
+
+    # non-prefix -> order not preserved, flag cleared in both directions
+    for sliced in (s.str.slice(1), s.str.tail(1)):
+        assert not sliced.flags["SORTED_ASC"]
+        assert not sliced.flags["SORTED_DESC"]
+        assert sliced.min() == "a"
+        assert sliced.max() == "c"
+
+
 @pytest.mark.parametrize(
     ("input", "n", "output"),
     [
@@ -1479,7 +1501,7 @@ def test_replace_many_invalid_inputs() -> None:
         df.select(pl.col("text").str.replace_many(["me"]))
 
     with pytest.raises(
-        InvalidOperationError,
+        ShapeError,
         match="expected the same amount of patterns as replacement strings",
     ):
         df.select(pl.col("text").str.replace_many(["a"], ["b", "c"]))
@@ -1493,7 +1515,7 @@ def test_replace_many_invalid_inputs() -> None:
         df.select(pl.col("text").str.replace_many(["me"]))
 
     with pytest.raises(
-        InvalidOperationError,
+        ShapeError,
         match="expected the same amount of patterns as replacement strings",
     ):
         s.str.replace_many(["a"], ["b", "c"])

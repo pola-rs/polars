@@ -13,10 +13,9 @@ use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::_boost_hash_combine;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
-use polars_utils::vec::CapacityByFactor;
 
 use crate::constants::CSE_REPLACED;
-use crate::plans::aexpr::is_inherently_nondeterministic_top_level;
+use crate::plans::aexpr::is_inherently_nondeterministic_excluding_udfs_top_level;
 use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::visitor::{
     IRNode, IRNodeArena, RewriteRecursion, RewritingVisitor, TreeWalker as _, VisitRecursion,
@@ -34,18 +33,6 @@ const REFUSE_ALLOW_MEMBER: Accepted = Some((VisitRecursion::Continue, true));
 const REFUSE_SKIP: Accepted = Some((VisitRecursion::Skip, false));
 // Accept this node.
 const ACCEPT: Accepted = None;
-
-/// CSE refuses anything inherently non-deterministic _except_ user UDFs,
-/// which CSE folds via Python/library identity (per #26253).
-fn refused_by_cse_due_to_nondeterminism(ae: &AExpr) -> bool {
-    if matches!(
-        ae,
-        AExpr::AnonymousFunction { .. } | AExpr::AnonymousAgg { .. }
-    ) {
-        return false;
-    }
-    is_inherently_nondeterministic_top_level(ae)
-}
 
 #[derive(Debug, Clone)]
 struct ProjectionExprs {
@@ -182,74 +169,6 @@ impl<V> IdentifierMap<V> {
 
     fn iter(&self) -> impl Iterator<Item = (&Identifier, &V)> {
         self.inner.iter()
-    }
-}
-
-/// Merges identical expressions into identical IDs.
-///
-/// Does no analysis whether this leads to legal substitutions.
-#[derive(Default)]
-pub struct NaiveExprMerger {
-    node_to_uniq_id: PlIndexMap<Node, u32>,
-    uniq_id_to_node: Vec<Node>,
-    identifier_to_uniq_id: IdentifierMap<u32>,
-    arg_stack: Vec<Option<Identifier>>,
-}
-
-impl NaiveExprMerger {
-    pub fn add_expr(&mut self, node: Node, arena: &Arena<AExpr>) {
-        AexprNode::new(node).visit(self, arena).unwrap();
-    }
-
-    pub fn add_and_get_uniq_id(&mut self, node: Node, arena: &Arena<AExpr>) -> u32 {
-        let aexpr_node = AexprNode::new(node);
-        aexpr_node.visit(self, arena).unwrap();
-        *self.node_to_uniq_id.get(&node).unwrap()
-    }
-
-    pub fn get_uniq_id(&self, node: Node) -> Option<u32> {
-        self.node_to_uniq_id.get(&node).copied()
-    }
-
-    pub fn get_node(&self, uniq_id: u32) -> Option<Node> {
-        self.uniq_id_to_node.get(uniq_id as usize).copied()
-    }
-}
-
-impl Visitor for NaiveExprMerger {
-    type Node = AexprNode;
-    type Arena = Arena<AExpr>;
-
-    fn pre_visit(
-        &mut self,
-        _node: &Self::Node,
-        _arena: &Self::Arena,
-    ) -> PolarsResult<VisitRecursion> {
-        self.arg_stack.push(None);
-        Ok(VisitRecursion::Continue)
-    }
-
-    fn post_visit(
-        &mut self,
-        node: &Self::Node,
-        arena: &Self::Arena,
-    ) -> PolarsResult<VisitRecursion> {
-        let mut identifier = Identifier::new();
-        while let Some(Some(arg)) = self.arg_stack.pop() {
-            identifier.combine(&arg);
-        }
-        identifier = identifier.add_ae_node(node, arena);
-        let uniq_id = *self.identifier_to_uniq_id.entry(
-            identifier,
-            || {
-                let uniq_id = self.uniq_id_to_node.len() as u32;
-                self.uniq_id_to_node.push(node.node());
-                uniq_id
-            },
-            arena,
-        );
-        self.node_to_uniq_id.insert(node.node(), uniq_id);
-        Ok(VisitRecursion::Continue)
     }
 }
 
@@ -455,7 +374,7 @@ impl ExprIdentifierVisitor<'_> {
                     REFUSE_ALLOW_MEMBER
                 }
             },
-            ae if refused_by_cse_due_to_nondeterminism(ae) => REFUSE_NO_MEMBER,
+            ae if is_inherently_nondeterministic_excluding_udfs_top_level(ae) => REFUSE_NO_MEMBER,
             #[cfg(feature = "rolling_window")]
             AExpr::Function {
                 function: IRFunctionExpr::RollingExpr { .. },
@@ -847,7 +766,7 @@ impl CommonSubExprOptimizer {
         }
 
         if has_sub_expr {
-            let mut new_expr = Vec::with_capacity_by_factor(expr.len(), 1.3);
+            let mut new_expr = Vec::with_capacity((expr.len() as f64 * 1.3) as usize);
 
             // Then rewrite the expressions that have a cse count > 1.
             for (e, offset) in expr.iter().zip(id_array_offsets.iter()) {

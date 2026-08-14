@@ -1,6 +1,7 @@
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 
@@ -216,49 +217,27 @@ impl PhysicalExpr for SortByExpr {
             let nulls_last = prepare_bool_vec(&self.sort_options.nulls_last, self.by.len());
 
             let sorted_idx_f = || {
-                let mut needs_broadcast = false;
-                let mut broadcast_length = 1;
-
                 let mut s_sort_by = self
                     .by
                     .iter()
-                    .enumerate()
-                    .map(|(i, e)| {
-                        let column = e.evaluate(df, state).map(|c| match c.dtype() {
+                    .map(|e| {
+                        e.evaluate(df, state).map(|c| match c.dtype() {
                             #[cfg(feature = "dtype-categorical")]
                             DataType::Categorical(_, _) | DataType::Enum(_, _) => c,
                             _ => c.to_physical_repr(),
-                        })?;
-
-                        if column.len() == 1 && broadcast_length != 1 {
-                            polars_ensure!(
-                                e.is_scalar(),
-                                ShapeMismatch: "non-scalar expression produces broadcasting column",
-                            );
-
-                            return Ok(column.new_from_index(0, broadcast_length));
-                        }
-
-                        if broadcast_length != column.len() {
-                            polars_ensure!(
-                                broadcast_length == 1, ShapeMismatch:
-                                "`sort_by` produced different length ({}) than earlier Series' length in `by` ({})",
-                                broadcast_length, column.len()
-                            );
-
-                            needs_broadcast |= i > 0;
-                            broadcast_length = column.len();
-                        }
-
-                        Ok(column)
+                        })
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                if needs_broadcast {
-                    for c in s_sort_by.iter_mut() {
-                        if c.len() != broadcast_length {
-                            *c = c.new_from_index(0, broadcast_length);
-                        }
+                let broadcast_length = broadcast_len(s_sort_by.iter())
+                    .context("`sort_by` produced Series of differing lengths in `by`")?;
+                for (e, c) in self.by.iter().zip(s_sort_by.iter_mut()) {
+                    if c.len() != broadcast_length {
+                        polars_ensure!(
+                            e.is_scalar(),
+                            ShapeMismatch: "non-scalar expression produces broadcasting column",
+                        );
+                        c.broadcast_in_place_to(broadcast_length)?;
                     }
                 }
 

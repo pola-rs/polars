@@ -1,6 +1,7 @@
 use std::sync::OnceLock;
 
 use polars_error::PolarsResult;
+use polars_utils::broadcast::BroadcastLength;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{AnyValue, Column, DataType, IntoColumn, Scalar, Series};
@@ -334,6 +335,16 @@ impl From<ScalarColumn> for Column {
     #[inline]
     fn from(value: ScalarColumn) -> Self {
         Self::Scalar(value)
+    }
+}
+
+impl BroadcastLength for ScalarColumn {
+    fn _broadcast_len(&self) -> usize {
+        self.len()
+    }
+
+    fn _column_name(&self) -> Option<&str> {
+        Some(self.name())
     }
 }
 

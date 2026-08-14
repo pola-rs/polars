@@ -8,8 +8,6 @@ use self::sort::arg_sort_row_fmt;
 use super::{IsSorted, StatisticsFlags, private};
 use crate::chunked_array::AsSinglePtr;
 use crate::chunked_array::cast::CastOptions;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::row_encode::{_get_rows_encoded_ca_unordered, encode_rows_unordered};
 use crate::prelude::*;
 use crate::runtime::RAYON;

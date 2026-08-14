@@ -10,7 +10,7 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 # example: 1.35.0b1
-version = "1.43.1"
+version = "1.43.2"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 
@@ -33,7 +33,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 # example: 1.35.0b1
-dependencies = ["polars-runtime-32 == 1.43.1"]
+dependencies = ["polars-runtime-32 == 1.43.2"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -44,8 +44,8 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # Runtimes
 # example: 1.35.0b1
-rt64 = ["polars-runtime-64 == 1.43.1"]
-rtcompat = ["polars-runtime-compat == 1.43.1"]
+rt64 = ["polars-runtime-64 == 1.43.2"]
+rtcompat = ["polars-runtime-compat == 1.43.2"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 polars_cloud = ["polars_cloud >= 0.4.0"]
@@ -73,7 +73,7 @@ fsspec = ["fsspec"]
 
 # Other I/O
 deltalake = ["deltalake >= 1.0.0, != 1.5.*"]
-iceberg = ["pyiceberg >= 0.7.1"]
+iceberg = ["pyiceberg >= 0.9.0"]
 
 # Other
 async = ["gevent"]
@@ -282,6 +282,7 @@ addopts = [
   "--strict-config",
   "--strict-markers",
   "--import-mode=importlib",
+  "--dist=loadgroup",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
   "-m not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only",
 ]

@@ -556,10 +556,40 @@ impl SlicePushDown {
                         })
                 };
 
+                let order = options.args.maintain_order;
+                let non_negative_offset = state.offset >= 0;
+                let can_limit_left = match options.args.how {
+                    JoinType::Left => !matches!(
+                        order,
+                        MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
+                    ),
+                    JoinType::Full => {
+                        non_negative_offset
+                            && matches!(
+                                order,
+                                MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
+                            )
+                    },
+                    _ => false,
+                };
+                let can_limit_right = match options.args.how {
+                    JoinType::Right => !matches!(
+                        order,
+                        MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
+                    ),
+                    JoinType::Full => {
+                        non_negative_offset
+                            && matches!(
+                                order,
+                                MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
+                            )
+                    },
+                    _ => false,
+                };
+
                 let lp_left = self.pushdown(
                     input_left,
-                    input_limit_slice
-                        .filter(|_| matches!(&options.args.how, JoinType::Left | JoinType::Full)),
+                    input_limit_slice.filter(|_| can_limit_left),
                     lp_arena,
                     expr_arena,
                 )?;
@@ -567,8 +597,7 @@ impl SlicePushDown {
 
                 let lp_right = self.pushdown(
                     input_right,
-                    input_limit_slice
-                        .filter(|_| matches!(&options.args.how, JoinType::Right | JoinType::Full)),
+                    input_limit_slice.filter(|_| can_limit_right),
                     lp_arena,
                     expr_arena,
                 )?;
