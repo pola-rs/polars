@@ -13,6 +13,7 @@ from polars.exceptions import ComputeError
 from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
+    _new_pyiceberg_scan,
     _normalize_windows_iceberg_file_uri,
     extract_field_initial_default,
     try_convert_pyarrow_predicate,
@@ -209,6 +210,8 @@ class IcebergScanResolver:
 
     table: IcebergTableWrap
     snapshot_id: int | None
+    from_snapshot_id_exclusive: int | None
+    to_snapshot_id_inclusive: int | None
     reader_override: Literal["native", "pyiceberg"] | None
     use_metadata_statistics: bool
     fast_deletion_count: bool
@@ -280,6 +283,8 @@ class IcebergScanResolver:
             eprint(
                 "IcebergScanResolver: to_dataset_scan(): "
                 f"snapshot ID: {self.snapshot_id}, "
+                f"from snapshot ID exclusive: {self.from_snapshot_id_exclusive}, "
+                f"to snapshot ID inclusive: {self.to_snapshot_id_inclusive}, "
                 f"limit: {limit}, "
                 f"projection: {projection}, "
                 f"filter_columns: {filter_columns}, "
@@ -303,6 +308,10 @@ class IcebergScanResolver:
             )
 
         snapshot_id = self.snapshot_id
+        is_incremental = (
+            self.from_snapshot_id_exclusive is not None
+            or self.to_snapshot_id_inclusive is not None
+        )
         schema_id = None
 
         if snapshot_id is not None:
@@ -327,8 +336,19 @@ class IcebergScanResolver:
             iceberg_schema = tbl.schema()
             schema_id = tbl.metadata.current_schema_id
 
+            current_snapshot_id = (
+                v.snapshot_id if (v := tbl.current_snapshot()) is not None else None
+            )
+            resolved_end_snapshot_id = (
+                self.to_snapshot_id_inclusive
+                if self.to_snapshot_id_inclusive is not None
+                else current_snapshot_id
+            )
             snapshot_id_key = (
-                f"{v.snapshot_id}" if (v := tbl.current_snapshot()) is not None else ""
+                f"incremental:{self.from_snapshot_id_exclusive}:"
+                f"{resolved_end_snapshot_id}:schema:{schema_id}"
+                if is_incremental
+                else f"{current_snapshot_id or ''}"
             )
 
         if (
@@ -405,8 +425,11 @@ class IcebergScanResolver:
 
             start_time = perf_counter()
 
-            scan = tbl.scan(
+            scan = _new_pyiceberg_scan(
+                tbl,
                 snapshot_id=snapshot_id,
+                from_snapshot_id_exclusive=self.from_snapshot_id_exclusive,
+                to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
                 limit=limit,
                 selected_fields=selected_fields,
             )
@@ -555,6 +578,8 @@ class IcebergScanResolver:
             polars.io.iceberg._utils._scan_pyarrow_dataset_impl,
             tbl,
             snapshot_id=snapshot_id,
+            from_snapshot_id_exclusive=self.from_snapshot_id_exclusive,
+            to_snapshot_id_inclusive=self.to_snapshot_id_inclusive,
             n_rows=limit,
             with_columns=projection,
             iceberg_table_filter=iceberg_table_filter,

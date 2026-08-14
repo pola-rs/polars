@@ -68,6 +68,7 @@ from polars.io.iceberg._dataset import (
 from polars.io.iceberg._sink import IcebergSinkState, PlIcebergPathProviderConfig
 from polars.io.iceberg._utils import (
     _convert_predicate,
+    _new_pyiceberg_scan,
     _normalize_windows_iceberg_file_uri,
     _to_ast,
     try_convert_pyarrow_predicate,
@@ -166,6 +167,8 @@ def new_iceberg_scan_resolver(
             iceberg_storage_properties=None,
         ),
         snapshot_id=None,
+        from_snapshot_id_exclusive=None,
+        to_snapshot_id_inclusive=None,
         reader_override=None,
         use_metadata_statistics=True,
         fast_deletion_count=False,
@@ -1028,6 +1031,145 @@ def test_scan_iceberg_table_name(tmp_path: Path) -> None:
         pl.scan_iceberg(".".join(tbl.name()), catalog=catalog).collect(),
         pl.DataFrame({"a": [2, 1]}),
     )
+
+
+def test_scan_iceberg_rejects_snapshot_id_with_incremental_range() -> None:
+    with pytest.raises(ValueError, match="cannot combine `snapshot_id`"):
+        pl.scan_iceberg(
+            "/tmp/metadata.json",
+            snapshot_id=1,
+            from_snapshot_id_exclusive=2,
+        )
+
+
+@pytest.mark.write_disk
+def test_new_pyiceberg_scan_forwards_incremental_range(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+    )
+    sentinel = object()
+    captured: dict[str, Any] = {}
+
+    def incremental_append_scan(table: Any, **kwargs: Any) -> object:
+        assert table is tbl
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(
+        pyiceberg.table.Table,
+        "incremental_append_scan",
+        incremental_append_scan,
+        raising=False,
+    )
+
+    result = _new_pyiceberg_scan(
+        tbl,
+        snapshot_id=None,
+        from_snapshot_id_exclusive=10,
+        to_snapshot_id_inclusive=20,
+        selected_fields=("a",),
+        limit=3,
+    )
+
+    assert result is sentinel
+    assert captured == {
+        "from_snapshot_id_exclusive": 10,
+        "to_snapshot_id_inclusive": 20,
+        "selected_fields": ("a",),
+        "limit": 3,
+    }
+
+
+@pytest.mark.write_disk
+@pytest.mark.skipif(
+    hasattr(pyiceberg.table.Table, "incremental_append_scan"),
+    reason="installed PyIceberg supports incremental append scans",
+)
+def test_scan_iceberg_incremental_requires_pyiceberg_support(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+    )
+    resolver = new_iceberg_scan_resolver(tbl)
+    resolver.from_snapshot_id_exclusive = 1
+
+    with pytest.raises(
+        pl.exceptions.ModuleUpgradeRequiredError,
+        match="incremental append scans require a newer PyIceberg version",
+    ):
+        resolver._to_dataset_scan_impl()
+
+
+@pytest.mark.write_disk
+@pytest.mark.skipif(
+    not hasattr(pyiceberg.table.Table, "incremental_append_scan"),
+    reason="requires PyIceberg incremental append scan support",
+)
+@pytest.mark.parametrize("reader_override", ["native", "pyiceberg"])
+def test_scan_iceberg_incremental_append_range(
+    tmp_path: Path,
+    reader_override: str,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+    )
+
+    tbl.append(pa.table({"a": [1]}))
+    first_snapshot = tbl.current_snapshot()
+    assert first_snapshot is not None
+
+    tbl.append(pa.table({"a": [2, 3]}))
+    second_snapshot = tbl.current_snapshot()
+    assert second_snapshot is not None
+
+    query = (
+        pl.scan_iceberg(
+            tbl,
+            from_snapshot_id_exclusive=first_snapshot.snapshot_id,
+            to_snapshot_id_inclusive=second_snapshot.snapshot_id,
+            reader_override=reader_override,  # type: ignore[arg-type]
+        )
+        .filter(pl.col("a") > 2)
+        .limit(1)
+    )
+    assert_frame_equal(query.collect(), pl.DataFrame({"a": [3]}))
+
+    tbl.append(pa.table({"a": [4]}))
+    assert_frame_equal(query.collect(), pl.DataFrame({"a": [3]}))
+
+
+@pytest.mark.write_disk
+@pytest.mark.skipif(
+    not hasattr(pyiceberg.table.Table, "incremental_append_scan"),
+    reason="requires PyIceberg incremental append scan support",
+)
+def test_scan_iceberg_incremental_append_tracks_current_snapshot(
+    tmp_path: Path,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+    )
+
+    tbl.append(pa.table({"a": [1]}))
+    first_snapshot = tbl.current_snapshot()
+    assert first_snapshot is not None
+
+    query = pl.scan_iceberg(
+        tbl,
+        from_snapshot_id_exclusive=first_snapshot.snapshot_id,
+    )
+
+    tbl.append(pa.table({"a": [2]}))
+    assert_frame_equal(query.collect(), pl.DataFrame({"a": [2]}))
+
+    tbl.append(pa.table({"a": [3]}))
+    assert_frame_equal(query.collect().sort("a"), pl.DataFrame({"a": [2, 3]}))
 
 
 @pytest.mark.write_disk
