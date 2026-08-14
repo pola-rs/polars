@@ -3569,7 +3569,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         _record_batch_statistics: bool = False,
-        _sinked_paths_callback: SinkedPathsCallback | None = None,
+        sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> None: ...
 
     @overload
@@ -3592,7 +3592,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         _record_batch_statistics: bool = False,
-        _sinked_paths_callback: SinkedPathsCallback | None = None,
+        sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
 
     def sink_ipc(
@@ -3614,7 +3614,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         _record_batch_statistics: bool = False,
-        _sinked_paths_callback: SinkedPathsCallback | None = None,
+        sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to an IPC file.
@@ -3785,6 +3785,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if compression is None:
             compression = "uncompressed"
 
+        if sinked_paths_callback is not None:
+            msg = "the `sinked_paths_callback` parameter of `sink_ipc` is considered unstable"
+            issue_unstable_warning(msg)
+
         from polars.io.partition import _SinkOptions
 
         sink_options = _SinkOptions(
@@ -3793,7 +3797,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             sync_on_close=sync_on_close,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            sinked_paths_callback=_sinked_paths_callback,
+            sinked_paths_callback=sinked_paths_callback,
         )
 
         ldf_py = self._ldf.sink_ipc(
