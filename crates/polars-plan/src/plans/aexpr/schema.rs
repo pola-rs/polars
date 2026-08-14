@@ -578,6 +578,9 @@ fn get_arithmetic_field(
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
                     Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
                 },
+                // Decimal - integer: runtime always uses DEC128_MAX_PREC, match that here.
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), r) if r.is_integer() => Decimal(DEC128_MAX_PREC, *scale),
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
@@ -639,6 +642,9 @@ fn get_arithmetic_field(
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
                     Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
                 },
+                // Decimal + integer: runtime always uses DEC128_MAX_PREC, match that here.
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), r) if r.is_integer() => Decimal(DEC128_MAX_PREC, *scale),
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
@@ -699,6 +705,13 @@ fn get_arithmetic_field(
                 #[cfg(feature = "dtype-decimal")]
                 (Decimal(_, scale_left), Decimal(_, scale_right)) => {
                     let dtype = Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right));
+                    left_field.coerce(dtype);
+                    return Ok(left_field);
+                },
+                // Decimal * integer: runtime always uses DEC128_MAX_PREC, match that here.
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, scale), r) if r.is_integer() => {
+                    let dtype = Decimal(DEC128_MAX_PREC, *scale);
                     left_field.coerce(dtype);
                     return Ok(left_field);
                 },
@@ -868,11 +881,13 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
             Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
         },
         #[cfg(feature = "dtype-decimal")]
-        (l @ Decimal(_, _), r) if r.is_primitive_numeric() => {
+        (Decimal(_, scale), r) if r.is_primitive_numeric() => {
             if r.is_float() {
+                // Decimal / float => cast to Float64
                 Float64
             } else {
-                l.clone()
+                // Decimal / integer: runtime always uses DEC128_MAX_PREC, match that here.
+                Decimal(DEC128_MAX_PREC, *scale)
             }
         },
         #[cfg(all(feature = "dtype-u8", feature = "dtype-f16"))]
