@@ -1,12 +1,8 @@
 """
-Engine selection.
+Resolve engine arguments and configured affinity.
 
-Resolves an `engine=` argument, or the configured engine affinity, to one of the
-engine classes in `polars.lazyframe.engine`. This is a strict consumer of that
-module -- nothing there may import this one.
-
-`GPUEngine` is re-exported here because `polars.lazyframe.engine_config` is its
-documented import path.
+Engine implementations must not import this module. `GPUEngine` is re-exported
+for compatibility with its documented import path.
 """
 
 from __future__ import annotations
@@ -44,35 +40,32 @@ _STREAMING_ENGINE: Final = StreamingEngine()
 _ENGINE_BY_NAME: Final[dict[str, Engine]] = {
     "auto": _AUTO_ENGINE,
     "in-memory": _IN_MEMORY_ENGINE,
-    # kept for backwards compatibility
+    # Legacy alias.
     "cpu": _IN_MEMORY_ENGINE,
     "streaming": _STREAMING_ENGINE,
 }
 
-# A configured engine cannot be represented by `POLARS_ENGINE_AFFINITY`, which holds
-# only a name, so an object-valued affinity is held here instead. The two are kept
-# mutually exclusive by `Config.set_engine_affinity`.
+# Engine objects cannot be stored in `POLARS_ENGINE_AFFINITY`; `Config` keeps
+# the object and name forms mutually exclusive.
 _ENGINE_AFFINITY_OVERRIDE: Engine | None = None
 
 
 def get_engine_affinity_override() -> Engine | None:
-    """Return the object-valued default engine, if one is configured."""
+    """Return the configured engine override."""
     return _ENGINE_AFFINITY_OVERRIDE
 
 
 def set_engine_affinity_override(engine: Engine | None) -> None:
-    """Set (or clear, with `None`) the object-valued default engine."""
+    """Set the configured engine override."""
     global _ENGINE_AFFINITY_OVERRIDE
     _ENGINE_AFFINITY_OVERRIDE = engine
 
 
 def _select_engine(engine: EngineType) -> Engine:
     """
-    Resolve an `engine` argument to an `Engine` instance.
+    Resolve an engine argument or configured affinity to an `Engine`.
 
-    `"auto"` is resolved against the engine affinity, which may be a configured
-    engine object, or a name -- including `"auto"` itself, which Rust resolves at
-    execution time.
+    An `"auto"` affinity remains unresolved for Rust to select at execution time.
     """
     if isinstance(engine, Engine):
         return engine
