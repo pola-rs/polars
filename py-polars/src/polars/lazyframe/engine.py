@@ -89,11 +89,11 @@ class Engine(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Name of the engine, as accepted by the `engine` argument."""
+        """Engine identifier."""
 
     @property
     def plan_engine(self) -> str:
-        """Name of the engine whose plan `explain` and `show_graph` should render."""
+        """Engine name used to render query plans."""
         return self.name
 
     def __repr__(self) -> str:
@@ -139,32 +139,31 @@ class Engine(ABC):
         post_opt_callback: PostOptCallback | None = None,
     ) -> DataFrame | InProcessQuery:
         """
-        Materialize `lf` into a `DataFrame`, or an `InProcessQuery` if `background`.
+        Execute `lf`, returning a `DataFrame` or a background query handle.
 
         Parameters
         ----------
         lf
             The query to execute.
         optimizations
-            The optimization passes to run during query optimization.
+            Optimization passes to apply.
         background
-            Run the query in the background and return an `InProcessQuery`.
+            Run in the background and return an `InProcessQuery`.
         post_opt_callback
-            Internal. Overrides the engine's post-optimization callback.
+            Internal post-optimization callback.
         """
 
     @abstractmethod
     def execute(self, lf: LazyFrame, *, optimizations: QueryOptFlags) -> QueryResult:
         """
-        Execute `lf` and return a handle to its result.
+        Execute the query into a `QueryResult`.
 
-        This is the weaker counterpart of :meth:`collect`: it makes no guarantee
-        about *where* the result is materialized. It may stay on the GPU, on a
-        cluster, or in remote storage. Use ``result.lazy()`` to keep operating on it
-        in place, and collect that to bring it into host memory.
+        This method of materializing a `LazyFrame` makes no guarantees as to where
+        the result is materialized. This can be on the GPU for the GPU-engine,
+        on the cluster or remote storage for the distributed engine and the streaming
+        engine could spill the result if it needed to.
 
-        Not defaulted to ``collect``, which would force exactly the transfer this
-        method exists to avoid.
+        The `QueryResult` can always be consumed as a new `LazyFrame` by calling `.lazy`
         """
 
     def _collect_eager(
@@ -174,12 +173,7 @@ class Engine(ABC):
         optimizations: QueryOptFlags,
         post_opt_callback: PostOptCallback | None = None,
     ) -> DataFrame:
-        """
-        Like `collect`, but used exclusively to implement eager `DataFrame` methods.
-
-        Should operate locally, because we do not want to do a remote call for
-        `DataFrame` methods implemented as `.lazy()....collect()`
-        """
+        """Handle an internal eager operation that must remain local."""
         return self.collect(
             lf, optimizations=optimizations, post_opt_callback=post_opt_callback
         )
@@ -187,7 +181,7 @@ class Engine(ABC):
     def _collect_all_eager(
         self, lfs: Iterable[LazyFrame], *, optimizations: QueryOptFlags
     ) -> list[DataFrame]:
-        """Like `collect_all`, but always executed locally."""
+        """Handle internal eager operations that must remain local."""
         return self.collect_all(lfs, optimizations=optimizations)
 
     def collect_async(
@@ -353,7 +347,7 @@ class Engine(ABC):
 
 
 class _LocalEngine(Engine):
-    """Base class for engines executing in this process, through `PyLazyFrame`."""
+    """Base for in-process engines backed by `PyLazyFrame`."""
 
     def execute(self, lf: LazyFrame, *, optimizations: QueryOptFlags) -> QueryResult:
         df = self.collect(lf, optimizations=optimizations)
@@ -504,7 +498,7 @@ class _LocalEngine(Engine):
     def _finish_sink(
         self, ldf_py: PyLazyFrame, *, lazy: bool, optimizations: QueryOptFlags
     ) -> LazyFrame | None:
-        """Execute a sink plan, or return it unexecuted when `lazy` is set."""
+        """Return a lazy sink plan, or execute it."""
         lf = wrap_ldf(ldf_py)
         if lazy:
             return lf

@@ -2287,7 +2287,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Returns
         -------
-        DataFrame
+        QueryResult
 
         See Also
         --------
