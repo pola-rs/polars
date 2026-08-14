@@ -2188,7 +2188,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             else None
         )
         if _kwargs.get("post_opt_callback") is not None:
-            # Only for testing
             callback = _kwargs.get("post_opt_callback")
         df_py, timings_py = ldf.profile(callback)
         (df, timings) = wrap_df(df_py), wrap_df(timings_py)
@@ -2589,7 +2588,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 raise TypeError(error_msg)
 
         engine_ = _select_engine(engine)
-        # Only for testing purposes
         post_opt_callback = _kwargs.get("post_opt_callback")
 
         if optimizations._pyoptflags.eager:
