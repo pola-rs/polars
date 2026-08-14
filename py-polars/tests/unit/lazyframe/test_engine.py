@@ -15,7 +15,7 @@ from polars import _plr as plr
 from polars.exceptions import UnstableWarning
 from polars.lazyframe import engine_config
 from polars.lazyframe.engine import _LocalEngine
-from polars.lazyframe.engine_config import _select_engine
+from polars.lazyframe.engine_config import _eager_engine, _select_engine
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -142,6 +142,16 @@ def test_select_engine_honors_affinity(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _select_engine("auto").name == "streaming"
     # an explicit engine still wins over the affinity
     assert _select_engine("in-memory").name == "in-memory"
+
+
+def test_eager_engine_ignores_affinity(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_ENGINE_AFFINITY", "streaming")
+    plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
+
+    # internal eager operations always run in-memory
+    assert _eager_engine().name == "in-memory"
+    with pl.Config(engine_affinity=pl.StreamingEngine()):
+        assert _eager_engine().name == "in-memory"
 
 
 def test_engine_is_abstract() -> None:

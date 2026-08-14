@@ -61,6 +61,11 @@ def set_engine_affinity_override(engine: Engine | None) -> None:
     _ENGINE_AFFINITY_OVERRIDE = engine
 
 
+def _eager_engine() -> Engine:
+    """Return the engine used for internal eager operations."""
+    return _IN_MEMORY_ENGINE
+
+
 def _engine_from_name(engine: EngineTypeName) -> Engine:
     """Resolve an explicit engine name without applying the configured affinity."""
     if engine == "gpu":

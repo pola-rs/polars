@@ -294,7 +294,7 @@ def concat(
                     to_supertypes=True,
                     maintain_order=True,
                 )
-            ).collect(optimizations=QueryOptFlags._eager())
+            )._collect_eager(optimizations=QueryOptFlags._eager())
 
         elif how == "diagonal":
             out = wrap_df(plr.concat_df_diagonal(elems))
@@ -307,7 +307,7 @@ def concat(
                     to_supertypes=True,
                     maintain_order=True,
                 )
-            ).collect(optimizations=QueryOptFlags._eager())
+            )._collect_eager(optimizations=QueryOptFlags._eager())
         elif how == "horizontal":
             out = wrap_df(plr.concat_df_horizontal(elems, strict=True))
         elif how == "horizontal_extend":
@@ -607,7 +607,7 @@ def union(
                     to_supertypes=how.endswith("relaxed"),
                     maintain_order=False,
                 )
-            ).collect(optimizations=QueryOptFlags._eager())
+            )._collect_eager(optimizations=QueryOptFlags._eager())
         elif how in ("diagonal", "diagonal_relaxed"):
             out = wrap_ldf(
                 plr.concat_lf_diagonal(
@@ -617,7 +617,7 @@ def union(
                     to_supertypes=how.endswith("relaxed"),
                     maintain_order=False,
                 )
-            ).collect(optimizations=QueryOptFlags._eager())
+            )._collect_eager(optimizations=QueryOptFlags._eager())
         elif how == "horizontal":
             out = wrap_df(plr.concat_df_horizontal(elems, strict=True))
         elif how == "horizontal_extend":

@@ -16,7 +16,7 @@ from polars._warnings import issue_warning
 from polars.lazyframe.engine import Engine, StreamingEngine
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Mapping
     from pathlib import Path
 
     import polars_cloud as pc
@@ -147,8 +147,6 @@ class RemoteEngine(Engine):
         self.n_retries = n_retries
         self.labels = [labels] if isinstance(labels, str) else labels
         self.config = kwargs
-        # eager work operates on data that is already present locally
-        self._local_engine = StreamingEngine()
 
     @property
     def name(self) -> str:
@@ -201,30 +199,12 @@ class RemoteEngine(Engine):
             category=UserWarning,
         )
         result = self.execute(lf, optimizations=optimizations)
-        return self._local_engine.collect(
+        return StreamingEngine().collect(
             result.lazy(),
             optimizations=optimizations,
             background=background,
             post_opt_callback=post_opt_callback,
         )
-
-    def _collect_eager(
-        self,
-        lf: LazyFrame,
-        *,
-        optimizations: QueryOptFlags,
-        post_opt_callback: PostOptCallback | None = None,
-    ) -> DataFrame:
-        """Execute an internal eager operation locally."""
-        return self._local_engine.collect(
-            lf, optimizations=optimizations, post_opt_callback=post_opt_callback
-        )
-
-    def _collect_all_eager(
-        self, lfs: Iterable[LazyFrame], *, optimizations: QueryOptFlags
-    ) -> list[DataFrame]:
-        """Execute internal eager operations locally."""
-        return self._local_engine.collect_all(lfs, optimizations=optimizations)
 
     # -- Sinks --------------------------------------------------------------------
 

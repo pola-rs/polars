@@ -24,7 +24,7 @@ from polars._utils.various import extend_bool, qualified_type_name
 from polars._utils.wrap import wrap_expr, wrap_s
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 from polars.datatypes._parse import parse_into_datatype_expr
-from polars.lazyframe.engine_config import _select_engine
+from polars.lazyframe.engine_config import _eager_engine, _select_engine
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
     forward_old_opt_flags,
@@ -2023,9 +2023,7 @@ def _collect_all_eager(
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
 ) -> list[DataFrame]:
     """Collect internal eager operations locally."""
-    return _select_engine("auto")._collect_all_eager(
-        lazy_frames, optimizations=optimizations
-    )
+    return _eager_engine().collect_all(lazy_frames, optimizations=optimizations)
 
 
 @overload

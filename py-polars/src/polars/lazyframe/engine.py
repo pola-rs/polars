@@ -166,24 +166,6 @@ class Engine(ABC):
         The `QueryResult` can always be consumed as a new `LazyFrame` by calling `.lazy`
         """
 
-    def _collect_eager(
-        self,
-        lf: LazyFrame,
-        *,
-        optimizations: QueryOptFlags,
-        post_opt_callback: PostOptCallback | None = None,
-    ) -> DataFrame:
-        """Handle an internal eager operation that must remain local."""
-        return self.collect(
-            lf, optimizations=optimizations, post_opt_callback=post_opt_callback
-        )
-
-    def _collect_all_eager(
-        self, lfs: Iterable[LazyFrame], *, optimizations: QueryOptFlags
-    ) -> list[DataFrame]:
-        """Handle internal eager operations that must remain local."""
-        return self.collect_all(lfs, optimizations=optimizations)
-
     def collect_async(
         self,
         lf: LazyFrame,

@@ -96,7 +96,7 @@ from polars.datatypes import (
 from polars.datatypes.group import DataTypeGroup
 from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.lazyframe.engine import GPUEngine
-from polars.lazyframe.engine_config import _select_engine
+from polars.lazyframe.engine_config import _eager_engine, _select_engine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
 from polars.schema import Schema
@@ -2232,15 +2232,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return df, timings
 
     def _collect_eager(
-        self,
-        *,
-        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-        **kwargs: Any,
+        self, *, optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS
     ) -> DataFrame:
         """Collect an internal eager operation locally."""
-        engine = _select_engine("auto")
-        return engine._collect_eager(  # type: ignore[return-value]
-            self, optimizations=optimizations, **kwargs
+        return _eager_engine().collect(
+            self, optimizations=optimizations, background=False
         )
 
     @unstable()
@@ -2590,11 +2586,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine_ = _select_engine(engine)
         post_opt_callback = _kwargs.get("post_opt_callback")
 
-        if optimizations._pyoptflags.eager:
-            # Eager entry points cannot run in the background.
-            return engine_._collect_eager(
-                self, optimizations=optimizations, post_opt_callback=post_opt_callback
-            )
         return engine_.collect(
             self,
             optimizations=optimizations,
