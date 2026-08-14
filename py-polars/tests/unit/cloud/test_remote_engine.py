@@ -33,13 +33,16 @@ class FakeQuery:
 class FakeExecuteRemote:
     """Stands in for `polars_cloud`'s `ExecuteRemote`."""
 
-    def __init__(self, calls: list[tuple[Any, ...]], tag: str) -> None:
+    def __init__(
+        self, calls: list[tuple[Any, ...]], tag: str, lf: pl.LazyFrame
+    ) -> None:
         self._calls = calls
         self.tag = tag
+        self._lf = lf
 
     def execute(self, **kwargs: Any) -> Any:
         self._calls.append((self.tag, "execute", kwargs))
-        return FakeQueryResult()
+        return FakeQueryResult(self._lf)
 
     def _sink(self, name: str, uri: Any, kwargs: dict[str, Any]) -> FakeQuery:
         self._calls.append((self.tag, name, uri, kwargs))
@@ -64,8 +67,11 @@ class FakeExecuteRemote:
 class FakeQueryResult:
     """Stands in for the `QueryResult` that Polars Cloud hands back."""
 
+    def __init__(self, lf: pl.LazyFrame) -> None:
+        self._lf = lf
+
     def lazy(self) -> pl.LazyFrame:
-        return pl.LazyFrame({"a": [1, 2, 3]})
+        return self._lf
 
 
 class FakeLazyFrameRemote(FakeExecuteRemote):
@@ -73,7 +79,7 @@ class FakeLazyFrameRemote(FakeExecuteRemote):
 
     def distributed(self, **kwargs: Any) -> FakeExecuteRemote:
         self._calls.append(("distributed", kwargs))
-        return FakeExecuteRemote(self._calls, "distributed")
+        return FakeExecuteRemote(self._calls, "distributed", self._lf)
 
     def labels(self, labels: list[str]) -> FakeLazyFrameRemote:
         self._calls.append(("labels", labels))
@@ -87,7 +93,7 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Any, ...]]:
 
     def fake_remote(self: pl.LazyFrame, context: Any = None, **kwargs: Any) -> Any:
         recorded.append(("remote", context, kwargs))
-        return FakeLazyFrameRemote(recorded, "auto")
+        return FakeLazyFrameRemote(recorded, "auto", self)
 
     monkeypatch.setitem(sys.modules, "polars_cloud", ModuleType("polars_cloud"))
     monkeypatch.setattr(pl.LazyFrame, "remote", fake_remote, raising=False)
@@ -131,6 +137,20 @@ def test_is_an_engine_with_a_distinct_name() -> None:
     # plans render for the engine the workers are asked to prefer
     assert engine.plan_engine == "auto"
     assert pl.RemoteEngine(engine="streaming").plan_engine == "streaming"
+
+
+@pytest.mark.usefixtures("_stub_cloud")
+def test_worker_engine_does_not_follow_global_affinity() -> None:
+    affinity = pl.RemoteEngine(engine="streaming")
+    with pl.Config(engine_affinity=affinity):
+        assert pl.RemoteEngine().plan_engine == "auto"
+
+
+@pytest.mark.usefixtures("_stub_cloud")
+def test_worker_engine_rejects_engine_object() -> None:
+    # we can not serialize engine objects for use with `RemoteEngine`
+    with pytest.raises(ValueError, match="Invalid engine argument"):
+        pl.RemoteEngine(engine=pl.StreamingEngine())  # type: ignore[arg-type]
 
 
 def test_execute_dispatches(calls: list[tuple[Any, ...]], lf: pl.LazyFrame) -> None:
@@ -311,3 +331,20 @@ def test_affinity_dispatches_lazy_queries(
         lf.execute()
     assert calls[0][2]["scaling_mode"] == "distributed"
     assert calls[-1][:2] == ("auto", "execute")
+
+
+def test_describe_honors_remote_affinity(
+    calls: list[tuple[Any, ...]], lf: pl.LazyFrame
+) -> None:
+    with pl.Config(engine_affinity=pl.RemoteEngine()):
+        result = lf.describe(percentiles=[])
+
+    assert result["statistic"].to_list() == [
+        "count",
+        "null_count",
+        "mean",
+        "std",
+        "min",
+        "max",
+    ]
+    assert any(call[:2] == ("auto", "execute") for call in calls)

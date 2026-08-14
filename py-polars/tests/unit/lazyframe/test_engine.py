@@ -319,8 +319,8 @@ def test_engine_sink_signature_matches_lazyframe(method_name: str) -> None:
 
 
 def test_engine_covers_every_lazyframe_sink() -> None:
-    # `sink_delta` and `sink_iceberg` are excluded: they hardcode engine="streaming"
-    # and expose no `engine` parameter at all.
+    # `sink_delta` and `sink_iceberg` are adapters backed by external writers. They
+    # use `engine` to produce rows but do not delegate to an `Engine.sink_*` method.
     lf_sinks = {
         name
         for name in dir(pl.LazyFrame)
