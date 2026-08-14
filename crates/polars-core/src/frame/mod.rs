@@ -1,5 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 //! DataFrame module.
+use std::borrow::Cow;
+
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_utils::UnitVec;
@@ -1153,9 +1155,20 @@ impl DataFrame {
                 Ok(self.clear())
             }
         } else {
-            // Unconditionally rechunk to avoid O(n*m) overhead, where n = number of chunks,
-            // and m = number of columns.
-            let mask = mask.rechunk();
+            // Rechunk when not all chunks are aligned. This avoid O(n*m) overhead,
+            // where n = number of chunks, and m = number of columns.
+            let all_chunks_aligned = !self.should_rechunk()
+                && self
+                    .materialized_column_iter()
+                    .next()
+                    .is_some_and(|s| s.chunk_lengths().eq(mask.chunk_lengths()));
+
+            let mask = if all_chunks_aligned {
+                Cow::Borrowed(mask)
+            } else {
+                mask.rechunk()
+            };
+
             let new_columns: Vec<Column> =
                 self.try_apply_columns_par(|s| s.filter(mask.as_ref()))?;
             let out = unsafe {
@@ -1177,9 +1190,18 @@ impl DataFrame {
                 Ok(self.clear())
             }
         } else {
-            // Unconditionally rechunk to avoid O(n*m) overhead, where n = number of chunks,
-            // and m = number of columns.
-            let mask = mask.rechunk();
+            let all_chunks_aligned = !self.should_rechunk()
+                && self
+                    .materialized_column_iter()
+                    .next()
+                    .is_some_and(|s| s.chunk_lengths().eq(mask.chunk_lengths()));
+
+            let mask = if all_chunks_aligned {
+                Cow::Borrowed(mask)
+            } else {
+                mask.rechunk()
+            };
+
             let new_columns: Vec<Column> = self.try_apply_columns(|s| s.filter(mask.as_ref()))?;
             let out = unsafe {
                 DataFrame::new_unchecked(new_columns[0].len(), new_columns).with_schema_from(self)
