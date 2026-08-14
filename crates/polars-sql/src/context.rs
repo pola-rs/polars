@@ -28,8 +28,9 @@ use crate::sql_expr::{
 };
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
-    expr_has_window_functions, expr_refers_to_table,
+    expr_contains_subquery, expr_has_window_functions, expr_refers_to_table,
 };
+use crate::subquery::{CORRELATED_COL_PREFIX, CorrelationCache, lift_uncorrelated_subqueries};
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 
@@ -831,7 +832,14 @@ impl SQLContext {
                 Ok(lf.clear())
             } else {
                 // apply constraint as inverted filter (drops rows matching the selection)
-                Ok(self.process_where(lf.clone(), selection, FilterMode::RemoveTrue, None)?)
+                let mut corr_cache: CorrelationCache = PlHashMap::new();
+                Ok(self.process_where(
+                    lf.clone(),
+                    selection,
+                    FilterMode::RemoveTrue,
+                    None,
+                    &mut corr_cache,
+                )?)
             }
         } else {
             polars_bail!(SQLInterface: "unexpected statement type; expected DELETE")
@@ -1317,6 +1325,12 @@ impl SQLContext {
         // Parse named windows first, as they may be referenced in the SELECT clause
         self.register_named_windows(&select_stmt.named_window)?;
 
+        // Owned from here on: correlated-subquery lowering rewrites the raw
+        // SQL of the SELECT list / WHERE / HAVING in place, before they're
+        // parsed into Polars expressions.
+        let mut select_stmt = select_stmt.clone();
+        let mut corr_cache: CorrelationCache = PlHashMap::new();
+
         // Get `FROM` table/data
         let mut implicit_join_filter: Option<SQLExpr> = None;
         let (mut lf, base_table_name) = if select_stmt.from.is_empty() {
@@ -1376,7 +1390,9 @@ impl SQLContext {
             effective_where,
             FilterMode::KeepTrue,
             Some(schema.clone()),
+            &mut corr_cache,
         )?;
+        schema = self.get_frame_schema(&mut lf)?;
 
         // Determine projections
         let mut select_modifiers = SelectModifiers {
@@ -1405,8 +1421,22 @@ impl SQLContext {
             PlHashSet::new()
         };
 
+        for item in &mut select_stmt.projection {
+            let raw_expr = match item {
+                SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => Some(e),
+                _ => None,
+            };
+            if let Some(e) = raw_expr {
+                if expr_contains_subquery(e) {
+                    let (new_lf, rewritten) = self.decorrelate_expr(lf, &schema, e, &mut corr_cache)?;
+                    lf = new_lf;
+                    schema = self.get_frame_schema(&mut lf)?;
+                    *e = rewritten;
+                }
+            }
+        }
         let mut projections =
-            self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
+            self.column_projections(&select_stmt, &schema, &mut select_modifiers)?;
 
         let subquery_names;
         (lf, subquery_names) = self.process_subqueries(lf, projections.iter_mut().collect())?;
@@ -1538,6 +1568,25 @@ impl SQLContext {
             },
         };
 
+        // A decorrelated/broadcast subquery result referenced directly in the
+        // SELECT list is a plain (constant per outer row) column; under an
+        // explicit GROUP BY it must be `.first()`'d so it reduces the group
+        // like any other aggregate, rather than tripping the "should
+        // participate in GROUP BY" validity check below.
+        if !group_by_keys.is_empty() {
+            for p in &mut projections {
+                *p = p.clone().map_expr(|e| match &e {
+                    Expr::Column(name)
+                        if name.starts_with(CORRELATED_COL_PREFIX)
+                            || subquery_names.contains(name) =>
+                    {
+                        e.first()
+                    },
+                    _ => e,
+                });
+            }
+        }
+
         lf = if group_by_keys.is_empty() {
             // The 'having' clause is only valid inside 'group by'
             if select_stmt.having.is_some() {
@@ -1639,11 +1688,83 @@ impl SQLContext {
             };
             lf
         } else {
-            let having = select_stmt
-                .having
-                .as_ref()
-                .map(|expr| parse_sql_expr(expr, self, Some(&schema)))
-                .transpose()?;
+            let having = match select_stmt.having.as_ref() {
+                Some(having_sql) if expr_contains_subquery(having_sql) => {
+                    // HAVING's correlation is against the *grouped* row (one
+                    // row per group-key combination), not the base table, so
+                    // decorrelate against a distinct-keys frame and broadcast
+                    // the per-group result back onto `lf` before grouping.
+                    let group_by_keys_schema =
+                        expressions_to_schema(&group_by_keys, &schema, |duplicate_name: &str| {
+                            format!(
+                                "group_by keys contained duplicate output name '{duplicate_name}'"
+                            )
+                        })?;
+                    let key_names: Vec<PlSmallStr> =
+                        group_by_keys_schema.iter_names().cloned().collect();
+                    let key_lf = lf
+                        .clone()
+                        .select(group_by_keys.clone())
+                        .unique(None, UniqueKeepStrategy::Any);
+                    let (mut new_key_lf, mut rewritten_having) =
+                        self.decorrelate_expr(key_lf, &schema, having_sql, &mut corr_cache)?;
+                    // Any subquery `decorrelate_expr` left alone was
+                    // uncorrelated (no WHERE tying it to the group). Lift it
+                    // out of comparison position (the "use IN instead" guard
+                    // only fires on a subquery that's a direct comparison
+                    // operand) and parse it standalone, then resolve it the
+                    // same way the row-level path does: broadcasting across
+                    // the distinct group keys instead of every row.
+                    let lifted = lift_uncorrelated_subqueries(&mut rewritten_having);
+                    let mut having_expr = parse_sql_expr(&rewritten_having, self, Some(&schema))?;
+                    let mut lifted_exprs = lifted
+                        .into_iter()
+                        .map(|(name, sq)| {
+                            Ok(parse_sql_expr(&SQLExpr::Subquery(Box::new(sq)), self, Some(&schema))?
+                                .alias(name))
+                        })
+                        .collect::<PolarsResult<Vec<Expr>>>()?;
+                    let having_subquery_names;
+                    (new_key_lf, having_subquery_names) = self.process_subqueries(new_key_lf, {
+                        let mut all: Vec<&mut Expr> = lifted_exprs.iter_mut().collect();
+                        all.push(&mut having_expr);
+                        all
+                    })?;
+                    // `process_subqueries` names each resolved column
+                    // internally; materialise it under the placeholder name
+                    // `rewritten_having` actually references, then drop the
+                    // internal name so it doesn't leak into a wildcard SELECT
+                    // once joined back onto `lf` below.
+                    if !lifted_exprs.is_empty() {
+                        new_key_lf = new_key_lf.with_columns(lifted_exprs).drop(Selector::ByName {
+                            names: having_subquery_names.into_iter().collect(),
+                            strict: true,
+                        });
+                    }
+                    lf = lf
+                        .join_builder()
+                        .with(new_key_lf)
+                        .left_on(group_by_keys.clone())
+                        .right_on(key_names.into_iter().map(col).collect::<Vec<_>>())
+                        .how(JoinType::Left)
+                        .coalesce(JoinCoalesce::CoalesceColumns)
+                        .finish();
+                    schema = self.get_frame_schema(&mut lf)?;
+                    // Both kinds of result (referenced only via their
+                    // placeholder alias; the internal names `process_subqueries`
+                    // assigned were just dropped above) are plain (broadcast,
+                    // constant per group) columns; `.first()` them so the
+                    // group_by/having validity check sees a reducing
+                    // aggregate rather than a bare non-key column reference.
+                    let having_expr = having_expr.map_expr(|e| match &e {
+                        Expr::Column(name) if name.starts_with(CORRELATED_COL_PREFIX) => e.first(),
+                        _ => e,
+                    });
+                    Some(having_expr)
+                },
+                Some(having_sql) => Some(parse_sql_expr(having_sql, self, Some(&schema))?),
+                None => None,
+            };
             lf = self.process_group_by(lf, &group_by_keys, &projections, having)?;
             lf = self.process_order_by(lf, &query.order_by, None)?;
 
@@ -1791,6 +1912,7 @@ impl SQLContext {
         expr: &Option<SQLExpr>,
         filter_mode: FilterMode,
         schema: Option<SchemaRef>,
+        corr_cache: &mut CorrelationCache,
     ) -> PolarsResult<LazyFrame> {
         if let Some(expr) = expr {
             let schema = match schema {
@@ -1829,7 +1951,23 @@ impl SQLContext {
             (lf, residual_exprs) =
                 self.rewrite_subquery_conjuncts(lf, expr, filter_mode, &schema)?;
 
-            let Some(parsed_residual) = residual_exprs
+            // Decorrelate whatever the join rewrite above couldn't express
+            // (inequality correlation, EXISTS/subqueries nested inside a
+            // larger boolean expression, etc.) before the generic parse path.
+            let mut schema = schema;
+            let mut rewritten_residuals: Vec<SQLExpr> = Vec::with_capacity(residual_exprs.len());
+            for conj in &residual_exprs {
+                if expr_contains_subquery(conj) {
+                    let (new_lf, rewritten) = self.decorrelate_expr(lf, &schema, conj, corr_cache)?;
+                    lf = new_lf;
+                    schema = self.get_frame_schema(&mut lf)?;
+                    rewritten_residuals.push(rewritten);
+                } else {
+                    rewritten_residuals.push((*conj).clone());
+                }
+            }
+
+            let Some(parsed_residual) = rewritten_residuals
                 .iter()
                 .map(|e| parse_sql_expr(e, self, Some(&*schema)))
                 .reduce(|a, b| Ok(a?.and(b?)))
@@ -1847,6 +1985,14 @@ impl SQLContext {
                 FilterMode::KeepTrue => lf.filter(filter_expression),
                 FilterMode::RemoveTrue => lf.remove(filter_expression),
             };
+            // These are internal to the filter expression; without dropping
+            // them here they'd otherwise leak into a wildcard SELECT.
+            if !subquery_names.is_empty() {
+                lf = lf.drop(Selector::ByName {
+                    names: subquery_names.into_iter().collect(),
+                    strict: true,
+                });
+            }
         }
         Ok(lf)
     }
@@ -2037,7 +2183,6 @@ impl SQLContext {
                     let mut lf = LazyFrame::from((**lp).clone());
                     let schema = self.get_frame_schema(&mut lf)?;
                     polars_ensure!(schema.len() == 1,  SQLSyntax: "SQL subquery returns more than one column");
-                    dbg!(&select_expr, lf.clone().collect());
                     let lf = lf.select([select_expr.clone()]);
 
                     subplans.push(lf);

@@ -263,3 +263,30 @@ impl SQLVisitor for WindowFunctionFinder {
 pub(crate) fn expr_has_window_functions(expr: &SQLExpr) -> bool {
     expr.visit(&mut WindowFunctionFinder).is_break()
 }
+
+// ---------------------------------------------------------------------------
+// SubqueryFinder
+// ---------------------------------------------------------------------------
+
+/// Visitor that checks if a SQL expression contains a `Subquery` or `EXISTS`.
+/// Used to skip correlated-subquery lowering for the (common) case of an
+/// expression that has no subquery in it at all.
+struct SubqueryFinder;
+
+impl SQLVisitor for SubqueryFinder {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+        if matches!(expr, SQLExpr::Subquery(_) | SQLExpr::Exists { .. }) {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    }
+}
+
+/// Check if a SQL expression contains a `Subquery` or `EXISTS` node anywhere
+/// in its tree.
+pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
+    expr.visit(&mut SubqueryFinder).is_break()
+}
