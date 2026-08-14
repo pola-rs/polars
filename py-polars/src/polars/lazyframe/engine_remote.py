@@ -222,7 +222,7 @@ class RemoteEngine(Engine):
         return path
 
     @staticmethod
-    def _reject_unsupported(**kwargs: Any) -> None:
+    def _reject_if_set(**kwargs: Any) -> None:
         """Reject options unsupported by Polars Cloud."""
         for name, value in kwargs.items():
             if value:
@@ -252,7 +252,7 @@ class RemoteEngine(Engine):
         sinked_paths_callback: SinkedPathsCallback | None,
     ) -> None:
         """See :meth:`polars.LazyFrame.sink_parquet`."""
-        self._reject_unsupported(
+        self._reject_if_set(
             lazy=lazy,
             mkdir=mkdir,
             sync_on_close=sync_on_close,
@@ -295,7 +295,7 @@ class RemoteEngine(Engine):
         sinked_paths_callback: SinkedPathsCallback | None,
     ) -> None:
         """See :meth:`polars.LazyFrame.sink_ipc`."""
-        self._reject_unsupported(
+        self._reject_if_set(
             lazy=lazy,
             mkdir=mkdir,
             sync_on_close=sync_on_close,
@@ -348,7 +348,7 @@ class RemoteEngine(Engine):
         optimizations: QueryOptFlags,
     ) -> None:
         """See :meth:`polars.LazyFrame.sink_csv`."""
-        self._reject_unsupported(
+        self._reject_if_set(
             lazy=lazy,
             mkdir=mkdir,
             sync_on_close=sync_on_close,
