@@ -73,6 +73,38 @@ def test_collect_calls_observer() -> None:
     assert started_id == planned_id
 
 
+def test_config_enable_monitoring_globally() -> None:
+    """A bare `Config.enable_monitoring()` monitors every subsequent query."""
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        pl.Config.enable_monitoring()
+        # no engine argument: monitoring switches the affinity to streaming
+        _sample_lf().collect()
+        _sample_lf().collect()
+
+    assert observer.on_query_started.call_count == 2
+
+
+def test_config_scope_monitoring() -> None:
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        assert "POLARS_ENGINE_AFFINITY" not in os.environ
+
+        with pl.Config(enable_monitoring=True):
+            assert os.environ["POLARS_QUERY_MONITORING"] == "1"
+            assert os.environ["POLARS_ENGINE_AFFINITY"] == "streaming"
+            _sample_lf().collect()
+        observer.on_query_started.assert_called_once()
+
+        # leaving the scope stops monitoring
+        _sample_lf().collect()
+
+        assert "POLARS_QUERY_MONITORING" not in os.environ
+        assert "POLARS_ENGINE_AFFINITY" not in os.environ
+
+    observer.on_query_started.assert_called_once()
+
+
 def test_engine_object_follows_config() -> None:
     module, observer = fake_cloud_observer()
     with mock_module_import("polars_cloud", module, replace_if_exists=True):
