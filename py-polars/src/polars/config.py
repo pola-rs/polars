@@ -113,10 +113,8 @@ def _set_default_credential_provider(provider: Any) -> None:
     builder.DEFAULT_CREDENTIAL_PROVIDER = provider
 
 
-# Runtime-only options hold arbitrary Python objects, so they can be neither
-# represented as environment variables nor persisted by `Config.save`. They are
-# registered here as (getter, setter, default) so that `restore_defaults` and the
-# context manager give them the same semantics as every other option.
+# Python-object options cannot be stored in environment variables or `Config.save`.
+# Register them here so contexts and resets handle them like other options.
 _POLARS_CFG_RUNTIME_VARS: Final[
     dict[str, tuple[Callable[[], Any], Callable[[Any], None], Any]]
 ] = {
@@ -396,7 +394,7 @@ class Config(contextlib.ContextDecorator):
         cfg_load = Config()
         opts = options.get("environment", {})
         if "POLARS_ENGINE_AFFINITY" in opts:
-            # a saved state can only name an engine, so it replaces any object
+            # A saved affinity value replaces any object affinity.
             set_engine_affinity_override(None)
         for key, opt in opts.items():
             if opt is None:
@@ -1571,11 +1569,9 @@ class Config(contextlib.ContextDecorator):
             when calling `.collect()`. However, the query is not
             guaranteed to execute with the specified engine.
 
-            An :class:`Engine` object may also be given, to make a *configured*
-            engine the default. Unlike the engine names, which are stored in the
-            `POLARS_ENGINE_AFFINITY` environment variable, these are held in
-            Python-level state and so are not included in :meth:`Config.save`;
-            a saved state that names an engine clears them on :meth:`Config.load`.
+            An :class:`Engine` object may also be used to configure the default. Engine
+            objects are process-local and omitted from :meth:`Config.save`; loading
+            a state containing `POLARS_ENGINE_AFFINITY` replaces the object affinity.
 
         Examples
         --------
@@ -1616,8 +1612,7 @@ class Config(contextlib.ContextDecorator):
         ValueError: if engine is not recognised.
         """
         if isinstance(engine, Engine):
-            # cannot be represented as an environment variable, so it is held
-            # Python-side; the two are kept mutually exclusive
+            # Object affinities are Python-only; clear the named affinity.
             os.environ.pop("POLARS_ENGINE_AFFINITY", None)
             set_engine_affinity_override(engine)
             plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")

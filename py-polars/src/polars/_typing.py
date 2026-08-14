@@ -444,8 +444,8 @@ EngineType: TypeAlias = Union[EngineTypeName, "Engine"]
 
 PlanStage: TypeAlias = Literal["ir", "physical"]
 
-# The post-optimization callback, that accepts a Rust `NodeTraverser`, and an optional
-# nanosecond duration
+# Post-optimization callback receiving a Rust `NodeTraverser` and optional duration
+# in nanoseconds.
 PostOptCallback: TypeAlias = Callable[[Any, int | None], None]
 
 

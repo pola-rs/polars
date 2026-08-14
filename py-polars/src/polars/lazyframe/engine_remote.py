@@ -191,7 +191,8 @@ class RemoteEngine(Engine):
         """
         Collect `lf` remotely, then transfer the result to this machine.
 
-        Prefer :meth:`LazyFrame.execute` or a sink to avoid transferring the full result.
+        Prefer `LazyFrame.execute` or a sink to avoid transferring the full
+        result.
         """
         issue_warning(
             "collecting a remote query transfers the entire result to this machine; "

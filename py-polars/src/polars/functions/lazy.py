@@ -2022,10 +2022,7 @@ def _collect_all_eager(
     *,
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
 ) -> list[DataFrame]:
-    """Like `collect_all()`, but executes locally.
-
-    See :meth:`Engine._collect_all_eager`.
-    """
+    """Collect internal eager operations locally."""
     return _select_engine("auto")._collect_all_eager(
         lazy_frames, optimizations=optimizations
     )
