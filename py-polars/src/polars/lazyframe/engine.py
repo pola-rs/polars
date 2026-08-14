@@ -7,7 +7,7 @@ import os
 from abc import ABC, abstractmethod
 from functools import partial
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Literal, overload
+from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, overload
 
 from polars._dependencies import import_optional
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
@@ -343,6 +343,13 @@ class Engine(ABC):
 
 class _LocalEngine(Engine):
     """Base for in-process engines backed by `PyLazyFrame`."""
+
+    _name: ClassVar[str]
+
+    @property
+    def name(self) -> str:
+        """Name of the engine."""
+        return self._name
 
     def execute(self, lf: LazyFrame, *, optimizations: QueryOptFlags) -> QueryResult:
         df = self.collect(lf, optimizations=optimizations)
@@ -812,27 +819,19 @@ class _CollectBatches:
 
 
 class _AutoEngine(_LocalEngine):
-    @property
-    def name(self) -> str:
-        return "auto"
+    _name = "auto"
 
 
 class InMemoryEngine(_LocalEngine):
     """The in-memory engine."""
 
-    @property
-    def name(self) -> str:
-        """Name of the engine."""
-        return "in-memory"
+    _name = "in-memory"
 
 
 class StreamingEngine(_LocalEngine):
     """The streaming engine."""
 
-    @property
-    def name(self) -> str:
-        """Name of the engine."""
-        return "streaming"
+    _name = "streaming"
 
 
 class GPUEngine(_LocalEngine):
@@ -861,6 +860,8 @@ class GPUEngine(_LocalEngine):
 
     """
 
+    _name = "gpu"
+
     device: int | None
     """Device on which to run query."""
     memory_resource: DeviceMemoryResource | None
@@ -886,11 +887,6 @@ class GPUEngine(_LocalEngine):
         # Avoids need for changes in cudf-polars
         kwargs["raise_on_fail"] = raise_on_fail
         self.config = kwargs
-
-    @property
-    def name(self) -> str:
-        """Name of the engine."""
-        return "gpu"
 
     def _post_opt_callback(
         self, *, background: bool, eager: bool
