@@ -1003,7 +1003,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Creates a summary of statistics for a LazyFrame, returning a DataFrame.
 
-        .. engine-support:: in-memory
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1030,6 +1030,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
           statistics that we deem informative, and may be updated in the future.
           Using `describe` programmatically (versus interactive exploration) is
           not recommended for this reason.
+        * The statistics query honors the configured engine affinity. Once computed,
+          the statistics are collected locally to reshape the result.
 
         Examples
         --------
@@ -1309,7 +1311,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. deprecated:: 1.30.0
                 Use the `engine` parameter instead.
         engine
-            Select the engine used to process the query (default ``"auto"``):
+            Select the engine used to process the query (default ``"auto"``).
+            A :class:`~.Engine` instance may also be passed. Supported engine
+            names are:
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -1516,7 +1520,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. deprecated:: 1.30.0
                 Use the `optimizations` parameters.
         engine
-            Select the engine used to process the query (default ``"auto"``):
+            Select the engine used to process the query (default ``"auto"``).
+            A :class:`~.Engine` instance may also be passed. Supported engine
+            names are:
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -2096,7 +2102,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         figsize
             matplotlib figsize of the profiling plot
         engine
-            Select the engine used to process the query (default ``"auto"``):
+            Select the engine used to process the query (default ``"auto"``).
+            A :class:`~.Engine` instance may also be passed. Supported engine
+            names are:
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -2258,6 +2266,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         engine
             Select the engine used to process the query, optional.
+            A :class:`~.Engine` instance may also be passed.
             At the moment, if set to `"auto"` (default), the query
             is run using the polars in-memory engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
@@ -2452,7 +2461,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. deprecated:: 1.30.0
                 Use the `optimizations` parameters.
         engine
-            Select the engine used to process the query (default ``"auto"``):
+            Select the engine used to process the query (default ``"auto"``).
+            A :class:`~.Engine` instance may also be passed. Supported engine
+            names are:
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -2638,7 +2649,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         gevent
             Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
         engine
-            Select the engine used to process the query (default ``"auto"``):
+            Select the engine used to process the query (default ``"auto"``).
+            A :class:`~.Engine` instance may also be passed. Supported engine
+            names are:
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -2949,7 +2962,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
         engine
-            Select the engine used to process the query (default ``"auto"``):
+            Select the engine used to process the query (default ``"auto"``).
+            A :class:`~.Engine` instance may also be passed. Supported engine
+            names are:
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -3108,7 +3123,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Keyword arguments which are required to `MERGE` a Delta lake Table.
             See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
         engine
-            Select the engine used to process the query (default ``"auto"``):
+            Select the engine used to process the query (default ``"auto"``).
+            A :class:`~.Engine` instance may also be passed. Supported engine
+            names are:
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -3550,7 +3567,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
         engine
-            Select the engine used to process the query (default ``"auto"``):
+            Select the engine used to process the query (default ``"auto"``).
+            A :class:`~.Engine` instance may also be passed. Supported engine
+            names are:
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -3870,7 +3889,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
         engine
-            Select the engine used to process the query (default ``"auto"``):
+            Select the engine used to process the query (default ``"auto"``).
+            A :class:`~.Engine` instance may also be passed. Supported engine
+            names are:
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -4105,7 +4126,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
         engine
-            Select the engine used to process the query (default ``"auto"``):
+            Select the engine used to process the query (default ``"auto"``).
+            A :class:`~.Engine` instance may also be passed. Supported engine
+            names are:
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -4238,7 +4261,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: bool
             Wait to start execution until `collect` is called.
         engine
-            Select the engine used to process the query (default ``"auto"``):
+            Select the engine used to process the query (default ``"auto"``).
+            A :class:`~.Engine` instance may also be passed. Supported engine
+            names are:
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -4313,7 +4338,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy
             Start the query when first requesting a batch.
         engine
-            Select the engine used to process the query (default ``"auto"``):
+            Select the engine used to process the query (default ``"auto"``).
+            A :class:`~.Engine` instance may also be passed. Supported engine
+            names are:
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`

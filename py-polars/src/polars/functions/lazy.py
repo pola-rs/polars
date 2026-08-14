@@ -2156,7 +2156,8 @@ def collect_all(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     engine
-        Select the engine used to process the query (default ``"auto"``):
+        Select the engine used to process the query (default ``"auto"``).
+        A :class:`~.Engine` instance may also be passed. Supported engine names are:
 
         * ``"auto"``: use the engine set by
           :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -2263,7 +2264,8 @@ def collect_all_async(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     engine
-        Select the engine used to process the query (default ``"auto"``):
+        Select the engine used to process the query (default ``"auto"``).
+        A :class:`~.Engine` instance may also be passed. Supported engine names are:
 
         * ``"auto"``: use the engine set by
           :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
