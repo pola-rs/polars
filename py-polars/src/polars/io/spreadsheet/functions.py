@@ -1147,7 +1147,7 @@ def _read_spreadsheet_calamine(
             lf = lf.with_columns(*str_to_temporal)
         if updated_overrides:
             lf = lf.cast(dtypes=updated_overrides)  # type: ignore[arg-type]
-        df = lf.collect()
+        df = lf._collect_eager()
 
     # standardise on string dtype for null columns in empty frame
     if df.is_empty():

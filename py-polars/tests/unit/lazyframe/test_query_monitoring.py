@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 import polars._plr as plr
-from polars.lazyframe.engine_config import StreamingEngine
+from polars.lazyframe.engine import StreamingEngine
 from tests.unit.conftest import mock_module_import
 
 if TYPE_CHECKING:
@@ -73,23 +73,20 @@ def test_collect_calls_observer() -> None:
     assert started_id == planned_id
 
 
-def test_streaming_engine_object_enables_monitoring() -> None:
-    """`StreamingEngine(monitoring=True)` enables monitoring without the env var."""
-    module, observer = fake_cloud_observer()
-    with mock_module_import("polars_cloud", module, replace_if_exists=True):
-        _sample_lf().collect(engine=StreamingEngine(monitoring=True))
-
-    observer.on_query_started.assert_called_once()
-    observer.on_query_planned.assert_called_once()
-    observer.on_query_planned.return_value.close.assert_called_once()
-
-
-def test_streaming_engine_monitoring_false_overrides_env() -> None:
-    """`StreamingEngine(monitoring=False)` disables monitoring (engine flag wins)."""
+def test_engine_object_follows_config() -> None:
     module, observer = fake_cloud_observer()
     with mock_module_import("polars_cloud", module, replace_if_exists=True):
         pl.Config.enable_monitoring()
-        _sample_lf().collect(engine=StreamingEngine(monitoring=False))
+        _sample_lf().collect(engine=StreamingEngine())
+
+    observer.on_query_started.assert_called_once()
+
+
+def test_engine_object_without_config_is_not_monitored() -> None:
+    """An engine object cannot enable monitoring on its own."""
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        _sample_lf().collect(engine=StreamingEngine())
 
     module.QueryCloudObserver.assert_not_called()
     observer.on_query_started.assert_not_called()
