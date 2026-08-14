@@ -44,7 +44,7 @@ def _partition_key_exprs(table: pyiceberg.table.Table) -> list[pl.Expr] | None:
         TruncateTransform,
         YearTransform,
     )
-    from pyiceberg.types import IntegerType, LongType, StringType
+    from pyiceberg.types import BinaryType, IntegerType, LongType, StringType
 
     import polars as pl
 
@@ -82,6 +82,8 @@ def _partition_key_exprs(table: pyiceberg.table.Table) -> list[pl.Expr] | None:
                 expr = expr - expr % transform.width
             elif isinstance(source_type, StringType):
                 expr = expr.str.slice(0, transform.width)
+            elif isinstance(source_type, BinaryType):
+                expr = expr.bin.slice(0, transform.width)
             else:
                 msg = (
                     "sink to Iceberg table with "

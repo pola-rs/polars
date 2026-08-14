@@ -608,6 +608,12 @@ def test_sink_iceberg_all_types(tmp_path: Path) -> None:
             id="truncate-string",
         ),
         pytest.param(
+            BinaryType(),
+            TruncateTransform(2),
+            [b"abc", b"de", b"abc"],
+            id="truncate-binary",
+        ),
+        pytest.param(
             TimestamptzType(),
             YearTransform(),
             [
@@ -655,12 +661,6 @@ def test_sink_iceberg_partitioned_transforms(
             TruncateTransform(10),
             [D("1.23"), D("11.23")],
             id="truncate-decimal",
-        ),
-        pytest.param(
-            BinaryType(),
-            TruncateTransform(2),
-            [b"abc", b"def"],
-            id="truncate-binary",
         ),
     ],
 )
