@@ -156,7 +156,7 @@ impl StrpTimeParser<i64> for DatetimeInfer<Int64Type> {
                     if let Some(parsed) = self
                         .transform_bytes
                         .parse(val, fmt.as_bytes())
-                        .map(datetime_to_timestamp_us)
+                        .map(transform)
                     {
                         self.latest_fmt = fmt;
                         return Some(parsed);
