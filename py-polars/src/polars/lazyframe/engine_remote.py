@@ -1,9 +1,8 @@
 """
-Remote execution on Polars Cloud.
+Remote query execution through Polars Cloud.
 
-Kept apart from `polars.lazyframe.engine` so the `polars_cloud` coupling stays in one
-place. Nothing here is imported during `import polars` beyond the class itself; the
-dependency is checked when a `RemoteEngine` is constructed.
+Cloud integration is isolated here; the optional `polars_cloud` dependency is
+loaded when a `RemoteEngine` is constructed.
 """
 
 from __future__ import annotations
@@ -48,11 +47,10 @@ _SCALING_MODES = get_args(ScalingMode)
 
 class RemoteEngine(Engine):
     """
-    Execute queries remotely, on Polars Cloud.
+    Execute queries remotely on Polars Cloud.
 
-    Pass an instance as the `engine` argument of :meth:`LazyFrame.execute` or of a
-    `LazyFrame.sink_*` method, or make it the default for every query with
-    :meth:`Config.set_engine_affinity`.
+    Use this engine with :meth:`LazyFrame.execute`, a `LazyFrame.sink_*` method,
+    or as the default through :meth:`Config.set_engine_affinity`.
 
     Requires the `polars_cloud` package.
 
@@ -63,21 +61,18 @@ class RemoteEngine(Engine):
     Parameters
     ----------
     context
-        Compute context in which queries are executed. If not given, the default
-        context of the `polars_cloud` session is used.
+        Compute context. Defaults to the current `polars_cloud` session.
     scaling_mode : {'auto', 'single-node', 'distributed'}
         Whether to run the query on a single node or distributed over the cluster.
         If `'auto'`, a query runs distributed if the cluster has more than one node.
     engine : {'auto', 'in-memory', 'streaming', 'gpu'}
-        Hint telling the workers which engine to prefer. It does not have to be
-        respected, and it is also the engine whose plan :meth:`LazyFrame.explain`
-        renders.
+        Preferred worker engine. This is a hint and also controls plan rendering.
     plan_type : {'dot', 'plain'}
-        Whether to render query plans as a dot diagram or as plain text.
+        Query-plan rendering format.
     n_retries
-        How often a stage should be retried on failure.
+        Number of retries per failed stage.
     labels
-        Labels to attach to the query. Labels are implicitly created.
+        Labels attached to the query. Missing labels are created automatically.
     **kwargs
         Additional options forwarded to the distributed planner, such as
         `max_workers`, `min_workers`, `shuffle_format` or `partitions_per_worker`.
@@ -156,16 +151,16 @@ class RemoteEngine(Engine):
 
     @property
     def name(self) -> str:
-        """Name of the engine."""
+        """Engine identifier."""
         return "remote"
 
     @property
     def plan_engine(self) -> str:
-        """Plans are rendered for the engine the workers are asked to prefer."""
+        """Preferred worker engine used to render query plans."""
         return self.engine.name
 
     def _target(self, lf: LazyFrame) -> pc.LazyFrameRemote | pc.ExecuteRemote:
-        """Return the `polars_cloud` object that runs `lf` on this engine."""
+        """Return the `polars_cloud` object that executes `lf`."""
         remote = lf.remote(
             self.context,
             plan_type=self.plan_type,
@@ -194,12 +189,9 @@ class RemoteEngine(Engine):
         post_opt_callback: PostOptCallback | None = None,
     ) -> DataFrame | InProcessQuery:
         """
-        See :meth:`polars.LazyFrame.collect`.
+        Collect `lf` remotely, then transfer the result to this machine.
 
-        Runs the query on the cluster and then pulls the whole result back to this
-        machine, which is usually not what you want for a remote query. Prefer
-        :meth:`LazyFrame.execute`, which leaves the result where it was produced, or
-        a `sink_*` method, which writes it without a round-trip.
+        Prefer :meth:`LazyFrame.execute` or a sink to avoid transferring the full result.
         """
         issue_warning(
             "collecting a remote query transfers the entire result to this machine; "
@@ -221,10 +213,7 @@ class RemoteEngine(Engine):
         optimizations: QueryOptFlags,
         post_opt_callback: PostOptCallback | None = None,
     ) -> DataFrame:
-        """Like `collect()`, but executes locally.
-
-        See :meth:`Engine._collect_eager`.
-        """
+        """Execute an internal eager operation locally."""
         return self._local_engine.collect(
             lf, optimizations=optimizations, post_opt_callback=post_opt_callback
         )
@@ -232,17 +221,14 @@ class RemoteEngine(Engine):
     def _collect_all_eager(
         self, lfs: Iterable[LazyFrame], *, optimizations: QueryOptFlags
     ) -> list[DataFrame]:
-        """Like `collect_all()`, but executes locally.
-
-        See :meth:`Engine._collect_all_eager`.
-        """
+        """Execute internal eager operations locally."""
         return self._local_engine.collect_all(lfs, optimizations=optimizations)
 
     # -- Sinks --------------------------------------------------------------------
 
     @staticmethod
     def _sink_uri(path: Any) -> str | PartitionBy:
-        """Narrow a sink target to the destinations Polars Cloud accepts."""
+        """Validate a Polars Cloud sink target."""
         from polars.io.partition import PartitionBy
 
         if not isinstance(path, (str, PartitionBy)):
@@ -255,7 +241,7 @@ class RemoteEngine(Engine):
 
     @staticmethod
     def _reject_unsupported(**kwargs: Any) -> None:
-        """Reject arguments that Polars Cloud has no equivalent for."""
+        """Reject options unsupported by Polars Cloud."""
         for name, value in kwargs.items():
             if value:
                 msg = f"`{name}` is not supported by the remote engine"
@@ -335,7 +321,7 @@ class RemoteEngine(Engine):
             record_batch_size=record_batch_size,
             _record_batch_statistics=_record_batch_statistics,
             _sinked_paths_callback=_sinked_paths_callback,
-            # `polars_cloud`'s sink_ipc does not accept it
+            # Polars Cloud only supports `maintain_order=True`.
             maintain_order=not maintain_order,
         )
         self._target(lf).sink_ipc(
@@ -388,7 +374,7 @@ class RemoteEngine(Engine):
             compression=compression != "uncompressed",
             compression_level=compression_level,
             check_extension=not check_extension,
-            # `polars_cloud`'s sink_csv does not accept it
+            # Polars Cloud only supports `maintain_order=True`.
             maintain_order=not maintain_order,
         )
         self._target(lf).sink_csv(
