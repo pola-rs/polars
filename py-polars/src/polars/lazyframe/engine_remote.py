@@ -151,7 +151,7 @@ class RemoteEngine(Engine):
         self.n_retries = n_retries
         self.labels = [labels] if isinstance(labels, str) else labels
         self.config = kwargs
-        # eager work operates on data that is already here, so it never leaves
+        # eager work operates on data that is already present locally
         self._local_engine = StreamingEngine()
 
     @property
@@ -221,7 +221,10 @@ class RemoteEngine(Engine):
         optimizations: QueryOptFlags,
         post_opt_callback: PostOptCallback | None = None,
     ) -> DataFrame:
-        """Eager work runs here: the data is already local, so sending it is waste."""
+        """Like `collect()`, but executes locally.
+
+        See :meth:`Engine._collect_eager`.
+        """
         return self._local_engine.collect(
             lf, optimizations=optimizations, post_opt_callback=post_opt_callback
         )
@@ -229,7 +232,10 @@ class RemoteEngine(Engine):
     def _collect_all_eager(
         self, lfs: Iterable[LazyFrame], *, optimizations: QueryOptFlags
     ) -> list[DataFrame]:
-        """See :meth:`Engine._collect_all_eager`."""
+        """Like `collect_all()`, but executes locally.
+
+        See :meth:`Engine._collect_all_eager`.
+        """
         return self._local_engine.collect_all(lfs, optimizations=optimizations)
 
     # -- Sinks --------------------------------------------------------------------

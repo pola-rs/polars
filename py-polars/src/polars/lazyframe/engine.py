@@ -202,7 +202,7 @@ class Engine(ABC):
     def _collect_all_eager(
         self, lfs: Iterable[LazyFrame], *, optimizations: QueryOptFlags
     ) -> list[DataFrame]:
-        """`_collect_eager` for several queries; see :func:`polars.collect_all`."""
+        """Like `collect_all`, but always executed locally."""
         return self.collect_all(lfs, optimizations=optimizations)
 
     def collect_async(

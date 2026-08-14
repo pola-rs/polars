@@ -2230,11 +2230,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         **kwargs: Any,
     ) -> DataFrame:
-        """
-        Collect an internal query whose result must be a local `DataFrame`.
+        """Like `collect()`, but executes locally.
 
-        Backs eager entry points that do not go through `QueryOptFlags._eager()`,
-        such as the `read_*` functions. See :meth:`Engine._collect_eager`.
+        See :meth:`Engine._collect_eager`.
         """
         engine = _select_engine("auto")
         return engine._collect_eager(  # type: ignore[return-value]
