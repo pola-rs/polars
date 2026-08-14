@@ -1408,6 +1408,10 @@ impl SQLContext {
         let mut projections =
             self.column_projections(select_stmt, &schema, &mut select_modifiers)?;
 
+        let subquery_names;
+        (lf, subquery_names) = self.process_subqueries(lf, projections.iter_mut().collect())?;
+        schema = self.get_frame_schema(&mut lf)?;
+
         // Apply `UNNEST` expressions
         let mut explode_names = Vec::new();
         let mut explode_exprs = Vec::new();
@@ -1837,7 +1841,8 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            lf = self.process_subqueries(lf, vec![&mut filter_expression])?;
+            let subquery_names;
+            (lf, subquery_names) = self.process_subqueries(lf, vec![&mut filter_expression])?;
             lf = match filter_mode {
                 FilterMode::KeepTrue => lf.filter(filter_expression),
                 FilterMode::RemoveTrue => lf.remove(filter_expression),
@@ -2005,7 +2010,8 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            lf = self.process_subqueries(lf, vec![&mut filter_expression])?;
+            let subquery_names;
+            (lf, subquery_names) = self.process_subqueries(lf, vec![&mut filter_expression])?;
             lf = lf.filter(filter_expression);
         }
         Ok(lf)
@@ -2015,26 +2021,28 @@ impl SQLContext {
         &mut self,
         lf: LazyFrame,
         exprs: Vec<&mut Expr>,
-    ) -> PolarsResult<LazyFrame> {
+    ) -> PolarsResult<(LazyFrame, PlHashSet<PlSmallStr>)> {
         let mut subplans = vec![];
+        let mut subplan_names = PlHashSet::new();
 
         for e in exprs {
             *e = e.clone().try_map_expr(|e| {
                 if let Expr::SubPlan(lp, names) = e {
-                    assert_eq!(
-                        names.len(),
-                        1,
-                        "multiple columns in subqueries not yet supported"
+                    polars_ensure!(
+                        names.len() == 1,
+                        ComputeError: "multiple columns in subqueries not yet supported"
                     );
 
                     let select_expr = names[0].1.clone();
                     let mut lf = LazyFrame::from((**lp).clone());
                     let schema = self.get_frame_schema(&mut lf)?;
                     polars_ensure!(schema.len() == 1,  SQLSyntax: "SQL subquery returns more than one column");
+                    dbg!(&select_expr, lf.clone().collect());
                     let lf = lf.select([select_expr.clone()]);
 
                     subplans.push(lf);
-                    Ok(Expr::Column(names[0].0.clone()).first())
+                    subplan_names.insert(names[0].0.clone());
+                    Ok(Expr::Column(names[0].0.clone()))
                 } else {
                     Ok(e)
                 }
@@ -2042,7 +2050,7 @@ impl SQLContext {
         }
 
         if subplans.is_empty() {
-            Ok(lf)
+            Ok((lf, subplan_names))
         } else {
             subplans.insert(0, lf);
             concat_lf_horizontal(
@@ -2052,6 +2060,7 @@ impl SQLContext {
                     ..Default::default()
                 },
             )
+            .map(|lf| (lf, subplan_names))
         }
     }
 

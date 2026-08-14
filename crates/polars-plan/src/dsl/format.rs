@@ -1,5 +1,7 @@
 use std::fmt::{self, Write};
 
+use polars_utils::format_list;
+
 use crate::prelude::*;
 
 /// Wrapper for formatting expressions with comma-separated arguments; also
@@ -123,8 +125,8 @@ impl fmt::Debug for Expr {
                     write!(f, "{expr:?}.gather({idx:?})")
                 }
             },
-            SubPlan(lf, _) => {
-                write!(f, ".subplan({lf:?})")
+            SubPlan(lf, exprs) => {
+                write!(f, "{:?}.subplan({:?})", format_list!(exprs, debug), lf)
             },
             Agg(agg) => {
                 use AggExpr::*;

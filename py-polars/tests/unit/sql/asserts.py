@@ -155,6 +155,7 @@ def assert_sql_matches(
 
     with pl.SQLContext(frames=frames, eager=True) as ctx:
         polars_result = ctx.execute(query=query, eager=True)
+    print("polars:", polars_result)
 
     if not compare_with:
         if expected is None:

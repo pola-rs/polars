@@ -56,7 +56,7 @@ pub enum SubqueryRestriction {
     /// Subquery must return a single column
     SingleColumn,
     // SingleRow,
-    // SingleValue,
+    SingleValue,
     // Any
 }
 
@@ -319,7 +319,7 @@ impl SQLExprVisitor<'_> {
                     .contains(self.visit_expr(pattern)?, true);
                 Ok(if *negated { matches.not() } else { matches })
             },
-            SQLExpr::Subquery(_) => polars_bail!(SQLInterface: "unexpected subquery"),
+            SQLExpr::Subquery(sq) => self.visit_subquery(sq, SubqueryRestriction::SingleValue),
             SQLExpr::Substring {
                 expr,
                 substring_from,
@@ -384,18 +384,16 @@ impl SQLExprVisitor<'_> {
             .ctx
             .execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
 
-        if restriction == SubqueryRestriction::SingleColumn {
-            let new_name = unique_column_name();
-            return Ok(Expr::SubPlan(
-                SpecialEq::new(Arc::new(lf.logical_plan)),
-                // TODO: pass the implode depending on expr.
-                vec![(
-                    new_name.clone(),
-                    first().as_expr().implode(true).alias(new_name.clone()),
-                )],
-            ));
+        let new_name = unique_column_name();
+        let reduce_expr = match restriction {
+            SubqueryRestriction::SingleColumn => first().as_expr().implode(true),
+            SubqueryRestriction::SingleValue => first().as_expr().item(true),
         };
-        polars_bail!(SQLInterface: "subquery type not supported");
+
+        Ok(Expr::SubPlan(
+            SpecialEq::new(Arc::new(lf.logical_plan)),
+            vec![(new_name.clone(), reduce_expr.alias(new_name))],
+        ))
     }
 
     /// Visit a single SQL identifier.

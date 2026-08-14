@@ -1,6 +1,9 @@
 #[macro_export]
 macro_rules! format_list_container {
-    ($e:expr, $start:tt, $end:tt) => {{
+    ($e:expr, $start:tt, $end:tt) => {
+        $crate::format_list_container!($e, $start, $end, "{}")
+    };
+    ($e:expr, $start:tt, $end:tt, $fmt:literal) => {{
         use std::fmt::Write;
         let mut out = String::new();
         out.push($start);
@@ -9,7 +12,7 @@ macro_rules! format_list_container {
 
         loop {
             if let Some(val) = next {
-                write!(out, "{val}").unwrap();
+                write!(out, $fmt, val).unwrap();
             };
             next = iter.next();
             if next.is_some() {
@@ -25,18 +28,22 @@ macro_rules! format_list_container {
 
 #[macro_export]
 macro_rules! format_list {
-    ($e:expr) => {{
-        use $crate::format_list_container;
-        format_list_container!($e, '[', ']')
-    }};
+    ($e:expr) => {
+        $crate::format_list_container!($e, '[', ']')
+    };
+    ($e:expr, debug) => {
+        $crate::format_list_container!($e, '[', ']', "{:?}")
+    };
 }
 
 #[macro_export]
 macro_rules! format_tuple {
-    ($e:expr) => {{
-        use $crate::format_list_container;
-        format_list_container!($e, '(', ')')
-    }};
+    ($e:expr) => {
+        $crate::format_list_container!($e, '(', ')')
+    };
+    ($e:expr, debug) => {
+        $crate::format_list_container!($e, '(', ')', "{:?}")
+    };
 }
 
 #[macro_export]
