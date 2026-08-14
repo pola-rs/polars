@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import IO, TYPE_CHECKING, Any, Literal, get_args
 
 from polars._dependencies import import_optional
-from polars._typing import ScalingMode
+from polars._typing import EngineTypeName, ScalingMode
 from polars._utils.various import qualified_type_name
 from polars._warnings import issue_warning
 from polars.lazyframe.engine import Engine, StreamingEngine
@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from polars._typing import (
         ArrowSchemaExportable,
         CsvQuoteStyle,
-        EngineType,
         IpcCompression,
         ParquetCompression,
         ParquetMetadata,
@@ -43,6 +42,7 @@ if TYPE_CHECKING:
     from polars.lazyframe.query_result import QueryResult
 
 _SCALING_MODES = get_args(ScalingMode)
+_WORKER_ENGINE_NAMES = get_args(EngineTypeName)
 
 
 class RemoteEngine(Engine):
@@ -98,7 +98,7 @@ class RemoteEngine(Engine):
     """Compute context in which queries are executed."""
     scaling_mode: ScalingMode
     """Whether the query runs on a single node or distributed over the cluster."""
-    engine: Engine
+    engine: EngineTypeName
     """Engine the workers are asked to prefer."""
     plan_type: PlanTypePreference
     """How query plans are rendered."""
@@ -114,7 +114,7 @@ class RemoteEngine(Engine):
         context: pc.ClientContext | None = None,
         *,
         scaling_mode: ScalingMode = "auto",
-        engine: EngineType = "auto",
+        engine: EngineTypeName = "auto",
         plan_type: PlanTypePreference = "dot",
         n_retries: int = 0,
         labels: list[str] | str | None = None,
@@ -122,6 +122,9 @@ class RemoteEngine(Engine):
     ) -> None:
         if scaling_mode not in _SCALING_MODES:
             msg = f"invalid `scaling_mode` {scaling_mode!r}"
+            raise ValueError(msg)
+        if engine not in _WORKER_ENGINE_NAMES:
+            msg = f"Invalid engine argument {engine=}"
             raise ValueError(msg)
         if scaling_mode == "single-node" and kwargs:
             msg = (
@@ -137,11 +140,9 @@ class RemoteEngine(Engine):
             install_message="Please install using the command `pip install polars-cloud`",
         )
 
-        from polars.lazyframe.engine_config import _select_engine
-
         self.context = context
         self.scaling_mode = scaling_mode
-        self.engine = _select_engine(engine)
+        self.engine = engine
         self.plan_type = plan_type
         self.n_retries = n_retries
         self.labels = [labels] if isinstance(labels, str) else labels
@@ -157,7 +158,7 @@ class RemoteEngine(Engine):
     @property
     def plan_engine(self) -> str:
         """Preferred worker engine used to render query plans."""
-        return self.engine.name
+        return self.engine
 
     def _target(self, lf: LazyFrame) -> pc.LazyFrameRemote | pc.ExecuteRemote:
         """Return the `polars_cloud` object that executes `lf`."""
@@ -165,7 +166,7 @@ class RemoteEngine(Engine):
             self.context,
             plan_type=self.plan_type,
             n_retries=self.n_retries,
-            engine=self.engine.name,  # type: ignore[arg-type]
+            engine=self.engine,
             scaling_mode=self.scaling_mode,
         )
         if self.labels:

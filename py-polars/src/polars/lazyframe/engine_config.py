@@ -22,7 +22,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import get_engine_affinity
 
 if TYPE_CHECKING:
-    from polars._typing import EngineType
+    from polars._typing import EngineType, EngineTypeName
 
 
 SUPPORTED_ENGINE_NAMES: Final[tuple[str, ...]] = (
@@ -61,6 +61,17 @@ def set_engine_affinity_override(engine: Engine | None) -> None:
     _ENGINE_AFFINITY_OVERRIDE = engine
 
 
+def _engine_from_name(engine: EngineTypeName) -> Engine:
+    """Resolve an explicit engine name without applying the configured affinity."""
+    if engine == "gpu":
+        return GPUEngine()
+
+    if (selected := _ENGINE_BY_NAME.get(engine)) is None:
+        msg = f"Invalid engine argument {engine=}"
+        raise ValueError(msg)
+    return selected
+
+
 def _select_engine(engine: EngineType) -> Engine:
     """
     Resolve an engine argument or configured affinity to an `Engine`.
@@ -75,13 +86,7 @@ def _select_engine(engine: EngineType) -> Engine:
             return _ENGINE_AFFINITY_OVERRIDE
         engine = get_engine_affinity()
 
-    if engine == "gpu":
-        return GPUEngine()
-
-    if (selected := _ENGINE_BY_NAME.get(engine)) is None:
-        msg = f"Invalid engine argument {engine=}"
-        raise ValueError(msg)
-    return selected
+    return _engine_from_name(engine)
 
 
 __all__ = [
