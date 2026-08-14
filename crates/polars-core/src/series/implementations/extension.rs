@@ -72,6 +72,7 @@ impl private::PrivateSeries for SeriesWrap<ExtensionChunked> {
         self.0.storage().group_tuples(multithreaded, sorted)
     }
 
+    #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         assert!(self._dtype() == other.dtype());
         self.try_apply_on_storage(|s| s.zip_with_same_type(mask, other.ext()?.storage()))
