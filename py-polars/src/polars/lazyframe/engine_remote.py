@@ -269,7 +269,7 @@ class RemoteEngine(Engine):
         mkdir: bool,
         lazy: bool,
         optimizations: QueryOptFlags,
-        _sinked_paths_callback: SinkedPathsCallback | None,
+        sinked_paths_callback: SinkedPathsCallback | None,
     ) -> None:
         """See :meth:`polars.LazyFrame.sink_parquet`."""
         self._reject_unsupported(
@@ -277,7 +277,7 @@ class RemoteEngine(Engine):
             mkdir=mkdir,
             sync_on_close=sync_on_close,
             retries=retries,
-            _sinked_paths_callback=_sinked_paths_callback,
+            sinked_paths_callback=sinked_paths_callback,
         )
         self._target(lf).sink_parquet(
             self._sink_uri(path),
@@ -312,7 +312,7 @@ class RemoteEngine(Engine):
         lazy: bool,
         optimizations: QueryOptFlags,
         _record_batch_statistics: bool,
-        _sinked_paths_callback: SinkedPathsCallback | None,
+        sinked_paths_callback: SinkedPathsCallback | None,
     ) -> None:
         """See :meth:`polars.LazyFrame.sink_ipc`."""
         self._reject_unsupported(
@@ -322,7 +322,7 @@ class RemoteEngine(Engine):
             retries=retries,
             record_batch_size=record_batch_size,
             _record_batch_statistics=_record_batch_statistics,
-            _sinked_paths_callback=_sinked_paths_callback,
+            sinked_paths_callback=sinked_paths_callback,
             # Polars Cloud only supports `maintain_order=True`.
             maintain_order=not maintain_order,
         )

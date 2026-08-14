@@ -446,7 +446,7 @@ def test_sinked_paths_callback(tmp_path: Path) -> None:
 
     out_path = tmp_path / "a.parquet"
     lst: list[SinkedPathsCallbackArgs] = []
-    lf.sink_parquet(out_path, _sinked_paths_callback=lst.append)
+    lf.sink_parquet(out_path, sinked_paths_callback=lst.append)
 
     assert [Path(x.path) for x in lst[0].paths] == [out_path]
 
@@ -457,7 +457,7 @@ def test_sinked_paths_callback(tmp_path: Path) -> None:
             out_dir,
             max_rows_per_file=1,
         ),
-        _sinked_paths_callback=lst.append,
+        sinked_paths_callback=lst.append,
     )
 
     assert [Path(x.path) for x in lst[0].paths] == [
@@ -475,7 +475,7 @@ def test_sinked_paths_callback(tmp_path: Path) -> None:
                 file_path_provider=lambda _: io.BytesIO(),
                 max_rows_per_file=1,
             ),
-            _sinked_paths_callback=lambda _: None,
+            sinked_paths_callback=lambda _: None,
         )
 
 
@@ -491,7 +491,7 @@ def test_sinked_paths_callback_sizes(tmp_path: Path) -> None:
 
     for ext in ["parquet", "ipc"]:
         Path.mkdir(tmp_path / ext)
-        sink_lf = partial(getattr(lf, f"sink_{ext}"), _sinked_paths_callback=callback)
+        sink_lf = partial(getattr(lf, f"sink_{ext}"), sinked_paths_callback=callback)
         sink_lf(tmp_path / ext / f"single.{ext}")
         sink_lf(
             tmp_path / ext / f"single_uncompressed.{ext}", compression="uncompressed"
