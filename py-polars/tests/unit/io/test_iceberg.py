@@ -548,6 +548,46 @@ def test_sink_iceberg_all_types(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.write_disk
+def test_sink_iceberg_snapshot_properties(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+    )
+    snapshot_properties = {"application": "polars", "run-id": "run-123"}
+
+    def snapshot_ids() -> set[int]:
+        return {snapshot.snapshot_id for snapshot in tbl.snapshots()}
+
+    def assert_snapshot_properties(new_snapshot_ids: set[int]) -> None:
+        snapshots = [
+            snapshot
+            for snapshot in tbl.snapshots()
+            if snapshot.snapshot_id in new_snapshot_ids
+        ]
+        assert snapshots
+        for snapshot in snapshots:
+            assert snapshot.summary is not None
+            summary_properties = snapshot.summary.additional_properties
+            assert snapshot_properties.items() <= summary_properties.items()
+
+    before_append = snapshot_ids()
+    pl.LazyFrame({"a": [1, 2]}).sink_iceberg(
+        tbl,
+        mode="append",
+        snapshot_properties=snapshot_properties,
+    )
+    assert_snapshot_properties(snapshot_ids() - before_append)
+
+    before_overwrite = snapshot_ids()
+    pl.LazyFrame({"a": [3]}).sink_iceberg(
+        tbl,
+        mode="overwrite",
+        snapshot_properties=snapshot_properties,
+    )
+    assert_snapshot_properties(snapshot_ids() - before_overwrite)
+
+
 @pytest.mark.parametrize(
     ("partitioned_paths", "custom_data_path"),
     [
@@ -713,7 +753,8 @@ def test_sink_iceberg_pickle(tmp_path: Path) -> None:
     assert_frame_equal(pl.scan_iceberg(tbl).collect(), pl.DataFrame({"a": 1}))
     assert new_md_path == tbl.metadata_location
 
-    sink_state = IcebergSinkState.new(tbl)
+    snapshot_properties = {"run-id": "pickled-run"}
+    sink_state = IcebergSinkState.new(tbl, snapshot_properties=snapshot_properties)
     sink_q = sink_state.attach_sink(pl.LazyFrame({"a": 2}))
     sink_q = pickle.loads(pickle.dumps(sink_q))
     sink_q.collect()
@@ -729,6 +770,11 @@ def test_sink_iceberg_pickle(tmp_path: Path) -> None:
         pl.scan_iceberg(tbl).collect(),
         pl.DataFrame({"a": [2, 1]}),
     )
+    current_snapshot = tbl.current_snapshot()
+    assert current_snapshot is not None
+    assert current_snapshot.summary is not None
+    summary_properties = current_snapshot.summary.additional_properties
+    assert snapshot_properties.items() <= summary_properties.items()
 
     assert new_md_path == tbl.metadata_location
 
