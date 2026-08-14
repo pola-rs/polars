@@ -28,6 +28,7 @@ impl PipelineBudget {
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn count_limit(&self) -> usize {
         self.count_limit
     }
@@ -37,10 +38,10 @@ impl PipelineBudget {
         self.kbytes_limit
     }
 
-    /// Acquire permit for a fetch of `n_bytes`.
+    /// Acquire a permit for an input item of `n_bytes`.
     ///
     /// Acquisition order is kbytes-first, then count, so that the count_in_use
-    /// value is meaningful. All pipeline paths (parquet, IPC) must acquire
+    /// value is meaningful. All pipeline paths must acquire
     /// through this method so the order can never diverge.
     ///
     /// The requested capacity is cap'ped to avoid deadlock, at the expense of
@@ -96,4 +97,41 @@ impl PipelineBudget {
 pub(crate) struct PipelinePermit {
     _count: OwnedSemaphorePermit,
     _kbytes: OwnedSemaphorePermit,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::future::{Future, poll_fn};
+    use std::task::Poll;
+
+    use polars_core::runtime::ASYNC;
+
+    use super::PipelineBudget;
+
+    #[test]
+    fn oversized_request_serializes_and_releases_capacity() {
+        let budget = PipelineBudget::new(2, 4);
+
+        ASYNC.block_on(async {
+            let oversized = budget.acquire(16 * 1024).await;
+            assert_eq!(budget.count.available_permits(), 1);
+            assert_eq!(budget.kbytes.available_permits(), 0);
+
+            let mut next = Box::pin(budget.acquire(1024));
+            // Poll once to observe blocking without a timing-based timeout.
+            let next_is_pending =
+                poll_fn(|cx| Poll::Ready(next.as_mut().poll(cx).is_pending())).await;
+            assert!(next_is_pending);
+            assert_eq!(budget.count.available_permits(), 1);
+
+            drop(oversized);
+            let next = next.await;
+            assert_eq!(budget.count.available_permits(), 1);
+            assert_eq!(budget.kbytes.available_permits(), 3);
+
+            drop(next);
+            assert_eq!(budget.count.available_permits(), 2);
+            assert_eq!(budget.kbytes.available_permits(), 4);
+        });
+    }
 }

@@ -1143,6 +1143,192 @@ def test_fallback_chrono_parser(chunk_override: None) -> None:
     assert df.null_count().row(0) == (0, 0)
 
 
+def test_csv_datetime_fallback_contract(chunk_override: None, tmp_path: Path) -> None:
+    data = """\
+a
+NULL
+2020-01-01 01:02:03
+2020-01-02 01:02:03.1
+2020-01-03T01:02:03.123
+2020-01-04T010203.123456
+invalid
+2020/01/05 01:02
+"""
+    path = tmp_path / "datetime-fallback.csv"
+    path.write_text(data)
+
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [
+                    None,
+                    datetime(2020, 1, 1, 1, 2, 3),
+                    datetime(2020, 1, 2, 1, 2, 3, 100_000),
+                    datetime(2020, 1, 3, 1, 2, 3, 123_000),
+                    datetime(2020, 1, 4, 1, 2, 3, 123_456),
+                    None,
+                    datetime(2020, 1, 5, 1, 2),
+                ],
+                dtype=pl.Datetime("us"),
+            )
+        }
+    )
+
+    assert_frame_equal(
+        pl.read_csv(
+            path,
+            schema_overrides={"a": pl.Datetime("us")},
+            null_values="NULL",
+            ignore_errors=True,
+        ),
+        expected,
+    )
+    assert_frame_equal(
+        pl.scan_csv(
+            path,
+            schema_overrides={"a": pl.Datetime("us")},
+            null_values="NULL",
+            ignore_errors=True,
+        ).collect(),
+        expected,
+    )
+
+    with pytest.raises(ComputeError):
+        pl.read_csv(
+            path,
+            schema_overrides={"a": pl.Datetime("us")},
+            null_values="NULL",
+        )
+
+
+def test_csv_datetime_fallback_independent_of_execution_chunks(
+    chunk_override: None,
+) -> None:
+    values = [
+        "2020-01-01 01:02:03",
+        "2020-01-02 01:02:03.1",
+        "2020-01-03T01:02:03.123",
+        "2020/01/04 01:02",
+    ]
+    expected_values = [
+        datetime(2020, 1, 1, 1, 2, 3),
+        datetime(2020, 1, 2, 1, 2, 3, 100_000),
+        datetime(2020, 1, 3, 1, 2, 3, 123_000),
+        datetime(2020, 1, 4, 1, 2),
+    ]
+    repeats = 1_024
+    data = "a\n" + "\n".join(values * repeats)
+    expected = pl.Series(
+        "a",
+        expected_values * repeats,
+        dtype=pl.Datetime("us"),
+    ).to_frame()
+
+    for n_threads, batch_size in [(1, 64), (2, 1_024)]:
+        result = pl.read_csv(
+            data.encode(),
+            schema_overrides={"a": pl.Datetime("us")},
+            n_threads=n_threads,
+            batch_size=batch_size,
+        )
+        assert_frame_equal(result, expected)
+
+
+def test_csv_line_batch_byte_budget_multifile_and_slice(
+    chunk_override: None, tmp_path: Path
+) -> None:
+    value = "x" * 4_096
+    rows_per_file = 160
+    for file_idx in range(2):
+        path = tmp_path / f"part-{file_idx}.csv"
+        path.write_text("value,file\n" + f"{value},{file_idx}\n" * rows_per_file)
+
+    scan = pl.scan_csv(tmp_path / "part-*.csv")
+    result = scan.select(
+        pl.len().alias("n_rows"),
+        pl.col("value").str.len_bytes().sum().alias("n_value_bytes"),
+    ).collect(engine="streaming")
+    expected = pl.DataFrame(
+        {
+            "n_rows": [2 * rows_per_file],
+            "n_value_bytes": [2 * rows_per_file * len(value)],
+        },
+        schema={"n_rows": pl.UInt32, "n_value_bytes": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
+
+    projected = scan.select("value").collect(engine="streaming")
+    assert projected.height == 2 * rows_per_file
+    assert projected["value"].str.len_bytes().unique().item() == len(value)
+
+    sliced = scan.head(3).collect(engine="streaming")
+    assert sliced.height == 3
+    assert sliced["value"].str.len_bytes().to_list() == [len(value)] * 3
+
+
+def test_csv_line_batch_byte_budget_compressed(
+    chunk_override: None, tmp_path: Path
+) -> None:
+    value = "y" * 4_096
+    n_rows = 320
+    path = tmp_path / "budgeted.csv.gz"
+    with gzip.open(path, mode="wt") as f:
+        f.write("value\n" + f"{value}\n" * n_rows)
+
+    result = (
+        pl.scan_csv(path)
+        .select(
+            pl.len().alias("n_rows"),
+            pl.col("value").str.len_bytes().sum().alias("n_value_bytes"),
+        )
+        .collect(engine="streaming")
+    )
+    expected = pl.DataFrame(
+        {"n_rows": [n_rows], "n_value_bytes": [n_rows * len(value)]},
+        schema={"n_rows": pl.UInt32, "n_value_bytes": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_csv_line_batch_byte_budget_multifile_compressed_tail(
+    chunk_override: None, tmp_path: Path
+) -> None:
+    value = "z" * 4_096
+    rows_per_file = 160
+    for file_idx in range(3):
+        path = tmp_path / f"part-{file_idx}.csv.gz"
+        with gzip.open(path, mode="wt") as f:
+            f.write("value,file,row\n")
+            for row_idx in range(rows_per_file):
+                f.write(f"{value},{file_idx},{row_idx}\n")
+
+    result = pl.scan_csv(tmp_path / "part-*.csv.gz").tail(3).collect(engine="streaming")
+
+    assert result["file"].to_list() == [2, 2, 2]
+    assert result["row"].to_list() == [157, 158, 159]
+    assert result["value"].str.len_bytes().to_list() == [len(value)] * 3
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+def test_csv_line_batch_byte_budget_wide_row(
+    chunk_override: None, tmp_path: Path, compressed: bool
+) -> None:
+    value = "w" * (2 * 1024 * 1024 + 17)
+    path = tmp_path / ("wide.csv.gz" if compressed else "wide.csv")
+    data = f"value,row\n{value},0\nshort,1\n"
+
+    if compressed:
+        with gzip.open(path, mode="wt") as f:
+            f.write(data)
+    else:
+        path.write_text(data)
+
+    result = pl.scan_csv(path).collect(engine="streaming")
+
+    assert result["row"].to_list() == [0, 1]
+    assert result["value"].str.len_bytes().to_list() == [len(value), 5]
+
+
 def test_tz_aware_try_parse_dates(chunk_override: None) -> None:
     data = (
         "a,b,c,d\n"
@@ -1195,6 +1381,35 @@ a
                     "2020-01-03T00:00:00.132547698",
                 ]
             ).str.to_datetime(time_unit=time_unit)
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_csv_mixed_datetime_formats_respect_time_unit(
+    chunk_override: None, time_unit: TimeUnit
+) -> None:
+    data = """\
+a
+2020-01-01
+2020-01-02 03:04
+2020-01-03T04:05:06
+"""
+    result = pl.read_csv(
+        io.StringIO(data),
+        schema_overrides={"a": pl.Datetime(time_unit)},
+    )
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [
+                    datetime(2020, 1, 1),
+                    datetime(2020, 1, 2, 3, 4),
+                    datetime(2020, 1, 3, 4, 5, 6),
+                ],
+                dtype=pl.Datetime(time_unit),
+            )
         }
     )
     assert_frame_equal(result, expected)
