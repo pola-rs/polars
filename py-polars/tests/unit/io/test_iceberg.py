@@ -28,9 +28,15 @@ import pytest
 from pyiceberg.expressions import literal
 from pyiceberg.partitioning import (
     BucketTransform,
+    DayTransform,
+    HourTransform,
     IdentityTransform,
+    MonthTransform,
     PartitionField,
     PartitionSpec,
+    TruncateTransform,
+    VoidTransform,
+    YearTransform,
 )
 from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.table import StaticTable
@@ -177,6 +183,7 @@ def new_iceberg_table(
     tmp_path: Path,
     *,
     schema: IcebergSchema,
+    partition_spec: PartitionSpec | None = None,
     name: str = "table",
     properties: dict[str, str] | None = None,
 ) -> tuple[pyiceberg.table.Table, SqlCatalog]:
@@ -188,10 +195,13 @@ def new_iceberg_table(
     namespace = uuid.uuid4().bytes.hex()
     catalog.create_namespace(namespace)
 
-    return (
-        catalog.create_table((namespace, name), schema, properties=properties or {}),
-        catalog,
-    )
+    create_table_kwargs: dict[str, Any] = {"properties": properties or {}}
+    if partition_spec is not None:
+        create_table_kwargs["partition_spec"] = partition_spec
+
+    return catalog.create_table(
+        (namespace, name), schema, **create_table_kwargs
+    ), catalog
 
 
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
@@ -548,6 +558,129 @@ def test_sink_iceberg_all_types(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("iceberg_type", "transform", "values"),
+    [
+        pytest.param(
+            StringType(),
+            IdentityTransform(),
+            ["a", "a", "b"],
+            id="identity",
+        ),
+        pytest.param(
+            DateType(),
+            YearTransform(),
+            [date(1969, 12, 31), date(2024, 1, 1), date(2024, 12, 31)],
+            id="year",
+        ),
+        pytest.param(
+            DateType(),
+            MonthTransform(),
+            [date(2024, 1, 1), date(2024, 1, 31), date(2024, 2, 1)],
+            id="month",
+        ),
+        pytest.param(
+            DateType(),
+            DayTransform(),
+            [date(2024, 1, 1), date(2024, 1, 1), date(2024, 1, 2)],
+            id="day",
+        ),
+        pytest.param(
+            TimestampType(),
+            HourTransform(),
+            [
+                datetime(2024, 1, 1, 1, 15),
+                datetime(2024, 1, 1, 1, 45),
+                datetime(2024, 1, 1, 2),
+            ],
+            id="hour",
+        ),
+        pytest.param(
+            LongType(),
+            TruncateTransform(10),
+            [-11, -1, 0, 9, 10],
+            id="truncate-integer",
+        ),
+        pytest.param(
+            StringType(),
+            TruncateTransform(2),
+            ["éclair", "école", "abc"],
+            id="truncate-string",
+        ),
+        pytest.param(
+            TimestamptzType(),
+            YearTransform(),
+            [
+                datetime(2024, 12, 31, 23, tzinfo=zoneinfo.ZoneInfo("UTC")),
+                datetime(2025, 1, 1, 1, tzinfo=zoneinfo.ZoneInfo("UTC")),
+            ],
+            id="year-timestamptz-utc-boundary",
+        ),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_transforms(
+    tmp_path: Path,
+    iceberg_type: Any,
+    transform: Any,
+    values: list[Any],
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "partition_col", iceberg_type),
+            NestedField(2, "value", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, transform, "partition_col_transformed")
+        ),
+    )
+    df = pl.DataFrame({"partition_col": values, "value": range(len(values))})
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("value"), df)
+    expected_partitions = {transform.transform(iceberg_type)(value) for value in values}
+    actual_partitions = {task.file.partition[0] for task in tbl.scan().plan_files()}
+    assert actual_partitions == expected_partitions
+
+
+@pytest.mark.parametrize(
+    ("iceberg_type", "transform", "values"),
+    [
+        pytest.param(LongType(), BucketTransform(16), [1, 2], id="bucket"),
+        pytest.param(LongType(), VoidTransform(), [1, 2], id="void"),
+        pytest.param(
+            DecimalType(10, 2),
+            TruncateTransform(10),
+            [D("1.23"), D("11.23")],
+            id="truncate-decimal",
+        ),
+        pytest.param(
+            BinaryType(),
+            TruncateTransform(2),
+            [b"abc", b"def"],
+            id="truncate-binary",
+        ),
+    ],
+)
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_unsupported_transform(
+    tmp_path: Path,
+    iceberg_type: Any,
+    transform: Any,
+    values: list[Any],
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", iceberg_type)),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, transform, "part")),
+    )
+
+    with pytest.raises(NotImplementedError, match="partition transform"):
+        pl.LazyFrame({"a": values}).sink_iceberg(tbl, mode="append")
+
+
 @pytest.mark.write_disk
 def test_sink_iceberg_snapshot_properties(tmp_path: Path) -> None:
     tbl, _ = new_iceberg_table(
@@ -667,6 +800,37 @@ def test_sink_iceberg_object_storage(
     assert set(overwrite_paths).isdisjoint(second_append_paths)
 
 
+@pytest.mark.parametrize("partitioned_paths", [False, True])
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_object_storage(
+    tmp_path: Path, *, partitioned_paths: bool
+) -> None:
+    from pyiceberg.table import TableProperties
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(2, "b", LongType()),
+        ),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "a")),
+        properties={
+            TableProperties.OBJECT_STORE_ENABLED: "true",
+            TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS: (
+                "true" if partitioned_paths else "false"
+            ),
+        },
+    )
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [1, 2, 3]})
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("b"), df)
+    file_paths = [task.file.file_path for task in tbl.scan().plan_files()]
+    assert len(file_paths) == 2
+    assert len(file_paths) == len(set(file_paths))
+
+
 @pytest.mark.write_disk
 def test_sink_iceberg_object_storage_property_update(tmp_path: Path) -> None:
     from pyiceberg.table import TableProperties
@@ -739,6 +903,7 @@ def test_sink_iceberg_pickle(tmp_path: Path) -> None:
     tbl, catalog = new_iceberg_table(
         tmp_path,
         schema=IcebergSchema(NestedField(1, "a", LongType())),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "a")),
     )
 
     sink_state = IcebergSinkState.new(tbl)

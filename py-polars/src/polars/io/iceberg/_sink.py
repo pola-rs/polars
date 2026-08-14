@@ -30,6 +30,77 @@ if TYPE_CHECKING:
     from polars._typing import StorageOptionsDict
 
 
+def _partition_key_exprs(table: pyiceberg.table.Table) -> list[pl.Expr] | None:
+    spec = table.spec()
+
+    if not spec.fields:
+        return None
+
+    from pyiceberg.transforms import (
+        DayTransform,
+        HourTransform,
+        IdentityTransform,
+        MonthTransform,
+        TruncateTransform,
+        YearTransform,
+    )
+    from pyiceberg.types import IntegerType, LongType, StringType
+
+    import polars as pl
+
+    schema = table.schema()
+    reserved_names = {field.name for field in schema.fields}
+    exprs: list[pl.Expr] = []
+
+    for field in spec.fields:
+        source_field = schema.find_field(field.source_id)
+        source_type = source_field.field_type
+        transform = field.transform
+        expr = pl.col(source_field.name)
+
+        if isinstance(transform, IdentityTransform):
+            pass
+        elif isinstance(
+            transform, (YearTransform, MonthTransform, DayTransform, HourTransform)
+        ):
+            if type(source_type).__name__ in {
+                "TimestamptzType",
+                "TimestamptzNanoType",
+            }:
+                expr = expr.dt.convert_time_zone("UTC")
+
+            if isinstance(transform, YearTransform):
+                expr = expr.dt.year() - 1970
+            elif isinstance(transform, MonthTransform):
+                expr = (expr.dt.year() - 1970) * 12 + expr.dt.month() - 1
+            elif isinstance(transform, DayTransform):
+                expr = expr.cast(pl.Date).cast(pl.Int32)
+            else:
+                expr = expr.dt.epoch("us") // 3_600_000_000
+        elif isinstance(transform, TruncateTransform):
+            if isinstance(source_type, (IntegerType, LongType)):
+                expr = expr - expr % transform.width
+            elif isinstance(source_type, StringType):
+                expr = expr.str.slice(0, transform.width)
+            else:
+                msg = (
+                    "sink to Iceberg table with "
+                    f"'{transform}' partition transform on '{source_type}'"
+                )
+                raise NotImplementedError(msg)
+        else:
+            msg = f"sink to Iceberg table with '{transform}' partition transform"
+            raise NotImplementedError(msg)
+
+        key_name = f"__POLARS_ICEBERG_PARTITION_{field.field_id}"
+        while key_name in reserved_names:
+            key_name += "_"
+        reserved_names.add(key_name)
+        exprs.append(expr.alias(key_name))
+
+    return exprs
+
+
 @dataclass(kw_only=True)
 class IcebergSinkState:
     py_catalog_class_module: str
@@ -132,9 +203,7 @@ class IcebergSinkState:
         table_metadata = table.metadata
         table_properties = table_metadata.properties
 
-        if table.spec().fields:
-            msg = "sink to partitioned Iceberg table"
-            raise NotImplementedError(msg)
+        partition_key_exprs = _partition_key_exprs(table)
 
         if table.sort_order().fields:
             msg = "sink to Iceberg table with sort order"
@@ -191,6 +260,8 @@ class IcebergSinkState:
                     file_path_provider=PlIcebergPathProviderConfig(
                         object_storage_partitioned_paths=object_storage_partitioned_paths
                     ),
+                    key=partition_key_exprs,
+                    include_key=False if partition_key_exprs is not None else None,
                     approximate_bytes_per_file=approximate_bytes_per_file,
                 ),
                 arrow_schema=arrow_schema,
