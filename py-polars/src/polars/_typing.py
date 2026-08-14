@@ -211,7 +211,7 @@ DefaultFieldValues: TypeAlias = tuple[
     Literal["iceberg"], tuple[dict[int, Union["Series", str]], dict[int, "Series"]]
 ]
 DeletionFiles: TypeAlias = (
-    tuple[Literal["iceberg-position-delete"], dict[int, list[str]]]
+    tuple[Literal["iceberg"], tuple[dict[int, list[str]], dict[int, str]]]
     | tuple[Literal["delta-deletion-vector"], Callable[["DataFrame"], "DataFrame"]]
 )
 FillNullStrategy: TypeAlias = Literal[
