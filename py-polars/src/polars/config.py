@@ -1658,6 +1658,12 @@ class Config(contextlib.ContextDecorator):
         Examples
         --------
         >>> pl.Config.enable_monitoring()  # doctest: +SKIP
+
+        Enable monitoring temporarily with ``Config``; the previous monitoring state
+        and engine affinity are restored on exit:
+
+        >>> with pl.Config(enable_monitoring=True):  # doctest: +SKIP
+        ...     lf.collect()
         """
         if active:
             try:
