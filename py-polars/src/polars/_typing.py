@@ -444,6 +444,11 @@ EngineType: TypeAlias = Union[EngineTypeName, "Engine"]
 
 PlanStage: TypeAlias = Literal["ir", "physical"]
 
+# The post-optimization callback, that accepts a Rust `NodeTraverser`, and an optional
+# nanosecond duration
+PostOptCallback: TypeAlias = Callable[[Any, int | None], None]
+
+
 # Result of an async collect, resolved either through asyncio or gevent.
 AsyncResultT = TypeVar("AsyncResultT")
 AsyncResult: TypeAlias = Union[

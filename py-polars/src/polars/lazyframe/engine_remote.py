@@ -30,6 +30,7 @@ if TYPE_CHECKING:
         ParquetCompression,
         ParquetMetadata,
         PlanTypePreference,
+        PostOptCallback,
         StorageOptionsDict,
         SyncOnCloseMethod,
     )
@@ -37,7 +38,6 @@ if TYPE_CHECKING:
     from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.partition import PartitionBy, SinkedPathsCallback
-    from polars.lazyframe.engine import PostOptCallback
     from polars.lazyframe.frame import LazyFrame
     from polars.lazyframe.in_process import InProcessQuery
     from polars.lazyframe.opt_flags import QueryOptFlags

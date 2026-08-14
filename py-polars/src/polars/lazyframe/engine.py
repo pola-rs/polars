@@ -1,20 +1,10 @@
-"""
-Query execution engines.
-
-Engine *selection* -- resolving an ``engine=`` argument or the engine affinity to
-one of these classes -- lives in ``polars.lazyframe.engine_config``, which imports
-this module. Nothing here may import that one.
-
-Reach ``LazyFrame``/``DataFrame`` through ``polars._utils.wrap`` rather than
-importing ``polars.lazyframe.frame``, which imports the selection code.
-"""
+"""Query execution engines."""
 
 from __future__ import annotations
 
 import io
 import os
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Literal, overload
@@ -30,8 +20,7 @@ from polars.lazyframe.in_process import InProcessQuery
 from polars.lazyframe.query_result import SingleNodeQueryResult
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Mapping
-    from typing import TypeAlias
+    from collections.abc import Callable, Iterable, Iterator, Mapping
 
     from rmm.mr import DeviceMemoryResource  # type: ignore[import-not-found]
 
@@ -43,6 +32,7 @@ if TYPE_CHECKING:
         IpcCompression,
         ParquetCompression,
         ParquetMetadata,
+        PostOptCallback,
         StorageOptionsDict,
         SyncOnCloseMethod,
     )
@@ -53,11 +43,6 @@ if TYPE_CHECKING:
     from polars.lazyframe.frame import LazyFrame
     from polars.lazyframe.opt_flags import QueryOptFlags
     from polars.lazyframe.query_result import QueryResult
-
-
-# The post-optimization callback receives the Rust node traverser, which has no
-# Python-side type, plus an optional node id.
-PostOptCallback: TypeAlias = Callable[[Any, int | None], None]
 
 
 def _to_sink_target(
