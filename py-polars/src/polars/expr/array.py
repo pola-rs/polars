@@ -286,7 +286,7 @@ class ExprArrayNameSpace:
         .. engine-support:: in-memory, streaming, distributed
 
         Both inputs must contain equal-width arrays. Their inner data types are cast
-        to a common supertype, which must be ``Float32`` or ``Float64``.
+        to a common supertype, which must be an integer, ``Float32``, or ``Float64``.
         An input with one row is broadcast against the other input.
         If either input Array is null for a row, the result for that row is null.
 
@@ -302,13 +302,18 @@ class ExprArrayNameSpace:
         Elements are paired by position.
 
         Pairs where either element is null do not contribute to the sum. If a
-        non-null row has no pairs where both elements are valid, the result is
-        ``0.0``.
+        non-null row has no pairs where both elements are valid, the result is zero.
 
-        Accumulation and output use the common floating-point data type. NaN and
-        infinity follow floating-point multiplication and addition semantics.
-        Results are not guaranteed to be bitwise identical to mathematically
-        equivalent expressions that use a different reduction path.
+        Multiplication uses the common input data type. Accumulation and output
+        follow ``arr.sum`` promotion: ``Int8``, ``UInt8``, ``Int16``, and ``UInt16``
+        use an ``Int64`` accumulator; other supported types retain the common data
+        type. Integer multiplication wraps in the common input type, and accumulation
+        wraps in the output type. Cast inputs before calling ``dot`` when wider
+        multiplication is required.
+
+        NaN and infinity follow floating-point multiplication and addition
+        semantics. Floating-point results are not guaranteed to be bitwise identical
+        to mathematically equivalent expressions that use a different reduction path.
 
         Examples
         --------
