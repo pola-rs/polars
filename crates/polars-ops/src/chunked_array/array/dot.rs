@@ -1,18 +1,29 @@
-use std::iter::Sum;
-use std::ops::{AddAssign, Mul};
-
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
+use num_traits::Zero;
+use polars_compute::arithmetic::pl_num::PlNumArithmetic;
+use polars_compute::sum::WrappingAdd;
 use polars_core::prelude::*;
 
-fn dot_primitive<T>(
+#[inline]
+fn multiply_add<T, S>(acc: S, lhs: T, rhs: T) -> S
+where
+    T: PlNumArithmetic + Into<S>,
+    S: WrappingAdd,
+{
+    let product = PlNumArithmetic::wrapping_mul(lhs, rhs).into();
+    acc.wrapping_add(&product)
+}
+
+fn dot_primitive<T, S>(
     lhs: &ArrayChunked,
     rhs: &ArrayChunked,
     output_len: usize,
 ) -> PolarsResult<Series>
 where
-    T: NativeType + Default + AddAssign + Mul<Output = T> + Sum,
+    T: NativeType + PlNumArithmetic + Into<S>,
+    S: NativeType + Zero + WrappingAdd,
 {
     let lhs = lhs.rechunk();
     let rhs = rhs.rechunk();
@@ -49,7 +60,7 @@ where
         output_validity.push(outer_valid);
 
         if !outer_valid {
-            output.push(T::default());
+            output.push(S::zero());
             continue;
         }
 
@@ -62,10 +73,9 @@ where
             lhs_row
                 .iter()
                 .zip(rhs_row)
-                .map(|(&lhs, &rhs)| lhs * rhs)
-                .sum()
+                .fold(S::zero(), |acc, (&lhs, &rhs)| multiply_add(acc, lhs, rhs))
         } else {
-            let mut value = T::default();
+            let mut value = S::zero();
             for (inner_idx, (&lhs, &rhs)) in lhs_row.iter().zip(rhs_row).enumerate() {
                 let lhs_valid = lhs_inner_validity.is_none_or(|validity| unsafe {
                     validity.get_bit_unchecked(lhs_offset + inner_idx)
@@ -74,7 +84,7 @@ where
                     validity.get_bit_unchecked(rhs_offset + inner_idx)
                 });
                 if lhs_valid && rhs_valid {
-                    value += lhs * rhs;
+                    value = multiply_add(value, lhs, rhs);
                 }
             }
             value
@@ -106,8 +116,8 @@ pub(super) fn array_dot(lhs: &ArrayChunked, rhs: &ArrayChunked) -> PolarsResult<
         "arr.dot requires matching inner dtypes, got {lhs_inner} and {rhs_inner}"
     );
     assert!(
-        matches!(lhs_inner, DataType::Float32 | DataType::Float64),
-        "arr.dot supports Float32 and Float64 arrays, got array[{lhs_inner}, {lhs_width}]"
+        lhs_inner.is_integer() || matches!(lhs_inner, DataType::Float32 | DataType::Float64),
+        "arr.dot supports integer, Float32, and Float64 arrays, got array[{lhs_inner}, {lhs_width}]"
     );
 
     let output_len = match (lhs.len(), rhs.len()) {
@@ -121,12 +131,25 @@ pub(super) fn array_dot(lhs: &ArrayChunked, rhs: &ArrayChunked) -> PolarsResult<
     };
 
     if output_len == 0 {
-        return Ok(Series::new_empty(lhs.name().clone(), lhs_inner));
+        return Ok(Series::new_empty(
+            lhs.name().clone(),
+            &sum_output_dtype(lhs_inner),
+        ));
     }
 
     match lhs_inner {
-        DataType::Float32 => dot_primitive::<f32>(lhs, rhs, output_len),
-        DataType::Float64 => dot_primitive::<f64>(lhs, rhs, output_len),
+        DataType::Int8 => dot_primitive::<i8, i64>(lhs, rhs, output_len),
+        DataType::Int16 => dot_primitive::<i16, i64>(lhs, rhs, output_len),
+        DataType::Int32 => dot_primitive::<i32, i32>(lhs, rhs, output_len),
+        DataType::Int64 => dot_primitive::<i64, i64>(lhs, rhs, output_len),
+        DataType::Int128 => dot_primitive::<i128, i128>(lhs, rhs, output_len),
+        DataType::UInt8 => dot_primitive::<u8, i64>(lhs, rhs, output_len),
+        DataType::UInt16 => dot_primitive::<u16, i64>(lhs, rhs, output_len),
+        DataType::UInt32 => dot_primitive::<u32, u32>(lhs, rhs, output_len),
+        DataType::UInt64 => dot_primitive::<u64, u64>(lhs, rhs, output_len),
+        DataType::UInt128 => dot_primitive::<u128, u128>(lhs, rhs, output_len),
+        DataType::Float32 => dot_primitive::<f32, f32>(lhs, rhs, output_len),
+        DataType::Float64 => dot_primitive::<f64, f64>(lhs, rhs, output_len),
         _ => unreachable!(),
     }
 }

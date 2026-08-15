@@ -1,6 +1,7 @@
 use polars_core::utils::{slice_offsets, try_get_supertype};
 use polars_ops::chunked_array::array::*;
 
+use super::schema::function_sum_output_dtype;
 use super::*;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
@@ -96,13 +97,14 @@ impl IRArrayFunction {
                 );
                 let inner_dtype = try_get_supertype(lhs_inner, rhs_inner)?;
                 polars_ensure!(
-                    matches!(inner_dtype, DataType::Float32 | DataType::Float64),
+                    inner_dtype.is_integer()
+                        || matches!(inner_dtype, DataType::Float32 | DataType::Float64),
                     InvalidOperation:
-                    "arr.dot supports inputs with a Float32 or Float64 supertype, got {} and {}",
+                    "arr.dot supports inputs with an integer, Float32, or Float64 supertype, got {} and {}",
                     args[0].dtype(), args[1].dtype()
                 );
 
-                mapper.with_dtype(inner_dtype)
+                mapper.with_dtype(function_sum_output_dtype(&inner_dtype))
             },
             ToList => mapper
                 .ensure_is_array()?
