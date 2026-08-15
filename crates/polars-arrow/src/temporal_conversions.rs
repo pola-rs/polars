@@ -287,29 +287,12 @@ pub(crate) fn timestamp_to_naive_datetime(timestamp: i64, time_unit: TimeUnit) -
     TimeZone::UTC.to_datetime(timestamp_to_timestamp(timestamp, time_unit))
 }
 
-/// Converts a timestamp in `time_unit` and `timezone` into a formattable
-/// [`jiff::fmt::strtime::BrokenDownTime`] (the local civil date/time plus the
-/// resolved UTC offset and IANA name) - ready for `.to_string(fmt)`/
-/// `.format(fmt, ..)`. Identical to going through [`Zoned`], and supports
-/// every `strftime` directive (including `%Z`, the tz abbreviation).
-///
-/// Returns `None` for a value outside [`Timestamp`]'s representable range,
-/// which is narrower than [`DateTime`]'s -9999/9999 range since it's kept
-/// small enough to accommodate an arbitrary UTC offset applied to it.
-pub fn timestamp_to_broken_down_time_opt(
-    timestamp: i64,
-    time_unit: TimeUnit,
-    timezone: &TimeZone,
-) -> Option<jiff::fmt::strtime::BrokenDownTime> {
-    let ts = timestamp_to_timestamp_opt(timestamp, time_unit)?;
-    let zoned = ts.to_zoned(timezone.clone());
-    Some(jiff::fmt::strtime::BrokenDownTime::from(&zoned))
-}
-
 /// Formats a timestamp in `time_unit` and `timezone` using `fmt`, degrading
 /// gracefully to the placeholder `"<out-of-range datetime>"` instead of
-/// panicking when the value is outside [`timestamp_to_broken_down_time_opt`]'s
-/// representable range.
+/// panicking - both for a value outside [`Timestamp`]'s representable range
+/// (narrower than [`DateTime`]'s -9999/9999 range, since it's kept small
+/// enough to accommodate an arbitrary UTC offset applied to it), and for one
+/// where `fmt` itself is invalid.
 ///
 /// TODO: return a `PolarsResult` instead of a placeholder string, see
 /// https://github.com/pola-rs/polars/issues/13404
@@ -319,8 +302,11 @@ pub fn format_timestamp_or_out_of_range(
     timezone: &TimeZone,
     fmt: &str,
 ) -> String {
-    timestamp_to_broken_down_time_opt(timestamp, time_unit, timezone)
-        .and_then(|tm| tm.to_string(fmt).ok())
+    timestamp_to_timestamp_opt(timestamp, time_unit)
+        .and_then(|ts| {
+            let zoned = ts.to_zoned(timezone.clone());
+            jiff::fmt::strtime::format(fmt, &zoned).ok()
+        })
         .unwrap_or_else(|| "<out-of-range datetime>".to_string())
 }
 
