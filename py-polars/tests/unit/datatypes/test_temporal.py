@@ -333,12 +333,6 @@ def test_datetime_consistency() -> None:
         (test_data[3], 999999000),
     ]
     # Same as above, but for tz-aware
-    # NOTE: the last entry is 9999-12-30, not 9999-12-31 - jiff deliberately
-    # shrinks the representable `Timestamp` range by the maximum supported UTC
-    # offset (see jiff-core's `bounds.rs`), so that every timestamp can always
-    # be converted to a civil datetime in any time zone. That makes the very
-    # last ~26 hours of the year-9999 range unrepresentable once a non-UTC
-    # zone is attached, even for a zone as close to UTC as Asia/Kathmandu.
     test_data = [
         datetime(2000, 1, 1, 1, 1, 1, 555555, tzinfo=ZoneInfo("Asia/Kathmandu")),
         datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=ZoneInfo("Asia/Kathmandu")),
