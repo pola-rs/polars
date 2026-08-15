@@ -290,7 +290,7 @@ def read_parquet(
         else:
             lf = lf.select(columns)
 
-    return lf.collect()
+    return lf._collect_eager()
 
 
 def _read_parquet_with_pyarrow(
