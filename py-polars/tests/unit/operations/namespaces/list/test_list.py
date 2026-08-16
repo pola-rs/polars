@@ -1005,6 +1005,12 @@ def test_list_sum_bool_schema() -> None:
     assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.get_index_type()
 
 
+def test_list_sum_decimal_schema() -> None:
+    dtype = pl.Decimal(10, 2)
+    q = pl.LazyFrame(schema={"x": pl.List(dtype)})
+    assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == dtype
+
+
 def test_list_concat_struct_19279() -> None:
     df = pl.select(
         pl.struct(

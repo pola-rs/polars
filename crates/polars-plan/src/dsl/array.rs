@@ -31,11 +31,13 @@ impl ArrayNameSpace {
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Sum))
     }
 
-    /// Compute the row-wise dot product with another equal-width float array expression.
+    /// Compute the row-wise dot product with another equal-width array expression.
     ///
-    /// Both arrays are cast to a common supertype, which must be `Float32` or
-    /// `Float64`. Pairs containing an inner null do not contribute to the sum. An
-    /// outer null row produces a null.
+    /// Both arrays are cast to a common supertype, which must be an integer,
+    /// `Float32`, or `Float64`. `Int8`, `UInt8`, `Int16`, and `UInt16` produce
+    /// `Int64`; other supported types retain the common type. Integer multiplication
+    /// and accumulation use wrapping arithmetic. Pairs containing an inner null do
+    /// not contribute to the sum. An outer null row produces a null.
     pub fn dot(self, other: Expr) -> Expr {
         self.0
             .map_binary(FunctionExpr::ArrayExpr(ArrayFunction::Dot), other)
