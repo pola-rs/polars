@@ -200,12 +200,12 @@ pub fn timestamp_ns_to_datetime_opt(v: i64) -> Option<NaiveDateTime> {
 pub(crate) fn timestamp_to_naive_datetime(
     timestamp: i64,
     time_unit: TimeUnit,
-) -> chrono::NaiveDateTime {
+) -> Option<chrono::NaiveDateTime> {
     match time_unit {
-        TimeUnit::Second => timestamp_s_to_datetime(timestamp),
-        TimeUnit::Millisecond => timestamp_ms_to_datetime(timestamp),
-        TimeUnit::Microsecond => timestamp_us_to_datetime(timestamp),
-        TimeUnit::Nanosecond => timestamp_ns_to_datetime(timestamp),
+        TimeUnit::Second => timestamp_s_to_datetime_opt(timestamp),
+        TimeUnit::Millisecond => timestamp_ms_to_datetime_opt(timestamp),
+        TimeUnit::Microsecond => timestamp_us_to_datetime_opt(timestamp),
+        TimeUnit::Nanosecond => timestamp_ns_to_datetime_opt(timestamp),
     }
 }
 
@@ -215,8 +215,8 @@ pub fn timestamp_to_datetime<T: chrono::TimeZone>(
     timestamp: i64,
     time_unit: TimeUnit,
     timezone: &T,
-) -> chrono::DateTime<T> {
-    timezone.from_utc_datetime(&timestamp_to_naive_datetime(timestamp, time_unit))
+) -> Option<chrono::DateTime<T>> {
+    timestamp_to_naive_datetime(timestamp, time_unit).map(|ndt| timezone.from_utc_datetime(&ndt))
 }
 
 /// Calculates the scale factor between two TimeUnits. The function returns the
