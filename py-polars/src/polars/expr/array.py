@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
+from polars._dependencies import _check_for_numpy
+from polars._dependencies import numpy as np
 from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import _Omitted
@@ -276,6 +278,86 @@ class ExprArrayNameSpace:
         └─────┘
         """
         return wrap_expr(self._pyexpr.arr_sum())
+
+    def dot(self, other: IntoExpr | Sequence[Any]) -> Expr:
+        """
+        Compute row-wise dot product with another Array expression.
+
+        .. engine-support:: in-memory, streaming, distributed
+
+        Both inputs must contain equal-width arrays. Their inner data types are cast
+        to a common supertype, which must be ``Float32`` or ``Float64``.
+        An input with one row is broadcast against the other input.
+        If either input Array is null for a row, the result for that row is null.
+
+        Parameters
+        ----------
+        other
+            Array expression or query vector to compute dot product with.
+            A Python sequence or one-dimensional NumPy array is treated as a
+            one-row Array query. A one-row Series is also broadcast.
+
+        Notes
+        -----
+        Elements are paired by position.
+
+        Pairs where either element is null do not contribute to the sum. If a
+        non-null row has no pairs where both elements are valid, the result is
+        ``0.0``.
+
+        Accumulation and output use the common floating-point data type. NaN and
+        infinity follow floating-point multiplication and addition semantics.
+        Results are not guaranteed to be bitwise identical to mathematically
+        equivalent expressions that use a different reduction path.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[1.0, 2.0], [3.0, 4.0]],
+        ...         "b": [[5.0, 6.0], [7.0, 8.0]],
+        ...     },
+        ...     schema={
+        ...         "a": pl.Array(pl.Float64, 2),
+        ...         "b": pl.Array(pl.Float64, 2),
+        ...     },
+        ... )
+        >>> df.select(pl.col("a").arr.dot("b"))
+        shape: (2, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 17.0 │
+        │ 53.0 │
+        └──────┘
+
+        A Python sequence can be used as a broadcast query.
+
+        >>> query = [2.0, 3.0]
+        >>> df.select(pl.col("a").arr.dot(query))
+        shape: (2, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 8.0  │
+        │ 18.0 │
+        └──────┘
+        """
+        if isinstance(other, Sequence) and not isinstance(other, (str, bytes)):
+            other = list(other)
+            other = F.lit(other).list.to_array(len(other))
+        elif _check_for_numpy(other) and isinstance(other, np.ndarray):
+            if other.ndim != 1:
+                msg = "arr.dot query vector must be one-dimensional"
+                raise ValueError(msg)
+            other = F.lit(other).implode().list.to_array(other.size)
+
+        other_pyexpr = parse_into_expression(other)
+        return wrap_expr(self._pyexpr.arr_dot(other_pyexpr))
 
     def std(self, ddof: int = 1) -> Expr:
         """

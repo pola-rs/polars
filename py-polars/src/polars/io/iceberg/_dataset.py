@@ -390,10 +390,12 @@ class IcebergScanResolver:
             if self.use_metadata_statistics and filter_columns is not None
             else None
         )
-        deletion_files: dict[int, list[str]] = {}
+        position_delete_files: dict[int, list[str]] = {}
+        deletion_vectors: dict[int, str] = {}
         total_physical_rows: int = 0
         total_deleted_rows: int = 0
-        total_deletion_files = 0
+        total_position_delete_files = 0
+        total_deletion_vectors = 0
 
         if reader_override != "pyiceberg" and not fallback_reason:
             from pyiceberg.manifest import DataFileContent, FileFormat
@@ -420,7 +422,9 @@ class IcebergScanResolver:
                     break
 
                 if file_info.delete_files:
-                    deletion_files[i] = []
+                    position_delete_files[i] = []
+                    position_delete_num_rows = 0
+                    deletion_vector_num_rows = 0
 
                     for deletion_file in file_info.delete_files:
                         if deletion_file.content != DataFileContent.POSITION_DELETES:
@@ -430,16 +434,32 @@ class IcebergScanResolver:
                             )
                             break
 
-                        if deletion_file.file_format != FileFormat.PARQUET:
-                            fallback_reason = (
-                                "unsupported deletion file format: "
-                                f"{deletion_file.file_format}"
-                            )
-                            break
+                        match deletion_file.file_format:
+                            case FileFormat.PARQUET:
+                                position_delete_files[i].append(deletion_file.file_path)
+                                position_delete_num_rows += deletion_file.record_count
 
-                        deletion_files[i].append(deletion_file.file_path)
-                        total_deletion_files += 1
-                        total_deleted_rows += deletion_file.record_count
+                            case FileFormat.PUFFIN:
+                                if i in deletion_vectors:
+                                    fallback_reason = "multiple deletion vectors associated with one data file"
+                                    break
+
+                                deletion_vectors[i] = deletion_file.file_path
+                                deletion_vector_num_rows += deletion_file.record_count
+
+                            case x:
+                                fallback_reason = (
+                                    f"unsupported deletion file format: {x}"
+                                )
+                                break
+
+                    if i in deletion_vectors:
+                        total_deleted_rows += deletion_vector_num_rows
+                        total_deletion_vectors += 1
+                        del position_delete_files[i]
+                    else:
+                        total_deleted_rows += position_delete_num_rows
+                        total_position_delete_files += len(position_delete_files[i])
 
                 if fallback_reason:
                     break
@@ -468,16 +488,14 @@ class IcebergScanResolver:
 
         if not fallback_reason:
             if verbose:
-                s = "" if len(sources) == 1 else "s"
-                s2 = "" if total_deletion_files == 1 else "s"
-
                 eprint(
                     "IcebergScanResolver: to_dataset_scan(): "
                     f"native scan_parquet(): "
-                    f"{len(sources)} source{s}, "
+                    f"num_sources: {len(sources)}, "
                     f"snapshot ID: {snapshot_id}, "
                     f"schema ID: {schema_id}, "
-                    f"{total_deletion_files} deletion file{s2}"
+                    f"num_position_delete_files: {total_position_delete_files}, "
+                    f"num_deletion_vectors: {total_deletion_vectors}"
                 )
 
             # The arrow schema returned by `schema_to_pyarrow` will contain
@@ -505,7 +523,8 @@ class IcebergScanResolver:
                 projected_iceberg_schema=projected_iceberg_schema,
                 column_mapping=column_mapping,
                 default_values=(identity_transformed_values, initial_defaults),
-                deletion_files=deletion_files,
+                position_delete_files=position_delete_files,
+                deletion_vectors=deletion_vectors,
                 min_max_statistics=min_max_statistics,
                 statistics_loader=statistics_loader,
                 storage_options=storage_options,
@@ -566,7 +585,8 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     projected_iceberg_schema: pyiceberg.schema.Schema
     column_mapping: pa.Schema
     default_values: tuple[dict[int, pl.Series | str], dict[int, pl.Series]]
-    deletion_files: dict[int, list[str]]
+    position_delete_files: dict[int, list[str]]
+    deletion_vectors: dict[int, str]
     min_max_statistics: pl.DataFrame | None
     # This is here for test purposes, as the `min_max_statistics` on this
     # dataclass can contain coalesced values from `default_values`. A test may
@@ -589,7 +609,10 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
             storage_options=self.storage_options,
             _column_mapping=("iceberg-column-mapping", self.column_mapping),
             _default_values=("iceberg", self.default_values),
-            _deletion_files=("iceberg-position-delete", self.deletion_files),
+            _deletion_files=(
+                "iceberg",
+                (self.position_delete_files, self.deletion_vectors),
+            ),
             _table_statistics=self.min_max_statistics,
             _row_count=self.row_count,
         )

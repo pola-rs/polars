@@ -9,7 +9,6 @@ import polars.functions as F
 import polars.selectors as cs
 from polars._dependencies import _check_for_numpy
 from polars._dependencies import numpy as np
-from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     deprecate_streaming_parameter,
@@ -22,9 +21,10 @@ from polars._utils.parse import (
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool, qualified_type_name
-from polars._utils.wrap import wrap_df, wrap_expr, wrap_s
+from polars._utils.wrap import wrap_expr, wrap_s
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 from polars.datatypes._parse import parse_into_datatype_expr
+from polars.lazyframe.engine_config import _eager_engine, _select_engine
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
     forward_old_opt_flags,
@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import (
+        AsyncResult,
         CorrelationMethod,
         EngineType,
         EpochTimeUnit,
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
         PolarsDataType,
         QuantileMethod,
     )
+    from polars._utils.async_ import _GeventDataFrameResult
     from polars.lazyframe.opt_flags import (
         QueryOptFlags,
     )
@@ -2015,6 +2017,15 @@ def arg_sort_by(
     )
 
 
+def _collect_all_eager(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+) -> list[DataFrame]:
+    """Collect internal eager operations locally."""
+    return _eager_engine().collect_all(lazy_frames, optimizations=optimizations)
+
+
 @overload
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
@@ -2143,7 +2154,8 @@ def collect_all(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     engine
-        Select the engine used to process the query (default ``"auto"``):
+        Select the engine used to process the query (default ``"auto"``).
+        A :class:`~.Engine` instance may also be passed. Supported engine names are:
 
         * ``"auto"``: use the engine set by
           :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -2180,26 +2192,18 @@ def collect_all(
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
-    lfs = [lf._ldf for lf in lazy_frames]
     if lazy:
         msg = "the `lazy` parameter of `collect_all` is considered unstable."
         issue_unstable_warning(msg)
 
         from polars.lazyframe import LazyFrame
 
+        lfs = [lf._ldf for lf in lazy_frames]
         ldf = plr.collect_all_lazy(lfs, optimizations._pyoptflags)
         lf = LazyFrame._from_pyldf(ldf)
         return lf
 
-    from polars.lazyframe.frame import _select_engine
-
-    engine = _select_engine(engine)
-    out = plr.collect_all(lfs, engine, optimizations._pyoptflags)
-
-    # wrap the pydataframes into dataframe
-    result = [wrap_df(pydf) for pydf in out]
-
-    return result
+    return _select_engine(engine).collect_all(lazy_frames, optimizations=optimizations)
 
 
 @overload
@@ -2258,7 +2262,8 @@ def collect_all_async(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     engine
-        Select the engine used to process the query (default ``"auto"``):
+        Select the engine used to process the query (default ``"auto"``).
+        A :class:`~.Engine` instance may also be passed. Supported engine names are:
 
         * ``"auto"``: use the engine set by
           :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -2299,12 +2304,8 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
-    result: (
-        _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
-    ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-    lfs = [lf._ldf for lf in lazy_frames]
-    plr.collect_all_with_callback(
-        lfs, engine, optimizations._pyoptflags, result._callback_all
+    result: AsyncResult[list[DataFrame]] = _select_engine(engine).collect_all_async(
+        lazy_frames, optimizations=optimizations, gevent=gevent
     )
     return result
 

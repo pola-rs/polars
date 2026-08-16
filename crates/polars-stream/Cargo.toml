@@ -42,7 +42,7 @@ polars-core = { workspace = true, features = ["partition_by"] }
 polars-descriptions = { workspace = true }
 polars-error = { workspace = true }
 polars-expr = { workspace = true, features = ["rle", "peaks", "arg_where", "unique_counts", "dtype-struct"] }
-polars-io = { workspace = true, features = ["async", "file_cache"] }
+polars-io = { workspace = true, features = ["async", "decompress", "file_cache"] }
 polars-json = { workspace = true, optional = true }
 polars-mem-engine = { workspace = true }
 polars-observer = { workspace = true }

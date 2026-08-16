@@ -18,7 +18,8 @@ if TYPE_CHECKING:
     from decimal import Decimal
     from typing import TypeAlias
 
-    from sqlalchemy.engine import Connection, Engine
+    from sqlalchemy.engine import Connection
+    from sqlalchemy.engine import Engine as AlchemyEngine
     from sqlalchemy.ext.asyncio import (
         AsyncConnection,
         AsyncEngine,
@@ -30,8 +31,9 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._dependencies import numpy as np
+    from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
-    from polars.lazyframe.engine_config import GPUEngine, StreamingEngine
+    from polars.lazyframe.engine import Engine
     from polars.selectors import Selector
 
 
@@ -211,7 +213,7 @@ DefaultFieldValues: TypeAlias = tuple[
     Literal["iceberg"], tuple[dict[int, Union["Series", str]], dict[int, "Series"]]
 ]
 DeletionFiles: TypeAlias = (
-    tuple[Literal["iceberg-position-delete"], dict[int, list[str]]]
+    tuple[Literal["iceberg"], tuple[dict[int, list[str]], dict[int, str]]]
     | tuple[Literal["delta-deletion-vector"], Callable[["DataFrame"], "DataFrame"]]
 )
 FillNullStrategy: TypeAlias = Literal[
@@ -404,7 +406,7 @@ class Cursor(BasicCursor):
         """Fetch results in batches."""
 
 
-AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
+AlchemyConnection: TypeAlias = Union["Connection", "AlchemyEngine", "Session"]
 AlchemyAsyncConnection: TypeAlias = Union[
     "AsyncConnection", "AsyncEngine", "AsyncSession", "async_sessionmaker[AsyncSession]"
 ]
@@ -437,13 +439,25 @@ SingleColSelector: TypeAlias = SingleIndexSelector | SingleNameSelector
 MultiColSelector: TypeAlias = MultiIndexSelector | MultiNameSelector | BooleanMask
 
 # LazyFrame engine selection
-EngineType: TypeAlias = Union[
-    Literal["auto", "in-memory", "streaming", "gpu"],
-    "GPUEngine",
-    "StreamingEngine",
-]
+EngineTypeName: TypeAlias = Literal["auto", "in-memory", "streaming", "gpu"]
+EngineType: TypeAlias = Union[EngineTypeName, "Engine"]
 
 PlanStage: TypeAlias = Literal["ir", "physical"]
+
+# Post-optimization callback receiving a Rust `NodeTraverser` and optional duration
+# in nanoseconds.
+PostOptCallback: TypeAlias = Callable[[Any, int | None], None]
+
+
+# Result of an async collect, resolved either through asyncio or gevent.
+AsyncResultT = TypeVar("AsyncResultT")
+AsyncResult: TypeAlias = Union[
+    "_GeventDataFrameResult[AsyncResultT]", "_AioDataFrameResult[AsyncResultT]"
+]
+
+# Remote execution on Polars Cloud; mirrors `polars_cloud._typing`
+ScalingMode: TypeAlias = Literal["auto", "single-node", "distributed"]
+PlanTypePreference: TypeAlias = Literal["dot", "plain"]
 
 FileSource: TypeAlias = (
     str
@@ -496,6 +510,7 @@ __all__ = [
     "DeprecationType",
     "Endianness",
     "EngineType",
+    "EngineTypeName",
     "EpochTimeUnit",
     "ExcelSpreadsheetEngine",
     "ExplainFormat",
@@ -531,6 +546,7 @@ __all__ = [
     "ParametricProfileNames",
     "ParquetCompression",
     "PivotAgg",
+    "PlanTypePreference",
     "PolarsDataType",
     "PolarsIntegerType",
     "PolarsTemporalType",
@@ -541,6 +557,7 @@ __all__ = [
     "RankMethod",
     "Roll",
     "RowTotalsDefinition",
+    "ScalingMode",
     "SchemaDefinition",
     "SchemaDict",
     "SearchSortedSide",
