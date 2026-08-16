@@ -453,6 +453,27 @@ def test_arr_dot_integer_overflow() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("dtype", "maximum", "expected"),
+    [
+        (pl.Int32, 2**31 - 1, -(2**31)),
+        (pl.UInt32, 2**32 - 1, 0),
+    ],
+)
+def test_arr_dot_integer_accumulation_overflow(
+    dtype: pl.DataType,
+    maximum: int,
+    expected: int,
+) -> None:
+    lhs = pl.Series("lhs", [[maximum, 1]], dtype=pl.Array(dtype, 2))
+    rhs = pl.Series("rhs", [[1, 1]], dtype=pl.Array(dtype, 2))
+
+    assert_series_equal(
+        lhs.arr.dot(rhs),
+        pl.Series("lhs", [expected], dtype=dtype),
+    )
+
+
 @pytest.mark.parametrize("dtype", [pl.Boolean, pl.Float16, pl.Decimal(10, 2)])
 def test_arr_dot_unsupported_inner_dtype(dtype: pl.DataType) -> None:
     lf = pl.LazyFrame(schema={"a": pl.Array(dtype, 2)})
