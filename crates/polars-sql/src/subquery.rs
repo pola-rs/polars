@@ -1097,12 +1097,8 @@ impl VisitorMut for CorrelatedRewriter<'_> {
     }
 }
 
-// Replace every `Subquery` node in `expr` with a placeholder identifier, then
-// parse each one standalone and alias it to that placeholder. Lifting a
-// subquery out of direct comparison position (e.g. `SUM(v) > (SELECT ...)`)
-// avoids the "use IN instead" comparison guard, which only fires on a
-// `Subquery` that's a direct operand of a `BinaryOp`; parsing it separately,
-// rather than in place, is what keeps it out of that position.
+// Replace every `Subquery` node in `expr` with a placeholder identifier,
+// parsing each one standalone and aliasing it to that name.
 pub(crate) fn lift_uncorrelated_subqueries(
     ctx: &mut SQLContext,
     expr: &mut SQLExpr,
