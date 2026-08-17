@@ -137,7 +137,7 @@ def test_engine_monitoring_overrides_config_off() -> None:
         _sample_lf().collect(engine=engine)
 
     observer.on_query_started.assert_called_once()
-    # the engine must not touch global state
+    # The engine override must not modify the environment-backed Config setting.
     assert "POLARS_QUERY_MONITORING" not in os.environ
 
 
@@ -148,7 +148,7 @@ def test_engine_monitoring_overrides_config_on() -> None:
         pl.Config.enable_monitoring()
         _sample_lf().collect(engine=StreamingEngine(monitoring=False))
 
-    # the observer is registered by the Config, but never invoked for this query
+    # The explicit engine setting prevents observer construction for this query.
     observer.on_query_started.assert_not_called()
 
 
@@ -177,7 +177,7 @@ def test_engine_affinity_object_carries_monitoring() -> None:
             _sample_lf().collect()
         observer.on_query_started.assert_called_once()
 
-        # leaving the scope restores the unmonitored affinity
+        # Leaving the scope restores the unmonitored affinity.
         _sample_lf().collect()
 
     observer.on_query_started.assert_called_once()
@@ -229,7 +229,7 @@ def _run_sink(lf: pl.LazyFrame, engine: StreamingEngine) -> None:
 def test_monitoring_covers_local_execution_paths(
     run: Callable[[pl.LazyFrame, StreamingEngine], None],
 ) -> None:
-    """Every way of executing a query locally reports to the observer."""
+    """The primary local collection and sink paths report to the observer."""
     module, observer = fake_cloud_observer()
     with mock_module_import("polars_cloud", module, replace_if_exists=True):
         run(_sample_lf(), StreamingEngine(monitoring=True))

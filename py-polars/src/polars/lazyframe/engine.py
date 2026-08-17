@@ -332,9 +332,9 @@ class _LocalEngine(Engine):
 
     _name: ClassVar[str]
 
-    # Subclasses that do not call `super().__init__()` will still see the default value
+    # Subclasses that do not call `super().__init__()` still see the default value.
     monitoring: bool | None = None
-    """Whether queries run by this engine are monitored (`None` follows `Config`)."""
+    """Whether queries are monitored (``None`` uses the configured default)."""
 
     def __init__(self, *, monitoring: bool | None = None) -> None:
         if monitoring:
@@ -353,7 +353,7 @@ class _LocalEngine(Engine):
         return self._name
 
     def _with_monitoring(self, optimizations: QueryOptFlags) -> QueryOptFlags:
-        """Register the query observer, and flag `optimizations` accordingly."""
+        """Register the query observer when enabled and update `optimizations`."""
         from polars._utils.monitoring import monitoring_enabled_globally
 
         monitor = (
@@ -852,12 +852,9 @@ class InMemoryEngine(_LocalEngine):
     Parameters
     ----------
     monitoring : bool, default None
-        Whether queries run by this engine are monitored. Overrides
-        :meth:`Config.enable_monitoring`, which `None` follows.
-        Requires the `polars-cloud` package.
-
-        Only the streaming engine collects per-node metrics; this engine reports
-        the query plan and its overall duration.
+        Whether to monitor queries run by this engine. ``None`` uses the setting from
+        :meth:`Config.enable_monitoring`; ``True`` or ``False`` overrides it. Setting
+        this to ``True`` requires the ``polars-cloud`` package.
     """
 
     _name = "in-memory"
@@ -870,9 +867,9 @@ class StreamingEngine(_LocalEngine):
     Parameters
     ----------
     monitoring : bool, default None
-        Whether queries run by this engine are monitored. Overrides
-        :meth:`Config.enable_monitoring`, which `None` follows.
-        Requires the `polars-cloud` package.
+        Whether to monitor queries run by this engine. ``None`` uses the setting from
+        :meth:`Config.enable_monitoring`; ``True`` or ``False`` overrides it. Setting
+        this to ``True`` requires the ``polars-cloud`` package.
 
     Examples
     --------
@@ -911,9 +908,6 @@ class GPUEngine(_LocalEngine):
         Whether queries run by this engine are monitored. Overrides
         :meth:`Config.enable_monitoring`, which `None` follows.
         Requires the `polars-cloud` package.
-
-        Only the streaming engine collects per-node metrics; this engine reports
-        the query plan and its overall duration.
 
     """
 

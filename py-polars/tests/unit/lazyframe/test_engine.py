@@ -194,7 +194,7 @@ def test_gpu_engine_stays_hashable_and_picklable() -> None:
 
 
 def test_named_engines_are_unmonitored_singletons() -> None:
-    # named engines resolve to shared instances, so nothing may mutate `monitoring`
+    # Named engines resolve to shared instances, so nothing may mutate `monitoring`.
     for name in ("streaming", "in-memory"):
         selected = _select_engine(name)  # type: ignore[arg-type]
         assert isinstance(selected, _LocalEngine)

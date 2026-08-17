@@ -1645,14 +1645,15 @@ class Config(contextlib.ContextDecorator):
         - The ``polars-cloud`` package installed in this environment
           (``pip install polars-cloud``).
 
-        Monitoring is only supported by the streaming engine, so enabling it also
-        sets the engine affinity to ``"streaming"``. Disabling it does not restore
-        the previous engine affinity.
+        Monitoring is supported by the in-memory and streaming engines, but only
+        the streaming engine collects per-node metrics. Enabling monitoring therefore
+        also sets the engine affinity to ``"streaming"``. Disabling it does not
+        restore the previous engine affinity.
 
-        This setting is the default for engines that do not state a preference; an
-        engine constructed with an explicit ``monitoring`` argument overrides it.
+        Engines whose ``monitoring`` option is ``None`` use this setting. An explicit
+        value of ``True`` or ``False`` on an engine overrides it.
 
-        .. engine-support:: streaming
+        .. engine-support:: in-memory, streaming
 
         Parameters
         ----------
