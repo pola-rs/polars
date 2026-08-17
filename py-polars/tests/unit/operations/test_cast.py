@@ -18,7 +18,7 @@ from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import PolarsDataType, PythonDataType
+    from polars._typing import PolarsDataType, PythonDataType, TimeUnit
 
 
 @pytest.mark.parametrize("dtype", [pl.Date(), pl.Date, date])
@@ -1120,3 +1120,31 @@ def test_cast_categorical_to_int_deprecated(dtype: PolarsDataType) -> None:
 
     expected = pl.Series("a", [2, 0, 1], dtype=pl.UInt32)
     assert_series_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "value"),
+    [
+        ("ms", 8_210_266_876_800_000),
+        ("us", 8_210_266_876_800_000_000),
+    ],
+)
+def test_out_of_range_datetime_display_no_panic_25742(
+    time_unit: TimeUnit, value: int
+) -> None:
+    result = str(pl.Series([value]).cast(pl.Datetime(time_unit)))
+    assert f"invalid or out-of-range datetime: {value}" in result
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "value"),
+    [
+        ("ms", 8_210_266_876_800_000),
+        ("us", 8_210_266_876_800_000_000),
+    ],
+)
+def test_out_of_range_datetime_cast_error_25742(
+    time_unit: TimeUnit, value: int
+) -> None:
+    with pytest.raises(InvalidOperationError, match="conversion from"):
+        pl.select(pl.lit(value, dtype=pl.Datetime(time_unit)).cast(pl.UInt32))
