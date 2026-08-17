@@ -10,8 +10,6 @@ if not _HYPOTHESIS_AVAILABLE:
 from polars.testing.parametric.profiles import load_profile, set_profile
 from polars.testing.parametric.strategies import (
     column,
-    columns,
-    create_list_strategy,
     dataframes,
     dtypes,
     lists,
