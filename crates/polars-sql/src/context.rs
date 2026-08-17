@@ -1326,11 +1326,9 @@ impl SQLContext {
         // Parse named windows first, as they may be referenced in the SELECT clause
         self.register_named_windows(&select_stmt.named_window)?;
 
-        // Correlated-subquery lowering rewrites the raw SQL of the SELECT
-        // list / WHERE / HAVING in place, before they're parsed into Polars
-        // expressions, so it needs an owned, mutable statement; skip the
-        // (non-trivial: sqlparser's AST isn't `Arc`-shared) clone for the
-        // common case of a statement with no subquery anywhere in it.
+        // Correlated-subquery lowering rewrites the SELECT list/WHERE/HAVING
+        // SQL in place, so it needs an owned statement; skip the clone when
+        // there's no subquery to lower.
         let mut select_stmt: Cow<'_, Select> = if select_stmt_has_subquery(select_stmt) {
             Cow::Owned(select_stmt.clone())
         } else {
@@ -1579,11 +1577,9 @@ impl SQLContext {
             },
         };
 
-        // A decorrelated/broadcast subquery result referenced directly in the
-        // SELECT list is a plain (constant per outer row) column; under an
-        // explicit GROUP BY it must be `.first()`'d so it reduces the group
-        // like any other aggregate, rather than tripping the "should
-        // participate in GROUP BY" validity check below.
+        // A decorrelated subquery result is a plain column constant per
+        // outer row; under GROUP BY it must be `.first()`'d to reduce the
+        // group like any other aggregate.
         if !group_by_keys.is_empty() {
             projections = projections
                 .into_iter()
@@ -1694,10 +1690,9 @@ impl SQLContext {
         } else {
             let having = match select_stmt.having.as_ref() {
                 Some(having_sql) if expr_contains_subquery(having_sql) => {
-                    // HAVING's correlation is against the *grouped* row (one
-                    // row per group-key combination), not the base table, so
-                    // decorrelate against a distinct-keys frame and broadcast
-                    // the per-group result back onto `lf` before grouping.
+                    // HAVING's correlation is against the grouped row, not
+                    // the base table: decorrelate against a distinct-keys
+                    // frame and broadcast the result back onto `lf`.
                     let group_by_keys_schema =
                         expressions_to_schema(&group_by_keys, &schema, |duplicate_name: &str| {
                             format!(
@@ -1710,13 +1705,10 @@ impl SQLContext {
                         .unique(None, UniqueKeepStrategy::Any);
                     let (mut new_key_lf, mut rewritten_having) =
                         self.decorrelate_expr(key_lf, &schema, having_sql, &mut corr_cache)?;
-                    // Any subquery `decorrelate_expr` left alone was
-                    // uncorrelated (no WHERE tying it to the group). Lift it
-                    // out of comparison position (the "use IN instead" guard
-                    // only fires on a subquery that's a direct comparison
-                    // operand) and parse it standalone, then resolve it the
-                    // same way the row-level path does: broadcasting across
-                    // the distinct group keys instead of every row.
+                    // Anything `decorrelate_expr` left alone is uncorrelated;
+                    // lift it out of comparison position (dodging the "use IN
+                    // instead" guard on a direct subquery operand) and
+                    // resolve it by broadcasting across the group keys.
                     let lifted = lift_uncorrelated_subqueries(&mut rewritten_having);
                     let mut having_expr = parse_sql_expr(&rewritten_having, self, Some(&schema))?;
                     let mut lifted_exprs = lifted
@@ -1731,14 +1723,12 @@ impl SQLContext {
                         all.push(&mut having_expr);
                         all
                     })?;
-                    // `process_subqueries` names each resolved column
-                    // internally; materialise it under the placeholder name
-                    // `rewritten_having` actually references. Unlike the WHERE
-                    // path, no explicit drop of the internal name is needed:
-                    // `process_group_by`'s `group_by(...).agg(...)` below only
-                    // outputs the group keys and `aggregation_projection`, so
-                    // any other column present on `lf` at that point (this
-                    // one included) is excluded automatically.
+                    // Materialise each resolved subquery under the
+                    // placeholder name `rewritten_having` references. No
+                    // explicit drop of process_subqueries' internal name is
+                    // needed: `process_group_by`'s `group_by().agg()` below
+                    // only outputs group keys and aggregations, so it's
+                    // excluded automatically.
                     if !lifted_exprs.is_empty() {
                         new_key_lf = new_key_lf.with_columns(lifted_exprs);
                     }
@@ -1757,12 +1747,9 @@ impl SQLContext {
                         .coalesce(JoinCoalesce::CoalesceColumns)
                         .finish();
                     schema = self.get_frame_schema(&mut lf)?;
-                    // Both kinds of result (referenced only via their
-                    // placeholder alias; the internal names `process_subqueries`
-                    // assigned were just dropped above) are plain (broadcast,
-                    // constant per group) columns; `.first()` them so the
-                    // group_by/having validity check sees a reducing
-                    // aggregate rather than a bare non-key column reference.
+                    // Both kinds of result are plain columns, constant per
+                    // group; `.first()` them so the group_by/having validity
+                    // check sees a reducing aggregate.
                     let having_expr =
                         having_expr.map_expr(|e| wrap_broadcast_column_first(e, &PlHashSet::new()));
                     Some(having_expr)
@@ -3258,12 +3245,9 @@ fn select_stmt_has_subquery(select_stmt: &Select) -> bool {
             .is_some_and(expr_contains_subquery)
 }
 
-/// `.first()`-wrap a bare reference to a decorrelated/broadcast subquery
-/// result column (recognised by the `CORRELATED_COL_PREFIX` naming
-/// convention, or by name in `extra_names`) so it reduces the group like any
-/// other aggregate, instead of tripping the "should participate in GROUP BY"
-/// validity check below. Shared by the SELECT-list and HAVING decorrelation
-/// call sites.
+/// `.first()`-wrap a bare reference to a decorrelated subquery result column
+/// (recognised by the `CORRELATED_COL_PREFIX` naming convention, or by name
+/// in `extra_names`) so it reduces the group like any other aggregate.
 fn wrap_broadcast_column_first(e: Expr, extra_names: &PlHashSet<PlSmallStr>) -> Expr {
     match &e {
         Expr::Column(name)

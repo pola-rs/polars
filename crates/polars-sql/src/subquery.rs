@@ -424,13 +424,10 @@ impl SQLContext {
 
     // Attempt to decorrelate a scalar-aggregate subquery:
     //   (SELECT AGG(...) FROM inner WHERE <corr-preds> AND <inner-filters>)
-    // Row-index the outer frame, inner-join it against the (renamed) inner
-    // relation via `join_where` (so inequality correlation works, not just
-    // equality), aggregate per outer row, then left-join the aggregate back
-    // onto the outer frame by row index. `COUNT`-shaped aggregates fill
-    // unmatched rows with 0 (SQL semantics); any other aggregate is left
-    // NULL. Returns `None` when the subquery is uncorrelated, or isn't a
-    // single scalar-aggregate-over-one-relation shape this can soundly lower.
+    // via `join_back_grouped`. `COUNT`-shaped aggregates fill unmatched rows
+    // with 0 (SQL semantics); any other aggregate is left NULL. Returns
+    // `None` when the subquery is uncorrelated, or isn't a single
+    // scalar-aggregate-over-one-relation shape this can soundly lower.
     fn try_decorrelate_scalar_subquery(
         &mut self,
         lf: LazyFrame,
@@ -504,12 +501,11 @@ impl SQLContext {
         Ok(Some((joined, result_name)))
     }
 
-    // Attempt to decorrelate an `[NOT] EXISTS (SELECT ... WHERE <corr-preds>
-    // AND <inner-filters>)` used in general expression position (not the
-    // top-level WHERE conjunct case `try_rewrite_exists_as_join` already
-    // handles) into a boolean flag column: `count(*) > 0` over the correlated
-    // match set (`== 0` when negated). Returns `None` when the subquery is
-    // uncorrelated (unsupported in this position) or not an eligible shape.
+    // Attempt to decorrelate an `[NOT] EXISTS (...)` used in general
+    // expression position (not the top-level WHERE conjunct case
+    // `try_rewrite_exists_as_join` already handles) into a boolean flag
+    // column: `count(*) > 0` over the correlated match set (`== 0` when
+    // negated). Returns `None` when uncorrelated or not an eligible shape.
     fn try_decorrelate_exists_subquery(
         &mut self,
         lf: LazyFrame,
@@ -858,10 +854,9 @@ fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
 // ---------------------------------------------------------------------------
 
 /// Prefix for columns materialised by [`SQLContext::try_decorrelate_scalar_subquery`]
-/// / [`SQLContext::try_decorrelate_exists_subquery`]. Chosen to be visible in
-/// `explain()` output: `test_repeated_correlated_subquery_is_decorrelated_once`
-/// inspects the plan text for `__POLARS_CORR_*_idx` tokens to confirm that a
-/// repeated subquery is only decorrelated once.
+/// / [`SQLContext::try_decorrelate_exists_subquery`]. Kept distinctive so it's
+/// identifiable in `explain()` plan text (e.g. to confirm decorrelation ran
+/// exactly once for a repeated subquery).
 pub(crate) const CORRELATED_COL_PREFIX: &str = "__POLARS_CORR_";
 
 fn prefixed_inner(prefix: &str, name: &str) -> PlSmallStr {
@@ -973,12 +968,10 @@ fn rename_inner(
 }
 
 // Row-index `lf`, inner-join it against `inner_renamed` via `join_where`
-// (so inequality correlation works, not just equality), aggregate per outer
-// row with `agg_expr` (already aliased to its output name), then left-join
-// the aggregate back onto `lf` by row index. Shared by the scalar-aggregate
-// and `EXISTS` decorrelation paths, which differ only in what they aggregate
-// and how they post-process the (possibly-unmatched, hence nullable) result;
-// the caller drops the returned row-index column once it's done with it.
+// (so inequality correlation works too), aggregate per outer row with
+// `agg_expr` (already aliased to its output name), then left-join the
+// aggregate back onto `lf` by row index. The caller drops the returned
+// row-index column once it's done with it.
 fn join_back_grouped(
     lf: LazyFrame,
     prefix: &str,
@@ -1031,10 +1024,9 @@ pub(crate) enum CorrKind {
 }
 
 // Mutably walks a SQL expression tree, replacing every correlated
-// `Subquery` / `Exists` node it can decorrelate with a plain column
-// reference, threading the (possibly join-extended) outer frame through the
-// walk. Nodes it can't decorrelate (uncorrelated, or an unsupported shape)
-// are left untouched.
+// `Subquery`/`Exists` node with a plain column reference and threading the
+// (possibly join-extended) outer frame through the walk. Nodes it can't
+// decorrelate are left untouched.
 struct CorrelatedRewriter<'a> {
     ctx: &'a mut SQLContext,
     lf: LazyFrame,
@@ -1105,14 +1097,11 @@ impl VisitorMut for CorrelatedRewriter<'_> {
     }
 }
 
-// Replace every remaining `Subquery` node in `expr` with a placeholder
-// identifier, returning each one's original query alongside the name that
-// stands in for it. Used for a HAVING expression after correlated subqueries
-// have already been lowered by `decorrelate_expr`: whatever's left is
-// necessarily uncorrelated, and lifting it out of direct comparison position
-// (e.g. `SUM(v) > (SELECT ...)`) avoids the "use IN instead" comparison
-// guard, which only fires when a `Subquery` is a direct operand of a
-// `BinaryOp` - a standalone parse of the lifted query doesn't trigger it.
+// Replace every `Subquery` node in `expr` with a placeholder identifier,
+// returning each one's original query alongside the name that stands in for
+// it. Lifting a subquery out of direct comparison position (e.g.
+// `SUM(v) > (SELECT ...)`) avoids the "use IN instead" comparison guard,
+// which only fires on a `Subquery` that's a direct operand of a `BinaryOp`.
 pub(crate) fn lift_uncorrelated_subqueries(expr: &mut SQLExpr) -> Vec<(PlSmallStr, Query)> {
     struct Lifter {
         out: Vec<(PlSmallStr, Query)>,
