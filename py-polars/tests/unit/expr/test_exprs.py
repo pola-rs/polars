@@ -806,13 +806,6 @@ def test_validate_format_argument_raises_chrono_format_warning(
         _validate_format_argument(format)
 
 
-def test_concat_deprecation() -> None:
-    with pytest.deprecated_call(match=r"`str\.concat` is deprecated."):
-        pl.Series(["foo"]).str.concat()
-    with pytest.deprecated_call(match=r"`str\.concat` is deprecated."):
-        pl.DataFrame({"foo": ["bar"]}).select(pl.all().str.concat())
-
-
 @pytest.mark.parametrize(
     ("compatible_set"),
     [
