@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ops::Deref;
 use std::sync::RwLock;
 
@@ -1325,10 +1326,16 @@ impl SQLContext {
         // Parse named windows first, as they may be referenced in the SELECT clause
         self.register_named_windows(&select_stmt.named_window)?;
 
-        // Owned from here on: correlated-subquery lowering rewrites the raw
-        // SQL of the SELECT list / WHERE / HAVING in place, before they're
-        // parsed into Polars expressions.
-        let mut select_stmt = select_stmt.clone();
+        // Correlated-subquery lowering rewrites the raw SQL of the SELECT
+        // list / WHERE / HAVING in place, before they're parsed into Polars
+        // expressions, so it needs an owned, mutable statement; skip the
+        // (non-trivial: sqlparser's AST isn't `Arc`-shared) clone for the
+        // common case of a statement with no subquery anywhere in it.
+        let mut select_stmt: Cow<'_, Select> = if select_stmt_has_subquery(select_stmt) {
+            Cow::Owned(select_stmt.clone())
+        } else {
+            Cow::Borrowed(select_stmt)
+        };
         let mut corr_cache: CorrelationCache = PlHashMap::new();
 
         // Get `FROM` table/data
@@ -1421,12 +1428,16 @@ impl SQLContext {
             PlHashSet::new()
         };
 
-        for item in &mut select_stmt.projection {
-            let raw_expr = match item {
-                SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => Some(e),
-                _ => None,
-            };
-            if let Some(e) = raw_expr {
+        if select_stmt
+            .projection
+            .iter()
+            .filter_map(projection_item_expr)
+            .any(expr_contains_subquery)
+        {
+            for item in &mut select_stmt.to_mut().projection {
+                let Some(e) = projection_item_expr_mut(item) else {
+                    continue;
+                };
                 if expr_contains_subquery(e) {
                     let (new_lf, rewritten) = self.decorrelate_expr(lf, &schema, e, &mut corr_cache)?;
                     lf = new_lf;
@@ -1574,17 +1585,10 @@ impl SQLContext {
         // like any other aggregate, rather than tripping the "should
         // participate in GROUP BY" validity check below.
         if !group_by_keys.is_empty() {
-            for p in &mut projections {
-                *p = p.clone().map_expr(|e| match &e {
-                    Expr::Column(name)
-                        if name.starts_with(CORRELATED_COL_PREFIX)
-                            || subquery_names.contains(name) =>
-                    {
-                        e.first()
-                    },
-                    _ => e,
-                });
-            }
+            projections = projections
+                .into_iter()
+                .map(|p| p.map_expr(|e| wrap_broadcast_column_first(e, &subquery_names)))
+                .collect();
         }
 
         lf = if group_by_keys.is_empty() {
@@ -1700,8 +1704,6 @@ impl SQLContext {
                                 "group_by keys contained duplicate output name '{duplicate_name}'"
                             )
                         })?;
-                    let key_names: Vec<PlSmallStr> =
-                        group_by_keys_schema.iter_names().cloned().collect();
                     let key_lf = lf
                         .clone()
                         .select(group_by_keys.clone())
@@ -1724,28 +1726,33 @@ impl SQLContext {
                                 .alias(name))
                         })
                         .collect::<PolarsResult<Vec<Expr>>>()?;
-                    let having_subquery_names;
-                    (new_key_lf, having_subquery_names) = self.process_subqueries(new_key_lf, {
+                    (new_key_lf, _) = self.process_subqueries(new_key_lf, {
                         let mut all: Vec<&mut Expr> = lifted_exprs.iter_mut().collect();
                         all.push(&mut having_expr);
                         all
                     })?;
                     // `process_subqueries` names each resolved column
                     // internally; materialise it under the placeholder name
-                    // `rewritten_having` actually references, then drop the
-                    // internal name so it doesn't leak into a wildcard SELECT
-                    // once joined back onto `lf` below.
+                    // `rewritten_having` actually references. Unlike the WHERE
+                    // path, no explicit drop of the internal name is needed:
+                    // `process_group_by`'s `group_by(...).agg(...)` below only
+                    // outputs the group keys and `aggregation_projection`, so
+                    // any other column present on `lf` at that point (this
+                    // one included) is excluded automatically.
                     if !lifted_exprs.is_empty() {
-                        new_key_lf = new_key_lf.with_columns(lifted_exprs).drop(Selector::ByName {
-                            names: having_subquery_names.into_iter().collect(),
-                            strict: true,
-                        });
+                        new_key_lf = new_key_lf.with_columns(lifted_exprs);
                     }
                     lf = lf
                         .join_builder()
                         .with(new_key_lf)
                         .left_on(group_by_keys.clone())
-                        .right_on(key_names.into_iter().map(col).collect::<Vec<_>>())
+                        .right_on(
+                            group_by_keys_schema
+                                .iter_names()
+                                .cloned()
+                                .map(col)
+                                .collect::<Vec<_>>(),
+                        )
                         .how(JoinType::Left)
                         .coalesce(JoinCoalesce::CoalesceColumns)
                         .finish();
@@ -1756,10 +1763,8 @@ impl SQLContext {
                     // constant per group) columns; `.first()` them so the
                     // group_by/having validity check sees a reducing
                     // aggregate rather than a bare non-key column reference.
-                    let having_expr = having_expr.map_expr(|e| match &e {
-                        Expr::Column(name) if name.starts_with(CORRELATED_COL_PREFIX) => e.first(),
-                        _ => e,
-                    });
+                    let having_expr =
+                        having_expr.map_expr(|e| wrap_broadcast_column_first(e, &PlHashSet::new()));
                     Some(having_expr)
                 },
                 Some(having_sql) => Some(parse_sql_expr(having_sql, self, Some(&schema))?),
@@ -3214,6 +3219,59 @@ fn process_join_on(
         _ => polars_bail!(
             SQLInterface: "unsupported join constraint expression: {:?}", sql_expr
         ),
+    }
+}
+
+/// The plain expression carried by a SELECT-list item, if any (wildcards and
+/// multi-alias items don't have one).
+fn projection_item_expr(item: &SelectItem) -> Option<&SQLExpr> {
+    match item {
+        SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => Some(e),
+        _ => None,
+    }
+}
+
+/// Mutable counterpart of [`projection_item_expr`].
+fn projection_item_expr_mut(item: &mut SelectItem) -> Option<&mut SQLExpr> {
+    match item {
+        SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => Some(e),
+        _ => None,
+    }
+}
+
+/// Whether any clause of `select_stmt` (SELECT list, WHERE, HAVING) contains
+/// a subquery, i.e. whether `execute_select` needs an owned statement to
+/// lower correlated subqueries into.
+fn select_stmt_has_subquery(select_stmt: &Select) -> bool {
+    select_stmt
+        .selection
+        .as_ref()
+        .is_some_and(expr_contains_subquery)
+        || select_stmt
+            .projection
+            .iter()
+            .filter_map(projection_item_expr)
+            .any(expr_contains_subquery)
+        || select_stmt
+            .having
+            .as_ref()
+            .is_some_and(expr_contains_subquery)
+}
+
+/// `.first()`-wrap a bare reference to a decorrelated/broadcast subquery
+/// result column (recognised by the `CORRELATED_COL_PREFIX` naming
+/// convention, or by name in `extra_names`) so it reduces the group like any
+/// other aggregate, instead of tripping the "should participate in GROUP BY"
+/// validity check below. Shared by the SELECT-list and HAVING decorrelation
+/// call sites.
+fn wrap_broadcast_column_first(e: Expr, extra_names: &PlHashSet<PlSmallStr>) -> Expr {
+    match &e {
+        Expr::Column(name)
+            if name.starts_with(CORRELATED_COL_PREFIX) || extra_names.contains(name) =>
+        {
+            e.first()
+        },
+        _ => e,
     }
 }
 

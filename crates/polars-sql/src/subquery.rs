@@ -476,7 +476,6 @@ impl SQLContext {
         }
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
-        let idx_name = format_pl_smallstr!("{prefix}idx");
         let result_name = format_pl_smallstr!("{prefix}res");
 
         let inner_renamed = rename_inner(&prefix, inner_lf, local_filters, &inner_schema, ctx);
@@ -488,25 +487,13 @@ impl SQLContext {
         });
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
 
-        let outer_indexed = lf.with_row_index(idx_name.clone(), None);
-        let matched = outer_indexed
-            .clone()
-            .join_builder()
-            .with(inner_renamed)
-            .how(JoinType::Inner)
-            .join_where(join_preds);
-        let grouped = matched
-            .group_by([col(idx_name.clone())])
-            .agg([agg_expr.alias(result_name.clone())]);
-
-        let mut joined = outer_indexed
-            .join_builder()
-            .with(grouped)
-            .left_on([col(idx_name.clone())])
-            .right_on([col(idx_name.clone())])
-            .how(JoinType::Left)
-            .coalesce(JoinCoalesce::CoalesceColumns)
-            .finish();
+        let (mut joined, idx_name) = join_back_grouped(
+            lf,
+            &prefix,
+            inner_renamed,
+            join_preds,
+            agg_expr.alias(result_name.clone()),
+        );
         if count_like {
             joined = joined.with_columns([col(result_name.clone()).fill_null(lit(0))]);
         }
@@ -560,32 +547,19 @@ impl SQLContext {
         }
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
-        let idx_name = format_pl_smallstr!("{prefix}idx");
         let flag_name = format_pl_smallstr!("{prefix}flag");
 
         let inner_renamed = rename_inner(&prefix, inner_lf, local_filters, &inner_schema, ctx);
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
 
-        let outer_indexed = lf.with_row_index(idx_name.clone(), None);
-        let matched = outer_indexed
-            .clone()
-            .join_builder()
-            .with(inner_renamed)
-            .how(JoinType::Inner)
-            .join_where(join_preds);
-        let grouped = matched
-            .group_by([col(idx_name.clone())])
-            .agg([len().alias(flag_name.clone())]);
-
-        let joined = outer_indexed
-            .join_builder()
-            .with(grouped)
-            .left_on([col(idx_name.clone())])
-            .right_on([col(idx_name.clone())])
-            .how(JoinType::Left)
-            .coalesce(JoinCoalesce::CoalesceColumns)
-            .finish()
-            .with_columns([col(flag_name.clone()).fill_null(lit(0))]);
+        let (joined, idx_name) = join_back_grouped(
+            lf,
+            &prefix,
+            inner_renamed,
+            join_preds,
+            len().alias(flag_name.clone()),
+        );
+        let joined = joined.with_columns([col(flag_name.clone()).fill_null(lit(0))]);
         let flag_expr = if negated {
             col(flag_name.clone()).eq(lit(0))
         } else {
@@ -747,23 +721,8 @@ fn correlation_key_pair(
     inner_schema: &Schema,
     outer_schema: &Schema,
 ) -> Option<(PlSmallStr, PlSmallStr)> {
-    let SQLExpr::BinaryOp {
-        left,
-        op: SQLBinaryOperator::Eq,
-        right,
-    } = conj
-    else {
-        return None;
-    };
-    let (lside, lname) =
-        classify_correlation_column(left, inner_names, inner_schema, outer_schema)?;
-    let (rside, rname) =
-        classify_correlation_column(right, inner_names, inner_schema, outer_schema)?;
-    match (lside, rside) {
-        (CorrelationSide::Outer, CorrelationSide::Inner) => Some((lname, rname)),
-        (CorrelationSide::Inner, CorrelationSide::Outer) => Some((rname, lname)),
-        _ => None,
-    }
+    let pred = scalar_correlation_predicate(conj, inner_names, inner_schema, outer_schema)?;
+    (pred.op == SQLBinaryOperator::Eq).then_some((pred.outer_col, pred.inner_col))
 }
 
 // Classify a correlation operand as an inner- or outer-query column and return
@@ -1013,6 +972,40 @@ fn rename_inner(
     inner_renamed
 }
 
+// Row-index `lf`, inner-join it against `inner_renamed` via `join_where`
+// (so inequality correlation works, not just equality), aggregate per outer
+// row with `agg_expr` (already aliased to its output name), then left-join
+// the aggregate back onto `lf` by row index. Shared by the scalar-aggregate
+// and `EXISTS` decorrelation paths, which differ only in what they aggregate
+// and how they post-process the (possibly-unmatched, hence nullable) result;
+// the caller drops the returned row-index column once it's done with it.
+fn join_back_grouped(
+    lf: LazyFrame,
+    prefix: &str,
+    inner_renamed: LazyFrame,
+    join_preds: Vec<Expr>,
+    agg_expr: Expr,
+) -> (LazyFrame, PlSmallStr) {
+    let idx_name = format_pl_smallstr!("{prefix}idx");
+    let outer_indexed = lf.with_row_index(idx_name.clone(), None);
+    let matched = outer_indexed
+        .clone()
+        .join_builder()
+        .with(inner_renamed)
+        .how(JoinType::Inner)
+        .join_where(join_preds);
+    let grouped = matched.group_by([col(idx_name.clone())]).agg([agg_expr]);
+    let joined = outer_indexed
+        .join_builder()
+        .with(grouped)
+        .left_on([col(idx_name.clone())])
+        .right_on([col(idx_name.clone())])
+        .how(JoinType::Left)
+        .coalesce(JoinCoalesce::CoalesceColumns)
+        .finish();
+    (joined, idx_name)
+}
+
 // The root of a scalar-aggregate expression, unwrapping alias wrappers, to
 // tell `COUNT`-shaped aggregates (which must yield 0 over no matches) apart
 // from every other aggregate (which must yield NULL).
@@ -1049,6 +1042,36 @@ struct CorrelatedRewriter<'a> {
     cache: &'a mut CorrelationCache,
 }
 
+impl CorrelatedRewriter<'_> {
+    // Shared "compute the decorrelated result, cache it, and substitute it
+    // into the AST" tail for a cache miss, used by both the `Subquery` and
+    // `Exists` arms of `pre_visit_expr` below (each does its own cache
+    // lookup first: cheap, just the subquery's `Display` text, and cloning
+    // nothing unless it's actually a miss).
+    fn substitute_on_miss(
+        &mut self,
+        expr: &mut SQLExpr,
+        key: (CorrKind, String),
+        try_decorrelate: impl FnOnce(
+            &mut SQLContext,
+            LazyFrame,
+            &Schema,
+        ) -> PolarsResult<Option<(LazyFrame, PlSmallStr)>>,
+    ) -> ControlFlow<PolarsError> {
+        let outer_lf = self.lf.clone();
+        match try_decorrelate(self.ctx, outer_lf, self.outer_schema) {
+            Ok(Some((new_lf, name))) => {
+                self.lf = new_lf;
+                self.cache.insert(key, name.clone());
+                *expr = SQLExpr::Identifier(Ident::new(name.as_str()));
+                ControlFlow::Continue(())
+            },
+            Ok(None) => ControlFlow::Continue(()),
+            Err(e) => ControlFlow::Break(e),
+        }
+    }
+}
+
 impl VisitorMut for CorrelatedRewriter<'_> {
     type Break = PolarsError;
 
@@ -1060,48 +1083,25 @@ impl VisitorMut for CorrelatedRewriter<'_> {
                     *expr = SQLExpr::Identifier(Ident::new(name.as_str()));
                     return ControlFlow::Continue(());
                 }
-                let outer_lf = self.lf.clone();
-                let outer_schema = self.outer_schema;
-                match self
-                    .ctx
-                    .try_decorrelate_scalar_subquery(outer_lf, outer_schema, sq.as_ref())
-                {
-                    Ok(Some((new_lf, name))) => {
-                        self.lf = new_lf;
-                        self.cache.insert(key, name.clone());
-                        *expr = SQLExpr::Identifier(Ident::new(name.as_str()));
-                    },
-                    Ok(None) => {},
-                    Err(e) => return ControlFlow::Break(e),
-                }
+                let sq = sq.clone();
+                self.substitute_on_miss(expr, key, |ctx, lf, schema| {
+                    ctx.try_decorrelate_scalar_subquery(lf, schema, &sq)
+                })
             },
             SQLExpr::Exists { subquery, negated } => {
-                let key = (CorrKind::Exists { negated: *negated }, subquery.to_string());
+                let negated = *negated;
+                let key = (CorrKind::Exists { negated }, subquery.to_string());
                 if let Some(name) = self.cache.get(&key).cloned() {
                     *expr = SQLExpr::Identifier(Ident::new(name.as_str()));
                     return ControlFlow::Continue(());
                 }
-                let outer_lf = self.lf.clone();
-                let outer_schema = self.outer_schema;
-                let negated = *negated;
-                match self.ctx.try_decorrelate_exists_subquery(
-                    outer_lf,
-                    outer_schema,
-                    subquery.as_ref(),
-                    negated,
-                ) {
-                    Ok(Some((new_lf, name))) => {
-                        self.lf = new_lf;
-                        self.cache.insert(key, name.clone());
-                        *expr = SQLExpr::Identifier(Ident::new(name.as_str()));
-                    },
-                    Ok(None) => {},
-                    Err(e) => return ControlFlow::Break(e),
-                }
+                let subquery = subquery.clone();
+                self.substitute_on_miss(expr, key, |ctx, lf, schema| {
+                    ctx.try_decorrelate_exists_subquery(lf, schema, &subquery, negated)
+                })
             },
-            _ => {},
+            _ => ControlFlow::Continue(()),
         }
-        ControlFlow::Continue(())
     }
 }
 
