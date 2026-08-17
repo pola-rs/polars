@@ -9781,16 +9781,16 @@ class Series(metaclass=_Meta):
 
     if not TYPE_CHECKING:
 
-        def __getattr__(cls, name: str) -> Any:
+        def __getattr__(self, name: str) -> Any:
             raise_for_removed_attributes(
-                cls,
+                self,
                 name,
                 {
                     "has_validity": "use `has_nulls` instead to check for the presence of null values."
                 },
                 version="2.0",
             )
-            return getattr_fallback(cls, super(), name)
+            return getattr_fallback(self, super(), name)
 
 
 def _resolve_temporal_dtype(
