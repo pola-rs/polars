@@ -5,16 +5,22 @@ from decimal import Decimal as D
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, overload
 
+import polars._reexport as pl
 from polars import functions as F
+from polars._dependencies import _check_for_numpy
+from polars._dependencies import numpy as np
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import qualified_type_name
-from polars._utils.wrap import wrap_expr
+from polars._utils.wrap import wrap_expr, wrap_s
+from polars.datatype_expr import DataTypeExpr
 from polars.datatypes import (
     Array,
+    BaseExtension,
     Boolean,
     Decimal,
     Float64,
     List,
+    Object,
     Utf8,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
@@ -137,6 +143,10 @@ def repeat(
             3
     ]
     """
+    if isinstance(n, int) and eager and _can_skip_expr_engine(value, n, dtype):
+        value_pyexpr = parse_into_expression(value, str_as_lit=True, dtype=dtype)
+        return wrap_s(plr.eager_repeat_fast(value_pyexpr, n, dtype))
+
     if isinstance(n, int):
         n = F.lit(n)
     if not hasattr(n, "_pyexpr"):
@@ -147,6 +157,42 @@ def repeat(
     if eager:
         return F.select(expr).to_series()
     return expr
+
+
+def _can_skip_expr_engine(
+    value: IntoExpr | None,
+    n: int,
+    dtype: PolarsDataType | None = None,
+) -> bool:
+    """Whether eagerly `repeat` may bypass the query engine for the given arguments.
+
+    In all `False` cases the pl.lit() constructor does not return a single
+    literal Expression.
+    """
+    if isinstance(n, bool) or n < 0:
+        return False
+
+    if isinstance(value, (pl.Expr, pl.Series)):
+        return False
+
+    if _check_for_numpy(value) and (
+        isinstance(value, np.ndarray)
+        or (
+            isinstance(value, np.generic)
+            and isinstance(value.item(), int)
+            and value.dtype.name.startswith(("datetime64[", "timedelta64["))
+        )
+    ):
+        return False
+
+    return not (
+        dtype is not None
+        and (
+            isinstance(dtype, (BaseExtension, DataTypeExpr))
+            or (isinstance(dtype, type) and issubclass(dtype, BaseExtension))
+            or dtype == Object
+        )
+    )
 
 
 @overload

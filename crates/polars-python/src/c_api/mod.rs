@@ -154,6 +154,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_df_horizontal))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::eager_repeat_fast))
+        .unwrap();
 
     // Functions - range
     m.add_wrapped(wrap_pyfunction!(functions::int_range))
