@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 )
 def test_removed_methods(name: str, match: str) -> None:
     with pytest.raises(AttributeRemovedError, match=re.escape(match)):
-        getattr(pl.DataFrame().group_by_dynamic("a"), name)
+        getattr(pl.DataFrame().group_by_dynamic("a", every="1i"), name)
 
 
 @pytest.mark.parametrize(

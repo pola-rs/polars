@@ -5,12 +5,10 @@ from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import deprecated
 from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.parse.expr import _parse_inputs_as_iterable
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable, Iterable, Iterator
     from datetime import timedelta
 
@@ -24,11 +22,6 @@ if TYPE_CHECKING:
         StartBy,
     )
     from polars.lazyframe.group_by import LazyGroupBy
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 class GroupByIter:

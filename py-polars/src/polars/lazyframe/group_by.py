@@ -3,23 +3,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
-from polars._utils.deprecation import deprecated
 from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_df, wrap_ldf
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Callable, Iterable
 
     from polars import DataFrame, LazyFrame
     from polars._plr import PyLazyGroupBy
     from polars._typing import IntoExpr, QuantileMethod, SchemaDict
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 class LazyGroupBy:
