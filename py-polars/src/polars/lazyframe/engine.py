@@ -904,10 +904,6 @@ class GPUEngine(_LocalEngine):
     raise_on_fail : bool, default False
         If True, do not fall back to the Polars CPU engine if the GPU
         engine cannot execute the query, but instead raise an error.
-    monitoring : bool, default None
-        Whether queries run by this engine are monitored. Overrides
-        :meth:`Config.enable_monitoring`, which `None` follows.
-        Requires the `polars-cloud` package.
 
     """
 
@@ -931,10 +927,15 @@ class GPUEngine(_LocalEngine):
         device: int | None = None,
         memory_resource: Any | None = None,
         raise_on_fail: bool = False,
-        monitoring: bool | None = None,
+        monitoring: bool = False,
         **kwargs: Any,
     ) -> None:
-        super().__init__(monitoring=monitoring)
+        # We do want a named param for `monitoring`, because otherwise it will silently end up in `kwargs`
+        if monitoring:
+            msg = "query monitoring is not supported by the GPU engine"
+            raise NotImplementedError(msg)
+        super().__init__(monitoring=False)
+
         self.device = device
         self.memory_resource = memory_resource
         # Avoids need for changes in cudf-polars

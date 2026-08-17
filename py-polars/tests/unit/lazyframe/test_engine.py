@@ -176,6 +176,7 @@ def test_gpu_engine_construction_unchanged() -> None:
     engine = pl.GPUEngine(raise_on_fail=True)
     assert engine.config == {"raise_on_fail": True}
     assert engine.name == "gpu"
+    assert engine.monitoring is False
 
     engine = pl.GPUEngine(monitoring=False)
     assert engine.config == {"raise_on_fail": False}
