@@ -31,7 +31,6 @@ from polars._utils.various import (
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_df, wrap_s
-from polars._warnings import issue_warning
 from polars.datatypes import N_INFER_DEFAULT, Categorical, String
 from polars.exceptions import NoDataError
 
@@ -49,7 +48,6 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
     )
-    from polars.interchange.protocol import SupportsInterchange
 
 
 def from_dict(
@@ -1108,7 +1106,7 @@ def _from_series_repr(m: re.Match[str]) -> Series:
 
 
 def from_dataframe(
-    df: SupportsInterchange | ArrowArrayExportable | ArrowStreamExportable,
+    df: ArrowArrayExportable | ArrowStreamExportable,
     *,
     allow_copy: bool | None = None,
     rechunk: bool = True,
@@ -1167,18 +1165,9 @@ def from_dataframe(
         )
     else:
         allow_copy = True
-    if is_pycapsule(df):
-        try:
-            return pycapsule_to_frame(df, rechunk=rechunk)
-        except Exception as exc:
-            issue_warning(
-                f"Failed to convert dataframe using PyCapsule Interface with exception: {exc!r}.\n"
-                "Falling back to Dataframe Interchange Protocol, which is known to be less robust.",
-                UserWarning,
-            )
-    from polars.interchange.from_dataframe import from_dataframe
 
-    result = from_dataframe(df, allow_copy=allow_copy)  # type: ignore[arg-type]
-    if rechunk:
-        return result.rechunk()
-    return result
+    if not is_pycapsule(df):
+        msg = f"expected object supporting the PyCapsule Interface, got {qualified_type_name(df)!r}"
+        raise TypeError(msg)
+
+    return pycapsule_to_frame(df, rechunk=rechunk)

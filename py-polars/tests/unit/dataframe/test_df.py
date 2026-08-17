@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 import typing
 from collections import OrderedDict
@@ -22,6 +23,7 @@ from polars._plr import PySeries
 from polars._utils.construction import iterable_to_pydf
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import (
+    AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
     DuplicateError,
@@ -56,6 +58,29 @@ class MappingObject(Mapping[str, Any]):  # noqa: D101
 
     def __len__(self) -> int:
         return len(self._data)
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        (
+            "__dataframe__",
+            "the dataframe interchange protocol is not supported anymore. Consider using `to_arrow` or `to_pandas` instead.",
+        ),
+        ("approx_n_unique", "use `select(pl.all().approx_n_unique())` instead."),
+        (
+            "melt",
+            "use `DataFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+        ),
+        (
+            "with_row_count",
+            "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
+        ),
+    ],
+)
+def test_removed_methods(name: str, match: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(pl.DataFrame(), name)
 
 
 def test_version() -> None:
@@ -3186,16 +3211,6 @@ def test_flags() -> None:
         "a": {"SORTED_ASC": True, "SORTED_DESC": False},
         "b": {"SORTED_ASC": False, "SORTED_DESC": False},
     }
-
-
-def test_interchange() -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
-    dfi = df.__dataframe__()
-
-    # Testing some random properties to make sure conversion happened correctly
-    assert dfi.num_rows() == 2
-    assert dfi.get_column(0).dtype[1] == 64
-    assert dfi.get_column_by_name("c").get_buffers()["data"][0].bufsize == 6
 
 
 def test_from_dicts_undeclared_column_dtype() -> None:
