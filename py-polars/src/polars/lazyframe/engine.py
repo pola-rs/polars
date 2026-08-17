@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import os
 from abc import ABC, abstractmethod
 from functools import partial
 from pathlib import Path
@@ -62,19 +61,6 @@ def _to_sink_target(
     else:
         msg = f"`path` argument has invalid type {qualified_type_name(path)!r}, and cannot be turned into a sink target"
         raise TypeError(msg)
-
-
-def _with_monitoring(optimizations: QueryOptFlags) -> QueryOptFlags:
-    """Register the query observer, and flag `optimizations` accordingly."""
-    monitor = os.environ.get("POLARS_QUERY_MONITORING") == "1"
-    if monitor:
-        import polars._plr as plr
-
-        plr.set_query_monitoring(True)
-
-    optimizations = optimizations.__copy__()
-    optimizations._pyoptflags.query_monitoring = monitor
-    return optimizations
 
 
 def _apply_retries_deprecation(
@@ -346,10 +332,43 @@ class _LocalEngine(Engine):
 
     _name: ClassVar[str]
 
+    # Subclasses that do not call `super().__init__()` still see the default value.
+    monitoring: bool | None = None
+    """Whether queries are monitored (``None`` uses the configured default)."""
+
+    def __init__(self, *, monitoring: bool | None = None) -> None:
+        if monitoring:
+            from polars._utils.monitoring import activate_monitoring
+
+            activate_monitoring()
+        self.monitoring = monitoring
+
+    def __repr__(self) -> str:
+        args = "" if self.monitoring is None else f"monitoring={self.monitoring!r}"
+        return f"{type(self).__name__}({args})"
+
     @property
     def name(self) -> str:
         """Name of the engine."""
         return self._name
+
+    def _with_monitoring(self, optimizations: QueryOptFlags) -> QueryOptFlags:
+        """Register the query observer when enabled and update `optimizations`."""
+        from polars._utils.monitoring import monitoring_enabled_globally
+
+        monitor = (
+            monitoring_enabled_globally()
+            if self.monitoring is None
+            else self.monitoring
+        )
+        if monitor:
+            import polars._plr as plr
+
+            plr.set_query_monitoring(True)
+
+        optimizations = optimizations.__copy__()
+        optimizations._pyoptflags.query_monitoring = monitor
+        return optimizations
 
     def execute(self, lf: LazyFrame, *, optimizations: QueryOptFlags) -> QueryResult:
         df = self.collect(lf, optimizations=optimizations)
@@ -404,7 +423,7 @@ class _LocalEngine(Engine):
         callback = self._post_opt_callback(
             background=background, eager=optimizations._pyoptflags.eager
         )
-        optimizations = _with_monitoring(optimizations)
+        optimizations = self._with_monitoring(optimizations)
 
         ldf = lf._ldf.with_optimizations(optimizations._pyoptflags)
         if background:
@@ -425,6 +444,7 @@ class _LocalEngine(Engine):
         if self.name == "streaming":
             issue_unstable_warning("streaming mode is considered unstable.")
 
+        optimizations = self._with_monitoring(optimizations)
         ldf = lf._ldf.with_optimizations(optimizations._pyoptflags)
         result: AsyncResult[DataFrame] = (
             _GeventDataFrameResult() if gevent else _AioDataFrameResult()
@@ -441,6 +461,7 @@ class _LocalEngine(Engine):
         chunk_size: int | None = None,
         lazy: bool = False,
     ) -> Iterator[DataFrame]:
+        optimizations = self._with_monitoring(optimizations)
         ldf = lf._ldf.with_optimizations(optimizations._pyoptflags)
         return _CollectBatches(
             ldf.collect_batches(
@@ -456,6 +477,7 @@ class _LocalEngine(Engine):
     ) -> list[DataFrame]:
         import polars._plr as plr
 
+        optimizations = self._with_monitoring(optimizations)
         out = plr.collect_all(
             [lf._ldf for lf in lfs], self.name, optimizations._pyoptflags
         )
@@ -470,6 +492,7 @@ class _LocalEngine(Engine):
     ) -> AsyncResult[list[DataFrame]]:
         import polars._plr as plr
 
+        optimizations = self._with_monitoring(optimizations)
         result: AsyncResult[list[DataFrame]] = (
             _GeventDataFrameResult() if gevent else _AioDataFrameResult()
         )
@@ -823,13 +846,37 @@ class _AutoEngine(_LocalEngine):
 
 
 class InMemoryEngine(_LocalEngine):
-    """The in-memory engine."""
+    """
+    The in-memory engine.
+
+    Parameters
+    ----------
+    monitoring : bool, default None
+        Whether to monitor queries run by this engine. ``None`` uses the setting from
+        :meth:`Config.enable_monitoring`; ``True`` or ``False`` overrides it. Setting
+        this to ``True`` requires the ``polars-cloud`` package.
+    """
 
     _name = "in-memory"
 
 
 class StreamingEngine(_LocalEngine):
-    """The streaming engine."""
+    """
+    The streaming engine.
+
+    Parameters
+    ----------
+    monitoring : bool, default None
+        Whether to monitor queries run by this engine. ``None`` uses the setting from
+        :meth:`Config.enable_monitoring`; ``True`` or ``False`` overrides it. Setting
+        this to ``True`` requires the ``polars-cloud`` package.
+
+    Examples
+    --------
+    Monitor a single query, regardless of the configured default:
+
+    >>> lf.collect(engine=pl.StreamingEngine(monitoring=True))  # doctest: +SKIP
+    """
 
     _name = "streaming"
 
@@ -880,8 +927,16 @@ class GPUEngine(_LocalEngine):
         device: int | None = None,
         memory_resource: Any | None = None,
         raise_on_fail: bool = False,
+        monitoring: bool = False,
         **kwargs: Any,
     ) -> None:
+        # We do want a named param for `monitoring`, because otherwise it will silently
+        # end up in `kwargs`
+        if monitoring:
+            msg = "query monitoring is not supported by the GPU engine"
+            raise NotImplementedError(msg)
+        super().__init__(monitoring=False)
+
         self.device = device
         self.memory_resource = memory_resource
         # Avoids need for changes in cudf-polars
