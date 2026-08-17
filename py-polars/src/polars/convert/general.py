@@ -1114,10 +1114,10 @@ def from_dataframe(
     """
     Build a Polars DataFrame from any dataframe supporting the PyCapsule Interface.
 
-    .. versionchanged:: 1.23.0
+    .. versionchanged:: 2.0
 
-       `from_dataframe` uses the PyCapsule Interface instead of the Dataframe
-       Interchange Protocol for conversion, only using the latter as a fallback.
+        `from_dataframe` used to fall back to the Interchange Protocol, but this
+        functionality has been removed.
 
     Parameters
     ----------
@@ -1136,10 +1136,8 @@ def from_dataframe(
     -----
     - Details on the PyCapsule Interface:
       https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html.
-    - Details on the Python dataframe interchange protocol:
-      https://data-apis.org/dataframe-protocol/latest/index.html.
       Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is
-      a more efficient method of conversion.
+      a more efficient method of conversion and is recommended when possible.
 
     Examples
     --------

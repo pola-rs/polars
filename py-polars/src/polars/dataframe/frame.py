@@ -125,7 +125,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import (
         Callable,
         Collection,
