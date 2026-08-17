@@ -1543,8 +1543,11 @@ def test_arrow_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
 
     original_array = pa.chunked_array([[1, 2, 3]], type=pa.int64())
     pyseries = arrow_to_pyseries("", original_array)
+
+    # Exporting back to Arrow is zero-copy.
+    result_array = pl.Series._from_pyseries(pyseries).to_arrow()
     assert (
-        pyseries.get_chunks()[0]._get_buffer_info()[0]
+        result_array.buffers()[1].address
         == original_array.chunks[0].buffers()[1].address
     )
 
