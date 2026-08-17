@@ -1650,9 +1650,6 @@ class Config(contextlib.ContextDecorator):
         also sets the engine affinity to ``"streaming"``. Disabling it does not
         restore the previous engine affinity.
 
-        Engines whose ``monitoring`` option is ``None`` use this setting. An explicit
-        value of ``True`` or ``False`` on an engine overrides it.
-
         .. engine-support:: in-memory, streaming
 
         Parameters

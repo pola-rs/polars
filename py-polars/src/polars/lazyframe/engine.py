@@ -930,7 +930,8 @@ class GPUEngine(_LocalEngine):
         monitoring: bool = False,
         **kwargs: Any,
     ) -> None:
-        # We do want a named param for `monitoring`, because otherwise it will silently end up in `kwargs`
+        # We do want a named param for `monitoring`, because otherwise it will silently
+        # end up in `kwargs`
         if monitoring:
             msg = "query monitoring is not supported by the GPU engine"
             raise NotImplementedError(msg)
