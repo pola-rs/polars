@@ -9614,10 +9614,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 self,
                 name,
                 {
+                    "approx_n_unique": "use `select(pl.all().approx_n_unique())` instead.",
                     "fetch": "use `collect` instead, in conjunction with a call to `head`.",
                     "melt": "use `LazyFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+                    "profile": "It was designed for the in-memory engine and would give"
+                    "misleading per-node timings under the streaming engine (now the default).",
                     "with_row_count": "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
-                    "approx_n_unique": "use `select(pl.all().approx_n_unique())` instead.",
                 },
                 version="2.0",
             )
