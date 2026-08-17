@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import date, datetime, time, tzinfo
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -837,6 +838,8 @@ def test_join_nulls_argument_removed() -> None:
     df = pl.DataFrame({"a": [1, None]})
     with pytest.raises(
         ArgumentRemovedError,
-        match=r"the argument `join_nulls` for `DataFrame.join` was deprecated in version 1.24 and has been removed in 2.0. It was renamed to `nulls_equal`",
+        match=re.escape(
+            "the argument 'join_nulls' for 'DataFrame.join' was deprecated in version 1.24 and has been removed in 2.0. It was renamed to 'nulls_equal'"
+        ),
     ):
         df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]

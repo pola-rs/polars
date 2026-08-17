@@ -35,14 +35,15 @@ from polars._typing import (
 )
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
-    deprecate_streaming_parameter,
     deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
     getattr_fallback,
     raise_for_removed_attributes,
+    removed_parameters,
 )
 from polars._utils.parse import (
     parse_into_expression,
@@ -100,7 +101,7 @@ from polars.datatypes.group import DataTypeGroup
 from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.lazyframe.engine_config import _eager_engine, _select_engine
 from polars.lazyframe.group_by import LazyGroupBy
-from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
+from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, REMOVED_OLD_OPT_FLAGS
 from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
@@ -1228,25 +1229,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         df_summary.insert_column(0, pl.Series("statistic", metrics))
         return df_summary
 
-    @deprecate_streaming_parameter()
-    @forward_old_opt_flags()
+    @removed_parameters(
+        RemovedParameter(
+            name="streaming",
+            deprecated_in="1.25.0",
+            removed_in="2.0",
+            hint='Use `engine="streaming"` instead.',
+        ),
+        RemovedParameter(
+            name="tree_format",
+            deprecated_in="0.20.30",
+            removed_in="2.0",
+            hint='Use `format="tree"` instead.',
+        ),
+        *REMOVED_OLD_OPT_FLAGS,
+    )
     def explain(
         self,
         *,
         format: ExplainFormat = "plain",
         optimized: bool = True,
-        type_coercion: bool = True,  # noqa: ARG002
-        predicate_pushdown: bool = True,  # noqa: ARG002
-        projection_pushdown: bool = True,  # noqa: ARG002
-        simplify_expression: bool = True,  # noqa: ARG002
-        slice_pushdown: bool = True,  # noqa: ARG002
-        comm_subplan_elim: bool = True,  # noqa: ARG002
-        comm_subexpr_elim: bool = True,  # noqa: ARG002
-        cluster_with_columns: bool = True,  # noqa: ARG002
-        collapse_joins: bool = True,  # noqa: ARG002
-        streaming: bool = False,  # noqa: ARG002
         engine: EngineType = "auto",
-        tree_format: bool | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> str:
         """
@@ -1263,56 +1266,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             If this is set to `True` the subsequent
             optimization flags control which optimizations
             run.
-        type_coercion
-            Do type coercion optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        predicate_pushdown
-            Do predicate pushdown optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        projection_pushdown
-            Do projection pushdown optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        simplify_expression
-            Run simplify expressions optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        slice_pushdown
-            Slice pushdown optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        comm_subplan_elim
-            Will try to cache branching subplans that occur on self-joins or unions.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        comm_subexpr_elim
-            Common subexpressions will be cached and reused.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        cluster_with_columns
-            Combine sequential independent calls to with_columns
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        collapse_joins
-            Collapse a join and filters into a faster join
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        streaming
-            Unused parameter, kept for backward compatibility.
-
-            .. deprecated:: 1.30.0
-                Use the `engine` parameter instead.
         engine
             Select the engine used to process the query (default ``"auto"``).
             A :class:`~.Engine` instance may also be passed. Supported engine
@@ -1348,11 +1301,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        tree_format
-            Format the output as a tree.
-
-            .. deprecated:: 0.20.30
-                Use `format="tree"` instead.
 
         Examples
         --------
@@ -1367,15 +1315,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).explain()  # doctest: +SKIP
         """
-        if tree_format is not None:
-            issue_deprecation_warning(
-                "the `tree_format` parameter for `LazyFrame.explain` is deprecated"
-                " Use the `format` parameter instead.",
-                version="0.20.30",
-            )
-            if tree_format:
-                format = "tree"
-
         engine_ = _select_engine(engine)
 
         if optimized:
@@ -1434,8 +1373,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = ...,
     ) -> str | None: ...
 
-    @deprecate_streaming_parameter()
-    @forward_old_opt_flags()
+    @removed_parameters(
+        RemovedParameter(
+            name="streaming",
+            deprecated_in="1.25.0",
+            removed_in="2.0",
+            hint='Use `engine="streaming"` instead.',
+        ),
+        *REMOVED_OLD_OPT_FLAGS,
+    )
     def show_graph(
         self,
         *,
@@ -1444,19 +1390,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         output_path: str | Path | None = None,
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
-        type_coercion: bool = True,  # noqa: ARG002
-        _type_check: bool = True,
-        predicate_pushdown: bool = True,  # noqa: ARG002
-        projection_pushdown: bool = True,  # noqa: ARG002
-        simplify_expression: bool = True,  # noqa: ARG002
-        slice_pushdown: bool = True,  # noqa: ARG002
-        comm_subplan_elim: bool = True,  # noqa: ARG002
-        comm_subexpr_elim: bool = True,  # noqa: ARG002
-        cluster_with_columns: bool = True,  # noqa: ARG002
-        collapse_joins: bool = True,  # noqa: ARG002
         engine: EngineType = "auto",
         plan_stage: PlanStage = "physical",
-        _check_order: bool = True,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> str | None:
         """
@@ -1477,51 +1412,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Return dot syntax. This cannot be combined with `show` and/or `output_path`.
         figsize
             Passed to matplotlib if `show == True`.
-        type_coercion
-            Do type coercion optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        predicate_pushdown
-            Do predicate pushdown optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        projection_pushdown
-            Do projection pushdown optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        simplify_expression
-            Run simplify expressions optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        slice_pushdown
-            Slice pushdown optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        comm_subplan_elim
-            Will try to cache branching subplans that occur on self-joins or unions.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        comm_subexpr_elim
-            Common subexpressions will be cached and reused.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        cluster_with_columns
-            Combine sequential independent calls to with_columns.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        collapse_joins
-            Collapse a join and filters into a faster join.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
         engine
             Select the engine used to process the query (default ``"auto"``).
             A :class:`~.Engine` instance may also be passed. Supported engine
@@ -1833,7 +1723,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ctx.register(name=name, frame=self)
             return ctx.execute(query)
 
-    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
+    )
     def top_k(
         self,
         k: int,
@@ -1850,9 +1747,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         output to be sorted.
 
         .. engine-support:: in-memory, streaming, distributed
-
-        .. versionchanged:: 1.0.0
-            The `descending` parameter was renamed `reverse`.
 
         Parameters
         ----------
@@ -1913,7 +1807,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         reverse = extend_bool(reverse, len(by), "reverse", "by")
         return self._from_pyldf(self._ldf.top_k(k, by=by, reverse=reverse))
 
-    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
+    )
     def bottom_k(
         self,
         k: int,
@@ -1930,9 +1831,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         output to be sorted.
 
         .. engine-support:: in-memory, streaming, distributed
-
-        .. versionchanged:: 1.0.0
-            The `descending` parameter was renamed `reverse`.
 
         Parameters
         ----------
@@ -2105,16 +2003,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def collect(
         self,
         *,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         engine: EngineType = "auto",
         background: Literal[True],
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -2124,36 +2012,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def collect(
         self,
         *,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        cluster_with_columns: bool = True,
-        collapse_joins: bool = True,
-        no_optimization: bool = False,
         engine: EngineType = "auto",
         background: Literal[False] = False,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> DataFrame: ...
 
-    @deprecate_streaming_parameter()
-    @forward_old_opt_flags()
+    @removed_parameters(
+        RemovedParameter(
+            name="streaming",
+            deprecated_in="1.25.0",
+            removed_in="2.0",
+            hint='Use `engine="streaming"` instead.',
+        ),
+        *REMOVED_OLD_OPT_FLAGS,
+    )
     def collect(
         self,
         *,
-        type_coercion: bool = True,  # noqa: ARG002
-        predicate_pushdown: bool = True,  # noqa: ARG002
-        projection_pushdown: bool = True,  # noqa: ARG002
-        simplify_expression: bool = True,  # noqa: ARG002
-        slice_pushdown: bool = True,  # noqa: ARG002
-        comm_subplan_elim: bool = True,  # noqa: ARG002
-        comm_subexpr_elim: bool = True,  # noqa: ARG002
-        cluster_with_columns: bool = True,  # noqa: ARG002
-        collapse_joins: bool = True,  # noqa: ARG002
-        no_optimization: bool = False,  # noqa: ARG002
         engine: EngineType = "auto",
         background: bool = False,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -2163,60 +2038,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Materialize this `LazyFrame` into a `DataFrame`.
 
         By default, all query optimizations are enabled. Individual optimizations may
-        be disabled by setting the corresponding parameter to `False`.
+        be disabled through the `optimizations` parameter.
 
         Parameters
         ----------
-        type_coercion
-            Do type coercion optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        predicate_pushdown
-            Do predicate pushdown optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        projection_pushdown
-            Do projection pushdown optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        simplify_expression
-            Run simplify expressions optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        slice_pushdown
-            Slice pushdown optimization.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        comm_subplan_elim
-            Will try to cache branching subplans that occur on self-joins or unions.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        comm_subexpr_elim
-            Common subexpressions will be cached and reused.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        cluster_with_columns
-            Combine sequential independent calls to with_columns
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        collapse_joins
-            Collapse a join and filters into a faster join
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
-        no_optimization
-            Turn off (certain) optimizations.
-
-            .. deprecated:: 1.30.0
-                Use the `optimizations` parameters.
         engine
             Select the engine used to process the query (default ``"auto"``).
             A :class:`~.Engine` instance may also be passed. Supported engine
@@ -2372,7 +2197,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> Awaitable[DataFrame]: ...
 
-    @deprecate_streaming_parameter()
+    @removed_parameters(
+        RemovedParameter(
+            name="streaming",
+            deprecated_in="1.25.0",
+            removed_in="2.0",
+            hint='Use `engine="streaming"` instead.',
+        )
+    )
     def collect_async(
         self,
         *,
@@ -2532,7 +2364,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
@@ -2558,7 +2389,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
@@ -2569,6 +2399,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
+    )
     def sink_parquet(
         self,
         path: str | Path | IO[bytes] | PartitionBy,
@@ -2583,7 +2421,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
@@ -2668,11 +2505,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -2787,7 +2619,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             sync_on_close=sync_on_close,
             metadata=metadata,
             arrow_schema=arrow_schema,
@@ -3206,7 +3037,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
@@ -3229,7 +3059,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
@@ -3239,6 +3068,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
+    )
     def sink_ipc(
         self,
         path: str | Path | IO[bytes] | PartitionBy,
@@ -3251,7 +3088,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
@@ -3316,11 +3152,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -3419,7 +3250,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             sync_on_close=sync_on_close,
             mkdir=mkdir,
             lazy=lazy,
@@ -3455,7 +3285,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
@@ -3490,7 +3319,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
@@ -3498,6 +3326,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame: ...
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
+    )
     def sink_csv(
         self,
         path: str | Path | IO[bytes] | IO[str] | PartitionBy,
@@ -3524,7 +3360,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
@@ -3648,11 +3483,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -3754,7 +3584,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             sync_on_close=sync_on_close,
             mkdir=mkdir,
             lazy=lazy,
@@ -3774,7 +3603,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
@@ -3795,7 +3623,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
@@ -3803,6 +3630,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> LazyFrame: ...
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
+    )
     def sink_ndjson(
         self,
         path: str | Path | IO[bytes] | IO[str] | PartitionBy,
@@ -3815,7 +3650,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
@@ -3885,11 +3719,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -3977,7 +3806,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             sync_on_close=sync_on_close,
             mkdir=mkdir,
             lazy=lazy,
@@ -5040,7 +4868,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
-    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
+    @removed_parameters(
+        RenamedParameter(
+            name="by",
+            new_name="group_by",
+            deprecated_in="0.20.14",
+            removed_in="2.0",
+        )
+    )
     def rolling(
         self,
         index_column: IntoExpr,
@@ -5181,7 +5016,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lgb = self._ldf.rolling(index_column_py, period, offset, closed, pyexprs_by)
         return LazyGroupBy(lgb)
 
-    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
+    @removed_parameters(
+        RenamedParameter(
+            name="by",
+            new_name="group_by",
+            deprecated_in="0.20.14",
+            removed_in="2.0",
+        )
+    )
     def group_by_dynamic(
         self,
         index_column: IntoExpr,
@@ -5919,7 +5761,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    @deprecate_renamed_parameter("join_nulls", "nulls_equal", version="1.24")
+    @removed_parameters(
+        RenamedParameter(
+            name="join_nulls",
+            new_name="nulls_equal",
+            deprecated_in="1.24",
+            removed_in="2.0",
+        )
+    )
     def join(
         self,
         other: LazyFrame,
@@ -8413,6 +8262,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
+    @removed_parameters(
+        RemovedParameter(name="streamable", deprecated_in="1.5.0", removed_in="2.0")
+    )
     def unpivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
@@ -8420,7 +8272,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
-        streamable: bool = True,
     ) -> LazyFrame:
         """
         Unpivot a DataFrame from wide to long format.
@@ -8446,8 +8297,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Name to give to the `variable` column. Defaults to "variable"
         value_name
             Name to give to the `value` column. Defaults to "value"
-        streamable
-            deprecated
 
         Notes
         -----
@@ -8483,13 +8332,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        if not streamable:
-            issue_deprecation_warning(
-                "the `streamable` parameter for `LazyFrame.unpivot` is deprecated"
-                "This parameter has no effect",
-                version="1.5.0",
-            )
-
         selector_on = None if on is None else parse_list_into_selector(on)._pyselector
 
         selector_index: pl.Selector = (

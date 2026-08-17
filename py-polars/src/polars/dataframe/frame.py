@@ -63,9 +63,11 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
     getattr_fallback,
     raise_for_removed_attributes,
-    removed_renamed_parameter,
+    removed_parameters,
 )
 from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse import parse_into_expression
@@ -1745,8 +1747,13 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    @removed_renamed_parameter(
-        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        )
     )
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Table:
         """
@@ -3034,7 +3041,6 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int | None = ...,
     ) -> str: ...
 
     @overload
@@ -3061,9 +3067,16 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int | None = ...,
     ) -> None: ...
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
+    )
     def write_csv(
         self,
         file: str | Path | IO[str] | IO[bytes] | None = None,
@@ -3089,7 +3102,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> str | None:
         """
         Write to comma-separated values (CSV) file.
@@ -3198,11 +3210,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
 
         Examples
         --------
@@ -3260,7 +3267,6 @@ class DataFrame:
             quote_style=quote_style,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             optimizations=QueryOptFlags._eager(),
             engine=engine,
         )
@@ -3931,7 +3937,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3946,11 +3951,21 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> None: ...
 
-    @removed_renamed_parameter(
-        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        ),
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        ),
     )
     def write_ipc(
         self,
@@ -3963,7 +3978,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -4011,11 +4025,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
 
         Examples
         --------
@@ -4058,7 +4067,6 @@ class DataFrame:
                 record_batch_size=record_batch_size,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
-                retries=retries,
                 optimizations=QueryOptFlags._eager(),
                 engine="streaming",
             )
@@ -4082,8 +4090,13 @@ class DataFrame:
         compat_level: CompatLevel | None = None,
     ) -> None: ...
 
-    @removed_renamed_parameter(
-        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        )
     )
     def write_ipc_stream(
         self,
@@ -4143,6 +4156,14 @@ class DataFrame:
         self._df.write_ipc_stream(file, compression, compat_level_py)
         return file if return_bytes else None  # type: ignore[return-value]
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
+    )
     def write_parquet(
         self,
         file: str | Path | IO[bytes],
@@ -4160,7 +4181,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
         mkdir: bool = False,
@@ -4250,11 +4270,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         metadata
             A dictionary or callback to add key-values to the file-level Parquet
             metadata.
@@ -4390,7 +4405,6 @@ class DataFrame:
             data_page_size=data_page_size,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             metadata=metadata,
             arrow_schema=arrow_schema,
             engine=engine,
@@ -5746,8 +5760,13 @@ class DataFrame:
         return_type: Literal["frame", "self"],
     ) -> DataFrame: ...
 
-    @removed_renamed_parameter(
-        "return_as_string", "return_type", deprecated_in="1.35.0", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="return_as_string",
+            new_name="return_type",
+            deprecated_in="1.35.0",
+            removed_in="2.0",
+        )
     )
     def glimpse(
         self,
@@ -6290,8 +6309,13 @@ class DataFrame:
             ctx.register(name=name, frame=self)
             return ctx.execute(query)
 
-    @removed_renamed_parameter(
-        "descending", "reverse", deprecated_in="1.0.0", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
     )
     def top_k(
         self,
@@ -6377,8 +6401,13 @@ class DataFrame:
             ._collect_eager(optimizations=optimizations)
         )
 
-    @removed_renamed_parameter(
-        "descending", "reverse", deprecated_in="1.0.0", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
     )
     def bottom_k(
         self,
@@ -7282,8 +7311,10 @@ class DataFrame:
             self, *by, **named_by, maintain_order=maintain_order, predicates=None
         )
 
-    @removed_renamed_parameter(
-        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
     )
     def rolling(
         self,
@@ -7442,8 +7473,10 @@ class DataFrame:
             predicates=None,
         )
 
-    @removed_renamed_parameter(
-        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
     )
     def group_by_dynamic(
         self,
@@ -7765,8 +7798,10 @@ class DataFrame:
             predicates=None,
         )
 
-    @removed_renamed_parameter(
-        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
     )
     def upsample(
         self,
@@ -8229,8 +8264,13 @@ class DataFrame:
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    @removed_renamed_parameter(
-        "join_nulls", "nulls_equal", deprecated_in="1.24", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="join_nulls",
+            new_name="nulls_equal",
+            deprecated_in="1.24",
+            removed_in="2.0",
+        )
     )
     def join(
         self,
@@ -9609,7 +9649,11 @@ class DataFrame:
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    @removed_renamed_parameter("columns", "on", deprecated_in="1.0.0", removed_in="2.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="columns", new_name="on", deprecated_in="1.0.0", removed_in="2.0"
+        )
+    )
     def pivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
