@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict, get_args
 
 from polars._dependencies import json
 from polars._utils.deprecation import deprecated
+from polars._utils.monitoring import MONITORING_ENV_VAR, activate_monitoring
 from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
 from polars.lazyframe.engine import Engine
@@ -1648,6 +1649,9 @@ class Config(contextlib.ContextDecorator):
         sets the engine affinity to ``"streaming"``. Disabling it does not restore
         the previous engine affinity.
 
+        This setting is the default for engines that do not state a preference; an
+        engine constructed with an explicit ``monitoring`` argument overrides it.
+
         .. engine-support:: streaming
 
         Parameters
@@ -1666,22 +1670,12 @@ class Config(contextlib.ContextDecorator):
         ...     lf.collect()
         """
         if active:
-            try:
-                import polars_cloud as pc
-            except ImportError as e:
-                msg = (
-                    "query monitoring requires the `polars_cloud>=0.11.0` package, which could "
-                    "not be imported. Install it into this environment "
-                    f"(e.g. `pip install 'polars-cloud>=0.11.0'`). ({e})"
-                )
-                raise ModuleNotFoundError(msg) from e
+            activate_monitoring()
 
-            pc.authenticate()
-
-            os.environ["POLARS_QUERY_MONITORING"] = "1"
+            os.environ[MONITORING_ENV_VAR] = "1"
             cls.set_engine_affinity("streaming")
         else:
-            os.environ.pop("POLARS_QUERY_MONITORING", None)
+            os.environ.pop(MONITORING_ENV_VAR, None)
 
         return cls
 
