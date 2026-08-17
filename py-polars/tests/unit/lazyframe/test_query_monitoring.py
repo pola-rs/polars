@@ -14,6 +14,7 @@ import pytest
 
 import polars as pl
 import polars._plr as plr
+from polars._utils.monitoring import MONITORING_ENV_VAR
 from polars.lazyframe.engine import StreamingEngine
 from tests.unit.conftest import mock_module_import
 
@@ -53,7 +54,7 @@ def test_config_enable_monitoring() -> None:
 
         pl.Config.enable_monitoring()
         module.authenticate.assert_called_once()
-        assert os.environ["POLARS_QUERY_MONITORING"] == "1"
+        assert os.environ[MONITORING_ENV_VAR] == "1"
         assert os.environ["POLARS_ENGINE_AFFINITY"] == "streaming"
 
         # no engine argument: monitoring switches the affinity to streaming
@@ -63,7 +64,7 @@ def test_config_enable_monitoring() -> None:
 
         # disabling stops monitoring; the affinity is left as it is
         pl.Config.enable_monitoring(False)
-        assert "POLARS_QUERY_MONITORING" not in os.environ
+        assert MONITORING_ENV_VAR not in os.environ
         _sample_lf().collect()
 
     assert observer.on_query_started.call_count == 2
@@ -94,7 +95,7 @@ def test_config_scope_monitoring() -> None:
         assert "POLARS_ENGINE_AFFINITY" not in os.environ
 
         with pl.Config(enable_monitoring=True):
-            assert os.environ["POLARS_QUERY_MONITORING"] == "1"
+            assert os.environ[MONITORING_ENV_VAR] == "1"
             assert os.environ["POLARS_ENGINE_AFFINITY"] == "streaming"
             _sample_lf().collect()
         observer.on_query_started.assert_called_once()
@@ -102,7 +103,7 @@ def test_config_scope_monitoring() -> None:
         # leaving the scope stops monitoring
         _sample_lf().collect()
 
-        assert "POLARS_QUERY_MONITORING" not in os.environ
+        assert MONITORING_ENV_VAR not in os.environ
         assert "POLARS_ENGINE_AFFINITY" not in os.environ
 
     observer.on_query_started.assert_called_once()
@@ -138,7 +139,7 @@ def test_engine_monitoring_overrides_config_off() -> None:
 
     observer.on_query_started.assert_called_once()
     # The engine override must not modify the environment-backed Config setting.
-    assert "POLARS_QUERY_MONITORING" not in os.environ
+    assert MONITORING_ENV_VAR not in os.environ
 
 
 def test_engine_monitoring_overrides_config_on() -> None:
@@ -182,7 +183,7 @@ def test_engine_affinity_object_carries_monitoring() -> None:
         _sample_lf().collect()
 
     observer.on_query_started.assert_called_once()
-    assert "POLARS_QUERY_MONITORING" not in os.environ
+    assert MONITORING_ENV_VAR not in os.environ
 
 
 def _run_collect(lf: pl.LazyFrame, engine: StreamingEngine) -> None:
