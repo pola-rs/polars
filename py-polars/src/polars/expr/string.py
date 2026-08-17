@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
+from polars._utils.deprecation import deprecated
+from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import (
@@ -15,7 +16,7 @@ from polars._utils.various import (
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_expr
-from polars._warnings import find_stacklevel, issue_warning
+from polars._warnings import find_stacklevel
 from polars.datatypes import Date, Datetime, Int64, Time, parse_into_datatype_expr
 from polars.exceptions import ChronoFormatWarning
 
@@ -331,7 +332,6 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             msg = "`dtype` must be of type {Date, Datetime, Time}"
             raise ValueError(msg)
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     @unstable()
     def to_decimal(self, *, scale: int) -> Expr:
         """
@@ -1299,12 +1299,12 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         prefix_pyexpr = parse_into_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_starts_with(prefix_pyexpr))
 
-    def json_decode(
-        self,
-        dtype: PolarsDataType | pl.DataTypeExpr,
-        *,
-        infer_schema_length: int | None = None,
-    ) -> Expr:
+    @removed_parameters(
+        RemovedParameter(
+            name="infer_schema_length", deprecated_in="1.33.0", removed_in="2.0"
+        )
+    )
+    def json_decode(self, dtype: PolarsDataType | pl.DataTypeExpr) -> Expr:
         """
         Parse string values as JSON.
 
@@ -1312,16 +1312,14 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
 
         .. engine-support:: in-memory, streaming, distributed
 
+        .. versionchanged:: 1.33.0
+            Parameter `infer_schema_length` was deprecated and `dtype` was made
+            non-optional to ensure that the planner can determine the output datatype.
+
         Parameters
         ----------
         dtype
             The dtype to cast the extracted value to.
-        infer_schema_length
-            Deprecated and ignored.
-
-            .. versionchanged:: 1.33.0
-                Deprecate `infer_schema_length` and make `dtype` non-optional to
-                ensure that the planner can determine the output datatype.
 
         See Also
         --------
@@ -1349,12 +1347,6 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         if dtype is None:
             msg = "`Expr.str.json_decode` needs an explicitly given `dtype` otherwise Polars is not able to determine the output type. If you want to eagerly infer datatype you can use `Series.str.json_decode`."
             raise TypeError(msg)
-
-        if infer_schema_length is not None:
-            issue_warning(
-                "`Expr.str.json_decode` with `infer_schema_length` is deprecated and has no effect on execution.",
-                DeprecationWarning,
-            )
 
         dtype_expr = parse_into_datatype_expr(dtype)._pydatatype_expr
         return wrap_expr(self._pyexpr.str_json_decode(dtype_expr))
