@@ -4,13 +4,13 @@ import datetime
 import io
 import subprocess
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.io.plugins import register_io_source
+from polars.io.plugins import IOSourceScanFunction, register_io_source
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -310,3 +310,54 @@ def test_io_plugin_object_dtype_25740() -> None:
     out = lf.collect()
     assert out.schema == df.schema
     assert out.to_dict(as_series=False) == {"a": [dummy, None]}
+
+
+def _scan_fn(lf: pl.LazyFrame) -> Any:
+    """Reach the registered scan function the way an execution engine does."""
+    return lf._ldf.visit().view_current_node().options[0]
+
+
+def _source(
+    with_columns: list[str] | None,
+    predicate: pl.Expr | None,
+    n_rows: int | None,
+    batch_size: int | None,
+) -> Iterator[pl.DataFrame]:
+    yield pl.DataFrame({"a": [1, 2, 3]})
+
+
+class _CallableSource:
+    """A source that is a class instance, which is how engines define their own."""
+
+    def __call__(
+        self,
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        yield pl.DataFrame({"a": [1, 2, 3]})
+
+
+@pytest.mark.parametrize(
+    "source", [_source, _CallableSource()], ids=["function", "callable-instance"]
+)
+def test_io_plugin_exposes_io_source(source: Any) -> None:
+    lf = register_io_source(source, schema={"a": pl.Int64})
+    scan_fn = _scan_fn(lf)
+
+    assert isinstance(scan_fn, IOSourceScanFunction)
+    assert scan_fn.io_source is source
+    assert_frame_equal(lf.collect(), pl.DataFrame({"a": [1, 2, 3]}))
+
+
+def test_io_plugin_non_source_fails_protocol_check() -> None:
+    assert not isinstance(_source, IOSourceScanFunction)
+
+
+def test_io_plugin_io_source_survives_serialization() -> None:
+    lf = register_io_source(_CallableSource(), schema={"a": pl.Int64})
+    roundtripped = pl.LazyFrame.deserialize(io.BytesIO(lf.serialize()))
+
+    assert isinstance(_scan_fn(roundtripped).io_source, _CallableSource)
+    assert_frame_equal(roundtripped.collect(), pl.DataFrame({"a": [1, 2, 3]}))
