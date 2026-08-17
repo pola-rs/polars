@@ -304,12 +304,13 @@ class ExprArrayNameSpace:
         Pairs where either element is null do not contribute to the sum. If a
         non-null row has no pairs where both elements are valid, the result is zero.
 
-        Multiplication uses the common input data type. Accumulation and output
-        follow ``arr.sum`` promotion: ``Int8``, ``UInt8``, ``Int16``, and ``UInt16``
-        use an ``Int64`` accumulator; other supported types retain the common data
-        type. Integer multiplication wraps in the common input type, and accumulation
-        wraps in the output type. Cast inputs before calling ``dot`` when wider
-        multiplication is required.
+        Integer operations use wrapping arithmetic. Each pair is multiplied in the
+        common inner data type before the product is converted to the ``arr.sum``
+        accumulator type. Therefore, an ``Int64`` output does not prevent
+        multiplication from overflowing in ``Int8``, ``UInt8``, ``Int16``, or
+        ``UInt16``. Accumulation may also wrap in the output type. To avoid wrapping,
+        cast both Array inputs to a type that can represent each product and the final
+        sum before calling ``dot``.
 
         NaN and infinity follow floating-point multiplication and addition
         semantics. Floating-point results are not guaranteed to be bitwise identical
@@ -351,6 +352,28 @@ class ExprArrayNameSpace:
         │ 8.0  │
         │ 18.0 │
         └──────┘
+
+        Integer multiplication can wrap before accumulator promotion.
+
+        >>> a = pl.Series("a", [[100, 100]], dtype=pl.Array(pl.Int8, 2))
+        >>> b = pl.Series("b", [[2, 2]], dtype=pl.Array(pl.Int8, 2))
+        >>> a.arr.dot(b)
+        shape: (1,)
+        Series: 'a' [i64]
+        [
+            -112
+        ]
+
+        Cast both inputs before ``dot`` to perform multiplication and accumulation in
+        a type that can represent the result.
+
+        >>> wide = pl.Array(pl.Int64, 2)
+        >>> a.cast(wide).arr.dot(b.cast(wide))
+        shape: (1,)
+        Series: 'a' [i64]
+        [
+            400
+        ]
         """
         if isinstance(other, Sequence) and not isinstance(other, (str, bytes)):
             other = list(other)
