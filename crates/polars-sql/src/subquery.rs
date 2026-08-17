@@ -12,12 +12,12 @@ use polars_plan::prelude::AggExpr;
 use polars_plan::utils::{expr_to_leaf_column_names_iter, has_expr};
 use polars_utils::aliases::PlHashSet;
 use polars_utils::{format_pl_smallstr, unique_column_name};
+#[cfg(feature = "semi_anti_join")]
+use sqlparser::ast::Distinct;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, GroupByExpr, Ident, Query, Select,
     SelectItem, SetExpr, TableWithJoins, VisitMut, VisitorMut,
 };
-#[cfg(feature = "semi_anti_join")]
-use sqlparser::ast::Distinct;
 
 use crate::SQLContext;
 use crate::context::{FilterMode, get_table_name};
@@ -1120,12 +1120,16 @@ pub(crate) fn lift_uncorrelated_subqueries(
 
         fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
             if let SQLExpr::Subquery(sq) = expr {
-                let name = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_res", unique_column_name());
-                let parsed =
-                    match parse_sql_expr(&SQLExpr::Subquery(sq.clone()), self.ctx, Some(self.schema)) {
-                        Ok(parsed) => parsed,
-                        Err(e) => return ControlFlow::Break(e),
-                    };
+                let name =
+                    format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_res", unique_column_name());
+                let parsed = match parse_sql_expr(
+                    &SQLExpr::Subquery(sq.clone()),
+                    self.ctx,
+                    Some(self.schema),
+                ) {
+                    Ok(parsed) => parsed,
+                    Err(e) => return ControlFlow::Break(e),
+                };
                 self.out.push(parsed.alias(name.clone()));
                 *expr = SQLExpr::Identifier(Ident::new(name.as_str()));
             }

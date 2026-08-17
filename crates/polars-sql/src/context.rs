@@ -2166,8 +2166,7 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            let subquery_names;
-            (lf, subquery_names) = self.process_subqueries(lf, vec![&mut filter_expression])?;
+            (lf, _) = self.process_subqueries(lf, vec![&mut filter_expression])?;
             lf = lf.filter(filter_expression);
         }
         Ok(lf)
