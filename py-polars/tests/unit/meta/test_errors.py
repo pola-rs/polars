@@ -4,7 +4,6 @@ import io
 import re
 from datetime import date, datetime, time, tzinfo
 from decimal import Decimal
-import re
 from typing import TYPE_CHECKING, Any
 
 import numpy as np

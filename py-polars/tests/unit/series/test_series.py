@@ -2574,12 +2574,24 @@ def test_removed_classmethods() -> None:
 @pytest.mark.parametrize(
     ("name", "match"),
     [
-        (
+        pytest.param(
             "has_validity",
             "use `has_nulls` instead to check for the presence of null values.",
+            id="has_validity",
+        ),
+        pytest.param(
+            lambda s: s.dt.median, "use `Series.median` instead.", id="dt.median"
+        ),
+        pytest.param(lambda s: s.dt.mean, "use `Series.mean` instead.", id="dt.mean"),
+        pytest.param(
+            lambda s: s.str.concat, "use `Series.str.join` instead.", id="str.concat"
         ),
     ],
 )
-def test_removed_methods(name: str, match: str) -> None:
-    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
-        getattr(pl.Series(), name)
+def test_removed_methods(name: str | Callable[[]], match: str) -> None:
+    if isinstance(name, str):
+        with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+            getattr(pl.Series(), name)
+    else:
+        with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+            name(pl.Series())
