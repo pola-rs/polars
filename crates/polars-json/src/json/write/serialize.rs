@@ -11,8 +11,8 @@ use arrow::offset::Offset;
 use arrow::temporal_conversions::parse_offset_tz;
 use arrow::temporal_conversions::{
     date32_to_date, duration_ms_to_duration, duration_ns_to_duration, duration_us_to_duration,
-    format_timestamp_or_out_of_range, parse_offset, time64ns_to_time, timestamp_ms_to_datetime,
-    timestamp_ns_to_datetime, timestamp_us_to_datetime,
+    parse_offset, time64ns_to_time, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+    timestamp_to_datetime, timestamp_us_to_datetime,
 };
 use arrow::types::NativeType;
 use jiff::SignedDuration as Duration;
@@ -472,12 +472,9 @@ fn timestamp_tz_serializer<'a>(
         Ok(parsed_tz) => {
             let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
                 if let Some(x) = x {
-                    let dt_str = format_timestamp_or_out_of_range(
-                        *x,
-                        time_unit,
-                        &parsed_tz,
-                        "%Y-%m-%dT%H:%M:%S%.9f%:z",
-                    );
+                    let dt_str = timestamp_to_datetime(*x, time_unit, &parsed_tz)
+                        .strftime("%Y-%m-%dT%H:%M:%S%.9f%:z")
+                        .to_string();
                     write!(buf, "\"{dt_str}\"").unwrap();
                 } else {
                     buf.extend_from_slice(b"null")
@@ -491,12 +488,9 @@ fn timestamp_tz_serializer<'a>(
             Ok(parsed_tz) => {
                 let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
                     if let Some(x) = x {
-                        let dt_str = format_timestamp_or_out_of_range(
-                            *x,
-                            time_unit,
-                            &parsed_tz,
-                            "%Y-%m-%dT%H:%M:%S%.9f%:z",
-                        );
+                        let dt_str = timestamp_to_datetime(*x, time_unit, &parsed_tz)
+                            .strftime("%Y-%m-%dT%H:%M:%S%.9f%:z")
+                            .to_string();
                         write!(buf, "\"{dt_str}\"").unwrap();
                     } else {
                         buf.extend_from_slice(b"null")

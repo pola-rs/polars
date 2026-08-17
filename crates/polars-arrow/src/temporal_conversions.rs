@@ -263,26 +263,6 @@ pub fn epoch_nanos_to_datetime_opt(epoch_nanos: i128) -> Option<DateTime> {
         .map(|ts| TimeZone::UTC.to_datetime(ts))
 }
 
-/// Formats a timestamp in `time_unit` and `timezone` using `fmt`, degrading gracefully to the
-/// placeholder `"<out-of-range datetime>"` instead of panicking - both for a value outside
-/// [`Timestamp`]'s representable range, and for one where `fmt` itself is invalid.
-///
-/// TODO: return a `PolarsResult` instead of a placeholder string, see
-/// https://github.com/pola-rs/polars/issues/13404
-pub fn format_timestamp_or_out_of_range(
-    timestamp: i64,
-    time_unit: TimeUnit,
-    timezone: &TimeZone,
-    fmt: &str,
-) -> String {
-    timestamp_to_timestamp_opt(timestamp, time_unit)
-        .and_then(|ts| {
-            let zoned = ts.to_zoned(timezone.clone());
-            jiff::fmt::strtime::format(fmt, &zoned).ok()
-        })
-        .unwrap_or_else(|| "<out-of-range datetime>".to_string())
-}
-
 /// Calculates the scale factor between two TimeUnits. The function returns the
 /// scale that should multiply the TimeUnit "b" to have the same time scale as
 /// the TimeUnit "a".

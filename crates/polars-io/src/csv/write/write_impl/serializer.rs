@@ -825,44 +825,41 @@ pub(super) fn serializer_for<'a>(
             })?;
 
             let array = array.as_any().downcast_ref().unwrap();
-            let time_unit = *time_unit;
 
-            match _time_zone {
-                #[cfg(feature = "timezones")]
-                Some(time_zone) => {
-                    let callback = move |item, buf: &mut Vec<u8>| {
-                        // We checked the format is valid above.
-                        let dt_str = arrow::temporal_conversions::format_timestamp_or_out_of_range(
-                            item,
-                            time_unit.to_arrow(),
-                            &time_zone,
-                            _datetime_format,
-                        );
-                        let _ = write!(buf, "{dt_str}");
-                    };
-                    date_and_time_final_serializer(array, callback, options)
-                },
-                #[cfg(not(feature = "timezones"))]
-                Some(_) => panic!("activate 'timezones' feature"),
-                None => {
-                    let convert = match time_unit {
-                        TimeUnit::Nanoseconds => {
-                            arrow::temporal_conversions::timestamp_ns_to_datetime
+            macro_rules! time_unit_serializer {
+                ($convert:ident) => {
+                    match _time_zone {
+                        #[cfg(feature = "timezones")]
+                        Some(time_zone) => {
+                            let callback = move |item, buf: &mut Vec<u8>| {
+                                let item = arrow::temporal_conversions::$convert(item);
+                                let ts = jiff::tz::TimeZone::UTC
+                                    .to_timestamp(item)
+                                    .expect("datetime out-of-range");
+                                let item = ts.to_zoned(time_zone.clone());
+                                // We checked the format is valid above.
+                                let _ = write!(buf, "{}", item.strftime(_datetime_format));
+                            };
+                            date_and_time_final_serializer(array, callback, options)
                         },
-                        TimeUnit::Microseconds => {
-                            arrow::temporal_conversions::timestamp_us_to_datetime
+                        #[cfg(not(feature = "timezones"))]
+                        Some(_) => panic!("activate 'timezones' feature"),
+                        None => {
+                            let callback = move |item, buf: &mut Vec<u8>| {
+                                let item = arrow::temporal_conversions::$convert(item);
+                                // We checked the format is valid above.
+                                let _ = write!(buf, "{}", item.strftime(_datetime_format));
+                            };
+                            date_and_time_final_serializer(array, callback, options)
                         },
-                        TimeUnit::Milliseconds => {
-                            arrow::temporal_conversions::timestamp_ms_to_datetime
-                        },
-                    };
-                    let callback = move |item, buf: &mut Vec<u8>| {
-                        let item = convert(item);
-                        // We checked the format is valid above.
-                        let _ = write!(buf, "{}", item.strftime(_datetime_format));
-                    };
-                    date_and_time_final_serializer(array, callback, options)
-                },
+                    }
+                };
+            }
+
+            match time_unit {
+                TimeUnit::Nanoseconds => time_unit_serializer!(timestamp_ns_to_datetime),
+                TimeUnit::Microseconds => time_unit_serializer!(timestamp_us_to_datetime),
+                TimeUnit::Milliseconds => time_unit_serializer!(timestamp_ms_to_datetime),
             }
         },
         DataType::String => string_serializer(
