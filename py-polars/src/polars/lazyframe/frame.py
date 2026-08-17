@@ -1389,10 +1389,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         output_path: str | Path | None = None,
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
-        _type_check: bool = True,
         engine: EngineType = "auto",
         plan_stage: PlanStage = "physical",
-        _check_order: bool = True,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     ) -> str | None:
         """
