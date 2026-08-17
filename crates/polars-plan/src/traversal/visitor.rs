@@ -3,8 +3,12 @@ use std::ops::ControlFlow;
 
 use crate::traversal::edge_provider::NodeEdgesProvider;
 
+/// Controls whether a [`NodeVisitor`] visits the inputs of the current node.
 pub enum SubtreeVisit {
+    /// Visit the current node's inputs before calling [`NodeVisitor::post_visit`].
     Visit,
+    /// Skip visitor callbacks for the current node's input subtree, then call
+    /// [`NodeVisitor::post_visit`] for the current node.
     Skip,
 }
 

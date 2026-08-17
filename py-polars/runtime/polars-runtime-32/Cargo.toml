@@ -89,6 +89,7 @@ io = ["polars-python/io"]
 
 optimizations = ["polars-python/optimizations"]
 fast_alloc = ["polars-python/fast_alloc"]
+numa = ["polars-python/numa"]
 
 full_functionality = [
   "ffi_plugin",

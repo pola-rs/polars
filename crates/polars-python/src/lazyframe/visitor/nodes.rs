@@ -8,6 +8,7 @@ use polars_io::cloud::CloudOptions;
 #[cfg(feature = "asof_join")]
 use polars_ops::prelude::AsofStrategy;
 use polars_ops::prelude::JoinType;
+use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
 use polars_plan::prelude::{FileScanIR, FunctionIR, PythonPredicate, UnifiedScanArgs};
 use pyo3::IntoPyObjectExt;
@@ -139,17 +140,37 @@ impl PyFileOptions {
 
     /// One of:
     /// * None
-    /// * ("iceberg-position-delete", dict[int, list[str]])
+    /// * (
+    ///     "iceberg",
+    ///     dict[int, list[str]],  # position deletes
+    ///     dict[int, str]         # deletion vectors
+    /// )
     #[getter]
     fn deletion_files(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.deletion_files {
             None => py.None().into_any(),
-            Some(DeletionFilesList::IcebergPositionDelete(paths)) => {
-                let out = PyDict::new(py);
+            Some(DeletionFilesList::Iceberg(paths)) => {
+                let position_deletes = PyDict::new(py);
+                let deletion_vectors = PyDict::new(py);
+
                 for (k, v) in paths.iter() {
-                    out.set_item(*k, v.as_ref())?;
+                    match v {
+                        IcebergDeletes::PositionDeletes(paths) => {
+                            let py_paths = PyList::empty(py);
+
+                            for p in paths.iter() {
+                                py_paths.append(p.as_str())?;
+                            }
+
+                            position_deletes.set_item(*k, py_paths)?;
+                        },
+                        IcebergDeletes::DeletionVector(path) => {
+                            deletion_vectors.set_item(*k, path.as_str())?
+                        },
+                    }
                 }
-                ("iceberg-position-delete", out)
+
+                ("iceberg", (position_deletes, deletion_vectors))
                     .into_pyobject(py)?
                     .into_any()
                     .unbind()

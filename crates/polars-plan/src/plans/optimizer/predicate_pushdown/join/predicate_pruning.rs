@@ -97,6 +97,7 @@ pub fn take_double_bounded_range_join_filter(
     schema_right: &Schema,
     output_schema: &Schema,
     suffix: &str,
+    dedup: &mut PredicateDedupState,
 ) -> PolarsResult<Option<(IEJoinCompatiblePredicate, IEJoinCompatiblePredicate, bool)>> {
     use InequalityOperator::*;
     use polars_utils::itertools::Itertools;
@@ -148,6 +149,7 @@ pub fn take_double_bounded_range_join_filter(
                 acc_predicates,
                 &ExprIR::from_node(pred.source_node, expr_arena),
                 expr_arena,
+                dedup,
             );
         }
         return Ok(None);
@@ -165,6 +167,7 @@ pub fn take_double_bounded_range_join_filter(
                 acc_predicates,
                 &ExprIR::from_node(pred.source_node, expr_arena),
                 expr_arena,
+                dedup,
             );
         }
     }
@@ -297,6 +300,7 @@ pub fn try_rewrite_join_type(
     acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     streaming: bool,
+    dedup: &mut PredicateDedupState,
 ) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
     if acc_predicates.is_empty() {
         return Ok(None);
@@ -326,7 +330,7 @@ pub fn try_rewrite_join_type(
                     unreachable!()
                 };
 
-                insert_predicate_dedup(acc_predicates, &predicate, expr_arena);
+                insert_predicate_dedup(acc_predicates, &predicate, expr_arena, dedup);
             },
 
             #[cfg(feature = "iejoin")]
@@ -375,6 +379,7 @@ pub fn try_rewrite_join_type(
                 schema_right,
                 output_schema,
                 &suffix,
+                dedup,
             )?;
             if let Some((bound_lower, bound_upper, left_is_point)) = range_predicate {
                 let join_options = Arc::make_mut(options);
@@ -460,6 +465,7 @@ pub fn try_rewrite_join_type(
                         acc_predicates,
                         &ExprIR::from_node(source_node, expr_arena),
                         expr_arena,
+                        dedup,
                     );
                 } else {
                     left_on.push(ExprIR::from_node(input_lhs, expr_arena));

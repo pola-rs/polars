@@ -34,7 +34,7 @@ impl TaskState {
     /// Wake this task. Returns true if task.schedule should be called.
     fn wake(&self) -> bool {
         self.state
-            .fetch_update(Ordering::Release, Ordering::Relaxed, |state| match state {
+            .try_update(Ordering::Release, Ordering::Relaxed, |state| match state {
                 Self::SCHEDULED | Self::NOTIFIED_WHILE_RUNNING => None,
                 Self::RUNNING => Some(Self::NOTIFIED_WHILE_RUNNING),
                 Self::IDLE => Some(Self::SCHEDULED),
@@ -53,7 +53,7 @@ impl TaskState {
     /// Done running this task. Returns true if task.schedule should be called.
     fn reschedule_after_running(&self) -> bool {
         self.state
-            .fetch_update(Ordering::Release, Ordering::Relaxed, |state| match state {
+            .try_update(Ordering::Release, Ordering::Relaxed, |state| match state {
                 Self::RUNNING => Some(Self::IDLE),
                 Self::NOTIFIED_WHILE_RUNNING => Some(Self::SCHEDULED),
                 _ => panic!("TaskState::reschedule_after_running() called on invalid state"),

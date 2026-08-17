@@ -579,7 +579,7 @@ def read_csv(
         elif projection:
             lf = lf.select(F.nth(projection))
 
-        df = lf.collect()
+        df = lf._collect_eager()
 
     else:
         with prepare_file_arg(
@@ -723,9 +723,9 @@ def _read_csv_impl(
         )
 
         if columns is None:
-            ret = scan.collect()
+            ret = scan._collect_eager()
         elif is_str_sequence(columns, allow_str=False):
-            ret = scan.select(columns).collect()
+            ret = scan.select(columns)._collect_eager()
         else:
             msg = (
                 "cannot use glob patterns and integer based projection as `columns` argument"

@@ -1,4 +1,5 @@
 use std::hash::Hash;
+use std::io::Cursor;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -98,6 +99,15 @@ impl HivePathProvider {
 pub struct IcebergPathProvider {
     pub extension: PlSmallStr,
     pub file_part_prefix: String,
+    pub layout: IcebergPathProviderLayout,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub enum IcebergPathProviderLayout {
+    Simple,
+    ObjectStorage { partitioned_paths: bool },
 }
 
 impl IcebergPathProvider {
@@ -106,13 +116,14 @@ impl IcebergPathProvider {
     }
 
     /// # Panics
-    /// Panics if `self.file_part_prefix` is `None`.
+    /// Panics if `self.file_part_prefix` is empty.
     pub fn get_path(&self, args: FileProviderArgs) -> PolarsResult<String> {
         use std::fmt::Write;
 
         let IcebergPathProvider {
             extension,
             file_part_prefix,
+            layout,
         } = self;
 
         assert!(!file_part_prefix.is_empty());
@@ -153,8 +164,26 @@ impl IcebergPathProvider {
         )
         .unwrap();
 
-        Ok(path)
+        Ok(match layout {
+            IcebergPathProviderLayout::Simple => path,
+            IcebergPathProviderLayout::ObjectStorage { partitioned_paths } => {
+                object_storage_path(path, *partitioned_paths)
+            },
+        })
     }
+}
+
+fn object_storage_path(path: String, partitioned_paths: bool) -> String {
+    let hash = murmur3::murmur3_32(&mut Cursor::new(path.as_bytes()), 0).unwrap();
+    let separator = if partitioned_paths { '/' } else { '-' };
+
+    format!(
+        "{:04b}/{:04b}/{:04b}/{:08b}{separator}{path}",
+        (hash >> 16) & 0xf,
+        (hash >> 12) & 0xf,
+        (hash >> 8) & 0xf,
+        hash & 0xff,
+    )
 }
 
 impl FileProviderFunction {
@@ -197,5 +226,30 @@ impl FileProviderFunction {
                 PolarsResult::Ok(out)
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::object_storage_path;
+
+    #[test]
+    fn iceberg_object_storage_paths_match_reference_hashes() {
+        for (file_name, expected_hash) in [
+            ("a", "0101/0110/1001/10110010"),
+            ("b", "1110/0111/1110/00000011"),
+            ("c", "0010/1101/0110/01011111"),
+            ("d", "1001/0001/0100/01110011"),
+        ] {
+            assert_eq!(
+                object_storage_path(file_name.to_owned(), true),
+                format!("{expected_hash}/{file_name}")
+            );
+        }
+
+        assert_eq!(
+            object_storage_path("test.parquet".to_owned(), false),
+            "0110/1010/0011/11101000-test.parquet"
+        );
     }
 }

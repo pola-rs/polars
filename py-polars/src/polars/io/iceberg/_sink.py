@@ -40,6 +40,7 @@ class IcebergSinkState:
 
     table_name: str
     mode: Literal["append", "overwrite"]
+    snapshot_properties: dict[str, str]
     iceberg_storage_properties: StorageOptionsDict
 
     sink_uuid_str: str
@@ -52,6 +53,7 @@ class IcebergSinkState:
         target: str | pyiceberg.table.Table,
         *,
         mode: Literal["append", "overwrite"] = "append",
+        snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
         storage_options: StorageOptionsDict | None = None,
     ) -> IcebergSinkState:
@@ -88,6 +90,7 @@ class IcebergSinkState:
             catalog_properties=catalog_config.properties,
             table_name=target if isinstance(target, str) else ".".join(target.name()),
             mode=mode,
+            snapshot_properties=snapshot_properties or {},
             iceberg_storage_properties=storage_options or {},
             sink_uuid_str=gen_uuid_v7().hex(),
             table_=NoPickleOption(target if not isinstance(target, str) else None),
@@ -146,11 +149,20 @@ class IcebergSinkState:
             )
             raise NotImplementedError(msg)
 
-        if property_as_bool(
-            table_properties, TableProperties.OBJECT_STORE_ENABLED, False
-        ):
-            msg = f"sink to Iceberg table with '{TableProperties.OBJECT_STORE_ENABLED}'"
-            raise NotImplementedError(msg)
+        object_storage_enabled = property_as_bool(
+            table_properties,
+            TableProperties.OBJECT_STORE_ENABLED,
+            TableProperties.OBJECT_STORE_ENABLED_DEFAULT,
+        )
+        object_storage_partitioned_paths = (
+            property_as_bool(
+                table_properties,
+                TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS,
+                TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT,
+            )
+            if object_storage_enabled
+            else None
+        )
 
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -171,8 +183,14 @@ class IcebergSinkState:
             wrap_ldf(plf)
             .sink_parquet(
                 pl.PartitionBy(
-                    _normalize_windows_iceberg_file_uri(self.output_base_path()),
-                    file_path_provider=PlIcebergPathProviderConfig(),
+                    _normalize_windows_iceberg_file_uri(
+                        self.sink_base_path(
+                            object_storage_enabled=object_storage_enabled
+                        )
+                    ),
+                    file_path_provider=PlIcebergPathProviderConfig(
+                        object_storage_partitioned_paths=object_storage_partitioned_paths
+                    ),
                     approximate_bytes_per_file=approximate_bytes_per_file,
                 ),
                 arrow_schema=arrow_schema,
@@ -206,7 +224,7 @@ class IcebergSinkState:
             if self.mode == "overwrite":
                 from pyiceberg.expressions import AlwaysTrue
 
-                tx.delete(AlwaysTrue())
+                tx.delete(AlwaysTrue(), snapshot_properties=self.snapshot_properties)
 
             if verbose:
                 eprint("IcebergSinkState[commit]: begin add_files")
@@ -215,6 +233,7 @@ class IcebergSinkState:
 
             tx.add_files(
                 data_file_paths,
+                snapshot_properties=self.snapshot_properties,
                 check_duplicate_files=False,
             )
 
@@ -255,22 +274,27 @@ class IcebergSinkState:
 
         return self.commit_result_df.get()  # type: ignore[return-value]
 
-    def output_base_path(self) -> str:
+    def sink_base_path(self, *, object_storage_enabled: bool) -> str:
         from pyiceberg.table import TableProperties
 
         table = self.table()
         table_metadata = table.metadata
         table_properties = table_metadata.properties
 
-        output_base_path = (
+        sink_base_path = (
             path.rstrip("/")
             if (path := table_properties.get(TableProperties.WRITE_DATA_PATH))
             else f"{table_metadata.location.rstrip('/')}/data"
         )
 
-        return f"{output_base_path}/{self.sink_uuid_str}/"
+        if object_storage_enabled:
+            return f"{sink_base_path}/"
+
+        return f"{sink_base_path}/{self.sink_uuid_str}/"
 
 
+@dataclass(frozen=True, kw_only=True)
 class PlIcebergPathProviderConfig(_InternalPlPathProviderConfig):
     pl_path_provider_id: ClassVar[str] = "iceberg"
     extension: ClassVar[Literal["parquet"]] = "parquet"
+    object_storage_partitioned_paths: bool | None = None

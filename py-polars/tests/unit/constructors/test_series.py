@@ -142,7 +142,7 @@ def test_series_init_nonexistent_datetime() -> None:
 # https://github.com/pola-rs/polars/issues/15518
 def test_series_init_np_temporal_with_nat_15518() -> None:
     arr = np.array(["2020-01-01", "2020-01-02", "2020-01-03"], "datetime64[D]")
-    arr[1] = np.datetime64("NaT")
+    arr[1] = np.datetime64("NaT", "D")
 
     result = pl.Series(arr)
 

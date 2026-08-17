@@ -196,7 +196,7 @@ def read_ndjson(
         storage_options=storage_options,
         credential_provider=credential_provider_builder,  # type: ignore[arg-type]
         file_cache_ttl=None,
-    ).collect()
+    )._collect_eager()
 
     if rechunk:
         ret = ret.rechunk()

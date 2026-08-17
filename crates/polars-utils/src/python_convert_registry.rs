@@ -79,6 +79,20 @@ impl PythonConvertRegistry {
         &CLS
     }
 
+    pub fn py_sinked_path_dataclass(&self) -> &'static Py<PyAny> {
+        static CLS: LazyLock<Py<PyAny>> = LazyLock::new(|| {
+            Python::attach(|py| {
+                py.import("polars.io.partition")
+                    .unwrap()
+                    .getattr("SinkedPath")
+                    .unwrap()
+                    .unbind()
+            })
+        });
+
+        &CLS
+    }
+
     pub fn py_iceberg_sink_state_class(&self) -> &'static Py<PyAny> {
         static CLS: LazyLock<Py<PyAny>> = LazyLock::new(|| {
             Python::attach(|py| {

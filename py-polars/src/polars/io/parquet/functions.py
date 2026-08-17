@@ -300,7 +300,7 @@ def read_parquet(
         else:
             lf = lf.select(columns)
 
-    ret = lf.collect()
+    ret = lf._collect_eager()
 
     if rechunk:
         ret = ret.rechunk()

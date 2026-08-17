@@ -247,3 +247,13 @@ def test_over_duplicate_name_27443(expr: pl.Expr) -> None:
     out = df.select(expr.over(pl.col.g, pl.col.g))
     expected = df.select(expr.over(pl.col.g))
     assert_frame_equal(out, expected)
+
+
+def test_nested_over_row_mapping_28712() -> None:
+    df = pl.DataFrame(
+        {"g": ["a", "b", "c", "d", "e", "f", "g"], "a": [1, 2, 3, 4, 5, 6, 7]}
+    )
+
+    result = df.with_columns(pl.col("a").over("g").over("g"))
+
+    assert_frame_equal(result, df)

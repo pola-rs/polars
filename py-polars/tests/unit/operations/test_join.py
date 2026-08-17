@@ -4493,3 +4493,11 @@ def test_full_join_slice_pushdown_no_maintain_order_28551(
     # We should never push the slice left or right (or both), otherwise some rows will
     # not match
     assert result.null_count().sum_horizontal().item() == 0
+
+
+def test_join_coalesce_empty_suffix_28783() -> None:
+    left = pl.LazyFrame({"k": [1], "a": [2]})
+    right = pl.LazyFrame({"k": [1], "b": [3]})
+    lf = left.join(right, on="k", how="inner", suffix="")
+    expected = pl.LazyFrame({"k": [1], "a": [2], "b": [3]})
+    assert_frame_equal(lf, expected)

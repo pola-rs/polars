@@ -155,7 +155,7 @@ def read_ipc(
             else:
                 lf = lf.select(columns)
 
-        df = lf.collect()
+        df = lf._collect_eager()
 
         if rechunk:
             df = df.rechunk()
@@ -252,9 +252,9 @@ def _read_ipc_impl(
             row_index_offset=row_index_offset,
         )
         if columns is None:
-            df = scan.collect()
+            df = scan._collect_eager()
         elif is_str_sequence(columns, allow_str=False):
-            df = scan.select(columns).collect()
+            df = scan.select(columns)._collect_eager()
         else:
             msg = (
                 "cannot use glob patterns and integer based projection as `columns` argument"
