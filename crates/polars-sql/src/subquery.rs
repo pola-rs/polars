@@ -341,24 +341,26 @@ impl SQLContext {
     }
 
     // Split a subquery's WHERE conjuncts into correlation predicates
-    // (comparisons, any operator, between one outer and one inner column) and
-    // inner-only filters, or `None` when a conjunct is neither (an outer
-    // column in an unsupported shape, an unresolvable name, a nested
-    // subquery).
+    // (comparisons, any operator, between one outer and one inner column,
+    // built into `join_where` exprs against `prefix`'s renamed inner
+    // columns) and inner-only filters, or `None` when a conjunct is neither
+    // (an outer column in an unsupported shape, an unresolvable name, a
+    // nested subquery).
     fn split_correlated_conjuncts(
         &mut self,
         selection: &SQLExpr,
         inner_names: &PlHashSet<String>,
         inner_schema: &Schema,
         outer_schema: &Schema,
-    ) -> PolarsResult<Option<(Vec<ScalarCorrPredicate>, Vec<Expr>)>> {
-        let mut corr_preds = Vec::new();
+        prefix: &str,
+    ) -> PolarsResult<Option<(Vec<Expr>, Vec<Expr>)>> {
+        let mut join_preds = Vec::new();
         let mut local_filters = Vec::new();
         for conj in MintermIter::new(selection) {
             if let Some(pred) =
                 scalar_correlation_predicate(conj, inner_names, inner_schema, outer_schema)
             {
-                corr_preds.push(pred);
+                join_preds.push(pred.to_expr(prefix));
                 continue;
             }
             let Some(filter) = self.try_parse_inner_only_expr(conj, inner_schema, outer_schema)?
@@ -367,7 +369,7 @@ impl SQLContext {
             };
             local_filters.push(filter);
         }
-        Ok(Some((corr_preds, local_filters)))
+        Ok(Some((join_preds, local_filters)))
     }
 
     #[cfg(not(feature = "semi_anti_join"))]
@@ -462,17 +464,22 @@ impl SQLContext {
         }
         let count_like = is_count_like(&agg_expr);
 
-        let Some((corr_preds, local_filters)) =
-            ctx.split_correlated_conjuncts(selection, &inner_names, &inner_schema, outer_schema)?
+        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
+        let Some((join_preds, local_filters)) = ctx.split_correlated_conjuncts(
+            selection,
+            &inner_names,
+            &inner_schema,
+            outer_schema,
+            &prefix,
+        )?
         else {
             return Ok(None);
         };
         // No correlation: leave it to the uncorrelated scalar-subquery path.
-        if corr_preds.is_empty() {
+        if join_preds.is_empty() {
             return Ok(None);
         }
 
-        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let result_name = format_pl_smallstr!("{prefix}res");
 
         let inner_renamed = rename_inner(&prefix, inner_lf, local_filters, &inner_schema, ctx);
@@ -482,7 +489,6 @@ impl SQLContext {
             },
             other => other,
         });
-        let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
 
         let (mut joined, idx_name) = join_back_grouped(
             lf,
@@ -523,13 +529,15 @@ impl SQLContext {
             return Ok(None);
         };
 
-        let (corr_preds, local_filters) = match &select.selection {
+        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
+        let (join_preds, local_filters) = match &select.selection {
             Some(selection) => {
                 let Some(split) = ctx.split_correlated_conjuncts(
                     selection,
                     &inner_names,
                     &inner_schema,
                     outer_schema,
+                    &prefix,
                 )?
                 else {
                     return Ok(None);
@@ -538,15 +546,13 @@ impl SQLContext {
             },
             None => (Vec::new(), Vec::new()),
         };
-        if corr_preds.is_empty() {
+        if join_preds.is_empty() {
             return Ok(None);
         }
 
-        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let flag_name = format_pl_smallstr!("{prefix}flag");
 
         let inner_renamed = rename_inner(&prefix, inner_lf, local_filters, &inner_schema, ctx);
-        let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
 
         let (joined, idx_name) = join_back_grouped(
             lf,
