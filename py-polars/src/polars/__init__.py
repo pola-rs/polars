@@ -271,12 +271,6 @@ from polars.meta import (
 from polars.schema import Schema
 from polars.series import Series
 from polars.sql import SQLContext, sql
-from polars.string_cache import (
-    StringCache,
-    disable_string_cache,
-    enable_string_cache,
-    using_string_cache,
-)
 
 __version__: str = _get_polars_version()
 del _get_polars_version
@@ -381,11 +375,6 @@ __all__ = [
     "CredentialProviderFunction",
     "CredentialProviderFunctionReturn",
     "CredentialProviderGCP",
-    # polars.stringcache
-    "StringCache",
-    "disable_string_cache",
-    "enable_string_cache",
-    "using_string_cache",
     # polars.config
     "Config",
     # polars.functions.whenthen
