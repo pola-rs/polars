@@ -82,7 +82,7 @@ def getattr_fallback(
     if (super_getattr := getattr(superclass, "__getattr__", None)) is not None:
         return super_getattr(name)
     else:
-        objname = f"{obj.__name__!r}" if meta else f"{type(obj).__name__!r}"
+        objname = f"{obj.__name__!r}" if meta else f"{type(obj).__name__!r}"  # type: ignore[attr-defined]
         msg = f"{objname} object has no attribute {name!r}"
         raise AttributeError(msg, name=name, obj=obj)
 

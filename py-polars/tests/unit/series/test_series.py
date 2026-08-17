@@ -2588,7 +2588,7 @@ def test_removed_classmethods() -> None:
         ),
     ],
 )
-def test_removed_methods(name: str | Callable[[]], match: str) -> None:
+def test_removed_methods(name: str | Callable[[pl.Series], None], match: str) -> None:
     if isinstance(name, str):
         with pytest.raises(AttributeRemovedError, match=re.escape(match)):
             getattr(pl.Series(), name)
