@@ -160,6 +160,7 @@ def test_engine_monitoring_requires_polars_cloud(
         StreamingEngine(monitoring=True)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_in_memory_engine_monitoring() -> None:
     module, observer = fake_cloud_observer()
     with mock_module_import("polars_cloud", module, replace_if_exists=True):
@@ -304,6 +305,7 @@ def test_no_monitoring_no_observer() -> None:
     module.QueryCloudObserver.assert_not_called()
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_in_memory_engine_planned_without_physical() -> None:
     """The in-memory engine is observed with an IR-only planned query.
 
