@@ -256,20 +256,8 @@ pub fn timestamp_ns_to_datetime_opt(v: i64) -> Option<DateTime> {
         .map(|ts| TimeZone::UTC.to_datetime(ts))
 }
 
-/// Converts a timestamp in `time_unit` into a [`Timestamp`].
-#[inline]
-pub(crate) fn timestamp_to_timestamp(timestamp: i64, time_unit: TimeUnit) -> Timestamp {
-    let result = match time_unit {
-        TimeUnit::Second => Timestamp::from_second(timestamp),
-        TimeUnit::Millisecond => Timestamp::from_millisecond(timestamp),
-        TimeUnit::Microsecond => Timestamp::from_microsecond(timestamp),
-        TimeUnit::Nanosecond => Timestamp::from_nanosecond(i128::from(timestamp)),
-    };
-    result.expect("invalid or out-of-range timestamp")
-}
-
-/// Fallible variant of [`timestamp_to_timestamp`], returning `None` on an
-/// out-of-range value instead of panicking.
+/// Converts a timestamp in `time_unit` into a [`Timestamp`], returning `None`
+/// on an out-of-range value instead of panicking.
 #[inline]
 pub(crate) fn timestamp_to_timestamp_opt(timestamp: i64, time_unit: TimeUnit) -> Option<Timestamp> {
     match time_unit {
@@ -284,7 +272,9 @@ pub(crate) fn timestamp_to_timestamp_opt(timestamp: i64, time_unit: TimeUnit) ->
 /// Converts a timestamp in `time_unit` into a naive (timezone-less, UTC-labelled) [`DateTime`].
 #[inline]
 pub(crate) fn timestamp_to_naive_datetime(timestamp: i64, time_unit: TimeUnit) -> DateTime {
-    TimeZone::UTC.to_datetime(timestamp_to_timestamp(timestamp, time_unit))
+    let ts = timestamp_to_timestamp_opt(timestamp, time_unit)
+        .expect("invalid or out-of-range timestamp");
+    TimeZone::UTC.to_datetime(ts)
 }
 
 /// Formats a timestamp in `time_unit` and `timezone` using `fmt`, degrading
