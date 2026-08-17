@@ -177,7 +177,12 @@ class _Meta(type):
                 },
                 version="2.0",
             )
-            return getattr_fallback(cls, super(), name)
+            return getattr_fallback(
+                cls,
+                super(),
+                name,
+                meta=True,
+            )
 
 
 @expr_dispatch

@@ -4,6 +4,7 @@ import io
 import re
 from datetime import date, datetime, time, tzinfo
 from decimal import Decimal
+import re
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -843,3 +844,9 @@ def test_join_nulls_argument_removed() -> None:
         ),
     ):
         df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]
+
+
+def test_invalid_classmethod_error() -> None:
+    match = "'Series' object has no attribute 'nonexistent'"
+    with pytest.raises(AttributeError, match=re.escape(match)):
+        pl.Series.nonexistent()  # type: ignore[attr-defined]

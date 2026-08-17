@@ -62,7 +62,9 @@ def raise_for_removed_attributes(
         raise AttributeRemovedError(msg, name=name, obj=obj)
 
 
-def getattr_fallback(obj: object, superclass: object, name: str) -> Any:
+def getattr_fallback(
+    obj: object, superclass: object, name: str, *, meta: bool = False
+) -> Any:
     """
     Raise an `AttributeError` for a non-existent attribute.
 
@@ -74,11 +76,14 @@ def getattr_fallback(obj: object, superclass: object, name: str) -> Any:
         The superclass of the object used to attempt to access the attribute.
     name
         The name of the non-existent attribute.
+    meta
+        Whether the object is a metaclass (default: False).
     """
     if (super_getattr := getattr(superclass, "__getattr__", None)) is not None:
         return super_getattr(name)
     else:
-        msg = f"{type(obj).__name__!r} object has no attribute {name!r}"
+        objname = f"{obj.__name__!r}" if meta else f"{type(obj).__name__!r}"
+        msg = f"{objname} object has no attribute {name!r}"
         raise AttributeError(msg, name=name, obj=obj)
 
 
