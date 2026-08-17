@@ -122,12 +122,7 @@ if TYPE_CHECKING:
     from builtins import list as list_
     from builtins import set as set_
     from builtins import str as str_
-    from collections.abc import Callable
-
-    with contextlib.suppress(ImportError):  # Module not available when building docs
-        pass
-
-    from collections.abc import Collection, Generator, Mapping
+    from collections.abc import Callable, Collection, Generator, Mapping
 
     import jax
 

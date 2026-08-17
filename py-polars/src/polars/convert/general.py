@@ -1157,12 +1157,11 @@ def from_dataframe(
     └─────┴─────┴─────┘
     """
     if allow_copy is not None:
+        # TODO: [amber] This parameter needs a removal
         issue_deprecation_warning(
             "`allow_copy` is deprecated and will be removed in a future version.",
             version="1.23",
         )
-    else:
-        allow_copy = True
 
     if not is_pycapsule(df):
         msg = f"expected object supporting the PyCapsule Interface, got {qualified_type_name(df)!r}"

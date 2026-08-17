@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from polars._utils.unstable import issue_unstable_warning
 
+# TODO: Interchange support was removed, but for stability reasons, `CompatLevel` has
+# remained here. However, we should probably move it somewhere else.
+
 
 class CompatLevel:
     """Data structure compatibility level."""
