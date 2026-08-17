@@ -1329,6 +1329,14 @@ impl SQLContext {
         // Correlated-subquery lowering rewrites the SELECT list/WHERE/HAVING
         // SQL in place, so it needs an owned statement; skip the clone when
         // there's no subquery to lower.
+        //
+        // The SQL wuery is rewritten from:
+        //
+        // SELECT a, (SELECT COUNT(*) FROM t1 AS x WHERE x.b < t1.b) AS cnt FROM t1
+        //
+        // TO:
+        //
+        // SELECT a, __POLARS_CORR_..._res AS cnt FROM t1
         let mut select_stmt: Cow<'_, Select> = if select_stmt_has_subquery(select_stmt) {
             Cow::Owned(select_stmt.clone())
         } else {
@@ -1437,7 +1445,8 @@ impl SQLContext {
                     continue;
                 };
                 if expr_contains_subquery(e) {
-                    let (new_lf, rewritten) = self.decorrelate_expr(lf, &schema, e, &mut corr_cache)?;
+                    let (new_lf, rewritten) =
+                        self.decorrelate_expr(lf, &schema, e, &mut corr_cache)?;
                     lf = new_lf;
                     schema = self.get_frame_schema(&mut lf)?;
                     *e = rewritten;
@@ -1714,8 +1723,12 @@ impl SQLContext {
                     let mut lifted_exprs = lifted
                         .into_iter()
                         .map(|(name, sq)| {
-                            Ok(parse_sql_expr(&SQLExpr::Subquery(Box::new(sq)), self, Some(&schema))?
-                                .alias(name))
+                            Ok(parse_sql_expr(
+                                &SQLExpr::Subquery(Box::new(sq)),
+                                self,
+                                Some(&schema),
+                            )?
+                            .alias(name))
                         })
                         .collect::<PolarsResult<Vec<Expr>>>()?;
                     (new_key_lf, _) = self.process_subqueries(new_key_lf, {
@@ -1950,7 +1963,8 @@ impl SQLContext {
             let mut rewritten_residuals: Vec<SQLExpr> = Vec::with_capacity(residual_exprs.len());
             for conj in &residual_exprs {
                 if expr_contains_subquery(conj) {
-                    let (new_lf, rewritten) = self.decorrelate_expr(lf, &schema, conj, corr_cache)?;
+                    let (new_lf, rewritten) =
+                        self.decorrelate_expr(lf, &schema, conj, corr_cache)?;
                     lf = new_lf;
                     schema = self.get_frame_schema(&mut lf)?;
                     rewritten_residuals.push(rewritten);
