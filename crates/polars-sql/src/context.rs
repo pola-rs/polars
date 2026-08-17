@@ -1699,6 +1699,20 @@ impl SQLContext {
         } else {
             let having = match select_stmt.having.as_ref() {
                 Some(having_sql) if expr_contains_subquery(having_sql) => {
+                    // Rewrites the following queries: 1. Correlated scalar subquery in HAVING:
+                    //
+                    // SELECT g, SUM(v) AS s FROM t GROUP BY g
+                    // HAVING SUM(v) > (SELECT SUM(c) FROM r WHERE r.k = t.g)
+                    //
+                    // 2. Correlated EXISTS in HAVING:
+                    // SELECT g, SUM(v) AS s FROM t GROUP BY g
+                    // HAVING EXISTS (SELECT 1 FROM r WHERE r.k = t.g AND r.c > 50)
+                    // Same mechanism, just resolving to a boolean flag column instead of a value.
+                    //
+                    // 3. Uncorrelated subquery in HAVING:
+                    // SELECT g, SUM(v) AS s FROM t GROUP BY g
+                    // HAVING SUM(v) > (SELECT AVG(c) FROM r)
+
                     // HAVING's correlation is against the grouped row, not
                     // the base table: decorrelate against a distinct-keys
                     // frame and broadcast the result back onto `lf`.
