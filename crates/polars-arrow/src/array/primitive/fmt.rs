@@ -58,27 +58,20 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
         Time64(_) => unreachable!(), // remaining are not valid
         Timestamp(time_unit, tz) => {
             if let Some(tz) = tz {
-                let time_unit = *time_unit;
                 let timezone = temporal_conversions::parse_offset(tz.as_str());
                 match timezone {
-                    Ok(timezone) => dyn_primitive!(array, i64, |time| {
-                        temporal_conversions::format_timestamp_or_out_of_range(
-                            time,
-                            time_unit,
-                            &timezone,
-                            "%Y-%m-%dT%H:%M:%S%.f%:z",
-                        )
-                    }),
+                    Ok(timezone) => {
+                        dyn_primitive!(array, i64, |time| {
+                            temporal_conversions::timestamp_to_datetime(time, *time_unit, &timezone)
+                        })
+                    },
                     #[cfg(feature = "timezones")]
                     Err(_) => {
                         let timezone = temporal_conversions::parse_offset_tz(tz.as_str());
                         match timezone {
                             Ok(timezone) => dyn_primitive!(array, i64, |time| {
-                                temporal_conversions::format_timestamp_or_out_of_range(
-                                    time,
-                                    time_unit,
-                                    &timezone,
-                                    "%Y-%m-%dT%H:%M:%S%.f%:z",
+                                temporal_conversions::timestamp_to_datetime(
+                                    time, *time_unit, &timezone,
                                 )
                             }),
                             Err(_) => {

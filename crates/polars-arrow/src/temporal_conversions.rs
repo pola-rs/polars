@@ -2,7 +2,7 @@
 
 use jiff::civil::{Date, DateTime, Time};
 use jiff::tz::TimeZone;
-use jiff::{SignedDuration, Timestamp};
+use jiff::{SignedDuration, Timestamp, Zoned};
 use polars_error::{PolarsResult, polars_err};
 
 use crate::datatypes::TimeUnit;
@@ -52,65 +52,6 @@ pub fn date32_to_date(days: i32) -> Date {
 pub fn date32_to_date_opt(days: i32) -> Option<Date> {
     let span = jiff::Span::new().try_days(i64::from(days)).ok()?;
     unix_epoch_date().checked_add(span).ok()
-}
-
-/// converts a [`Date`] to an `i32` representing a `date32` (days since the
-/// Unix epoch).
-///
-/// Computed via calendar-day arithmetic on [`Date`] directly rather than
-/// through [`Timestamp`], since [`Timestamp`]'s representable range is
-/// narrower than the full span of dates a [`Date`] can hold (e.g. it can't
-/// represent 9999-12-31 at all).
-#[inline]
-pub fn date_to_date32_opt(date: Date) -> Option<i32> {
-    let span = date.since(unix_epoch_date()).ok()?;
-    Some(span.get_days())
-}
-
-/// Elapsed nanoseconds between the Unix epoch and `dt`, computed via
-/// calendar (`DateTime`) arithmetic rather than through `Timestamp`.
-///
-/// `Timestamp`'s representable range is deliberately narrower than
-/// `DateTime`'s (it's kept small enough to accommodate an arbitrary UTC
-/// offset applied to it), so routing through `TimeZone::to_timestamp`/
-/// `Offset::to_timestamp` would incorrectly reject legitimate `DateTime`
-/// values near the -9999/9999 year boundary that `DateTime` itself can
-/// represent just fine (e.g. `DateTime::MAX`).
-#[inline]
-pub fn datetime_to_epoch_nanos_opt(dt: DateTime) -> Option<i128> {
-    let diff =
-        jiff::civil::DateTimeDifference::new(unix_epoch_date().to_datetime(Time::midnight()))
-            .smallest(jiff::Unit::Nanosecond)
-            .largest(jiff::Unit::Second);
-    let span = dt.since(diff).ok()?;
-    Some(
-        i128::from(span.get_seconds()) * 1_000_000_000
-            + i128::from(span.get_milliseconds()) * 1_000_000
-            + i128::from(span.get_microseconds()) * 1_000
-            + i128::from(span.get_nanoseconds()),
-    )
-}
-
-/// The inverse of [`datetime_to_epoch_nanos_opt`]: converts elapsed
-/// nanoseconds since the Unix epoch into a [`DateTime`], via calendar
-/// arithmetic rather than through [`Timestamp`] (same rationale as
-/// [`datetime_to_epoch_nanos_opt`] - `Timestamp`'s range is too narrow to
-/// hold every value `DateTime` can represent). This is on a hot path (it
-/// backs every epoch-tick-to-civil conversion), so the time-of-day
-/// component is computed with plain arithmetic rather than `Span`/
-/// `checked_add`.
-#[inline]
-pub fn epoch_nanos_to_datetime_opt(epoch_nanos: i128) -> Option<DateTime> {
-    const NANOS_PER_DAY: i64 = 86_400_000_000_000;
-    let days = epoch_nanos.div_euclid(i128::from(NANOS_PER_DAY));
-    let nanos_of_day = epoch_nanos.rem_euclid(i128::from(NANOS_PER_DAY)) as i64;
-    let date = date32_to_date_opt(i32::try_from(days).ok()?)?;
-    let hour = (nanos_of_day / 3_600_000_000_000) as i8;
-    let minute = ((nanos_of_day / 60_000_000_000) % 60) as i8;
-    let second = ((nanos_of_day / 1_000_000_000) % 60) as i8;
-    let subsec_nanosecond = (nanos_of_day % 1_000_000_000) as i32;
-    let time = Time::new(hour, minute, second, subsec_nanosecond).ok()?;
-    Some(date.to_datetime(time))
 }
 
 /// converts a `i64` representing a `date64` to [`DateTime`]
@@ -227,7 +168,9 @@ pub fn timestamp_ms_to_datetime(v: i64) -> DateTime {
 /// converts a `i64` representing a `timestamp(ms)` to [`DateTime`]
 #[inline]
 pub fn timestamp_ms_to_datetime_opt(v: i64) -> Option<DateTime> {
-    epoch_nanos_to_datetime_opt(i128::from(v) * 1_000_000)
+    Timestamp::from_millisecond(v)
+        .ok()
+        .map(|ts| TimeZone::UTC.to_datetime(ts))
 }
 
 /// converts a `i64` representing a `timestamp(us)` to [`DateTime`]
@@ -239,7 +182,9 @@ pub fn timestamp_us_to_datetime(v: i64) -> DateTime {
 /// converts a `i64` representing a `timestamp(us)` to [`DateTime`]
 #[inline]
 pub fn timestamp_us_to_datetime_opt(v: i64) -> Option<DateTime> {
-    epoch_nanos_to_datetime_opt(i128::from(v) * 1_000)
+    Timestamp::from_microsecond(v)
+        .ok()
+        .map(|ts| TimeZone::UTC.to_datetime(ts))
 }
 
 /// converts a `i64` representing a `timestamp(ns)` to [`DateTime`]
@@ -256,8 +201,20 @@ pub fn timestamp_ns_to_datetime_opt(v: i64) -> Option<DateTime> {
         .map(|ts| TimeZone::UTC.to_datetime(ts))
 }
 
-/// Converts a timestamp in `time_unit` into a [`Timestamp`], returning `None`
-/// on an out-of-range value instead of panicking.
+/// Converts a timestamp in `time_unit` into a [`Timestamp`].
+#[inline]
+pub(crate) fn timestamp_to_timestamp(timestamp: i64, time_unit: TimeUnit) -> Timestamp {
+    let result = match time_unit {
+        TimeUnit::Second => Timestamp::from_second(timestamp),
+        TimeUnit::Millisecond => Timestamp::from_millisecond(timestamp),
+        TimeUnit::Microsecond => Timestamp::from_microsecond(timestamp),
+        TimeUnit::Nanosecond => Timestamp::from_nanosecond(i128::from(timestamp)),
+    };
+    result.expect("invalid or out-of-range timestamp")
+}
+
+/// Fallible variant of [`timestamp_to_timestamp`], returning `None` on an
+/// out-of-range value instead of panicking.
 #[inline]
 pub(crate) fn timestamp_to_timestamp_opt(timestamp: i64, time_unit: TimeUnit) -> Option<Timestamp> {
     match time_unit {
@@ -272,17 +229,43 @@ pub(crate) fn timestamp_to_timestamp_opt(timestamp: i64, time_unit: TimeUnit) ->
 /// Converts a timestamp in `time_unit` into a naive (timezone-less, UTC-labelled) [`DateTime`].
 #[inline]
 pub(crate) fn timestamp_to_naive_datetime(timestamp: i64, time_unit: TimeUnit) -> DateTime {
-    let ts = timestamp_to_timestamp_opt(timestamp, time_unit)
-        .expect("invalid or out-of-range timestamp");
-    TimeZone::UTC.to_datetime(ts)
+    TimeZone::UTC.to_datetime(timestamp_to_timestamp(timestamp, time_unit))
 }
 
-/// Formats a timestamp in `time_unit` and `timezone` using `fmt`, degrading
-/// gracefully to the placeholder `"<out-of-range datetime>"` instead of
-/// panicking - both for a value outside [`Timestamp`]'s representable range
-/// (narrower than [`DateTime`]'s -9999/9999 range, since it's kept small
-/// enough to accommodate an arbitrary UTC offset applied to it), and for one
-/// where `fmt` itself is invalid.
+/// Converts a timestamp in `time_unit` and `timezone` into a [`Zoned`] datetime.
+#[inline]
+pub fn timestamp_to_datetime(timestamp: i64, time_unit: TimeUnit, timezone: &TimeZone) -> Zoned {
+    timestamp_to_timestamp(timestamp, time_unit).to_zoned(timezone.clone())
+}
+
+/// converts a [`Date`] to an `i32` representing a `date32` (days since the Unix epoch).
+#[inline]
+pub fn date_to_date32_opt(date: Date) -> Option<i32> {
+    let ts = TimeZone::UTC
+        .to_timestamp(date.to_datetime(Time::midnight()))
+        .ok()?;
+    i32::try_from(ts.as_second() / SECONDS_IN_DAY).ok()
+}
+
+/// Elapsed nanoseconds between the Unix epoch and `dt`.
+#[inline]
+pub fn datetime_to_epoch_nanos_opt(dt: DateTime) -> Option<i128> {
+    let ts = TimeZone::UTC.to_timestamp(dt).ok()?;
+    Some(ts.as_nanosecond())
+}
+
+/// The inverse of [`datetime_to_epoch_nanos_opt`]: converts elapsed nanoseconds since the Unix
+/// epoch into a [`DateTime`].
+#[inline]
+pub fn epoch_nanos_to_datetime_opt(epoch_nanos: i128) -> Option<DateTime> {
+    Timestamp::from_nanosecond(epoch_nanos)
+        .ok()
+        .map(|ts| TimeZone::UTC.to_datetime(ts))
+}
+
+/// Formats a timestamp in `time_unit` and `timezone` using `fmt`, degrading gracefully to the
+/// placeholder `"<out-of-range datetime>"` instead of panicking - both for a value outside
+/// [`Timestamp`]'s representable range, and for one where `fmt` itself is invalid.
 ///
 /// TODO: return a `PolarsResult` instead of a placeholder string, see
 /// https://github.com/pola-rs/polars/issues/13404
