@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 
 #[cfg(feature = "dtype-duration")]
-use chrono::Duration as ChronoDuration;
+use jiff::SignedDuration as ChronoDuration;
 #[cfg(feature = "dtype-date")]
-use chrono::NaiveDate;
+use jiff::civil::Date as NaiveDate;
 #[cfg(feature = "dtype-datetime")]
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime as NaiveDateTime;
 #[cfg(feature = "dtype-time")]
-use chrono::NaiveTime;
+use jiff::civil::Time as NaiveTime;
 #[cfg(feature = "dtype-f16")]
 use polars_utils::float16::pf16;
 
@@ -466,15 +466,16 @@ mod test {
     fn test_temporal_df_construction() {
         // check if we can construct.
         let _df = df![
-            "date" => [NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()],
-            "datetime" => [NaiveDate::from_ymd_opt(2021, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap()],
-            "optional_date" => [Some(NaiveDate::from_ymd_opt(2021, 1, 1).unwrap())],
-            "optional_datetime" => [Some(NaiveDate::from_ymd_opt(2021, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap())],
-            "time" => [NaiveTime::from_hms_opt(23, 23, 23).unwrap()],
-            "optional_time" => [Some(NaiveTime::from_hms_opt(23, 23, 23).unwrap())],
-            "duration" => [ChronoDuration::from_std(std::time::Duration::from_secs(10)).unwrap()],
-            "optional_duration" => [Some(ChronoDuration::from_std(std::time::Duration::from_secs(10)).unwrap())],
-        ].unwrap();
+            "date" => [NaiveDate::new(2021, 1, 1).unwrap()],
+            "datetime" => [NaiveDate::new(2021, 1, 1).unwrap().at(0, 0, 0, 0)],
+            "optional_date" => [Some(NaiveDate::new(2021, 1, 1).unwrap())],
+            "optional_datetime" => [Some(NaiveDate::new(2021, 1, 1).unwrap().at(0, 0, 0, 0))],
+            "time" => [NaiveTime::new(23, 23, 23, 0).unwrap()],
+            "optional_time" => [Some(NaiveTime::new(23, 23, 23, 0).unwrap())],
+            "duration" => [ChronoDuration::from_secs(10)],
+            "optional_duration" => [Some(ChronoDuration::from_secs(10))],
+        ]
+        .unwrap();
     }
 
     #[test]

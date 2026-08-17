@@ -1,14 +1,11 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 //! Much more opinionated, but also much faster strptrime than the one given in Chrono.
 
-use chrono::{NaiveDate, NaiveDateTime};
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time};
 
 use crate::chunkedarray::{PolarsResult, polars_bail};
 
 polars_utils::regex_cache::cached_regex! {
-    static HOUR_PATTERN = r"%[_-]?[HkIl]";
-    static MINUTE_PATTERN = r"%[_-]?M";
-    static SECOND_PATTERN = r"%[_-]?S";
     static TWELVE_HOUR_PATTERN = r"%[_-]?[Il]";
     static MERIDIEM_PATTERN = r"%[_-]?[pP]";
 }
@@ -80,18 +77,6 @@ fn parse_month_full_or_abbrev(val: &[u8], offset: usize) -> Option<(u32, usize)>
 /// E.g. chrono supports single letter date identifiers like %F, whereas polars only consumes
 /// year, day, month distinctively with %Y, %d, %m.
 pub(super) fn compile_fmt(fmt: &str) -> PolarsResult<String> {
-    // (hopefully) temporary hacks. Ideally, chrono would return a ParseKindError indicating
-    // if `fmt` is too long for NaiveDate. If that's implemented, then this check could
-    // be removed, and that error could be matched against in `transform_datetime_*s`
-    // See https://github.com/chronotope/chrono/issues/1075.
-    if HOUR_PATTERN.is_match(fmt) ^ MINUTE_PATTERN.is_match(fmt) {
-        polars_bail!(ComputeError: "Invalid format string: \
-            Please either specify both hour and minute, or neither.");
-    }
-    if SECOND_PATTERN.is_match(fmt) && !HOUR_PATTERN.is_match(fmt) {
-        polars_bail!(ComputeError: "Invalid format string: \
-            Found seconds directive, but no hours directive.");
-    }
     if TWELVE_HOUR_PATTERN.is_match(fmt) ^ MERIDIEM_PATTERN.is_match(fmt) {
         polars_bail!(ComputeError: "Invalid format string: \
             Please either specify both 12-hour directive and meridiem directive, or neither.");
@@ -102,7 +87,11 @@ pub(super) fn compile_fmt(fmt: &str) -> PolarsResult<String> {
         .replace("%R", "%H:%M")
         .replace("%T", "%H:%M:%S")
         .replace("%X", "%H:%M:%S")
-        .replace("%F", "%Y-%m-%d"))
+        .replace("%F", "%Y-%m-%d")
+        // jiff's strtime parser rejects `%c` outright (it's locale-dependent
+        // and only supported when formatting), so expand it to the C-locale
+        // date/time directives it stands for.
+        .replace("%c", "%a %b %e %H:%M:%S %Y"))
 }
 
 #[derive(Default, Clone)]
@@ -120,7 +109,7 @@ impl StrpTimeState {
 
         const ESCAPE: u8 = b'%';
 
-        // Minimal day/month is always 1, otherwise chrono may panic.
+        // Minimal day/month is always 1, since 0 isn't a valid `Date`.
         let mut year: i32 = 1;
         let mut month: u32 = 1;
         let mut day: u32 = 1;
@@ -206,8 +195,13 @@ impl StrpTimeState {
         }
         // all values processed
         if offset == val.len() {
-            NaiveDate::from_ymd_opt(year, month, day)
-                .and_then(|nd| nd.and_hms_nano_opt(hour, min, sec, nano))
+            NaiveDate::new(year as i16, month as i8, day as i8)
+                .ok()
+                .and_then(|nd| {
+                    Time::new(hour as i8, min as i8, sec as i8, nano as i32)
+                        .ok()
+                        .map(|t| nd.to_datetime(t))
+                })
         }
         // remaining values did not match pattern
         else {
@@ -248,61 +242,43 @@ mod test {
             (
                 "2021-01-01",
                 "%Y-%m-%d",
-                Some(
-                    NaiveDate::from_ymd_opt(2021, 1, 1)
-                        .unwrap()
-                        .and_hms_nano_opt(0, 0, 0, 0)
-                        .unwrap(),
-                ),
+                Some(NaiveDate::new(2021, 1, 1).unwrap().at(0, 0, 0, 0)),
             ),
             (
                 "2021-01-01 07:45:12",
                 "%Y-%m-%d %H:%M:%S",
-                Some(
-                    NaiveDate::from_ymd_opt(2021, 1, 1)
-                        .unwrap()
-                        .and_hms_nano_opt(7, 45, 12, 0)
-                        .unwrap(),
-                ),
+                Some(NaiveDate::new(2021, 1, 1).unwrap().at(7, 45, 12, 0)),
             ),
             (
                 "2021-01-01 07:45:12",
                 "%Y-%m-%d %H:%M:%S",
-                Some(
-                    NaiveDate::from_ymd_opt(2021, 1, 1)
-                        .unwrap()
-                        .and_hms_nano_opt(7, 45, 12, 0)
-                        .unwrap(),
-                ),
+                Some(NaiveDate::new(2021, 1, 1).unwrap().at(7, 45, 12, 0)),
             ),
             (
                 "2019-04-18T02:45:55.555000000",
                 "%Y-%m-%dT%H:%M:%S.%9f",
                 Some(
-                    NaiveDate::from_ymd_opt(2019, 4, 18)
+                    NaiveDate::new(2019, 4, 18)
                         .unwrap()
-                        .and_hms_nano_opt(2, 45, 55, 555000000)
-                        .unwrap(),
+                        .at(2, 45, 55, 555000000),
                 ),
             ),
             (
                 "2019-04-18T02:45:55.555000",
                 "%Y-%m-%dT%H:%M:%S.%6f",
                 Some(
-                    NaiveDate::from_ymd_opt(2019, 4, 18)
+                    NaiveDate::new(2019, 4, 18)
                         .unwrap()
-                        .and_hms_nano_opt(2, 45, 55, 555000000)
-                        .unwrap(),
+                        .at(2, 45, 55, 555000000),
                 ),
             ),
             (
                 "2019-04-18T02:45:55.555",
                 "%Y-%m-%dT%H:%M:%S.%3f",
                 Some(
-                    NaiveDate::from_ymd_opt(2019, 4, 18)
+                    NaiveDate::new(2019, 4, 18)
                         .unwrap()
-                        .and_hms_nano_opt(2, 45, 55, 555000000)
-                        .unwrap(),
+                        .at(2, 45, 55, 555000000),
                 ),
             ),
         ];

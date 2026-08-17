@@ -78,6 +78,18 @@ pub fn check_is_valid_struct_cast(
 }
 
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
+    handle_casting_failures_with_hint(input, output, None)
+}
+
+/// Like [`handle_casting_failures`], but lets the caller attach extra,
+/// situation-specific advice (e.g. a format-string fix) on top of the usual
+/// generic hints, since this function has no visibility into how the
+/// conversion was actually invoked (e.g. which format string was used).
+pub fn handle_casting_failures_with_hint(
+    input: &Series,
+    output: &Series,
+    extra_hint: Option<&str>,
+) -> PolarsResult<()> {
     check_is_valid_struct_cast(input.dtype(), output.dtype(), output.name())?;
 
     let mut idxs = Vec::new();
@@ -108,7 +120,7 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
 
     polars_bail!(
         InvalidOperation:
-        "conversion from `{}` to `{}` failed in column '{}' for {} out of {} values: {}{}",
+        "conversion from `{}` to `{}` failed in column '{}' for {} out of {} values: {}{}{}",
         input.dtype(),
         output.dtype(),
         output.name(),
@@ -116,6 +128,7 @@ pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<
         input.len(),
         failures.fmt_list(),
         additional_info,
+        extra_hint.map(|h| format!("\n\n{h}")).unwrap_or_default(),
     )
 }
 

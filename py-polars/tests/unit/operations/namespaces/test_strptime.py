@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import polars as pl
-from polars.exceptions import ChronoFormatWarning, ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -111,7 +111,7 @@ def test_timezone_aware_strptime(tz_string: str, timedelta: timedelta) -> None:
         }
     )
     assert times.with_columns(
-        pl.col("delivery_datetime").str.to_datetime(format="%Y-%m-%d %H:%M:%S%z")
+        pl.col("delivery_datetime").str.to_datetime(format="%Y-%m-%d %H:%M:%S%:z")
     ).to_dict(as_series=False) == {
         "delivery_datetime": [
             datetime(2021, 12, 5, 6, 0, tzinfo=timezone(timedelta)),
@@ -193,7 +193,7 @@ def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
 @pytest.mark.parametrize(
     ("offset", "time_zone", "tzinfo", "format"),
     [
-        ("+01:00", "UTC", timezone(timedelta(hours=1)), "%Y-%m-%dT%H:%M%z"),
+        ("+01:00", "UTC", timezone(timedelta(hours=1)), "%Y-%m-%dT%H:%M%:z"),
         ("", None, None, "%Y-%m-%dT%H:%M"),
     ],
 )
@@ -337,18 +337,18 @@ def test_str_to_datetime_infer_tz_aware() -> None:
     "result",
     [
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(
-            pl.Datetime("us", "UTC"), format="%Y-%m-%dT%H:%M:%S%z"
+            pl.Datetime("us", "UTC"), format="%Y-%m-%dT%H:%M:%S%:z"
         ),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(
-            pl.Datetime("us"), format="%Y-%m-%dT%H:%M:%S%z"
+            pl.Datetime("us"), format="%Y-%m-%dT%H:%M:%S%:z"
         ),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(pl.Datetime("us", "UTC")),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(pl.Datetime("us")),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(
-            time_zone="UTC", format="%Y-%m-%dT%H:%M:%S%z"
+            time_zone="UTC", format="%Y-%m-%dT%H:%M:%S%:z"
         ),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(
-            format="%Y-%m-%dT%H:%M:%S%z"
+            format="%Y-%m-%dT%H:%M:%S%:z"
         ),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(time_zone="UTC"),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(),
@@ -497,7 +497,9 @@ def test_invalid_date_parsing_4898() -> None:
 
 
 def test_strptime_invalid_timezone() -> None:
-    ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime("%Y-%m-%d %H:%M:%S%z")
+    ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime(
+        "%Y-%m-%d %H:%M:%S%:z"
+    )
     with pytest.raises(ComputeError, match=r"unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("foo")
 
@@ -543,7 +545,7 @@ def test_to_datetime_ambiguous_or_non_existent() -> None:
         ("2020-01-01T00:00:00Z", None, datetime(2020, 1, 1, tzinfo=timezone.utc)),
         ("2020-01-01T00:00:00Z", "%+", datetime(2020, 1, 1, tzinfo=timezone.utc)),
         (
-            "2020-01-01T00:00:00+01:00",
+            "2020-01-01T00:00:00+0100",
             "%Y-%m-%dT%H:%M:%S%z",
             datetime(2020, 1, 1, tzinfo=timezone(timedelta(seconds=3600))),
         ),
@@ -553,7 +555,7 @@ def test_to_datetime_ambiguous_or_non_existent() -> None:
             datetime(2020, 1, 1, tzinfo=timezone(timedelta(seconds=3600))),
         ),
         (
-            "2020-01-01T00:00:00+01:00",
+            "2020-01-01T00:00:00+0100",
             "%Y-%m-%dT%H:%M:%S%#z",
             datetime(2020, 1, 1, tzinfo=timezone(timedelta(seconds=3600))),
         ),
@@ -564,7 +566,7 @@ def test_to_datetime_tz_aware_strptime(ts: str, fmt: str, expected: datetime) ->
     assert result == expected
 
 
-@pytest.mark.parametrize("format", ["%+", "%Y-%m-%dT%H:%M:%S%z"])
+@pytest.mark.parametrize("format", ["%+", "%Y-%m-%dT%H:%M:%S%:z"])
 def test_crossing_dst(format: str) -> None:
     ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
     result = pl.Series(ts).str.to_datetime(format)
@@ -572,7 +574,7 @@ def test_crossing_dst(format: str) -> None:
     assert result[1] == datetime(2021, 3, 28, 21, 59, 59, tzinfo=ZoneInfo("UTC"))
 
 
-@pytest.mark.parametrize("format", ["%+", "%Y-%m-%dT%H:%M:%S%z"])
+@pytest.mark.parametrize("format", ["%+", "%Y-%m-%dT%H:%M:%S%:z"])
 def test_crossing_dst_tz_aware(format: str) -> None:
     ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
     result = pl.Series(ts).str.to_datetime(format)
@@ -604,10 +606,6 @@ def test_strptime_subseconds_datetime(data: str, format: str, expected: time) ->
 @pytest.mark.parametrize(
     ("string", "fmt"),
     [
-        pytest.param("2023-05-04|7", "%Y-%m-%d|%H", id="hour but no minute"),
-        pytest.param("2023-05-04|7", "%Y-%m-%d|%k", id="padded hour but no minute"),
-        pytest.param("2023-05-04|10", "%Y-%m-%d|%M", id="minute but no hour"),
-        pytest.param("2023-05-04|10", "%Y-%m-%d|%S", id="second but no hour"),
         pytest.param(
             "2000-Jan-01 01 00 01", "%Y-%b-%d %I %M %S", id="12-hour clock but no AM/PM"
         ),
@@ -619,11 +617,52 @@ def test_strptime_subseconds_datetime(data: str, format: str, expected: time) ->
     ],
 )
 def test_strptime_incomplete_formats(string: str, fmt: str) -> None:
+    # A 12-hour-clock directive without an AM/PM directive (or vice versa) is
+    # rejected, since which is missing gives no way to tell which of the two
+    # 12-hour halves is meant.
     with pytest.raises(
         ComputeError,
         match="Invalid format string",
     ):
         pl.Series([string]).str.to_datetime(fmt)
+
+
+@pytest.mark.parametrize(
+    ("string", "fmt", "expected"),
+    [
+        pytest.param(
+            "2023-05-04|7",
+            "%Y-%m-%d|%H",
+            datetime(2023, 5, 4, 7),
+            id="hour but no minute",
+        ),
+        pytest.param(
+            "2023-05-04|7",
+            "%Y-%m-%d|%k",
+            datetime(2023, 5, 4, 7),
+            id="padded hour but no minute",
+        ),
+        pytest.param(
+            "2023-05-04|10",
+            "%Y-%m-%d|%M",
+            datetime(2023, 5, 4, 0, 10),
+            id="minute but no hour",
+        ),
+        pytest.param(
+            "2023-05-04|10",
+            "%Y-%m-%d|%S",
+            datetime(2023, 5, 4, 0, 0, 10),
+            id="second but no hour",
+        ),
+    ],
+)
+def test_strptime_missing_bigger_time_unit_defaults_to_zero(
+    string: str, fmt: str, expected: datetime
+) -> None:
+    # Unlike a missing AM/PM directive, a missing hour/minute directive is
+    # unambiguous - the omitted, bigger unit just defaults to zero.
+    result = pl.Series([string]).str.to_datetime(fmt).item()
+    assert result == expected
 
 
 @pytest.mark.parametrize(
@@ -704,11 +743,10 @@ def test_to_time_subseconds(data: str, format: str, expected: time) -> None:
         assert res == expected
 
 
-def test_to_time_format_warning() -> None:
+def test_to_time_format_dot_percent_f() -> None:
     s = pl.Series(["05:10:10.074000"])
-    with pytest.warns(ChronoFormatWarning, match=r".%f"):
-        result = s.str.to_time("%H:%M:%S.%f").item()
-    assert result == time(5, 10, 10, 74)
+    result = s.str.to_time("%H:%M:%S.%f").item()
+    assert result == time(5, 10, 10, 74000)
 
 
 @pytest.mark.parametrize(

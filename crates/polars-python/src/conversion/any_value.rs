@@ -1,11 +1,9 @@
 use std::borrow::{Borrow, Cow};
 use std::sync::{Arc, Mutex};
 
-use chrono::{
-    DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike,
-};
-use chrono_tz::Tz;
 use hashbrown::HashMap;
+use jiff::SignedDuration as TimeDelta;
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
 use num_traits::ToPrimitive;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
@@ -15,7 +13,9 @@ use polars::datatypes::{DataType, Field, TimeUnit};
 use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
 use polars_compute::decimal::{DEC128_MAX_PREC, DecimalFmtBuffer, dec128_fits};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
-use polars_core::utils::arrow::temporal_conversions::date32_to_date;
+use polars_core::utils::arrow::temporal_conversions::{
+    date_to_date32_opt, date32_to_date_opt, datetime_to_epoch_nanos_opt,
+};
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -93,7 +93,8 @@ pub(crate) fn any_value_into_py_object<'py>(
             map.cat_to_str_unchecked(cat).into_bound_py_any(py)
         },
         AnyValue::Date(v) => {
-            let date = date32_to_date(v);
+            let date =
+                date32_to_date_opt(v).ok_or_else(|| PyValueError::new_err("date out-of-range"))?;
             date.into_bound_py_any(py)
         },
         AnyValue::Datetime(v, time_unit, time_zone) => {
@@ -231,10 +232,10 @@ pub(crate) fn py_object_to_any_value(
     }
 
     fn get_date(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        const UNIX_EPOCH: NaiveDate = DateTime::UNIX_EPOCH.naive_utc().date();
         let date = ob.extract::<NaiveDate>()?;
-        let elapsed = date.signed_duration_since(UNIX_EPOCH);
-        Ok(AnyValue::Date(elapsed.num_days() as i32))
+        let days = date_to_date32_opt(date)
+            .ok_or_else(|| PyPolarsErr::Other("date out-of-range".to_string()))?;
+        Ok(AnyValue::Date(days))
     }
 
     fn get_datetime(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
@@ -243,52 +244,73 @@ pub(crate) fn py_object_to_any_value(
 
         if tzinfo.is_none() {
             let datetime = ob.extract::<NaiveDateTime>()?;
-            let delta = datetime - DateTime::UNIX_EPOCH.naive_utc();
-            let timestamp = delta.num_microseconds().unwrap();
-            return Ok(AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None));
+            // Avoid `TimeZone::to_timestamp`, whose `Timestamp` range is
+            // narrower than `DateTime`'s (kept small enough to accommodate
+            // an arbitrary UTC offset), and so rejects legitimate `DateTime`
+            // values near the -9999/9999 year boundary.
+            let us = polars_core::chunked_array::temporal::datetime_to_timestamp_us(datetime);
+            return Ok(AnyValue::Datetime(us, TimeUnit::Microseconds, None));
         }
 
         // Try converting `pytz` timezone to `zoneinfo` timezone
-        let (ob, tzinfo) = if let Some(tz) = tzinfo
+        let ob = if let Some(tz) = tzinfo
             .getattr(intern!(py, "zone"))
             .ok()
             .and_then(|tz| (!tz.is_none()).then_some(tz))
         {
             let tzinfo = PyTzInfo::timezone(py, tz.cast_into::<PyString>()?)?;
-            (
-                &ob.call_method(intern!(py, "astimezone"), (&tzinfo,), None)?,
-                tzinfo,
-            )
+            ob.call_method(intern!(py, "astimezone"), (&tzinfo,), None)?
         } else {
-            (ob, tzinfo.cast_into()?)
+            ob.clone()
         };
 
-        let (timestamp, tz) = if tzinfo.hasattr(intern!(py, "key"))? {
-            let datetime = ob.extract::<DateTime<Tz>>()?;
-            let tz = unsafe { TimeZone::from_static(datetime.timezone().name()) };
-            if datetime.year() >= 2100 {
-                // chrono-tz does not support dates after 2100
-                // https://github.com/chronotope/chrono-tz/issues/135
-                (
-                    pl_utils(py)
-                        .bind(py)
-                        .getattr(intern!(py, "datetime_to_int"))?
-                        .call1((ob, intern!(py, "us")))?
-                        .extract::<i64>()?,
-                    tz,
-                )
-            } else {
-                let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
-                (delta.num_microseconds().unwrap(), tz)
-            }
+        // Read the wall-clock fields directly (ignoring tzinfo) and resolve
+        // the UTC offset via Python's own `utcoffset()` (which respects
+        // `fold` for DST-fold ambiguity), then compute the epoch tick via
+        // calendar arithmetic. This avoids `jiff::Zoned`, whose underlying
+        // `Timestamp` range is narrower than `DateTime`'s and would
+        // otherwise reject legitimate values near the -9999/9999 year
+        // boundary.
+        let year: i16 = ob.getattr(intern!(py, "year"))?.extract()?;
+        let month: i8 = ob.getattr(intern!(py, "month"))?.extract()?;
+        let day: i8 = ob.getattr(intern!(py, "day"))?.extract()?;
+        let hour: i8 = ob.getattr(intern!(py, "hour"))?.extract()?;
+        let minute: i8 = ob.getattr(intern!(py, "minute"))?.extract()?;
+        let second: i8 = ob.getattr(intern!(py, "second"))?.extract()?;
+        let microsecond: i32 = ob.getattr(intern!(py, "microsecond"))?.extract()?;
+        let naive =
+            jiff::civil::DateTime::new(year, month, day, hour, minute, second, microsecond * 1_000)
+                .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
+
+        let offset_td = ob.call_method0(intern!(py, "utcoffset"))?;
+        let offset_days: i64 = offset_td.getattr(intern!(py, "days"))?.extract()?;
+        let offset_seconds: i64 = offset_td.getattr(intern!(py, "seconds"))?.extract()?;
+        let offset_micros: i64 = offset_td.getattr(intern!(py, "microseconds"))?.extract()?;
+        let offset_nanos = i128::from(offset_days) * 86_400_000_000_000
+            + i128::from(offset_seconds) * 1_000_000_000
+            + i128::from(offset_micros) * 1_000;
+
+        let epoch_nanos = datetime_to_epoch_nanos_opt(naive)
+            .and_then(|n| n.checked_sub(offset_nanos))
+            .ok_or_else(|| PyPolarsErr::Other("datetime out-of-range".to_string()))?;
+        let timestamp_us = i64::try_from(epoch_nanos.div_euclid(1_000))
+            .map_err(|_| PyPolarsErr::Other("timestamp out-of-range".to_string()))?;
+
+        let new_tzinfo = ob.getattr(intern!(py, "tzinfo"))?;
+        let tz = if new_tzinfo.hasattr(intern!(py, "key"))? {
+            let name: String = new_tzinfo.getattr(intern!(py, "key"))?.extract()?;
+            // SAFETY: `key` is only present on `zoneinfo.ZoneInfo`, which
+            // only ever holds a validated IANA identifier.
+            unsafe { TimeZone::new_unchecked(name) }
         } else {
-            let datetime = ob.extract::<DateTime<FixedOffset>>()?;
-            let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
-            (delta.num_microseconds().unwrap(), TimeZone::UTC)
+            // Polars only supports named time zones as a column dtype label;
+            // arbitrary fixed-offset tzinfo is normalized to UTC (the instant
+            // itself is unaffected).
+            TimeZone::UTC
         };
 
         Ok(AnyValue::DatetimeOwned(
-            timestamp,
+            timestamp_us,
             TimeUnit::Microseconds,
             Some(Arc::new(tz)),
         ))
@@ -296,11 +318,11 @@ pub(crate) fn py_object_to_any_value(
 
     fn get_timedelta(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let timedelta = ob.extract::<TimeDelta>()?;
-        if let Some(micros) = timedelta.num_microseconds() {
+        if let Ok(micros) = i64::try_from(timedelta.as_micros()) {
             Ok(AnyValue::Duration(micros, TimeUnit::Microseconds))
         } else {
             Ok(AnyValue::Duration(
-                timedelta.num_milliseconds(),
+                i64::try_from(timedelta.as_millis()).unwrap(),
                 TimeUnit::Milliseconds,
             ))
         }
@@ -309,9 +331,10 @@ pub(crate) fn py_object_to_any_value(
     fn get_time(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let time = ob.extract::<NaiveTime>()?;
 
-        Ok(AnyValue::Time(
-            (time.num_seconds_from_midnight() as i64) * 1_000_000_000 + time.nanosecond() as i64,
-        ))
+        let nanos = (time.hour() as i64 * 3_600 + time.minute() as i64 * 60 + time.second() as i64)
+            * 1_000_000_000
+            + time.subsec_nanosecond() as i64;
+        Ok(AnyValue::Time(nanos))
     }
 
     fn get_decimal(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {

@@ -23,8 +23,6 @@ arrow = { workspace = true }
 bitflags = { workspace = true }
 boxcar = { workspace = true }
 bytemuck = { workspace = true }
-chrono = { workspace = true, optional = true }
-chrono-tz = { workspace = true, optional = true }
 comfy-table = { version = "7.1.1", default-features = false, optional = true }
 either = { workspace = true }
 getrandom = { workspace = true }
@@ -32,6 +30,7 @@ half = { workspace = true, optional = true, features = ["num-traits", "bytemuck"
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
+jiff = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
 proptest = { workspace = true, optional = true }
@@ -66,7 +65,7 @@ simd = ["arrow/simd", "polars-compute/simd"]
 nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "arrow/nightly"]
 avx512 = []
 docs = []
-temporal = ["regex", "chrono", "polars-error/regex"]
+temporal = ["regex", "dep:jiff", "polars-error/regex"]
 proptest = ["dep:proptest", "dtype-u8", "dtype-u16", "dtype-i8", "dtype-i16", "dtype-u128", "dtype-i128"]
 random = ["rand", "rand_distr"]
 algorithm_group_by = []
@@ -113,7 +112,7 @@ product = []
 unique_counts = []
 partition_by = ["algorithm_group_by"]
 describe = []
-timezones = ["temporal", "chrono", "chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
+timezones = ["temporal", "arrow/timezones"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
 list_arithmetic = []
 array_arithmetic = ["dtype-array"]
@@ -153,7 +152,7 @@ serde = [
   "arrow/io_ipc_compression",
   "serde_json",
 ]
-serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "chrono/serde"]
+serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "jiff/serde"]
 dsl-schema = [
   "serde",
   "dep:schemars",

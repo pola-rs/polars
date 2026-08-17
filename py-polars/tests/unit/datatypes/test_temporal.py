@@ -337,7 +337,7 @@ def test_datetime_consistency() -> None:
         datetime(2000, 1, 1, 1, 1, 1, 555555, tzinfo=ZoneInfo("Asia/Kathmandu")),
         datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=ZoneInfo("Asia/Kathmandu")),
         datetime(3099, 12, 31, 23, 59, 59, 123456, tzinfo=ZoneInfo("Asia/Kathmandu")),
-        datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=ZoneInfo("Asia/Kathmandu")),
+        datetime(9999, 12, 30, 23, 59, 59, 999999, tzinfo=ZoneInfo("Asia/Kathmandu")),
     ]
     ddf = pl.DataFrame({"dtm": test_data}).with_columns(
         pl.col("dtm").dt.nanosecond().alias("ns")
@@ -364,6 +364,28 @@ def test_datetime_consistency() -> None:
         (test_data[2],),
         (test_data[3],),
     ]
+
+
+def test_write_csv_json_repr_tz_aware_datetime_beyond_timestamp_range() -> None:
+    # The physical tick stored for a tz-aware `Datetime` is the elapsed time
+    # since the epoch in UTC, independent of whatever time zone is attached
+    # for display - so a perfectly ordinary local reading (well within
+    # `datetime.MAXYEAR`) can correspond to a UTC instant beyond jiff's
+    # `Timestamp::MAX` (~9999-12-30T22:00:00Z, deliberately kept narrower
+    # than `DateTime`'s own -9999/9999 range so it can always accommodate an
+    # arbitrary UTC offset). Formatting such a value must degrade gracefully
+    # instead of panicking, regardless of output format.
+    value = datetime(9999, 12, 31, 13, 0, 0, tzinfo=ZoneInfo("Europe/Amsterdam"))
+    s = pl.Series("dt", [value], dtype=pl.Datetime("us", "Europe/Amsterdam"))
+
+    repr(s)
+    repr(s.to_frame())
+
+    csv = s.to_frame().write_csv()
+    assert "9999-12-31T13:00:00" in csv
+
+    json_str = s.to_frame().write_json()
+    assert "9999-12-31T13:00:00" in json_str
 
 
 def test_timezone() -> None:
@@ -1846,13 +1868,11 @@ def test_tz_aware_with_timezone_directive(
     assert result == expected
 
 
-def test_local_time_zone_name() -> None:
-    ser = pl.Series(["2020-01-01 03:00ACST"]).str.strptime(
-        pl.Datetime, "%Y-%m-%d %H:%M%Z"
-    )
-    result = ser[0]
-    expected = datetime(2020, 1, 1, 3)
-    assert result == expected
+def test_local_time_zone_name_rejected() -> None:
+    with pytest.raises(InvalidOperationError):
+        pl.Series(["2020-01-01 03:00ACST"]).str.strptime(
+            pl.Datetime, "%Y-%m-%d %H:%M%Z"
+        )
 
 
 def test_tz_aware_filter_lit() -> None:
