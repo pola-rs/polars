@@ -21,10 +21,8 @@ __all__ = [
     "dataframes",
     "series",
     "column",
-    "columns",
     "dtypes",
     "lists",
-    "create_list_strategy",
     # profiles
     "load_profile",
     "set_profile",
