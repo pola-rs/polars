@@ -1097,28 +1097,46 @@ impl VisitorMut for CorrelatedRewriter<'_> {
     }
 }
 
-// Replace every `Subquery` node in `expr` with a placeholder identifier,
-// returning each one's original query alongside the name that stands in for
-// it. Lifting a subquery out of direct comparison position (e.g.
-// `SUM(v) > (SELECT ...)`) avoids the "use IN instead" comparison guard,
-// which only fires on a `Subquery` that's a direct operand of a `BinaryOp`.
-pub(crate) fn lift_uncorrelated_subqueries(expr: &mut SQLExpr) -> Vec<(PlSmallStr, Query)> {
-    struct Lifter {
-        out: Vec<(PlSmallStr, Query)>,
+// Replace every `Subquery` node in `expr` with a placeholder identifier, then
+// parse each one standalone and alias it to that placeholder. Lifting a
+// subquery out of direct comparison position (e.g. `SUM(v) > (SELECT ...)`)
+// avoids the "use IN instead" comparison guard, which only fires on a
+// `Subquery` that's a direct operand of a `BinaryOp`; parsing it separately,
+// rather than in place, is what keeps it out of that position.
+pub(crate) fn lift_uncorrelated_subqueries(
+    ctx: &mut SQLContext,
+    expr: &mut SQLExpr,
+    schema: &Schema,
+) -> PolarsResult<Vec<Expr>> {
+    struct Lifter<'a> {
+        ctx: &'a mut SQLContext,
+        schema: &'a Schema,
+        out: Vec<Expr>,
     }
-    impl VisitorMut for Lifter {
-        type Break = ();
+    impl VisitorMut for Lifter<'_> {
+        type Break = PolarsError;
 
-        fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+        fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<PolarsError> {
             if let SQLExpr::Subquery(sq) = expr {
                 let name = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_res", unique_column_name());
-                self.out.push((name.clone(), (**sq).clone()));
+                let parsed =
+                    match parse_sql_expr(&SQLExpr::Subquery(sq.clone()), self.ctx, Some(self.schema)) {
+                        Ok(parsed) => parsed,
+                        Err(e) => return ControlFlow::Break(e),
+                    };
+                self.out.push(parsed.alias(name.clone()));
                 *expr = SQLExpr::Identifier(Ident::new(name.as_str()));
             }
             ControlFlow::Continue(())
         }
     }
-    let mut lifter = Lifter { out: Vec::new() };
-    let _ = expr.visit(&mut lifter);
-    lifter.out
+    let mut lifter = Lifter {
+        ctx,
+        schema,
+        out: Vec::new(),
+    };
+    if let ControlFlow::Break(e) = expr.visit(&mut lifter) {
+        return Err(e);
+    }
+    Ok(lifter.out)
 }

@@ -1718,19 +1718,9 @@ impl SQLContext {
                     // lift it out of comparison position (dodging the "use IN
                     // instead" guard on a direct subquery operand) and
                     // resolve it by broadcasting across the group keys.
-                    let lifted = lift_uncorrelated_subqueries(&mut rewritten_having);
+                    let mut lifted_exprs =
+                        lift_uncorrelated_subqueries(self, &mut rewritten_having, &schema)?;
                     let mut having_expr = parse_sql_expr(&rewritten_having, self, Some(&schema))?;
-                    let mut lifted_exprs = lifted
-                        .into_iter()
-                        .map(|(name, sq)| {
-                            Ok(parse_sql_expr(
-                                &SQLExpr::Subquery(Box::new(sq)),
-                                self,
-                                Some(&schema),
-                            )?
-                            .alias(name))
-                        })
-                        .collect::<PolarsResult<Vec<Expr>>>()?;
                     (new_key_lf, _) = self.process_subqueries(new_key_lf, {
                         let mut all: Vec<&mut Expr> = lifted_exprs.iter_mut().collect();
                         all.push(&mut having_expr);
