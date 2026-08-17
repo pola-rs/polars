@@ -63,8 +63,6 @@ Strategy helpers
    :toctree: api/
 
     testing.parametric.column
-    testing.parametric.columns
-    testing.parametric.create_list_strategy
 
 
 Profiles
