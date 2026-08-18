@@ -17,7 +17,6 @@ pytestmark = pytest.mark.filterwarnings(
 )
 
 
-@pytest.mark.may_fail_auto_streaming  # dtype not set
 @pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_map_elements_infer_list() -> None:
     df = pl.DataFrame(
@@ -184,7 +183,6 @@ def test_map_elements_type_propagation() -> None:
     ).to_dict(as_series=False) == {"a": [1, 2, 3], "b": [1.0, 2.0, None]}
 
 
-@pytest.mark.may_fail_auto_streaming  # dtype not set
 @pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_empty_list_in_map_elements() -> None:
     df = pl.DataFrame(
@@ -248,7 +246,6 @@ def test_map_elements_explicit_list_output_type() -> None:
     assert out.to_dict(as_series=False) == {"str": [[1, 2, 3], [1, 2, 3]]}
 
 
-@pytest.mark.may_fail_auto_streaming  # dtype not set
 def test_map_elements_dict() -> None:
     df = pl.DataFrame({"abc": ['{"A":"Value1"}', '{"B":"Value2"}']})
     with pytest.warns(

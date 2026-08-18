@@ -179,7 +179,7 @@ def _defer(
             lf = lf.filter(predicate)
         if n_rows is not None:
             lf = lf.limit(n_rows)
-        yield lf.collect()
+        yield lf._collect_eager()
 
     return register_io_source(
         io_source=source, schema=schema, validate_schema=validate_schema

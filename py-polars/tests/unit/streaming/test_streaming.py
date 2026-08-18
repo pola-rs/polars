@@ -53,7 +53,6 @@ def test_streaming_block_on_literals_6054() -> None:
     ).sort("col_1").to_dict(as_series=False) == {"col_1": [0, 1], "col_2": [0, 5]}
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: non-pure map_batches
 def test_streaming_streamable_functions(
     plmonkeypatch: PlMonkeyPatch, capfd: Any
@@ -83,7 +82,6 @@ def test_streaming_streamable_functions(
 
 
 @pytest.mark.slow
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: timing
 def test_cross_join_stack() -> None:
     morsel_size = os.environ.get("POLARS_IDEAL_MORSEL_SIZE")
@@ -129,7 +127,6 @@ def test_streaming_literal_expansion() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_streaming_apply(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 

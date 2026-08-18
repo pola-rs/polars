@@ -42,7 +42,7 @@ pub fn count_rows(
                 .try_open_assume_latest()?
         })
     } else {
-        polars_utils::open_file(path.as_std_path())?
+        polars_utils::io::open_file(path.as_std_path())?
     };
 
     let mmap = MMapSemaphore::new_from_file(&file).unwrap();
@@ -1175,6 +1175,7 @@ pub(super) fn parse_lines(
                                         \n\
                                         You might want to try:\n\
                                         - increasing `infer_schema_length` (e.g. `infer_schema_length=10000`),\n\
+                                        - increasing `infer_schema_files` (e.g. `infer_schema_files=50`),\n\
                                         - specifying correct dtype with the `schema_overrides` argument\n\
                                         - setting `ignore_errors` to `True`,\n\
                                         - adding `{}` to the `null_values` list.\n\n\

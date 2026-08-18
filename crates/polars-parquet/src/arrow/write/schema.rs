@@ -252,7 +252,10 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         },
         ArrowDataType::Dictionary(_, value, _) => {
             assert!(!value.is_nested());
-            let dict_field = Field::new(name, value.as_ref().clone(), field.is_nullable);
+            let mut dict_field = Field::new(name, value.as_ref().clone(), field.is_nullable);
+            if let Some(metadata) = &field.metadata {
+                dict_field = dict_field.with_metadata((**metadata).clone());
+            }
             return to_parquet_type(&dict_field);
         },
         ArrowDataType::FixedSizeBinary(size) => {

@@ -23,7 +23,6 @@ use polars_utils::unique_id::UniqueId;
 use crate::constants::get_len_name;
 use crate::dsl::{FileScanIR, JoinTypeOptionsIR, PredicateFileSkip, UnionOptions};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
-use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::optimizer::projection_pushdown::edge::{
     GetParentKeyAndPort as _, GetProjectionState, ParentKeyAndPort, Projection, ProjectionState,
 };
@@ -77,10 +76,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
         },
         &mut vec![],
         &mut vec![],
-        IRTraversalStorage {
-            arena: ir_arena,
-            skip_subtree: |_| false,
-        },
+        ir_arena,
     )
     .continue_value()
     .unwrap();
@@ -130,7 +126,7 @@ impl<'a, 'arena> NodeVisitor for ProjectionPushdownVisitor<'a, 'arena> {
     type Edge = Edge;
     type BreakValue = ();
     type Key = Node;
-    type Storage = IRTraversalStorage<'arena>;
+    type Storage = Arena<IR>;
 
     fn default_edge(
         &mut self,
@@ -1679,7 +1675,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                                 sources,
                                 scan_type,
                                 alias: Some(name),
-                                cloud_options: unified_scan_args.cloud_options,
+                                cloud_options: Box::new(unified_scan_args.cloud_options),
                             },
                         },
                     );

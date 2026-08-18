@@ -399,7 +399,6 @@ def test_join_chunks_alignment_4720() -> None:
     )
 
 
-@pytest.mark.may_fail_auto_streaming  # SORTED_ASC flags
 def test_jit_sort_joins() -> None:
     n = 200
     # Explicitly specify numpy dtype because of different defaults on Windows
@@ -3426,6 +3425,9 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
 
+    assert plan.count("CACHE") == 2
+    assert len(extract) == 3
+
     assert extract[0] in {
         'LEFT PLAN ON: [col("a"), col("b")]',
         'LEFT PLAN ON: [col("b"), col("a")]',
@@ -3435,22 +3437,6 @@ def test_join_filter_pushdown_iejoin() -> None:
         'RIGHT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("b"), col("a")]',
     }
-
-    cse_applied = plan.count("CACHE") == 2
-
-    if cse_applied:
-        assert len(extract) == 3
-    else:
-        assert extract[3] in {
-            'LEFT PLAN ON: [col("a"), col("b")]',
-            'LEFT PLAN ON: [col("b"), col("a")]',
-        }
-        assert extract[4] == 'FILTER col("a") > 0'
-        assert extract[5] in {
-            'RIGHT PLAN ON: [col("a"), col("b")]',
-            'RIGHT PLAN ON: [col("b"), col("a")]',
-        }
-        assert len(extract) == 6
 
     assert_frame_equal(q.collect().sort(pl.all()), expect)
     assert_frame_equal(
@@ -4494,3 +4480,11 @@ def test_full_join_slice_pushdown_no_maintain_order_28551(
     # We should never push the slice left or right (or both), otherwise some rows will
     # not match
     assert result.null_count().sum_horizontal().item() == 0
+
+
+def test_join_coalesce_empty_suffix_28783() -> None:
+    left = pl.LazyFrame({"k": [1], "a": [2]})
+    right = pl.LazyFrame({"k": [1], "b": [3]})
+    lf = left.join(right, on="k", how="inner", suffix="")
+    expected = pl.LazyFrame({"k": [1], "a": [2], "b": [3]})
+    assert_frame_equal(lf, expected)

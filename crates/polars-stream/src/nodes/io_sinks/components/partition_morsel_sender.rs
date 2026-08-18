@@ -46,7 +46,7 @@ impl PartitionMorselSender {
                 ($file_sink_task_data:expr) => {{
                     used_row_capacity = partition
                         .sinked_size
-                        .checked_sub($file_sink_task_data.start_position)
+                        .checked_sub($file_sink_task_data.start_position())
                         .unwrap();
                     available_row_capacity = if self.file_size_limit.get() == RowCountAndSize::MAX {
                         RowCountAndSize::MAX
@@ -172,7 +172,7 @@ impl PartitionMorselSender {
                 *morsel.df_mut() = unsafe { DataFrame::new_unchecked(height, new_columns) };
             };
 
-            if file_sink_task_data.morsel_tx.send(morsel).await.is_err() {
+            if file_sink_task_data.send_morsel(morsel).await.is_err() {
                 let handle = partition.file_sink_task_data.take().unwrap().close();
                 return Err(handle.await.unwrap_err());
             }

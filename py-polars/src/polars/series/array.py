@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.wrap import wrap_s
@@ -73,6 +73,53 @@ class ArrayNameSpace:
         [
             3
             7
+        ]
+        """
+
+    def dot(self, other: IntoExpr | Sequence[Any]) -> Series:
+        """
+        Compute row-wise dot product with another Array Series or query vector.
+
+        Both inputs must contain equal-width arrays. Their inner data types are cast
+        to a common supertype, which must be ``Float32`` or ``Float64``.
+        An input with one row is broadcast against the other input.
+        A Python sequence or one-dimensional NumPy array is treated as a one-row
+        Array query.
+        If either input Array is null for a row, the result for that row is null.
+
+        Notes
+        -----
+        Elements are paired by position.
+
+        Pairs where either element is null do not contribute to the sum. If a
+        non-null row has no pairs where both elements are valid, the result is
+        ``0.0``.
+
+        Accumulation and output use the common floating-point data type. NaN and
+        infinity follow floating-point multiplication and addition semantics.
+        Results are not guaranteed to be bitwise identical to mathematically
+        equivalent expressions that use a different reduction path.
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [[1.0, 2.0], [3.0, 4.0]], dtype=pl.Array(pl.Float64, 2))
+        >>> b = pl.Series("b", [[5.0, 6.0], [7.0, 8.0]], dtype=pl.Array(pl.Float64, 2))
+        >>> a.arr.dot(b)
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            17.0
+            53.0
+        ]
+
+        A Python sequence can be used as a broadcast query.
+
+        >>> a.arr.dot([2.0, 3.0])
+        shape: (2,)
+        Series: 'a' [f64]
+        [
+            8.0
+            18.0
         ]
         """
 
@@ -479,7 +526,11 @@ class ArrayNameSpace:
 
     def arg_min(self) -> Series:
         """
-        Retrieve the index of the minimal value in every sub-array.
+        Retrieve an index of a minimal value in every sub-array.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------
@@ -502,7 +553,11 @@ class ArrayNameSpace:
 
     def arg_max(self) -> Series:
         """
-        Retrieve the index of the maximum value in every sub-array.
+        Retrieve an index of a maximum value in every sub-array.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
 
         Returns
         -------

@@ -11,20 +11,21 @@ use polars_ops::series::SearchSortedSide;
 use polars_ops::series::{ClosedInterval, InterpolationMethod};
 use polars_plan::dsl::DateRangeArgs;
 use polars_plan::plans::{
-    DynListLiteralValue, DynLiteralValue, FusedOperator, IRBitwiseFunction, IRBooleanFunction,
-    IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction, IRRandomMethod,
-    IRRangeFunction, IRRollingFunction, IRRollingFunctionBy, IRStringFunction, IRStructFunction,
-    IRTemporalFunction,
+    DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
+    IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
+    IRRandomMethod, IRRangeFunction, IRRollingFunction, IRRollingFunctionBy, IRStringFunction,
+    IRStructFunction, IRTemporalFunction,
 };
 use polars_plan::prelude::{
     AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
 };
 use polars_time::prelude::RollingGroupOptions;
 use polars_time::{ClosedWindow, Duration, DynamicGroupOptions};
+use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
-use pyo3::types::{PyInt, PyList, PyTuple};
+use pyo3::types::{PyBytes, PyInt, PyList, PyTuple};
 
 use crate::Wrap;
 use crate::lazyframe::visit::PyExprIR;
@@ -288,6 +289,7 @@ impl PyTemporalFunction {
 pub enum PyStructFunction {
     FieldByName,
     RenameFields,
+    DropFields,
     PrefixFields,
     SuffixFields,
     JsonEncode,
@@ -335,6 +337,40 @@ pub enum PyListFunction {
 
 #[pymethods]
 impl PyListFunction {
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pyclass(name = "ArrayFunction", eq, frozen, skip_from_py_object)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum PyArrayFunction {
+    Length,
+    Min,
+    Max,
+    Sum,
+    Dot,
+    ToList,
+    Std,
+    Var,
+    Mean,
+    Median,
+    Sort,
+    ArgMin,
+    ArgMax,
+    Get,
+    Join,
+    Contains,
+    CountMatches,
+    Shift,
+    Explode,
+    Concat,
+    Slice,
+    ToStruct,
+}
+
+#[pymethods]
+impl PyArrayFunction {
     fn __hash__(&self) -> isize {
         *self as isize
     }
@@ -1033,8 +1069,60 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
         } => Function {
             input: input.iter().map(|n| n.node().0).collect(),
             function_data: match function {
-                IRFunctionExpr::ArrayExpr(_) => {
-                    return Err(PyNotImplementedError::new_err("array expr"));
+                IRFunctionExpr::ArrayExpr(f) => match f {
+                    IRArrayFunction::Length => (PyArrayFunction::Length,).into_py_any(py),
+                    IRArrayFunction::Min => (PyArrayFunction::Min,).into_py_any(py),
+                    IRArrayFunction::Max => (PyArrayFunction::Max,).into_py_any(py),
+                    IRArrayFunction::Sum => (PyArrayFunction::Sum,).into_py_any(py),
+                    IRArrayFunction::Dot => (PyArrayFunction::Dot,).into_py_any(py),
+                    IRArrayFunction::ToList => (PyArrayFunction::ToList,).into_py_any(py),
+                    IRArrayFunction::Std(ddof) => (PyArrayFunction::Std, *ddof).into_py_any(py),
+                    IRArrayFunction::Var(ddof) => (PyArrayFunction::Var, *ddof).into_py_any(py),
+                    IRArrayFunction::Mean => (PyArrayFunction::Mean,).into_py_any(py),
+                    IRArrayFunction::Median => (PyArrayFunction::Median,).into_py_any(py),
+                    IRArrayFunction::Sort(options) => (
+                        PyArrayFunction::Sort,
+                        options.descending,
+                        options.nulls_last,
+                    )
+                        .into_py_any(py),
+                    IRArrayFunction::ArgMin => (PyArrayFunction::ArgMin,).into_py_any(py),
+                    IRArrayFunction::ArgMax => (PyArrayFunction::ArgMax,).into_py_any(py),
+                    IRArrayFunction::Get(null_on_oob) => {
+                        (PyArrayFunction::Get, *null_on_oob).into_py_any(py)
+                    },
+                    IRArrayFunction::Join(ignore_nulls) => {
+                        (PyArrayFunction::Join, *ignore_nulls).into_py_any(py)
+                    },
+                    #[cfg(feature = "is_in")]
+                    IRArrayFunction::Contains { nulls_equal } => {
+                        (PyArrayFunction::Contains, *nulls_equal).into_py_any(py)
+                    },
+                    #[cfg(feature = "array_count")]
+                    IRArrayFunction::CountMatches => {
+                        (PyArrayFunction::CountMatches,).into_py_any(py)
+                    },
+                    IRArrayFunction::Shift => (PyArrayFunction::Shift,).into_py_any(py),
+                    IRArrayFunction::Explode(options) => (
+                        PyArrayFunction::Explode,
+                        options.empty_as_null,
+                        options.keep_nulls,
+                    )
+                        .into_py_any(py),
+                    IRArrayFunction::Concat => (PyArrayFunction::Concat,).into_py_any(py),
+                    IRArrayFunction::Slice(offset, length) => {
+                        (PyArrayFunction::Slice, *offset, *length).into_py_any(py)
+                    },
+                    // Callable name generators are deprecated in favor of explicit field names and
+                    // cannot be represented in the typed view.
+                    IRArrayFunction::ToStruct(name_generator) => match name_generator {
+                        None => (PyArrayFunction::ToStruct, py.None()).into_py_any(py),
+                        Some(_) => {
+                            return Err(PyNotImplementedError::new_err(
+                                "array to_struct with a name generator",
+                            ));
+                        },
+                    },
                 },
                 IRFunctionExpr::BinaryExpr(_) => {
                     return Err(PyNotImplementedError::new_err("binary expr"));
@@ -1321,9 +1409,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRStructFunction::FieldByName(name) => {
                         (PyStructFunction::FieldByName, name.as_str()).into_py_any(py)
                     },
-                    IRStructFunction::RenameFields(names) => {
-                        (PyStructFunction::RenameFields, names[0].as_str()).into_py_any(py)
-                    },
+                    IRStructFunction::RenameFields(names) => (
+                        PyStructFunction::RenameFields,
+                        names.iter().map(|s| s.as_str()).collect_vec(),
+                    )
+                        .into_py_any(py),
+                    IRStructFunction::DropFields(names, strict) => (
+                        PyStructFunction::DropFields,
+                        names.iter().map(|s| s.as_str()).collect_vec(),
+                        strict,
+                    )
+                        .into_py_any(py),
                     IRStructFunction::PrefixFields(prefix) => {
                         (PyStructFunction::PrefixFields, prefix.as_str()).into_py_any(py)
                     },
@@ -1917,9 +2013,19 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     ("set_sorted", sorted.descending, sorted.nulls_last).into_py_any(py)
                 },
                 #[cfg(feature = "ffi_plugin")]
-                IRFunctionExpr::FfiPlugin { .. } => {
-                    return Err(PyNotImplementedError::new_err("ffi plugin"));
-                },
+                IRFunctionExpr::FfiPlugin {
+                    flags,
+                    lib,
+                    symbol,
+                    kwargs,
+                } => (
+                    "ffi_plugin",
+                    lib.as_str(),
+                    symbol.as_str(),
+                    PyBytes::new(py, kwargs.as_ref()),
+                    flags.is_elementwise(),
+                )
+                    .into_py_any(py),
                 IRFunctionExpr::FoldHorizontal { .. } => {
                     Err(PyNotImplementedError::new_err("fold"))
                 },

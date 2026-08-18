@@ -35,6 +35,7 @@ pub(super) fn convert_functions(
                 A::Min => IA::Min,
                 A::Max => IA::Max,
                 A::Sum => IA::Sum,
+                A::Dot => IA::Dot,
                 A::ToList => IA::ToList,
                 A::Std(v) => IA::Std(v),
                 A::Var(v) => IA::Var(v),
@@ -339,6 +340,7 @@ pub(super) fn convert_functions(
             I::StructExpr(match struct_function {
                 S::FieldByName(pl_small_str) => IS::FieldByName(pl_small_str),
                 S::RenameFields(pl_small_strs) => IS::RenameFields(pl_small_strs),
+                S::Drop(pl_small_strs, strict) => IS::DropFields(pl_small_strs, strict),
                 S::PrefixFields(pl_small_str) => IS::PrefixFields(pl_small_str),
                 S::SuffixFields(pl_small_str) => IS::SuffixFields(pl_small_str),
                 S::SelectFields(_) => unreachable!("handled by expression expansion"),
