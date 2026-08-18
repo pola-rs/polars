@@ -1422,7 +1422,7 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         time_zone
             Time zone for the `Datetime` Series. Pass `None` to unset time zone.
 
-        ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
+        ambiguous
             Determine how to handle daylight savings time (DST)
             ambiguous datetimes (e.g., when the clock falls back and the
             same local time occurs twice):
@@ -2305,7 +2305,7 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         microsecond
             Literal or Series, ranging from 0-999999.
 
-        ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
+        ambiguous
             Determine how to handle daylight savings time (DST)
             ambiguous datetimes (e.g., when the clock falls back and the
             same local time occurs twice):

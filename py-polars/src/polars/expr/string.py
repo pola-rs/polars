@@ -149,7 +149,7 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
 
-        ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
+        ambiguous
             Determine how to handle daylight savings time (DST)
             ambiguous datetimes (e.g., when the clock falls back and the
             same local time occurs twice). This does not apply to
@@ -261,7 +261,7 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
 
-        ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
+        ambiguous
             Determine how to handle daylight savings time (DST)
             ambiguous datetimes (e.g., when the clock falls back and the
             same local time occurs twice). This does not apply to

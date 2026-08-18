@@ -140,7 +140,7 @@ class StringNameSpace(_NamespaceSuggestMixin):
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
 
-        ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
+        ambiguous
             Determine how to handle daylight savings time (DST)
             ambiguous datetimes (e.g., when the clock falls back and the
             same local time occurs twice). This does not apply to
@@ -150,7 +150,6 @@ class StringNameSpace(_NamespaceSuggestMixin):
             - 'latest': use the latest datetime
             - 'raise': raise an error
             - 'null': set to null
-
         Examples
         --------
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
@@ -264,7 +263,7 @@ class StringNameSpace(_NamespaceSuggestMixin):
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
 
-        ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
+        ambiguous
             Determine how to handle daylight savings time (DST)
             ambiguous datetimes (e.g., when the clock falls back and the
             same local time occurs twice). This does not apply to
