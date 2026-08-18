@@ -136,6 +136,14 @@ elif BUILDING_SPHINX_DOCS:
     current_module.property = sphinx_accessor
 
 
+_REMOVED_MIN_PERIODS = RenamedParameter(
+    name="min_periods",
+    new_name="min_samples",
+    deprecated_in="1.21.0",
+    removed_in="2.0",
+)
+
+
 class Expr:
     """Expressions that can be used in various contexts."""
 
@@ -7128,14 +7136,7 @@ class Expr:
         return wrap_expr(self._pyexpr.interpolate_by(by_pyexpr))
 
     @unstable()
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_min_by(
         self,
         by: IntoExpr,
@@ -7266,14 +7267,7 @@ class Expr:
         )
 
     @unstable()
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_max_by(
         self,
         by: IntoExpr,
@@ -7430,14 +7424,7 @@ class Expr:
         )
 
     @unstable()
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_mean_by(
         self,
         by: IntoExpr,
@@ -7601,14 +7588,7 @@ class Expr:
         )
 
     @unstable()
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_sum_by(
         self,
         by: IntoExpr,
@@ -7765,14 +7745,7 @@ class Expr:
         )
 
     @unstable()
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_std_by(
         self,
         by: IntoExpr,
@@ -7938,14 +7911,7 @@ class Expr:
         )
 
     @unstable()
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_var_by(
         self,
         by: IntoExpr,
@@ -8111,14 +8077,7 @@ class Expr:
         )
 
     @unstable()
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_median_by(
         self,
         by: IntoExpr,
@@ -8251,14 +8210,7 @@ class Expr:
         )
 
     @unstable()
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_quantile_by(
         self,
         by: IntoExpr,
@@ -8503,14 +8455,7 @@ class Expr:
             )
         )
 
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_min(
         self,
         window_size: int,
@@ -8622,14 +8567,7 @@ class Expr:
             )
         )
 
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_max(
         self,
         window_size: int,
@@ -8741,14 +8679,7 @@ class Expr:
             )
         )
 
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_mean(
         self,
         window_size: int,
@@ -8862,14 +8793,7 @@ class Expr:
             )
         )
 
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_sum(
         self,
         window_size: int,
@@ -8981,14 +8905,7 @@ class Expr:
             )
         )
 
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_std(
         self,
         window_size: int,
@@ -9106,14 +9023,7 @@ class Expr:
             )
         )
 
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_var(
         self,
         window_size: int,
@@ -9231,14 +9141,7 @@ class Expr:
             )
         )
 
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_median(
         self,
         window_size: int,
@@ -9350,14 +9253,7 @@ class Expr:
             )
         )
 
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_quantile(
         self,
         quantile: float,
@@ -9723,14 +9619,7 @@ class Expr:
         )
 
     @unstable()
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_map(
         self,
         function: Callable[[Series], Any],
@@ -11023,14 +10912,7 @@ class Expr:
             self._pyexpr.sample_n(n_pyexpr, with_replacement, shuffle, seed)
         )
 
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def ewm_mean(
         self,
         *,
@@ -11347,14 +11229,7 @@ class Expr:
         half_life = parse_as_duration_string(half_life)
         return wrap_expr(self._pyexpr.ewm_sum_by(by_pyexpr, half_life))
 
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def ewm_std(
         self,
         *,
@@ -11451,14 +11326,7 @@ class Expr:
             self._pyexpr.ewm_std(alpha, adjust, bias, min_samples, ignore_nulls)
         )
 
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def ewm_var(
         self,
         *,
@@ -11895,14 +11763,7 @@ class Expr:
         return wrap_expr(self._pyexpr.entropy(base, normalize))
 
     @unstable()
-    @removed_parameters(
-        RenamedParameter(
-            name="min_periods",
-            new_name="min_samples",
-            deprecated_in="1.21.0",
-            removed_in="2.0",
-        )
-    )
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def cumulative_eval(self, expr: Expr, *, min_samples: int = 1) -> Expr:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
