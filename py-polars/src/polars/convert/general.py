@@ -1129,7 +1129,7 @@ def from_dataframe(
         Allow memory to be copied to perform the conversion. If set to False, may cause
         conversions that are not zero-copy to fail.
 
-        .. versionchanged:: 2.0.0
+        .. versionchanged:: 2.0
             `allow_copy` was removed
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
