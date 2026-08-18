@@ -142,7 +142,6 @@ pub fn optimize(
             let members = get_or_init_members!();
             if (members.has_sink_multiple || members.has_joins_or_unions)
                 && members.has_duplicate_scans()
-                && !members.has_cache
             {
                 if verbose {
                     eprintln!("found multiple sources; run comm_subplan_elim")

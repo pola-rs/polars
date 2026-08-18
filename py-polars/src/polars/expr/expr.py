@@ -4064,7 +4064,7 @@ class Expr:
         """
         Get the single value.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         This raises an error if there is not exactly one value.
 

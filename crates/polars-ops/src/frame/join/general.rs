@@ -36,7 +36,7 @@ pub fn _finish_join(
 
     let suffix = get_suffix(suffix);
 
-    df_right.rename_many(rename_strs.iter().map(|name| {
+    df_right = df_right.rename_many(rename_strs.iter().map(|name| {
         (
             name.as_str(),
             _join_suffix_name(name.as_str(), suffix.as_str()),

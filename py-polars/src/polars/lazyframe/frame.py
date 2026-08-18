@@ -6616,7 +6616,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Selects rows from this LazyFrame at the given indices.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, partially-distributed
 
         .. warning::
             This functionality is experimental. It may be
@@ -8011,7 +8011,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame as the sum of their null value count.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
