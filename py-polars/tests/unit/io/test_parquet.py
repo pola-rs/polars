@@ -143,7 +143,11 @@ def test_read_parquet_respects_rechunk_16416(
     buf.seek(0)
 
     rechunk, expected_chunks = rechunk_and_expected_chunks
-    result = pl.read_parquet(buf, use_pyarrow=use_pyarrow, rechunk=rechunk)
+    result = pl.read_parquet(buf, use_pyarrow=use_pyarrow)
+
+    if rechunk:
+        result = result.rechunk()
+
     assert result.n_chunks() == expected_chunks
 
 
@@ -1000,7 +1004,7 @@ def test_read_parquet_only_loads_selected_columns_15098(
     memory_usage_without_pyarrow.reset_tracking()
 
     # Only load one column:
-    df = pl.read_parquet([file_path], columns=["b"], rechunk=False)
+    df = pl.read_parquet([file_path], columns=["b"])
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 16_000_000 at least, but there's some overhead.
@@ -2643,11 +2647,7 @@ c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10
     f.seek(0)
 
     q = (
-        pl.scan_parquet(
-            f,
-            rechunk=True,
-            parallel="prefiltered",
-        )
+        pl.scan_parquet(f, parallel="prefiltered")
         .filter(
             pl.col("c0") == 1,
         )

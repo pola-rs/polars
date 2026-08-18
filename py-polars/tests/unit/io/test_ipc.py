@@ -443,7 +443,7 @@ def test_read_ipc_only_loads_selected_columns(
     kwargs = {}
     if not stream:
         kwargs["memory_map"] = False
-    df = read_ipc(stream, str(file_path), columns=["b"], rechunk=False, **kwargs)
+    df = read_ipc(stream, str(file_path), columns=["b"], **kwargs)
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 32_000_000 at least, but there's some overhead.
