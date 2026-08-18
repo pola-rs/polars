@@ -34,20 +34,15 @@ impl HintIR {
     {
         match self {
             Self::Sorted(s) => {
-                let Some(i) = s.iter().position(|s| f(&s.column)) else {
-                    return false;
-                };
-
-                *s = s
-                    .get(i)
-                    .into_iter()
-                    .chain(s.iter().skip(1 + i).filter(|s| f(&s.column)))
-                    .cloned()
-                    .collect()
-            },
+                // If a column was removed all later columns in the sort order are also
+                // invalid.
+                if let Some(first_invalidated) = s.iter().position(|s| !f(&s.column)) {
+                    *s = s[..first_invalidated].iter().cloned().collect();
+                }
+                
+                !s.is_empty()
+            }
         }
-
-        true
     }
 }
 
