@@ -23,8 +23,8 @@ from polars._utils.construction.dataframe import (
 from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyseries
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
-    issue_deprecation_warning,
 )
+from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.various import (
     _cast_repr_strings_with_schema,
@@ -1105,10 +1105,12 @@ def _from_series_repr(m: re.Match[str]) -> Series:
         ).to_series()
 
 
+@removed_parameters(
+    RemovedParameter(name="allow_copy", deprecated_in="1.23.0", removed_in="2.0.0")
+)
 def from_dataframe(
     df: ArrowArrayExportable | ArrowStreamExportable,
     *,
-    allow_copy: bool | None = None,
     rechunk: bool = True,
 ) -> DataFrame:
     """
@@ -1127,8 +1129,8 @@ def from_dataframe(
         Allow memory to be copied to perform the conversion. If set to False, may cause
         conversions that are not zero-copy to fail.
 
-        .. deprecated: 1.23.0
-            `allow_copy` is deprecated and will be removed in a future version.
+        .. versionchanged:: 2.0.0
+            `allow_copy` was removed
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
 
@@ -1156,13 +1158,6 @@ def from_dataframe(
     │ 2   ┆ 4.0 ┆ y   │
     └─────┴─────┴─────┘
     """
-    if allow_copy is not None:
-        # TODO: [amber] This parameter needs a removal
-        issue_deprecation_warning(
-            "`allow_copy` is deprecated and will be removed in a future version.",
-            version="1.23",
-        )
-
     if not is_pycapsule(df):
         msg = f"expected object supporting the PyCapsule Interface, got {qualified_type_name(df)!r}"
         raise TypeError(msg)
