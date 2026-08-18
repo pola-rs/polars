@@ -1111,9 +1111,12 @@ impl<'a> AnyValue<'a> {
             },
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => {
-                let av = StructOwned(payload);
-                // SAFETY: owned is already static
-                unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
+                // Inner values may still borrow (e.g. `String(&str)`), so promote each one.
+                let (avs, fields) = *payload;
+                StructOwned(Box::new((
+                    avs.into_iter().map(|av| av.into_static()).collect(),
+                    fields,
+                )))
             },
             #[cfg(feature = "object")]
             ObjectOwned(payload) => {
@@ -1711,8 +1714,23 @@ impl From<bool> for AnyValue<'static> {
 
 #[cfg(test)]
 mod test {
-    #[cfg(feature = "dtype-categorical")]
+    #[cfg(any(feature = "dtype-categorical", feature = "dtype-struct"))]
     use super::*;
+
+    // `into_static` must promote borrowed struct fields; otherwise they dangle once the source drops.
+    #[test]
+    #[cfg(feature = "dtype-struct")]
+    fn into_static_promotes_borrowed_struct_field() {
+        let s = String::from("borrowed");
+        let struct_owned = AnyValue::StructOwned(Box::new((vec![AnyValue::String(&s)], vec![])));
+        let promoted: AnyValue<'static> = struct_owned.into_static();
+        drop(s);
+
+        let AnyValue::StructOwned(payload) = &promoted else {
+            panic!("expected StructOwned");
+        };
+        assert_eq!(payload.0[0], AnyValue::StringOwned("borrowed".into()));
+    }
 
     #[test]
     #[cfg(feature = "dtype-categorical")]
