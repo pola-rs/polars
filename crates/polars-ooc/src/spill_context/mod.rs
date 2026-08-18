@@ -1,4 +1,3 @@
-use std::cmp::Reverse;
 use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
@@ -59,7 +58,7 @@ impl LocalStagingArea {
     }
 
     pub fn drain_into(&mut self, target: &mut Vec<RegisteredSpillToken>) {
-        target.extend(self.tokens.drain(..));
+        target.append(&mut self.tokens);
         self.retain_amort = 0;
     }
 
@@ -82,11 +81,6 @@ impl SpillQueue {
     pub fn push_back(&mut self, token: &Arc<dyn DynSpillToken>, id: u32) {
         self.gc();
         self.tokens.push_back(RegisteredSpillToken::new(token, id));
-    }
-
-    pub fn push_front(&mut self, token: &Arc<dyn DynSpillToken>, id: u32) {
-        self.gc();
-        self.tokens.push_front(RegisteredSpillToken::new(token, id));
     }
 
     pub fn pop_front(&mut self) -> Option<(Arc<dyn DynSpillToken>, u32)> {
@@ -169,9 +163,11 @@ impl SpillContextInner {
         }
     }
 
-    fn drain_staging(&self, queue: &mut SpillQueue) {
-        if self.staging_empty.load(Ordering::Relaxed)
-            || self.staging_empty.swap(true, Ordering::AcqRel)
+    // We need forced locking to make reset not leave orphan spillframes.
+    fn drain_staging(&self, queue: &mut SpillQueue, force_lock: bool) {
+        if !force_lock
+            && (self.staging_empty.load(Ordering::Relaxed)
+                || self.staging_empty.swap(true, Ordering::AcqRel))
         {
             return;
         }
@@ -202,7 +198,7 @@ impl SpillContextInner {
         self.stats.reset(name);
 
         let mut queue = self.spill_queue.lock().unwrap();
-        self.drain_staging(&mut queue);
+        self.drain_staging(&mut queue, true);
         while let Some(t) = queue.pop_back() {
             t.0.unregister();
         }
@@ -225,7 +221,7 @@ impl SpillContextInner {
         let policy = self.policy();
 
         let mut queue = self.spill_queue.lock().unwrap();
-        self.drain_staging(&mut queue);
+        self.drain_staging(&mut queue, false);
 
         while let Some((cand, reg_id)) = match policy {
             SpillContextPolicy::MostRecent => queue.pop_back(),
@@ -239,14 +235,11 @@ impl SpillContextInner {
     }
 
     pub(crate) fn reinsert(&self, token: &Arc<dyn DynSpillToken>, reg_id: u32, ctx_id: u64) {
+        let mut local = self.staging.get_or_default().lock().unwrap();
         if ctx_id != self.context_id.load(Ordering::Relaxed) {
             return;
         }
-
-        {
-            let mut local = self.staging.get_or_default().lock().unwrap();
-            local.push(token, reg_id);
-        }
+        local.push(token, reg_id);
 
         if self.staging_empty.load(Ordering::Relaxed) {
             self.staging_empty.swap(false, Ordering::AcqRel);
