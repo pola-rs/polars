@@ -343,9 +343,6 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-        .. versionchanged:: 1.20.0
-            Parameter `inference_length` should now be passed as a keyword argument.
-
         .. versionchanged:: 1.33.0
             Parameter `inference_length` was removed and `scale` was made non-optional.
 
@@ -1313,7 +1310,7 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         .. engine-support:: in-memory, streaming, distributed
 
         .. versionchanged:: 1.33.0
-            Parameter `infer_schema_length` was deprecated and `dtype` was made
+            Parameter `infer_schema_length` was removed and `dtype` was made
             non-optional to ensure that the planner can determine the output datatype.
 
         Parameters
