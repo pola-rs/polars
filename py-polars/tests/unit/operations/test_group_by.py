@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import typing
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
@@ -14,6 +15,7 @@ import polars as pl
 import polars.selectors as cs
 from polars import Expr
 from polars.exceptions import (
+    AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
@@ -27,6 +29,17 @@ if TYPE_CHECKING:
 
     from polars._typing import PolarsDataType, TimeUnit
     from tests.conftest import PlMonkeyPatch
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        ("count", "use `GroupBy.len` instead."),
+    ],
+)
+def test_removed_methods(name: str, match: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(pl.LazyFrame().group_by("a"), name)
 
 
 def test_group_by() -> None:
