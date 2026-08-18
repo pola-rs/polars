@@ -60,11 +60,10 @@ def datetime_(
         Time unit of the resulting expression.
     time_zone
         Time zone of the resulting expression.
-        
     ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
-            Determine how to handle daylight savings time (DST) ambiguous
-            datetimes (e.g., when the clock falls back and the same local
-            time occurs twice):
+        Determine how to handle daylight savings time (DST)
+        ambiguous datetimes (e.g., when the clock falls back and the
+        same local time occurs twice):
 
         - 'earliest': use the earliest datetime
         - 'latest': use the latest datetime

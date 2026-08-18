@@ -150,10 +150,15 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             Use a cache of unique, converted datetimes to apply the conversion.
 
         ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
-            Determine how to handle daylight savings time (DST) ambiguous
-            datetimes (e.g., when the clock falls back and the same local
-            time occurs twice). This does not apply to unparsable or
-            malformed date strings (use `strict=False` instead):
+            Determine how to handle daylight savings time (DST)
+            ambiguous datetimes (e.g., when the clock falls back and the
+            same local time occurs twice). This does not apply to
+            unparsable or malformed date strings (use `strict=False` instead):
+
+            - 'earliest': use the earliest datetime
+            - 'latest': use the latest datetime
+            - 'raise': raise an error
+            - 'null': set to null
 
         Examples
         --------
@@ -257,10 +262,15 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             Use a cache of unique, converted dates to apply the datetime conversion.
 
         ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
-            Determine how to handle daylight savings time (DST) ambiguous
-            datetimes (e.g., when the clock falls back and the same local
-            time occurs twice). This does not apply to unparsable or
-            malformed date strings (use `strict=False` instead):
+            Determine how to handle daylight savings time (DST)
+            ambiguous datetimes (e.g., when the clock falls back and the
+            same local time occurs twice). This does not apply to
+            unparsable or malformed date strings (use `strict=False` instead):
+
+            - 'earliest': use the earliest datetime
+            - 'latest': use the latest datetime
+            - 'raise': raise an error
+            - 'null': set to null
 
         Notes
         -----

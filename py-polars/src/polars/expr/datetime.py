@@ -439,9 +439,14 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
             Column or literal, ranging from 0-999999.
 
         ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
-            Determine how to handle daylight savings time (DST) ambiguous
-            datetimes (e.g., when the clock falls back and the same local
-            time occurs twice):
+            Determine how to handle daylight savings time (DST)
+            ambiguous datetimes (e.g., when the clock falls back and the
+            same local time occurs twice):
+
+            - 'earliest': use the earliest datetime
+            - 'latest': use the latest datetime
+            - 'raise': raise an error
+            - 'null': set to null
 
         Returns
         -------
@@ -2047,10 +2052,17 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         ----------
         time_zone
             Time zone for the `Datetime` expression. Pass `None` to unset time zone.
+            
         ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
-            Determine how to handle daylight savings time (DST) ambiguous
-            datetimes (e.g., when the clock falls back and the same local
-            time occurs twice):
+            Determine how to handle daylight savings time (DST)
+            ambiguous datetimes (e.g., when the clock falls back and the
+            same local time occurs twice):
+
+            - 'earliest': use the earliest datetime
+            - 'latest': use the latest datetime
+            - 'raise': raise an error
+            - 'null': set to null
+
         non_existent
             Determine how to deal with non-existent datetimes:
 
