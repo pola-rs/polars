@@ -150,7 +150,6 @@ class StringNameSpace(_NamespaceSuggestMixin):
             - 'latest': use the latest datetime
             - 'raise': raise an error
             - 'null': set to null
-            
         Examples
         --------
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])

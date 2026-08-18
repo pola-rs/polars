@@ -2314,7 +2314,6 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
             - 'latest': use the latest datetime
             - 'raise': raise an error
             - 'null': set to null
-            
         Returns
         -------
         Series
