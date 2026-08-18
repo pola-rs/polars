@@ -4,10 +4,12 @@ from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.exceptions import ComputeError, SchemaError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import dtypes, series
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -460,3 +462,19 @@ def test_repeat_by_null() -> None:
 def test_repeat_by_length_limit_raises_24330() -> None:
     with pytest.raises(ComputeError):
         pl.select(pl.lit(None).repeat_by(2147483648 - pl.Series([0, 0])))
+
+
+@given(s=series(min_size=1, max_size=1, allow_chunks=False), dtype=dtypes())
+def test_repeat_eager_matches_lazy(s: pl.Series, dtype: pl.DataType) -> None:
+    # Assert that eager and lazy engine agree on results/erros on randomly sampled data
+    value = s.item()
+    n = 3
+
+    try:
+        expected = pl.select(pl.repeat(value, n=n, dtype=dtype)).to_series()
+    except Exception as exc:
+        with pytest.raises(type(exc)):
+            pl.repeat(value, n=n, dtype=dtype, eager=True)
+        return
+
+    assert_series_equal(pl.repeat(value, n=n, dtype=dtype, eager=True), expected)

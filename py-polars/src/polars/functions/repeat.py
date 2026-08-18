@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, overload
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import qualified_type_name
-from polars._utils.wrap import wrap_expr
+from polars._utils.wrap import wrap_expr, wrap_s
 from polars.datatypes import (
     Array,
     Boolean,
@@ -143,6 +143,13 @@ def repeat(
         msg = f"`n` parameter of `repeat expected a `int` or `Expr` got a `{qualified_type_name(n)}`"
         raise TypeError(msg)
     value_pyexpr = parse_into_expression(value, str_as_lit=True, dtype=dtype)
+    if (
+        eager
+        and value_pyexpr.meta_is_scalar_literal()
+        and n._pyexpr.meta_is_scalar_literal()
+    ):
+        return wrap_s(plr.eager_repeat(value_pyexpr, n._pyexpr, dtype))
+
     expr = wrap_expr(plr.repeat(value_pyexpr, n._pyexpr, dtype))
     if eager:
         return F.select(expr).to_series()
