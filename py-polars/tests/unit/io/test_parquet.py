@@ -4,6 +4,7 @@ import decimal
 import functools
 import io
 import math
+import re
 import subprocess
 import sys
 from datetime import date, datetime, time, timezone
@@ -23,6 +24,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
+from polars._utils.polars_version import get_polars_build_commit
 from polars._utils.various import parse_version
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
@@ -4575,3 +4577,25 @@ def test_parquet_max_cached_scans_28661(
     err = capfd.readouterr().err
     if "parquet max cached metadata scans:" in err:
         assert "parquet max cached metadata scans: 8" in err, err
+
+
+@pytest.mark.parametrize("lazy", [True, False])
+def test_parquet_created_by_field(df: pl.DataFrame, lazy: bool) -> None:
+    f = io.BytesIO()
+    if lazy:
+        df.lazy().sink_parquet(f)
+    else:
+        df.write_parquet(f)
+    f.seek(0)
+    metadata = pq.read_metadata(f)
+
+    # Exact regex used by parquet-java. See https://github.com/pola-rs/polars/issues/15910
+    rgx = re.compile(
+        r"(.*?)\s+version\s*(?:([^(]*?)\s*(?:\(\s*build\s*([^)]*?)\s*\))?)?"
+    )
+    match = rgx.fullmatch(metadata.created_by)
+
+    assert match is not None
+    assert match.group(1) == "Polars (python)"
+    assert match.group(2) == pl.__version__
+    assert match.group(3) == get_polars_build_commit()
