@@ -447,7 +447,6 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
             - 'latest': use the latest datetime
             - 'raise': raise an error
             - 'null': set to null
-
         Returns
         -------
         Expr
@@ -2052,7 +2051,6 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         ----------
         time_zone
             Time zone for the `Datetime` expression. Pass `None` to unset time zone.
-            
         ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
             Determine how to handle daylight savings time (DST)
             ambiguous datetimes (e.g., when the clock falls back and the
