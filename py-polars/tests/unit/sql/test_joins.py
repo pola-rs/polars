@@ -444,6 +444,16 @@ def test_non_equi_joins(constraint: str) -> None:
                 "c": [3, 4, 8, 3, 4, 8, 3, 4, 8],
             },
         ),
+        # unqualified column on one side of the join predicate
+        (
+            "SELECT df1.a, df3.c FROM df1, df3 WHERE df1.a = c",
+            {"a": [3], "c": [3]},
+        ),
+        # unqualified column on the other side of the comparison
+        (
+            "SELECT df1.a, df3.c FROM df1, df3 WHERE c = df1.a",
+            {"a": [3], "c": [3]},
+        ),
     ],
 )
 def test_implicit_joins(query: str, expected: dict[str, Any]) -> None:

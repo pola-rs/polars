@@ -52,6 +52,52 @@ pub(crate) fn expr_refers_to_table(expr: &SQLExpr, table_name: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// UnqualifiedColumnsInSchema
+// ---------------------------------------------------------------------------
+
+/// Visitor that collects unqualified column identifiers (`SQLExpr::Identifier`, as opposed
+/// to `SQLExpr::CompoundIdentifier`) referenced in an expression tree, checking each one
+/// against a given `Schema` as it goes.
+struct UnqualifiedColumnsInSchema<'a> {
+    schema: &'a Schema,
+    found_any: bool,
+    all_in_schema: bool,
+}
+
+impl<'a> UnqualifiedColumnsInSchema<'a> {
+    fn new(schema: &'a Schema) -> Self {
+        Self {
+            schema,
+            found_any: false,
+            all_in_schema: true,
+        }
+    }
+}
+
+impl<'a> SQLVisitor for UnqualifiedColumnsInSchema<'a> {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<Self::Break> {
+        if let SQLExpr::Identifier(ident) = expr {
+            self.found_any = true;
+            if !self.schema.contains(ident.value.as_str()) {
+                self.all_in_schema = false;
+                return ControlFlow::Break(()); // short-circuit on first non-match
+            }
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// Check whether a raw SQL expression contains at least one *unqualified* column
+/// identifier, and that every unqualified identifier it contains exists in `schema`.
+pub(crate) fn sql_expr_cols_all_in_schema(expr: &SQLExpr, schema: &Schema) -> bool {
+    let mut visitor = UnqualifiedColumnsInSchema::new(schema);
+    let _ = expr.visit(&mut visitor);
+    visitor.found_any && visitor.all_in_schema
+}
+
+// ---------------------------------------------------------------------------
 // QualifyExpression
 // ---------------------------------------------------------------------------
 
