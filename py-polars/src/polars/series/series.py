@@ -122,19 +122,13 @@ if TYPE_CHECKING:
     from builtins import list as list_
     from builtins import set as set_
     from builtins import str as str_
-    from collections.abc import Callable
-
-    with contextlib.suppress(ImportError):  # Module not available when building docs
-        import polars._plr as plr
-
-    from collections.abc import Collection, Generator, Mapping
+    from collections.abc import Callable, Collection, Generator, Mapping
 
     import jax
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
         ArrayLike,
-        BufferInfo,
         ClosedInterval,
         ComparisonOperator,
         FillNullStrategy,
@@ -151,7 +145,6 @@ if TYPE_CHECKING:
         RankMethod,
         RoundMode,
         SearchSortedSide,
-        SeriesBuffers,
         SingleIndexSelector,
         SizeUnit,
         TemporalLiteral,
@@ -536,146 +529,6 @@ class Series:
           expert users.
         """
         self._s._export_arrow_to_c(out_ptr, out_schema_ptr)
-
-    def _get_buffer_info(self) -> BufferInfo:
-        """
-        Return pointer, offset, and length information about the underlying buffer.
-
-        Returns
-        -------
-        tuple of ints
-            Tuple of the form (pointer, offset, length)
-
-        Raises
-        ------
-        TypeError
-            If the `Series` data type is not physical.
-        ComputeError
-            If the `Series` contains multiple chunks.
-
-        Notes
-        -----
-        This method is mainly intended for use with the dataframe interchange protocol.
-        """
-        return self._s._get_buffer_info()
-
-    def _get_buffers(self) -> SeriesBuffers:
-        """
-        Return the underlying values, validity, and offsets buffers as Series.
-
-        The values buffer always exists.
-        The validity buffer may not exist if the column contains no null values.
-        The offsets buffer only exists for Series of data type `String` and `List`.
-
-        Returns
-        -------
-        dict
-            Dictionary with `"values"`, `"validity"`, and `"offsets"` keys mapping
-            to the corresponding buffer or `None` if the buffer doesn't exist.
-
-        Warnings
-        --------
-        The underlying buffers for `String` Series cannot be represented in this
-        format. Instead, the buffers are converted to a values and offsets buffer.
-
-        Notes
-        -----
-        This method is mainly intended for use with the dataframe interchange protocol.
-        """
-        buffers = self._s._get_buffers()
-        keys = ("values", "validity", "offsets")
-        return {  # type: ignore[return-value]
-            k: self._from_pyseries(b) if b is not None else b
-            for k, b in zip(keys, buffers, strict=True)
-        }
-
-    @classmethod
-    def _from_buffer(
-        cls, dtype: PolarsDataType, buffer_info: BufferInfo, owner: Any
-    ) -> Self:
-        """
-        Construct a Series from information about its underlying buffer.
-
-        Parameters
-        ----------
-        dtype
-            The data type of the buffer.
-            Must be a physical type (integer, float, or boolean).
-        buffer_info
-            Tuple containing buffer information in the form `(pointer, offset, length)`.
-        owner
-            The object owning the buffer.
-
-        Returns
-        -------
-        Series
-
-        Raises
-        ------
-        TypeError
-            When the given `dtype` is not supported.
-
-        Notes
-        -----
-        This method is mainly intended for use with the dataframe interchange protocol.
-        """
-        return cls._from_pyseries(PySeries._from_buffer(dtype, buffer_info, owner))
-
-    @classmethod
-    def _from_buffers(
-        cls,
-        dtype: PolarsDataType,
-        data: Series | Sequence[Series],
-        validity: Series | None = None,
-    ) -> Self:
-        """
-        Construct a Series from information about its underlying buffers.
-
-        Parameters
-        ----------
-        dtype
-            The data type of the resulting Series.
-        data
-            Buffers describing the data. For most data types, this is a single Series of
-            the physical data type of `dtype`. Some data types require multiple buffers:
-
-            - `String`: A data buffer of type `UInt8` and an offsets buffer
-              of type `Int64`. Note that this does not match how the data
-              is represented internally and data copy is required to construct
-              the Series.
-        validity
-            Validity buffer. If specified, must be a Series of data type `Boolean`.
-
-        Returns
-        -------
-        Series
-
-        Raises
-        ------
-        TypeError
-            When the given `dtype` is not supported or the other inputs do not match
-            the requirements for constructing a Series of the given `dtype`.
-
-        Warnings
-        --------
-        Constructing a `String` Series requires specifying a values and offsets buffer,
-        which does not match the actual underlying buffers. The values and offsets
-        buffer are converted into the actual buffers, which copies data.
-
-        Notes
-        -----
-        This method is mainly intended for use with the dataframe interchange protocol.
-        """
-        if isinstance(data, Series):
-            data_lst = [data._s]
-        else:
-            data_lst = [s._s for s in data]
-        validity_series: plr.PySeries | None = None
-        if validity is not None:
-            validity_series = validity._s
-        return cls._from_pyseries(
-            PySeries._from_buffers(dtype, data_lst, validity_series)
-        )
 
     @staticmethod
     def _newest_compat_level() -> int:

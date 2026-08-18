@@ -18,7 +18,6 @@ _debug: bool
 RUNTIME_REPR: str
 
 CompatLevel: TypeAlias = int | bool
-BufferInfo: TypeAlias = tuple[int, int, int]
 UnicodeForm: TypeAlias = Literal["NFC", "NFKC", "NFD", "NFKD"]
 KeyValueMetadata: TypeAlias = Sequence[tuple[str, str]] | Any
 TimeZone: TypeAlias = str | None
@@ -345,22 +344,6 @@ class PySeries:
     def rem_f16_rhs(self, other: float) -> PySeries: ...
     def rem_f32_rhs(self, other: float) -> PySeries: ...
     def rem_f64_rhs(self, other: float) -> PySeries: ...
-
-    # buffers
-    @staticmethod
-    def _from_buffers(
-        dtype: Any,
-        data: Sequence[PySeries],
-        validity: PySeries | None,
-    ) -> PySeries: ...
-    @staticmethod
-    def _from_buffer(
-        dtype: DataType,
-        buffer_info: BufferInfo,
-        owner: Any,
-    ) -> PySeries: ...
-    def _get_buffer_info(self) -> BufferInfo: ...
-    def _get_buffers(self) -> tuple[PySeries, PySeries | None, PySeries | None]: ...
 
     # c_interface
     @staticmethod
