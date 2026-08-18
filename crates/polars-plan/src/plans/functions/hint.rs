@@ -39,9 +39,9 @@ impl HintIR {
                 if let Some(first_invalidated) = s.iter().position(|s| !f(&s.column)) {
                     *s = s[..first_invalidated].iter().cloned().collect();
                 }
-                
+
                 !s.is_empty()
-            }
+            },
         }
     }
 }
