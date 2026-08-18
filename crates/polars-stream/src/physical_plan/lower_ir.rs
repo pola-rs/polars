@@ -109,6 +109,7 @@ pub fn build_filter_stream(
     let filter = PhysNodeKind::Filter {
         input: trans_input,
         predicate: trans_cols_and_predicate.last().unwrap().clone(),
+        projection: None,
     };
 
     let post_filter = phys_sm.insert(PhysNode::new(filter_schema, filter));

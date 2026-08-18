@@ -20,6 +20,8 @@ import sphinx_autosummary_accessors
 
 # Add py-polars directory
 sys.path.insert(0, str(Path("../..").resolve()))
+# Add local Sphinx extensions directory
+sys.path.insert(0, str(Path(__file__).parent / "_ext"))
 
 
 # -- Project information -----------------------------------------------------
@@ -39,6 +41,8 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.linkcode",
     "sphinx.ext.mathjax",
+    # Local extensions
+    "engine_support",
     # Third-party extensions
     "autodocsumm",
     "numpydoc",

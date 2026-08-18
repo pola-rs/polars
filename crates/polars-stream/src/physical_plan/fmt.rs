@@ -280,13 +280,33 @@ fn visualize_plan_rec(
             offset,
             fill: None,
         } => ("shift".to_owned(), &[*input, *offset][..]),
-        PhysNodeKind::Filter { input, predicate } => (
-            format!(
-                "filter\\n{}",
-                fmt_exprs_to_label(from_ref(predicate), expr_arena, FormatExprStyle::Select)
-            ),
-            from_ref(input),
-        ),
+        PhysNodeKind::Filter {
+            input,
+            predicate,
+            projection,
+        } => {
+            let mut projection_fmt = String::new();
+
+            if let Some((names, len_before_drop)) = projection.as_ref() {
+                write!(
+                    EscapeLabel(&mut projection_fmt),
+                    "project {} / {}: {}",
+                    names.len(),
+                    len_before_drop,
+                    names.join(", ")
+                )
+                .unwrap();
+            }
+
+            (
+                format!(
+                    "filter\\n{}{}",
+                    fmt_exprs_to_label(from_ref(predicate), expr_arena, FormatExprStyle::Select),
+                    projection_fmt
+                ),
+                from_ref(input),
+            )
+        },
         PhysNodeKind::SimpleProjection { input, columns } => {
             let mut label = "select".to_string();
             let mut f = EscapeLabel(&mut label);

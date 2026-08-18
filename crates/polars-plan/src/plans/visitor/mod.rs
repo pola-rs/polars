@@ -2,8 +2,6 @@
 
 use arrow::legacy::error::PolarsResult;
 mod expr;
-#[cfg(feature = "cse")]
-pub(crate) mod hash;
 mod lp;
 mod visitors;
 
@@ -14,11 +12,15 @@ pub use visitors::*;
 /// Controls how the [`TreeWalker`] recursion should proceed for [`TreeWalker::visit`].
 #[derive(Debug)]
 pub enum VisitRecursion {
-    /// Continue the visit to this node tree.
+    /// Visit this node's children, then call [`Visitor::post_visit`] for this node.
     Continue,
-    /// Keep recursive but skip applying op on the children
+    /// Skip this node's children and do not call [`Visitor::post_visit`] for this node.
+    ///
+    /// Traversal continues with the next sibling or ancestor.
     Skip,
-    /// Stop the visit to this node tree.
+    /// Stop the entire traversal immediately.
+    ///
+    /// [`Visitor::post_visit`] is not called for this node or for any active ancestor.
     Stop,
 }
 

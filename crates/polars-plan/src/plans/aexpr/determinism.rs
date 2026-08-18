@@ -46,6 +46,17 @@ pub fn is_inherently_nondeterministic_top_level(ae: &AExpr) -> bool {
     }
 }
 
+/// Similar to [`is_inherently_nondeterministic_top_level`], but allows caching UDFs
+pub fn is_inherently_nondeterministic_excluding_udfs_top_level(ae: &AExpr) -> bool {
+    if matches!(
+        ae,
+        AExpr::AnonymousFunction { .. } | AExpr::AnonymousAgg { .. }
+    ) {
+        return false;
+    }
+    is_inherently_nondeterministic_top_level(ae)
+}
+
 /// Returns `true` if evaluating `root`'s subtree may produce different
 /// values across calls for a fundamental reason: random draws, opaque
 /// user UDFs, FFI plugins, runtime-injected predicates.
@@ -56,12 +67,9 @@ pub fn is_inherently_nondeterministic_top_level(ae: &AExpr) -> bool {
 /// may freely factor those out.
 ///
 /// Used as a correctness gate by rewrites that change the per-row
-/// evaluation count of a subexpression, for example OR factoring
-/// `(A ∧ X) ∨ (A ∧ Y) → A ∧ (X ∨ Y)`, which is sound only when `A`
-/// is not inherently non-deterministic. A newly added `AExpr` or
-/// `IRFunctionExpr` variant fails to compile here until explicitly
-/// classified, so the helper cannot silently misclassify an unfamiliar
-/// variant.
+/// evaluation count of a subexpression, for example collapsing
+/// `A ∧ ¬A` to `false`, which is sound only when `A` is not inherently
+/// non-deterministic.
 pub fn is_inherently_nondeterministic(root: Node, arena: &Arena<AExpr>) -> bool {
     let mut stack: UnitVec<Node> = unitvec![];
     let mut ae = arena.get(root);
@@ -69,7 +77,7 @@ pub fn is_inherently_nondeterministic(root: Node, arena: &Arena<AExpr>) -> bool 
         if is_inherently_nondeterministic_top_level(ae) {
             return true;
         }
-        ae.inputs_rev(&mut stack);
+        ae.children_rev(&mut stack);
         let Some(node) = stack.pop() else {
             return false;
         };
@@ -250,6 +258,7 @@ fn is_inherently_nondeterministic_array_fn(f: &IRArrayFunction) -> bool {
         | A::Min
         | A::Max
         | A::Sum
+        | A::Dot
         | A::ToList
         | A::Std(_)
         | A::Var(_)

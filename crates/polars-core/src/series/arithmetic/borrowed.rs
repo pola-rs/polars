@@ -1,3 +1,5 @@
+use polars_utils::broadcast::broadcast_len;
+
 use super::*;
 use crate::utils::align_chunks_binary;
 
@@ -456,17 +458,10 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> PolarsResult<Series>>(
             Ok(rhs.try_apply_fields(|rhs| func(s, rhs))?.into_series())
         },
         _ => {
-            let mut s = Cow::Borrowed(s);
-            let mut rhs = Cow::Borrowed(rhs);
+            let len = broadcast_len([s, rhs]).context("struct arithmetic")?;
+            let s = s.broadcast_to(len)?;
+            let rhs = rhs.broadcast_to(len)?;
 
-            match (s.len(), rhs.len()) {
-                (l, r) if l == r => {},
-                (1, _) => s = Cow::Owned(s.new_from_index(0, rhs.len())),
-                (_, 1) => rhs = Cow::Owned(rhs.new_from_index(0, s.len())),
-                (l, r) => {
-                    polars_bail!(ComputeError: "Struct arithmetic between different lengths {l} != {r}")
-                },
-            };
             let (s, rhs) = align_chunks_binary(&s, &rhs);
             let mut s = s.into_owned();
 

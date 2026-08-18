@@ -1,7 +1,4 @@
 use std::borrow::{Borrow, BorrowMut};
-use std::hash::Hash;
-#[cfg(feature = "cse")]
-use std::hash::Hasher;
 use std::sync::OnceLock;
 
 use polars_utils::format_pl_smallstr;
@@ -265,14 +262,6 @@ impl ExprIR {
 
     pub(crate) fn has_alias(&self) -> bool {
         matches!(self.output_name, OutputName::Alias(_))
-    }
-
-    #[cfg(feature = "cse")]
-    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
-        traverse_and_hash_aexpr(self.node, expr_arena, state);
-        if let Some(alias) = self.get_alias() {
-            alias.hash(state)
-        }
     }
 
     pub fn is_scalar(&self, expr_arena: &Arena<AExpr>) -> bool {

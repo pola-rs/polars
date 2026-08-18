@@ -72,6 +72,7 @@ pub(super) fn process_join(
         &mut acc_predicates,
         expr_arena,
         streaming,
+        &mut opt.dedup_state,
     )?;
 
     if match &options.args.how {
@@ -377,7 +378,12 @@ pub(super) fn process_join(
         if push_left {
             let mut predicate = predicate.clone();
             map_column_references(&mut predicate, expr_arena, &output_key_to_left_input_map);
-            insert_predicate_dedup(&mut pushdown_left, &predicate, expr_arena);
+            insert_predicate_dedup(
+                &mut pushdown_left,
+                &predicate,
+                expr_arena,
+                &mut opt.dedup_state,
+            );
         }
 
         if push_right {
@@ -389,7 +395,12 @@ pub(super) fn process_join(
                 &schema_right,
                 options.args.suffix(),
             );
-            insert_predicate_dedup(&mut pushdown_right, &predicate, expr_arena);
+            insert_predicate_dedup(
+                &mut pushdown_right,
+                &predicate,
+                expr_arena,
+                &mut opt.dedup_state,
+            );
         }
     }
 
@@ -501,6 +512,7 @@ fn try_reduce_redundant_join_keys(
             &mut remove_key,
             &mut pushdown_left,
             expr_arena,
+            &mut opt.dedup_state,
         );
     }
 
@@ -512,6 +524,7 @@ fn try_reduce_redundant_join_keys(
             &mut remove_key,
             &mut pushdown_right,
             expr_arena,
+            &mut opt.dedup_state,
         );
     }
 
@@ -574,6 +587,7 @@ fn collect_redundant_join_key_filters(
     remove_key: &mut [bool],
     pushdown: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
+    dedup: &mut PredicateDedupState,
 ) {
     let op = if nulls_equal {
         Operator::EqValidity
@@ -622,7 +636,7 @@ fn collect_redundant_join_key_filters(
                 right: rhs,
             });
             let predicate = ExprIR::from_node(predicate, expr_arena);
-            insert_predicate_dedup(pushdown, &predicate, expr_arena);
+            insert_predicate_dedup(pushdown, &predicate, expr_arena, dedup);
         }
     }
 }
