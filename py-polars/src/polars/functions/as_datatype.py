@@ -60,13 +60,14 @@ def datetime_(
         Time unit of the resulting expression.
     time_zone
         Time zone of the resulting expression.
-    ambiguous
-        Determine how to deal with ambiguous datetimes:
+    ambiguous : {'earliest', 'latest', 'raise', 'null', Expr, Series}, default 'raise'
+        Determine how to handle daylight savings time (DST) ambiguous datetimes
+        (e.g., when the clock falls back and the same local time occurs twice):
 
-        - `'raise'` (default): raise
-        - `'earliest'`: use the earliest datetime
-        - `'latest'`: use the latest datetime
-        - `'null'`: set to null
+        - 'earliest': use the earliest datetime
+        - 'latest': use the latest datetime
+        - 'raise': raise an error
+        - 'null': set to null
 
     Returns
     -------
