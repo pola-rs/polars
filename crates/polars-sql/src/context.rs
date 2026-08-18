@@ -32,7 +32,7 @@ use crate::sql_expr::{
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
-    expr_refers_to_table,
+    expr_refers_to_table, sql_expr_cols_all_in_schema,
 };
 use crate::subquery::{LowerScope, SubqueryBindings};
 use crate::table_functions::PolarsTableFunctions;
@@ -2214,8 +2214,13 @@ impl SQLContext {
             );
             let left_schema = self.get_frame_schema(lf)?;
             let right_schema = self.get_frame_schema(&mut rf)?;
-            let (join_expr, residual) =
-                extract_join_predicates(&remaining_where, &joined_table_names, &r_name);
+            let (join_expr, residual) = extract_join_predicates(
+                &remaining_where,
+                &joined_table_names,
+                &r_name,
+                &left_schema,
+                &right_schema,
+            );
 
             *lf = if let Some(on_expr) = join_expr {
                 self.process_join(
@@ -3645,8 +3650,16 @@ fn combine_and_conditions(conditions: Vec<SQLExpr>) -> Option<SQLExpr> {
 }
 
 /// Check if a SQL expression is a join condition (equi or non-equi comparison) that bridges
-/// the given left table set and the right table (both sides must be qualified).
-fn is_join_comparison(expr: &SQLExpr, left_tables: &[String], right_table: &str) -> bool {
+/// the given left table set and the right table. Operands are matched via qualified table
+/// references first, falling back to schema membership for unqualified columns; an operand
+/// found in both schemas (or neither) is ambiguous and matches neither side.
+fn is_join_comparison(
+    expr: &SQLExpr,
+    left_tables: &[String],
+    right_table: &str,
+    left_schema: &Schema,
+    right_schema: &Schema,
+) -> bool {
     if let SQLExpr::BinaryOp {
         left,
         op:
@@ -3659,18 +3672,25 @@ fn is_join_comparison(expr: &SQLExpr, left_tables: &[String], right_table: &str)
         right,
     } = expr
     {
-        let left_refs_right = expr_refers_to_table(left, right_table);
-        let right_refs_right = expr_refers_to_table(right, right_table);
+        let operand_side = |operand: &SQLExpr| -> (bool, bool) {
+            let refs_right = expr_refers_to_table(operand, right_table);
+            let refs_left = left_tables
+                .iter()
+                .any(|t| expr_refers_to_table(operand, t.as_str()));
+            if refs_right || refs_left {
+                (refs_right, refs_left)
+            } else {
+                let in_right = sql_expr_cols_all_in_schema(operand, right_schema);
+                let in_left = sql_expr_cols_all_in_schema(operand, left_schema);
+                (in_right && !in_left, in_left && !in_right)
+            }
+        };
 
-        let left_refs_any_left = left_tables
-            .iter()
-            .any(|t| expr_refers_to_table(left, t.as_str()));
-        let right_refs_any_left = left_tables
-            .iter()
-            .any(|t| expr_refers_to_table(right, t.as_str()));
+        let (left_is_right, left_is_left) = operand_side(left);
+        let (right_is_right, right_is_left) = operand_side(right);
 
         // One side references a left table, the other references the right table
-        (left_refs_right && right_refs_any_left) || (right_refs_right && left_refs_any_left)
+        (left_is_right && right_is_left) || (right_is_right && left_is_left)
     } else {
         false
     }
@@ -3682,6 +3702,8 @@ fn extract_join_predicates(
     where_expr: &Option<SQLExpr>,
     left_tables: &[String],
     right_table: &str,
+    left_schema: &Schema,
+    right_schema: &Schema,
 ) -> (Option<SQLExpr>, Option<SQLExpr>) {
     let Some(expr) = where_expr else {
         return (None, None);
@@ -3690,7 +3712,7 @@ fn extract_join_predicates(
     let mut join_conds = Vec::new();
     let mut filter_conds = Vec::new();
     for cond in conditions {
-        if is_join_comparison(cond, left_tables, right_table) {
+        if is_join_comparison(cond, left_tables, right_table, left_schema, right_schema) {
             join_conds.push(cond.clone());
         } else {
             filter_conds.push(cond.clone());
