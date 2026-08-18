@@ -839,7 +839,7 @@ def test_join_nulls_argument_removed() -> None:
     with pytest.raises(
         ArgumentRemovedError,
         match=re.escape(
-            "the argument 'join_nulls' for 'DataFrame.join' was deprecated in version 1.24 and has been removed in 2.0. It was renamed to 'nulls_equal'"
+            "the argument 'join_nulls' for 'join' was deprecated in version 1.24 and has been removed in version 2.0. It was renamed to 'nulls_equal'."
         ),
     ):
         df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]

@@ -103,7 +103,7 @@ def removed_parameters(
                 if name in params_dict:
                     _raise_removed_argument_error(
                         params_dict[name],
-                        func_name=function.__qualname__,
+                        func_name=function.__name__,
                         kwargs=kwargs,
                     )
             return function(*args, **kwargs)
