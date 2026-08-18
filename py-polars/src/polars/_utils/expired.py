@@ -109,7 +109,7 @@ def removed_parameters(
             return function(*args, **kwargs)
 
         wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
-        # Stach the removed parameters on the wrapper so that they can be introspected
+        # Stash the removed parameters on the wrapper so that they can be introspected
         # later, in case the function needs to go through @expr_dispatch later.
         wrapper.__removed_parameters__ = params  # type: ignore[attr-defined]
         return wrapper
