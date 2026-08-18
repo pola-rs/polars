@@ -1,11 +1,13 @@
 use polars::functions;
+use polars::prelude::Expr;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use pyo3::prelude::*;
 
-use crate::conversion::{get_df, get_series};
+use crate::conversion::{Wrap, get_df, get_series};
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
-use crate::{PyDataFrame, PySeries};
+use crate::{PyDataFrame, PyExpr, PySeries};
 
 #[pyfunction]
 pub fn concat_df(dfs: &Bound<'_, PyAny>, py: Python) -> PyResult<PyDataFrame> {
@@ -88,4 +90,50 @@ pub fn concat_df_horizontal(dfs: &Bound<'_, PyAny>, strict: bool) -> PyResult<Py
     let df =
         functions::concat_df_horizontal(&dfs, true, strict, false).map_err(PyPolarsErr::from)?;
     Ok(df.into())
+}
+
+/// Eagerly construct a `Series` of length `n` filled with a single literal value.
+///
+/// This is a fast option of `pl.repeat(..., eager=True)`. It bypasses the query
+/// engine and materializes the Series directly.
+///
+/// NOTE: `value` must be an `Expr::Literal` holding a scalar.
+/// list/array/struct literals are scalars, `Series` and `Range` literals aren't.
+#[pyfunction]
+#[pyo3(signature = (value, n, dtype=None))]
+pub fn eager_repeat(
+    py: Python<'_>,
+    value: PyExpr,
+    n: PyExpr,
+    dtype: Option<Wrap<DataType>>,
+) -> PyResult<PySeries> {
+    py.enter_polars(move || {
+        let Expr::Literal(lv) = &value.inner else {
+            polars_bail!(
+                ComputeError:
+                "eager_repeat expects `value` to be a literal expression, got: {:?}",
+                value.inner
+            );
+        };
+        let Expr::Literal(n) = &n.inner else {
+            polars_bail!(
+                ComputeError:
+                "eager_repeat expects `n` to be a literal expression, got: {:?}",
+                n.inner
+            );
+        };
+
+        let column = lv.to_column(PlSmallStr::from_static("repeat"))?;
+
+        // Not all dtypes are handled in python (e.g. stripping timezones from datetime)
+        // thus cast again, like in `functions::lazy::repeat`
+        let column = match dtype {
+            Some(dtype) => column.cast_with_options(&dtype.0, CastOptions::NonStrict)?,
+            None => column,
+        };
+
+        let n = n.to_column(PlSmallStr::EMPTY)?;
+        polars_expr::dispatch::repeat(&[column, n]).map(Column::take_materialized_series)
+    })
+    .map(PySeries::from)
 }

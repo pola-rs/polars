@@ -135,6 +135,7 @@ mod temporal;
 mod trigonometry;
 
 pub use groups_dispatch::drop_items;
+pub use misc::repeat;
 
 pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRFunctionExpr as F;

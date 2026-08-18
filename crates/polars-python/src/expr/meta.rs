@@ -1,4 +1,4 @@
-use polars::prelude::Schema;
+use polars::prelude::{Expr, Schema};
 use pyo3::prelude::*;
 
 use crate::PyExpr;
@@ -68,6 +68,10 @@ impl PyExpr {
 
     fn meta_is_literal(&self, allow_aliasing: bool) -> bool {
         self.inner.clone().meta().is_literal(allow_aliasing)
+    }
+
+    fn meta_is_scalar_literal(&self) -> bool {
+        matches!(&self.inner, Expr::Literal(lv) if lv.is_scalar())
     }
 
     fn compute_tree_format(
