@@ -1,16 +1,34 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+import sys
+from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 
 import polars as pl
+from polars.datatypes import BaseExtension
 from polars.exceptions import ComputeError, SchemaError, ShapeError
+from polars.functions.repeat import _can_skip_expr_engine
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
+
+
+@pytest.fixture(params=[False, True], ids=["no_fast_path", "fast_path"])
+def eager_fast_path(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Runs every test twice: once with the fast and one with the standard eager function
+    if request.param:
+        monkeypatch.setattr(
+            sys.modules["polars.functions.repeat"],
+            "_can_skip_expr_engine",
+            lambda *_, **__: False,
+        )
 
 
 @pytest.mark.parametrize(
@@ -41,6 +59,7 @@ def test_repeat(
     n: int,
     dtype: PolarsDataType,
     expected_dtype: PolarsDataType,
+    eager_fast_path: bool,
 ) -> None:
     expected = pl.Series("repeat", [value] * n).cast(expected_dtype)
 
@@ -51,13 +70,13 @@ def test_repeat(
     assert_series_equal(result_lazy, expected)
 
 
-def test_repeat_expr_input_eager() -> None:
+def test_repeat_expr_input_eager(eager_fast_path: bool) -> None:
     result = pl.select(pl.repeat(1, n=pl.lit(3), eager=True)).to_series()
     expected = pl.Series("repeat", [1, 1, 1], dtype=pl.Int32)
     assert_series_equal(result, expected)
 
 
-def test_repeat_expr_input_lazy() -> None:
+def test_repeat_expr_input_lazy(eager_fast_path: bool) -> None:
     df = pl.DataFrame({"a": [3, 2, 1]})
     result = df.select(pl.repeat(1, n=pl.col("a").first())).to_series()
     expected = pl.Series("repeat", [1, 1, 1], dtype=pl.Int32)
@@ -67,7 +86,7 @@ def test_repeat_expr_input_lazy() -> None:
     assert df.select(pl.repeat(pl.sum("a"), n=2)).to_series().to_list() == [6, 6]
 
 
-def test_repeat_n_zero() -> None:
+def test_repeat_n_zero(eager_fast_path: bool) -> None:
     assert pl.repeat(1, n=0, eager=True).len() == 0
 
 
@@ -75,18 +94,18 @@ def test_repeat_n_zero() -> None:
     "n",
     [1.5, 2.0, date(1971, 1, 2), "hello"],
 )
-def test_repeat_n_non_integer(n: Any) -> None:
+def test_repeat_n_non_integer(n: Any, eager_fast_path: bool) -> None:
     with pytest.raises(SchemaError, match="expected expression of dtype 'integer'"):
         pl.repeat(1, n=pl.lit(n), eager=True)
 
 
-def test_repeat_n_empty() -> None:
+def test_repeat_n_empty(eager_fast_path: bool) -> None:
     df = pl.DataFrame(schema={"a": pl.Int32})
     with pytest.raises(ShapeError, match="'n' must be a scalar value"):
         df.select(pl.repeat(1, n=pl.col("a")))
 
 
-def test_repeat_n_negative() -> None:
+def test_repeat_n_negative(eager_fast_path: bool) -> None:
     with pytest.raises(ComputeError, match="could not parse value '-1' as a size"):
         pl.repeat(1, n=-1, eager=True)
 
@@ -110,6 +129,7 @@ def test_ones(
     n: int,
     value: Any,
     dtype: PolarsDataType,
+    eager_fast_path: bool,
 ) -> None:
     expected = pl.Series("ones", [value] * n, dtype=dtype)
 
@@ -139,6 +159,7 @@ def test_zeros(
     n: int,
     value: Any,
     dtype: PolarsDataType,
+    eager_fast_path: bool,
 ) -> None:
     expected = pl.Series("zeros", [value] * n, dtype=dtype)
 
@@ -149,7 +170,7 @@ def test_zeros(
     assert_series_equal(result_lazy, expected)
 
 
-def test_ones_zeros_misc() -> None:
+def test_ones_zeros_misc(eager_fast_path: bool) -> None:
     # check we default to f64 if dtype is unspecified
     s_ones = pl.ones(n=2, eager=True)
     s_zeros = pl.zeros(n=2, eager=True)
@@ -421,19 +442,19 @@ def test_repeat_by_literal_none_20268() -> None:
 
 
 @pytest.mark.parametrize("value", [pl.Series([]), pl.Series([1, 2])])
-def test_repeat_nonscalar_value(value: pl.Series) -> None:
+def test_repeat_nonscalar_value(value: pl.Series, eager_fast_path: bool) -> None:
     with pytest.raises(ShapeError, match="'value' must be a scalar value"):
         pl.select(pl.repeat(pl.Series(value), n=1))
 
 
 @pytest.mark.parametrize("n", [[], [1, 2]])
-def test_repeat_nonscalar_n(n: list[int]) -> None:
+def test_repeat_nonscalar_n(n: list[int], eager_fast_path: bool) -> None:
     df = pl.DataFrame({"n": n})
     with pytest.raises(ShapeError, match="'n' must be a scalar value"):
         df.select(pl.repeat("a", pl.col("n")))
 
 
-def test_repeat_value_first() -> None:
+def test_repeat_value_first(eager_fast_path: bool) -> None:
     df = pl.DataFrame({"a": ["a", "b", "c"], "n": [4, 5, 6]})
     result = df.select(rep=pl.repeat(pl.col("a").first(), n=pl.col("n").first()))
     expected = pl.DataFrame({"rep": ["a", "a", "a", "a"]})
@@ -460,3 +481,126 @@ def test_repeat_by_null() -> None:
 def test_repeat_by_length_limit_raises_24330() -> None:
     with pytest.raises(ComputeError):
         pl.select(pl.lit(None).repeat_by(2147483648 - pl.Series([0, 0])))
+
+
+@pytest.mark.parametrize(
+    ("value", "n", "dtype", "expected"),
+    [
+        (42, 5, None, True),
+        (-1, 0, pl.Int8, True),
+        (1.5, 5, pl.Utf8, True),
+        (True, 5, pl.Boolean, True),
+        ("123", 5, pl.Int64(), True),
+        ("a", 5, pl.Enum(["a", "b"]), True),
+        (b"ab12", 5, pl.Binary, True),
+        (None, 5, pl.Struct({"a": pl.Int64}), True),
+        (D("1.5"), 5, float, True),
+        (date(2023, 2, 2), 5, pl.Datetime("ms", "UTC"), True),
+        (datetime(2023, 2, 2, tzinfo=timezone.utc), 5, pl.Datetime("us"), True),
+        (time(10, 15), 5, pl.Time, True),
+        (timedelta(hours=3), 5, pl.Duration("ns"), True),
+        ([[1, 2], [3]], 5, pl.Array(pl.Int64, 3), True),
+        ((1, 2, 3), 5, pl.List(pl.Int8), True),
+        ({"a": 1, "b": "x"}, 5, str, True),
+        (np.float64(1.5), 5, None, True),
+        (np.int64(42), 5, None, False),
+        (np.datetime64("2023-02-02T03:04:05", "us"), 5, None, False),
+        (pl.col("a").first(), 5, None, False),
+        (pl.sum("a"), 5, pl.Int64, False),
+        (pl.Series("a", [1, 2, 3]), 5, None, False),
+        (np.array([1, 2, 3]), 5, None, False),
+        (np.timedelta64(5, "ns"), 5, None, False),
+        (42, True, None, False),
+        (42, False, None, False),
+        (42, -5, None, False),
+        (42, 5, pl.Object, False),
+        ({"a": 1}, 5, pl.dtype_of("a"), False),
+        (1.5, 5, BaseExtension, False),
+        (42, 5, BaseExtension("myext", pl.Int64), False),
+    ],
+)
+def test_can_skip_expr_engine(value: Any, n: Any, dtype: Any, expected: bool) -> None:
+    # test _can_skip_expr_engine on all possible dtypes and value combinations
+    assert _can_skip_expr_engine(value, n, dtype) is expected
+
+
+@pytest.mark.parametrize("n", [0, 5])
+@pytest.mark.parametrize(
+    ("value", "dtype"),
+    [
+        (42, None),
+        (42, pl.Int64),
+        (300, pl.Int8),
+        (1.5, None),
+        (1.5, pl.Float32),
+        (1.5, pl.Date),
+        (float("nan"), pl.Int32),
+        (True, None),
+        (False, pl.Int8),
+        (True, pl.Date),
+        ("123", None),
+        ("123", pl.Int32),
+        ("notanumber", pl.Int32),
+        ("x", pl.Enum(["x", "y"])),
+        (b"ab12", None),
+        (b"ab12", pl.Binary),
+        (b"ab12", pl.Int32),
+        (None, None),
+        (None, pl.Int8),
+        (None, pl.Struct({"a": pl.Int64})),
+        (D("1.5"), None),
+        (D("1.5"), pl.Decimal(10, 2)),
+        (D("1.5"), pl.Date),
+        (date(2023, 2, 2), None),
+        (date(2023, 2, 2), pl.Datetime("ns")),
+        (date(2023, 2, 2), pl.Duration("ms")),
+        (datetime(2023, 2, 2, 3, 4, 5, 123456), None),
+        (datetime(2023, 2, 2, 3, 4, 5, 123456), pl.Datetime("ms")),
+        (datetime(2023, 2, 2, 3, 4, 5), pl.Duration("ms")),
+        (datetime(2023, 2, 2, 12, tzinfo=timezone.utc), None),
+        (datetime(2023, 2, 2, 12, tzinfo=timezone.utc), pl.Datetime("us", "UTC")),
+        (datetime(2023, 2, 2, 12, tzinfo=timezone.utc), pl.Datetime("us")),
+        (
+            datetime(2023, 2, 2, 12, tzinfo=timezone.utc),
+            pl.Datetime("us", "Asia/Tokyo"),
+        ),
+        (time(10, 15), None),
+        (time(10, 15), pl.Time),
+        (time(10, 15), pl.Date),
+        (timedelta(microseconds=1500), None),
+        (timedelta(microseconds=1500), pl.Duration("ms")),
+        (timedelta(hours=3), pl.Date),
+        ([1, 2, 3], None),
+        ([1, 2, 3], pl.List(pl.Int8)),
+        ([1, 2, 3], pl.Int32),
+        ([1, 2, 3], pl.Array(pl.Int64, 3)),
+        ([1, 2, 3], pl.Array(pl.Int64, 2)),
+        ([[1, 2], [3]], None),
+        ([[1, 2], [3]], pl.List(pl.List(pl.Int8))),
+        ([[1, 2], [3]], pl.List(pl.Int64)),
+        ((1, 2, 3), None),
+        ((1, 2, 3), pl.List(pl.Int64)),
+        ((1, 2, 3), pl.List(pl.Binary)),
+        ({"a": 1, "b": "x"}, None),
+        ({"a": 1, "b": "x"}, pl.Struct({"a": pl.Int8, "b": pl.String})),
+        ({"a": 1, "b": "x"}, pl.Struct({"a": pl.Int64, "b": pl.Int64})),
+        (np.int64(42), None),
+        (np.float64(1.5), None),
+        (np.datetime64("2023-02-02T03:04:05", "us"), None),
+        (np.datetime64("2023-02-02T03:04:05", "ns"), None),
+        (np.timedelta64(5, "us"), None),
+        (np.timedelta64(5, "ns"), None),
+    ],
+)
+def test_eager_matches_lazy(value: Any, dtype: PolarsDataType | None, n: int) -> None:
+    # assert that (fast) eager path and lazy path return the same outputs and exceptions
+    try:
+        expected = pl.select(
+            pl.repeat(value, n=n, dtype=dtype, eager=False)
+        ).to_series()
+    except Exception as lazy_exc:
+        with pytest.raises(type(lazy_exc)):
+            pl.repeat(value, n=n, dtype=dtype, eager=True)
+        return
+
+    assert_series_equal(pl.repeat(value, n=n, dtype=dtype, eager=True), expected)
