@@ -1079,11 +1079,6 @@ pub fn write_ir_non_recursive(
             schema: _,
             options: _,
         } => write!(f, "{:indent$}HCONCAT", ""),
-        IR::ExtContext {
-            input: _,
-            contexts: _,
-            schema: _,
-        } => write!(f, "{:indent$}EXTERNAL_CONTEXT", ""),
         IR::Sink { input: _, payload } => {
             let name = match payload {
                 SinkTypeIR::Memory => "SINK (memory)",

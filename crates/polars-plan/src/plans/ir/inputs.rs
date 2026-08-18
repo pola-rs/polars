@@ -43,7 +43,6 @@ impl IR {
             | MapFunction { .. }
             | DataFrameScan { .. }
             | HConcat { .. }
-            | ExtContext { .. }
             | SimpleProjection { .. }
             | SinkMultiple { .. }
             | Gather { .. } => Exprs::Empty,
@@ -118,7 +117,6 @@ impl IR {
             | MapFunction { .. }
             | DataFrameScan { .. }
             | HConcat { .. }
-            | ExtContext { .. }
             | SimpleProjection { .. }
             | SinkMultiple { .. }
             | Gather { .. } => ExprsMut::Empty,
@@ -213,14 +211,6 @@ impl IR {
             Distinct { input, .. } => Inputs::single(*input),
             MapFunction { input, .. } => Inputs::single(*input),
             Sink { input, .. } => Inputs::single(*input),
-            ExtContext {
-                input, contexts, ..
-            } => Inputs::DoubleSlice(
-                std::slice::from_ref(input)
-                    .iter()
-                    .chain(contexts.iter())
-                    .copied(),
-            ),
             Scan { .. } => Inputs::Empty,
             DataFrameScan { .. } => Inputs::Empty,
             #[cfg(feature = "python")]
@@ -259,12 +249,6 @@ impl IR {
             Distinct { input, .. } => InputsMut::single(input),
             MapFunction { input, .. } => InputsMut::single(input),
             Sink { input, .. } => InputsMut::single(input),
-            ExtContext {
-                input, contexts, ..
-            } => InputsMut::DoubleSlice(std::iter::chain(
-                std::slice::from_mut(input).iter_mut(),
-                contexts.iter_mut(),
-            )),
             Scan { .. } => InputsMut::Empty,
             DataFrameScan { .. } => InputsMut::Empty,
             #[cfg(feature = "python")]

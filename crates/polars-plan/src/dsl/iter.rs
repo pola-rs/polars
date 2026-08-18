@@ -31,10 +31,6 @@ impl DslPlan {
                 scratch.push(input);
                 scratch.push(idxs);
             },
-            ExtContext { input, contexts } => {
-                scratch.push(input);
-                scratch.extend(contexts);
-            },
             IR { dsl, .. } => scratch.push(dsl),
             Scan { .. } | DataFrameScan { .. } => (),
             #[cfg(feature = "pivot")]

@@ -1035,7 +1035,6 @@ class PyLazyFrame:
         group_by: Sequence[PyExpr],
         start_by: StartBy,
     ) -> PyLazyGroupBy: ...
-    def with_context(self, contexts: Sequence[PyLazyFrame]) -> PyLazyFrame: ...
     def join_asof(
         self,
         other: PyLazyFrame,

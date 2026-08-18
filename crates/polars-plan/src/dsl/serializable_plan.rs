@@ -135,10 +135,6 @@ pub(crate) enum SerializableDslPlanNode {
         inputs: Vec<SerializableDslPlanNode>,
         options: HConcatOptions,
     },
-    ExtContext {
-        input: DslPlanKey,
-        contexts: Vec<SerializableDslPlanNode>,
-    },
     Sink {
         input: DslPlanKey,
         payload: SinkType,
@@ -352,13 +348,6 @@ fn convert_dsl_plan_to_serializable_plan(
                 .map(|p| convert_dsl_plan_to_serializable_plan(p, arenas))
                 .collect(),
             options: *options,
-        },
-        DP::ExtContext { input, contexts } => SP::ExtContext {
-            input: dsl_plan_key(input, arenas),
-            contexts: contexts
-                .iter()
-                .map(|p| convert_dsl_plan_to_serializable_plan(p, arenas))
-                .collect(),
         },
         DP::Sink { input, payload } => SP::Sink {
             input: dsl_plan_key(input, arenas),
@@ -612,13 +601,6 @@ fn try_convert_serializable_plan_to_dsl_plan(
                 .map(|node| try_convert_serializable_plan_to_dsl_plan(node, ser_dsl_plan, arenas))
                 .collect::<Result<Vec<_>, _>>()?,
             options: *options,
-        }),
-        SP::ExtContext { input, contexts } => Ok(DP::ExtContext {
-            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
-            contexts: contexts
-                .iter()
-                .map(|node| try_convert_serializable_plan_to_dsl_plan(node, ser_dsl_plan, arenas))
-                .collect::<Result<Vec<_>, _>>()?,
         }),
         SP::Sink { input, payload } => Ok(DP::Sink {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
