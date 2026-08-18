@@ -6,7 +6,9 @@
 use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
-use sqlparser::ast::{Expr as SQLExpr, ObjectName, Query, SetExpr, Visit, Visitor as SQLVisitor};
+use sqlparser::ast::{
+    Expr as SQLExpr, ObjectName, Query, SetExpr, Visit, Visitor as SQLVisitor, visit_expressions,
+};
 use sqlparser::keywords::ALL_KEYWORDS;
 
 // ---------------------------------------------------------------------------
@@ -262,4 +264,47 @@ impl SQLVisitor for WindowFunctionFinder {
 /// Check if a SQL expression contains explicit window functions.
 pub(crate) fn expr_has_window_functions(expr: &SQLExpr) -> bool {
     expr.visit(&mut WindowFunctionFinder).is_break()
+}
+
+// ---------------------------------------------------------------------------
+// ColumnRefFinder
+// ---------------------------------------------------------------------------
+
+/// Visitor that checks if a SQL expression contains any column reference at all.
+struct ColumnRefFinder;
+
+impl SQLVisitor for ColumnRefFinder {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+        if matches!(
+            expr,
+            SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_)
+        ) {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    }
+}
+
+/// Check if a SQL expression references any column (as opposed to being a
+/// constant expression composed only of literals/operators/functions).
+pub(crate) fn expr_references_any_column(expr: &SQLExpr) -> bool {
+    expr.visit(&mut ColumnRefFinder).is_break()
+}
+
+/// Check if a SQL expression contains a subquery, in any of its forms.
+pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
+    visit_expressions(expr, |e| {
+        if matches!(
+            e,
+            SQLExpr::Subquery(_) | SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. }
+        ) {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    })
+    .is_break()
 }
