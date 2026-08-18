@@ -79,7 +79,7 @@ jobs:
           # Make sure we use the Polars we're about to build.
           uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
           uv pip install --no-deps -e .
-          maturin build --manifest-path runtime/polars-runtime-32/Cargo.toml --profile nodebug-release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+          maturin build --manifest-path runtime/polars-runtime-32/Cargo.toml --profile nodebug-release --features numa -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Install Polars release build
         run: |

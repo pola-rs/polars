@@ -42,6 +42,8 @@ bitflags! {
         /// Pre-partition hive partitioned joins or group-by's
         /// Only works if PREDICATE_PUSHDOWN is set
         const PARTITION_HIVE = 1 << 17;
+        /// Observe this query with the registered observer.
+        const QUERY_MONITORING = 1 << 18;
     }
 }
 
@@ -92,6 +94,10 @@ impl OptFlags {
         self.contains(OptFlags::STREAMING)
     }
 
+    pub fn query_monitoring(&self) -> bool {
+        self.contains(OptFlags::QUERY_MONITORING)
+    }
+
     pub fn partition_hive(&self) -> bool {
         self.contains(OptFlags::PARTITION_HIVE)
     }
@@ -99,7 +105,11 @@ impl OptFlags {
 
 impl Default for OptFlags {
     fn default() -> Self {
-        Self::from_bits_truncate(u32::MAX) & !Self::STREAMING & !Self::EAGER & !Self::GPU
+        Self::from_bits_truncate(u32::MAX)
+            & !Self::STREAMING
+            & !Self::EAGER
+            & !Self::GPU
+            & !Self::QUERY_MONITORING
     }
 }
 

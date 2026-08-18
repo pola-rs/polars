@@ -1496,6 +1496,7 @@ def test_scan_sink_error_captures_path() -> None:
     ],
 )
 @pytest.mark.parametrize("partitioned", [True, False])
+@pytest.mark.debug
 @pytest.mark.write_disk
 def test_scan_metrics(
     plmonkeypatch: PlMonkeyPatch,
@@ -1559,6 +1560,7 @@ def test_scan_metrics(
     assert_frame_equal(out, df)
 
 
+@pytest.mark.debug
 @pytest.mark.write_disk
 def test_scan_sink_metrics_multiple_phases(
     plmonkeypatch: PlMonkeyPatch,
