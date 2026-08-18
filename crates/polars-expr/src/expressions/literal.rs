@@ -1,9 +1,6 @@
 use std::borrow::Cow;
-use std::ops::Deref;
 
-use arrow::temporal_conversions::NANOSECONDS_IN_DAY;
 use polars_core::prelude::*;
-use polars_core::utils::NoNull;
 use polars_plan::constants::get_literal_name;
 
 use super::*;
@@ -17,70 +14,7 @@ impl LiteralExpr {
     }
 
     fn as_column(&self) -> PolarsResult<Column> {
-        use LiteralValue as L;
-        let column = match &self.0 {
-            L::Scalar(sc) => {
-                #[cfg(feature = "dtype-time")]
-                if let AnyValue::Time(v) = sc.value() {
-                    if !(0..NANOSECONDS_IN_DAY).contains(v) {
-                        polars_bail!(
-                            InvalidOperation: "value `{v}` is out-of-range for `time` which can be 0 - {}",
-                            NANOSECONDS_IN_DAY - 1
-                        );
-                    }
-                }
-
-                sc.clone().into_column(get_literal_name())
-            },
-            L::Series(s) => s.deref().clone().into_column(),
-            lv @ L::Dyn(_) => polars_core::prelude::Series::from_any_values(
-                get_literal_name(),
-                &[lv.to_any_value().unwrap()],
-                false,
-            )
-            .unwrap()
-            .into_column(),
-            L::Range(RangeLiteralValue { low, high, dtype }) => {
-                let low = *low;
-                let high = *high;
-                match dtype {
-                    DataType::Int32 => {
-                        polars_ensure!(
-                            low >= i32::MIN as i128 && high <= i32::MAX as i128,
-                            ComputeError: "range not within bounds of `Int32`: [{}, {}]", low, high
-                        );
-                        let low = low as i32;
-                        let high = high as i32;
-                        let ca: NoNull<Int32Chunked> = (low..high).collect();
-                        ca.into_inner().into_column()
-                    },
-                    DataType::Int64 => {
-                        polars_ensure!(
-                            low >= i64::MIN as i128 && high <= i64::MAX as i128,
-                            ComputeError: "range not within bounds of `Int32`: [{}, {}]", low, high
-                        );
-                        let low = low as i64;
-                        let high = high as i64;
-                        let ca: NoNull<Int64Chunked> = (low..high).collect();
-                        ca.into_inner().into_column()
-                    },
-                    DataType::UInt32 => {
-                        polars_ensure!(
-                            low >= u32::MIN as i128 && high <= u32::MAX as i128,
-                            ComputeError: "range not within bounds of `UInt32`: [{}, {}]", low, high
-                        );
-                        let low = low as u32;
-                        let high = high as u32;
-                        let ca: NoNull<UInt32Chunked> = (low..high).collect();
-                        ca.into_inner().into_column()
-                    },
-                    dt => polars_bail!(
-                        InvalidOperation: "datatype `{}` is not supported as range", dt
-                    ),
-                }
-            },
-        };
-        Ok(column)
+        self.0.to_column(get_literal_name())
     }
 }
 
