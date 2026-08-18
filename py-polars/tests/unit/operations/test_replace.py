@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -268,13 +269,19 @@ def test_replace_duplicates_new() -> None:
 
 def test_replace_return_dtype_removed() -> None:
     s = pl.Series([1, 2, 3])
-    with pytest.raises(ArgumentRemovedError):
+    with pytest.raises(
+        ArgumentRemovedError,
+        match=re.escape("Use `replace_strict` instead to set a return data type while"),
+    ):
         s.replace(1, 10, return_dtype=pl.Int8)  # type: ignore[call-arg]
 
 
 def test_replace_default_removed() -> None:
     s = pl.Series([1, 2, 3])
-    with pytest.raises(ArgumentRemovedError):
+    with pytest.raises(
+        ArgumentRemovedError,
+        match=re.escape("Use `replace_strict` instead to set a default while "),
+    ):
         s.replace(1, 10, default=None)  # type: ignore[call-arg]
 
 
