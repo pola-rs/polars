@@ -10,6 +10,12 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 import polars._reexport as pl
 import polars.datatypes
+from polars._utils.expired import (
+    RemovedParameter,
+    getattr_fallback,
+    raise_for_removed_attributes,
+    removed_parameters,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars._plr as plr
@@ -1132,8 +1138,8 @@ class Array(NestedType):
     width
         The length of the arrays.
 
-        .. deprecated:: 0.20.31
-            The `width` parameter for `Array` is deprecated. Use `shape` instead.
+        .. versionchanged:: 0.20.31
+            The `width` parameter for `Array` has been removed. Use `shape` instead.
 
     Examples
     --------
@@ -1151,22 +1157,20 @@ class Array(NestedType):
     size: int
     shape: tuple[int, ...]
 
+    @removed_parameters(
+        RemovedParameter(
+            name="width",
+            deprecated_in="0.20.31",
+            removed_in="2.0",
+            hint="use `shape` instead.",
+        )
+    )
     def __init__(
         self,
         inner: PolarsDataType | PythonDataType,
         shape: int | tuple[int, ...] | None = None,
-        *,
-        width: int | None = None,
     ) -> None:
-        if width is not None:
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                "the `width` parameter for `Array` is deprecated. Use `shape` instead.",
-                version="0.20.31",
-            )
-            shape = width
-        elif shape is None:
+        if shape is None:
             msg = "Array constructor is missing the required argument `shape`"
             raise TypeError(msg)
 
@@ -1220,16 +1224,13 @@ class Array(NestedType):
         class_name = self.__class__.__name__
         return f"{class_name}({dtype!r}, shape={self.shape})"
 
-    @property
-    def width(self) -> int:
-        """The size of the Array."""
-        from polars._utils.deprecation import issue_deprecation_warning
+    if not TYPE_CHECKING:
 
-        issue_deprecation_warning(
-            "the `width` attribute for `Array` is deprecated. Use `size` instead.",
-            version="0.20.31",
-        )
-        return self.size
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self, name, {"width": "use `size` instead."}, version="2.0"
+            )
+            return getattr_fallback(self, super(), name)
 
 
 class Field:
