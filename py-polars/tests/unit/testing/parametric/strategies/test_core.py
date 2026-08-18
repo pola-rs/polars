@@ -4,7 +4,6 @@ from typing import Any
 import hypothesis.strategies as st
 import pytest
 from hypothesis import given, settings
-from hypothesis.errors import InvalidArgument
 
 import polars as pl
 from polars.testing.parametric import (
@@ -168,20 +167,6 @@ def test_dataframes_columns(lf: pl.LazyFrame) -> None:
     # string col, entries selected from custom values
     xyz = {"x", "y", "z"}
     assert all(v in xyz for v in df["d"].to_list())
-
-
-@pytest.mark.hypothesis
-def test_column_invalid_probability() -> None:
-    with pytest.deprecated_call(), pytest.raises(InvalidArgument):
-        column("col", null_probability=2.0)
-
-
-@pytest.mark.hypothesis
-def test_column_null_probability_deprecated() -> None:
-    with pytest.deprecated_call():
-        col = column("col", allow_null=False, null_probability=0.5)
-    assert col.null_probability == 0.5
-    assert col.allow_null is True  # null_probability takes precedence
 
 
 @given(st.data())
