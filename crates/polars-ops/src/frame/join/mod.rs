@@ -606,7 +606,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
             df.sort_in_place(columns, options)?;
 
             if let Some((offset, len)) = args.slice {
-                df = df.slice(offset, usize::min(len, df.height()));
+                df = df.slice(offset, len);
             }
 
             let [mut a, b]: [Column; 2] = df.into_columns().try_into().unwrap();

@@ -1,5 +1,6 @@
 mod count;
 mod dsl;
+mod equality;
 mod hint;
 #[cfg(feature = "python")]
 mod python_udf;
@@ -43,7 +44,7 @@ pub enum FunctionIR {
         sources: ScanSources,
         scan_type: Box<FileScanIR>,
         alias: Option<PlSmallStr>,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
+        cloud_options: Box<Option<polars_io::cloud::CloudOptions>>,
     },
 
     Unnest {
@@ -63,6 +64,9 @@ pub enum FunctionIR {
         #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
+    Hint(HintIR),
+
+    // The skipped variants have to be at the end, otherwise bincode doesn't round-trip.
     #[cfg_attr(feature = "ir_serde", serde(skip))]
     Opaque {
         function: Arc<dyn DataFrameUdf>,
@@ -75,7 +79,6 @@ pub enum FunctionIR {
         // used for formatting
         fmt_str: PlSmallStr,
     },
-    Hint(HintIR),
 }
 
 impl Hash for FunctionIR {
@@ -83,15 +86,46 @@ impl Hash for FunctionIR {
         std::mem::discriminant(self).hash(state);
         match self {
             #[cfg(feature = "python")]
-            FunctionIR::OpaquePython(OpaquePythonUdf { function, .. }) => {
+            FunctionIR::OpaquePython(OpaquePythonUdf {
+                function,
+                schema,
+                predicate_pd,
+                projection_pd,
+                streamable,
+                validate_output,
+            }) => {
                 // Use the Python object pointer as its identity (equivalent to Python's id()).
                 // This ensures two different Python functions are never treated as identical
                 // by common subplan elimination, while the same function object used twice
                 // on the same input is correctly recognised as a common subplan.
                 let ptr_addr = function.0.as_ptr() as usize;
                 ptr_addr.hash(state);
+                // Behavior-affecting fields, mirrored from `PartialEq`.
+                schema.hash(state);
+                predicate_pd.hash(state);
+                projection_pd.hash(state);
+                streamable.hash(state);
+                validate_output.hash(state);
             },
-            FunctionIR::Opaque { fmt_str, .. } => fmt_str.hash(state),
+            FunctionIR::Opaque {
+                function,
+                schema,
+                predicate_pd,
+                projection_pd,
+                streamable,
+                fmt_str: _,
+            } => {
+                // There is no meaningful structural hash for a `dyn DataFrameUdf`; use the `Arc`
+                // allocation address as its identity, matching `PartialEq` (`Arc::ptr_eq`).
+                (Arc::as_ptr(function) as *const () as usize).hash(state);
+                std::mem::discriminant(schema).hash(state);
+                if let Some(schema) = schema {
+                    (Arc::as_ptr(schema) as *const () as usize).hash(state);
+                }
+                predicate_pd.hash(state);
+                projection_pd.hash(state);
+                streamable.hash(state);
+            },
             FunctionIR::FastCount {
                 sources,
                 scan_type,
@@ -214,7 +248,12 @@ impl FunctionIR {
                 cloud_options,
             } => {
                 debug_assert_eq!(df.shape(), (0, 0));
-                count::count_rows(sources, scan_type, alias.clone(), cloud_options.as_ref())
+                count::count_rows(
+                    sources,
+                    scan_type,
+                    alias.clone(),
+                    cloud_options.as_ref().as_ref(),
+                )
             },
             Rechunk => {
                 df.rechunk_mut_par();

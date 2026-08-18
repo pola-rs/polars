@@ -20,6 +20,8 @@ import sphinx_autosummary_accessors
 
 # Add py-polars directory
 sys.path.insert(0, str(Path("../..").resolve()))
+# Add local Sphinx extensions directory
+sys.path.insert(0, str(Path(__file__).parent / "_ext"))
 
 
 # -- Project information -----------------------------------------------------
@@ -39,6 +41,8 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.linkcode",
     "sphinx.ext.mathjax",
+    # Local extensions
+    "engine_support",
     # Third-party extensions
     "autodocsumm",
     "numpydoc",
@@ -151,7 +155,7 @@ html_theme_options = {
         },
         {
             "name": "Polars Cloud API reference",
-            "url": "https://docs.cloud.pola.rs/reference/index.html",
+            "url": "https://docs.cloud.pola.rs/api/python/stable/reference/index.html",
         },
     ],
     "icon_links": [

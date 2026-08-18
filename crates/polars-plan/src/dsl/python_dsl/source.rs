@@ -39,7 +39,7 @@ impl PythonOptionsDsl {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Hash, strum_macros::IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum PythonScanSource {

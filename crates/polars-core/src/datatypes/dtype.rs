@@ -86,7 +86,7 @@ impl UnknownKind {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, strum_macros::IntoStaticStr)]
 pub enum DataType {
     Boolean,
     UInt8,

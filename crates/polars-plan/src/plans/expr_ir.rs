@@ -1,18 +1,15 @@
 use std::borrow::{Borrow, BorrowMut};
-use std::hash::Hash;
-#[cfg(feature = "cse")]
-use std::hash::Hasher;
 use std::sync::OnceLock;
 
 use polars_utils::format_pl_smallstr;
-#[cfg(feature = "ir_serde")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::*;
 use crate::constants::{get_len_name, get_literal_name, get_pl_element_name};
 
 #[derive(Default, Debug, Clone, Hash, PartialEq, Eq)]
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum OutputName {
     /// No not yet set.
     #[default]
@@ -61,7 +58,7 @@ impl OutputName {
 }
 
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ExprIR {
     /// Output name of this expression.
     output_name: OutputName,
@@ -69,7 +66,7 @@ pub struct ExprIR {
     /// Reduced expression.
     /// This expression is pruned from `alias` and already expanded.
     node: Node,
-    #[cfg_attr(feature = "ir_serde", serde(skip))]
+    #[cfg_attr(feature = "serde", serde(skip))]
     output_dtype: OnceLock<DataType>,
 }
 
@@ -265,14 +262,6 @@ impl ExprIR {
 
     pub(crate) fn has_alias(&self) -> bool {
         matches!(self.output_name, OutputName::Alias(_))
-    }
-
-    #[cfg(feature = "cse")]
-    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
-        traverse_and_hash_aexpr(self.node, expr_arena, state);
-        if let Some(alias) = self.get_alias() {
-            alias.hash(state)
-        }
     }
 
     pub fn is_scalar(&self, expr_arena: &Arena<AExpr>) -> bool {

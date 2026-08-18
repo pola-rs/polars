@@ -4,9 +4,6 @@ use polars_async::executor;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::prelude::{CsvWriterOptions, ExternalCompression, UTF8_BOM, csv_header};
-use polars_io::utils::compression::CompressedWriter;
-use polars_io::utils::file::{AsyncDynWritable, AsyncWritable};
-use tokio::io::AsyncWriteExt as _;
 
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorselPermit;
 use crate::nodes::io_sinks::writers::csv::morsel_serializer::MorselSerializer;
@@ -33,22 +30,15 @@ impl IOWriter {
             options,
         } = self;
 
-        let (writable, sync_on_close) = file.await?;
+        let (mut target, sync_on_close) = file.await?;
 
-        let mut writer = match options.compression {
-            // Natively convert into `AsyncWritable` to allow native async optimizations.
-            ExternalCompression::Uncompressed => writable.try_into_async_writable()?,
-            // Our compression encoders only offer sync `io::Write` capabilities, so we wrap them in
-            // `task::block_in_place` provided by `AsyncDynWritable`. In theory this could
-            // bottleneck the pipeline if there are a large number of files being written into in
-            // parallel, since the tokio thread-pool is smaller than the computation thread-pool.
-            ExternalCompression::Gzip { level } => AsyncWritable::Dyn(AsyncDynWritable(Box::new(
-                CompressedWriter::gzip(writable, level),
-            ))),
-            ExternalCompression::Zstd { level } => AsyncWritable::Dyn(AsyncDynWritable(Box::new(
-                CompressedWriter::zstd(writable, level)?,
-            ))),
-        };
+        // TODO: Refactor to avoid doing compression work on a tokio async thread here.
+        let (mut writer, finish_writer) =
+            if options.compression == ExternalCompression::Uncompressed {
+                (target.as_writable(), None)
+            } else {
+                target.as_compressed_writable(options.compression)?
+            };
 
         if options.include_bom {
             writer.write_all(&UTF8_BOM).await?;
@@ -73,7 +63,14 @@ impl IOWriter {
             let _ = reuse_serializer_tx.send(serializer).await;
         }
 
-        writer.close(sync_on_close).await?;
+        if let Some(finish_writer) = &finish_writer {
+            finish_writer(writer)?.flush().await?;
+        } else {
+            writer.flush().await?;
+            drop(writer);
+        }
+
+        target.close(sync_on_close).await?;
 
         Ok(())
     }

@@ -4,7 +4,7 @@
 *.pdb
 *.ipynb
 .ENV
-.env
+.env*
 .ipynb_checkpoints/
 .python-version
 .yarn/

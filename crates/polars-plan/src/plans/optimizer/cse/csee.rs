@@ -1,50 +1,35 @@
-use std::hash::BuildHasher;
-
-use indexmap::map::RawEntryApiV1;
-use indexmap::map::raw_entry_v1::RawEntryMut;
 use polars_core::CHEAP_SERIES_HASH_LIMIT;
-use polars_core::config::verbose;
-use polars_core::prelude::PlIndexMap;
+use polars_core::prelude::{PlIndexMap, PlIndexSet};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
-use polars_utils::aliases::PlFixedStateQuality;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
-use polars_utils::hashing::_boost_hash_combine;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
-use polars_utils::vec::CapacityByFactor;
 
 use crate::constants::CSE_REPLACED;
-use crate::plans::aexpr::is_inherently_nondeterministic_top_level;
+use crate::plans::aexpr::is_inherently_nondeterministic_excluding_udfs_top_level;
 use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::visitor::{
     IRNode, IRNodeArena, RewriteRecursion, RewritingVisitor, TreeWalker as _, VisitRecursion,
     Visitor,
 };
-use crate::plans::{AExpr, ExprIR, IR, IRBuilder, IRFunctionExpr, LiteralValue, OutputName};
+use crate::plans::{
+    AExpr, CanonicalExprId, CanonicalExprMap, ExprIR, IR, IRBuilder, IRFunctionExpr, LiteralValue,
+    OutputName,
+};
 use crate::prelude::ProjectionOptions;
 use crate::prelude::visitor::AexprNode;
 
-type Accepted = Option<(VisitRecursion, bool)>;
-// Don't allow this node in a cse.
-const REFUSE_NO_MEMBER: Accepted = Some((VisitRecursion::Continue, false));
-// Don't allow this node, but allow as a member of a cse.
-const REFUSE_ALLOW_MEMBER: Accepted = Some((VisitRecursion::Continue, true));
-const REFUSE_SKIP: Accepted = Some((VisitRecursion::Skip, false));
-// Accept this node.
-const ACCEPT: Accepted = None;
-
-/// CSE refuses anything inherently non-deterministic _except_ user UDFs,
-/// which CSE folds via Python/library identity (per #26253).
-fn refused_by_cse_due_to_nondeterminism(ae: &AExpr) -> bool {
-    if matches!(
-        ae,
-        AExpr::AnonymousFunction { .. } | AExpr::AnonymousAgg { .. }
-    ) {
-        return false;
-    }
-    is_inherently_nondeterministic_top_level(ae)
+/// How a visited node participates in CSE.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NodeRole {
+    /// Invalidates its enclosing expression, but descendants may still be candidates.
+    Refuse,
+    /// May occur within a candidate but is not a candidate itself.
+    Member,
+    /// May be extracted as a common subexpression.
+    Candidate,
 }
 
 #[derive(Debug, Clone)]
@@ -73,215 +58,15 @@ impl ProjectionExprs {
     }
 }
 
-/// Identifier that shows the sub-expression path.
-/// Must implement hash and equality and ideally
-/// have little collisions
-/// We will do a full expression comparison to check if the
-/// expressions with equal identifiers are truly equal
-#[derive(Clone, Debug)]
-pub(super) struct Identifier {
-    inner: Option<u64>,
-    last_node: Option<AexprNode>,
-    hb: PlFixedStateQuality,
+fn cse_column_name(id: CanonicalExprId) -> PlSmallStr {
+    format_pl_smallstr!("{}{:#x}", CSE_REPLACED, id.as_u64())
 }
 
-impl Identifier {
-    fn new() -> Self {
-        Self {
-            inner: None,
-            last_node: None,
-            hb: PlFixedStateQuality::with_seed(0),
-        }
-    }
+/// Canonical expression id maps to the number of occurrences in the current plan node.
+type SubExprCount = PlIndexMap<CanonicalExprId, u32>;
 
-    fn hash(&self) -> u64 {
-        self.inner.unwrap_or(0)
-    }
-
-    fn ae_node(&self) -> AexprNode {
-        self.last_node.unwrap()
-    }
-
-    fn is_equal(&self, other: &Self, arena: &Arena<AExpr>) -> bool {
-        self.inner == other.inner
-            && self.last_node.map(|v| v.hashable_and_cmp(arena))
-                == other.last_node.map(|v| v.hashable_and_cmp(arena))
-    }
-
-    fn is_valid(&self) -> bool {
-        self.inner.is_some()
-    }
-
-    fn materialize(&self) -> PlSmallStr {
-        format_pl_smallstr!("{}{:#x}", CSE_REPLACED, self.materialized_hash())
-    }
-
-    fn materialized_hash(&self) -> u64 {
-        self.inner.unwrap_or(0)
-    }
-
-    fn combine(&mut self, other: &Identifier) {
-        let inner = match (self.inner, other.inner) {
-            (Some(l), Some(r)) => _boost_hash_combine(l, r),
-            (None, Some(r)) => r,
-            (Some(l), None) => l,
-            _ => return,
-        };
-        self.inner = Some(inner);
-    }
-
-    fn add_ae_node(&self, ae: &AexprNode, arena: &Arena<AExpr>) -> Self {
-        let hashed = self.hb.hash_one(ae.to_aexpr(arena));
-        let inner = Some(
-            self.inner
-                .map_or(hashed, |l| _boost_hash_combine(l, hashed)),
-        );
-        Self {
-            inner,
-            last_node: Some(*ae),
-            hb: self.hb.clone(),
-        }
-    }
-}
-
-#[derive(Default)]
-struct IdentifierMap<V> {
-    inner: PlIndexMap<Identifier, V>,
-}
-
-impl<V> IdentifierMap<V> {
-    fn get(&self, id: &Identifier, arena: &Arena<AExpr>) -> Option<&V> {
-        self.inner
-            .raw_entry_v1()
-            .from_hash(id.hash(), |k| k.is_equal(id, arena))
-            .map(|(_k, v)| v)
-    }
-
-    fn entry<'a, F: FnOnce() -> V>(
-        &'a mut self,
-        id: Identifier,
-        v: F,
-        arena: &Arena<AExpr>,
-    ) -> &'a mut V {
-        let h = id.hash();
-        match self
-            .inner
-            .raw_entry_mut_v1()
-            .from_hash(h, |k| k.is_equal(&id, arena))
-        {
-            RawEntryMut::Occupied(entry) => entry.into_mut(),
-            RawEntryMut::Vacant(entry) => {
-                let (_, v) = entry.insert_hashed_nocheck(h, id, v());
-                v
-            },
-        }
-    }
-    fn insert(&mut self, id: Identifier, v: V, arena: &Arena<AExpr>) {
-        self.entry(id, || v, arena);
-    }
-
-    fn iter(&self) -> impl Iterator<Item = (&Identifier, &V)> {
-        self.inner.iter()
-    }
-}
-
-/// Merges identical expressions into identical IDs.
-///
-/// Does no analysis whether this leads to legal substitutions.
-#[derive(Default)]
-pub struct NaiveExprMerger {
-    node_to_uniq_id: PlIndexMap<Node, u32>,
-    uniq_id_to_node: Vec<Node>,
-    identifier_to_uniq_id: IdentifierMap<u32>,
-    arg_stack: Vec<Option<Identifier>>,
-}
-
-impl NaiveExprMerger {
-    pub fn add_expr(&mut self, node: Node, arena: &Arena<AExpr>) {
-        AexprNode::new(node).visit(self, arena).unwrap();
-    }
-
-    pub fn add_and_get_uniq_id(&mut self, node: Node, arena: &Arena<AExpr>) -> u32 {
-        let aexpr_node = AexprNode::new(node);
-        aexpr_node.visit(self, arena).unwrap();
-        *self.node_to_uniq_id.get(&node).unwrap()
-    }
-
-    pub fn get_uniq_id(&self, node: Node) -> Option<u32> {
-        self.node_to_uniq_id.get(&node).copied()
-    }
-
-    pub fn get_node(&self, uniq_id: u32) -> Option<Node> {
-        self.uniq_id_to_node.get(uniq_id as usize).copied()
-    }
-}
-
-impl Visitor for NaiveExprMerger {
-    type Node = AexprNode;
-    type Arena = Arena<AExpr>;
-
-    fn pre_visit(
-        &mut self,
-        _node: &Self::Node,
-        _arena: &Self::Arena,
-    ) -> PolarsResult<VisitRecursion> {
-        self.arg_stack.push(None);
-        Ok(VisitRecursion::Continue)
-    }
-
-    fn post_visit(
-        &mut self,
-        node: &Self::Node,
-        arena: &Self::Arena,
-    ) -> PolarsResult<VisitRecursion> {
-        let mut identifier = Identifier::new();
-        while let Some(Some(arg)) = self.arg_stack.pop() {
-            identifier.combine(&arg);
-        }
-        identifier = identifier.add_ae_node(node, arena);
-        let uniq_id = *self.identifier_to_uniq_id.entry(
-            identifier,
-            || {
-                let uniq_id = self.uniq_id_to_node.len() as u32;
-                self.uniq_id_to_node.push(node.node());
-                uniq_id
-            },
-            arena,
-        );
-        self.node_to_uniq_id.insert(node.node(), uniq_id);
-        Ok(VisitRecursion::Continue)
-    }
-}
-
-/// Identifier maps to Expr Node and count.
-type SubExprCount = IdentifierMap<(Node, u32)>;
-/// (post_visit_idx, identifier);
-type IdentifierArray = Vec<(usize, Identifier)>;
-
-#[derive(Debug)]
-enum VisitRecord {
-    /// entered a new expression
-    Entered(usize),
-    /// Every visited sub-expression pushes their identifier to the stack.
-    // The `bool` indicates if this expression is valid.
-    // This can be `AND` accumulated by the lineage of the expression to determine
-    // of the whole expression can be added.
-    // For instance a in a group_by we only want to use elementwise operation in cse:
-    // - `(col("a") * 2).sum(), (col("a") * 2)` -> we want to do `col("a") * 2` on a `with_columns`
-    // - `col("a").sum() * col("a").sum()` -> we don't want `sum` to run on `with_columns`
-    // as that doesn't have groups context. If we encounter a `sum` it should be flagged as `false`
-    //
-    // This should have the following stack
-    // id        valid
-    // col(a)   true
-    // sum      false
-    // col(a)   true
-    // sum      false
-    // binary   true
-    // -------------- accumulated
-    //          false
-    SubExprId(Identifier, bool),
-}
+/// One frame per active node; `false` means its subtree was invalidated.
+type ValidityStack = Vec<bool>;
 
 fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) -> bool {
     match ae {
@@ -306,182 +91,94 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) 
     }
 }
 
-/// Goes through an expression and generates a identifier
-///
-/// The visitor uses a `visit_stack` to track traversal order.
-///
-/// # Entering a node
-/// When `pre-visit` is called we enter a new (sub)-expression and
-/// we add `Entered` to the stack.
-/// # Leaving a node
-/// On `post-visit` when we leave the node and we pop all `SubExprIds` nodes.
-/// Those are considered sub-expression of the leaving node
-///
-/// We also record an `id_array` that followed the pre-visit order. This
-/// is used to cache the `Identifiers`.
-//
-// # Example (this is not a docstring as clippy complains about spacing)
-// Say we have the expression: `(col("f00").min() * col("bar")).sum()`
-// with the following call tree:
-//
-//     sum
-//
-//       |
-//
-//     binary: *
-//
-//       |              |
-//
-//     col(bar)         min
-//
-//                      |
-//
-//                      col(f00)
-//
-// # call order
-// function-called              stack                stack-after(pop until E, push I)   # ID
-// pre-visit: sum                E                        -
-// pre-visit: binary: *          EE                       -
-// pre-visit: col(bar)           EEE                      -
-// post-visit: col(bar)	         EEE                      EEI                          id: col(bar)
-// pre-visit: min                EEIE                     -
-// pre-visit: col(f00)           EEIEE                    -
-// post-visit: col(f00)	         EEIEE                    EEIEI                        id: col(f00)
-// post-visit: min	             EEIEI                    EEII                         id: min!col(f00)
-// post-visit: binary: *         EEII                     EI                           id: binary: *!min!col(f00)!col(bar)
-// post-visit: sum               EI                       I                            id: sum!binary: *!min!col(f00)!col(bar)
-struct ExprIdentifierVisitor<'a> {
+/// Counts valid CSE candidates while propagating subtree validity to their ancestors.
+struct ExprCandidateVisitor<'a> {
+    canonical_map: &'a mut CanonicalExprMap,
     se_count: &'a mut SubExprCount,
-    /// Materialized `CSE` materialized (name) hashes can collide. So we validate that all CSE counts
-    /// match name hash counts.
-    name_validation: &'a mut PlIndexMap<u64, u32>,
-    identifier_array: &'a mut IdentifierArray,
-    // Index in pre-visit traversal order.
-    pre_visit_idx: usize,
-    post_visit_idx: usize,
-    visit_stack: &'a mut Vec<VisitRecord>,
-    /// Offset in the identifier array
-    /// this allows us to use a single `vec` on multiple expressions
-    id_array_offset: usize,
-    // Whether the expression replaced a subexpression.
-    has_sub_expr: bool,
+    validity_stack: &'a mut ValidityStack,
     // During aggregation we only identify element-wise operations
     is_group_by: bool,
     //
     element_wise_only: bool,
 }
 
-impl ExprIdentifierVisitor<'_> {
+impl ExprCandidateVisitor<'_> {
     fn new<'a>(
+        canonical_map: &'a mut CanonicalExprMap,
         se_count: &'a mut SubExprCount,
-        identifier_array: &'a mut IdentifierArray,
-        visit_stack: &'a mut Vec<VisitRecord>,
+        validity_stack: &'a mut ValidityStack,
         is_group_by: bool,
-        name_validation: &'a mut PlIndexMap<u64, u32>,
         element_wise_select_only: bool,
-    ) -> ExprIdentifierVisitor<'a> {
-        let id_array_offset = identifier_array.len();
-        ExprIdentifierVisitor {
+    ) -> ExprCandidateVisitor<'a> {
+        ExprCandidateVisitor {
+            canonical_map,
             se_count,
-            name_validation,
-            identifier_array,
-            pre_visit_idx: 0,
-            post_visit_idx: 0,
-            visit_stack,
-            id_array_offset,
-            has_sub_expr: false,
+            validity_stack,
             is_group_by,
             element_wise_only: element_wise_select_only,
         }
     }
 
-    /// pop all visit-records until an `Entered` is found. We accumulate a `SubExprId`s
-    /// to `id`. Finally we return the expression `idx` and `Identifier`.
-    /// This works due to the stack.
-    /// If we traverse another expression in the mean time, it will get popped of the stack first
-    /// so the returned identifier belongs to a single sub-expression
-    fn pop_until_entered(&mut self) -> (usize, Identifier, bool) {
-        let mut id = Identifier::new();
-        let mut is_valid_accumulated = true;
-
-        while let Some(item) = self.visit_stack.pop() {
-            match item {
-                VisitRecord::Entered(idx) => return (idx, id, is_valid_accumulated),
-                VisitRecord::SubExprId(s, valid) => {
-                    id.combine(&s);
-                    is_valid_accumulated &= valid
-                },
-            }
-        }
-        unreachable!()
-    }
-
-    /// return `None` -> node is accepted
-    /// return `Some(_)` node is not accepted and apply the given recursion operation
-    /// `Some(_, true)` don't accept this node, but can be a member of a cse.
-    /// `Some(_,  false)` don't accept this node, and don't allow as a member of a cse.
-    fn accept_node_post_visit(&self, ae: &AExpr) -> Accepted {
-        match ae {
-            // window expressions should `evaluate_on_groups`, not `evaluate`
-            // so we shouldn't cache the children as they are evaluated incorrectly
-            #[cfg(feature = "dynamic_group_by")]
-            AExpr::Rolling { .. } => REFUSE_SKIP,
-            AExpr::Over { .. } => REFUSE_SKIP,
-            // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
-            // TODO! Add a typed null
-            AExpr::Literal(LiteralValue::Scalar(sc)) if sc.is_null() => REFUSE_NO_MEMBER,
-            AExpr::Literal(s) => {
-                match s {
-                    LiteralValue::Series(s) => {
-                        let dtype = s.dtype();
-
-                        // Object and nested types are harder to hash and compare.
-                        let allow = !(dtype.is_nested() | dtype.is_object());
-
-                        if s.len() < CHEAP_SERIES_HASH_LIMIT && allow {
-                            REFUSE_ALLOW_MEMBER
-                        } else {
-                            REFUSE_NO_MEMBER
-                        }
-                    },
-                    _ => REFUSE_ALLOW_MEMBER,
-                }
-            },
-            AExpr::Column(_) => REFUSE_ALLOW_MEMBER,
-            AExpr::Len => {
-                if self.is_group_by {
-                    REFUSE_NO_MEMBER
-                } else {
-                    REFUSE_ALLOW_MEMBER
-                }
-            },
-            ae if refused_by_cse_due_to_nondeterminism(ae) => REFUSE_NO_MEMBER,
-            #[cfg(feature = "rolling_window")]
-            AExpr::Function {
-                function: IRFunctionExpr::RollingExpr { .. },
-                ..
-            } => REFUSE_NO_MEMBER,
-            _ => {
-                // During aggregation we only store elementwise operation in the state
-                // other operations we cannot add to the state as they have the output size of the
-                // groups, not the original dataframe
-                if self.is_group_by {
-                    if !ae.is_elementwise_top_level() {
-                        return REFUSE_NO_MEMBER;
-                    }
-                    match ae {
-                        AExpr::Cast { .. } => REFUSE_ALLOW_MEMBER,
-                        _ => ACCEPT,
-                    }
-                } else {
-                    ACCEPT
-                }
-            },
+    /// Invalidates the enclosing node, if any.
+    fn invalidate_parent(&mut self) {
+        if let Some(frame) = self.validity_stack.last_mut() {
+            *frame = false;
         }
     }
 }
 
-impl Visitor for ExprIdentifierVisitor<'_> {
+/// Classifies how a visited node may participate in CSE.
+fn classify(ae: &AExpr, is_group_by: bool) -> NodeRole {
+    match ae {
+        // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
+        // TODO! Add a typed null
+        AExpr::Literal(LiteralValue::Scalar(sc)) if sc.is_null() => NodeRole::Refuse,
+        AExpr::Literal(LiteralValue::Series(s)) => {
+            let dtype = s.dtype();
+
+            // Object and nested types are harder to hash and compare.
+            let allow = !(dtype.is_nested() | dtype.is_object());
+
+            if s.len() < CHEAP_SERIES_HASH_LIMIT && allow {
+                NodeRole::Member
+            } else {
+                NodeRole::Refuse
+            }
+        },
+        AExpr::Literal(_) => NodeRole::Member,
+        AExpr::Column(_) => NodeRole::Member,
+        AExpr::Len => {
+            if is_group_by {
+                NodeRole::Refuse
+            } else {
+                NodeRole::Member
+            }
+        },
+        ae if is_inherently_nondeterministic_excluding_udfs_top_level(ae) => NodeRole::Refuse,
+        #[cfg(feature = "rolling_window")]
+        AExpr::Function {
+            function: IRFunctionExpr::RollingExpr { .. },
+            ..
+        } => NodeRole::Refuse,
+        _ => {
+            // Group-by temporaries are evaluated before aggregation, so only elementwise
+            // expressions have the correct length.
+            if is_group_by {
+                if !ae.is_elementwise_top_level() {
+                    return NodeRole::Refuse;
+                }
+                match ae {
+                    AExpr::Cast { .. } => NodeRole::Member,
+                    _ => NodeRole::Candidate,
+                }
+            } else {
+                NodeRole::Candidate
+            }
+        },
+    }
+}
+
+impl Visitor for ExprCandidateVisitor<'_> {
     type Node = AexprNode;
     type Arena = Arena<AExpr>;
 
@@ -495,19 +192,12 @@ impl Visitor for ExprIdentifierVisitor<'_> {
             self.is_group_by,
             self.element_wise_only,
         ) {
-            // Still add to the stack so that a parent becomes invalidated.
-            self.visit_stack
-                .push(VisitRecord::SubExprId(Identifier::new(), false));
+            // No frame is pushed for this node, so invalidate the parent directly.
+            self.invalidate_parent();
             return Ok(VisitRecursion::Skip);
         }
 
-        self.visit_stack
-            .push(VisitRecord::Entered(self.pre_visit_idx));
-        self.pre_visit_idx += 1;
-
-        // implement default placeholders
-        self.identifier_array
-            .push((self.id_array_offset, Identifier::new()));
+        self.validity_stack.push(true);
 
         Ok(VisitRecursion::Continue)
     }
@@ -518,43 +208,18 @@ impl Visitor for ExprIdentifierVisitor<'_> {
         arena: &Self::Arena,
     ) -> PolarsResult<VisitRecursion> {
         let ae = node.to_aexpr(arena);
-        self.post_visit_idx += 1;
+        let subtree_is_valid = self.validity_stack.pop().unwrap();
 
-        let (pre_visit_idx, sub_expr_id, is_valid_accumulated) = self.pop_until_entered();
-        // Create the Id of this node.
-        let id: Identifier = sub_expr_id.add_ae_node(node, arena);
+        let role = classify(ae, self.is_group_by);
 
-        if !is_valid_accumulated {
-            self.identifier_array[pre_visit_idx + self.id_array_offset].0 = self.post_visit_idx;
-            self.visit_stack.push(VisitRecord::SubExprId(id, false));
-            return Ok(VisitRecursion::Continue);
+        if !subtree_is_valid || role == NodeRole::Refuse {
+            self.invalidate_parent();
         }
 
-        // If we don't store this node
-        // we only push the visit_stack, so the parents know the trail.
-        if let Some((recurse, local_is_valid)) = self.accept_node_post_visit(ae) {
-            self.identifier_array[pre_visit_idx + self.id_array_offset].0 = self.post_visit_idx;
-
-            self.visit_stack
-                .push(VisitRecord::SubExprId(id, local_is_valid));
-            return Ok(recurse);
+        if subtree_is_valid && role == NodeRole::Candidate {
+            let id = self.canonical_map.resolve(node.node(), arena);
+            *self.se_count.entry(id).or_insert(0) += 1;
         }
-
-        // Store the created id.
-        self.identifier_array[pre_visit_idx + self.id_array_offset] =
-            (self.post_visit_idx, id.clone());
-
-        // We popped until entered, push this Id on the stack so the trail
-        // is available for the parent expression.
-        self.visit_stack
-            .push(VisitRecord::SubExprId(id.clone(), true));
-
-        let mat_h = id.materialized_hash();
-        let (_, se_count) = self.se_count.entry(id, || (node.node(), 0), arena);
-
-        *se_count += 1;
-        *self.name_validation.entry(mat_h).or_insert(0) += 1;
-        self.has_sub_expr |= *se_count > 1;
 
         Ok(VisitRecursion::Continue)
     }
@@ -562,17 +227,10 @@ impl Visitor for ExprIdentifierVisitor<'_> {
 
 struct CommonSubExprRewriter<'a> {
     sub_expr_map: &'a SubExprCount,
-    identifier_array: &'a IdentifierArray,
+    canonical_map: &'a CanonicalExprMap,
     /// keep track of the replaced identifiers.
-    replaced_identifiers: &'a mut IdentifierMap<()>,
+    replaced_identifiers: &'a mut PlIndexSet<CanonicalExprId>,
 
-    max_post_visit_idx: usize,
-    /// index in traversal order in which `identifier_array`
-    /// was written. This is the index in `identifier_array`.
-    visited_idx: usize,
-    /// Offset in the identifier array.
-    /// This allows us to use a single `vec` on multiple expressions
-    id_array_offset: usize,
     /// Indicates if this expression is rewritten.
     rewritten: bool,
     is_group_by: bool,
@@ -581,60 +239,58 @@ struct CommonSubExprRewriter<'a> {
 
 impl<'a> CommonSubExprRewriter<'a> {
     fn new(
+        canonical_map: &'a CanonicalExprMap,
         sub_expr_map: &'a SubExprCount,
-        identifier_array: &'a IdentifierArray,
-        replaced_identifiers: &'a mut IdentifierMap<()>,
-        id_array_offset: usize,
+        replaced_identifiers: &'a mut PlIndexSet<CanonicalExprId>,
         is_group_by: bool,
         is_element_wise_select_only: bool,
     ) -> Self {
         Self {
             sub_expr_map,
-            identifier_array,
+            canonical_map,
             replaced_identifiers,
-            max_post_visit_idx: 0,
-            visited_idx: 0,
-            id_array_offset,
             rewritten: false,
             is_group_by,
             is_element_wise_select_only,
         }
     }
+
+    /// Returns the canonical ID and count when this node's equivalence class was accepted as a
+    /// CSE candidate for the current plan node.
+    fn candidate(&self, node: Node) -> Option<(CanonicalExprId, u32)> {
+        let id = self.canonical_map.cached_id(node)?;
+        let count = *self.sub_expr_map.get(&id)?;
+        Some((id, count))
+    }
 }
 
 // # Example
-// Expression tree with [pre-visit,post-visit] indices
-// counted from 1
-//     [1,8] binary: +
+// Say we are rewriting `col(foo).sum() + col(foo).sum() * col(bar)`, where `col(foo).sum()` was
+// counted twice.
+//
+//     binary: +
 //
 //       |                            |
 //
-//     [2,2] sum                    [4,7] sum
+//     sum                          binary: *
 //
-//       |                            |
+//       |                            |                       |
 //
-//     [3,1] col(foo)               [5,6] binary: *
-//
-//                                    |                       |
-//
-//                                   [6,3] col(bar)        [7,5] sum
+//     col(foo)                     col(bar)                  sum
 //
 //                                                            |
 //
-//                                                         [8,4] col(foo)
-//
-// in this tree `col(foo).sum()` should be post-visited/mutated
-// so if we are at `[2,2]`
+//                                                         col(foo)
 //
 // call stack
-// pre-visit    [1,8] binary    -> no_mutate_and_continue -> visits children
-// pre-visit    [2,2] sum       -> mutate_and_stop -> does not visit children
-// post-visit   [2,2] sum       -> skip index to [4,7] (because we didn't visit children)
-// pre-visit    [4,7] sum       -> no_mutate_and_continue -> visits children
-// pre-visit    [5,6] binary    -> no_mutate_and_continue -> visits children
-// pre-visit    [6,3] col       -> stop_recursion -> does not mutate
-// pre-visit    [7,5] sum       -> mutate_and_stop -> does not visit children
-// post-visit   [7,5]           -> skip index to end
+// pre-visit    binary: +   -> counted once      -> no_mutate_and_continue -> visits children
+// pre-visit    sum         -> counted twice     -> mutate_and_stop -> does not visit children
+// pre-visit    binary: *   -> counted once      -> no_mutate_and_continue -> visits children
+// pre-visit    col(bar)    -> not a candidate   -> stop, it is a leaf
+// pre-visit    sum         -> counted twice     -> mutate_and_stop -> does not visit children
+//
+// Both `sum` nodes resolve to the same [`CanonicalExprId`], so both are replaced by a reference
+// to the same temporary column.
 impl RewritingVisitor for CommonSubExprRewriter<'_> {
     type Node = AexprNode;
     type Arena = Arena<AExpr>;
@@ -645,45 +301,23 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         arena: &mut Self::Arena,
     ) -> PolarsResult<RewriteRecursion> {
         let ae = ae_node.to_aexpr(arena);
-        if self.visited_idx + self.id_array_offset >= self.identifier_array.len()
-            || self.max_post_visit_idx
-                > self.identifier_array[self.visited_idx + self.id_array_offset].0
-            || skip_pre_visit(ae, self.is_group_by, self.is_element_wise_select_only)
-        {
+        if skip_pre_visit(ae, self.is_group_by, self.is_element_wise_select_only) {
             return Ok(RewriteRecursion::Stop);
         }
 
-        let id = &self.identifier_array[self.visited_idx + self.id_array_offset].1;
-
-        // Id placeholder not overwritten, so we can skip this sub-expression.
-        if !id.is_valid() {
-            self.visited_idx += 1;
-            let recurse = if ae_node.is_leaf(arena) {
-                RewriteRecursion::Stop
-            } else {
-                // continue visit its children to see
-                // if there are cse
-                RewriteRecursion::NoMutateAndContinue
-            };
-            return Ok(recurse);
+        if let Some((id, count)) = self.candidate(ae_node.node())
+            && count > 1
+        {
+            self.replaced_identifiers.insert(id);
+            return Ok(RewriteRecursion::MutateAndStop);
         }
 
-        // Because some expressions don't have hash / equality guarantee (e.g. floats)
-        // we can get none here. This must be changed later.
-        let Some((_, count)) = self.sub_expr_map.get(id, arena) else {
-            self.visited_idx += 1;
-            return Ok(RewriteRecursion::NoMutateAndContinue);
-        };
-        if *count > 1 {
-            self.replaced_identifiers.insert(id.clone(), (), arena);
-            // rewrite this sub-expression, don't visit its children
-            Ok(RewriteRecursion::MutateAndStop)
+        let recurse = if ae_node.is_leaf(arena) {
+            RewriteRecursion::Stop
         } else {
-            // This is a unique expression
-            // visit its children to see if they are cse
-            self.visited_idx += 1;
-            Ok(RewriteRecursion::NoMutateAndContinue)
-        }
+            RewriteRecursion::NoMutateAndContinue
+        };
+        Ok(recurse)
     }
 
     fn mutate(
@@ -691,34 +325,12 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         mut node: Self::Node,
         arena: &mut Self::Arena,
     ) -> PolarsResult<Self::Node> {
-        let (post_visit_count, id) =
-            &self.identifier_array[self.visited_idx + self.id_array_offset];
-        self.visited_idx += 1;
+        let (id, count) = self
+            .candidate(node.node())
+            .expect("mutated node was not a CSE candidate");
+        debug_assert!(count > 1);
 
-        // TODO!: check if we ever hit this branch
-        if *post_visit_count < self.max_post_visit_idx {
-            return Ok(node);
-        }
-
-        self.max_post_visit_idx = *post_visit_count;
-        // DFS, so every post_visit that is smaller than `post_visit_count`
-        // is a subexpression of this node and we can skip that
-        //
-        // `self.visited_idx` will influence recursion strategy in `pre_visit`
-        // see call-stack comment above
-        while self.visited_idx < self.identifier_array.len() - self.id_array_offset
-            && *post_visit_count > self.identifier_array[self.visited_idx + self.id_array_offset].0
-        {
-            self.visited_idx += 1;
-        }
-        // If this is not true, the traversal order in the visitor was different from the rewriter.
-        debug_assert_eq!(
-            node.hashable_and_cmp(arena),
-            id.ae_node().hashable_and_cmp(arena)
-        );
-
-        let name = id.materialize();
-        node.assign(AExpr::col(name), arena);
+        node.assign(AExpr::col(cse_column_name(id)), arena);
         self.rewritten = true;
 
         Ok(node)
@@ -726,15 +338,15 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
 }
 
 pub(crate) struct CommonSubExprOptimizer {
+    /// Kept for the whole pass so distinct canonical expressions receive distinct temporary
+    /// names plan-wide. Resolved `AExpr` nodes must not be mutated in place.
+    canonical_map: CanonicalExprMap,
     // amortize allocations
     // these are cleared per lp node
     se_count: SubExprCount,
-    id_array: IdentifierArray,
-    id_array_offsets: Vec<u32>,
-    replaced_identifiers: IdentifierMap<()>,
+    replaced_identifiers: PlIndexSet<CanonicalExprId>,
     // these are cleared per expr node
-    visit_stack: Vec<VisitRecord>,
-    name_validation: PlIndexMap<u64, u32>,
+    validity_stack: ValidityStack,
     // Set by the streaming engine
     // Only supports element-wise CSEE
     // on SELECT/HSTACK
@@ -747,12 +359,10 @@ pub(crate) struct CommonSubExprOptimizer {
 impl CommonSubExprOptimizer {
     pub(crate) fn new(element_wise_select_only: bool) -> Self {
         Self {
+            canonical_map: CanonicalExprMap::new(),
             se_count: Default::default(),
-            id_array: Default::default(),
-            visit_stack: Default::default(),
-            id_array_offsets: Default::default(),
+            validity_stack: Default::default(),
             replaced_identifiers: Default::default(),
-            name_validation: Default::default(),
             element_wise_select_only,
             nodes_scratch: ScratchVec::default(),
             heights_scratch: ScratchVec::default(),
@@ -764,18 +374,15 @@ impl CommonSubExprOptimizer {
         ae_node: AexprNode,
         is_group_by: bool,
         expr_arena: &mut Arena<AExpr>,
-        element_wise_select_only: bool,
-    ) -> PolarsResult<(usize, bool)> {
-        let mut visitor = ExprIdentifierVisitor::new(
+    ) -> PolarsResult<()> {
+        let mut visitor = ExprCandidateVisitor::new(
+            &mut self.canonical_map,
             &mut self.se_count,
-            &mut self.id_array,
-            &mut self.visit_stack,
+            &mut self.validity_stack,
             is_group_by,
-            &mut self.name_validation,
-            element_wise_select_only,
+            self.element_wise_select_only,
         );
-        ae_node.visit(&mut visitor, expr_arena).map(|_| ())?;
-        Ok((visitor.id_array_offset, visitor.has_sub_expr))
+        ae_node.visit(&mut visitor, expr_arena).map(|_| ())
     }
 
     /// Mutate the expression.
@@ -783,18 +390,15 @@ impl CommonSubExprOptimizer {
     fn mutate_expression(
         &mut self,
         ae_node: AexprNode,
-        id_array_offset: usize,
         is_group_by: bool,
         expr_arena: &mut Arena<AExpr>,
-        element_wise_select_only: bool,
     ) -> PolarsResult<(AexprNode, bool)> {
         let mut rewriter = CommonSubExprRewriter::new(
+            &self.canonical_map,
             &self.se_count,
-            &self.id_array,
             &mut self.replaced_identifiers,
-            id_array_offset,
             is_group_by,
-            element_wise_select_only,
+            self.element_wise_select_only,
         );
         ae_node
             .rewrite(&mut rewriter, expr_arena)
@@ -805,61 +409,30 @@ impl CommonSubExprOptimizer {
         &mut self,
         expr: &[ExprIR],
         expr_arena: &mut Arena<AExpr>,
-        id_array_offsets: &mut Vec<u32>,
         is_group_by: bool,
         schema: &Schema,
-        element_wise_select_only: bool,
     ) -> PolarsResult<Option<ProjectionExprs>> {
-        let mut has_sub_expr = false;
-
         // First get all cse's.
         for e in expr {
-            // The visitor can return early thus depleted its stack
-            // on a previous iteration.
-            self.visit_stack.clear();
+            // A balanced traversal leaves the stack empty, but an early return from a
+            // previous expression might not
+            self.validity_stack.clear();
 
             // Visit expressions and collect sub-expression counts.
             let ae_node = AexprNode::new(e.node());
-            let (id_array_offset, this_expr_has_se) =
-                self.visit_expression(ae_node, is_group_by, expr_arena, element_wise_select_only)?;
-            id_array_offsets.push(id_array_offset as u32);
-            has_sub_expr |= this_expr_has_se;
+            self.visit_expression(ae_node, is_group_by, expr_arena)?;
         }
 
-        // Ensure that the `materialized hashes` count matches that of the CSE count.
-        // It can happen that CSE collide and in that case we fallback and skip CSE.
-        for (id, (_, count)) in self.se_count.iter() {
-            let mat_h = id.materialized_hash();
-            let valid = if let Some(name_count) = self.name_validation.get(&mat_h) {
-                *name_count == *count
-            } else {
-                false
-            };
-
-            if !valid {
-                if verbose() {
-                    eprintln!(
-                        "materialized names collided in common subexpression elimination.\n backtrace and run without CSE"
-                    )
-                }
-                return Ok(None);
-            }
-        }
+        let has_sub_expr = self.se_count.values().any(|&count| count > 1);
 
         if has_sub_expr {
-            let mut new_expr = Vec::with_capacity_by_factor(expr.len(), 1.3);
+            let mut new_expr = Vec::with_capacity((expr.len() as f64 * 1.3) as usize);
 
             // Then rewrite the expressions that have a cse count > 1.
-            for (e, offset) in expr.iter().zip(id_array_offsets.iter()) {
+            for e in expr {
                 let ae_node = AexprNode::new(e.node());
 
-                let (out, rewritten) = self.mutate_expression(
-                    ae_node,
-                    *offset as usize,
-                    is_group_by,
-                    expr_arena,
-                    element_wise_select_only,
-                )?;
+                let (out, rewritten) = self.mutate_expression(ae_node, is_group_by, expr_arena)?;
 
                 let out_node = out.node();
                 let mut out_e = e.clone();
@@ -867,67 +440,6 @@ impl CommonSubExprOptimizer {
                     out_e
                 } else {
                     out_e.set_node(out_node);
-
-                    // Ensure the function ExprIR's have the proper names.
-                    // This is needed for structs to get the proper field
-                    let mut scratch = vec![];
-                    let mut stack = vec![(e.node(), out_node)];
-                    while let Some((original, new)) = stack.pop() {
-                        // Don't follow identical nodes.
-                        if original == new {
-                            continue;
-                        }
-                        scratch.clear();
-                        let aes = expr_arena.get_disjoint_mut([original, new]);
-
-                        // Only follow paths that are the same.
-                        if std::mem::discriminant(aes[0]) != std::mem::discriminant(aes[1]) {
-                            continue;
-                        }
-
-                        aes[0].inputs_rev(&mut scratch);
-                        let offset = scratch.len();
-                        aes[1].inputs_rev(&mut scratch);
-
-                        // If they have a different number of inputs, we don't follow the nodes.
-                        if scratch.len() != offset * 2 {
-                            continue;
-                        }
-
-                        for i in 0..scratch.len() / 2 {
-                            stack.push((scratch[i], scratch[i + offset]));
-                        }
-
-                        match expr_arena.get_disjoint_mut([original, new]) {
-                            [
-                                AExpr::Function {
-                                    input: input_original,
-                                    ..
-                                },
-                                AExpr::Function {
-                                    input: input_new, ..
-                                },
-                            ] => {
-                                for (new, original) in input_new.iter_mut().zip(input_original) {
-                                    new.set_alias(original.output_name().clone());
-                                }
-                            },
-                            [
-                                AExpr::AnonymousFunction {
-                                    input: input_original,
-                                    ..
-                                },
-                                AExpr::AnonymousFunction {
-                                    input: input_new, ..
-                                },
-                            ] => {
-                                for (new, original) in input_new.iter_mut().zip(input_original) {
-                                    new.set_alias(original.output_name().clone());
-                                }
-                            },
-                            _ => {},
-                        }
-                    }
 
                     // If we don't end with an alias we add an alias. Because the normal left-hand
                     // rule we apply for determining the name will not work we now refer to
@@ -941,14 +453,14 @@ impl CommonSubExprOptimizer {
                 new_expr.push(new_node)
             }
             // Add the tmp columns
-            for id in self.replaced_identifiers.inner.keys() {
-                let (node, _count) = self.se_count.get(id, expr_arena).unwrap();
+            for &id in self.replaced_identifiers.iter() {
+                let node = self.canonical_map.representative(id);
 
                 // Avoid accidentally broadcasting <scalar literal>.<elementwise_ops..>
                 if self.element_wise_select_only
                     && !matches!(
                         aexpr_projection_height_rec(
-                            *node,
+                            node,
                             expr_arena,
                             &mut self.nodes_scratch,
                             &mut self.heights_scratch
@@ -959,12 +471,10 @@ impl CommonSubExprOptimizer {
                     return Ok(None);
                 }
 
-                let name = id.materialize();
-                let out_e = ExprIR::new(*node, OutputName::Alias(name));
+                let out_e = ExprIR::new(node, OutputName::Alias(cse_column_name(id)));
                 new_expr.push(out_e)
             }
-            let expr =
-                ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.inner.len());
+            let expr = ProjectionExprs::new_with_cse(new_expr, self.replaced_identifiers.len());
             Ok(Some(expr))
         } else {
             Ok(None)
@@ -989,13 +499,8 @@ impl RewritingVisitor for CommonSubExprOptimizer {
     }
 
     fn mutate(&mut self, node: Self::Node, arena: &mut Self::Arena) -> PolarsResult<Self::Node> {
-        let mut id_array_offsets = std::mem::take(&mut self.id_array_offsets);
-
-        self.se_count.inner.clear();
-        self.name_validation.clear();
-        self.id_array.clear();
-        id_array_offsets.clear();
-        self.replaced_identifiers.inner.clear();
+        self.se_count.clear();
+        self.replaced_identifiers.clear();
 
         let arena_idx = node.node();
         let alp = arena.0.get(arena_idx);
@@ -1008,14 +513,9 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                 options,
             } => {
                 let input_schema = arena.0.get(*input).schema(&arena.0);
-                if let Some(expr) = self.find_cse(
-                    expr,
-                    &mut arena.1,
-                    &mut id_array_offsets,
-                    false,
-                    input_schema.as_ref().as_ref(),
-                    self.element_wise_select_only,
-                )? {
+                if let Some(expr) =
+                    self.find_cse(expr, &mut arena.1, false, input_schema.as_ref().as_ref())?
+                {
                     let schema = schema.clone();
                     let options = *options;
 
@@ -1053,14 +553,9 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                 options,
             } => {
                 let input_schema = arena.0.get(*input).schema(&arena.0);
-                if let Some(exprs) = self.find_cse(
-                    exprs,
-                    &mut arena.1,
-                    &mut id_array_offsets,
-                    false,
-                    input_schema.as_ref().as_ref(),
-                    self.element_wise_select_only,
-                )? {
+                if let Some(exprs) =
+                    self.find_cse(exprs, &mut arena.1, false, input_schema.as_ref().as_ref())?
+                {
                     let schema = schema.clone();
                     let options = *options;
                     let input = *input;
@@ -1101,14 +596,9 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                 schema,
             } if !self.element_wise_select_only => {
                 let input_schema = arena.0.get(*input).schema(&arena.0);
-                if let Some(aggs) = self.find_cse(
-                    aggs,
-                    &mut arena.1,
-                    &mut id_array_offsets,
-                    true,
-                    input_schema.as_ref().as_ref(),
-                    self.element_wise_select_only,
-                )? {
+                if let Some(aggs) =
+                    self.find_cse(aggs, &mut arena.1, true, input_schema.as_ref().as_ref())?
+                {
                     let keys = keys.clone();
                     let options = options.clone();
                     let schema = schema.clone();
@@ -1136,7 +626,6 @@ impl RewritingVisitor for CommonSubExprOptimizer {
             _ => {},
         }
 
-        self.id_array_offsets = id_array_offsets;
         Ok(node)
     }
 }

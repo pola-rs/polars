@@ -4,6 +4,7 @@ import io
 import os
 import subprocess
 import sys
+from functools import partial
 from itertools import permutations
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -19,7 +20,7 @@ from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
     from polars._typing import EngineType
-    from polars.io.partition import SinkedPathsCallbackArgs
+    from polars.io.partition import SinkedPath, SinkedPathsCallbackArgs
     from tests.conftest import PlMonkeyPatch
 
 
@@ -350,6 +351,7 @@ def test_sink_path_slicing_utf8_boundaries_26324(
 
 @pytest.mark.parametrize("file_format", ["parquet", "ipc", "csv", "ndjson"])
 @pytest.mark.parametrize("partitioned", [True, False])
+@pytest.mark.debug
 @pytest.mark.write_disk
 def test_sink_metrics(
     plmonkeypatch: PlMonkeyPatch,
@@ -444,9 +446,9 @@ def test_sinked_paths_callback(tmp_path: Path) -> None:
 
     out_path = tmp_path / "a.parquet"
     lst: list[SinkedPathsCallbackArgs] = []
-    lf.sink_parquet(out_path, _sinked_paths_callback=lst.append)
+    lf.sink_parquet(out_path, sinked_paths_callback=lst.append)
 
-    assert [Path(x) for x in lst[0].paths] == [out_path]
+    assert [Path(x.path) for x in lst[0].paths] == [out_path]
 
     out_dir = tmp_path / "multiple"
     lst = []
@@ -455,10 +457,10 @@ def test_sinked_paths_callback(tmp_path: Path) -> None:
             out_dir,
             max_rows_per_file=1,
         ),
-        _sinked_paths_callback=lst.append,
+        sinked_paths_callback=lst.append,
     )
 
-    assert [Path(x) for x in lst[0].paths] == [
+    assert [Path(x.path) for x in lst[0].paths] == [
         out_dir / "00000000.parquet",
         out_dir / "00000001.parquet",
         out_dir / "00000002.parquet",
@@ -473,8 +475,52 @@ def test_sinked_paths_callback(tmp_path: Path) -> None:
                 file_path_provider=lambda _: io.BytesIO(),
                 max_rows_per_file=1,
             ),
-            _sinked_paths_callback=lambda _: None,
+            sinked_paths_callback=lambda _: None,
         )
+
+
+@pytest.mark.write_disk
+def test_sinked_paths_callback_sizes(tmp_path: Path) -> None:
+    paths: list[SinkedPath] = []
+
+    def callback(args: SinkedPathsCallbackArgs) -> None:
+        nonlocal paths
+        paths.extend(args.paths)
+
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
+
+    for ext in ["parquet", "ipc"]:
+        Path.mkdir(tmp_path / ext)
+        sink_lf = partial(getattr(lf, f"sink_{ext}"), sinked_paths_callback=callback)
+        sink_lf(tmp_path / ext / f"single.{ext}")
+        sink_lf(
+            tmp_path / ext / f"single_uncompressed.{ext}", compression="uncompressed"
+        )
+        sink_lf(tmp_path / ext / f"single_zstd.{ext}", compression="zstd")
+
+        sink_lf(pl.PartitionBy(tmp_path / f"{ext}_max_rows_2", max_rows_per_file=2))
+        sink_lf(pl.PartitionBy(tmp_path / f"{ext}_key_a", key="a"))
+
+    assert len(paths) == 22
+
+    df = pl.DataFrame(paths, orient="row")
+
+    check = df.select("path").with_columns(
+        num_rows=pl.col("path").map_elements(
+            lambda x: (
+                getattr(pl, f"scan_{Path(x).suffix[1:]}")(x)
+                .select(pl.len())
+                .collect()
+                .item()
+            ),
+            return_dtype=df.schema["num_rows"],
+        ),
+        num_bytes=pl.col("path").map_elements(
+            lambda x: Path(x).stat().st_size, return_dtype=df.schema["num_bytes"]
+        ),
+    )
+
+    assert_frame_equal(df, check)
 
 
 def test_sink_predicate_pushdown_streaming_flag_27922() -> None:
@@ -655,6 +701,7 @@ def test_sink_upload_chunk_size_config(
                 "max_retries": 0,
                 "aws_endpoint_url": "https://localhost:333",
             },
+            credential_provider=None,
         )
     capture = capfd.readouterr().err
 
@@ -703,6 +750,7 @@ def test_sink_upload_chunk_size_config_partitioned(
                 "max_retries": 0,
                 "aws_endpoint_url": "https://localhost:333",
             },
+            credential_provider=None,
         )
     capture = capfd.readouterr().err
 
@@ -724,3 +772,36 @@ def test_sink_upload_chunk_size_config_partitioned(
     assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
         "Some(13579)"
     )
+
+
+@pytest.mark.write_disk
+def test_sink_max_blocking_threads_28526(tmp_path: Path) -> None:
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import sys
+
+import polars as pl
+
+(_, path) = sys.argv
+
+pl.DataFrame(
+    {
+        "a": range(10000),
+        "b": range(10000, 20000),
+    }
+).write_parquet(path, row_group_size=2500)
+
+print("OK", end="")
+""",
+            format_file_uri(tmp_path / "a.parquet"),
+        ],
+        env={
+            **os.environ,
+            "POLARS_MAX_BLOCKING_THREAD_COUNT": "5",
+        },
+    )
+
+    assert out == b"OK"

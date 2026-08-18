@@ -23,7 +23,7 @@ from tests.unit.conftest import time_func
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from polars._typing import JoinStrategy, PolarsDataType
+    from polars._typing import JoinStrategy, MaintainOrderJoin, PolarsDataType
 
 
 def test_semi_anti_join() -> None:
@@ -399,7 +399,6 @@ def test_join_chunks_alignment_4720() -> None:
     )
 
 
-@pytest.mark.may_fail_auto_streaming  # SORTED_ASC flags
 def test_jit_sort_joins() -> None:
     n = 200
     # Explicitly specify numpy dtype because of different defaults on Windows
@@ -3426,6 +3425,9 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
 
+    assert plan.count("CACHE") == 2
+    assert len(extract) == 3
+
     assert extract[0] in {
         'LEFT PLAN ON: [col("a"), col("b")]',
         'LEFT PLAN ON: [col("b"), col("a")]',
@@ -3435,22 +3437,6 @@ def test_join_filter_pushdown_iejoin() -> None:
         'RIGHT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("b"), col("a")]',
     }
-
-    cse_applied = plan.count("CACHE") == 2
-
-    if cse_applied:
-        assert len(extract) == 3
-    else:
-        assert extract[3] in {
-            'LEFT PLAN ON: [col("a"), col("b")]',
-            'LEFT PLAN ON: [col("b"), col("a")]',
-        }
-        assert extract[4] == 'FILTER col("a") > 0'
-        assert extract[5] in {
-            'RIGHT PLAN ON: [col("a"), col("b")]',
-            'RIGHT PLAN ON: [col("b"), col("a")]',
-        }
-        assert len(extract) == 6
 
     assert_frame_equal(q.collect().sort(pl.all()), expect)
     assert_frame_equal(
@@ -4402,3 +4388,103 @@ def test_join_slice_maintain_order_28419_28448() -> None:
     assert_frame_equal(
         q.collect(), pl.DataFrame({"a": [0, 1], "v": [40, 10], "jx": [9, 8]})
     )
+
+
+def test_join_slice_maintain_order_negative_offset_overshoot_28538() -> None:
+    lf = pl.LazyFrame({"a": [1, 2]})
+    q = lf.join(lf, on="a", maintain_order="left").tail(6)
+    expected = pl.DataFrame({"a": [1, 2]})
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(
+        q.collect(optimizations=pl.QueryOptFlags().update(slice_pushdown=False)),
+        expected,
+    )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "present", "missing", "inner_null"),
+    [
+        (pl.List(pl.Int64), [1], None, [None]),
+        (pl.Array(pl.Int64, 1), [1], None, [None]),
+        (pl.Struct({"a": pl.Int64}), {"a": 1}, None, {"a": None}),
+    ],
+)
+def test_join_nested_key_nulls_not_equal_28584(
+    dtype: pl.DataType, present: Any, missing: Any, inner_null: Any
+) -> None:
+    left = pl.DataFrame({"k": pl.Series([present, missing], dtype=dtype), "l": [0, 1]})
+    right = pl.DataFrame(
+        {"k": pl.Series([missing, present], dtype=dtype), "r": [10, 11]}
+    )
+
+    # default, nulls_equal=False
+    assert left.join(right, on="k", how="inner").height == 1
+    assert left.join(right, on="k", how="left").sort("l")["r"].to_list() == [11, None]
+    assert left.join(right, on="k", how="full").height == 3
+    assert left.join(right, on="k", how="semi").height == 1
+    assert left.join(right, on="k", how="anti").height == 1
+
+    # inner nulls still match
+    left2 = pl.DataFrame({"k": pl.Series([inner_null], dtype=dtype), "l": [0]})
+    right2 = pl.DataFrame({"k": pl.Series([inner_null], dtype=dtype), "r": [9]})
+    assert left2.join(right2, on="k", how="inner").height == 1
+
+    # nulls_equal=True
+    assert left.join(right, on="k", how="inner", nulls_equal=True).height == 2
+    lr = left.join(right, on="k", how="left", nulls_equal=True)
+    assert lr.sort("l")["r"].to_list() == [11, 10]
+    assert left.join(right, on="k", how="right", nulls_equal=True).height == 2
+    assert left.join(right, on="k", how="full", nulls_equal=True).height == 2
+    assert left.join(right, on="k", how="semi", nulls_equal=True).height == 2
+    assert left.join(right, on="k", how="anti", nulls_equal=True).height == 0
+
+
+@pytest.mark.parametrize("how", ["inner", "left", "right", "full", "semi", "anti"])
+@pytest.mark.parametrize(
+    "maintain_order", ["left", "right", "left_right", "right_left"]
+)
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [(0, 1), (0, 3), (1, 2), (2, 4), (0, 100), (3, 10), (-1, 1), (-3, 2), (-100, 3)],
+)
+def test_join_slice_pushdown_maintain_order_matrix_28551(
+    how: JoinStrategy,
+    maintain_order: MaintainOrderJoin,
+    offset: int,
+    length: int,
+) -> None:
+    lf1 = pl.LazyFrame({"a": [2, 5, 1, 3], "v": [20, 50, 10, 30]})  # left-only key: 5
+    lf2 = pl.LazyFrame({"a": [3, 1, 4, 2], "w": [300, 100, 400, 200]})  # right-only: 4
+
+    q = lf1.join(lf2, on="a", how=how, maintain_order=maintain_order).slice(
+        offset, length
+    )
+    expected = q.collect(
+        optimizations=pl.QueryOptFlags().update(slice_pushdown=False),
+    )
+    result = q.collect()
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(("offset", "length"), [(0, 2), (0, 4), (1, 2), (2, 5)])
+def test_full_join_slice_pushdown_no_maintain_order_28551(
+    offset: int, length: int
+) -> None:
+    lf1 = pl.LazyFrame({"a": [1, 2, 3, 4]})
+    lf2 = pl.LazyFrame({"a": [4, 3, 2, 1]})
+
+    q = lf1.join(lf2, on="a", how="full").slice(offset, length)
+    result = q.collect()
+
+    # We should never push the slice left or right (or both), otherwise some rows will
+    # not match
+    assert result.null_count().sum_horizontal().item() == 0
+
+
+def test_join_coalesce_empty_suffix_28783() -> None:
+    left = pl.LazyFrame({"k": [1], "a": [2]})
+    right = pl.LazyFrame({"k": [1], "b": [3]})
+    lf = left.join(right, on="k", how="inner", suffix="")
+    expected = pl.LazyFrame({"k": [1], "a": [2], "b": [3]})
+    assert_frame_equal(lf, expected)

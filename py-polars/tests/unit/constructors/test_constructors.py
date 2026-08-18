@@ -1722,7 +1722,6 @@ def test_array_construction() -> None:
     assert df.rows() == [("a", [1, 2, 3]), ("b", [2, 3, 4])]
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_pycapsule_interface(df: pl.DataFrame) -> None:
     df = df.rechunk()
     pyarrow_table = df.to_arrow()
