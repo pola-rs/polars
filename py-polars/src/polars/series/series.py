@@ -53,6 +53,7 @@ from polars._utils.deprecation import (
     deprecated,
     issue_deprecation_warning,
 )
+from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.getitem import get_series_item_by_key
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -8700,6 +8701,21 @@ class Series:
         ]
         """
 
+    @removed_parameters(
+        RemovedParameter(
+            name="default",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+            hint="Use `replace_strict` instead to set a default while replacing values.",
+        ),
+        RemovedParameter(
+            name="return_dtype",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+            hint="Use `replace_strict` instead to set a return data type while"
+            " replacing values, or explicitly call `cast` on the output.",
+        ),
+    )
     def replace(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],

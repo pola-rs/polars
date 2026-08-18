@@ -268,12 +268,22 @@ def test_replace_duplicates_new() -> None:
 
 
 def test_replace_return_dtype_removed() -> None:
+    def msg(qualname: str) -> str:
+        return (
+            re.escape(
+                f"the argument 'return_dtype' for '{qualname}' was deprecated in "
+            )
+            + ".*"
+            + re.escape("Use `replace_strict` instead to set a return data type while")
+        )
+
     s = pl.Series([1, 2, 3])
-    with pytest.raises(
-        ArgumentRemovedError,
-        match=re.escape("Use `replace_strict` instead to set a return data type while"),
-    ):
+    with pytest.raises(ArgumentRemovedError, match=msg("Series.replace")):
         s.replace(1, 10, return_dtype=pl.Int8)  # type: ignore[call-arg]
+
+    e = pl.col("a")
+    with pytest.raises(ArgumentRemovedError, match=msg("Expr.replace")):
+        e.replace(1, 10, return_dtype=pl.Int8)  # type: ignore[call-arg]
 
 
 def test_replace_default_removed() -> None:

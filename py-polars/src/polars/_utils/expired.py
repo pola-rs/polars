@@ -103,12 +103,15 @@ def removed_parameters(
                 if name in params_dict:
                     _raise_removed_argument_error(
                         params_dict[name],
-                        func_name=function.__name__,
+                        func_name=function.__qualname__,
                         kwargs=kwargs,
                     )
             return function(*args, **kwargs)
 
         wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
+        # Stach the removed parameters on the wrapper so that they can be introspected
+        # later, in case the function needs to go through @expr_dispatch later.
+        wrapper.__removed_parameters__ = params  # type: ignore[attr-defined]
         return wrapper
 
     return decorate
