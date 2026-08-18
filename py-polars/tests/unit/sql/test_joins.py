@@ -444,6 +444,16 @@ def test_non_equi_joins(constraint: str) -> None:
                 "c": [3, 4, 8, 3, 4, 8, 3, 4, 8],
             },
         ),
+        # unqualified column on one side of the join predicate
+        (
+            "SELECT df1.a, df3.c FROM df1, df3 WHERE df1.a = c",
+            {"a": [3], "c": [3]},
+        ),
+        # unqualified column on the other side of the comparison
+        (
+            "SELECT df1.a, df3.c FROM df1, df3 WHERE c = df1.a",
+            {"a": [3], "c": [3]},
+        ),
     ],
 )
 def test_implicit_joins(query: str, expected: dict[str, Any]) -> None:
@@ -1502,3 +1512,35 @@ def test_qualified_wildcard_combinations(query: str, expected: dict[str, Any]) -
         right=pl.sql(query).collect(),
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize(
+    ("join_clause", "on_expr", "expected"),
+    [
+        ("INNER JOIN", "1 IS NOT NULL", {"a": [1, 1, 2, 2], "b": [10, 20, 10, 20]}),
+        ("INNER JOIN", "NULL IS NOT NULL", {"a": [], "b": []}),
+        (
+            "LEFT OUTER JOIN",
+            "1 IS NOT NULL",
+            {"a": [1, 1, 2, 2], "b": [10, 20, 10, 20]},
+        ),
+        (
+            "LEFT OUTER JOIN",
+            "NULL IS NOT NULL",
+            {"a": [1, 2], "b": [None, None]},
+        ),
+    ],
+)
+def test_join_on_constant_predicate(
+    join_clause: str, on_expr: str, expected: dict[str, Any]
+) -> None:
+    df1 = pl.DataFrame({"a": [1, 2]})
+    df2 = pl.DataFrame({"b": [10, 20]})
+
+    query = f"""
+        SELECT * FROM df1 {join_clause} df2 ON {on_expr}
+        ORDER BY ALL
+    """
+    res = pl.sql(query, eager=True)
+    expected_df = pl.DataFrame(expected, schema={"a": pl.Int64, "b": pl.Int64})
+    assert_frame_equal(res, expected_df, check_row_order=False)

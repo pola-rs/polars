@@ -1302,3 +1302,19 @@ def test_streaming_engine_fused_filter_drop() -> None:
 
     assert phys_plan.index("project 2 / 3") > phys_plan.index("filter")
     assert_frame_equal(q.collect(), pl.DataFrame({"x": 1, "z": "Z"}))
+
+
+def test_projection_pushdown_select_prune_expr_28729() -> None:
+    q = (
+        pl.LazyFrame({"x": [0, 1, 2]})
+        .join(
+            pl.LazyFrame({"x": [1, 1]}).select(pl.min("x").alias("x_rhs_sum")),
+            how="cross",
+        )
+        .select("x")
+    )
+
+    assert_frame_equal(
+        q.collect().sort("x"),
+        pl.DataFrame({"x": [0, 1, 2]}),
+    )
