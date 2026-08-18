@@ -137,7 +137,28 @@ _REMOVED_MIN_PERIODS = RenamedParameter(
 )
 
 
-class Expr:
+class _Meta(type):
+    if not TYPE_CHECKING:
+
+        def __getattr__(cls, name: str) -> Any:
+            raise_for_removed_attributes(
+                cls,
+                name,
+                {
+                    "from_json": "use `Expr.deserialize` instead. Note that the new "
+                    "method operates on file-like inputs rather than strings.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(
+                cls,
+                super(),
+                name,
+                meta=True,
+            )
+
+
+class Expr(metaclass=_Meta):
     """Expressions that can be used in various contexts."""
 
     # NOTE: This `= None` is needed to generate the docs with sphinx_accessor.
@@ -12423,8 +12444,6 @@ class Expr:
                 self,
                 name,
                 {
-                    "from_json": "use `Expr.deserialize` instead. Note that the new "
-                    "method operates on file-like inputs rather than strings.",
                     "rechunk": "rechunking within a query is not well-defined. Use `df.rechunk()` after collecting the results instead.",
                     "register_plugin": "use `polars.plugins.register_plugin_function` instead.",
                     "shrink_dtype": "use `Series.shrink_dtype` instead.",
