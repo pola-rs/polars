@@ -6010,19 +6010,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = "'left_on' requires corresponding 'right_on'"
             raise ValueError(msg)
 
-        if how == "outer":
-            how = "full"
-            issue_deprecation_warning(
-                "use of `how='outer'` should be replaced with `how='full'`.",
-                version="0.20.29",
-            )
+        if how == "outer":  # type: ignore[comparison-overlap]
+            msg = "use of `how='outer'` should be replaced with `how='full'`."
+            raise ValueError(msg)
         elif how == "outer_coalesce":  # type: ignore[comparison-overlap]
-            coalesce = True
-            how = "full"
-            issue_deprecation_warning(
-                "use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
-                version="0.20.29",
-            )
+            msg = "use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`."
+            raise ValueError(msg)
         elif how == "cross":
             if uses_on or uses_lr_on:
                 msg = "cross join should not pass join keys"
