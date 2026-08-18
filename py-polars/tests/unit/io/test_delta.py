@@ -43,7 +43,7 @@ def new_pl_delta_dataset(source: str | DeltaTable) -> DeltaDataset:
         delta_table_options=None,
         use_pyarrow=False,
         pyarrow_options=None,
-        rechunk=False,
+        rechunk=None,
     )
 
 
