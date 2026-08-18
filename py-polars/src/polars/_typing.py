@@ -8,7 +8,6 @@ from typing import (
     Any,
     Literal,
     Protocol,
-    TypedDict,
     TypeVar,
     Union,
 )
@@ -373,18 +372,9 @@ ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
 # typevars for core polars types
 PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
-BufferInfo: TypeAlias = tuple[int, int, int]
 
 # type alias for supported spreadsheet engines
 ExcelSpreadsheetEngine: TypeAlias = Literal["calamine", "openpyxl", "xlsx2csv"]
-
-
-class SeriesBuffers(TypedDict):
-    """Underlying buffers of a Series."""
-
-    values: Series
-    validity: Series | None
-    offsets: Series | None
 
 
 # minimal protocol definitions that can reasonably represent
@@ -489,7 +479,6 @@ __all__ = [
     "AsofJoinStrategy",
     "AvroCompression",
     "BooleanMask",
-    "BufferInfo",
     "CategoricalOrdering",
     "ClosedInterval",
     "ColumnFormatDict",
@@ -563,7 +552,6 @@ __all__ = [
     "SearchSortedSide",
     "SelectorType",
     "SerializationFormat",
-    "SeriesBuffers",
     "SingleColSelector",
     "SingleIndexSelector",
     "SingleNameSelector",

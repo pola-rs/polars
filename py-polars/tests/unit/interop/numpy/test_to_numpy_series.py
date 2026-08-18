@@ -22,9 +22,10 @@ if TYPE_CHECKING:
 
 
 def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
+    """Assert that `arr` points at the values buffer of `s`."""
     if s.len() == 0:
         return
-    s_ptr = s._get_buffers()["values"]._get_buffer_info()[0]
+    s_ptr = s.to_arrow().buffers()[1].address
     arr_ptr = arr.__array_interface__["data"][0]
     assert s_ptr == arr_ptr
 
