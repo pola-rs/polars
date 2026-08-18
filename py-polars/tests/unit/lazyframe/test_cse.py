@@ -1710,6 +1710,28 @@ def test_cspe_cache_removal_keeps_nested_caches(
     )
 
 
+def test_cspe_nested_cache_does_not_block_pushable_filters() -> None:
+    buffer = io.BytesIO()
+    pl.DataFrame({"a": range(100), "b": range(100)}).write_parquet(buffer)
+
+    lf = pl.scan_parquet(buffer.getvalue())
+    inner = lf.select("a", "b")
+    outer = pl.concat([inner, inner])
+    q = pl.concat([outer.filter(pl.col("a") > 90), outer.filter(pl.col("a") < 5)])
+
+    # Both predicates must be pushed down all the way to the parquet scan.
+    # Currently, with POLARS_ALLOW_NESTED_CSPE=1, we only cache the unfiltered scan,
+    # which is why this is disabled by default (DEFAULT_ALLOW_NESTED_CSPE == false).
+    plan = q.explain()
+    assert plan.count('SELECTION: col("a") > 90') == 2, plan
+    assert plan.count('SELECTION: col("a") < 5') == 2, plan
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+
+
 def test_cse_single_scalar_does_not_broadcast_28407() -> None:
     e = pl.lit(5).abs()
     q = pl.LazyFrame({"a": [1, 2, 3]}).select((e + e).alias("o"))
