@@ -302,7 +302,8 @@ pub fn try_rewrite_join_type(
     streaming: bool,
     dedup: &mut PredicateDedupState,
 ) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
-    // For non-inner non-equi joins, the predicates are attached to the `CrossAndFilter`
+    // A non-equi condition is attached directly to the join, so this must still run even
+    // with nothing pushed down from above.
     let has_attached_predicate = matches!(
         &options.options,
         Some(JoinTypeOptionsIR::CrossAndFilter { .. })

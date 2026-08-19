@@ -404,8 +404,6 @@ def test_non_equi_joins(constraint: str) -> None:
 
 def test_non_equi_left_join() -> None:
     # https://github.com/pola-rs/polars/issues/28875
-    # LEFT JOIN with a range predicate in ON previously dropped unmatched left
-    # rows and behaved like an INNER JOIN.
     ctx = pl.SQLContext(
         v=pl.LazyFrame({"key": ["A", "B", "C"], "lo": [0, 0, 0], "hi": [10, 10, 10]}),
         s=pl.LazyFrame({"key": ["A", "A", "B"], "t": [5, 7, 50]}),
