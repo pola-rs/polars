@@ -3079,3 +3079,36 @@ def test_scan_iceberg_self_join_28465(tmp_path: Path) -> None:
     q = lf.join(lf, on="x")
 
     assert_frame_equal(q.collect(), pl.DataFrame({"x": 1}))
+
+
+def test_scan_iceberg_schema_change_24498(
+    tmp_path: Path,
+) -> None:
+    table, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+
+    df1 = pl.DataFrame([{"a": 1}])
+    df1.write_iceberg(table, mode="append")
+
+    df2 = df1.with_columns(b=pl.col("a") * 2)
+
+    with table.update_schema() as update_schema:
+        update_schema.union_by_name(df2.to_arrow().schema)
+
+    df2.write_iceberg(table, mode="overwrite")
+
+    assert pl.scan_iceberg(
+        table,
+        snapshot_id=table.snapshots()[0].snapshot_id,
+    ).collect_schema() == {"a": pl.Int64}
+
+    assert pl.scan_iceberg(
+        table,
+        snapshot_id=table.snapshots()[1].snapshot_id,
+    ).collect_schema() == {"a": pl.Int64, "b": pl.Int64}
+
+    assert pl.scan_iceberg(
+        table,
+        snapshot_id=table.snapshots()[2].snapshot_id,
+    ).collect_schema() == {"a": pl.Int64, "b": pl.Int64}
