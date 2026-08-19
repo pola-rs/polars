@@ -106,7 +106,7 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-struct")]
     Struct(usize, &'a StructArray, &'a [Field]),
     #[cfg(feature = "dtype-struct")]
-    StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
+    StructOwned(Box<(Vec<AnyValue<'static>>, Vec<Field>)>),
     /// An UTF8 encoded string type.
     StringOwned(PlSmallStr),
     Binary(&'a [u8]),
@@ -1110,17 +1110,9 @@ impl<'a> AnyValue<'a> {
                 StructOwned(Box::new((avs, fields.to_vec())))
             },
             #[cfg(feature = "dtype-struct")]
-            StructOwned(payload) => {
-                let av = StructOwned(payload);
-                // SAFETY: owned is already static
-                unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
-            },
+            StructOwned(v) => StructOwned(v),
             #[cfg(feature = "object")]
-            ObjectOwned(payload) => {
-                let av = ObjectOwned(payload);
-                // SAFETY: owned is already static
-                unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
-            },
+            ObjectOwned(v) => ObjectOwned(v),
             #[cfg(feature = "dtype-decimal")]
             Decimal(val, s, p) => Decimal(val, s, p),
             #[cfg(feature = "dtype-categorical")]
