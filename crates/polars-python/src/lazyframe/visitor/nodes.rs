@@ -376,14 +376,6 @@ pub struct HConcat {
     #[pyo3(get)]
     options: Py<PyAny>,
 }
-#[pyclass(frozen)]
-/// This allows expressions to access other tables
-pub struct ExtContext {
-    #[pyo3(get)]
-    input: usize,
-    #[pyo3(get)]
-    contexts: Vec<usize>,
-}
 
 #[pyclass(frozen)]
 pub struct Sink {
@@ -798,15 +790,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 options.broadcast_unit_length,
             )
                 .into_py_any(py)?,
-        }
-        .into_py_any(py),
-        IR::ExtContext {
-            input,
-            contexts,
-            schema: _,
-        } => ExtContext {
-            input: input.0,
-            contexts: contexts.iter().map(|n| n.0).collect(),
         }
         .into_py_any(py),
         IR::Sink { input, payload } => Sink {

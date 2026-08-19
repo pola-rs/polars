@@ -66,7 +66,6 @@ fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<MapFunction>().unwrap();
     m.add_class::<Union>().unwrap();
     m.add_class::<HConcat>().unwrap();
-    m.add_class::<ExtContext>().unwrap();
     m.add_class::<Sink>().unwrap();
     Ok(())
 }

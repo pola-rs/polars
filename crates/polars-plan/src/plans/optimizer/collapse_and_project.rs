@@ -39,9 +39,7 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
 
         match lp {
             Select { input, expr, .. } => {
-                if !matches!(lp_arena.get(*input), ExtContext { .. })
-                    && !self.processed.contains(&node)
-                {
+                if !self.processed.contains(&node) {
                     // First check if we can apply the optimization before we allocate.
                     if !expr.iter().all(|e| {
                         matches!(expr_arena.get(e.node()), AExpr::Column(name) if e.output_name() == name)
