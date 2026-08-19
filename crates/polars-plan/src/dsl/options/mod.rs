@@ -83,7 +83,8 @@ impl Default for StrptimeOptions {
 pub enum JoinTypeOptionsIR {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
-    // Fused cross join and filter (only used in the in-memory engine)
+    // Fused cross join and filter. Executed by the in-memory engine; the streaming
+    // engine has no native node for this and falls back to it via `InMemoryJoin`.
     CrossAndFilter {
         predicate: ExprIR, // Must be elementwise.
     },
