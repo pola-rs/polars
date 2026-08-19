@@ -1,5 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 //! DataFrame module.
+use std::borrow::Cow;
+
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_utils::UnitVec;
@@ -1153,7 +1155,22 @@ impl DataFrame {
                 Ok(self.clear())
             }
         } else {
-            let new_columns: Vec<Column> = self.try_apply_columns_par(|s| s.filter(mask))?;
+            // Rechunk when not all chunks are aligned. This avoid O(n*m) overhead,
+            // where n = number of chunks, and m = number of columns.
+            let all_chunks_aligned = !self.should_rechunk()
+                && self
+                    .materialized_column_iter()
+                    .next()
+                    .is_some_and(|s| s.chunk_lengths().eq(mask.chunk_lengths()));
+
+            let mask = if all_chunks_aligned {
+                Cow::Borrowed(mask)
+            } else {
+                mask.rechunk()
+            };
+
+            let new_columns: Vec<Column> =
+                self.try_apply_columns_par(|s| s.filter(mask.as_ref()))?;
             let out = unsafe {
                 DataFrame::new_unchecked(new_columns[0].len(), new_columns).with_schema_from(self)
             };
@@ -1173,7 +1190,19 @@ impl DataFrame {
                 Ok(self.clear())
             }
         } else {
-            let new_columns: Vec<Column> = self.try_apply_columns(|s| s.filter(mask))?;
+            let all_chunks_aligned = !self.should_rechunk()
+                && self
+                    .materialized_column_iter()
+                    .next()
+                    .is_some_and(|s| s.chunk_lengths().eq(mask.chunk_lengths()));
+
+            let mask = if all_chunks_aligned {
+                Cow::Borrowed(mask)
+            } else {
+                mask.rechunk()
+            };
+
+            let new_columns: Vec<Column> = self.try_apply_columns(|s| s.filter(mask.as_ref()))?;
             let out = unsafe {
                 DataFrame::new_unchecked(new_columns[0].len(), new_columns).with_schema_from(self)
             };
@@ -1347,36 +1376,35 @@ impl DataFrame {
     }
 
     pub fn rename_many<'a>(
-        &mut self,
+        mut self,
         renames: impl Iterator<Item = (&'a str, PlSmallStr)>,
-    ) -> PolarsResult<&mut Self> {
-        let mut schema_arc = self.schema().clone();
-        let schema = Arc::make_mut(&mut schema_arc);
+    ) -> PolarsResult<Self> {
+        let schema = self.schema().clone();
 
         for (from, to) in renames {
             if from == to.as_str() {
                 continue;
             }
 
-            polars_ensure!(
-                !schema.contains(&to),
-                Duplicate: "column rename attempted with already existing name \"{to}\""
-            );
+            let idx = schema
+                .index_of(from)
+                .ok_or_else(|| polars_err!(col_not_found = from))?;
 
-            match schema.get_full(from) {
-                None => polars_bail!(col_not_found = from),
-                Some((idx, _, _)) => {
-                    let (n, _) = schema.get_at_index_mut(idx).unwrap();
-                    *n = to.clone();
-                    unsafe { self.columns_mut() }
-                        .get_mut(idx)
-                        .unwrap()
-                        .rename(to);
-                },
-            }
+            unsafe { self.columns_mut() }
+                .get_mut(idx)
+                .unwrap()
+                .rename(to);
         }
 
-        unsafe { self.set_schema(schema_arc) };
+        // Check for duplicates.
+        let schema = Schema::from_iter_check_duplicates(
+            self.columns()
+                .iter()
+                .map(|c| c.name().clone())
+                .zip_eq(schema.iter_values().cloned()),
+        )?;
+
+        unsafe { self.set_schema(Arc::new(schema)) };
 
         Ok(self)
     }

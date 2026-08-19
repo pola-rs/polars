@@ -418,7 +418,7 @@ class SQLContext(Generic[FrameType]):
         ┌────────┬─────────────┬─────────┐
         │ decade ┆ total_gross ┆ n_films │
         │ ---    ┆ ---         ┆ ---     │
-        │ i64    ┆ i64         ┆ u32     │
+        │ i64    ┆ i64         ┆ i64     │
         ╞════════╪═════════════╪═════════╡
         │ 2000   ┆ 533316061   ┆ 1       │
         │ 1990   ┆ 232338648   ┆ 3       │
@@ -426,7 +426,7 @@ class SQLContext(Generic[FrameType]):
         └────────┴─────────────┴─────────┘
         """
         res = wrap_ldf(self._ctxt.execute(query))
-        return res.collect() if (eager or self._eager_execution) else res
+        return res._collect_eager() if (eager or self._eager_execution) else res
 
     def register(self, name: str, frame: CompatibleFrameType | None) -> Self:
         """

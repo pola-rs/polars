@@ -17,6 +17,7 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
         Min => map!(min),
         Max => map!(max),
         Sum => map!(sum),
+        Dot => map_as_slice!(dot),
         ToList => map!(to_list),
         Std(ddof) => map!(std, ddof),
         Var(ddof) => map!(var, ddof),
@@ -72,6 +73,12 @@ pub(super) fn min(s: &Column) -> PolarsResult<Column> {
 
 pub(super) fn sum(s: &Column) -> PolarsResult<Column> {
     s.array()?.array_sum().map(Column::from)
+}
+
+pub(super) fn dot(s: &[Column]) -> PolarsResult<Column> {
+    let lhs = s[0].array()?;
+    let rhs = s[1].array()?;
+    lhs.array_dot(rhs).map(Column::from)
 }
 
 pub(super) fn std(s: &Column, ddof: u8) -> PolarsResult<Column> {

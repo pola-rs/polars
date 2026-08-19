@@ -64,6 +64,9 @@ pub enum FunctionIR {
         #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
+    Hint(HintIR),
+
+    // The skipped variants have to be at the end, otherwise bincode doesn't round-trip.
     #[cfg_attr(feature = "ir_serde", serde(skip))]
     Opaque {
         function: Arc<dyn DataFrameUdf>,
@@ -76,7 +79,6 @@ pub enum FunctionIR {
         // used for formatting
         fmt_str: PlSmallStr,
     },
-    Hint(HintIR),
 }
 
 impl Hash for FunctionIR {

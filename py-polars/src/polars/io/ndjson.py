@@ -42,7 +42,7 @@ def read_ndjson(
     batch_size: int | None = 1024,
     n_rows: int | None = None,
     low_memory: bool = False,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     ignore_errors: bool = False,
@@ -86,6 +86,9 @@ def read_ndjson(
         Reduce memory pressure at the expense of performance.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
+
+        .. deprecated:: 1.43.2
+            Call rechunk on the returned DataFrame.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -161,13 +164,23 @@ def read_ndjson(
         msg = "the `file_cache_ttl` parameter was deprecated in 1.39.0"
         issue_deprecation_warning(msg)
 
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on read_ndjson() will be removed. "
+            "Consider calling "
+            "df.rechunk() on the result.",
+            version="1.43.2",
+        )
+    else:
+        rechunk = False
+
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "read_ndjson"
     )
 
     del credential_provider
 
-    return scan_ndjson(
+    ret = scan_ndjson(
         source,
         schema=schema,
         schema_overrides=schema_overrides,
@@ -175,7 +188,6 @@ def read_ndjson(
         batch_size=batch_size,
         n_rows=n_rows,
         low_memory=low_memory,
-        rechunk=rechunk,
         row_index_name=row_index_name,
         row_index_offset=row_index_offset,
         ignore_errors=ignore_errors,
@@ -184,7 +196,12 @@ def read_ndjson(
         storage_options=storage_options,
         credential_provider=credential_provider_builder,  # type: ignore[arg-type]
         file_cache_ttl=None,
-    ).collect()
+    )._collect_eager()
+
+    if rechunk:
+        ret = ret.rechunk()
+
+    return ret
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -208,7 +225,7 @@ def scan_ndjson(
     batch_size: int | None = 1024,
     n_rows: int | None = None,
     low_memory: bool = False,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     ignore_errors: bool = False,
@@ -256,6 +273,9 @@ def scan_ndjson(
         Reduce memory pressure at the expense of performance.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
+
+        .. deprecated:: 1.43.2
+            Collect into a DataFrame first, then call rechunk on the returned DataFrame.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -300,6 +320,16 @@ def scan_ndjson(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on read_ndjson()/scan_ndjson() will be removed. "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            version="1.43.2",
+        )
+    else:
+        rechunk = False
+
     sources: list[str] | list[Path] | list[IO[str]] | list[IO[bytes]] = []
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)

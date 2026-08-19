@@ -7,16 +7,20 @@ use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
 use polars_core::runtime::RAYON;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
+use polars_observer::{PlannedQuery, QueryObserver};
 use polars_plan::plans::{IR, IRPlan, IRPlanSorted};
-use polars_plan::prelude::AExpr;
 use polars_plan::prelude::expr_ir::ExprIR;
+use polars_plan::prelude::{AExpr, ir_plan_to_description};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::relaxed_cell::RelaxedCell;
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::graph::{Graph, GraphNodeKey};
 use crate::metrics::GraphMetrics;
-use crate::physical_plan::{PhysNode, PhysNodeKey, PhysNodeKind, StreamingLowerIRContext};
+use crate::observer_metrics::StreamingQueryMetricsSnapshotter;
+use crate::physical_plan::{
+    PhysNode, PhysNodeKey, PhysNodeKind, StreamingLowerIRContext, physical_plan_to_description,
+};
 
 /// Executes the IR with the streaming engine.
 ///
@@ -33,8 +37,44 @@ pub fn run_query(
     node: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    observer: Option<Box<dyn QueryObserver>>,
 ) -> PolarsResult<QueryResult> {
-    StreamingQuery::build(node, ir_arena, expr_arena)?.execute()
+    let query = StreamingQuery::build(node, ir_arena, expr_arena, observer.is_some()).inspect_err(
+        |err| {
+            if let Some(o) = observer.as_ref() {
+                o.on_query_failed(err)
+            }
+        },
+    )?;
+
+    /// if the query fails, [`observer::on_query_failed`] needs to be called before [`_guard`] is dropped
+    let _guard = observer
+        .as_ref()
+        .map(|o| o.on_query_planned(query.to_planned_query(node, ir_arena, expr_arena)));
+
+    query.execute().inspect_err(|err| {
+        if let Some(o) = observer.as_ref() {
+            o.on_query_failed(err)
+        }
+    })
+}
+
+impl StreamingQuery {
+    pub fn to_planned_query(
+        &self,
+        ir_node: Node,
+        ir_arena: &Arena<IR>,
+        expr_arena: &Arena<AExpr>,
+    ) -> PlannedQuery {
+        let ir = ir_plan_to_description(&[ir_node], ir_arena, expr_arena);
+        let physical =
+            physical_plan_to_description(&[self.root_phys_node], &self.phys_sm, expr_arena);
+        let mut query = PlannedQuery::new(ir).with_physical(physical);
+        if let Some(snapshotter) = StreamingQueryMetricsSnapshotter::from_query(self) {
+            query = query.with_metrics_snapshotter(snapshotter);
+        }
+        query
+    }
 }
 
 /// Visualizes the physical plan as a dot graph.
@@ -90,6 +130,7 @@ impl StreamingQuery {
         node: Node,
         ir_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
+        observe: bool,
     ) -> PolarsResult<Self> {
         if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_IR") {
             let plan = IRPlan {
@@ -126,6 +167,7 @@ impl StreamingQuery {
 
         let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1")
             || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
+            || observe
         {
             polars_async::executor::track_task_metrics(true);
             Some(Arc::default())

@@ -88,7 +88,7 @@ def read_csv(
     n_rows: int | None = None,
     encoding: CsvEncoding | str = "utf8",
     low_memory: bool = False,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     use_pyarrow: bool = False,
     storage_options: StorageOptionsDict | None = None,
     skip_rows_after_header: int = 0,
@@ -211,6 +211,9 @@ def read_csv(
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
+
+        .. deprecated:: 1.43.2
+            Call rechunk on the returned DataFrame.
     use_pyarrow
         Try to use pyarrow's native CSV parser. This will always
         parse dates, even if `try_parse_dates=False`.
@@ -306,6 +309,16 @@ def read_csv(
 
     projection, columns = parse_columns_arg(columns)
     storage_options = storage_options or {}
+
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on read_csv() will be removed. "
+            "Consider calling "
+            "df.rechunk() on the result.",
+            version="1.43.2",
+        )
+    else:
+        rechunk = False
 
     if columns and not has_header:
         for column in columns:
@@ -566,7 +579,7 @@ def read_csv(
         elif projection:
             lf = lf.select(F.nth(projection))
 
-        df = lf.collect()
+        df = lf._collect_eager()
 
     else:
         with prepare_file_arg(
@@ -699,7 +712,6 @@ def _read_csv_impl(
             infer_schema_length=infer_schema_length,
             n_rows=n_rows,
             low_memory=low_memory,
-            rechunk=rechunk,
             skip_rows_after_header=skip_rows_after_header,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
@@ -709,16 +721,22 @@ def _read_csv_impl(
             decimal_comma=decimal_comma,
             glob=glob,
         )
+
         if columns is None:
-            return scan.collect()
+            ret = scan._collect_eager()
         elif is_str_sequence(columns, allow_str=False):
-            return scan.select(columns).collect()
+            ret = scan.select(columns)._collect_eager()
         else:
             msg = (
                 "cannot use glob patterns and integer based projection as `columns` argument"
                 "\n\nUse columns: List[str]"
             )
             raise ValueError(msg)
+
+        if rechunk:
+            ret = ret.rechunk()
+
+        return ret
 
     projection, columns = parse_columns_arg(columns)
 
@@ -793,7 +811,7 @@ def read_csv_batched(
     n_rows: int | None = None,
     encoding: CsvEncoding | str = "utf8",
     low_memory: bool = False,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     skip_rows_after_header: int = 0,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -901,6 +919,9 @@ def read_csv_batched(
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
+
+        .. deprecated:: 1.43.2
+            Call rechunk on the returned DataFrame(s).
     skip_rows_after_header
         Skip this number of rows when the header is parsed.
     row_index_name
@@ -1137,7 +1158,7 @@ def scan_csv(
     n_rows: int | None = None,
     encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     skip_rows_after_header: int = 0,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -1254,6 +1275,9 @@ def scan_csv(
         Reduce memory pressure at the expense of performance.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
+
+        .. deprecated:: 1.43.2
+            Collect into a DataFrame first, then call rechunk on the returned DataFrame.
     skip_rows_after_header
         Skip this number of rows when the header is parsed.
     row_index_name
@@ -1395,6 +1419,16 @@ def scan_csv(
     │ 4   ┆ read │
     └─────┴──────┘
     """
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on scan_csv() will be removed. "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            version="1.43.2",
+        )
+    else:
+        rechunk = False
+
     if schema_overrides is not None and not isinstance(
         schema_overrides, (dict, Sequence)
     ):

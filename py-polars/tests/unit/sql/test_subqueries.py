@@ -1,8 +1,11 @@
+from typing import Any
+
 import pytest
 
 import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 @pytest.mark.parametrize(
@@ -157,29 +160,112 @@ def test_subquery_20732() -> None:
     assert res.to_dict(as_series=False) == {"id": [2], "s": ["b"]}
 
 
-def test_unsupported_subquery_comparisons() -> None:
-    """Test that using = with a subquery gives a helpful error message."""
-    df = pl.DataFrame({"value": [2000, 2000]})
+@pytest.mark.parametrize("op", ["=", "!=", "<", "<=", ">", ">="])
+def test_scalar_subquery_comparison_operators(op: str) -> None:
+    df = pl.DataFrame({"value": [1000, 2000, 3000, 4000]})
 
-    for op, suggestion in (("=", "IN"), ("!=", "NOT IN")):
-        with pytest.raises(
-            expected_exception=SQLSyntaxError,
-            match=rf"subquery comparisons with '{op}' are not supported; use '{suggestion}' instead",
-        ):
-            pl.sql(f"SELECT * FROM df WHERE value {op} (SELECT MAX(e) FROM df)")
+    assert_sql_matches(
+        frames={"df": df},
+        query=f"SELECT value FROM df WHERE value {op} (SELECT MAX(value) FROM df WHERE value < 4000)",
+        compare_with="duckdb",
+    )
+    assert_sql_matches(
+        frames={"df": df},
+        query=f"SELECT value FROM df WHERE (SELECT MAX(value) FROM df WHERE value < 4000) {op} value",
+        compare_with="duckdb",
+    )
 
-    for op in ("<", "<=", ">", ">="):
-        with pytest.raises(
-            expected_exception=SQLSyntaxError,
-            match=rf"subquery comparisons with '{op}' are not supported",
-        ):
-            pl.sql(f"SELECT * FROM df WHERE (SELECT MAX(e) FROM df) {op} value")
 
-        with pytest.raises(
-            expected_exception=SQLSyntaxError,
-            match=rf"subquery comparisons with '{op}' are not supported",
-        ):
-            pl.sql(f"SELECT * FROM df WHERE value {op} (SELECT MAX(value) FROM df)")
+def test_scalar_subquery_arithmetic_operand() -> None:
+    df = pl.DataFrame({"value": [1000, 2000, 3000]})
+
+    assert_sql_matches(
+        frames={"df": df},
+        query="SELECT value, value + (SELECT MAX(value) FROM df) AS z FROM df",
+        compare_with="duckdb",
+    )
+
+
+def test_scalar_subquery_in_select_list() -> None:
+    df = pl.DataFrame({"value": [1000, 2000, 3000]})
+
+    assert_sql_matches(
+        frames={"df": df},
+        query="SELECT value, (SELECT MAX(value) FROM df) AS mx FROM df",
+        compare_with="duckdb",
+    )
+
+
+def test_scalar_subquery_in_having() -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["a", "a", "b", "b", "c"],
+            "value": [10, 20, 30, 40, 50],
+        }
+    )
+    assert_sql_matches(
+        frames={"df": df},
+        query="""
+            SELECT grp, SUM(value) AS s FROM df
+            GROUP BY grp
+            HAVING SUM(value) > (SELECT AVG(value) FROM df)
+            ORDER BY grp
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_scalar_subquery_with_own_cte() -> None:
+    df = pl.DataFrame({"value": [1000, 2000, 3000]})
+
+    assert_sql_matches(
+        frames={"df": df},
+        query="""
+            SELECT value FROM df
+            WHERE value = (
+                WITH cte AS (SELECT MAX(value) AS m FROM df)
+                SELECT m FROM cte
+            )
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_scalar_subquery_null_result() -> None:
+    df = pl.DataFrame({"value": [1000, 2000, 3000]})
+
+    # an empty subquery result compares as NULL, so it matches nothing
+    assert_sql_matches(
+        frames={"df": df},
+        query="SELECT value FROM df WHERE value = (SELECT value FROM df WHERE value > 10000)",
+        compare_with="duckdb",
+    )
+    assert_sql_matches(
+        frames={"df": df},
+        query="""
+            SELECT value FROM df
+            WHERE (SELECT value FROM df WHERE value > 10000) IS NULL
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_scalar_subquery_multi_row_errors() -> None:
+    # PostgreSQL semantics: a scalar subquery returning more than one row is a
+    # runtime error.
+    df = pl.DataFrame({"value": [1000, 2000, 3000]})
+    with pytest.raises(pl.exceptions.ComputeError, match="aggregation 'item'"):
+        pl.sql(
+            "SELECT value FROM df WHERE value = (SELECT value FROM df ORDER BY value)",
+            eager=True,
+        )
+
+
+def test_unaliased_scalar_subquery_in_select_list() -> None:
+    df = pl.DataFrame({"value": [1000, 2000, 3000]})
+    res = pl.sql("SELECT (SELECT MAX(value) FROM df) FROM df", eager=True)
+    assert res.height == 3
+    assert res.to_series().to_list() == [3000, 3000, 3000]
 
 
 def test_derived_table_without_alias() -> None:
@@ -449,3 +535,56 @@ def test_sql_subquery_not_rewritten(subquery: str) -> None:
     sql = f"SELECT c_custkey FROM customer WHERE NOT EXISTS ({subquery})"
     with pytest.raises(SQLInterfaceError, match="not currently supported"):
         _subquery_ctx().execute(sql, eager=True)
+
+
+@pytest.mark.parametrize(
+    ("projection", "value"),
+    [
+        ("(SELECT MAX(value) FROM df) + 1", 3001),
+        ("CASE WHEN (SELECT MAX(value) FROM df) > 5 THEN 'y' ELSE 'n' END", "y"),
+    ],
+)
+def test_scalar_subquery_only_projections_keep_table_height(
+    projection: str, value: Any
+) -> None:
+    # Every projection derives its height from the subquery, so there is no plain
+    # column to supply the frame height; the scalar must still broadcast to it.
+    # (`expected=` isn't usable here: an unaliased scalar subquery gets an internal
+    # output name, and the helper keys the expected frame by the polars column names.)
+    frames = {"df": pl.DataFrame({"value": [1000, 2000, 3000]})}
+    query = f"SELECT {projection} FROM df"
+
+    res = pl.SQLContext(frames=frames, eager=True).execute(query)
+    assert res.height == 3
+    assert res.to_series().to_list() == [value] * 3
+
+    assert_sql_matches(
+        frames=frames,
+        query=query,
+        compare_with="duckdb",
+        check_column_names=False,
+    )
+
+
+def test_subquery_unsupported_positions_report_sql_errors() -> None:
+    # These positions don't resolve subqueries; they must say so in SQL terms rather
+    # than surfacing the engine's internal "subplan not allowed here".
+    df1 = pl.DataFrame({"a": [1, 2, 3]})
+    df2 = pl.DataFrame({"b": [1, 2]})
+
+    with pytest.raises(
+        SQLInterfaceError, match="not currently supported in the GROUP BY"
+    ):
+        pl.sql("SELECT COUNT(*) FROM df1 GROUP BY (SELECT MAX(b) FROM df2)", eager=True)
+
+    with pytest.raises(SQLInterfaceError, match=r"not currently supported in the JOIN"):
+        pl.sql(
+            "SELECT * FROM df1 JOIN df2 ON df1.a = df2.b AND df1.a > (SELECT MAX(b) FROM df2)",
+            eager=True,
+        )
+
+    # column-free ON with a subquery must not be mistaken for a constant predicate
+    with pytest.raises(SQLInterfaceError, match=r"not currently supported in the JOIN"):
+        pl.sql(
+            "SELECT * FROM df1 JOIN df2 ON (SELECT COUNT(*) FROM df2) > 0", eager=True
+        )
