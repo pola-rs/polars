@@ -352,10 +352,14 @@ impl SQLContext {
 impl SQLContext {
     pub(crate) fn isolated(&self) -> Self {
         Self {
-            // Deep clone to isolate
+            // Deep-copy/clone to isolate
             table_map: Arc::new(RwLock::new(self.table_map.read().unwrap().clone())),
             named_windows: self.named_windows.clone(),
             cte_map: self.cte_map.clone(),
+
+            // Context-level; needs to remain visible in nested scopes.
+            // (Note: shared by Arc, no need to deep-copy)
+            function_registry: self.function_registry.clone(),
 
             ..Default::default()
         }
