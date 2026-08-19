@@ -2310,24 +2310,30 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.sort_with(descending, nulls_last))
 
-    def top_k(self, k: int | IntoExprColumn = 5) -> Expr:
+    def top_k(
+        self, k: int | IntoExprColumn = 5, *, maintain_order: bool = False
+    ) -> Expr:
         r"""
         Return the `k` largest elements.
 
-        Non-null elements are always preferred over null elements. The output
-        is not guaranteed to be in any particular order, call :func:`sort`
-        after this function if you wish the output to be sorted.
+        Non-null elements are always preferred over null elements. If
+        ``maintain_order`` is set to ``True``, the order of the input data is
+        preserved in the output. Otherwise, the output is not guaranteed to be
+        in any particular order.
 
         This has time complexity:
 
         .. math:: O(n)
 
-        .. engine-support:: in-memory, streaming, distributed
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
 
         Parameters
         ----------
         k
             Number of elements to return.
+        maintain_order
+            Maintain the order of the input data in the output. This requires more
+            work.
 
         See Also
         --------
@@ -2358,7 +2364,7 @@ class Expr:
         └───────┴──────────┘
         """
         k_pyexpr = parse_into_expression(k)
-        return wrap_expr(self._pyexpr.top_k(k_pyexpr))
+        return wrap_expr(self._pyexpr.top_k(k_pyexpr, maintain_order=maintain_order))
 
     @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def top_k_by(
@@ -2367,14 +2373,15 @@ class Expr:
         k: int | IntoExprColumn = 5,
         *,
         reverse: bool | Sequence[bool] = False,
+        maintain_order: bool = False,
     ) -> Expr:
         r"""
         Return the elements corresponding to the `k` largest elements of the `by` column(s).
 
         Non-null elements are always preferred over null elements, regardless of
-        the value of `reverse`. The output is not guaranteed to be in any
-        particular order, call :func:`sort` after this function if you wish the
-        output to be sorted.
+        the value of `reverse`. If ``maintain_order`` is set to ``True``, the order
+        of the input data is preserved in the output. Otherwise, the output is not
+        guaranteed to be in any particular order.
 
         This has time complexity:
 
@@ -2396,6 +2403,9 @@ class Expr:
             Consider the `k` smallest elements of the `by` column(s) (instead of the `k`
             largest). This can be specified per column by passing a sequence of
             booleans.
+        maintain_order
+            Maintain the order of the input data in the output. This requires more
+            work.
 
         See Also
         --------
@@ -2488,26 +2498,39 @@ class Expr:
 
         reverse = extend_bool(reverse, len(by_pyexprs), "reverse", "by")
 
-        return wrap_expr(self._pyexpr.top_k_by(by_pyexprs, k=k_pyexpr, reverse=reverse))
+        return wrap_expr(
+            self._pyexpr.top_k_by(
+                by_pyexprs,
+                k=k_pyexpr,
+                reverse=reverse,
+                maintain_order=maintain_order,
+            )
+        )
 
-    def bottom_k(self, k: int | IntoExprColumn = 5) -> Expr:
+    def bottom_k(
+        self, k: int | IntoExprColumn = 5, *, maintain_order: bool = False
+    ) -> Expr:
         r"""
         Return the `k` smallest elements.
 
-        Non-null elements are always preferred over null elements. The output is
-        not guaranteed to be in any particular order, call :func:`sort` after
-        this function if you wish the output to be sorted.
+        Non-null elements are always preferred over null elements. If
+        ``maintain_order`` is set to ``True``, the order of the input data is
+        preserved in the output. Otherwise, the output is not guaranteed to be
+        in any particular order.
 
         This has time complexity:
 
         .. math:: O(n)
 
-        .. engine-support:: in-memory, streaming, distributed
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
 
         Parameters
         ----------
         k
             Number of elements to return.
+        maintain_order
+            Maintain the order of the input data in the output. This requires more
+            work.
 
         See Also
         --------
@@ -2540,7 +2563,7 @@ class Expr:
         └───────┴──────────┘
         """
         k_pyexpr = parse_into_expression(k)
-        return wrap_expr(self._pyexpr.bottom_k(k_pyexpr))
+        return wrap_expr(self._pyexpr.bottom_k(k_pyexpr, maintain_order=maintain_order))
 
     @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
     def bottom_k_by(
@@ -2549,14 +2572,15 @@ class Expr:
         k: int | IntoExprColumn = 5,
         *,
         reverse: bool | Sequence[bool] = False,
+        maintain_order: bool = False,
     ) -> Expr:
         r"""
         Return the elements corresponding to the `k` smallest elements of the `by` column(s).
 
         Non-null elements are always preferred over null elements, regardless of
-        the value of `reverse`. The output is not guaranteed to be in any
-        particular order, call :func:`sort` after this function if you wish the
-        output to be sorted.
+        the value of `reverse`. If ``maintain_order`` is set to ``True``, the order
+        of the input data is preserved in the output. Otherwise, the output is not
+        guaranteed to be in any particular order.
 
         This has time complexity:
 
@@ -2578,6 +2602,9 @@ class Expr:
             Consider the `k` largest elements of the `by` column(s) (instead of the `k`
             smallest). This can be specified per column by passing a sequence of
             booleans.
+        maintain_order
+            Maintain the order of the input data in the output. This requires more
+            work.
 
         See Also
         --------
@@ -2669,7 +2696,12 @@ class Expr:
         by_pyexpr = parse_into_list_of_expressions(by)
         reverse = extend_bool(reverse, len(by_pyexpr), "reverse", "by")
         return wrap_expr(
-            self._pyexpr.bottom_k_by(by_pyexpr, k=k_pyexpr, reverse=reverse)
+            self._pyexpr.bottom_k_by(
+                by_pyexpr,
+                k=k_pyexpr,
+                reverse=reverse,
+                maintain_order=maintain_order,
+            )
         )
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
