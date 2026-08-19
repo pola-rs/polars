@@ -285,13 +285,6 @@ where
     }
 }
 
-/// Whether `how` is still one of the historical Inner-only algorithm spellings
-/// (`Cross`) that `try_rewrite_join_type` is free to rewrite into `Inner`/`IEJoin`/
-/// `Range`. `Left`/`Right` carry real semantics and must never be matched here.
-fn is_cross_algorithm(how: &JoinType) -> bool {
-    matches!(how, JoinType::Cross)
-}
-
 /// Attempts to rewrite the join-type based on NULL-removing filters.
 ///
 /// Changing between some join types may cause the output column order to change. If this is the
@@ -350,7 +343,7 @@ pub fn try_rewrite_join_type(
             Some(JoinTypeOptionsIR::CrossAndFilter { .. }) => true,
             #[cfg(feature = "iejoin")]
             Some(JoinTypeOptionsIR::IEJoin(_)) => true,
-            None => is_cross_algorithm(&options.args.how),
+            None => options.args.how.is_cross(),
         };
         if !is_rewrite_candidate {
             return PolarsResult::Ok(());
@@ -421,7 +414,7 @@ pub fn try_rewrite_join_type(
         // to the generic IEJoin conversion below instead, which does not overload `how`.
         #[cfg(feature = "iejoin")]
         if streaming
-            && is_cross_algorithm(&options.args.how)
+            && options.args.how.is_cross()
             && matches!(options.args.maintain_order, MaintainOrderJoin::None)
             && left_on.is_empty()
         {
@@ -496,7 +489,7 @@ pub fn try_rewrite_join_type(
 
             // If there is only one predicate, prefer lowering to a single-bounded range-join.
             // Same `Cross`-only restriction as the double-bounded case above.
-            if ie_conditions.len() == 1 && streaming && is_cross_algorithm(&options.args.how) {
+            if ie_conditions.len() == 1 && streaming && options.args.how.is_cross() {
                 let join_options = Arc::make_mut(options);
                 join_options.args.how = JoinType::Range;
                 let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
@@ -522,7 +515,7 @@ pub fn try_rewrite_join_type(
             } in ie_conditions
             {
                 let join_options = Arc::make_mut(options);
-                if is_cross_algorithm(&join_options.args.how) {
+                if join_options.args.how.is_cross() {
                     join_options.args.how = JoinType::IEJoin;
                 }
 
