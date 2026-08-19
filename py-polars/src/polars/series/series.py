@@ -52,7 +52,12 @@ from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
-from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
+from polars._utils.expired import (
+    RemovedParameter,
+    getattr_fallback,
+    raise_for_removed_attributes,
+    removed_parameters,
+)
 from polars._utils.getitem import get_series_item_by_key
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -4785,12 +4790,20 @@ class Series(metaclass=_Meta):
             )
         ).to_series()
 
+    @removed_parameters(
+        RemovedParameter(
+            name="use_pyarrow",
+            deprecated_in="0.20.28",
+            removed_in="2.0",
+            hint="Polars now uses its native engine for conversion to NumPy by default."
+            " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
+        )
+    )
     def to_numpy(
         self,
         *,
         writable: bool = False,
         allow_copy: bool = True,
-        use_pyarrow: bool | None = None,
         zero_copy_only: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
@@ -4813,17 +4826,6 @@ class Series(metaclass=_Meta):
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
-
-        use_pyarrow
-            First convert to PyArrow, then call `pyarrow.Array.to_numpy
-            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-            to convert to NumPy. If set to `False`, Polars' own conversion logic is
-            used.
-
-            .. deprecated:: 0.20.28
-                Polars now uses its native engine by default for conversion to NumPy.
-                To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.
-
         zero_copy_only
             Raise an exception if the conversion to a NumPy would require copying
             the underlying data. Data copy occurs, for example, when the Series contains
@@ -4879,29 +4881,6 @@ class Series(metaclass=_Meta):
                 version="0.20.10",
             )
             allow_copy = not zero_copy_only
-
-        if use_pyarrow is not None:
-            issue_deprecation_warning(
-                "the `use_pyarrow` parameter for `Series.to_numpy` is deprecated."
-                " Polars now uses its native engine for conversion to NumPy by default."
-                " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
-                version="0.20.28",
-            )
-        else:
-            use_pyarrow = False
-
-        if (
-            use_pyarrow
-            and _PYARROW_AVAILABLE
-            and self.dtype not in (Date, Datetime, Duration, Array, Object)
-        ):
-            if not allow_copy and self.n_chunks() > 1 and not self.is_empty():
-                msg = "cannot return a zero-copy array"
-                raise ValueError(msg)
-
-            return self.to_arrow().to_numpy(
-                zero_copy_only=not allow_copy, writable=writable
-            )
 
         return self._s.to_numpy(writable=writable, allow_copy=allow_copy)
 

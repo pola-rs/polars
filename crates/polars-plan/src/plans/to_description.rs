@@ -82,12 +82,6 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             keep_strategy: format!("{:?}", keep_strategy),
             slice: *slice,
         },
-        IR::ExtContext {
-            contexts, schema, ..
-        } => IrPropsDescription::ExtContext {
-            num_contexts: contexts.len(),
-            schema_names: schema.iter_names().map(ToString::to_string).collect(),
-        },
         IR::Filter { predicate, .. } => IrPropsDescription::Filter {
             predicate: fmt_predicate(predicate, expr_arena),
         },

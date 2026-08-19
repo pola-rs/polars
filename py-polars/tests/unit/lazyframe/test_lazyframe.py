@@ -1857,6 +1857,10 @@ def test_execute() -> None:
             "It was designed for the in-memory engine and would give misleading ",
         ),
         (
+            "with_context",
+            "use `pl.concat(..., how='horizontal')` instead.",
+        ),
+        (
             "with_row_count",
             "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
         ),
