@@ -1,5 +1,5 @@
 use arrow::legacy::error::PolarsResult;
-use polars_core::utils::try_get_supertype;
+use polars_core::utils::{SuperTypeFlags, try_get_supertype, try_get_supertype_with_options};
 use polars_utils::arena::Node;
 use polars_utils::format_pl_smallstr;
 use polars_utils::option::OptionTry;
@@ -7,6 +7,8 @@ use polars_utils::option::OptionTry;
 use super::expr_to_ir::ExprToIRContext;
 use super::*;
 use crate::constants::get_literal_name;
+#[cfg(feature = "cutqcut")]
+use crate::dsl::BinMethod;
 use crate::dsl::{Expr, FunctionExpr};
 use crate::plans::conversion::dsl_to_ir::expr_to_ir::to_expr_irs;
 use crate::plans::{AExpr, IRFunctionExpr};
@@ -971,6 +973,81 @@ pub(super) fn convert_functions(
             allow_duplicates,
             include_breaks,
         },
+        #[cfg(feature = "cutqcut")]
+        F::Bin(mut options) => {
+            let input_dtype = e[0].dtype(ctx.schema, ctx.arena)?.clone();
+            let name = options.method.name();
+
+            if options.method.requires_numeric_input() {
+                polars_ensure!(
+                    input_dtype.is_numeric(),
+                    InvalidOperation: "`{}` requires a numeric input, got `{}`", name, input_dtype
+                );
+            } else {
+                polars_ensure!(
+                    input_dtype.is_ord(),
+                    InvalidOperation: "`{}` requires an orderable input, got `{}`", name, input_dtype
+                );
+            }
+            polars_ensure!(
+                options.method.n_bins() >= 1,
+                ComputeError: "`{}` requires at least one bin", name
+            );
+
+            options.method = match options.method {
+                BinMethod::Intervals {
+                    breaks,
+                    right_closed,
+                } => {
+                    polars_ensure!(
+                        breaks.null_count() == 0,
+                        ComputeError: "`{}` breakpoints cannot contain nulls", name
+                    );
+                    let breaks = if input_dtype.is_numeric() && breaks.dtype().is_numeric() {
+                        let opts = (SuperTypeFlags::default()
+                            & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
+                            .into();
+                        let supertype =
+                            try_get_supertype_with_options(&input_dtype, breaks.dtype(), opts)?;
+                        if input_dtype != supertype {
+                            let node = ctx.arena.add(AExpr::Cast {
+                                expr: e[0].node(),
+                                dtype: supertype.clone(),
+                                options: CastOptions::Strict,
+                            });
+                            e[0] = ExprIR::new(node, e[0].output_name_inner().clone());
+                        }
+                        breaks.cast(&supertype)?
+                    } else {
+                        // Take care to not convert Enum to String
+                        breaks.strict_cast(&input_dtype)?
+                    };
+                    // It is possible that the type promotion has collapsed some breakpoints
+                    ensure_strictly_ascending(&breaks, name, "intervals")?;
+                    BinMethod::Intervals {
+                        breaks,
+                        right_closed,
+                    }
+                },
+                BinMethod::Quantiles {
+                    probs,
+                    right_closed,
+                } => {
+                    ensure_ascending_unit_interval(&probs, name, "quantiles")?;
+                    BinMethod::Quantiles {
+                        probs,
+                        right_closed,
+                    }
+                },
+                BinMethod::Ranks { fractions } => {
+                    ensure_ascending_unit_interval(&fractions, name, "ranks")?;
+                    BinMethod::Ranks { fractions }
+                },
+                m => m,
+            };
+
+            I::Bin(options)
+        },
         #[cfg(feature = "rle")]
         F::RLE => I::RLE,
         #[cfg(feature = "rle")]
@@ -1173,4 +1250,33 @@ pub(super) fn convert_functions(
         options,
     };
     Ok((ctx.arena.add(ae_function), output_name))
+}
+
+#[cfg(feature = "cutqcut")]
+fn ensure_strictly_ascending(s: &Series, name: &str, arg: &str) -> PolarsResult<()> {
+    let n = s.len();
+    if n < 2 {
+        return Ok(());
+    }
+    let ascending = s.slice(0, n - 1).lt(&s.slice(1, n - 1))?;
+    polars_ensure!(
+        ascending.all(),
+        ComputeError: "`{}` requires `{}` to be strictly ascending", name, arg
+    );
+    Ok(())
+}
+
+#[cfg(feature = "cutqcut")]
+fn ensure_ascending_unit_interval(xs: &[f64], name: &str, arg: &str) -> PolarsResult<()> {
+    for x in xs {
+        polars_ensure!(
+            (0.0..=1.0).contains(x),
+            ComputeError: "`{}` requires `{}` to be between 0.0 and 1.0, got {}", name, arg, x
+        );
+    }
+    polars_ensure!(
+        xs.is_sorted_by(|a, b| a < b),
+        ComputeError: "`{}` requires `{}` to be strictly ascending", name, arg
+    );
+    Ok(())
 }

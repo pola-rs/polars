@@ -214,7 +214,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "peaks")]
         F::PeakMin | F::PeakMax => false,
         #[cfg(feature = "cutqcut")]
-        F::Cut { .. } | F::QCut { .. } => false,
+        F::Cut { .. } | F::QCut { .. } | F::Bin(_) => false,
         #[cfg(feature = "rle")]
         F::RLE | F::RLEID => false,
         F::ToPhysical => false,
