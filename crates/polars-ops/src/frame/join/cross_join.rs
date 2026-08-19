@@ -222,7 +222,7 @@ pub(super) fn fused_cross_filter(
                 let idx = IdxCa::from_vec(PlSmallStr::EMPTY, unmatched_local);
                 let unmatched_primary = unsafe { left_chunk.take_unchecked(&idx) };
                 let mut unmatched_secondary =
-                    DataFrame::full_null(&right.schema(), idx.len()).into_columns();
+                    DataFrame::full_null(right.schema(), idx.len()).into_columns();
                 for (c, name) in unmatched_secondary.iter_mut().zip(rename_names) {
                     c.rename((*name).clone());
                 }

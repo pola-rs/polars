@@ -322,6 +322,10 @@ impl JoinType {
         }
     }
 
+    pub fn is_inner(&self) -> bool {
+        matches!(self, JoinType::Inner)
+    }
+
     pub fn is_cross(&self) -> bool {
         matches!(self, JoinType::Cross)
     }
@@ -365,11 +369,7 @@ impl JoinType {
         matches!(self, JoinType::Right | JoinType::Full)
     }
 
-    /// Can be combined with a non-equality match condition.
-    ///
-    /// Semi and anti joins are excluded: their output schema is the left schema, so an
-    /// attached match condition referencing right-side columns cannot be resolved
-    /// against the join's output.
+    /// Joins supported in join where with non-equi conditions
     pub fn supports_non_equi(&self) -> bool {
         matches!(self, JoinType::Inner | JoinType::Left | JoinType::Right)
     }

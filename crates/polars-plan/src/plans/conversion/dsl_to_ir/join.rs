@@ -487,9 +487,9 @@ fn resolve_join_where(
         .schema(ctxt.lp_arena)
         .into_owned();
 
+    // We start assuming a cross join. Take the how, to keep join information.
     let how = std::mem::replace(&mut options.args.how, JoinType::Cross);
-    // There are no equality keys to coalesce; leaving this on would make
-    // `det_join_schema` drop the operand columns of the match condition.
+    // Left and right joins coalesce. We don't want that in join_where.
     options.args.coalesce = JoinCoalesce::KeepColumns;
 
     let (mut last_node, join_node) = resolve_join(
@@ -541,7 +541,8 @@ fn resolve_join_where(
         resolved.push(predicate);
     }
 
-    if matches!(how, JoinType::Inner) {
+    if how.is_inner() {
+        // Inner join_where is lowered as cross + filters
         for predicate in resolved {
             let ir = IR::Filter {
                 input: last_node,
@@ -551,8 +552,10 @@ fn resolve_join_where(
             last_node = ctxt.lp_arena.add(ir);
         }
     } else {
-        // Attach the condition to the join itself. A filter above the join would remove
-        // the unmatched rows that a left/right/semi/anti join has to observe.
+        // For left and right joins, we cannot lower to cross + filters
+        // as null outputs for missing rows would not be preserved.
+        // We attach the join predicates/conditions to the joins itself
+        // and restore the original `how` join type.
         let node = resolved
             .iter()
             .map(|e| e.node())
@@ -573,15 +576,6 @@ fn resolve_join_where(
         new_options.args.how = how;
         new_options.options = Some(JoinTypeOptionsIR::CrossAndFilter { predicate });
 
-        let new_schema = det_join_schema(
-            &schema_left,
-            &schema_right,
-            &[],
-            &[],
-            &new_options,
-            ctxt.expr_arena,
-        )?;
-
         let IR::Join {
             options, schema, ..
         } = ctxt.lp_arena.get_mut(join_node)
@@ -589,7 +583,6 @@ fn resolve_join_where(
             unreachable!()
         };
         *options = Arc::new(new_options);
-        *schema = new_schema;
     }
 
     ctxt.conversion_optimizer
