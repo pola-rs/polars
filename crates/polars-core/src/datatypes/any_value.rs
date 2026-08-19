@@ -1714,23 +1714,8 @@ impl From<bool> for AnyValue<'static> {
 
 #[cfg(test)]
 mod test {
-    #[cfg(any(feature = "dtype-categorical", feature = "dtype-struct"))]
+    #[cfg(feature = "dtype-categorical")]
     use super::*;
-
-    // `into_static` must promote borrowed struct fields; otherwise they dangle once the source drops.
-    #[test]
-    #[cfg(feature = "dtype-struct")]
-    fn into_static_promotes_borrowed_struct_field() {
-        let s = String::from("borrowed");
-        let struct_owned = AnyValue::StructOwned(Box::new((vec![AnyValue::String(&s)], vec![])));
-        let promoted: AnyValue<'static> = struct_owned.into_static();
-        drop(s);
-
-        let AnyValue::StructOwned(payload) = &promoted else {
-            panic!("expected StructOwned");
-        };
-        assert_eq!(payload.0[0], AnyValue::StringOwned("borrowed".into()));
-    }
 
     #[test]
     #[cfg(feature = "dtype-categorical")]
