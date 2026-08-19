@@ -8835,12 +8835,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┘
         """
         require_same_type(self, other)
-        if how in ("outer", "outer_coalesce"):
-            how = "full"
-            issue_deprecation_warning(
-                "use of `how='outer'` should be replaced with `how='full'`.",
-                version="0.20.29",
-            )
+
+        if how in {"outer", "outer_coalesce"}:  # type: ignore[comparison-overlap]
+            msg = f"use of `how='{how}'` should be replaced with `how='full'`."
+            raise ValueError(msg)
 
         if how not in ("left", "inner", "full"):
             msg = f"`how` must be one of {{'left', 'inner', 'full'}}; found {how!r}"
