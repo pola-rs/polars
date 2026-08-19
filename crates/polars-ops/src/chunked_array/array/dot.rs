@@ -7,23 +7,23 @@ use polars_compute::sum::WrappingAdd;
 use polars_core::prelude::*;
 
 #[inline]
-fn multiply_add<T, S>(acc: S, lhs: T, rhs: T) -> S
+fn multiply_then_add<T>(acc: T::Sum, lhs: T, rhs: T) -> T::Sum
 where
-    T: PlNumArithmetic + Into<S>,
-    S: WrappingAdd,
+    T: PlNumArithmetic + SumCast,
+    T::Sum: WrappingAdd,
 {
     let product = PlNumArithmetic::wrapping_mul(lhs, rhs).into();
     acc.wrapping_add(&product)
 }
 
-fn dot_primitive<T, S>(
+fn dot_primitive<T>(
     lhs: &ArrayChunked,
     rhs: &ArrayChunked,
     output_len: usize,
 ) -> PolarsResult<Series>
 where
-    T: NativeType + PlNumArithmetic + Into<S>,
-    S: NativeType + Zero + WrappingAdd,
+    T: NativeType + PlNumArithmetic + SumCast,
+    T::Sum: WrappingAdd,
 {
     let lhs = lhs.rechunk();
     let rhs = rhs.rechunk();
@@ -60,7 +60,7 @@ where
         output_validity.push(outer_valid);
 
         if !outer_valid {
-            output.push(S::zero());
+            output.push(T::Sum::zero());
             continue;
         }
 
@@ -73,9 +73,11 @@ where
             lhs_row
                 .iter()
                 .zip(rhs_row)
-                .fold(S::zero(), |acc, (&lhs, &rhs)| multiply_add(acc, lhs, rhs))
+                .fold(T::Sum::zero(), |acc, (&lhs, &rhs)| {
+                    multiply_then_add(acc, lhs, rhs)
+                })
         } else {
-            let mut value = S::zero();
+            let mut value = T::Sum::zero();
             for (inner_idx, (&lhs, &rhs)) in lhs_row.iter().zip(rhs_row).enumerate() {
                 let lhs_valid = lhs_inner_validity.is_none_or(|validity| unsafe {
                     validity.get_bit_unchecked(lhs_offset + inner_idx)
@@ -84,7 +86,7 @@ where
                     validity.get_bit_unchecked(rhs_offset + inner_idx)
                 });
                 if lhs_valid && rhs_valid {
-                    value = multiply_add(value, lhs, rhs);
+                    value = multiply_then_add(value, lhs, rhs);
                 }
             }
             value
@@ -138,18 +140,20 @@ pub(super) fn array_dot(lhs: &ArrayChunked, rhs: &ArrayChunked) -> PolarsResult<
     }
 
     match lhs_inner {
-        DataType::Int8 => dot_primitive::<i8, i64>(lhs, rhs, output_len),
-        DataType::Int16 => dot_primitive::<i16, i64>(lhs, rhs, output_len),
-        DataType::Int32 => dot_primitive::<i32, i32>(lhs, rhs, output_len),
-        DataType::Int64 => dot_primitive::<i64, i64>(lhs, rhs, output_len),
-        DataType::Int128 => dot_primitive::<i128, i128>(lhs, rhs, output_len),
-        DataType::UInt8 => dot_primitive::<u8, i64>(lhs, rhs, output_len),
-        DataType::UInt16 => dot_primitive::<u16, i64>(lhs, rhs, output_len),
-        DataType::UInt32 => dot_primitive::<u32, u32>(lhs, rhs, output_len),
-        DataType::UInt64 => dot_primitive::<u64, u64>(lhs, rhs, output_len),
-        DataType::UInt128 => dot_primitive::<u128, u128>(lhs, rhs, output_len),
-        DataType::Float32 => dot_primitive::<f32, f32>(lhs, rhs, output_len),
-        DataType::Float64 => dot_primitive::<f64, f64>(lhs, rhs, output_len),
+        DataType::Int8 => dot_primitive::<i8>(lhs, rhs, output_len),
+        DataType::Int16 => dot_primitive::<i16>(lhs, rhs, output_len),
+        DataType::Int32 => dot_primitive::<i32>(lhs, rhs, output_len),
+        DataType::Int64 => dot_primitive::<i64>(lhs, rhs, output_len),
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => dot_primitive::<i128>(lhs, rhs, output_len),
+        DataType::UInt8 => dot_primitive::<u8>(lhs, rhs, output_len),
+        DataType::UInt16 => dot_primitive::<u16>(lhs, rhs, output_len),
+        DataType::UInt32 => dot_primitive::<u32>(lhs, rhs, output_len),
+        DataType::UInt64 => dot_primitive::<u64>(lhs, rhs, output_len),
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => dot_primitive::<u128>(lhs, rhs, output_len),
+        DataType::Float32 => dot_primitive::<f32>(lhs, rhs, output_len),
+        DataType::Float64 => dot_primitive::<f64>(lhs, rhs, output_len),
         _ => unreachable!(),
     }
 }
