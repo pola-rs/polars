@@ -220,7 +220,26 @@ class IcebergScanResolver:
 
     def schema(self) -> pa.schema:
         """Fetch the schema of the table."""
-        return self.table.arrow_schema()
+        from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+        if self.snapshot_id is None:
+            return self.table.arrow_schema()
+
+        snapshot = self.table.get().snapshot_by_id(self.snapshot_id)
+
+        if snapshot is None:
+            msg = f"iceberg snapshot ID not found: {self.snapshot_id}"
+            raise ValueError(msg)
+
+        schema_id = snapshot.schema_id
+
+        if schema_id is None:
+            msg = (
+                f"IcebergScanResolver: requested snapshot {self.snapshot_id} "
+                "did not contain a schema ID"
+            )
+            raise ValueError(msg)
+        return schema_to_pyarrow(self.table.get().schemas()[schema_id])
 
     def to_dataset_scan(
         self,
