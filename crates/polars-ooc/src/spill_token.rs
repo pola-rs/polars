@@ -185,7 +185,12 @@ impl<T: Spillable> SpillTokenInner<T> {
         if let Some(r) = slf.try_pin() {
             return r;
         }
+        
+        Self::pin_impl(slf, false).await
+    }
 
+    #[cold]
+    async fn pin_impl(slf: &Arc<Self>, prefetch: bool) -> PinnedRef<'_, T> {
         std::hint::cold_path();
 
         if let Some(r) = slf.pin_or_lock().await {
@@ -219,7 +224,7 @@ impl<T: Spillable> SpillTokenInner<T> {
             if let Some(strong) = spill_ctx.upgrade() {
                 strong
                     .stats()
-                    .add_unspill(n_bytes, spill_time_ns, spilled_start, unspill_start);
+                    .add_unspill(n_bytes, spill_time_ns, spilled_start, unspill_start, prefetch);
             }
             if reinsert_reg_id == slf.registration_id.load(Ordering::Relaxed) {
                 let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
@@ -272,6 +277,7 @@ impl<T: Spillable> SpillTokenInner<T> {
                         *spill_time_ns,
                         *spilled_start,
                         unspill_start,
+                        false,
                     );
                 }
                 if *reinsert_reg_id == slf.registration_id.load(Ordering::Relaxed) {
