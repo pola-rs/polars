@@ -185,7 +185,7 @@ impl<T: Spillable> SpillTokenInner<T> {
         if let Some(r) = slf.try_pin() {
             return r;
         }
-        
+
         Self::pin_impl(slf, false).await
     }
 
@@ -222,9 +222,13 @@ impl<T: Spillable> SpillTokenInner<T> {
             };
 
             if let Some(strong) = spill_ctx.upgrade() {
-                strong
-                    .stats()
-                    .add_unspill(n_bytes, spill_time_ns, spilled_start, unspill_start, prefetch);
+                strong.stats().add_unspill(
+                    n_bytes,
+                    spill_time_ns,
+                    spilled_start,
+                    unspill_start,
+                    prefetch,
+                );
             }
             if reinsert_reg_id == slf.registration_id.load(Ordering::Relaxed) {
                 let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();

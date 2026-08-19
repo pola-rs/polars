@@ -134,7 +134,7 @@ impl MemoryManager {
                             } else {
                                 ctx.0.reinsert(&spillable, reg_id, ctx.1);
                             }
-                            
+
                             MEMORY_MANAGER.spills_exist.store(true, Ordering::Release);
                         },
                         Err(TrySpillError::Pinned) => {
@@ -161,8 +161,7 @@ impl MemoryManager {
 
     #[inline(never)]
     #[cold]
-    async fn do_prefetch(&self) {
-    }
+    async fn do_prefetch(&self) {}
 
     #[inline(never)]
     #[cold]
