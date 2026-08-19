@@ -512,7 +512,8 @@ class column:
     ...         column("x", dtype=pl.Int32, allow_null=True),
     ...         column("y", dtype=pl.Float64),
     ...     ],
-    ...     size=2,
+    ...     min_size=2,
+    ...     max_size=2,
     ... )
     >>> dfs.example()  # doctest: +SKIP
     shape: (2, 2)
