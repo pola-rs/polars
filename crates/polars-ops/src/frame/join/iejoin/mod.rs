@@ -4,6 +4,7 @@ mod l1_l2;
 
 use std::cmp::min;
 
+use arrow::bitmap::MutableBitmap;
 use filtered_bit_array::FilteredBitArray;
 use l1_l2::*;
 use polars_core::chunked_array::ChunkedArray;
@@ -12,7 +13,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
-use polars_core::utils::{_set_partition_size, split};
+use polars_core::utils::{_set_partition_size, slice_slice, split};
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
@@ -40,12 +41,34 @@ impl InequalityOperator {
     fn is_strict(&self) -> bool {
         matches!(self, InequalityOperator::Gt | InequalityOperator::Lt)
     }
+
+    /// The operator such that `b op.flip() a` holds whenever `a op b` holds.
+    fn flip(&self) -> InequalityOperator {
+        use InequalityOperator::*;
+        match self {
+            Lt => Gt,
+            LtEq => GtEq,
+            Gt => Lt,
+            GtEq => LtEq,
+        }
+    }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IEJoinOptions {
     pub operator1: InequalityOperator,
     pub operator2: Option<InequalityOperator>,
+}
+
+impl IEJoinOptions {
+    /// The options such that matching with the left/right inputs swapped produces the
+    /// same pairs as matching with the original inputs and options.
+    fn flip(&self) -> IEJoinOptions {
+        IEJoinOptions {
+            operator1: self.operator1.flip(),
+            operator2: self.operator2.map(|op| op.flip()),
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -204,15 +227,75 @@ where
     Ok((left_row_idx, right_row_idx))
 }
 
-pub(super) fn iejoin_par(
+/// Given the row indices of the matched pairs and the (pre-null-filtering) height of the
+/// left input, returns the left/right row-index vectors extended with an entry for every
+/// left row that had no match, paired with a null right index.
+fn append_unmatched_left(
+    left_row_idx: &IdxCa,
+    right_row_idx: &IdxCa,
+    left_height: usize,
+) -> (Vec<IdxSize>, Vec<NullableIdxSize>) {
+    let mut matched = MutableBitmap::from_len_zeroed(left_height);
+    for i in left_row_idx.into_no_null_iter() {
+        // SAFETY: every value in `left_row_idx` is a valid index into the left input.
+        unsafe { matched.set_unchecked(i as usize, true) };
+    }
+
+    let mut out_left: Vec<IdxSize> = left_row_idx.into_no_null_iter().collect();
+    let mut out_right: Vec<NullableIdxSize> = right_row_idx
+        .into_no_null_iter()
+        .map(NullableIdxSize::from)
+        .collect();
+
+    for i in 0..left_height {
+        // SAFETY: `i` is in bounds by construction of the loop.
+        if !unsafe { matched.get_unchecked(i) } {
+            out_left.push(i as IdxSize);
+            out_right.push(NullableIdxSize::null());
+        }
+    }
+
+    (out_left, out_right)
+}
+
+/// Appends unmatched left rows (see [`append_unmatched_left`]), applies `slice`, and takes
+/// both sides. Returns the raw taken frames without a suffix applied — the caller decides
+/// output order and which side gets suffixed on a name collision, which lets this be
+/// reused for a right join by passing the inputs and matched indices with roles swapped.
+fn take_unmatched_left(
     left: &DataFrame,
     right: &DataFrame,
+    left_matched_idx: &IdxCa,
+    right_matched_idx: &IdxCa,
+    left_height: usize,
+    slice: Option<(i64, usize)>,
+) -> PolarsResult<(DataFrame, DataFrame)> {
+    let (left_idx, right_idx) =
+        append_unmatched_left(left_matched_idx, right_matched_idx, left_height);
+    try_raise_polars_abort();
+
+    let (left_idx, right_idx) = match slice {
+        None => (left_idx.as_slice(), right_idx.as_slice()),
+        Some((offset, len)) => (
+            slice_slice(&left_idx, offset, len),
+            slice_slice(&right_idx, offset, len),
+        ),
+    };
+
+    Ok(RAYON.join(
+        || {
+            let idx = unsafe { IdxCa::mmap_slice(PlSmallStr::EMPTY, left_idx) };
+            unsafe { left.take_unchecked(&idx) }
+        },
+        || unsafe { IdxCa::with_nullable_idx(right_idx, |idx| right.take_unchecked(idx)) },
+    ))
+}
+
+fn iejoin_par_indices(
     selected_left: Vec<Series>,
     selected_right: Vec<Series>,
     options: &IEJoinOptions,
-    suffix: Option<PlSmallStr>,
-    slice: Option<(i64, usize)>,
-) -> PolarsResult<DataFrame> {
+) -> PolarsResult<(IdxCa, IdxCa)> {
     let l1_descending = matches!(
         options.operator1,
         InequalityOperator::Gt | InequalityOperator::GtEq
@@ -333,6 +416,47 @@ pub(super) fn iejoin_par(
         left_idx.append(&l)?;
         right_idx.append(&r)?;
     }
+
+    Ok((left_idx, right_idx))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn iejoin_par(
+    left: &DataFrame,
+    right: &DataFrame,
+    selected_left: Vec<Series>,
+    selected_right: Vec<Series>,
+    options: &IEJoinOptions,
+    suffix: Option<PlSmallStr>,
+    slice: Option<(i64, usize)>,
+    emit_unmatched_left: bool,
+    emit_unmatched_right: bool,
+) -> PolarsResult<DataFrame> {
+    debug_assert!(!(emit_unmatched_left && emit_unmatched_right));
+
+    if emit_unmatched_right {
+        let flipped = options.flip();
+        let (matched_right, matched_left) =
+            iejoin_par_indices(selected_right, selected_left, &flipped)?;
+        let (taken_right, taken_left) = take_unmatched_left(
+            right,
+            left,
+            &matched_right,
+            &matched_left,
+            right.height(),
+            slice,
+        )?;
+        return _finish_join(taken_left, taken_right, suffix);
+    }
+
+    let (mut left_idx, mut right_idx) = iejoin_par_indices(selected_left, selected_right, options)?;
+
+    if emit_unmatched_left {
+        let (taken_left, taken_right) =
+            take_unmatched_left(left, right, &left_idx, &right_idx, left.height(), slice)?;
+        return _finish_join(taken_left, taken_right, suffix);
+    }
+
     if let Some((offset, end)) = slice {
         left_idx = left_idx.slice(offset, end);
         right_idx = right_idx.slice(offset, end);
@@ -341,6 +465,7 @@ pub(super) fn iejoin_par(
     unsafe { materialize_join(left, right, &left_idx, &right_idx, suffix) }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn iejoin(
     left: &DataFrame,
     right: &DataFrame,
@@ -349,13 +474,58 @@ pub(super) fn iejoin(
     options: &IEJoinOptions,
     suffix: Option<PlSmallStr>,
     slice: Option<(i64, usize)>,
+    emit_unmatched_left: bool,
+    emit_unmatched_right: bool,
 ) -> PolarsResult<DataFrame> {
-    let (left_row_idx, right_row_idx) = if options.operator2.is_some() {
+    debug_assert!(!(emit_unmatched_left && emit_unmatched_right));
+
+    if emit_unmatched_right {
+        let flipped = options.flip();
+        let (matched_right, matched_left) =
+            compute_ie_join_indices(selected_right, selected_left, &flipped, None)?;
+        let (taken_right, taken_left) = take_unmatched_left(
+            right,
+            left,
+            &matched_right,
+            &matched_left,
+            right.height(),
+            slice,
+        )?;
+        return _finish_join(taken_left, taken_right, suffix);
+    }
+
+    // Internal slice-based pruning would cause matched rows to be misreported as
+    // unmatched; the final slice is applied after unmatched rows are appended instead.
+    let match_slice = if emit_unmatched_left { None } else { slice };
+    let (left_row_idx, right_row_idx) =
+        compute_ie_join_indices(selected_left, selected_right, options, match_slice)?;
+
+    if emit_unmatched_left {
+        let (taken_left, taken_right) = take_unmatched_left(
+            left,
+            right,
+            &left_row_idx,
+            &right_row_idx,
+            left.height(),
+            slice,
+        )?;
+        return _finish_join(taken_left, taken_right, suffix);
+    }
+
+    unsafe { materialize_join(left, right, &left_row_idx, &right_row_idx, suffix) }
+}
+
+fn compute_ie_join_indices(
+    selected_left: Vec<Series>,
+    selected_right: Vec<Series>,
+    options: &IEJoinOptions,
+    slice: Option<(i64, usize)>,
+) -> PolarsResult<(IdxCa, IdxCa)> {
+    if options.operator2.is_some() {
         iejoin_tuples(selected_left, selected_right, options, slice)
     } else {
         piecewise_merge_join_tuples(selected_left, selected_right, options, slice)
-    }?;
-    unsafe { materialize_join(left, right, &left_row_idx, &right_row_idx, suffix) }
+    }
 }
 
 unsafe fn materialize_join(

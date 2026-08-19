@@ -459,6 +459,13 @@ fn resolve_join_where(
     mut options: JoinOptionsIR,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
+    polars_ensure!(
+        options.args.how.supports_non_equi(),
+        InvalidOperation:
+        "'{}' join is not supported with non-equi join conditions",
+        options.args.how,
+    );
+
     // If not eager, respect the flag.
     if ctxt.opt_flags.eager() {
         ctxt.opt_flags.set(OptFlags::PREDICATE_PUSHDOWN, true);
@@ -474,8 +481,16 @@ fn resolve_join_where(
         .get(input_left)
         .schema(ctxt.lp_arena)
         .into_owned();
+    let schema_right = ctxt
+        .lp_arena
+        .get(input_right)
+        .schema(ctxt.lp_arena)
+        .into_owned();
 
-    options.args.how = JoinType::Cross;
+    let how = std::mem::replace(&mut options.args.how, JoinType::Cross);
+    // There are no equality keys to coalesce; leaving this on would make
+    // `det_join_schema` drop the operand columns of the match condition.
+    options.args.coalesce = JoinCoalesce::KeepColumns;
 
     let (mut last_node, join_node) = resolve_join(
         Either::Right(input_left),
@@ -495,6 +510,7 @@ fn resolve_join_where(
 
     // Perform predicate validation.
     let mut upcast_exprs = Vec::<(Node, DataType)>::new();
+    let mut resolved = Vec::with_capacity(predicates.len());
     for e in predicates {
         let arena = &mut ctxt.expr_arena;
         let predicate = to_expr_ir_materialized_lit(
@@ -522,12 +538,58 @@ fn resolve_join_where(
         ctxt.conversion_optimizer
             .push_scratch(predicate.node(), ctxt.expr_arena);
 
-        let ir = IR::Filter {
-            input: last_node,
-            predicate,
-        };
+        resolved.push(predicate);
+    }
 
-        last_node = ctxt.lp_arena.add(ir);
+    if matches!(how, JoinType::Inner) {
+        for predicate in resolved {
+            let ir = IR::Filter {
+                input: last_node,
+                predicate,
+            };
+
+            last_node = ctxt.lp_arena.add(ir);
+        }
+    } else {
+        // Attach the condition to the join itself. A filter above the join would remove
+        // the unmatched rows that a left/right/semi/anti join has to observe.
+        let node = resolved
+            .iter()
+            .map(|e| e.node())
+            .reduce(|left, right| {
+                ctxt.expr_arena.add(AExpr::BinaryExpr {
+                    left,
+                    op: Operator::And,
+                    right,
+                })
+            })
+            .expect("'join_where' requires at least one predicate");
+        let predicate = ExprIR::from_node(node, ctxt.expr_arena);
+
+        let IR::Join { options, .. } = ctxt.lp_arena.get(join_node) else {
+            unreachable!()
+        };
+        let mut new_options = (**options).clone();
+        new_options.args.how = how;
+        new_options.options = Some(JoinTypeOptionsIR::CrossAndFilter { predicate });
+
+        let new_schema = det_join_schema(
+            &schema_left,
+            &schema_right,
+            &[],
+            &[],
+            &new_options,
+            ctxt.expr_arena,
+        )?;
+
+        let IR::Join {
+            options, schema, ..
+        } = ctxt.lp_arena.get_mut(join_node)
+        else {
+            unreachable!()
+        };
+        *options = Arc::new(new_options);
+        *schema = new_schema;
     }
 
     ctxt.conversion_optimizer

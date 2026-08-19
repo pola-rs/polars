@@ -154,6 +154,16 @@ pub struct JoinOptionsIR {
 }
 
 impl JoinOptionsIR {
+    /// The match condition is exactly `left_on == right_on`.
+    pub fn is_pure_equi(&self) -> bool {
+        self.options.is_none()
+    }
+
+    /// The match condition has a non-equality component, held in `options`.
+    pub fn is_non_equi(&self) -> bool {
+        self.options.is_some()
+    }
+
     pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
         let Self {
             allow_parallel,

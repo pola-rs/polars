@@ -302,7 +302,23 @@ pub fn try_rewrite_join_type(
     streaming: bool,
     dedup: &mut PredicateDedupState,
 ) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
-    if acc_predicates.is_empty() {
+    // A `join_where` condition is attached directly to the join (never as a `Filter`
+    // above it, so that a left/right/semi/anti join doesn't remove null-extended rows),
+    // so this must still run even with no predicates pushed down from above.
+    let has_attached_predicate = matches!(
+        &options.options,
+        Some(JoinTypeOptionsIR::CrossAndFilter { .. })
+    ) || {
+        #[cfg(feature = "iejoin")]
+        {
+            matches!(&options.options, Some(JoinTypeOptionsIR::IEJoin(_)))
+        }
+        #[cfg(not(feature = "iejoin"))]
+        {
+            false
+        }
+    };
+    if acc_predicates.is_empty() && !has_attached_predicate {
         return Ok(None);
     }
 
@@ -314,12 +330,23 @@ pub fn try_rewrite_join_type(
     // Note: The join rewrites here all maintain output column ordering, hence this does not need
     // to return any post-select (inserted inner joins will use JoinCoalesce::KeepColumns).
     (|| {
-        match &options.args.how {
+        // Candidate for (further) algorithm lowering: either an unlowered non-equi
+        // predicate is attached (`CrossAndFilter`), a previous pass already lowered to
+        // `IEJoin`/`Range` (both spelled as `JoinTypeOptionsIR::IEJoin`), or this is a
+        // literal cross join that WHERE-pushed equalities may turn into a real join.
+        //
+        // Note: `how` itself is no longer used as an algorithm tag except for the
+        // historical `Cross`/`IEJoin`/`Range` spellings, which are always Inner-semantic.
+        // `Left`/`Right` keep their real semantics in `how` throughout this function; the
+        // algorithm they end up using lives entirely in `options.options`.
+        let is_rewrite_candidate = match &options.options {
+            Some(JoinTypeOptionsIR::CrossAndFilter { .. }) => true,
             #[cfg(feature = "iejoin")]
-            JoinType::IEJoin | JoinType::Range => {},
-            JoinType::Cross => {},
-
-            _ => return PolarsResult::Ok(()),
+            Some(JoinTypeOptionsIR::IEJoin(_)) => true,
+            None => matches!(options.args.how, JoinType::Cross),
+        };
+        if !is_rewrite_candidate {
+            return PolarsResult::Ok(());
         }
 
         match &options.options {
@@ -338,37 +365,56 @@ pub fn try_rewrite_join_type(
             None => {},
         }
 
-        // Try converting to inner join
-        let equality_conditions = take_inner_join_compatible_filters(
-            acc_predicates,
-            expr_arena,
-            schema_left,
-            schema_right,
-            &suffix,
-        )?;
+        let is_outer = matches!(options.args.how, JoinType::Left | JoinType::Right);
 
-        for InnerJoinKeys {
-            input_lhs,
-            input_rhs,
-        } in equality_conditions
-        {
-            let join_options = Arc::make_mut(options);
-            join_options.args.how = JoinType::Inner;
-            join_options.args.coalesce = JoinCoalesce::KeepColumns;
+        // For Left/Right, `left_on`/`right_on` are only ever populated below by the
+        // IEJoin conversion (as comparison operands, not equality keys) — reusing them for
+        // a genuine equality key here would conflate two incompatible meanings of those
+        // columns within the same join node. A mixed equi/non-equi condition on an outer
+        // join therefore skips straight to the nested-loop fallback further down, which
+        // can evaluate the whole conjunction (equality included) as one predicate.
+        if !is_outer {
+            // Try converting to inner join
+            let equality_conditions = take_inner_join_compatible_filters(
+                acc_predicates,
+                expr_arena,
+                schema_left,
+                schema_right,
+                &suffix,
+            )?;
 
-            left_on.push(ExprIR::from_node(input_lhs, expr_arena));
-            let mut rexpr = ExprIR::from_node(input_rhs, expr_arena);
-            remove_suffix(&mut rexpr, expr_arena, schema_right, &suffix);
-            right_on.push(rexpr);
+            for InnerJoinKeys {
+                input_lhs,
+                input_rhs,
+            } in equality_conditions
+            {
+                let join_options = Arc::make_mut(options);
+                join_options.args.how = JoinType::Inner;
+                join_options.args.coalesce = JoinCoalesce::KeepColumns;
+
+                left_on.push(ExprIR::from_node(input_lhs, expr_arena));
+                let mut rexpr = ExprIR::from_node(input_rhs, expr_arena);
+                remove_suffix(&mut rexpr, expr_arena, schema_right, &suffix);
+                right_on.push(rexpr);
+            }
         }
 
+        // For an Inner join, a residual non-equi predicate left in `acc_predicates` is safe
+        // as an ordinary filter above the join (filter commutes with Inner). For Left/Right
+        // it is not — those keep going below to try to attach any remaining predicate to
+        // the join itself instead of leaving it in `acc_predicates`.
         if options.args.how == JoinType::Inner {
             return Ok(());
         }
 
-        // Try converting cross join to double-bounded RangeJoin
+        // Try converting cross join to double-bounded RangeJoin.
+        //
+        // `Range` (like `IEJoin`) is an Inner-only algorithm spelling of `how`, so this is
+        // restricted to joins that are still literally `Cross` — outer joins fall through
+        // to the generic IEJoin conversion below instead, which does not overload `how`.
         #[cfg(feature = "iejoin")]
         if streaming
+            && matches!(options.args.how, JoinType::Cross)
             && matches!(options.args.maintain_order, MaintainOrderJoin::None)
             && left_on.is_empty()
         {
@@ -413,10 +459,21 @@ pub fn try_rewrite_join_type(
             }
         }
 
-        // Try converting cross join to IEJoin
+        // Try converting cross join to IEJoin. Skipped for an outer join whose remaining
+        // condition still mixes in an equality — see the comment above the equality-key
+        // extraction for why that combination can't be represented here; it falls through
+        // to the nested-loop fallback instead.
         #[cfg(feature = "iejoin")]
         if matches!(options.args.maintain_order, MaintainOrderJoin::None)
             && left_on.len() < IEJOIN_MAX_PREDICATES
+            && !(is_outer
+                && contains_cross_side_equality(
+                    acc_predicates,
+                    expr_arena,
+                    schema_left,
+                    schema_right,
+                    &suffix,
+                )?)
         {
             use polars_utils::itertools::Itertools;
 
@@ -430,8 +487,10 @@ pub fn try_rewrite_join_type(
             )?
             .collect_vec();
 
-            // If there is only one predicate, prefer lowering to a single-bounded range-join
-            if ie_conditions.len() == 1 && streaming {
+            // If there is only one predicate, prefer lowering to a single-bounded range-join.
+            // Same `Cross`-only restriction as the double-bounded case above.
+            if ie_conditions.len() == 1 && streaming && matches!(options.args.how, JoinType::Cross)
+            {
                 let join_options = Arc::make_mut(options);
                 join_options.args.how = JoinType::Range;
                 let JoinTypeOptionsIR::IEJoin(ie_options) = join_options
@@ -457,7 +516,9 @@ pub fn try_rewrite_join_type(
             } in ie_conditions
             {
                 let join_options = Arc::make_mut(options);
-                join_options.args.how = JoinType::IEJoin;
+                if matches!(join_options.args.how, JoinType::Cross) {
+                    join_options.args.how = JoinType::IEJoin;
+                }
 
                 if left_on.len() >= IEJOIN_MAX_PREDICATES {
                     // Important: Place these back into acc_predicates.
@@ -488,18 +549,25 @@ pub fn try_rewrite_join_type(
                 }
             }
 
-            if options.args.how == JoinType::IEJoin {
+            // Whether this succeeded for the historical `Inner`-via-`IEJoin` spelling or
+            // for an outer join (whose `how` is left untouched), the algorithm was chosen.
+            if matches!(options.options, Some(JoinTypeOptionsIR::IEJoin(_))) {
                 return Ok(());
             }
         }
 
-        debug_assert_eq!(options.args.how, JoinType::Cross);
+        debug_assert!(options.options.is_none());
 
-        if options.args.how != JoinType::Cross {
-            return Ok(());
-        }
+        let is_outer = matches!(options.args.how, JoinType::Left | JoinType::Right);
 
-        if streaming {
+        // Nested-loop is in-memory only. For the historical Inner-only spellings this is a
+        // pure algorithm choice: any residual predicate can equally be left as an ordinary
+        // filter above the join (filter commutes with Inner), so the streaming engine can
+        // just skip this and leave it in `acc_predicates`. For Left/Right that filter would
+        // silently remove null-extended rows, so any residual predicate referencing both
+        // sides must stay attached to the join instead — even under `streaming`, where it
+        // will be executed by the in-memory engine's fallback path.
+        if streaming && !is_outer {
             return Ok(());
         }
 
@@ -529,6 +597,12 @@ pub fn try_rewrite_join_type(
 
         Ok(())
     })()?;
+
+    // The rewrites below reason about `left_on`/`right_on` as equality keys, which does
+    // not hold when the match condition has a non-equality component.
+    if options.is_non_equi() {
+        return Ok(None);
+    }
 
     if !matches!(
         &options.args.how,
@@ -963,6 +1037,58 @@ struct InnerJoinKeys {
 }
 
 /// Removes all equality predicates that can be used as inner-join conditions from `acc_predicates`.
+/// Whether `acc_predicates` contains an equality minterm comparing a left-origin
+/// expression to a right-origin one. Unlike [`take_inner_join_compatible_filters`], this
+/// does not remove anything — it is used to detect a *mixed* equi/non-equi match
+/// condition, which `IEJoin` cannot represent (it has no concept of an equality operand
+/// alongside its up-to-two inequality operands, and reusing `left_on`/`right_on` for both
+/// would conflate two incompatible meanings of those columns).
+fn contains_cross_side_equality(
+    acc_predicates: &PlIndexMap<PlSmallStr, ExprIR>,
+    expr_arena: &Arena<AExpr>,
+    schema_left: &Schema,
+    schema_right: &Schema,
+    suffix: &str,
+) -> PolarsResult<bool> {
+    for predicate in acc_predicates.values() {
+        for node in MintermIter::new(predicate.node(), expr_arena) {
+            let AExpr::BinaryExpr {
+                left,
+                op: Operator::Eq,
+                right,
+            } = expr_arena.get(node)
+            else {
+                continue;
+            };
+
+            let left_origin = ExprOrigin::get_expr_origin(
+                *left,
+                expr_arena,
+                schema_left,
+                schema_right,
+                suffix,
+                None,
+            )?;
+            let right_origin = ExprOrigin::get_expr_origin(
+                *right,
+                expr_arena,
+                schema_left,
+                schema_right,
+                suffix,
+                None,
+            )?;
+
+            if matches!(
+                (left_origin, right_origin),
+                (ExprOrigin::Left, ExprOrigin::Right) | (ExprOrigin::Right, ExprOrigin::Left)
+            ) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 fn take_inner_join_compatible_filters(
     acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,

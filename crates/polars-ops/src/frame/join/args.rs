@@ -183,14 +183,20 @@ impl From<JoinType> for JoinArgs {
 }
 
 pub trait CrossJoinFilter: Send + Sync {
-    fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame>;
+    /// Evaluates the filter predicate on `df`, returning a boolean mask.
+    fn evaluate(&self, df: &DataFrame) -> PolarsResult<BooleanChunked>;
+
+    fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame> {
+        let mask = self.evaluate(&df)?;
+        df.filter(&mask)
+    }
 }
 
 impl<T> CrossJoinFilter for T
 where
-    T: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
+    T: Fn(&DataFrame) -> PolarsResult<BooleanChunked> + Send + Sync,
 {
-    fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame> {
+    fn evaluate(&self, df: &DataFrame) -> PolarsResult<BooleanChunked> {
         self(df)
     }
 }
@@ -340,6 +346,32 @@ impl JoinType {
         {
             false
         }
+    }
+
+    /// Unmatched rows of the left input appear in the output.
+    pub fn emits_unmatched_left(&self) -> bool {
+        #[cfg(feature = "semi_anti_join")]
+        {
+            matches!(self, JoinType::Left | JoinType::Full | JoinType::Anti)
+        }
+        #[cfg(not(feature = "semi_anti_join"))]
+        {
+            matches!(self, JoinType::Left | JoinType::Full)
+        }
+    }
+
+    /// Unmatched rows of the right input appear in the output.
+    pub fn emits_unmatched_right(&self) -> bool {
+        matches!(self, JoinType::Right | JoinType::Full)
+    }
+
+    /// Can be combined with a non-equality match condition.
+    ///
+    /// Semi and anti joins are excluded: their output schema is the left schema, so an
+    /// attached match condition referencing right-side columns cannot be resolved
+    /// against the join's output.
+    pub fn supports_non_equi(&self) -> bool {
+        matches!(self, JoinType::Inner | JoinType::Left | JoinType::Right)
     }
 }
 

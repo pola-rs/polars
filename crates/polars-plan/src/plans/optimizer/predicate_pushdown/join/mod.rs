@@ -226,8 +226,15 @@ pub(super) fn process_join(
     let mut output_key_to_right_input_map: PlIndexMap<PlSmallStr, PlSmallStr> =
         PlIndexMap::with_capacity(get_rhs_column_keys_iter().len());
 
+    // These maps encode that `left_on[i]` and `right_on[i]` hold equal values in the
+    // output, which is only true for an equality match condition.
+    let key_columns_are_equal = options.is_pure_equi();
+
     for (lhs_input_key, rhs_input_key) in get_lhs_column_keys_iter().zip(get_rhs_column_keys_iter())
     {
+        if !key_columns_are_equal {
+            break;
+        }
         let (Some(lhs_input_key), Some(rhs_input_key)) = (lhs_input_key, rhs_input_key) else {
             continue;
         };

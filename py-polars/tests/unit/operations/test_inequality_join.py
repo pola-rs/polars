@@ -469,6 +469,50 @@ def test_raise_invalid_input_join_where() -> None:
         df.join_where(df)
 
 
+def test_join_where_how_left() -> None:
+    # https://github.com/pola-rs/polars/issues/28875
+    left = pl.LazyFrame({"a": [1, 2, 3]})
+    right = pl.LazyFrame({"b": [2]})
+
+    got = left.join_where(right, pl.col("a") > pl.col("b"), how="left").sort("a")
+    expected = pl.LazyFrame({"a": [1, 2, 3], "b": [None, None, 2]})
+    assert_frame_equal(got.collect(), expected.collect())
+
+
+def test_join_where_how_right() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3]})
+    right = pl.LazyFrame({"b": [2]})
+
+    got = left.join_where(right, pl.col("a") > pl.col("b"), how="right")
+    expected = pl.LazyFrame({"a": [3], "b": [2]})
+    assert_frame_equal(got.collect(), expected.collect())
+
+
+@pytest.mark.parametrize("how", ["full", "semi", "anti", "cross"])
+def test_join_where_how_unsupported(how: str) -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3]})
+    right = pl.LazyFrame({"b": [2]})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="join is not supported with non-equi join conditions",
+    ):
+        left.join_where(
+            right,
+            pl.col("a") > pl.col("b"),
+            how=how,  # type: ignore[arg-type]
+        ).collect()
+
+
+def test_join_where_how_left_dataframe() -> None:
+    left = pl.DataFrame({"a": [1, 2, 3]})
+    right = pl.DataFrame({"b": [2]})
+
+    got = left.join_where(right, pl.col("a") > pl.col("b"), how="left").sort("a")
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": [None, None, 2]})
+    assert_frame_equal(got, expected)
+
+
 def test_ie_join_use_keys_multiple() -> None:
     a = pl.LazyFrame({"a": [1, 2, 3], "x": [7, 2, 1]})
     b = pl.LazyFrame({"b": [2, 2, 2], "x": [7, 1, 3]})

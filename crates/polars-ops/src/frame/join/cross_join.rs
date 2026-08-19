@@ -139,7 +139,17 @@ pub(super) fn fused_cross_filter(
     suffix: Option<PlSmallStr>,
     cross_join_options: &CrossJoinOptions,
     maintain_order: MaintainOrderJoin,
+    emit_unmatched_left: bool,
 ) -> PolarsResult<DataFrame> {
+    // For a left join, every left row's full run of candidate matches must stay within a
+    // single chunk so a match can be decided per-chunk; that only holds when left is the
+    // (chunked) primary side.
+    let maintain_order = if emit_unmatched_left {
+        MaintainOrderJoin::Left
+    } else {
+        maintain_order
+    };
+
     let unfiltered_size = (left.height() as u64).saturating_mul(right.height() as u64);
     let chunk_size = (unfiltered_size / _set_partition_size() as u64).clamp(1, 100_000);
     let num_chunks = (unfiltered_size / chunk_size).max(1) as usize;
@@ -149,6 +159,7 @@ pub(super) fn fused_cross_filter(
         MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => true,
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => false,
     };
+    debug_assert!(!emit_unmatched_left || left_is_primary);
 
     let split_chunks;
     let cartesian_prod = if left_is_primary {
@@ -162,20 +173,57 @@ pub(super) fn fused_cross_filter(
     let names = _finish_join(left.clear(), right.clear(), suffix)?;
     let rename_names = names.get_column_names();
     let rename_names = &rename_names[left.width()..];
+    let n_secondary = right.height();
 
     let dfs = RAYON
         .install(|| {
-            cartesian_prod.par_iter().map(|(left, right)| {
-                let (mut left, right) = cross_join_dfs(left, right, None, false, maintain_order)?;
-                let mut right_columns = right.into_columns();
+            cartesian_prod.par_iter().map(|(left_chunk, right_chunk)| {
+                let (mut joined, right_taken) =
+                    cross_join_dfs(left_chunk, right_chunk, None, false, maintain_order)?;
+                let mut right_columns = right_taken.into_columns();
 
                 for (c, name) in right_columns.iter_mut().zip(rename_names) {
                     c.rename((*name).clone());
                 }
 
-                unsafe { left.hstack_mut_unchecked(&right_columns) };
+                unsafe { joined.hstack_mut_unchecked(&right_columns) };
 
-                cross_join_options.predicate.apply(left)
+                if !emit_unmatched_left {
+                    return cross_join_options.predicate.apply(joined);
+                }
+
+                let mask = cross_join_options.predicate.evaluate(&joined)?;
+                let matched = joined.filter(&mask)?;
+
+                let n_primary = left_chunk.height();
+                debug_assert_eq!(joined.height(), n_primary * n_secondary);
+
+                // A null-mask bit means "no match", consistent with `filter`.
+                let bits: Vec<bool> = mask.iter().map(|v| v.unwrap_or(false)).collect();
+                let unmatched_local: Vec<IdxSize> = (0..n_primary as IdxSize)
+                    .filter(|&i| {
+                        let start = i as usize * n_secondary;
+                        !bits[start..start + n_secondary].iter().any(|b| *b)
+                    })
+                    .collect();
+
+                if unmatched_local.is_empty() {
+                    return Ok(matched);
+                }
+
+                let idx = IdxCa::from_vec(PlSmallStr::EMPTY, unmatched_local);
+                let unmatched_primary = unsafe { left_chunk.take_unchecked(&idx) };
+                let mut unmatched_secondary =
+                    DataFrame::full_null(&right.schema(), idx.len()).into_columns();
+                for (c, name) in unmatched_secondary.iter_mut().zip(rename_names) {
+                    c.rename((*name).clone());
+                }
+                let mut unmatched = unmatched_primary;
+                unsafe { unmatched.hstack_mut_unchecked(&unmatched_secondary) };
+
+                Ok(accumulate_dataframes_vertical_unchecked([
+                    matched, unmatched,
+                ]))
             })
         })
         .collect::<PolarsResult<Vec<_>>>()?;
