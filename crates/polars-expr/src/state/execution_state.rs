@@ -124,7 +124,6 @@ pub struct ExecutionState {
     pub with_fields: Option<Arc<StructChunked>>,
     #[cfg(feature = "dtype-struct")]
     pub with_fields_ac: Option<Arc<AggregationContext<'static>>>,
-    pub ext_contexts: Arc<Vec<DataFrame>>,
     pub element: Arc<Option<(Column, Option<Bitmap>)>>,
     stop: Arc<RelaxedCell<bool>>,
 }
@@ -145,7 +144,6 @@ impl ExecutionState {
             with_fields: Default::default(),
             #[cfg(feature = "dtype-struct")]
             with_fields_ac: Default::default(),
-            ext_contexts: Default::default(),
             element: Default::default(),
             stop: Arc::new(RelaxedCell::from(false)),
         }
@@ -171,7 +169,6 @@ impl ExecutionState {
             window_cache: Default::default(),
             branch_idx: self.branch_idx,
             flags: self.flags.clone(),
-            ext_contexts: self.ext_contexts.clone(),
             // Retain input values for `pl.element` in Eval context
             element: self.element.clone(),
             #[cfg(feature = "dtype-struct")]

@@ -155,11 +155,6 @@ pub enum DslPlan {
         inputs: Vec<DslPlan>,
         options: HConcatOptions,
     },
-    /// This allows expressions to access other tables
-    ExtContext {
-        input: Arc<DslPlan>,
-        contexts: Vec<DslPlan>,
-    },
     Sink {
         input: Arc<DslPlan>,
         payload: SinkType,
@@ -212,7 +207,6 @@ impl Clone for DslPlan {
             Self::MapFunction { input, function } => Self::MapFunction { input: input.clone(), function: function.clone() },
             Self::Union { inputs, args} => Self::Union { inputs: inputs.clone(), args: args.clone() },
             Self::HConcat { inputs, options } => Self::HConcat { inputs: inputs.clone(), options: options.clone() },
-            Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
             Self::SinkMultiple { inputs } => Self::SinkMultiple { inputs: inputs.clone() },
             #[cfg(feature = "pivot")]
