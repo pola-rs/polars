@@ -198,12 +198,20 @@ pub(super) fn fused_cross_filter(
                 let n_primary = left_chunk.height();
                 debug_assert_eq!(joined.height(), n_primary * n_secondary);
 
-                // A null-mask bit means "no match", consistent with `filter`.
-                let bits: Vec<bool> = mask.iter().map(|v| v.unwrap_or(false)).collect();
+                // Combine values and validity into one bitmap so a null bit reads as "no
+                // match" (consistent with `filter`), then test each row's run of
+                // `n_secondary` bits with an O(1) slice + popcount instead of collecting
+                // the mask into a `Vec<bool>` and scanning it byte-wise.
+                let mask_arr = mask.rechunk();
+                let mask_arr = mask_arr.downcast_get(0).unwrap();
+                let match_bits = match mask_arr.validity() {
+                    Some(validity) => mask_arr.values() & validity,
+                    None => mask_arr.values().clone(),
+                };
                 let unmatched_local: Vec<IdxSize> = (0..n_primary as IdxSize)
                     .filter(|&i| {
                         let start = i as usize * n_secondary;
-                        !bits[start..start + n_secondary].iter().any(|b| *b)
+                        match_bits.clone().sliced(start, n_secondary).unset_bits() == n_secondary
                     })
                     .collect();
 

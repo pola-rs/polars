@@ -235,18 +235,24 @@ fn append_unmatched_left(
     right_row_idx: &IdxCa,
     left_height: usize,
 ) -> (Vec<IdxSize>, Vec<NullableIdxSize>) {
+    let n_matched_pairs = left_row_idx.len();
     let mut matched = MutableBitmap::from_len_zeroed(left_height);
-    for i in left_row_idx.into_no_null_iter() {
+    let mut out_left: Vec<IdxSize> = Vec::with_capacity(n_matched_pairs);
+    let mut out_right: Vec<NullableIdxSize> = Vec::with_capacity(n_matched_pairs);
+
+    for (l, r) in left_row_idx
+        .into_no_null_iter()
+        .zip(right_row_idx.into_no_null_iter())
+    {
         // SAFETY: every value in `left_row_idx` is a valid index into the left input.
-        unsafe { matched.set_unchecked(i as usize, true) };
+        unsafe { matched.set_unchecked(l as usize, true) };
+        out_left.push(l);
+        out_right.push(NullableIdxSize::from(r));
     }
 
-    let mut out_left: Vec<IdxSize> = left_row_idx.into_no_null_iter().collect();
-    let mut out_right: Vec<NullableIdxSize> = right_row_idx
-        .into_no_null_iter()
-        .map(NullableIdxSize::from)
-        .collect();
-
+    let n_unmatched = left_height - matched.set_bits();
+    out_left.reserve(n_unmatched);
+    out_right.reserve(n_unmatched);
     for i in 0..left_height {
         // SAFETY: `i` is in bounds by construction of the loop.
         if !unsafe { matched.get_unchecked(i) } {
@@ -256,6 +262,37 @@ fn append_unmatched_left(
     }
 
     (out_left, out_right)
+}
+
+/// Which side's unmatched rows (if any) must be null-extended into the output.
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub(super) enum EmitUnmatched {
+    None,
+    Left,
+    Right,
+}
+
+/// Computes the flipped-input match and null-extends the (flipped) left side — i.e. the
+/// original `right` — then reassembles the output in the original left/right order. This
+/// is the shared implementation behind `emit_unmatched == Right` for both [`iejoin`] and
+/// [`iejoin_par`], which only differ in how they compute the matched indices.
+fn emit_unmatched_right_via_flip(
+    left: &DataFrame,
+    right: &DataFrame,
+    suffix: Option<PlSmallStr>,
+    slice: Option<(i64, usize)>,
+    compute_flipped_indices: impl FnOnce() -> PolarsResult<(IdxCa, IdxCa)>,
+) -> PolarsResult<DataFrame> {
+    let (matched_right, matched_left) = compute_flipped_indices()?;
+    let (taken_right, taken_left) = take_unmatched_left(
+        right,
+        left,
+        &matched_right,
+        &matched_left,
+        right.height(),
+        slice,
+    )?;
+    _finish_join(taken_left, taken_right, suffix)
 }
 
 /// Appends unmatched left rows (see [`append_unmatched_left`]), applies `slice`, and takes
@@ -429,29 +466,18 @@ pub(super) fn iejoin_par(
     options: &IEJoinOptions,
     suffix: Option<PlSmallStr>,
     slice: Option<(i64, usize)>,
-    emit_unmatched_left: bool,
-    emit_unmatched_right: bool,
+    emit_unmatched: EmitUnmatched,
 ) -> PolarsResult<DataFrame> {
-    debug_assert!(!(emit_unmatched_left && emit_unmatched_right));
-
-    if emit_unmatched_right {
+    if emit_unmatched == EmitUnmatched::Right {
         let flipped = options.flip();
-        let (matched_right, matched_left) =
-            iejoin_par_indices(selected_right, selected_left, &flipped)?;
-        let (taken_right, taken_left) = take_unmatched_left(
-            right,
-            left,
-            &matched_right,
-            &matched_left,
-            right.height(),
-            slice,
-        )?;
-        return _finish_join(taken_left, taken_right, suffix);
+        return emit_unmatched_right_via_flip(left, right, suffix, slice, || {
+            iejoin_par_indices(selected_right, selected_left, &flipped)
+        });
     }
 
     let (mut left_idx, mut right_idx) = iejoin_par_indices(selected_left, selected_right, options)?;
 
-    if emit_unmatched_left {
+    if emit_unmatched == EmitUnmatched::Left {
         let (taken_left, taken_right) =
             take_unmatched_left(left, right, &left_idx, &right_idx, left.height(), slice)?;
         return _finish_join(taken_left, taken_right, suffix);
@@ -474,33 +500,26 @@ pub(super) fn iejoin(
     options: &IEJoinOptions,
     suffix: Option<PlSmallStr>,
     slice: Option<(i64, usize)>,
-    emit_unmatched_left: bool,
-    emit_unmatched_right: bool,
+    emit_unmatched: EmitUnmatched,
 ) -> PolarsResult<DataFrame> {
-    debug_assert!(!(emit_unmatched_left && emit_unmatched_right));
-
-    if emit_unmatched_right {
+    if emit_unmatched == EmitUnmatched::Right {
         let flipped = options.flip();
-        let (matched_right, matched_left) =
-            compute_ie_join_indices(selected_right, selected_left, &flipped, None)?;
-        let (taken_right, taken_left) = take_unmatched_left(
-            right,
-            left,
-            &matched_right,
-            &matched_left,
-            right.height(),
-            slice,
-        )?;
-        return _finish_join(taken_left, taken_right, suffix);
+        return emit_unmatched_right_via_flip(left, right, suffix, slice, || {
+            compute_ie_join_indices(selected_right, selected_left, &flipped, None)
+        });
     }
 
     // Internal slice-based pruning would cause matched rows to be misreported as
     // unmatched; the final slice is applied after unmatched rows are appended instead.
-    let match_slice = if emit_unmatched_left { None } else { slice };
+    let match_slice = if emit_unmatched == EmitUnmatched::Left {
+        None
+    } else {
+        slice
+    };
     let (left_row_idx, right_row_idx) =
         compute_ie_join_indices(selected_left, selected_right, options, match_slice)?;
 
-    if emit_unmatched_left {
+    if emit_unmatched == EmitUnmatched::Left {
         let (taken_left, taken_right) = take_unmatched_left(
             left,
             right,

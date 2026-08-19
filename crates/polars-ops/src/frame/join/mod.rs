@@ -138,14 +138,7 @@ pub trait DataFrameJoinOps: IntoDf {
         // implementation does not yet track unmatched rows must not silently produce
         // inner-join results.
         polars_ensure!(
-            options.is_none()
-                || matches!(args.how, JoinType::Inner | JoinType::Cross)
-                || args.how.is_ie()
-                || args.how.is_range()
-                || (matches!(args.how, JoinType::Left | JoinType::Right)
-                    && matches!(options, Some(JoinTypeOptions::IEJoin(_))))
-                || (matches!(args.how, JoinType::Left)
-                    && matches!(options, Some(JoinTypeOptions::Cross(_)))),
+            args.how.supports_non_equi_options(&options),
             InvalidOperation:
             "'{}' join is not supported with non-equi join conditions",
             args.how,
@@ -256,6 +249,13 @@ pub trait DataFrameJoinOps: IntoDf {
             } else {
                 iejoin::iejoin
             };
+            let emit_unmatched = if args.how.emits_unmatched_left() {
+                iejoin::EmitUnmatched::Left
+            } else if args.how.emits_unmatched_right() {
+                iejoin::EmitUnmatched::Right
+            } else {
+                iejoin::EmitUnmatched::None
+            };
             return func(
                 left_df,
                 other,
@@ -264,8 +264,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 &ie_options,
                 args.suffix,
                 args.slice,
-                args.how.emits_unmatched_left(),
-                args.how.emits_unmatched_right(),
+                emit_unmatched,
             );
         }
 
