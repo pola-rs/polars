@@ -199,7 +199,7 @@ pub struct Config {
     dns_log_threshold_ms: AtomicU64,
     numa_aware: AtomicBool,
     numa_mock_regions: AtomicU64,
-    
+
     // Derived from others.
     ooc_memory_prefetch_bytes: AtomicU64,
 }
@@ -273,11 +273,12 @@ impl Config {
         self.apply_env_var(var, std::env::var(var).ok().as_deref());
         self.recompute_derived();
     }
-    
+
     fn recompute_derived(&self) {
         let bytes = self.ooc_memory_budget_bytes.load(Ordering::Relaxed);
         let frac = f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed));
-        self.ooc_memory_prefetch_bytes.store((bytes as f64 * frac) as u64, Ordering::Relaxed);
+        self.ooc_memory_prefetch_bytes
+            .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
     }
 
     fn apply_env_var(&self, var: &str, val: Option<&str>) {

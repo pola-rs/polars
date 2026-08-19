@@ -33,7 +33,9 @@ pub fn parse_f64_with_limits(var: &str, val: &str, lo: f64, hi: f64) -> Option<f
     let ret = val.trim_ascii().parse::<f64>().ok();
     if let Some(val) = ret {
         if val < lo || val > hi {
-            polars_warn!("out-of-bounds value '{val}' found while parsing option '{var}', must be in [{lo}, {hi}]");
+            polars_warn!(
+                "out-of-bounds value '{val}' found while parsing option '{var}', must be in [{lo}, {hi}]"
+            );
         }
     } else {
         polars_warn!("illegal value '{val}' found while parsing option '{var}'");
