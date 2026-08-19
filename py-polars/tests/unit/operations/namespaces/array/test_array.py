@@ -453,6 +453,15 @@ def test_arr_dot_integer_overflow() -> None:
     )
 
 
+def test_arr_dot_integer_query_vector_coercion() -> None:
+    lhs = pl.Series("lhs", [[100, 100]], dtype=pl.Array(pl.Int8, 2))
+
+    assert_series_equal(
+        lhs.arr.dot([2, 2]),
+        pl.Series("lhs", [400], dtype=pl.Int64),
+    )
+
+
 @pytest.mark.parametrize(
     ("dtype", "maximum", "expected"),
     [
