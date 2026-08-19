@@ -155,11 +155,6 @@ pub enum IR {
         schema: SchemaRef,
         options: HConcatOptions,
     },
-    ExtContext {
-        input: Node,
-        contexts: Vec<Node>,
-        schema: SchemaRef,
-    },
     Sink {
         input: Node,
         payload: SinkTypeIR,
