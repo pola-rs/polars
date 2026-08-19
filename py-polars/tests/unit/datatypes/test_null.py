@@ -85,36 +85,31 @@ def test_null_lit_filter_16664() -> None:
 
 @pytest.mark.parametrize(
     "op",
-    [
-        pl.Expr.is_nan,
-        pl.Expr.is_not_nan,
-        pl.Expr.is_finite,
-        pl.Expr.is_infinite,
-    ],
+    [pl.Expr.is_nan, pl.Expr.is_not_nan, pl.Expr.is_finite, pl.Expr.is_infinite],
 )
-def test_null_is_nan_finite_28845(op: Any) -> None:
-    s = [None, None]
-    df = pl.DataFrame({"a": s})
+def test_null_fused_not_28845(op: Any) -> None:
+    two_nulls = [None, None]
+    df = pl.DataFrame({"a": two_nulls})
     assert df.schema == {"a": pl.Null}
 
     output_df = df.select(
         col=op(pl.col("a")),
-        inverted_col=~op(pl.col("a")),
         broadcast=op(pl.lit(None)),
+        inverted_col=~op(pl.col("a")),
         inverted_broadcast=~op(pl.lit(None)),
     )
 
     expected_df = pl.DataFrame(
         {
-            "col": s,
-            "inverted_col": s,
-            "broadcast": s,
-            "inverted_broadcast": s,
+            "col": two_nulls,
+            "broadcast": two_nulls,
+            "inverted_col": two_nulls,
+            "inverted_broadcast": two_nulls,
         },
         schema={
             "col": pl.Boolean,
-            "inverted_col": pl.Boolean,
             "broadcast": pl.Boolean,
+            "inverted_col": pl.Boolean,
             "inverted_broadcast": pl.Boolean,
         },
     )
