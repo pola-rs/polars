@@ -481,12 +481,12 @@ impl SQLContext {
 
     // Attempt the decorrelation of a single scalar aggregate subquery:
     //   (SELECT AGG(...) FROM inner WHERE <corr-preds> AND <inner-filters>)
-    // Row-index the outer frame, inner-join outer × inner on the correlation
-    // predicates (`join_where` handles inequality correlation), aggregate per
-    // outer row, then left-join the aggregate back on the row index. `COUNT`
-    // over no matches is 0; every other aggregate is NULL. Returns the updated
-    // frame and the materialised result column, or `None` when the subquery is
-    // uncorrelated or not an aggregate scalar shape we can soundly lower.
+    // Equality-only correlation: `inner GROUP BY <corr cols>` once, joined onto
+    // the outer frame on those columns directly. Otherwise: row-index the outer
+    // frame, inner-join outer × inner on the correlation predicates (`join_where`
+    // handles inequality), aggregate per outer row, then left-join back on the
+    // row index. Either way, `COUNT` over no matches is 0, every other aggregate
+    // is NULL. Returns `None` when uncorrelated or not a scalar-aggregate shape.
     fn try_decorrelate_scalar_subquery(
         &mut self,
         lf: LazyFrame,
@@ -546,7 +546,6 @@ impl SQLContext {
         }
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
-        let idx_name = format_pl_smallstr!("{prefix}idx");
         let result_name = format_pl_smallstr!("{prefix}res");
 
         // Apply inner-only filters, then rename inner columns to collision-free
@@ -567,7 +566,23 @@ impl SQLContext {
             },
             other => other,
         });
+
+        if corr_preds.iter().all(|p| p.op == SQLBinaryOperator::Eq) {
+            let outer_on: Vec<Expr> = corr_preds.iter().map(|p| col(p.outer.clone())).collect();
+            let inner_on: Vec<Expr> = corr_preds
+                .iter()
+                .map(|p| col(prefixed_inner(&prefix, &p.inner)))
+                .collect();
+            let grouped = inner_renamed
+                .group_by(inner_on.clone())
+                .agg([agg_expr.alias(result_name.clone())]);
+            let joined =
+                left_join_aggregate(lf, grouped, outer_on, inner_on, &result_name, count_like);
+            return Ok(Some((joined, result_name)));
+        }
+
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
+        let idx_name = format_pl_smallstr!("{prefix}idx");
 
         let outer_indexed = lf.with_row_index(idx_name.clone(), None);
         let matched = outer_indexed
@@ -580,19 +595,15 @@ impl SQLContext {
             .group_by([col(idx_name.clone())])
             .agg([agg_expr.alias(result_name.clone())]);
 
-        let mut joined = outer_indexed
-            .join_builder()
-            .with(grouped)
-            .left_on([col(idx_name.clone())])
-            .right_on([col(idx_name.clone())])
-            .how(JoinType::Left)
-            .coalesce(JoinCoalesce::CoalesceColumns)
-            .maintain_order(MaintainOrderJoin::Left)
-            .finish();
-        if count_like {
-            joined = joined.with_columns([col(result_name.clone()).fill_null(lit(0))]);
-        }
-        joined = joined.drop(Selector::ByName {
+        let joined = left_join_aggregate(
+            outer_indexed,
+            grouped,
+            vec![col(idx_name.clone())],
+            vec![col(idx_name.clone())],
+            &result_name,
+            count_like,
+        )
+        .drop(Selector::ByName {
             names: Arc::from([idx_name]),
             strict: true,
         });
@@ -1142,6 +1153,32 @@ impl VisitorMut for CorrelatedLowering<'_> {
 
 fn prefixed_inner(prefix: &str, name: &str) -> PlSmallStr {
     format_pl_smallstr!("{prefix}c_{name}")
+}
+
+// Left-join a per-group aggregate onto the outer frame, filling unmatched `COUNT`
+// results with 0 (every other aggregate stays NULL for unmatched rows).
+fn left_join_aggregate(
+    outer: LazyFrame,
+    grouped: LazyFrame,
+    left_on: Vec<Expr>,
+    right_on: Vec<Expr>,
+    result_name: &PlSmallStr,
+    count_like: bool,
+) -> LazyFrame {
+    let joined = outer
+        .join_builder()
+        .with(grouped)
+        .left_on(left_on)
+        .right_on(right_on)
+        .how(JoinType::Left)
+        .coalesce(JoinCoalesce::CoalesceColumns)
+        .maintain_order(MaintainOrderJoin::Left)
+        .finish();
+    if count_like {
+        joined.with_columns([col(result_name.clone()).fill_null(lit(0))])
+    } else {
+        joined
+    }
 }
 
 // Peel the alias/cast wrappers SQL puts around an aggregate to reach the
