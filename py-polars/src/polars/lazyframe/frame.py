@@ -8755,6 +8755,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
+        >>> import polars as pl
+        >>> import polars.selectors as cs
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["x", "y", "z"],
@@ -8762,7 +8764,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [2, 4, 6],
         ...     }
         ... )
-        >>> import polars.selectors as cs
+        >>> lf.collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ x   ┆ 1   ┆ 2   │
+        │ y   ┆ 3   ┆ 4   │
+        │ z   ┆ 5   ┆ 6   │
+        └─────┴─────┴─────┘
         >>> lf.unpivot(cs.numeric(), index="a").collect()
         shape: (6, 3)
         ┌─────┬──────────┬───────┐
@@ -8777,6 +8789,57 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ y   ┆ c        ┆ 4     │
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
+
+        To unpivot multiple sets of value columns,
+        join them into a single `pl.Struct` column, `unpivot` one struct column,
+        then `unnest` the struct.
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "PRODUCT": ["x", "y", "z"],
+        ...         "QUANTITY1": ["xq1", "yq1", "zq1"],
+        ...         "QUANTITY2": ["xq2", "yq2", "zq2"],
+        ...         "PRICE1": ["xp1", "yp1", "zp1"],
+        ...         "PRICE2": ["xp2", "yp2", "zp2"],
+        ...     }
+        ... )
+        >>>
+        >>> lf.collect()
+        shape: (3, 5)
+        ┌─────────┬───────────┬───────────┬────────┬────────┐
+        │ PRODUCT ┆ QUANTITY1 ┆ QUANTITY2 ┆ PRICE1 ┆ PRICE2 │
+        │ ---     ┆ ---       ┆ ---       ┆ ---    ┆ ---    │
+        │ str     ┆ str       ┆ str       ┆ str    ┆ str    │
+        ╞═════════╪═══════════╪═══════════╪════════╪════════╡
+        │ x       ┆ xq1       ┆ xq2       ┆ xp1    ┆ xp2    │
+        │ y       ┆ yq1       ┆ yq2       ┆ yp1    ┆ yp2    │
+        │ z       ┆ zq1       ┆ zq2       ┆ zp1    ┆ zp2    │
+        └─────────┴───────────┴───────────┴────────┴────────┘
+        >>> (
+        ...     lf.select(
+        ...         "PRODUCT",
+        ...         pl.struct(QTY="QUANTITY1", PRICE="PRICE1").alias("PQ1"),
+        ...         pl.struct(QTY="QUANTITY2", PRICE="PRICE2").alias("PQ2"),
+        ...     )
+        ...     .unpivot(on=["PQ1", "PQ2"], index="PRODUCT")
+        ...     .unnest("value")
+        ...     .with_columns(pl.col("variable").str.replace("PQ", ""))
+        ...     .collect()
+        ... )
+        shape: (6, 4)
+        ┌─────────┬──────────┬─────┬───────┐
+        │ PRODUCT ┆ variable ┆ QTY ┆ PRICE │
+        │ ---     ┆ ---      ┆ --- ┆ ---   │
+        │ str     ┆ str      ┆ str ┆ str   │
+        ╞═════════╪══════════╪═════╪═══════╡
+        │ x       ┆ 1        ┆ xq1 ┆ xp1   │
+        │ y       ┆ 1        ┆ yq1 ┆ yp1   │
+        │ z       ┆ 1        ┆ zq1 ┆ zp1   │
+        │ x       ┆ 2        ┆ xq2 ┆ xp2   │
+        │ y       ┆ 2        ┆ yq2 ┆ yp2   │
+        │ z       ┆ 2        ┆ zq2 ┆ zp2   │
+        └─────────┴──────────┴─────┴───────┘
+
         """
         if not streamable:
             issue_deprecation_warning(
