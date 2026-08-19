@@ -244,14 +244,6 @@ impl DslBuilder {
         .into()
     }
 
-    pub fn with_context(self, contexts: Vec<DslPlan>) -> Self {
-        DslPlan::ExtContext {
-            input: Arc::new(self.0),
-            contexts,
-        }
-        .into()
-    }
-
     /// Apply a filter predicate, keeping the rows that match it.
     pub fn filter(self, predicate: Expr) -> Self {
         DslPlan::Filter {

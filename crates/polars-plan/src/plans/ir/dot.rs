@@ -297,10 +297,6 @@ impl<'a> IRDotDisplay<'a> {
                 recurse!(*input);
                 write_label(f, id, |f| write!(f, "{function}"))?;
             },
-            ExtContext { input, .. } => {
-                recurse!(*input);
-                write_label(f, id, |f| f.write_str("EXTERNAL_CONTEXT"))?;
-            },
             Sink { input, payload, .. } => {
                 recurse!(*input);
 

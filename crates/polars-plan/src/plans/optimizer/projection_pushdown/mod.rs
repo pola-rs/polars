@@ -177,46 +177,6 @@ impl<'a, 'arena> NodeVisitor for ProjectionPushdownVisitor<'a, 'arena> {
                 debug_assert_eq!(inputs.len(), edges.inputs().len());
             },
 
-            IR::ExtContext { schema, .. } => {
-                let schema = match storage.get(parent_key_and_port.node) {
-                    // Replace simple-projection added from pre-visit
-                    IR::SimpleProjection { columns, .. } => columns.clone(),
-                    // Wrap in `Select {}` if it is the root node, otherwise it only returns cols from first input.
-                    _ if parent_key_and_port.node
-                        == self.default_edge.parent_key_and_port().node =>
-                    {
-                        schema.clone()
-                    },
-                    _ => return ControlFlow::Continue(()),
-                };
-
-                let mut exprs = Vec::with_capacity(schema.len());
-                let schema = schema.clone();
-                exprs.extend(
-                    schema
-                        .iter_names_cloned()
-                        .map(|name| ExprIR::from_column_name(name, self.expr_arena)),
-                );
-
-                let ext_ctx_ir = storage.take(key);
-                let new_key = storage.add(ext_ctx_ir);
-
-                storage.replace(
-                    key,
-                    IR::Select {
-                        input: new_key,
-                        expr: exprs,
-                        schema,
-                        options: ProjectionOptions {
-                            run_parallel: false,
-                            duplicate_check: false,
-                            should_broadcast: true,
-                            maintain_dataframe_height: false,
-                        },
-                    },
-                );
-            },
-
             IR::Cache { input, id } => {
                 self.cache_inputs.insert(*id, *input);
             },
@@ -1375,13 +1335,6 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 for key in key.iter() {
                     projected_names.insert(key.clone());
                 }
-                pushdown_with_added_names!(len_before_added_names)
-            },
-
-            IR::ExtContext { schema, .. } => {
-                let (projected_names, _) = projected_names_subset_or_return!();
-                let len_before_added_names = projected_names.len();
-                Arc::make_mut(schema).retain(|name, _| projected_names.contains(name));
                 pushdown_with_added_names!(len_before_added_names)
             },
 
