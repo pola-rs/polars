@@ -611,6 +611,7 @@ impl PredicatePushDown {
 
                 if let Some((offset, len, None)) = slice
                     && by_column.len() == 1
+                    && self.streaming
                 {
                     let n = by_column[0].node();
                     if let AExpr::Column(_) = expr_arena.get(n) {
