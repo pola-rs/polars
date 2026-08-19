@@ -2717,6 +2717,184 @@ class Series:
         └─────┴────────────┴────────────┘
         """
 
+    @unstable()
+    def bin_intervals(
+        self,
+        intervals: Sequence[Any] | Series | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+        right_closed: bool = False,
+    ) -> Series:
+        """
+        Bin values into discrete intervals delimited by breakpoints.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        intervals
+            Strictly ascending breakpoints, or a positive integer giving the number of
+            equal-width bins over `[min, max]`. Explicit breakpoints may have any
+            orderable data type; an integer requires numeric input.
+        labels
+            One label per bin, or `False` to return the integer bin index.
+        include_intervals
+            Return a struct with fields `bin`, `left`, and `right`. The first bin's left
+            and last bin's right boundary are null.
+        right_closed
+            Use right-closed `(left, right]` rather than left-closed `[left, right)`
+            bins.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Enum`, or :class:`UInt32` if `labels`
+            is `False`, or :class:`Struct` if `include_intervals` is set.
+
+        Notes
+        -----
+        Explicit breakpoints make this elementwise. An integer derives breakpoints from
+        the data, so bins are computed per group in group and window contexts. Reported
+        boundaries use the data type in which values were compared.
+
+        See Also
+        --------
+        bin_ranks
+        bin_quantiles
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", [-2, -1, 0, 1, 2])
+        >>> s.bin_intervals([-1, 1], labels=["a", "b", "c"])
+        shape: (5,)
+        Series: 'foo' [enum]
+        [
+            "a"
+            "b"
+            "b"
+            "c"
+            "c"
+        ]
+        """
+
+    @unstable()
+    def bin_quantiles(
+        self,
+        quantiles: Sequence[float] | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+        right_closed: bool = False,
+    ) -> Series:
+        """
+        Bin values into discrete intervals delimited by quantiles of the data.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        quantiles
+            Strictly ascending quantiles in `[0, 1]`, or a positive integer giving the
+            number of bins. Input must be numeric. For quantile `q`, the value of the
+            breakpoint is the sorted value at `floor(q * (len - 1))`.
+        labels
+            One label per bin, or `False` to return the integer bin index.
+        include_intervals
+            Return a struct with fields `bin`, `left`, and `right`. The first bin's left
+            and last bin's right boundary are null.
+        right_closed
+            Use right-closed `(left, right]` rather than left-closed `[left, right)`
+            bins.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Enum`, or :class:`UInt32` if `labels`
+            is `False`, or :class:`Struct` if `include_intervals` is set.
+
+        See Also
+        --------
+        bin_intervals
+        bin_ranks
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", [-2, -1, 0, 1, 2])
+        >>> s.bin_quantiles([0.25, 0.75], labels=["a", "b", "c"])
+        shape: (5,)
+        Series: 'foo' [enum]
+        [
+            "a"
+            "b"
+            "b"
+            "c"
+            "c"
+        ]
+        """
+
+    @unstable()
+    def bin_ranks(
+        self,
+        ranks: Sequence[float] | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+    ) -> Series:
+        """
+        Bin values by their position in sorted order.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        ranks
+            Strictly ascending cumulative fractions in `[0, 1]`, or a positive integer
+            giving the number of near-equal-sized bins. For an integer, earlier bins
+            receive any remainder.
+        labels
+            One label per bin, or `False` to return the integer bin index.
+        include_intervals
+            Return a struct with fields `bin`, `left`, and `right`. Boundaries are input
+            values, not ranks; the first bin's left and last bin's right boundary are
+            null.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Enum`, or :class:`UInt32` if `labels`
+            is `False`, or :class:`Struct` if `include_intervals` is set.
+
+        Notes
+        -----
+        Membership is positional, so equal values may be split across adjacent bins in
+        input order. Bins are computed per group in group and window contexts.
+
+        See Also
+        --------
+        bin_intervals
+        bin_quantiles
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", [10, 20, 30, 40])
+        >>> s.bin_ranks(2, labels=["low", "high"])
+        shape: (4,)
+        Series: 'foo' [enum]
+        [
+            "low"
+            "low"
+            "high"
+            "high"
+        ]
+        """
+
     def rle(self) -> Series:
         """
         Compress the Series data using run-length encoding.
