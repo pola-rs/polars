@@ -94,8 +94,12 @@ struct Statistics {
     bandit_tt_sum: f64,
     bandit_rt_sum: f64,
 
+    // Context exploration attempts.
     bandit_explore_weight: f64,
     bandit_explore_success: f64,
+    
+    // Number of unspills that weren't due to prefetching.
+    bandit_non_prefetch_unspill_weight: f64,
 
     // Stats of currently active spills. We prefer integers here for accuracy,
     // but have to use floats for the bigger accumulators. Those are only used
@@ -201,10 +205,15 @@ impl SpillContextStatistics {
         spill_time_ns: u64,
         spilled_start: Instant,
         unspill_start: Instant,
+        prefetch: bool,
     ) {
         let mut stats = self.stats.lock().unwrap();
         let now = Instant::now();
         stats.step_time(now); // Important: step time before mutating.
+        
+        if !prefetch {
+            stats.bandit_non_prefetch_unspill_weight += 1.0;
+        }
 
         let mean_b_before = stats.active_spills_bytes as f64 / stats.active_spills as f64;
         let mean_r_before = stats.active_spills_bytes_ns as f64
@@ -293,6 +302,8 @@ impl Statistics {
 
         self.bandit_explore_success *= decay_factor;
         self.bandit_explore_weight *= decay_factor;
+        
+        self.bandit_non_prefetch_unspill_weight *= decay_factor;
 
         self.last_update = now;
     }
@@ -428,6 +439,8 @@ impl Default for Statistics {
 
             bandit_explore_weight: 0.0,
             bandit_explore_success: 0.0,
+
+            bandit_non_prefetch_unspill_weight: 0.0,
 
             active_spills: 0,
             active_spills_io_time_ns: 0,

@@ -30,6 +30,7 @@ pub struct MemoryManager {
     finding_spill_lock: AsyncMutex<()>,
     spill_semaphore: Arc<AsyncSemaphore>,
     est_spill_in_progress: AtomicU64,
+    spills_exist: AtomicBool,
 }
 
 impl MemoryManager {
@@ -39,6 +40,7 @@ impl MemoryManager {
             finding_spill_lock: AsyncMutex::new(()),
             spill_semaphore: Arc::new(AsyncSemaphore::new(MAX_PARALLEL_SPILL_TASKS)),
             est_spill_in_progress: AtomicU64::new(0),
+            spills_exist: AtomicBool::new(false),
         }
     }
 
@@ -46,6 +48,15 @@ impl MemoryManager {
         let usage = crate::estimate_memory_usage();
         let likely_dealt_with = self.est_spill_in_progress.load(Ordering::Relaxed);
         usage.saturating_sub(likely_dealt_with) > config().ooc_memory_budget_bytes()
+    }
+
+    fn should_prefetch(&self) -> bool {
+        if !self.spills_exist.load(Ordering::Acquire) {
+            return false;
+        }
+
+        let usage = crate::estimate_memory_usage();
+        usage < config().ooc_memory_prefetch_bytes()
     }
 
     fn clean_contexts(&self) {
@@ -62,6 +73,8 @@ impl MemoryManager {
     pub async fn spill(&self) {
         if self.should_spill() {
             self.do_spill().await
+        } else if self.should_prefetch() {
+            self.do_prefetch().await
         }
     }
 
@@ -69,6 +82,8 @@ impl MemoryManager {
     pub fn spill_blocking(&self) {
         if self.should_spill() {
             self.do_spill_blocking()
+        } else if self.should_prefetch() {
+            self.do_prefetch_blocking()
         }
     }
 
@@ -116,6 +131,8 @@ impl MemoryManager {
                             } else {
                                 ctx.0.reinsert(&spillable, reg_id, ctx.1);
                             }
+                            
+                            MEMORY_MANAGER.spills_exist.store(true, Ordering::Release);
                         },
                         Err(TrySpillError::Pinned) => {
                             ctx.0.reinsert(&spillable, reg_id, ctx.1);
@@ -131,6 +148,17 @@ impl MemoryManager {
                 });
             }
         }
+    }
+
+    #[inline(never)]
+    #[cold]
+    fn do_prefetch_blocking(&self) {
+        ASYNC.block_in_place_on(self.do_prefetch())
+    }
+
+    #[inline(never)]
+    #[cold]
+    async fn do_prefetch(&self) {
     }
 
     #[inline(never)]
