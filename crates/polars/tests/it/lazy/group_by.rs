@@ -459,6 +459,14 @@ fn test_group_by_null_group() -> PolarsResult<()> {
         .group_by([col("g")])
         .agg([col("flt").sum(), col("int").sum()])
         .collect()?;
-    panic!("{:?}", df);
+    let expected = df![
+        "g"=> [Option::<&str>::None],
+        "flt" => [2.0],
+        "int" => [2]]
+    .unwrap();
+    assert_eq!(
+        df.lazy().filter(col("g").is_null()).collect().unwrap(),
+        expected
+    );
     Ok(())
 }
