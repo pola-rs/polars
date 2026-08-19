@@ -33,15 +33,6 @@ def test_dtype_groups_deprecated() -> None:
     assert pl.Int8 in dtypes
 
 
-def test_type_aliases_deprecated() -> None:
-    with pytest.deprecated_call(
-        match=r"the `polars\.type_aliases` module was deprecated in version 1.0.0."
-    ):
-        from polars.type_aliases import PolarsDataType
-
-        _ = PolarsDataType
-
-
 def test_import_all() -> None:
     exec("from polars import *")
 

@@ -35,7 +35,6 @@ from polars._typing import (
 )
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
-    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.expired import (
@@ -109,7 +108,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyLazyFrame
 
 if TYPE_CHECKING:
-    import sys
     from builtins import slice as slice_
     from collections.abc import Awaitable, Callable, Iterator
     from io import IOBase
@@ -170,16 +168,6 @@ if TYPE_CHECKING:
     from polars.io.cloud import CredentialProviderFunction
     from polars.lazyframe.in_process import InProcessQuery
     from polars.lazyframe.query_result import QueryResult
-
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -6010,19 +5998,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = "'left_on' requires corresponding 'right_on'"
             raise ValueError(msg)
 
-        if how == "outer":
-            how = "full"
-            issue_deprecation_warning(
-                "use of `how='outer'` should be replaced with `how='full'`.",
-                version="0.20.29",
-            )
+        if how == "outer":  # type: ignore[comparison-overlap]
+            msg = "use of `how='outer'` should be replaced with `how='full'`."
+            raise ValueError(msg)
         elif how == "outer_coalesce":  # type: ignore[comparison-overlap]
-            coalesce = True
-            how = "full"
-            issue_deprecation_warning(
-                "use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
-                version="0.20.29",
-            )
+            msg = "use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`."
+            raise ValueError(msg)
         elif how == "cross":
             if uses_on or uses_lr_on:
                 msg = "cross join should not pass join keys"
@@ -6428,72 +6409,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.with_columns_seq(pyexprs))
-
-    @deprecated(
-        "`LazyFrame.with_context` is deprecated; "
-        "use `pl.concat(..., how='horizontal')` instead."
-    )
-    def with_context(self, other: Self | list[Self]) -> LazyFrame:
-        """
-        Add an external context to the computation graph.
-
-        .. deprecated:: 1.0.0
-            Use :func:`concat` instead, with `how='horizontal'`
-
-        This allows expressions to also access columns from DataFrames
-        that are not part of this one.
-
-        Parameters
-        ----------
-        other
-            Lazy DataFrame to join with.
-
-        Examples
-        --------
-        >>> lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "c", None]})
-        >>> lf_other = pl.LazyFrame({"c": ["foo", "ham"]})
-        >>> lf.with_context(lf_other).select(  # doctest: +SKIP
-        ...     pl.col("b") + pl.col("c").first()
-        ... ).collect()
-        shape: (3, 1)
-        ┌──────┐
-        │ b    │
-        │ ---  │
-        │ str  │
-        ╞══════╡
-        │ afoo │
-        │ cfoo │
-        │ null │
-        └──────┘
-
-        Fill nulls with the median from another DataFrame:
-
-        >>> train_lf = pl.LazyFrame(
-        ...     {"feature_0": [-1.0, 0, 1], "feature_1": [-1.0, 0, 1]}
-        ... )
-        >>> test_lf = pl.LazyFrame(
-        ...     {"feature_0": [-1.0, None, 1], "feature_1": [-1.0, 0, 1]}
-        ... )
-        >>> test_lf.with_context(  # doctest: +SKIP
-        ...     train_lf.select(pl.all().name.suffix("_train"))
-        ... ).select(
-        ...     pl.col("feature_0").fill_null(pl.col("feature_0_train").median())
-        ... ).collect()
-        shape: (3, 1)
-        ┌───────────┐
-        │ feature_0 │
-        │ ---       │
-        │ f64       │
-        ╞═══════════╡
-        │ -1.0      │
-        │ 0.0       │
-        │ 1.0       │
-        └───────────┘
-        """
-        if not isinstance(other, list):
-            other = [other]
-
-        return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
     def drop(
         self,
@@ -8842,12 +8757,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┘
         """
         require_same_type(self, other)
-        if how in ("outer", "outer_coalesce"):
-            how = "full"
-            issue_deprecation_warning(
-                "use of `how='outer'` should be replaced with `how='full'`.",
-                version="0.20.29",
-            )
+
+        if how in {"outer", "outer_coalesce"}:  # type: ignore[comparison-overlap]
+            msg = f"use of `how='{how}'` should be replaced with `how='full'`."
+            raise ValueError(msg)
 
         if how not in ("left", "inner", "full"):
             msg = f"`how` must be one of {{'left', 'inner', 'full'}}; found {how!r}"
@@ -9461,6 +9374,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     "melt": "use `LazyFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
                     "profile": "It was designed for the in-memory engine and would give "
                     "misleading per-node timings under the streaming engine (now the default).",
+                    "with_context": "use `pl.concat(..., how='horizontal')` instead.",
                     "with_row_count": "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
                 },
                 version="2.0",

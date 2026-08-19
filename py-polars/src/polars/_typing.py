@@ -284,7 +284,7 @@ AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofS
 ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
-    "inner", "left", "right", "full", "semi", "anti", "cross", "outer"
+    "inner", "left", "right", "full", "semi", "anti", "cross"
 ]  # JoinType
 
 # The following have no equivalent on the Rust side

@@ -266,7 +266,6 @@ from polars.meta import (
     get_index_type,
     show_versions,
     thread_pool_size,
-    threadpool_size,
 )
 from polars.schema import Schema
 from polars.series import Series
@@ -500,7 +499,6 @@ __all__ = [
     "get_index_type",
     "show_versions",
     "thread_pool_size",
-    "threadpool_size",
     # polars.sql
     "SQLContext",
     "sql",
