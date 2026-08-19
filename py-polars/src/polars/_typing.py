@@ -284,7 +284,7 @@ AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofS
 ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
-    "inner", "left", "right", "full", "semi", "anti", "cross", "outer"
+    "inner", "left", "right", "full", "semi", "anti", "cross"
 ]  # JoinType
 JoinWhereStrategy: TypeAlias = Literal["inner", "left", "right"]  # JoinType
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
