@@ -15,6 +15,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
+    Literal,
     NoReturn,
     TypeVar,
 )
@@ -4890,6 +4891,68 @@ class Expr:
                 quantiles, labels, left_closed, allow_duplicates, include_breaks
             )
 
+        return wrap_expr(pyexpr)
+
+    @unstable()
+    def bin_intervals(
+        self,
+        intervals: Sequence[Any] | Series | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+        right_closed: bool = False,
+    ) -> Expr:
+        labels_arg = None if labels is False else list(labels)
+        if isinstance(intervals, int):
+            pyexpr = self._pyexpr.bin_intervals_uniform(
+                intervals, labels_arg, include_intervals, right_closed
+            )
+        else:
+            breaks = (
+                intervals
+                if isinstance(intervals, pl.Series)
+                else pl.Series("breaks", intervals)
+            )
+            pyexpr = self._pyexpr.bin_intervals(
+                breaks._s, labels_arg, include_intervals, right_closed
+            )
+        return wrap_expr(pyexpr)
+
+    @unstable()
+    def bin_quantiles(
+        self,
+        quantiles: Sequence[float] | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+        right_closed: bool = False,
+    ) -> Expr:
+        labels_arg = None if labels is False else list(labels)
+        if isinstance(quantiles, int):
+            pyexpr = self._pyexpr.bin_quantiles_uniform(
+                quantiles, labels_arg, include_intervals, right_closed
+            )
+        else:
+            pyexpr = self._pyexpr.bin_quantiles(
+                list(quantiles), labels_arg, include_intervals, right_closed
+            )
+        return wrap_expr(pyexpr)
+
+    @unstable()
+    def bin_ranks(
+        self,
+        ranks: Sequence[float] | int,
+        *,
+        labels: Sequence[str_] | Literal[False],
+        include_intervals: bool = False,
+    ) -> Expr:
+        labels_arg = None if labels is False else list(labels)
+        if isinstance(ranks, int):
+            pyexpr = self._pyexpr.bin_ranks_uniform(
+                ranks, labels_arg, include_intervals
+            )
+        else:
+            pyexpr = self._pyexpr.bin_ranks(list(ranks), labels_arg, include_intervals)
         return wrap_expr(pyexpr)
 
     def rle(self) -> Expr:
