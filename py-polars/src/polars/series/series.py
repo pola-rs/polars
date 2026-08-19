@@ -2824,16 +2824,18 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("foo", [-2, -1, 0, 1, 2])
-        >>> s.bin_quantiles([0.25, 0.75], labels=["a", "b", "c"])
-        shape: (5,)
-        Series: 'foo' [enum]
+        Unlike :meth:`bin_ranks`, equal values remain in the same bin. Here, the first
+        bin is empty because the first breakpoint is `1`.
+
+        >>> s = pl.Series("x", [1, 1, 2, 2])
+        >>> s.bin_quantiles([0.25, 0.75], labels=["low", "mid", "high"])
+        shape: (4,)
+        Series: 'x' [enum]
         [
-            "a"
-            "b"
-            "b"
-            "c"
-            "c"
+            "mid"
+            "mid"
+            "high"
+            "high"
         ]
         """
 
@@ -2883,14 +2885,17 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("foo", [10, 20, 30, 40])
-        >>> s.bin_ranks(2, labels=["low", "high"])
+        Unlike :meth:`bin_quantiles`, rank bins may split equal values. Here, the bins
+        contain 25%, 50%, and 25% of the values.
+
+        >>> s = pl.Series("x", [1, 1, 2, 2])
+        >>> s.bin_ranks([0.25, 0.75], labels=["low", "mid", "high"])
         shape: (4,)
-        Series: 'foo' [enum]
+        Series: 'x' [enum]
         [
             "low"
-            "low"
-            "high"
+            "mid"
+            "mid"
             "high"
         ]
         """

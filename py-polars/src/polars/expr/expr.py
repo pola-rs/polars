@@ -5032,23 +5032,25 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [-2, -1, 0, 1, 2]})
+        Unlike :meth:`bin_ranks`, equal values remain in the same bin. Here, the first
+        bin is empty because the first breakpoint is `1`.
+
+        >>> df = pl.DataFrame({"x": [1, 1, 2, 2]})
         >>> df.with_columns(
-        ...     pl.col("foo")
-        ...     .bin_quantiles([0.25, 0.75], labels=["a", "b", "c"])
+        ...     pl.col("x")
+        ...     .bin_quantiles([0.25, 0.75], labels=["low", "mid", "high"])
         ...     .alias("bin")
         ... )
-        shape: (5, 2)
+        shape: (4, 2)
         ┌─────┬──────┐
-        │ foo ┆ bin  │
+        │ x   ┆ bin  │
         │ --- ┆ ---  │
         │ i64 ┆ enum │
         ╞═════╪══════╡
-        │ -2  ┆ a    │
-        │ -1  ┆ b    │
-        │ 0   ┆ b    │
-        │ 1   ┆ c    │
-        │ 2   ┆ c    │
+        │ 1   ┆ mid  │
+        │ 1   ┆ mid  │
+        │ 2   ┆ high │
+        │ 2   ┆ high │
         └─────┴──────┘
         """
         labels_arg = None if labels is False else list(labels)
@@ -5110,23 +5112,26 @@ class Expr:
 
         Examples
         --------
-        Split into a bottom 20%, a middle 30% and 30%, and a top 20%.
+        Unlike :meth:`bin_quantiles`, rank bins may split equal values. Here, the bins
+        contain 25%, 50%, and 25% of the values.
 
-        >>> df = pl.DataFrame({"foo": list(range(10))})
+        >>> df = pl.DataFrame({"x": [1, 1, 2, 2]})
         >>> df.with_columns(
-        ...     pl.col("foo").bin_ranks([0.2, 0.5, 0.8], labels=False).alias("bin")
-        ... ).group_by("bin").len().sort("bin")
+        ...     pl.col("x")
+        ...     .bin_ranks([0.25, 0.75], labels=["low", "mid", "high"])
+        ...     .alias("bin")
+        ... )
         shape: (4, 2)
-        ┌─────┬─────┐
-        │ bin ┆ len │
-        │ --- ┆ --- │
-        │ u32 ┆ u32 │
-        ╞═════╪═════╡
-        │ 0   ┆ 2   │
-        │ 1   ┆ 3   │
-        │ 2   ┆ 3   │
-        │ 3   ┆ 2   │
-        └─────┴─────┘
+        ┌─────┬──────┐
+        │ x   ┆ bin  │
+        │ --- ┆ ---  │
+        │ i64 ┆ enum │
+        ╞═════╪══════╡
+        │ 1   ┆ low  │
+        │ 1   ┆ mid  │
+        │ 2   ┆ mid  │
+        │ 2   ┆ high │
+        └─────┴──────┘
         """
         labels_arg = None if labels is False else list(labels)
         if isinstance(ranks, int):
