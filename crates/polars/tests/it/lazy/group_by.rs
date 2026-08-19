@@ -454,10 +454,11 @@ fn test_group_by_null_group() -> PolarsResult<()> {
         s.cast(&DataType::from_categories(Categories::global()))
     })?;
 
-    let _ = df
+    let df = df
         .lazy()
         .group_by([col("g")])
         .agg([col("flt").sum(), col("int").sum()])
         .collect()?;
+    panic!("{:?}", df);
     Ok(())
 }

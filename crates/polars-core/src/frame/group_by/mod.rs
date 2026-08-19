@@ -103,10 +103,10 @@ impl DataFrame {
     ///
     /// ```
     /// use polars_core::prelude::*;
-    /// fn group_by_sum(df: &DataFrame) -> PolarsResult<DataFrame> {
+    /// fn group_by_example(df: &DataFrame) -> PolarsResult<DataFrame> {
     ///     df.group_by(["column_name"])?
     ///     .select(["agg_column_name"])
-    ///     .sum()
+    ///     .groups()
     /// }
     /// ```
     pub fn group_by<I, S>(&self, by: I) -> PolarsResult<GroupBy<'_>>
