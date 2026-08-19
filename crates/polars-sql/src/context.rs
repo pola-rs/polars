@@ -991,11 +991,21 @@ impl SQLContext {
             if with.recursive {
                 polars_bail!(SQLInterface: "recursive CTEs are not supported")
             }
+            let mut reference_counts = PlHashMap::<String, usize>::new();
+            let mut collector = TableIdentifierCollector::default();
+            let _ = query.visit(&mut collector);
+            for name in collector.tables {
+                *reference_counts.entry(name).or_insert(0) += 1;
+            }
+
             for cte in &with.cte_tables {
                 // Note: isolate CTE execution to prevent context state leakage
                 let cte_name = cte.alias.name.value.clone();
                 let mut lf = self.execute_isolated(|ctx| ctx.execute_query(&cte.query))?;
                 lf = self.rename_columns_from_table_alias(lf, &cte.alias)?;
+                if reference_counts.get(&cte_name).copied().unwrap_or(0) > 1 {
+                    lf = lf.cache();
+                }
                 self.register_cte(&cte_name, lf);
             }
         }
