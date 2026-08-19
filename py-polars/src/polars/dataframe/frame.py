@@ -1875,6 +1875,15 @@ class DataFrame:
         """
         return self.rows(named=True)
 
+    @removed_parameters(
+        RemovedParameter(
+            name="use_pyarrow",
+            deprecated_in="0.20.28",
+            removed_in="2.0",
+            hint="Polars now uses its native engine for conversion to NumPy by default."
+            " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
+        )
+    )
     def to_numpy(
         self,
         *,
@@ -1882,7 +1891,6 @@ class DataFrame:
         writable: bool = False,
         allow_copy: bool = True,
         structured: bool = False,
-        use_pyarrow: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this DataFrame to a NumPy ndarray.
@@ -1918,15 +1926,6 @@ class DataFrame:
             returned instead.
 
             .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
-
-        use_pyarrow
-            Use `pyarrow.Array.to_numpy
-            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-
-            function for the conversion to NumPy if necessary.
-
-            .. deprecated:: 0.20.28
-                Polars now uses its native engine by default for conversion to NumPy.
 
         Examples
         --------
@@ -1992,13 +1991,6 @@ class DataFrame:
         array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
               dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
         """  # noqa: W505
-        if use_pyarrow is not None:
-            issue_deprecation_warning(
-                "the `use_pyarrow` parameter for `DataFrame.to_numpy` is deprecated."
-                " Polars now uses its native engine by default for conversion to NumPy.",
-                version="0.20.28",
-            )
-
         if structured:
             if not allow_copy and not self.is_empty():
                 msg = "copy not allowed: cannot create structured array without copying data"
@@ -2011,10 +2003,9 @@ class DataFrame:
                     arr = s.struct.unnest().to_numpy(
                         structured=True,
                         allow_copy=True,
-                        use_pyarrow=use_pyarrow,
                     )
                 else:
-                    arr = s.to_numpy(use_pyarrow=use_pyarrow)
+                    arr = s.to_numpy()
 
                 if s.dtype == String and not s.has_nulls():
                     arr = arr.astype(str, copy=False)
