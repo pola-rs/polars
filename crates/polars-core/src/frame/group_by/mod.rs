@@ -415,30 +415,6 @@ impl<'a> GroupBy<'a> {
         }
     }
 
-    /// Apply a closure over the groups as a new [`DataFrame`] in parallel.
-    #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
-    pub fn par_apply<F>(&self, f: F) -> PolarsResult<DataFrame>
-    where
-        F: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
-    {
-        polars_ensure!(self.df.height() > 0, ComputeError: "cannot group_by + apply on empty 'DataFrame'");
-        let df = self.prepare_apply()?;
-        let dfs = self
-            .get_groups()
-            .par_iter()
-            .map(|g| {
-                // SAFETY:
-                // groups are in bounds
-                let sub_df = unsafe { take_df(&df, g) };
-                f(sub_df)
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
-
-        let mut df = accumulate_dataframes_vertical(dfs)?;
-        df.rechunk_mut_par();
-        Ok(df)
-    }
-
     /// Apply a closure over the groups as a new [`DataFrame`].
     pub fn apply<F>(&self, f: F) -> PolarsResult<DataFrame>
     where
