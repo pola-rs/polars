@@ -109,8 +109,8 @@ const DEFAULT_NUMA_AWARE: bool = false;
 const NUMA_MOCK_REGIONS: &str = "POLARS_NUMA_MOCK_REGIONS";
 const DEFAULT_NUMA_MOCK_REGIONS: u64 = 0;
 
-const DISABLE_RATE_LIMIT: &str = "POLARS_DISABLE_RATE_LIMIT";
-const DEFAULT_DISABLE_RATE_LIMIT: bool = false;
+const DISABLE_HTTP_RATE_LIMIT: &str = "POLARS_DISABLE_HTTP_RATE_LIMIT";
+const DEFAULT_DISABLE_HTTP_RATE_LIMIT: bool = false;
 
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
@@ -165,7 +165,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     DNS_LOG_THRESHOLD_MS,
     NUMA_AWARE,
     NUMA_MOCK_REGIONS,
-    DISABLE_RATE_LIMIT,
+    DISABLE_HTTP_RATE_LIMIT,
 ];
 
 pub struct Config {
@@ -198,7 +198,7 @@ pub struct Config {
     dns_log_threshold_ms: AtomicU64,
     numa_aware: AtomicBool,
     numa_mock_regions: AtomicU64,
-    disable_rate_limit: AtomicBool,
+    disable_http_rate_limit: AtomicBool,
 }
 
 impl Config {
@@ -243,7 +243,7 @@ impl Config {
             dns_log_threshold_ms: AtomicU64::new(DNS_LOG_THRESHOLD_DISABLED),
             numa_aware: AtomicBool::new(DEFAULT_NUMA_AWARE),
             numa_mock_regions: AtomicU64::new(DEFAULT_NUMA_MOCK_REGIONS),
-            disable_rate_limit: AtomicBool::new(DEFAULT_DISABLE_RATE_LIMIT),
+            disable_http_rate_limit: AtomicBool::new(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
         };
         cfg.reload_env_vars();
         cfg
@@ -411,9 +411,9 @@ impl Config {
                     .unwrap_or(DEFAULT_NUMA_MOCK_REGIONS),
                 Ordering::Relaxed,
             ),
-            DISABLE_RATE_LIMIT => self.disable_rate_limit.store(
+            DISABLE_HTTP_RATE_LIMIT => self.disable_http_rate_limit.store(
                 val.and_then(|x| parse::parse_bool(var, x))
-                    .unwrap_or(DEFAULT_DISABLE_RATE_LIMIT),
+                    .unwrap_or(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
                 Ordering::Relaxed,
             ),
             _ => {
@@ -591,8 +591,8 @@ impl Config {
     }
 
     #[inline(always)]
-    pub fn disable_rate_limit(&self) -> bool {
-        self.disable_rate_limit.load(Ordering::Relaxed)
+    pub fn disable_http_rate_limit(&self) -> bool {
+        self.disable_http_rate_limit.load(Ordering::Relaxed)
     }
 }
 
