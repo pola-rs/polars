@@ -5,6 +5,8 @@ use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::cast::CastOptions;
+#[cfg(feature = "cutqcut")]
+use polars_plan::dsl::{BinMethod, BinOptions};
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
 use polars_plan::plans::{
     AExprSorted, ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir,
@@ -12,13 +14,15 @@ use polars_plan::plans::{
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedStr;
 
 use super::datatype::PyDataTypeExpr;
 use super::selector::PySelector;
 use crate::conversion::{Wrap, parse_fill_null_strategy};
 use crate::error::PyPolarsErr;
+use crate::prelude::strings_to_pl_smallstr;
 use crate::utils::EnterPolarsExt;
-use crate::{PyDataType, PyExpr};
+use crate::{PyDataType, PyExpr, PySeries};
 
 #[pymethods]
 impl PyExpr {
@@ -239,6 +243,131 @@ impl PyExpr {
                 allow_duplicates,
                 include_breaks,
             )
+            .into()
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (intervals, labels, include_intervals, right_closed))]
+    fn bin_intervals(
+        &self,
+        intervals: PySeries,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> Self {
+        let breaks = intervals.series.into_inner();
+        self.inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Intervals {
+                    breaks,
+                    right_closed,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into()
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (n_bins, labels, include_intervals, right_closed))]
+    fn bin_intervals_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::UniformIntervals {
+                    n_bins,
+                    right_closed,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into()
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (quantiles, labels, include_intervals, right_closed))]
+    fn bin_quantiles(
+        &self,
+        quantiles: Vec<f64>,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Quantiles {
+                    probs: quantiles,
+                    right_closed,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into()
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (n_bins, labels, include_intervals, right_closed))]
+    fn bin_quantiles_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+        right_closed: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::UniformQuantiles {
+                    n_bins,
+                    right_closed,
+                },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into()
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (ranks, labels, include_intervals))]
+    fn bin_ranks(
+        &self,
+        ranks: Vec<f64>,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::Ranks { fractions: ranks },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
+            .into()
+    }
+
+    #[cfg(feature = "cutqcut")]
+    #[pyo3(signature = (n_bins, labels, include_intervals))]
+    fn bin_ranks_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<PyBackedStr>>,
+        include_intervals: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .bin(BinOptions {
+                method: BinMethod::UniformRanks { n_bins },
+                labels: labels.map(strings_to_pl_smallstr),
+                include_intervals,
+            })
             .into()
     }
 

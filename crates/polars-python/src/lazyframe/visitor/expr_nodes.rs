@@ -9,6 +9,8 @@ use polars_ops::prelude::RankMethod;
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
 use polars_ops::series::{ClosedInterval, InterpolationMethod};
+#[cfg(feature = "cutqcut")]
+use polars_plan::dsl::BinMethod;
 use polars_plan::dsl::DateRangeArgs;
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
@@ -1996,6 +1998,63 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     include_breaks,
                 )
                     .into_py_any(py),
+                #[cfg(feature = "cutqcut")]
+                IRFunctionExpr::Bin(options) => {
+                    let labels = options
+                        .labels
+                        .as_ref()
+                        .map(|l| l.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+                    let include_intervals = options.include_intervals;
+                    match &options.method {
+                        BinMethod::Intervals { right_closed, .. } => (
+                            "bin_intervals",
+                            PySeries::new(options.method.breaks().unwrap().clone()),
+                            labels,
+                            include_intervals,
+                            right_closed,
+                        )
+                            .into_py_any(py),
+                        BinMethod::UniformIntervals {
+                            n_bins,
+                            right_closed,
+                        } => (
+                            "bin_intervals_uniform",
+                            n_bins,
+                            labels,
+                            include_intervals,
+                            right_closed,
+                        )
+                            .into_py_any(py),
+                        BinMethod::Quantiles {
+                            probs,
+                            right_closed,
+                        } => (
+                            "bin_quantiles",
+                            probs,
+                            labels,
+                            include_intervals,
+                            right_closed,
+                        )
+                            .into_py_any(py),
+                        BinMethod::UniformQuantiles {
+                            n_bins,
+                            right_closed,
+                        } => (
+                            "bin_quantiles_uniform",
+                            n_bins,
+                            labels,
+                            include_intervals,
+                            right_closed,
+                        )
+                            .into_py_any(py),
+                        BinMethod::Ranks { fractions } => {
+                            ("bin_ranks", fractions, labels, include_intervals).into_py_any(py)
+                        },
+                        BinMethod::UniformRanks { n_bins } => {
+                            ("bin_ranks_uniform", n_bins, labels, include_intervals).into_py_any(py)
+                        },
+                    }
+                },
                 #[cfg(feature = "rle")]
                 IRFunctionExpr::RLE => ("rle",).into_py_any(py),
                 #[cfg(feature = "rle")]
