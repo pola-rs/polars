@@ -489,7 +489,7 @@ def test_arr_dot_unsupported_inner_dtype(dtype: pl.DataType) -> None:
 
     with pytest.raises(
         InvalidOperationError,
-        match="supports inputs with an integer, Float32, or Float64 supertype",
+        match=r"arr\.dot does not support input dtypes",
     ):
         lf.select(pl.col("a").arr.dot("a")).collect_schema()
 

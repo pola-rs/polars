@@ -97,10 +97,9 @@ impl IRArrayFunction {
                 );
                 let inner_dtype = try_get_supertype(lhs_inner, rhs_inner)?;
                 polars_ensure!(
-                    inner_dtype.is_integer()
-                        || matches!(inner_dtype, DataType::Float32 | DataType::Float64),
+                    is_supported_array_dot_dtype(&inner_dtype),
                     InvalidOperation:
-                    "arr.dot supports inputs with an integer, Float32, or Float64 supertype, got {} and {}",
+                    "arr.dot does not support input dtypes {} and {} with supertype {inner_dtype}",
                     args[0].dtype(), args[1].dtype()
                 );
 

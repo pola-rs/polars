@@ -6,6 +6,12 @@ use polars_compute::arithmetic::pl_num::PlNumArithmetic;
 use polars_compute::sum::WrappingAdd;
 use polars_core::prelude::*;
 
+type ArrayDotKernel = fn(&ArrayChunked, &ArrayChunked, usize) -> PolarsResult<Series>;
+
+pub fn is_supported_array_dot_dtype(dtype: &DataType) -> bool {
+    array_dot_kernel(dtype).is_some()
+}
+
 #[inline]
 fn multiply_then_add<T>(acc: T::Sum, lhs: T, rhs: T) -> T::Sum
 where
@@ -99,6 +105,27 @@ where
     Series::try_from((lhs.name().clone(), vec![Box::new(output) as ArrayRef]))
 }
 
+fn array_dot_kernel(dtype: &DataType) -> Option<ArrayDotKernel> {
+    let kernel = match dtype {
+        DataType::Int8 => dot_primitive::<i8>,
+        DataType::Int16 => dot_primitive::<i16>,
+        DataType::Int32 => dot_primitive::<i32>,
+        DataType::Int64 => dot_primitive::<i64>,
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => dot_primitive::<i128>,
+        DataType::UInt8 => dot_primitive::<u8>,
+        DataType::UInt16 => dot_primitive::<u16>,
+        DataType::UInt32 => dot_primitive::<u32>,
+        DataType::UInt64 => dot_primitive::<u64>,
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => dot_primitive::<u128>,
+        DataType::Float32 => dot_primitive::<f32>,
+        DataType::Float64 => dot_primitive::<f64>,
+        _ => return None,
+    };
+    Some(kernel)
+}
+
 pub(super) fn array_dot(lhs: &ArrayChunked, rhs: &ArrayChunked) -> PolarsResult<Series> {
     let (lhs_inner, lhs_width) = match lhs.dtype() {
         DataType::Array(inner, width) => (inner.as_ref(), *width),
@@ -117,10 +144,12 @@ pub(super) fn array_dot(lhs: &ArrayChunked, rhs: &ArrayChunked) -> PolarsResult<
         lhs_inner, rhs_inner,
         "arr.dot requires matching inner dtypes, got {lhs_inner} and {rhs_inner}"
     );
-    assert!(
-        lhs_inner.is_integer() || matches!(lhs_inner, DataType::Float32 | DataType::Float64),
-        "arr.dot supports integer, Float32, and Float64 arrays, got array[{lhs_inner}, {lhs_width}]"
-    );
+    let Some(kernel) = array_dot_kernel(lhs_inner) else {
+        polars_bail!(
+            InvalidOperation:
+            "arr.dot does not support inner dtype {lhs_inner}"
+        )
+    };
 
     let output_len = match (lhs.len(), rhs.len()) {
         (lhs_len, rhs_len) if lhs_len == rhs_len => lhs_len,
@@ -139,21 +168,5 @@ pub(super) fn array_dot(lhs: &ArrayChunked, rhs: &ArrayChunked) -> PolarsResult<
         ));
     }
 
-    match lhs_inner {
-        DataType::Int8 => dot_primitive::<i8>(lhs, rhs, output_len),
-        DataType::Int16 => dot_primitive::<i16>(lhs, rhs, output_len),
-        DataType::Int32 => dot_primitive::<i32>(lhs, rhs, output_len),
-        DataType::Int64 => dot_primitive::<i64>(lhs, rhs, output_len),
-        #[cfg(feature = "dtype-i128")]
-        DataType::Int128 => dot_primitive::<i128>(lhs, rhs, output_len),
-        DataType::UInt8 => dot_primitive::<u8>(lhs, rhs, output_len),
-        DataType::UInt16 => dot_primitive::<u16>(lhs, rhs, output_len),
-        DataType::UInt32 => dot_primitive::<u32>(lhs, rhs, output_len),
-        DataType::UInt64 => dot_primitive::<u64>(lhs, rhs, output_len),
-        #[cfg(feature = "dtype-u128")]
-        DataType::UInt128 => dot_primitive::<u128>(lhs, rhs, output_len),
-        DataType::Float32 => dot_primitive::<f32>(lhs, rhs, output_len),
-        DataType::Float64 => dot_primitive::<f64>(lhs, rhs, output_len),
-        _ => unreachable!(),
-    }
+    kernel(lhs, rhs, output_len)
 }
