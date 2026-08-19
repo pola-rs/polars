@@ -193,22 +193,6 @@ pub fn lower_ir(
     let ir_node = ir_arena.get(node);
     let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
 
-    // IR::ExtContext fallback. This must dispatch the IR node directly on top of the ExtContext
-    // into the in-memory engine, as that performs the selection of columns.
-    if ir_node
-        .inputs()
-        .any(|node| matches!(ir_arena.get(node), IR::ExtContext { .. }))
-    {
-        return lower_subtree_to_inmem_engine(
-            node,
-            output_schema,
-            ir_arena,
-            expr_arena,
-            phys_sm,
-            ctx,
-        );
-    }
-
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
             disable_morsel_split.get_or_insert(true);
@@ -1665,7 +1649,6 @@ pub fn lower_ir(
 
             return Ok(stream);
         },
-        IR::ExtContext { .. } => panic!("Cannot execute IR::ExtContext as the root node."),
         IR::UnoptimizedDispatch {
             inputs,
             arg_map,

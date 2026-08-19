@@ -53,5 +53,4 @@ Manipulation/selection
     LazyFrame.update
     LazyFrame.with_columns
     LazyFrame.with_columns_seq
-    LazyFrame.with_context
     LazyFrame.with_row_index
