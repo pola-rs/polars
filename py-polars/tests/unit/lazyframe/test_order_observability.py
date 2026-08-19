@@ -828,3 +828,9 @@ def test_order_simplify_expr_slice_28028() -> None:
     assert ".slice(" in plan
 
     assert q.collect().item() == 2
+
+
+def test_order_project_invalidates_suborder_28831() -> None:
+    lf = pl.LazyFrame({"a": [1, 1, 2, 2], "b": [5, 10, 2, 4]})
+    out = lf.set_sorted("a", "b").select(pl.col("b").max()).collect().item()
+    assert out == 10

@@ -190,11 +190,13 @@ def test_uncorrelated_subquery_in_having_still_works() -> None:
 
 
 def _decorrelation_count(ctx: pl.SQLContext[pl.LazyFrame], query: str) -> int:
-    """Count decorrelation pipelines; each materialises one unique `..._idx` column."""
+    """Count decorrelation pipelines by their unique `__POLARS_CORR_*` id.
+
+    Equality correlation lowers to a `GROUP BY` + join with no `_idx` column, so the
+    pipeline id itself (not a strategy-specific column suffix) is what's counted.
+    """
     plan = ctx.execute(query).explain()
-    return len(
-        {tok for tok in re.findall(r"__POLARS_CORR_\w+", plan) if tok.endswith("_idx")}
-    )
+    return len(set(re.findall(r"__POLARS_CORR.*?(POLARS_TMP_\d+)_", plan)))
 
 
 def test_repeated_correlated_subquery_is_decorrelated_once() -> None:
