@@ -6,6 +6,7 @@ import pytest
 from hypothesis import given, settings
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
 from polars.testing.parametric import (
     column,
     dataframes,
@@ -170,12 +171,10 @@ def test_dataframes_columns(lf: pl.LazyFrame) -> None:
 
 
 @given(st.data())
-def test_allow_infinities_deprecated(data: st.DataObject) -> None:
-    with pytest.deprecated_call():
-        strategy = series(dtype=pl.Float64, allow_infinities=False)
-        s = data.draw(strategy)
-
-    assert all(v not in (float("inf"), float("-inf")) for v in s)
+@settings(max_examples=1)
+def test_allow_infinities_removed(data: st.DataObject) -> None:
+    with pytest.raises(ArgumentRemovedError):
+        series(dtype=pl.Float64, allow_infinities=False)
 
 
 @given(
@@ -290,7 +289,5 @@ def test_dataframes_allowed_dtypes_integer_cols(df: pl.DataFrame) -> None:
 @given(st.data())
 @settings(max_examples=1)
 def test_series_chunked_deprecated(data: st.DataObject) -> None:
-    with pytest.deprecated_call():
-        data.draw(series(chunked=True))
-    with pytest.deprecated_call():
-        data.draw(dataframes(chunked=True))
+    data.draw(series(chunked=True))
+    data.draw(dataframes(chunked=True))
