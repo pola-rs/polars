@@ -254,19 +254,22 @@ impl PyExpr {
         labels: Option<Vec<PyBackedStr>>,
         include_intervals: bool,
         right_closed: bool,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let breaks = intervals.series.into_inner();
-        self.inner
+        Ok(self
+            .inner
             .clone()
             .bin(BinOptions {
                 method: BinMethod::Intervals {
-                    spec: IntervalSpec::Breaks(breaks),
+                    spec: IntervalSpec::from_breaks(breaks)
+                        .context("bin_intervals")
+                        .map_err(PyPolarsErr::from)?,
                     right_closed,
                 },
                 labels: labels.map(strings_to_pl_smallstr),
                 include_intervals,
             })
-            .into()
+            .into())
     }
 
     #[cfg(feature = "cutqcut")]
@@ -277,18 +280,21 @@ impl PyExpr {
         labels: Option<Vec<PyBackedStr>>,
         include_intervals: bool,
         right_closed: bool,
-    ) -> Self {
-        self.inner
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
             .clone()
             .bin(BinOptions {
                 method: BinMethod::Intervals {
-                    spec: IntervalSpec::Count(n_bins),
+                    spec: IntervalSpec::from_count(n_bins)
+                        .context("bin_intervals")
+                        .map_err(PyPolarsErr::from)?,
                     right_closed,
                 },
                 labels: labels.map(strings_to_pl_smallstr),
                 include_intervals,
             })
-            .into()
+            .into())
     }
 
     #[cfg(feature = "cutqcut")]
@@ -299,18 +305,21 @@ impl PyExpr {
         labels: Option<Vec<PyBackedStr>>,
         include_intervals: bool,
         right_closed: bool,
-    ) -> Self {
-        self.inner
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
             .clone()
             .bin(BinOptions {
                 method: BinMethod::Quantiles {
-                    spec: FractionSpec::Explicit(quantiles),
+                    spec: FractionSpec::from_fractions(quantiles)
+                        .context("bin_quantiles")
+                        .map_err(PyPolarsErr::from)?,
                     right_closed,
                 },
                 labels: labels.map(strings_to_pl_smallstr),
                 include_intervals,
             })
-            .into()
+            .into())
     }
 
     #[cfg(feature = "cutqcut")]
@@ -321,18 +330,21 @@ impl PyExpr {
         labels: Option<Vec<PyBackedStr>>,
         include_intervals: bool,
         right_closed: bool,
-    ) -> Self {
-        self.inner
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
             .clone()
             .bin(BinOptions {
                 method: BinMethod::Quantiles {
-                    spec: FractionSpec::Count(n_bins),
+                    spec: FractionSpec::from_count(n_bins)
+                        .context("bin_quantiles")
+                        .map_err(PyPolarsErr::from)?,
                     right_closed,
                 },
                 labels: labels.map(strings_to_pl_smallstr),
                 include_intervals,
             })
-            .into()
+            .into())
     }
 
     #[cfg(feature = "cutqcut")]
@@ -342,17 +354,20 @@ impl PyExpr {
         ranks: Vec<f64>,
         labels: Option<Vec<PyBackedStr>>,
         include_intervals: bool,
-    ) -> Self {
-        self.inner
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
             .clone()
             .bin(BinOptions {
                 method: BinMethod::Ranks {
-                    spec: FractionSpec::Explicit(ranks),
+                    spec: FractionSpec::from_fractions(ranks)
+                        .context("bin_ranks")
+                        .map_err(PyPolarsErr::from)?,
                 },
                 labels: labels.map(strings_to_pl_smallstr),
                 include_intervals,
             })
-            .into()
+            .into())
     }
 
     #[cfg(feature = "cutqcut")]
@@ -362,17 +377,20 @@ impl PyExpr {
         n_bins: usize,
         labels: Option<Vec<PyBackedStr>>,
         include_intervals: bool,
-    ) -> Self {
-        self.inner
+    ) -> PyResult<Self> {
+        Ok(self
+            .inner
             .clone()
             .bin(BinOptions {
                 method: BinMethod::Ranks {
-                    spec: FractionSpec::Count(n_bins),
+                    spec: FractionSpec::from_count(n_bins)
+                        .context("bin_ranks")
+                        .map_err(PyPolarsErr::from)?,
                 },
                 labels: labels.map(strings_to_pl_smallstr),
                 include_intervals,
             })
-            .into()
+            .into())
     }
 
     #[cfg(feature = "rle")]

@@ -2009,7 +2009,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         BinMethod::Intervals { spec, right_closed } => match spec {
                             IntervalSpec::Breaks(breaks) => (
                                 "bin_intervals",
-                                PySeries::new(breaks.clone()),
+                                PySeries::new((**breaks).clone()),
                                 labels,
                                 include_intervals,
                                 right_closed,
@@ -2017,7 +2017,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                                 .into_py_any(py),
                             IntervalSpec::Count(n_bins) => (
                                 "bin_intervals_uniform",
-                                n_bins,
+                                n_bins.get(),
                                 labels,
                                 include_intervals,
                                 right_closed,
@@ -2027,7 +2027,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         BinMethod::Quantiles { spec, right_closed } => match spec {
                             FractionSpec::Explicit(probs) => (
                                 "bin_quantiles",
-                                probs,
+                                probs.to_vec(),
                                 labels,
                                 include_intervals,
                                 right_closed,
@@ -2035,7 +2035,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                                 .into_py_any(py),
                             FractionSpec::Count(n_bins) => (
                                 "bin_quantiles_uniform",
-                                n_bins,
+                                n_bins.get(),
                                 labels,
                                 include_intervals,
                                 right_closed,
@@ -2044,10 +2044,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         },
                         BinMethod::Ranks { spec } => match spec {
                             FractionSpec::Explicit(fractions) => {
-                                ("bin_ranks", fractions, labels, include_intervals).into_py_any(py)
+                                ("bin_ranks", fractions.to_vec(), labels, include_intervals)
+                                    .into_py_any(py)
                             },
                             FractionSpec::Count(n_bins) => {
-                                ("bin_ranks_uniform", n_bins, labels, include_intervals)
+                                ("bin_ranks_uniform", n_bins.get(), labels, include_intervals)
                                     .into_py_any(py)
                             },
                         },

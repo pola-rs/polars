@@ -8,7 +8,7 @@ use super::expr_to_ir::ExprToIRContext;
 use super::*;
 use crate::constants::get_literal_name;
 #[cfg(feature = "cutqcut")]
-use crate::dsl::{BinMethod, FractionSpec, IntervalSpec};
+use crate::dsl::{BinMethod, IntervalSpec};
 use crate::dsl::{Expr, FunctionExpr};
 use crate::plans::conversion::dsl_to_ir::expr_to_ir::to_expr_irs;
 use crate::plans::{AExpr, IRFunctionExpr};
@@ -989,20 +989,11 @@ pub(super) fn convert_functions(
                     InvalidOperation: "`{}` requires an orderable input, got `{}`", name, input_dtype
                 );
             }
-            polars_ensure!(
-                options.method.n_bins() >= 1,
-                ComputeError: "`{}` requires at least one bin", name
-            );
-
             options.method = match options.method {
                 BinMethod::Intervals {
                     spec: IntervalSpec::Breaks(breaks),
                     right_closed,
                 } => {
-                    polars_ensure!(
-                        breaks.null_count() == 0,
-                        ComputeError: "`{}` breakpoints cannot contain nulls", name
-                    );
                     let breaks = if input_dtype.is_numeric() && breaks.dtype().is_numeric() {
                         let opts = (SuperTypeFlags::default()
                             & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
@@ -1022,29 +1013,9 @@ pub(super) fn convert_functions(
                         // Take care to not convert Enum to String
                         breaks.strict_cast(&input_dtype)?
                     };
-                    // It is possible that the type promotion has collapsed some breakpoints
-                    ensure_strictly_ascending(&breaks, name, "intervals")?;
                     BinMethod::Intervals {
-                        spec: IntervalSpec::Breaks(breaks),
+                        spec: IntervalSpec::from_breaks(breaks).context(name)?,
                         right_closed,
-                    }
-                },
-                BinMethod::Quantiles {
-                    spec: FractionSpec::Explicit(probs),
-                    right_closed,
-                } => {
-                    ensure_ascending_unit_interval(&probs, name, "quantiles")?;
-                    BinMethod::Quantiles {
-                        spec: FractionSpec::Explicit(probs),
-                        right_closed,
-                    }
-                },
-                BinMethod::Ranks {
-                    spec: FractionSpec::Explicit(fractions),
-                } => {
-                    ensure_ascending_unit_interval(&fractions, name, "ranks")?;
-                    BinMethod::Ranks {
-                        spec: FractionSpec::Explicit(fractions),
                     }
                 },
                 m => m,
@@ -1254,33 +1225,4 @@ pub(super) fn convert_functions(
         options,
     };
     Ok((ctx.arena.add(ae_function), output_name))
-}
-
-#[cfg(feature = "cutqcut")]
-fn ensure_strictly_ascending(s: &Series, name: &str, arg: &str) -> PolarsResult<()> {
-    let n = s.len();
-    if n < 2 {
-        return Ok(());
-    }
-    let ascending = s.slice(0, n - 1).lt(&s.slice(1, n - 1))?;
-    polars_ensure!(
-        ascending.all(),
-        ComputeError: "`{}` requires `{}` to be strictly ascending", name, arg
-    );
-    Ok(())
-}
-
-#[cfg(feature = "cutqcut")]
-fn ensure_ascending_unit_interval(xs: &[f64], name: &str, arg: &str) -> PolarsResult<()> {
-    for x in xs {
-        polars_ensure!(
-            (0.0..=1.0).contains(x),
-            ComputeError: "`{}` requires `{}` to be between 0.0 and 1.0, got {}", name, arg, x
-        );
-    }
-    polars_ensure!(
-        xs.is_sorted_by(|a, b| a < b),
-        ComputeError: "`{}` requires `{}` to be strictly ascending", name, arg
-    );
-    Ok(())
 }
