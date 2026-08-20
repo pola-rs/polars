@@ -168,6 +168,11 @@ pub enum Selector {
 
     Wildcard,
     Empty,
+
+    /// Select all columns not already selected by preceding expressions.
+    /// This is handled specially in `rewrite_projections` - the preceding output
+    /// columns are added to `ignored_columns` before expansion.
+    Remaining,
 }
 
 fn dtype_selector(
@@ -265,7 +270,9 @@ impl Selector {
                         .cloned(),
                 )
             },
-            Self::Wildcard => PlIndexSet::from_iter(
+            // Remaining behaves like Wildcard - the difference is that
+            // rewrite_projections adds prior output columns to ignored_columns
+            Self::Wildcard | Self::Remaining => PlIndexSet::from_iter(
                 schema
                     .iter_names()
                     .filter(|name| !ignored_columns.contains(*name))
@@ -304,7 +311,7 @@ impl Selector {
 
             Self::ByDType(dts) => Some(dts.clone()),
 
-            Self::ByName { .. } | Self::ByIndex { .. } | Self::Matches(_) => None,
+            Self::ByName { .. } | Self::ByIndex { .. } | Self::Matches(_) | Self::Remaining => None,
         }
     }
 
@@ -671,6 +678,7 @@ impl fmt::Display for Selector {
             },
             Self::Matches(s) => write!(f, "cs.matches(\"{s}\")"),
             Self::Wildcard => f.write_str("cs.all()"),
+            Self::Remaining => f.write_str("cs.remaining()"),
             Self::Empty => f.write_str("cs.empty()"),
         }
     }
