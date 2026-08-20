@@ -50,10 +50,14 @@ from polars._utils.convert import (
 )
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
-    deprecated,
     issue_deprecation_warning,
 )
-from polars._utils.expired import RemovedParameter, removed_parameters
+from polars._utils.expired import (
+    RemovedParameter,
+    getattr_fallback,
+    raise_for_removed_attributes,
+    removed_parameters,
+)
 from polars._utils.getitem import get_series_item_by_key
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -157,10 +161,6 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Self
 
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 elif BUILDING_SPHINX_DOCS:
     # note: we assign this way to work around an autocomplete issue in ipython/jedi
@@ -169,8 +169,29 @@ elif BUILDING_SPHINX_DOCS:
     current_module.property = sphinx_accessor
 
 
+class _Meta(type):
+    if not TYPE_CHECKING:
+
+        def __getattr__(cls, name: str) -> Any:
+            raise_for_removed_attributes(
+                cls,
+                name,
+                {
+                    "_import_from_c": "use `_import_arrow_from_c` instead. "
+                    "If you are using an extension, please compile it with the latest 'pyo3-polars'",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(
+                cls,
+                super(),
+                name,
+                meta=True,
+            )
+
+
 @expr_dispatch
-class Series:
+class Series(metaclass=_Meta):
     """
     A Series represents a single column in a Polars DataFrame.
 
@@ -470,15 +491,6 @@ class Series:
         series = cls.__new__(cls)
         series._s = pyseries
         return series
-
-    @classmethod
-    @deprecated(
-        "`_import_from_c` is deprecated; use `_import_arrow_from_c` instead. If "
-        "you are using an extension, please compile it with the latest 'pyo3-polars'"
-    )
-    def _import_from_c(cls, name: str_, pointers: list_[tuple[int, int]]) -> Self:
-        # `_import_from_c` was deprecated in 1.3
-        return cls._from_pyseries(PySeries._import_arrow_from_c(name, pointers))
 
     @classmethod
     def _import_arrow_from_c(cls, name: str_, pointers: list_[tuple[int, int]]) -> Self:
@@ -3983,19 +3995,6 @@ class Series:
         True
         >>> s[:2].has_nulls()
         False
-        """
-        return self._s.has_nulls()
-
-    @deprecated(
-        "`has_validity` is deprecated; use `has_nulls` "
-        "instead to check for the presence of null values."
-    )
-    def has_validity(self) -> bool:
-        """
-        Check whether the Series contains one or more null values.
-
-        .. deprecated:: 0.20.30
-            Use the :meth:`has_nulls` method instead.
         """
         return self._s.has_nulls()
 
@@ -9757,6 +9756,19 @@ class Series:
             Expression of data type List, where the inner data type is equal to the
             original data type.
         """
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "has_validity": "use `has_nulls` instead to check for the presence of null values."
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
 
 
 def _resolve_temporal_dtype(
