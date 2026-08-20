@@ -336,31 +336,26 @@ impl PolarsError {
             #[cfg(feature = "python")]
             Python { error } => pyo3::Python::attach(|py| {
                 use pyo3::types::{PyAnyMethods, PyStringMethods};
-                use pyo3::{IntoPyObject, PyErr};
 
-                let value = error.value(py);
+                let out = error.clone_ref(py);
+                let value = out.value(py);
 
-                let msg = if let Ok(s) = value.str() {
-                    func(&s.to_string_lossy())
+                let note = if let Ok(s) = value.str() {
+                    let msg = s.to_string_lossy();
+                    let context = func(&msg);
+
+                    context
+                        .strip_prefix(msg.as_ref())
+                        .unwrap_or(&context)
+                        .trim_start_matches('\n')
+                        .to_string()
                 } else {
                     func("<exception str() failed>")
                 };
 
-                let cls = value.get_type();
-
-                let out = PyErr::from_type(cls, (msg,));
-
-                let out = if let Ok(out_with_traceback) = (|| {
-                    out.clone_ref(py)
-                        .into_pyobject(py)?
-                        .getattr("with_traceback")
-                        .unwrap()
-                        .call1((value.getattr("__traceback__").unwrap(),))
-                })() {
-                    PyErr::from_value(out_with_traceback)
-                } else {
-                    out
-                };
+                if !note.is_empty() {
+                    let _ = value.call_method1("add_note", (note,));
+                }
 
                 Python {
                     error: python::PyErrWrap(out),
