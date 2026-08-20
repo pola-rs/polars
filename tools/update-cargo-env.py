@@ -3,6 +3,7 @@ import os
 import sys
 from pathlib import Path
 
+
 def toml_str(value):
     # The escapes json.dumps emits (\", \\, \n, \uXXXX, ...) are all valid in a TOML
     # basic string as well.

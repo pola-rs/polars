@@ -6,8 +6,8 @@
 # Since this file is committed, any local changes you'd like to make should go
 # in config.local.toml, which is gitignored.
 include = [
-    { path = "config.generated.toml", optional = true },
-    { path = "config.local.toml", optional = true },
+  { path = "config.generated.toml", optional = true },
+  { path = "config.local.toml", optional = true },
 ]
 
 [unstable]
