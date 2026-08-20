@@ -9,9 +9,9 @@ use polars_ops::prelude::RankMethod;
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
 use polars_ops::series::{ClosedInterval, InterpolationMethod};
-#[cfg(feature = "cutqcut")]
-use polars_plan::dsl::BinMethod;
 use polars_plan::dsl::DateRangeArgs;
+#[cfg(feature = "cutqcut")]
+use polars_plan::dsl::{BinMethod, FractionSpec, IntervalSpec};
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
     IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
@@ -2006,52 +2006,50 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         .map(|l| l.iter().map(|s| s.as_str()).collect::<Vec<_>>());
                     let include_intervals = options.include_intervals;
                     match &options.method {
-                        BinMethod::Intervals { right_closed, .. } => (
-                            "bin_intervals",
-                            PySeries::new(options.method.breaks().unwrap().clone()),
-                            labels,
-                            include_intervals,
-                            right_closed,
-                        )
-                            .into_py_any(py),
-                        BinMethod::UniformIntervals {
-                            n_bins,
-                            right_closed,
-                        } => (
-                            "bin_intervals_uniform",
-                            n_bins,
-                            labels,
-                            include_intervals,
-                            right_closed,
-                        )
-                            .into_py_any(py),
-                        BinMethod::Quantiles {
-                            probs,
-                            right_closed,
-                        } => (
-                            "bin_quantiles",
-                            probs,
-                            labels,
-                            include_intervals,
-                            right_closed,
-                        )
-                            .into_py_any(py),
-                        BinMethod::UniformQuantiles {
-                            n_bins,
-                            right_closed,
-                        } => (
-                            "bin_quantiles_uniform",
-                            n_bins,
-                            labels,
-                            include_intervals,
-                            right_closed,
-                        )
-                            .into_py_any(py),
-                        BinMethod::Ranks { fractions } => {
-                            ("bin_ranks", fractions, labels, include_intervals).into_py_any(py)
+                        BinMethod::Intervals { spec, right_closed } => match spec {
+                            IntervalSpec::Breaks(breaks) => (
+                                "bin_intervals",
+                                PySeries::new(breaks.clone()),
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                            IntervalSpec::Count(n_bins) => (
+                                "bin_intervals_uniform",
+                                n_bins,
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
                         },
-                        BinMethod::UniformRanks { n_bins } => {
-                            ("bin_ranks_uniform", n_bins, labels, include_intervals).into_py_any(py)
+                        BinMethod::Quantiles { spec, right_closed } => match spec {
+                            FractionSpec::Explicit(probs) => (
+                                "bin_quantiles",
+                                probs,
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                            FractionSpec::Count(n_bins) => (
+                                "bin_quantiles_uniform",
+                                n_bins,
+                                labels,
+                                include_intervals,
+                                right_closed,
+                            )
+                                .into_py_any(py),
+                        },
+                        BinMethod::Ranks { spec } => match spec {
+                            FractionSpec::Explicit(fractions) => {
+                                ("bin_ranks", fractions, labels, include_intervals).into_py_any(py)
+                            },
+                            FractionSpec::Count(n_bins) => {
+                                ("bin_ranks_uniform", n_bins, labels, include_intervals)
+                                    .into_py_any(py)
+                            },
                         },
                     }
                 },

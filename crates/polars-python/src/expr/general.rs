@@ -6,7 +6,7 @@ use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::cast::CastOptions;
 #[cfg(feature = "cutqcut")]
-use polars_plan::dsl::{BinMethod, BinOptions};
+use polars_plan::dsl::{BinMethod, BinOptions, FractionSpec, IntervalSpec};
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
 use polars_plan::plans::{
     AExprSorted, ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir,
@@ -260,7 +260,7 @@ impl PyExpr {
             .clone()
             .bin(BinOptions {
                 method: BinMethod::Intervals {
-                    breaks,
+                    spec: IntervalSpec::Breaks(breaks),
                     right_closed,
                 },
                 labels: labels.map(strings_to_pl_smallstr),
@@ -281,8 +281,8 @@ impl PyExpr {
         self.inner
             .clone()
             .bin(BinOptions {
-                method: BinMethod::UniformIntervals {
-                    n_bins,
+                method: BinMethod::Intervals {
+                    spec: IntervalSpec::Count(n_bins),
                     right_closed,
                 },
                 labels: labels.map(strings_to_pl_smallstr),
@@ -304,7 +304,7 @@ impl PyExpr {
             .clone()
             .bin(BinOptions {
                 method: BinMethod::Quantiles {
-                    probs: quantiles,
+                    spec: FractionSpec::Explicit(quantiles),
                     right_closed,
                 },
                 labels: labels.map(strings_to_pl_smallstr),
@@ -325,8 +325,8 @@ impl PyExpr {
         self.inner
             .clone()
             .bin(BinOptions {
-                method: BinMethod::UniformQuantiles {
-                    n_bins,
+                method: BinMethod::Quantiles {
+                    spec: FractionSpec::Count(n_bins),
                     right_closed,
                 },
                 labels: labels.map(strings_to_pl_smallstr),
@@ -346,7 +346,9 @@ impl PyExpr {
         self.inner
             .clone()
             .bin(BinOptions {
-                method: BinMethod::Ranks { fractions: ranks },
+                method: BinMethod::Ranks {
+                    spec: FractionSpec::Explicit(ranks),
+                },
                 labels: labels.map(strings_to_pl_smallstr),
                 include_intervals,
             })
@@ -364,7 +366,9 @@ impl PyExpr {
         self.inner
             .clone()
             .bin(BinOptions {
-                method: BinMethod::UniformRanks { n_bins },
+                method: BinMethod::Ranks {
+                    spec: FractionSpec::Count(n_bins),
+                },
                 labels: labels.map(strings_to_pl_smallstr),
                 include_intervals,
             })

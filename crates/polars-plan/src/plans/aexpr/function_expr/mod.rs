@@ -87,7 +87,7 @@ pub use self::struct_::IRStructFunction;
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
 #[cfg(feature = "cutqcut")]
-pub use crate::dsl::{BinMethod, BinOptions};
+pub use crate::dsl::{BinMethod, BinOptions, FractionSpec, IntervalSpec};
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -1226,7 +1226,11 @@ impl IRFunctionExpr {
                 .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),
             #[cfg(feature = "cutqcut")]
             F::Bin(BinOptions {
-                method: BinMethod::Intervals { .. },
+                method:
+                    BinMethod::Intervals {
+                        spec: IntervalSpec::Breaks(_),
+                        ..
+                    },
                 ..
             }) => {
                 FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY)
@@ -1234,16 +1238,18 @@ impl IRFunctionExpr {
             #[cfg(feature = "cutqcut")]
             F::Bin(BinOptions {
                 method:
-                    BinMethod::UniformIntervals { .. }
-                    | BinMethod::Quantiles { .. }
-                    | BinMethod::UniformQuantiles { .. },
+                    BinMethod::Intervals {
+                        spec: IntervalSpec::Count(_),
+                        ..
+                    }
+                    | BinMethod::Quantiles { .. },
                 ..
             }) => FunctionOptions::length_preserving().with_flags(|f| {
                 f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::NON_ORDER_OBSERVING
             }),
             #[cfg(feature = "cutqcut")]
             F::Bin(BinOptions {
-                method: BinMethod::Ranks { .. } | BinMethod::UniformRanks { .. },
+                method: BinMethod::Ranks { .. },
                 ..
             }) => FunctionOptions::length_preserving()
                 .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),

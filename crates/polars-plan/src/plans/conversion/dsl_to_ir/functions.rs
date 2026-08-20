@@ -8,7 +8,7 @@ use super::expr_to_ir::ExprToIRContext;
 use super::*;
 use crate::constants::get_literal_name;
 #[cfg(feature = "cutqcut")]
-use crate::dsl::BinMethod;
+use crate::dsl::{BinMethod, FractionSpec, IntervalSpec};
 use crate::dsl::{Expr, FunctionExpr};
 use crate::plans::conversion::dsl_to_ir::expr_to_ir::to_expr_irs;
 use crate::plans::{AExpr, IRFunctionExpr};
@@ -996,7 +996,7 @@ pub(super) fn convert_functions(
 
             options.method = match options.method {
                 BinMethod::Intervals {
-                    breaks,
+                    spec: IntervalSpec::Breaks(breaks),
                     right_closed,
                 } => {
                     polars_ensure!(
@@ -1025,23 +1025,27 @@ pub(super) fn convert_functions(
                     // It is possible that the type promotion has collapsed some breakpoints
                     ensure_strictly_ascending(&breaks, name, "intervals")?;
                     BinMethod::Intervals {
-                        breaks,
+                        spec: IntervalSpec::Breaks(breaks),
                         right_closed,
                     }
                 },
                 BinMethod::Quantiles {
-                    probs,
+                    spec: FractionSpec::Explicit(probs),
                     right_closed,
                 } => {
                     ensure_ascending_unit_interval(&probs, name, "quantiles")?;
                     BinMethod::Quantiles {
-                        probs,
+                        spec: FractionSpec::Explicit(probs),
                         right_closed,
                     }
                 },
-                BinMethod::Ranks { fractions } => {
+                BinMethod::Ranks {
+                    spec: FractionSpec::Explicit(fractions),
+                } => {
                     ensure_ascending_unit_interval(&fractions, name, "ranks")?;
-                    BinMethod::Ranks { fractions }
+                    BinMethod::Ranks {
+                        spec: FractionSpec::Explicit(fractions),
+                    }
                 },
                 m => m,
             };

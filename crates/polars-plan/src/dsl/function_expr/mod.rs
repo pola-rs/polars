@@ -39,7 +39,7 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "dtype-array")]
 pub use array::ArrayFunction;
 #[cfg(feature = "cutqcut")]
-pub use binning::{BinMethod, BinOptions};
+pub use binning::{BinMethod, BinOptions, FractionSpec, IntervalSpec};
 #[cfg(feature = "cov")]
 pub use correlation::CorrelationMethod;
 pub use list::ListFunction;
