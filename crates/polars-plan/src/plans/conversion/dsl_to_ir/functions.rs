@@ -989,37 +989,33 @@ pub(super) fn convert_functions(
                     InvalidOperation: "`{}` requires an orderable input, got `{}`", name, input_dtype
                 );
             }
-            options.method = match options.method {
-                BinMethod::Intervals {
-                    spec: IntervalSpec::Breaks(breaks),
-                    right_closed,
-                } => {
-                    let breaks = if input_dtype.is_numeric() && breaks.dtype().is_numeric() {
-                        let opts = (SuperTypeFlags::default()
-                            & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
-                            .into();
-                        let supertype =
-                            try_get_supertype_with_options(&input_dtype, breaks.dtype(), opts)?;
-                        if input_dtype != supertype {
-                            let node = ctx.arena.add(AExpr::Cast {
-                                expr: e[0].node(),
-                                dtype: supertype.clone(),
-                                options: CastOptions::Strict,
-                            });
-                            e[0] = ExprIR::new(node, e[0].output_name_inner().clone());
-                        }
-                        breaks.cast(&supertype)?
-                    } else {
-                        // Take care to not convert Enum to String
-                        breaks.strict_cast(&input_dtype)?
-                    };
-                    BinMethod::Intervals {
-                        spec: IntervalSpec::from_breaks(breaks).context(name)?,
-                        right_closed,
+            if let BinMethod::Intervals { spec, .. } = &mut options.method
+                && let IntervalSpec::Breaks(input_breaks) = spec
+            {
+                let breaks = if input_dtype.is_numeric() && input_breaks.dtype().is_numeric() {
+                    let opts = (SuperTypeFlags::default()
+                        & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
+                        .into();
+                    let supertype =
+                        try_get_supertype_with_options(&input_dtype, input_breaks.dtype(), opts)?;
+
+                    if input_dtype != supertype {
+                        let node = ctx.arena.add(AExpr::Cast {
+                            expr: e[0].node(),
+                            dtype: supertype.clone(),
+                            options: CastOptions::Strict,
+                        });
+                        e[0] = ExprIR::new(node, e[0].output_name_inner().clone());
                     }
-                },
-                m => m,
-            };
+
+                    input_breaks.cast(&supertype)?
+                } else {
+                    // Take care to not convert Enum to String.
+                    input_breaks.strict_cast(&input_dtype)?
+                };
+
+                *spec = IntervalSpec::from_breaks(breaks).context(name)?;
+            }
 
             I::Bin(options)
         },
