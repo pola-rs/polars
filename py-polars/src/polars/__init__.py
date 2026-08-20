@@ -523,16 +523,12 @@ if not TYPE_CHECKING:
 
         # Deprecate re-export of exceptions at top-level
         if name in dir(exceptions):
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                message=(
-                    f"accessing `{name}` from the top-level `polars` module was deprecated "
-                    "in version 1.0.0. Import it directly from the `polars.exceptions` module "
-                    f"instead, e.g.: `from polars.exceptions import {name}`"
-                ),
+            msg = (
+                f"accessing `{name}` from the top-level `polars` module was deprecated "
+                "in version 1.0.0. Import it directly from the `polars.exceptions` module "
+                f"instead, e.g.: `from polars.exceptions import {name}`"
             )
-            return getattr(exceptions, name)
+            raise exceptions.AttributeRemovedError(msg)
 
         # Deprecate data type groups at top-level
         import polars.datatypes.group as dtgroup

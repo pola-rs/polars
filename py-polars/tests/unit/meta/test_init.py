@@ -1,9 +1,11 @@
+import importlib
 import importlib.metadata
+import re
 
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import AttributeRemovedError
 
 
 def test_init_nonexistent_attribute() -> None:
@@ -13,15 +15,10 @@ def test_init_nonexistent_attribute() -> None:
         pl.stroopwafel  # type: ignore[attr-defined]
 
 
-def test_init_exceptions_deprecated() -> None:
-    with pytest.deprecated_call(
-        match=r"accessing `ComputeError` from the top-level `polars` module was deprecated in version 1\.0\.0"
-    ):
-        exc = pl.ComputeError  # type: ignore[attr-defined]
-
-    msg = "nope"
-    with pytest.raises(ComputeError, match=msg):
-        raise exc(msg)
+def test_init_exceptions_not_found() -> None:
+    msg = "accessing `ComputeError` from the top-level `polars` module was deprecated in version 1.0.0"
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
+        pl.ComputeError  # type: ignore[attr-defined]
 
 
 def test_dtype_groups_deprecated() -> None:
