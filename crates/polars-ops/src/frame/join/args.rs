@@ -188,7 +188,7 @@ pub trait CrossJoinFilter: Send + Sync {
 
     fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame> {
         let mask = self.evaluate(&df)?;
-        df.filter(&mask)
+        df.filter_seq(&mask)
     }
 }
 

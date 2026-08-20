@@ -193,7 +193,7 @@ pub(super) fn fused_cross_filter(
                 }
 
                 let mask = cross_join_options.predicate.evaluate(&joined)?;
-                let matched = joined.filter(&mask)?;
+                let matched = joined.filter_seq(&mask)?;
 
                 let n_primary = left_chunk.height();
                 debug_assert_eq!(joined.height(), n_primary * n_secondary);
