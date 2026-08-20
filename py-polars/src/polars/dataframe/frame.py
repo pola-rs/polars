@@ -8013,6 +8013,11 @@ class DataFrame:
             if 'by' groups are provided. The `streaming` engine will only check the
             sortedness of the rows it processes.
 
+        See Also
+        --------
+        join
+        join_where
+
         Examples
         --------
         >>> from datetime import date
@@ -8399,6 +8404,7 @@ class DataFrame:
         See Also
         --------
         join_asof
+        join_where
 
         Examples
         --------
@@ -8556,6 +8562,11 @@ class DataFrame:
             be applied in the predicate.
         suffix
             Suffix to append to columns with a duplicate name.
+
+        See Also
+        --------
+        join
+        join_asof
 
         Examples
         --------
