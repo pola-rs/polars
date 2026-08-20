@@ -26,10 +26,6 @@ pub enum IrPropsDescription {
         keep_strategy: String,
         slice: Option<(i64, usize)>,
     },
-    ExtContext {
-        num_contexts: usize,
-        schema_names: Vec<String>,
-    },
     Filter {
         predicate: Vec<String>,
     },

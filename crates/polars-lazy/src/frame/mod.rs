@@ -1512,17 +1512,6 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    pub fn with_context<C: AsRef<[LazyFrame]>>(self, contexts: C) -> LazyFrame {
-        let contexts = contexts
-            .as_ref()
-            .iter()
-            .map(|lf| lf.logical_plan.clone())
-            .collect();
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().with_context(contexts).build();
-        Self::from_logical_plan(lp, opt_state)
-    }
-
     /// Aggregate all the columns as their maximum values.
     ///
     /// Aggregated columns will have the same names as the original columns.

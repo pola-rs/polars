@@ -1144,9 +1144,9 @@ def test_contains_expr() -> None:
         (["me"], False, True),
         (["Me"], False, False),
         (["Me"], True, True),
-        (pl.Series(["me", "they"]), False, True),
-        (pl.Series(["Me", "they"]), False, False),
-        (pl.Series(["Me", "they"]), True, True),
+        (pl.Series([["me", "they"]]), False, True),
+        (pl.Series([["Me", "they"]]), False, False),
+        (pl.Series([["Me", "they"]]), True, True),
         (["me", "they"], False, True),
         (["Me", "they"], False, False),
         (["Me", "they"], True, True),
@@ -1182,6 +1182,13 @@ def test_contains_any(
             )
         )
     )
+
+
+def test_contains_any_flat_dtype_invalid() -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    msg = "`str.contains_any` with a flat string datatype is invalid. Use `implode` to wrap the string value into a list."
+    with pytest.raises(InvalidOperationError, match=re.escape(msg)):
+        df.select(pl.col("text").str.contains_any(pl.Series(["me", "they"])))
 
 
 def test_replace() -> None:
@@ -1361,24 +1368,29 @@ def test_replace_expressions() -> None:
 @pytest.mark.parametrize(
     ("pattern", "replacement", "case_insensitive", "leftmost", "expected"),
     [
-        (["say"], "", False, False, "Tell me what you want"),
+        (["say"], [""], False, False, "Tell me what you want"),
         (["me"], ["them"], False, False, "Tell them what you want"),
         (["who"], ["them"], False, False, "Tell me what you want"),
-        (["me", "you"], "it", False, False, "Tell it what it want"),
-        (["Me", "you"], "it", False, False, "Tell me what it want"),
         (["me", "you"], ["it"], False, False, "Tell it what it want"),
+        (["Me", "you"], ["it"], False, False, "Tell me what it want"),
         (["me", "you"], ["you", "me"], False, False, "Tell you what me want"),
-        (["me", "You", "them"], "it", False, False, "Tell it what you want"),
-        (["Me", "you"], "it", True, False, "Tell it what it want"),
+        (["me", "You", "them"], ["it"], False, False, "Tell it what you want"),
+        (["Me", "you"], ["it"], True, False, "Tell it what it want"),
         (["me", "YOU"], ["you", "me"], True, False, "Tell you what me want"),
         (
-            pl.Series(["me", "YOU"]),
+            pl.Series([["me", "YOU"]]),
             ["you", "me"],
             False,
             False,
             "Tell you what you want",
         ),
-        (pl.Series(["me", "YOU"]), ["you", "me"], True, False, "Tell you what me want"),
+        (
+            pl.Series([["me", "YOU"]]),
+            ["you", "me"],
+            True,
+            False,
+            "Tell you what me want",
+        ),
         (
             ["Tell me", "Tell"],
             ["Don't tell", "Text"],
@@ -1427,6 +1439,24 @@ def test_replace_many(
     assert expected == val, val
 
 
+def test_replace_many_flat_dtype_invalid() -> None:
+    df = pl.DataFrame({"text": ["Tell me what you want"]})
+    msg = "`str.replace_many` with a flat str datatype as pattern is invalid. Use `implode` to wrap the string value into a list."
+    with pytest.raises(InvalidOperationError, match=re.escape(msg)):
+        df.select(
+            pl.col("text").str.replace_many(
+                pl.Series(["me", "they"]), pl.Series([["it"]])
+            )
+        )
+    msg = "`str.replace_many` with a flat str datatype as replacement is invalid. Use `implode` to wrap the string value into a list."
+    with pytest.raises(InvalidOperationError, match=re.escape(msg)):
+        df.select(
+            pl.col("text").str.replace_many(
+                pl.Series([["me", "they"]]), pl.Series(["it"])
+            )
+        )
+
+
 def test_replace_many_groupby() -> None:
     df = pl.DataFrame(
         {
@@ -1434,7 +1464,9 @@ def test_replace_many_groupby() -> None:
             "g": [0, 0, 0, 1, 1, 1, 2, 2, 2],
         }
     )
-    out = df.group_by("g").agg(pl.col.x.str.replace_many(pl.col.x.head(2), ""))
+    out = df.group_by("g").agg(
+        pl.col.x.str.replace_many(pl.col.x.head(2).implode(), pl.Series([[""]]))
+    )
     expected = pl.DataFrame(
         {
             "g": [0, 1, 2],

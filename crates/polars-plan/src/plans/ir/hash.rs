@@ -199,11 +199,6 @@ impl IR {
             } => {
                 options.hash(state);
             },
-            IR::ExtContext {
-                input: _,
-                contexts: _,
-                schema: _,
-            } => {},
             IR::Sink { input: _, payload } => {
                 payload.shallow_hash(state, expr_hash);
             },

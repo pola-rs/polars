@@ -989,14 +989,6 @@ impl PyLazyFrame {
         Ok(PyLazyGroupBy { lgb: Some(lazy_gb) })
     }
 
-    fn with_context(&self, contexts: Vec<Self>) -> Self {
-        let contexts = contexts
-            .into_iter()
-            .map(|ldf| ldf.ldf.into_inner())
-            .collect::<Vec<_>>();
-        self.ldf.read().clone().with_context(contexts).into()
-    }
-
     #[cfg(feature = "asof_join")]
     #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str, coalesce, allow_eq, check_sortedness))]
     fn join_asof(

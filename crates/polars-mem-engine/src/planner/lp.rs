@@ -829,16 +829,6 @@ fn create_physical_plan_impl(
             let input = recurse!(input, state)?;
             Ok(Box::new(executors::UdfExec { input, function }))
         },
-        ExtContext {
-            input, contexts, ..
-        } => {
-            let input = recurse!(input, state)?;
-            let contexts = contexts
-                .into_iter()
-                .map(|node| recurse!(node, state))
-                .collect::<PolarsResult<_>>()?;
-            Ok(Box::new(executors::ExternalContext { input, contexts }))
-        },
         SimpleProjection { input, columns } => {
             let input = recurse!(input, state)?;
             let exec = executors::ProjectionSimple { input, columns };

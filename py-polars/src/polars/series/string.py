@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 import polars.functions as F
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.unstable import unstable
 from polars._utils.various import NO_DEFAULT, _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
@@ -2327,3 +2328,17 @@ class StringNameSpace(_NamespaceSuggestMixin):
                 "KADOKAWA"
         ]
         """  # noqa: RUF002
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "concat": "use `Series.str.join` instead. Note also that the default "
+                    "`delimiter` for `str.join` is an empty string, not a hyphen.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
