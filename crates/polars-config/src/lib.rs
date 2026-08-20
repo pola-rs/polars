@@ -78,6 +78,9 @@ const DEFAULT_OOC_MEMORY_BUDGET_FRACTION: f64 = 0.8;
 const OOC_MEMORY_BUDGET_MB: &str = "POLARS_OOC_MEMORY_BUDGET_MB";
 const DEFAULT_OOC_MEMORY_BUDGET_MB: u64 = u64::MAX;
 
+const OOC_MEMORY_PREFETCH_FRACTION: &str = "POLARS_OOC_MEMORY_PREFETCH_FRACTION";
+const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.8;
+
 const OOC_DISK_BUDGET_MB: &str = "POLARS_OOC_DISK_BUDGET_MB";
 const DEFAULT_OOC_DISK_BUDGET_MB: u64 = u64::MAX;
 
@@ -154,6 +157,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_SPILL_COMPRESSION_LEVEL,
     OOC_MEMORY_BUDGET_FRACTION,
     OOC_MEMORY_BUDGET_MB,
+    OOC_MEMORY_PREFETCH_FRACTION,
     OOC_DISK_BUDGET_MB,
     OOC_SPILL_MIN_BYTES,
     OOC_LOG_METRICS,
@@ -186,6 +190,7 @@ pub struct Config {
     ooc_spill_compression_level: AtomicU64,
     ooc_memory_budget_fraction: AtomicU64,
     ooc_memory_budget_bytes: AtomicU64,
+    ooc_memory_prefetch_fraction: AtomicU64,
     ooc_disk_budget_bytes: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
     ooc_log_metrics: AtomicBool,
@@ -194,6 +199,9 @@ pub struct Config {
     dns_log_threshold_ms: AtomicU64,
     numa_aware: AtomicBool,
     numa_mock_regions: AtomicU64,
+
+    // Derived from others.
+    ooc_memory_prefetch_bytes: AtomicU64,
 }
 
 impl Config {
@@ -225,6 +233,9 @@ impl Config {
             ooc_memory_budget_bytes: AtomicU64::new(
                 DEFAULT_OOC_MEMORY_BUDGET_MB.saturating_mul(1_000_000),
             ),
+            ooc_memory_prefetch_fraction: AtomicU64::new(
+                DEFAULT_OOC_MEMORY_PREFETCH_FRACTION.to_bits(),
+            ),
             ooc_disk_budget_bytes: AtomicU64::new(
                 DEFAULT_OOC_DISK_BUDGET_MB.saturating_mul(1_000_000),
             ),
@@ -238,6 +249,8 @@ impl Config {
             dns_log_threshold_ms: AtomicU64::new(DNS_LOG_THRESHOLD_DISABLED),
             numa_aware: AtomicBool::new(DEFAULT_NUMA_AWARE),
             numa_mock_regions: AtomicU64::new(DEFAULT_NUMA_MOCK_REGIONS),
+
+            ooc_memory_prefetch_bytes: AtomicU64::new(0),
         };
         cfg.reload_env_vars();
         cfg
@@ -251,11 +264,21 @@ impl Config {
         for var in KNOWN_OPTIONS {
             self.reload_env_var(var);
         }
+
+        self.recompute_derived();
     }
 
     /// Reload a specific environment variable.
     pub fn reload_env_var(&self, var: &str) {
         self.apply_env_var(var, std::env::var(var).ok().as_deref());
+        self.recompute_derived();
+    }
+
+    fn recompute_derived(&self) {
+        let bytes = self.ooc_memory_budget_bytes.load(Ordering::Relaxed);
+        let frac = f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed));
+        self.ooc_memory_prefetch_bytes
+            .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
     }
 
     fn apply_env_var(&self, var: &str, val: Option<&str>) {
@@ -360,6 +383,12 @@ impl Config {
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_OOC_MEMORY_BUDGET_MB)
                     .saturating_mul(1_000_000),
+                Ordering::Relaxed,
+            ),
+            OOC_MEMORY_PREFETCH_FRACTION => self.ooc_memory_prefetch_fraction.store(
+                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 0.95))
+                    .unwrap_or(DEFAULT_OOC_MEMORY_PREFETCH_FRACTION)
+                    .to_bits(),
                 Ordering::Relaxed,
             ),
             OOC_DISK_BUDGET_MB => self.ooc_disk_budget_bytes.store(
@@ -525,6 +554,16 @@ impl Config {
     #[inline(always)]
     pub fn ooc_memory_budget_bytes(&self) -> u64 {
         self.ooc_memory_budget_bytes.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn ooc_memory_prefetch_fraction(&self) -> f64 {
+        f64::from_bits(self.ooc_memory_prefetch_fraction.load(Ordering::Relaxed))
+    }
+
+    #[inline(always)]
+    pub fn ooc_memory_prefetch_bytes(&self) -> u64 {
+        self.ooc_memory_prefetch_bytes.load(Ordering::Relaxed)
     }
 
     #[inline(always)]
