@@ -243,6 +243,7 @@ fn append_unmatched_left(
         .into_no_null_iter()
         .zip(right_row_idx.into_no_null_iter())
     {
+        debug_assert!((l as usize) < left_height);
         // SAFETY: every value in `left_row_idx` is a valid index into the left input.
         unsafe { matched.set_unchecked(l as usize, true) };
         out_left.push(l);

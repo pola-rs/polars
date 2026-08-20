@@ -192,7 +192,6 @@ pub(super) fn fused_cross_filter(
                     cross_join_options.predicate.apply(joined)
                 } else {
                     let mask = cross_join_options.predicate.evaluate(&joined)?;
-                    let matched = joined.filter_seq(&mask)?;
 
                     let len_left = left_chunk.height();
                     debug_assert_eq!(joined.height(), len_left * len_right);
@@ -206,33 +205,37 @@ pub(super) fn fused_cross_filter(
                         None => mask_arr.values().clone(),
                     };
 
-                    // Find the rows that didn't match and use them to gather from `left_df` and
-                    // add the `nulls` required for the outer join.
-                    let unmatched_local: Vec<IdxSize> = (0..len_left as IdxSize)
-                        .filter(|&i| {
-                            let start = i as usize * len_right;
-                            // If all rows at this offset are masked out, this one was unmatched.
-                            match_bits.clone().sliced(start, len_right).unset_bits() == len_right
-                        })
-                        .collect();
-
-                    if unmatched_local.is_empty() {
-                        return Ok(matched);
+                    // Emit each left row's matches, or a single null-extended row when it has
+                    // none, so that unmatched rows keep their position in the left input's
+                    // order instead of being appended after the matched ones.
+                    let capacity = match_bits.set_bits() + len_left;
+                    let mut left_idx: Vec<IdxSize> = Vec::with_capacity(capacity);
+                    let mut right_idx: Vec<NullableIdxSize> = Vec::with_capacity(capacity);
+                    for i in 0..len_left {
+                        let run = match_bits.clone().sliced(i * len_right, len_right);
+                        if run.unset_bits() == len_right {
+                            left_idx.push(i as IdxSize);
+                            right_idx.push(NullableIdxSize::null());
+                        } else {
+                            for j in run.true_idx_iter() {
+                                left_idx.push(i as IdxSize);
+                                right_idx.push(NullableIdxSize::from(j as IdxSize));
+                            }
+                        }
                     }
 
-                    let idx = IdxCa::from_vec(PlSmallStr::EMPTY, unmatched_local);
-                    let unmatched_primary = unsafe { left_chunk.take_unchecked(&idx) };
-                    let mut unmatched_secondary =
-                        DataFrame::full_null(right.schema(), idx.len()).into_columns();
-                    for (c, name) in unmatched_secondary.iter_mut().zip(rename_names) {
+                    let idx = unsafe { IdxCa::mmap_slice(PlSmallStr::EMPTY, &left_idx) };
+                    let mut out = unsafe { left_chunk.take_unchecked(&idx) };
+                    let mut right_columns = unsafe {
+                        IdxCa::with_nullable_idx(&right_idx, |idx| right.take_unchecked(idx))
+                    }
+                    .into_columns();
+                    for (c, name) in right_columns.iter_mut().zip(rename_names) {
                         c.rename((*name).clone());
                     }
-                    let mut unmatched = unmatched_primary;
-                    unsafe { unmatched.hstack_mut_unchecked(&unmatched_secondary) };
+                    unsafe { out.hstack_mut_unchecked(&right_columns) };
 
-                    Ok(accumulate_dataframes_vertical_unchecked([
-                        matched, unmatched,
-                    ]))
+                    Ok(out)
                 }
             })
         })
