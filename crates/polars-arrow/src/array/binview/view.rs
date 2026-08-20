@@ -365,7 +365,7 @@ impl View {
                     }
                 }
 
-                views.extend(src.chunks_exact(N).map(|slice| unsafe {
+                views.extend(src.as_chunks::<N>().0.iter().map(|slice| unsafe {
                     View::new_inline_unchecked(slice)
                 }));
             },
