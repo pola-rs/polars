@@ -376,10 +376,6 @@ impl JoinType {
 
     /// Whether the physical join implementations can execute this `how` with the given
     /// (already-resolved) match-condition algorithm without silently dropping it.
-    ///
-    /// This is the capability matrix behind `_join_impl`'s backstop: every (semantics,
-    /// algorithm) pair a physical join implementation actually supports must be listed
-    /// here, so adding a new combination only requires extending this one method.
     pub fn supports_non_equi_options(&self, options: &Option<JoinTypeOptions>) -> bool {
         options.is_none()
             || matches!(self, JoinType::Inner | JoinType::Cross)

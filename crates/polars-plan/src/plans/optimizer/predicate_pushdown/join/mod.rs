@@ -221,68 +221,66 @@ pub(super) fn process_join(
             Default::default()
         };
 
+    // These maps encode that `left_on[i]` and `right_on[i]` hold equal values in the
+    // output, which is only true for an equality match condition.
     let mut output_key_to_left_input_map: PlIndexMap<PlSmallStr, PlSmallStr> =
         PlIndexMap::with_capacity(get_lhs_column_keys_iter().len());
     let mut output_key_to_right_input_map: PlIndexMap<PlSmallStr, PlSmallStr> =
         PlIndexMap::with_capacity(get_rhs_column_keys_iter().len());
 
-    // These maps encode that `left_on[i]` and `right_on[i]` hold equal values in the
-    // output, which is only true for an equality match condition.
-    let key_columns_are_equal = options.is_pure_equi();
-
-    for (lhs_input_key, rhs_input_key) in get_lhs_column_keys_iter().zip(get_rhs_column_keys_iter())
-    {
-        if !key_columns_are_equal {
-            break;
-        }
-        let (Some(lhs_input_key), Some(rhs_input_key)) = (lhs_input_key, rhs_input_key) else {
-            continue;
-        };
-
-        // lhs_input_key: Column name within the left table.
-        use JoinType::*;
-        // Map output name of an LHS join key output to an input key column of the right table.
-        // This will cause predicates referring to LHS join keys to also be pushed to the RHS table.
-        if match &options.args.how {
-            Left | Inner | Full => true,
-
-            #[cfg(feature = "asof_join")]
-            AsOf(_) => true,
-            #[cfg(feature = "semi_anti_join")]
-            Semi | Anti => true,
-
-            // NOTE: Right-join is excluded.
-            Right => false,
-
-            #[cfg(feature = "iejoin")]
-            IEJoin | Range => false,
-
-            Cross => unreachable!(), // Cross left/right_on should be empty
-        } {
-            // Note: `lhs_input_key` maintains its name in the output column for all cases except
-            // for a coalescing right-join.
-            output_key_to_right_input_map.insert(lhs_input_key.clone(), rhs_input_key.clone());
-        }
-
-        // Map output name of an RHS join key output to a key column of the left table.
-        // This will cause predicates referring to RHS join keys to also be pushed to the LHS table.
-        if match &options.args.how {
-            JoinType::Right => true,
-            // Non-coalesced output columns of an inner join are equivalent between LHS and RHS.
-            JoinType::Inner => !options.args.should_coalesce(),
-            _ => false,
-        } {
-            let rhs_output_key: PlSmallStr = if schema_left.contains(rhs_input_key.as_str())
-                && !coalesced_to_right.contains(rhs_input_key.as_str())
-            {
-                format_pl_smallstr!("{}{}", rhs_input_key, options.args.suffix())
-            } else {
-                rhs_input_key.clone()
+    if options.is_pure_equi() {
+        for (lhs_input_key, rhs_input_key) in
+            get_lhs_column_keys_iter().zip(get_rhs_column_keys_iter())
+        {
+            let (Some(lhs_input_key), Some(rhs_input_key)) = (lhs_input_key, rhs_input_key) else {
+                continue;
             };
 
-            assert!(schema.contains(&rhs_output_key));
+            // lhs_input_key: Column name within the left table.
+            use JoinType::*;
+            // Map output name of an LHS join key output to an input key column of the right table.
+            // This will cause predicates referring to LHS join keys to also be pushed to the RHS table.
+            if match &options.args.how {
+                Left | Inner | Full => true,
 
-            output_key_to_left_input_map.insert(rhs_output_key.clone(), lhs_input_key.clone());
+                #[cfg(feature = "asof_join")]
+                AsOf(_) => true,
+                #[cfg(feature = "semi_anti_join")]
+                Semi | Anti => true,
+
+                // NOTE: Right-join is excluded.
+                Right => false,
+
+                #[cfg(feature = "iejoin")]
+                IEJoin | Range => false,
+
+                Cross => unreachable!(), // Cross left/right_on should be empty
+            } {
+                // Note: `lhs_input_key` maintains its name in the output column for all cases except
+                // for a coalescing right-join.
+                output_key_to_right_input_map.insert(lhs_input_key.clone(), rhs_input_key.clone());
+            }
+
+            // Map output name of an RHS join key output to a key column of the left table.
+            // This will cause predicates referring to RHS join keys to also be pushed to the LHS table.
+            if match &options.args.how {
+                JoinType::Right => true,
+                // Non-coalesced output columns of an inner join are equivalent between LHS and RHS.
+                JoinType::Inner => !options.args.should_coalesce(),
+                _ => false,
+            } {
+                let rhs_output_key: PlSmallStr = if schema_left.contains(rhs_input_key.as_str())
+                    && !coalesced_to_right.contains(rhs_input_key.as_str())
+                {
+                    format_pl_smallstr!("{}{}", rhs_input_key, options.args.suffix())
+                } else {
+                    rhs_input_key.clone()
+                };
+
+                assert!(schema.contains(&rhs_output_key));
+
+                output_key_to_left_input_map.insert(rhs_output_key.clone(), lhs_input_key.clone());
+            }
         }
     }
 
