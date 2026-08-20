@@ -8674,13 +8674,25 @@ class Series(metaclass=_Meta):
         ]
         """
 
+    @removed_parameters(
+        RemovedParameter(
+            name="default",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+            hint="Use `replace_strict` instead to set a default while replacing values.",
+        ),
+        RemovedParameter(
+            name="return_dtype",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+            hint="Use `replace_strict` instead to set a return data type while"
+            " replacing values, or explicitly call `cast` on the output.",
+        ),
+    )
     def replace(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
         new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
-        *,
-        default: IntoExpr | NoDefault = NO_DEFAULT,
-        return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
         Replace values by different values of the same data type.
@@ -8694,24 +8706,6 @@ class Series(metaclass=_Meta):
         new
             Value or sequence of values to replace by.
             Length must match the length of `old` or have length 1.
-
-        default
-            Set values that were not replaced to this value.
-            Defaults to keeping the original value.
-            Accepts expression input. Non-expression inputs are parsed as literals.
-
-            .. deprecated:: 0.20.31
-                Use :meth:`replace_strict` instead to set a default while
-                replacing values.
-
-        return_dtype
-            The data type of the resulting expression. If set to `None` (default),
-            the data type is determined automatically based on the other inputs.
-
-            .. deprecated:: 0.20.31
-                Use :meth:`replace_strict` instead to set a return data type while
-                replacing values.
-
 
         See Also
         --------

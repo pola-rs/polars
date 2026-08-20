@@ -9,7 +9,7 @@ from hypothesis.strategies import booleans
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError
+from polars.exceptions import ArgumentRemovedError, ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
@@ -435,8 +435,8 @@ def test_bottom_k_nulls(s: pl.Series, should_sort: bool) -> None:
     assert_series_equal(result, s, check_order=False)
 
 
-def test_top_k_descending_deprecated() -> None:
-    with pytest.deprecated_call():
+def test_top_k_descending_removed() -> None:
+    with pytest.raises(ArgumentRemovedError):
         pl.col("a").top_k_by("b", descending=True)  # type: ignore[call-arg]
 
 
