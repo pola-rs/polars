@@ -227,11 +227,8 @@ def count(*columns: str) -> Expr:
     └───────┘
     """
     if not columns:
-        issue_deprecation_warning(
-            "`pl.count()` is deprecated. Please use `pl.len()` instead.",
-            version="0.20.5",
-        )
-        return F.len().alias("count")
+        msg = "`pl.count()` takes at least one argument. If you want to count the number of rows, please use `pl.len()` instead."
+        raise TypeError(msg)
     return F.col(*columns).count()
 
 
