@@ -103,8 +103,8 @@ def test_map_groups_none() -> None:
             ).alias("multiple")
         )
     )["multiple"]
-    assert out[0].to_list() == [4.75, 326.75, 82.75]
-    assert out[1].to_list() == [238.75, 3418849.75, 372.75]
+    assert out[0] == [4.75, 326.75, 82.75]
+    assert out[1] == [238.75, 3418849.75, 372.75]
 
     out_df = df.select(pl.map_batches(exprs=["a", "b"], function=lambda s: s[0] * s[1]))
     assert out_df["a"].to_list() == (df["a"] * df["b"]).to_list()
