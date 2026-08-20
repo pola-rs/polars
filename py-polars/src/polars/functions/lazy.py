@@ -10,7 +10,6 @@ from polars._dependencies import _check_for_numpy
 from polars._dependencies import numpy as np
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
-    deprecated,
     issue_deprecation_warning,
 )
 from polars._utils.expired import RemovedParameter, removed_parameters
@@ -54,9 +53,9 @@ if TYPE_CHECKING:
     )
 
     if sys.version_info >= (3, 13):
-        from warnings import deprecated
+        pass
     else:
-        from typing_extensions import deprecated  # noqa: TC004
+        pass
 
 
 def field(name: str | list[str]) -> Expr:
@@ -1745,52 +1744,6 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
         raise TypeError(msg)
 
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
-
-
-@deprecated("`arctan2d` is deprecated; use `arctan2` followed by `.degrees()` instead.")
-def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
-    """
-    Compute two argument arctan in degrees.
-
-    .. deprecated:: 1.0.0
-        Use `arctan2` followed by :meth:`Expr.degrees` instead.
-
-    Returns the angle (in degrees) in the plane between the positive x-axis
-    and the ray from the origin to (x,y).
-
-    Parameters
-    ----------
-    y
-        Column name or Expression.
-    x
-        Column name or Expression.
-
-    Examples
-    --------
-    >>> c = (2**0.5) / 2
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "y": [c, -c, c, -c],
-    ...         "x": [c, c, -c, -c],
-    ...     }
-    ... )
-    >>> df.select(  # doctest: +SKIP
-    ...     pl.arctan2d("y", "x").alias("atan2d"),
-    ...     pl.arctan2("y", "x").alias("atan2"),
-    ... )
-    shape: (4, 2)
-    ┌────────┬───────────┐
-    │ atan2d ┆ atan2     │
-    │ ---    ┆ ---       │
-    │ f64    ┆ f64       │
-    ╞════════╪═══════════╡
-    │ 45.0   ┆ 0.785398  │
-    │ -45.0  ┆ -0.785398 │
-    │ 135.0  ┆ 2.356194  │
-    │ -135.0 ┆ -2.356194 │
-    └────────┴───────────┘
-    """
-    return arctan2(y, x).degrees()
 
 
 def exclude(
