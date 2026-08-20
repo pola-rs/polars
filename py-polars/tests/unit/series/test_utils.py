@@ -1,8 +1,11 @@
-from collections.abc import Callable
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from polars import Series
 from polars.series.utils import _is_empty_method
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from polars import Series
 
 
 def test_is_empty_method_python_315_constants() -> None:
