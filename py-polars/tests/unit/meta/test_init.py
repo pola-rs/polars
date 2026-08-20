@@ -1,4 +1,4 @@
-import importlib
+import importlib.metadata
 
 import pytest
 
@@ -39,7 +39,11 @@ def test_import_all() -> None:
 
 def test_version() -> None:
     # This has already gone wrong once (#23940), preventing future problems.
-    lhs = pl.__version__.replace("-beta.", "b")
+    lhs = (
+        pl.__version__.replace("-alpha.", "a")
+        .replace("-beta.", "b")
+        .replace("-rc.", "rc")
+    )
     rhs = importlib.metadata.version("polars")
 
     assert lhs == rhs, (
