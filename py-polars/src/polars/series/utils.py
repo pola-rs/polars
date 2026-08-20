@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import sys
 from functools import wraps
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -119,10 +118,9 @@ def _is_empty_method(func: SeriesMethod) -> bool:
     - has no docstring and just contains 'pass' (or equivalent)
     """
     fc = func.__code__
-    return (fc.co_code in _EMPTY_BYTECODE) and (
-        (len(fc.co_consts) == 2 and fc.co_consts[1] is None)
-        # account for optimized-out docstrings (eg: running 'python -OO')
-        or (sys.flags.optimize == 2 and fc.co_consts == (None,))
+    return fc.co_code in _EMPTY_BYTECODE and fc.co_consts in (
+        (func.__doc__,),
+        (func.__doc__, None),
     )
 
 
