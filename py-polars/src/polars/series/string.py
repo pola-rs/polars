@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 import polars.functions as F
-from polars._utils.deprecation import deprecated
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.unstable import unstable
 from polars._utils.various import NO_DEFAULT, _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
@@ -14,7 +14,6 @@ from polars.datatypes.constants import N_INFER_DEFAULT
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Mapping
 
     from polars import Expr, Series
@@ -31,11 +30,6 @@ if TYPE_CHECKING:
         UnicodeForm,
     )
     from polars._utils.various import NoDefault
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 @expr_dispatch
@@ -2283,50 +2277,6 @@ class StringNameSpace(_NamespaceSuggestMixin):
         ]
         """
 
-    @deprecated(
-        "`Series.str.concat` is deprecated; use `Series.str.join` instead. Note also "
-        "that the default `delimiter` for `str.join` is an empty string, not a hyphen."
-    )
-    def concat(
-        self, delimiter: str | None = None, *, ignore_nulls: bool = True
-    ) -> Series:
-        """
-        Vertically concatenate the string values in the column to a single string value.
-
-        .. deprecated:: 1.0.0
-            Use :meth:`join` instead. Note that the default `delimiter` for :meth:`join`
-            is an empty string instead of a hyphen.
-
-        Parameters
-        ----------
-        delimiter
-            The delimiter to insert between consecutive string values.
-        ignore_nulls
-            Ignore null values (default).
-            If set to `False`, null values will be propagated. This means that
-            if the column contains any null values, the output is null.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`String`.
-
-        Examples
-        --------
-        >>> pl.Series([1, None, 2]).str.concat("-")  # doctest: +SKIP
-        shape: (1,)
-        Series: '' [str]
-        [
-            "1-2"
-        ]
-        >>> pl.Series([1, None, 2]).str.concat(ignore_nulls=False)  # doctest: +SKIP
-        shape: (1,)
-        Series: '' [str]
-        [
-            null
-        ]
-        """
-
     def escape_regex(self) -> Series:
         r"""
         Returns string values with all regular expression meta characters escaped.
@@ -2378,3 +2328,17 @@ class StringNameSpace(_NamespaceSuggestMixin):
                 "KADOKAWA"
         ]
         """  # noqa: RUF002
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "concat": "use `Series.str.join` instead. Note also that the default "
+                    "`delimiter` for `str.join` is an empty string, not a hyphen.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
