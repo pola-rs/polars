@@ -10,6 +10,7 @@ import polars.functions as F
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
 )
+from polars._utils.expired import RenamedParameter, removed_parameters
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     _process_null_values,
@@ -49,8 +50,20 @@ _N_INFER_FILES_DEFAULT = 10
 
 
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
-@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
-@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@removed_parameters(
+    RenamedParameter(
+        name="row_count_name",
+        new_name="row_index_name",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RenamedParameter(
+        name="row_count_offset",
+        new_name="row_index_offset",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+)
 def read_csv(
     source: (
         str
