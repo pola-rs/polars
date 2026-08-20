@@ -9,7 +9,6 @@ The following methods are available under the `expr.str` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
-    Expr.str.concat
     Expr.str.contains
     Expr.str.contains_any
     Expr.str.count_matches

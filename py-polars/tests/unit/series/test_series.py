@@ -2584,7 +2584,7 @@ def test_removed_classmethods() -> None:
         ),
         pytest.param(lambda s: s.dt.mean, "use `Series.mean` instead.", id="dt.mean"),
         pytest.param(
-            lambda s: s.str.concat, "use `Series.str.join` instead.", id="str.concat"
+            lambda s: s.str.concat, "use `str.join` instead.", id="str.concat"
         ),
     ],
 )
