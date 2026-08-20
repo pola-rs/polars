@@ -149,12 +149,14 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
         ambiguous
-            Determine how to deal with ambiguous datetimes:
+            Determine how to deal with datetimes that are ambiguous due to a daylight
+            saving time transition, i.e. wall-clock times that occur twice because the
+            clock is moved backward:
 
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-            - `'null'`: set to null
+            - `'raise'` (default): raise an error
+            - `'earliest'`: use the earliest of the two datetimes
+            - `'latest'`: use the latest of the two datetimes
+            - `'null'`: set the value to null
 
         Examples
         --------
@@ -257,12 +259,14 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         ambiguous
-            Determine how to deal with ambiguous datetimes:
+            Determine how to deal with datetimes that are ambiguous due to a daylight
+            saving time transition, i.e. wall-clock times that occur twice because the
+            clock is moved backward:
 
-            - `'raise'` (default): raise
-            - `'earliest'`: use the earliest datetime
-            - `'latest'`: use the latest datetime
-            - `'null'`: set to null
+            - `'raise'` (default): raise an error
+            - `'earliest'`: use the earliest of the two datetimes
+            - `'latest'`: use the latest of the two datetimes
+            - `'null'`: set the value to null
 
         Notes
         -----
