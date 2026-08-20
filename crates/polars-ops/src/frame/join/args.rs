@@ -240,6 +240,16 @@ pub enum JoinTypeOptions {
     Cross(CrossJoinOptions),
 }
 
+impl JoinTypeOptions {
+    pub fn is_iejoin(&self) -> bool {
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin(_) => true,
+            _ => false,
+        }
+    }
+}
+
 impl Display for JoinType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use JoinType::*;
@@ -382,7 +392,7 @@ impl JoinType {
             || self.is_ie()
             || self.is_range()
             || (matches!(self, JoinType::Left | JoinType::Right)
-                && matches!(options, Some(JoinTypeOptions::IEJoin(_))))
+                && options.as_ref().map(|o| o.is_iejoin()).unwrap_or(false))
             || (matches!(self, JoinType::Left)
                 && matches!(options, Some(JoinTypeOptions::Cross(_))))
     }
