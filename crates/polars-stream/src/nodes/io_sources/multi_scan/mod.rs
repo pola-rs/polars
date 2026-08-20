@@ -251,29 +251,33 @@ impl MultiScanState {
                 bridge_state,
                 task_handle,
                 io_metrics,
-            } => match { *bridge_state.lock().unwrap() } {
-                BridgeState::NotYetStarted | BridgeState::Running => Initialized {
-                    phase_channel_tx,
-                    wait_group,
-                    bridge_state,
-                    task_handle,
-                    io_metrics,
-                },
+            } => {
+                // Separate variable to avoid borrowing bridge_state for entire match.
+                let state = *bridge_state.lock().unwrap();
+                match state {
+                    BridgeState::NotYetStarted | BridgeState::Running => Initialized {
+                        phase_channel_tx,
+                        wait_group,
+                        bridge_state,
+                        task_handle,
+                        io_metrics,
+                    },
 
-                // Never the case: holding `phase_channel_tx` guarantees this.
-                BridgeState::Stopped(StopReason::ComputeNodeDisconnected) => unreachable!(),
+                    // Never the case: holding `phase_channel_tx` guarantees this.
+                    BridgeState::Stopped(StopReason::ComputeNodeDisconnected) => unreachable!(),
 
-                // If we are disconnected from the reader side, it could mean an error. Joining on
-                // the handle should catch this.
-                BridgeState::Stopped(StopReason::ReadersDisconnected) => {
-                    if verbose {
-                        eprintln!("[MultiScanState]: Readers disconnected")
-                    }
+                    // If we are disconnected from the reader side, it could mean an error. Joining on
+                    // the handle should catch this.
+                    BridgeState::Stopped(StopReason::ReadersDisconnected) => {
+                        if verbose {
+                            eprintln!("[MultiScanState]: Readers disconnected")
+                        }
 
-                    *self = Finished;
-                    task_handle.await?;
-                    Finished
-                },
+                        *self = Finished;
+                        task_handle.await?;
+                        Finished
+                    },
+                }
             },
         };
 
