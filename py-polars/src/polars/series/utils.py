@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.expired import removed_parameters
 from polars._utils.wrap import wrap_s
 from polars.datatypes import dtype_to_ffiname
 from polars.exceptions import AttributeRemovedError
@@ -48,6 +49,7 @@ def expr_dispatch(cls: type[T]) -> type[T]:
         ):
             attr = getattr(cls, name)
             if callable(attr):
+                removed_params = getattr(attr, "__removed_parameters__", None)
                 attr = cast("Callable[..., Series]", _undecorated(attr))
                 # note: `co_varnames` starts with the function args, but needs to be
                 # constrained by `co_argcount` as it also includes function-level consts
@@ -55,7 +57,12 @@ def expr_dispatch(cls: type[T]) -> type[T]:
                 # if an expression method with compatible method exists, further check
                 # that the series implementation has an empty function body
                 if (namespace, name, args) in expr_lookup and _is_empty_method(attr):
-                    setattr(cls, name, call_expr(attr))
+                    dispatcher = call_expr(attr)
+                    if removed_params is not None:
+                        # The @removed_params() decorator was applied to the original
+                        # function, so we also apply it to the dispatcher function.
+                        dispatcher = removed_parameters(*removed_params)(dispatcher)
+                    setattr(cls, name, dispatcher)
 
     # Forward any __getattr__ calls to the Expr namespace's too.
     if (namespace, "__getattr__", ("self", "name")) in expr_lookup:

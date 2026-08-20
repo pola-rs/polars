@@ -25,9 +25,13 @@ from polars._dependencies import _check_for_numpy
 from polars._dependencies import numpy as np
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
 from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
     deprecated,
     issue_deprecation_warning,
+)
+from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
+    removed_parameters,
 )
 from polars._utils.parse import (
     parse_into_expression,
@@ -130,6 +134,14 @@ elif BUILDING_SPHINX_DOCS:
     # (ref: https://github.com/davidhalter/jedi/issues/2057)
     current_module = sys.modules[__name__]
     current_module.property = sphinx_accessor
+
+
+_REMOVED_MIN_PERIODS = RenamedParameter(
+    name="min_periods",
+    new_name="min_samples",
+    deprecated_in="1.21.0",
+    removed_in="2.0",
+)
 
 
 class Expr:
@@ -2266,7 +2278,14 @@ class Expr:
         k_pyexpr = parse_into_expression(k)
         return wrap_expr(self._pyexpr.top_k(k_pyexpr))
 
-    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
+    )
     def top_k_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
@@ -2448,7 +2467,14 @@ class Expr:
         k_pyexpr = parse_into_expression(k)
         return wrap_expr(self._pyexpr.bottom_k(k_pyexpr))
 
-    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
+    )
     def bottom_k_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
@@ -5006,12 +5032,19 @@ class Expr:
         """
         return self.filter(predicate)
 
+    @removed_parameters(
+        RemovedParameter(
+            name="agg_list",
+            deprecated_in="1.32.0",
+            removed_in="2.0",
+            hint="Use `expr.implode().map_batches(..)` instead.",
+        )
+    )
     def map_batches(
         self,
         function: Callable[[Series], Series | Any],
         return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
         *,
-        agg_list: bool = False,
         is_elementwise: bool = False,
         returns_scalar: bool = False,
     ) -> Expr:
@@ -5039,12 +5072,6 @@ class Expr:
             It is recommended to set this whenever possible. If this is `None`, it tries
             to infer the datatype by calling the function with dummy data and looking at
             the output.
-        agg_list
-            First implode when in a group-by aggregation.
-
-            .. deprecated:: 1.32.0
-
-                Use `expr.implode().map_batches(..)` instead.
         is_elementwise
             Set to true if the operations is elementwise for better performance
             and optimization.
@@ -5142,12 +5169,6 @@ class Expr:
         │ 3   ┆ 4   ┆ 12        │
         └─────┴─────┴───────────┘
         """
-        if agg_list:
-            msg = f"""using 'agg_list=True' is deprecated and will be removed in 2.0
-
-Consider using {self}.implode() instead"""
-            raise DeprecationWarning(msg)
-            self = self.implode()
 
         def _wrap(sl: Sequence[pl.Series], *args: Any, **kwargs: Any) -> pl.Series:
             return function(sl[0], *args, **kwargs)
@@ -5160,6 +5181,11 @@ Consider using {self}.implode() instead"""
             returns_scalar=returns_scalar,
         )
 
+    @removed_parameters(
+        RemovedParameter(
+            name="returns_scalar", deprecated_in="1.32.0", removed_in="2.0"
+        )
+    )
     def map_elements(
         self,
         function: Callable[[Any], Any],
@@ -5168,7 +5194,6 @@ Consider using {self}.implode() instead"""
         skip_nulls: bool = True,
         pass_name: bool = False,
         strategy: MapElementsStrategy = "thread_local",
-        returns_scalar: bool = False,
     ) -> Expr:
         """
         Map a custom/user-defined function (UDF) to each element of a column.
@@ -5206,9 +5231,6 @@ Consider using {self}.implode() instead"""
             Don't map the function over values that contain nulls (this is faster).
         pass_name
             Pass the Series name to the custom function (this is more expensive).
-        returns_scalar
-            .. deprecated:: 1.32.0
-                Is ignored and will be removed in 2.0.
         strategy : {'thread_local', 'threading'}
             The threading strategy to use.
 
@@ -5341,10 +5363,6 @@ Consider using {self}.implode() instead"""
         ... ).sort("key")  # doctest: +IGNORE_RESULT
 
         """
-        if returns_scalar:
-            msg = "the `returns_scalar` parameter was deprecated in 1.32.0"
-            issue_deprecation_warning(msg)
-
         if strategy == "threading":
             issue_unstable_warning(
                 "the 'threading' strategy for `map_elements` is considered unstable."
@@ -5390,7 +5408,6 @@ Consider using {self}.implode() instead"""
         if strategy == "thread_local":
             return self.map_batches(
                 wrap_f,
-                agg_list=False,
                 return_dtype=return_dtype,
                 returns_scalar=False,
                 is_elementwise=True,
@@ -5402,7 +5419,6 @@ Consider using {self}.implode() instead"""
                     return df.lazy().select(
                         F.col("x").map_batches(
                             wrap_f,
-                            agg_list=False,
                             return_dtype=return_dtype,
                             returns_scalar=False,
                         )
@@ -5441,7 +5457,6 @@ Consider using {self}.implode() instead"""
 
             return self.map_batches(
                 wrap_threading,
-                agg_list=False,
                 return_dtype=return_dtype,
                 returns_scalar=False,
                 is_elementwise=True,
@@ -7121,7 +7136,7 @@ Consider using {self}.implode() instead"""
         return wrap_expr(self._pyexpr.interpolate_by(by_pyexpr))
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_min_by(
         self,
         by: IntoExpr,
@@ -7252,7 +7267,7 @@ Consider using {self}.implode() instead"""
         )
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_max_by(
         self,
         by: IntoExpr,
@@ -7409,7 +7424,7 @@ Consider using {self}.implode() instead"""
         )
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_mean_by(
         self,
         by: IntoExpr,
@@ -7573,7 +7588,7 @@ Consider using {self}.implode() instead"""
         )
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_sum_by(
         self,
         by: IntoExpr,
@@ -7730,7 +7745,7 @@ Consider using {self}.implode() instead"""
         )
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_std_by(
         self,
         by: IntoExpr,
@@ -7896,7 +7911,7 @@ Consider using {self}.implode() instead"""
         )
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_var_by(
         self,
         by: IntoExpr,
@@ -8062,7 +8077,7 @@ Consider using {self}.implode() instead"""
         )
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_median_by(
         self,
         by: IntoExpr,
@@ -8195,7 +8210,7 @@ Consider using {self}.implode() instead"""
         )
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_quantile_by(
         self,
         by: IntoExpr,
@@ -8440,7 +8455,7 @@ Consider using {self}.implode() instead"""
             )
         )
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_min(
         self,
         window_size: int,
@@ -8552,7 +8567,7 @@ Consider using {self}.implode() instead"""
             )
         )
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_max(
         self,
         window_size: int,
@@ -8664,7 +8679,7 @@ Consider using {self}.implode() instead"""
             )
         )
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_mean(
         self,
         window_size: int,
@@ -8778,7 +8793,7 @@ Consider using {self}.implode() instead"""
             )
         )
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_sum(
         self,
         window_size: int,
@@ -8890,7 +8905,7 @@ Consider using {self}.implode() instead"""
             )
         )
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_std(
         self,
         window_size: int,
@@ -9008,7 +9023,7 @@ Consider using {self}.implode() instead"""
             )
         )
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_var(
         self,
         window_size: int,
@@ -9126,7 +9141,7 @@ Consider using {self}.implode() instead"""
             )
         )
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_median(
         self,
         window_size: int,
@@ -9238,7 +9253,7 @@ Consider using {self}.implode() instead"""
             )
         )
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_quantile(
         self,
         quantile: float,
@@ -9604,7 +9619,7 @@ Consider using {self}.implode() instead"""
         )
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_map(
         self,
         function: Callable[[Series], Any],
@@ -10897,7 +10912,7 @@ Consider using {self}.implode() instead"""
             self._pyexpr.sample_n(n_pyexpr, with_replacement, shuffle, seed)
         )
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def ewm_mean(
         self,
         *,
@@ -11214,7 +11229,7 @@ Consider using {self}.implode() instead"""
         half_life = parse_as_duration_string(half_life)
         return wrap_expr(self._pyexpr.ewm_sum_by(by_pyexpr, half_life))
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def ewm_std(
         self,
         *,
@@ -11311,7 +11326,7 @@ Consider using {self}.implode() instead"""
             self._pyexpr.ewm_std(alpha, adjust, bias, min_samples, ignore_nulls)
         )
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def ewm_var(
         self,
         *,
@@ -11748,7 +11763,7 @@ Consider using {self}.implode() instead"""
         return wrap_expr(self._pyexpr.entropy(base, normalize))
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def cumulative_eval(self, expr: Expr, *, min_samples: int = 1) -> Expr:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -11955,13 +11970,25 @@ Consider using {self}.implode() instead"""
             )
         )
 
+    @removed_parameters(
+        RemovedParameter(
+            name="default",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+            hint="Use `replace_strict` instead to set a default while replacing values.",
+        ),
+        RemovedParameter(
+            name="return_dtype",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+            hint="Use `replace_strict` instead to set a return data type while"
+            " replacing values, or explicitly call `cast` on the output.",
+        ),
+    )
     def replace(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
         new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
-        *,
-        default: IntoExpr | NoDefault = NO_DEFAULT,
-        return_dtype: PolarsDataType | None = None,
     ) -> Expr:
         """
         Replace the given values by different values of the same data type.
@@ -11981,23 +12008,6 @@ Consider using {self}.implode() instead"""
             Accepts expression input. Sequences are parsed as Series,
             other non-expression inputs are parsed as literals.
             Length must match the length of `old` or have length 1.
-
-        default
-            Set values that were not replaced to this value.
-            Defaults to keeping the original value.
-            Accepts expression input. Non-expression inputs are parsed as literals.
-
-            .. deprecated:: 1.0.0
-                Use :meth:`replace_strict` instead to set a default while replacing
-                values.
-
-        return_dtype
-            The data type of the resulting expression. If set to `None` (default),
-            the data type of the original column is preserved.
-
-            .. deprecated:: 1.0.0
-                Use :meth:`replace_strict` instead to set a return data type while
-                replacing values, or explicitly call :meth:`cast` on the output.
 
         See Also
         --------
@@ -12093,22 +12103,6 @@ Consider using {self}.implode() instead"""
         │ 3   ┆ 1.0 ┆ 10       │
         └─────┴─────┴──────────┘
         """
-        if return_dtype is not None:
-            issue_deprecation_warning(
-                "the `return_dtype` parameter for `replace` is deprecated."
-                " Use `replace_strict` instead to set a return data type while replacing values.",
-                version="1.0.0",
-            )
-        if default is not NO_DEFAULT:
-            issue_deprecation_warning(
-                "the `default` parameter for `replace` is deprecated."
-                " Use `replace_strict` instead to set a default while replacing values.",
-                version="1.0.0",
-            )
-            return self.replace_strict(
-                old, new, default=default, return_dtype=return_dtype
-            )
-
         if new is NO_DEFAULT:
             if not isinstance(old, Mapping):
                 msg = (
@@ -12126,12 +12120,7 @@ Consider using {self}.implode() instead"""
         old_pyexpr = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
         new_pyexpr = parse_into_expression(new, str_as_lit=True)
 
-        result = wrap_expr(self._pyexpr.replace(old_pyexpr, new_pyexpr))
-
-        if return_dtype is not None:
-            result = result.cast(return_dtype)
-
-        return result
+        return wrap_expr(self._pyexpr.replace(old_pyexpr, new_pyexpr))
 
     def replace_strict(
         self,
