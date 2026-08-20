@@ -485,3 +485,57 @@ fn test_with_columns() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn sliced_list_columns_roundtrip() -> PolarsResult<()> {
+    let labels_dtype = ArrowDataType::List(Box::new(Field::new(
+        "item".into(),
+        ArrowDataType::Utf8,
+        false,
+    )));
+    let nullable_labels_dtype = ArrowDataType::List(Box::new(Field::new(
+        "item".into(),
+        ArrowDataType::Utf8,
+        false,
+    )));
+
+    let labels = ListArray::<i32>::new(
+        labels_dtype.clone(),
+        vec![0, 2, 4, 6].try_into().unwrap(),
+        Utf8Array::<i32>::from_slice([
+            "label_0", "label_1", "label_2", "label_3", "label_4", "label_5",
+        ])
+        .boxed(),
+        None,
+    )
+    .sliced(1, 2);
+
+    let nullable_labels = ListArray::<i32>::new(
+        nullable_labels_dtype.clone(),
+        vec![0, 2, 4, 4].try_into().unwrap(),
+        Utf8Array::<i32>::from_slice(["value_0", "value_1", "value_2", "value_3"]).boxed(),
+        Some([true, true, false].into()),
+    )
+    .sliced(1, 2);
+
+    let schema = ArrowSchema::from_iter([
+        Field::new("labels".into(), labels_dtype, false),
+        Field::new("nullable_labels".into(), nullable_labels_dtype, true),
+    ]);
+
+    let expected = RecordBatchT::new(
+        2,
+        Arc::new(schema.clone()),
+        vec![labels.boxed(), nullable_labels.boxed()],
+    );
+
+    let data = write_avro(&expected, &schema, None)?;
+    let (result, read_schema) = read_avro(&data, None)?;
+
+    assert_eq!(read_schema, schema);
+    for (lhs, rhs) in result.columns().iter().zip(expected.columns().iter()) {
+        assert_eq!(lhs.as_ref(), rhs.as_ref());
+    }
+
+    Ok(())
+}
