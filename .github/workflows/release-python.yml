@@ -49,7 +49,7 @@ jobs:
           ref: ${{ inputs.sha }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -116,7 +116,7 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -268,13 +268,13 @@ jobs:
 
       - name: Set up Python
         if: matrix.os != 'windows-11-arm'
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Set up Python (ARM64 Windows)
         if: matrix.os == 'windows-11-arm'
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION_WIN_ARM64 }}
 
@@ -412,7 +412,7 @@ jobs:
 
       - name: Create GitHub release
         id: github-release
-        uses: release-drafter/release-drafter@v6
+        uses: release-drafter/release-drafter@v7
         with:
           config-name: release-drafter-python.yml
           name: Python Polars ${{ steps.version.outputs.version }}
