@@ -114,6 +114,9 @@ def removed_parameters(
             return function(*args, **kwargs)
 
         wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
+        # Stash the removed parameters on the wrapper so that they can be introspected
+        # later, in case the function needs to go through @expr_dispatch later.
+        wrapper.__removed_parameters__ = params  # type: ignore[attr-defined]
         return wrapper
 
     return decorate
@@ -141,8 +144,8 @@ def _raise_removed_argument_error(
         else:
             msg = (
                 f"the argument {param.name!r} for {func_name!r}{was_deprecated_and}"
-                f" has been removed in {param.removed_in}."
-                f" It was renamed to {param.new_name!r} in version {param.removed_in}."
+                f" has been removed in version {param.removed_in}."
+                f" It was renamed to {param.new_name!r}."
             )
             msg = msg if param.hint is None else f"{msg} {param.hint}"
             raise ArgumentRemovedError(msg)
