@@ -245,7 +245,6 @@ impl MultiScanState {
         let slf = match slf {
             Uninitialized { .. } | Finished => slf,
 
-            #[expect(clippy::blocks_in_conditions)]
             Initialized {
                 phase_channel_tx,
                 wait_group,

@@ -1,5 +1,5 @@
 use crate::morsel::{Morsel, MorselLinearizer};
-use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputRecv;
+use crate::nodes::io_sources::multi_scan::reader_interface::output::{FileReaderOutputRecv, RecvError};
 
 #[derive(Copy, Clone)]
 pub enum BridgeState {
@@ -30,7 +30,7 @@ pub enum BridgeRecvPort {
 }
 
 impl BridgeRecvPort {
-    pub async fn recv(&mut self) -> Result<Morsel, ()> {
+    pub async fn recv(&mut self) -> Result<Morsel, RecvError> {
         use BridgeRecvPort::*;
         match self {
             Direct { rx, first_morsel } => {
@@ -40,7 +40,7 @@ impl BridgeRecvPort {
                     rx.recv().await
                 }
             },
-            Linearized { rx } => rx.get().await.ok_or(()),
+            Linearized { rx } => rx.get().await.ok_or(RecvError),
         }
     }
 }
