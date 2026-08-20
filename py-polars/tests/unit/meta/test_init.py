@@ -21,13 +21,10 @@ def test_init_exceptions_not_found() -> None:
         pl.ComputeError  # type: ignore[attr-defined]
 
 
-def test_dtype_groups_deprecated() -> None:
-    with pytest.deprecated_call(
-        match=r"`INTEGER_DTYPES` was deprecated in version 1\.0\.0"
-    ):
-        dtypes = pl.INTEGER_DTYPES  # type: ignore[attr-defined]
-
-    assert pl.Int8 in dtypes
+def test_dtype_groups_not_found() -> None:
+    msg = "`INTEGER_DTYPES` was deprecated in version 1.0.0"
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
+        pl.INTEGER_DTYPES  # type: ignore[attr-defined]
 
 
 def test_import_all() -> None:

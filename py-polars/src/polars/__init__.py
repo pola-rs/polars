@@ -534,15 +534,13 @@ if not TYPE_CHECKING:
         import polars.datatypes.group as dtgroup
 
         if name in dir(dtgroup):
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                message=(
+            msg = (
+                (
                     f"`{name}` was deprecated in version 1.0.0. Define your own data type groups or "
                     "use the `polars.selectors` module for selecting columns of a certain data type."
                 ),
             )
-            return getattr(dtgroup, name)
+            raise exceptions.AttributeRemovedError(msg)
 
         msg = f"module {__name__!r} has no attribute {name!r}"
         raise AttributeError(msg)
