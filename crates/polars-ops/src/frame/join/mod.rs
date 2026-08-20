@@ -154,6 +154,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 cross_options,
                 args.maintain_order,
                 args.how.emits_unmatched_left(),
+                &args.how,
             );
         }
         #[cfg(feature = "cross_join")]

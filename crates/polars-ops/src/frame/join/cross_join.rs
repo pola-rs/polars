@@ -139,17 +139,10 @@ pub(super) fn fused_cross_filter(
     suffix: Option<PlSmallStr>,
     cross_join_options: &CrossJoinOptions,
     maintain_order: MaintainOrderJoin,
+    // If this is set, we didn't do a `how=cross`, but `how=left,anti,semi` in `join_where`
     emit_unmatched_left: bool,
+    how: &JoinType,
 ) -> PolarsResult<DataFrame> {
-    // For a left join, every left row's full run of candidate matches must stay within a
-    // single chunk so a match can be decided per-chunk; that only holds when left is the
-    // (chunked) primary side.
-    let maintain_order = if emit_unmatched_left {
-        MaintainOrderJoin::Left
-    } else {
-        maintain_order
-    };
-
     let unfiltered_size = (left.height() as u64).saturating_mul(right.height() as u64);
     let chunk_size = (unfiltered_size / _set_partition_size() as u64).clamp(1, 100_000);
     let num_chunks = (unfiltered_size / chunk_size).max(1) as usize;
@@ -159,7 +152,14 @@ pub(super) fn fused_cross_filter(
         MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => true,
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => false,
     };
-    debug_assert!(!emit_unmatched_left || left_is_primary);
+    // Every left row's full run of candidate matches must stay within a single chunk so a
+    // match can be decided per-chunk; that only holds when left is the (chunked) primary side.
+    polars_ensure!(
+        !emit_unmatched_left || left_is_primary,
+        InvalidOperation: "'maintain_order={:?}' is not supported for `join_where` with 'how'={}",
+        maintain_order,
+        how
+    );
 
     let split_chunks;
     let cartesian_prod = if left_is_primary {
@@ -173,7 +173,7 @@ pub(super) fn fused_cross_filter(
     let names = _finish_join(left.clear(), right.clear(), suffix)?;
     let rename_names = names.get_column_names();
     let rename_names = &rename_names[left.width()..];
-    let n_secondary = right.height();
+    let len_right = right.height();
 
     let dfs = RAYON
         .install(|| {
@@ -189,49 +189,51 @@ pub(super) fn fused_cross_filter(
                 unsafe { joined.hstack_mut_unchecked(&right_columns) };
 
                 if !emit_unmatched_left {
-                    return cross_join_options.predicate.apply(joined);
+                    cross_join_options.predicate.apply(joined)
+                } else {
+                    let mask = cross_join_options.predicate.evaluate(&joined)?;
+                    let matched = joined.filter_seq(&mask)?;
+
+                    let len_left = left_chunk.height();
+                    debug_assert_eq!(joined.height(), len_left * len_right);
+
+                    // Combine values and validity into one bitmap so a null bit reads as "no
+                    // match" (this is what filter has filtered)
+                    let mask_arr = mask.rechunk();
+                    let mask_arr = mask_arr.downcast_get(0).unwrap();
+                    let match_bits = match mask_arr.validity() {
+                        Some(validity) => mask_arr.values() & validity,
+                        None => mask_arr.values().clone(),
+                    };
+
+                    // Find the rows that didn't match and use them to gather from `left_df` and
+                    // add the `nulls` required for the outer join.
+                    let unmatched_local: Vec<IdxSize> = (0..len_left as IdxSize)
+                        .filter(|&i| {
+                            let start = i as usize * len_right;
+                            // If all rows at this offset are masked out, this one was unmatched.
+                            match_bits.clone().sliced(start, len_right).unset_bits() == len_right
+                        })
+                        .collect();
+
+                    if unmatched_local.is_empty() {
+                        return Ok(matched);
+                    }
+
+                    let idx = IdxCa::from_vec(PlSmallStr::EMPTY, unmatched_local);
+                    let unmatched_primary = unsafe { left_chunk.take_unchecked(&idx) };
+                    let mut unmatched_secondary =
+                        DataFrame::full_null(right.schema(), idx.len()).into_columns();
+                    for (c, name) in unmatched_secondary.iter_mut().zip(rename_names) {
+                        c.rename((*name).clone());
+                    }
+                    let mut unmatched = unmatched_primary;
+                    unsafe { unmatched.hstack_mut_unchecked(&unmatched_secondary) };
+
+                    Ok(accumulate_dataframes_vertical_unchecked([
+                        matched, unmatched,
+                    ]))
                 }
-
-                let mask = cross_join_options.predicate.evaluate(&joined)?;
-                let matched = joined.filter_seq(&mask)?;
-
-                let n_primary = left_chunk.height();
-                debug_assert_eq!(joined.height(), n_primary * n_secondary);
-
-                // Combine values and validity into one bitmap so a null bit reads as "no
-                // match" (consistent with `filter`), then test each row's run of
-                // `n_secondary` bits with an O(1) slice + popcount instead of collecting
-                // the mask into a `Vec<bool>` and scanning it byte-wise.
-                let mask_arr = mask.rechunk();
-                let mask_arr = mask_arr.downcast_get(0).unwrap();
-                let match_bits = match mask_arr.validity() {
-                    Some(validity) => mask_arr.values() & validity,
-                    None => mask_arr.values().clone(),
-                };
-                let unmatched_local: Vec<IdxSize> = (0..n_primary as IdxSize)
-                    .filter(|&i| {
-                        let start = i as usize * n_secondary;
-                        match_bits.clone().sliced(start, n_secondary).unset_bits() == n_secondary
-                    })
-                    .collect();
-
-                if unmatched_local.is_empty() {
-                    return Ok(matched);
-                }
-
-                let idx = IdxCa::from_vec(PlSmallStr::EMPTY, unmatched_local);
-                let unmatched_primary = unsafe { left_chunk.take_unchecked(&idx) };
-                let mut unmatched_secondary =
-                    DataFrame::full_null(right.schema(), idx.len()).into_columns();
-                for (c, name) in unmatched_secondary.iter_mut().zip(rename_names) {
-                    c.rename((*name).clone());
-                }
-                let mut unmatched = unmatched_primary;
-                unsafe { unmatched.hstack_mut_unchecked(&unmatched_secondary) };
-
-                Ok(accumulate_dataframes_vertical_unchecked([
-                    matched, unmatched,
-                ]))
             })
         })
         .collect::<PolarsResult<Vec<_>>>()?;

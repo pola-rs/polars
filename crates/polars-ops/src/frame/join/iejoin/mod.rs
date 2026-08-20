@@ -42,7 +42,6 @@ impl InequalityOperator {
         matches!(self, InequalityOperator::Gt | InequalityOperator::Lt)
     }
 
-    /// The operator such that `b op.flip() a` holds whenever `a op b` holds.
     fn flip(&self) -> InequalityOperator {
         use InequalityOperator::*;
         match self {
