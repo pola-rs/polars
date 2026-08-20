@@ -481,11 +481,6 @@ fn resolve_join_where(
         .get(input_left)
         .schema(ctxt.lp_arena)
         .into_owned();
-    let schema_right = ctxt
-        .lp_arena
-        .get(input_right)
-        .schema(ctxt.lp_arena)
-        .into_owned();
 
     // We start assuming a cross join. Take the how, to keep join information.
     let how = std::mem::replace(&mut options.args.how, JoinType::Cross);
@@ -576,10 +571,7 @@ fn resolve_join_where(
         new_options.args.how = how;
         new_options.options = Some(JoinTypeOptionsIR::CrossAndFilter { predicate });
 
-        let IR::Join {
-            options, schema, ..
-        } = ctxt.lp_arena.get_mut(join_node)
-        else {
+        let IR::Join { options, .. } = ctxt.lp_arena.get_mut(join_node) else {
             unreachable!()
         };
         *options = Arc::new(new_options);

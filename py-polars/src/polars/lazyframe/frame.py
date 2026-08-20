@@ -143,6 +143,7 @@ if TYPE_CHECKING:
         JoinBuildSide,
         JoinStrategy,
         JoinValidation,
+        JoinWhereStrategy,
         Label,
         MaintainOrderJoin,
         Orientation,
@@ -6495,7 +6496,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         other: LazyFrame,
         *predicates: Expr | Iterable[Expr],
-        how: JoinStrategy = "inner",
+        how: JoinWhereStrategy = "inner",
         suffix: str = "_right",
     ) -> LazyFrame:
         """
