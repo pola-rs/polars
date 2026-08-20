@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 from polars._utils.constants import MS_PER_SECOND, NS_PER_SECOND, US_PER_SECOND
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
@@ -928,7 +928,8 @@ def test_nested_struct_cast_22744() -> None:
 
     assert_series_equal(
         s.cast(
-            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})})
+            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})}),
+            strict=False,
         ),
         expected.to_series(),
     )
@@ -938,10 +939,26 @@ def test_nested_struct_cast_22744() -> None:
                 "x": pl.Struct(
                     {"attrs": pl.Struct({"class": pl.String, "other": pl.String})}
                 )
-            }
+            },
+            strict=False,
         ),
         expected,
     )
+
+
+def test_struct_cast_strict_missing_field_28587() -> None:
+    s = pl.Series([{"a": 1, "b": 2}])
+
+    with pytest.raises(SchemaError, match="not found in source struct"):
+        s.cast(pl.Struct({"x": pl.Int64, "y": pl.Int64}), strict=True)
+
+    with pytest.raises(SchemaError, match="not found in source struct"):
+        s.cast(pl.Struct({"a": pl.Int64, "c": pl.Int64}), strict=True)
+
+    # non-strict still fills missing fields with nulls
+    assert s.cast(
+        pl.Struct({"a": pl.Int64, "c": pl.Int64}), strict=False
+    ).to_list() == [{"a": 1, "c": None}]
 
 
 def test_cast_to_self_is_pruned() -> None:
