@@ -163,18 +163,10 @@ where
     let (true_chunks, true_remainder) = rest_true.as_chunks::<64>();
     let (false_chunks, false_remainder) = rest_false.as_chunks::<64>();
     let (out_chunks, out_remainder) = rest_out.as_chunks_mut::<64>();
-    let combined = true_chunks
-        .iter()
-        .zip(false_chunks)
-        .zip(out_chunks);
+    let combined = true_chunks.iter().zip(false_chunks).zip(out_chunks);
     for (i, ((tc, fc), oc)) in combined.enumerate() {
         let m = unsafe { *aligned.bulk().get_unchecked(i) };
-        process_chunk(
-            m,
-            tc,
-            fc,
-            oc,
-        );
+        process_chunk(m, tc, fc, oc);
     }
 
     // Handle suffix.
@@ -183,7 +175,7 @@ where
             aligned.suffix(),
             true_remainder,
             false_remainder,
-            out_remainder
+            out_remainder,
         );
     }
 

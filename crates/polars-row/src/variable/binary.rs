@@ -80,7 +80,10 @@ unsafe fn encode_one(
             let (src_chunks, src_remainder) = val.as_chunks::<BLOCK_SIZE>();
 
             // + 1 is for the BLOCK CONTINUATION TOKEN
-            let dst_chunks = dst.get_unchecked_mut(1..).as_chunks_mut::<{BLOCK_SIZE + 1}>().0;
+            let dst_chunks = dst
+                .get_unchecked_mut(1..)
+                .as_chunks_mut::<{ BLOCK_SIZE + 1 }>()
+                .0;
 
             for (src, dst) in src_chunks.iter().zip(dst_chunks) {
                 // we copy src.len() that leaves 1 bytes for the continuation tkn.

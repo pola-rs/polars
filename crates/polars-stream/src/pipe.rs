@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
-use polars_async::primitives::connector::{ReceiverExt, SenderExt, connector_with, RecvError};
+use polars_async::primitives::connector::{ReceiverExt, RecvError, SenderExt, connector_with};
 use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::linearizer::Linearizer;
 use polars_async::primitives::wait_group::WaitGroup;

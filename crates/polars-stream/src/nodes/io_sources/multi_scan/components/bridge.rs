@@ -1,5 +1,7 @@
 use crate::morsel::{Morsel, MorselLinearizer};
-use crate::nodes::io_sources::multi_scan::reader_interface::output::{FileReaderOutputRecv, RecvError};
+use crate::nodes::io_sources::multi_scan::reader_interface::output::{
+    FileReaderOutputRecv, RecvError,
+};
 
 #[derive(Copy, Clone)]
 pub enum BridgeState {
