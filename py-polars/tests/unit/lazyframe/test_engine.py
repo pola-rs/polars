@@ -176,6 +176,11 @@ def test_gpu_engine_construction_unchanged() -> None:
     engine = pl.GPUEngine(raise_on_fail=True)
     assert engine.config == {"raise_on_fail": True}
     assert engine.name == "gpu"
+    assert engine.monitoring is False
+
+    engine = pl.GPUEngine(monitoring=False)
+    assert engine.config == {"raise_on_fail": False}
+    assert engine.monitoring is False
 
 
 def test_gpu_engine_stays_hashable_and_picklable() -> None:
@@ -183,6 +188,15 @@ def test_gpu_engine_stays_hashable_and_picklable() -> None:
     engine = pl.GPUEngine(device=1)
     assert hash(engine) is not None
     assert pickle.loads(pickle.dumps(engine)).config == engine.config
+
+
+def test_named_engines_are_unmonitored_singletons() -> None:
+    # Named engines resolve to shared instances, so nothing may mutate `monitoring`.
+    for name in ("streaming", "in-memory"):
+        selected = _select_engine(name)  # type: ignore[arg-type]
+        assert isinstance(selected, _LocalEngine)
+        assert selected.monitoring is None
+        assert _select_engine(name) is selected  # type: ignore[arg-type]
 
 
 class _CountingEngine(pl.Engine):

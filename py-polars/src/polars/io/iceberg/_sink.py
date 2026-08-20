@@ -22,8 +22,10 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import gen_uuid_v7
 
 if TYPE_CHECKING:
+    import pyarrow as pa
     import pyiceberg.catalog
     import pyiceberg.table
+    from pyiceberg.table import Transaction
 
     import polars as pl
     from polars._plr import PyLazyFrame
@@ -113,12 +115,14 @@ class IcebergSinkState:
 
     table_name: str
     mode: Literal["append", "overwrite"]
+    schema_mode: Literal["merge", "overwrite"] | None
     snapshot_properties: dict[str, str]
     iceberg_storage_properties: StorageOptionsDict
 
     sink_uuid_str: str
 
     table_: NoPickleOption[pyiceberg.table.Table]
+    source_schema: pa.Schema | None
     commit_result_df: NoPickleOption[pl.DataFrame]
 
     @staticmethod
@@ -126,10 +130,15 @@ class IcebergSinkState:
         target: str | pyiceberg.table.Table,
         *,
         mode: Literal["append", "overwrite"] = "append",
+        schema_mode: Literal["merge", "overwrite"] | None = None,
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
         storage_options: StorageOptionsDict | None = None,
     ) -> IcebergSinkState:
+        if schema_mode == "overwrite" and mode != "overwrite":
+            msg = "schema_mode='overwrite' requires mode='overwrite'"
+            raise ValueError(msg)
+
         catalog_config = (
             (
                 IcebergCatalogConfig._from_api_parameter_or_environment_default(
@@ -163,10 +172,12 @@ class IcebergSinkState:
             catalog_properties=catalog_config.properties,
             table_name=target if isinstance(target, str) else ".".join(target.name()),
             mode=mode,
+            schema_mode=schema_mode,
             snapshot_properties=snapshot_properties or {},
             iceberg_storage_properties=storage_options or {},
             sink_uuid_str=gen_uuid_v7().hex(),
             table_=NoPickleOption(target if not isinstance(target, str) else None),
+            source_schema=None,
             commit_result_df=NoPickleOption(),
         )
 
@@ -193,7 +204,40 @@ class IcebergSinkState:
         )
 
     def attach_sink(self, lf: pl.LazyFrame) -> pl.LazyFrame:
+        if self.schema_mode is not None:
+            self.source_schema = lf.collect_schema().to_arrow()
         return wrap_ldf(lf._ldf.sink_iceberg(self))
+
+    def _get_source_schema(self) -> pa.Schema:
+        assert self.source_schema is not None
+        return self.source_schema
+
+    def _update_schema(self, transaction: Transaction) -> None:
+        if self.schema_mode == "merge":
+            with transaction.update_schema() as update:
+                update.union_by_name(self._get_source_schema())
+        elif self.schema_mode == "overwrite":
+            with transaction.update_schema(allow_incompatible_changes=True) as update:
+                update.set_identifier_fields()
+                for field in transaction.table_metadata.schema().fields:
+                    update.delete_column(field.name)
+
+            with transaction.update_schema(allow_incompatible_changes=True) as update:
+                update.union_by_name(self._get_source_schema())
+
+    def _schema_for_write(self, table: pyiceberg.table.Table) -> pa.Schema:
+        from pyiceberg.io.pyarrow import pyarrow_to_schema, schema_to_pyarrow
+
+        if self.schema_mode is None:
+            return schema_to_pyarrow(table.schema())
+
+        transaction = table.transaction()
+        self._update_schema(transaction)
+        evolved_schema = transaction.table_metadata.schema()
+        source_schema = pyarrow_to_schema(
+            self._get_source_schema(), name_mapping=evolved_schema.name_mapping
+        )
+        return schema_to_pyarrow(source_schema)
 
     def _attach_resolved_sink(self, plf: PyLazyFrame) -> PyLazyFrame:
         from pyiceberg.table import TableProperties
@@ -235,9 +279,7 @@ class IcebergSinkState:
             else None
         )
 
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
-
-        arrow_schema = schema_to_pyarrow(table.schema())
+        arrow_schema = self._schema_for_write(table)
 
         approximate_bytes_per_file = 2 * 1024 * 1024 * 1024
 
@@ -294,6 +336,8 @@ class IcebergSinkState:
             ]
 
         with table.transaction() as tx:
+            self._update_schema(tx)
+
             if self.mode == "overwrite":
                 from pyiceberg.expressions import AlwaysTrue
 

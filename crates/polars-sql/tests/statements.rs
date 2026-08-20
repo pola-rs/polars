@@ -618,6 +618,49 @@ fn test_implicit_join_basic() {
 }
 
 #[test]
+fn test_implicit_join_unqualified_column() {
+    let mut ctx = prepare_compound_join_context();
+
+    for implicit_sql in [
+        "SELECT df1.a, df1.b, df3.c FROM df1, df3 WHERE df1.a = c",
+        "SELECT df1.a, df1.b, df3.c FROM df1, df3 WHERE c = df1.a",
+    ] {
+        let implicit_lf = ctx.execute(implicit_sql).unwrap();
+
+        let plan = implicit_lf.describe_plan().unwrap();
+        assert!(
+            !plan.contains("CROSS JOIN"),
+            "expected a real join (not cross join + filter) for: {implicit_sql}\nplan:\n{plan}"
+        );
+        assert!(
+            plan.contains("INNER JOIN"),
+            "expected an INNER JOIN in the plan for: {implicit_sql}\nplan:\n{plan}"
+        );
+
+        let explicit_sql = r#"
+            SELECT df1.a, df1.b, df3.c FROM df1
+            INNER JOIN df3 ON df1.a = df3.c
+        "#;
+        let actual = implicit_lf
+            .collect()
+            .unwrap()
+            .sort(["a", "b", "c"], Default::default())
+            .unwrap();
+        let expected = ctx
+            .execute(explicit_sql)
+            .unwrap()
+            .collect()
+            .unwrap()
+            .sort(["a", "b", "c"], Default::default())
+            .unwrap();
+        assert!(
+            actual.equals(&expected),
+            "implicit join with unqualified column should match explicit join\nimplicit={actual:?}\nexplicit={expected:?}"
+        );
+    }
+}
+
+#[test]
 fn test_join_non_equi_range() {
     // Range join (two inequalities resolved via `join_where`): amount in [lo, hi]
     let orders = df! {

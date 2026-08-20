@@ -534,7 +534,7 @@ pub struct FileSinkOptions {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Hash, PartialEq)]
 pub enum SinkedPathsCallback {
-    IcebergCommit(IcebergSinkState),
+    IcebergCommit(Box<IcebergSinkState>),
     Callback(PlanCallback<SinkedPathsCallbackArgs, ()>),
 }
 
@@ -584,11 +584,11 @@ impl SinkedPathsCallback {
                             py_paths.append(path)?;
                         }
 
-                        sink_state.clone().into_sink_state_obj()?.call_method1(
-                            py,
-                            intern!(py, "commit"),
-                            (py_paths,),
-                        )?;
+                        sink_state
+                            .as_ref()
+                            .clone()
+                            .into_sink_state_obj()?
+                            .call_method1(py, intern!(py, "commit"), (py_paths,))?;
 
                         PolarsResult::Ok(())
                     })

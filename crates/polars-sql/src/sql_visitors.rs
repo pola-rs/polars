@@ -6,7 +6,9 @@
 use std::ops::ControlFlow;
 
 use polars_core::prelude::*;
-use sqlparser::ast::{Expr as SQLExpr, ObjectName, Query, SetExpr, Visit, Visitor as SQLVisitor};
+use sqlparser::ast::{
+    Expr as SQLExpr, ObjectName, Query, SetExpr, Visit, Visitor as SQLVisitor, visit_expressions,
+};
 use sqlparser::keywords::ALL_KEYWORDS;
 
 // ---------------------------------------------------------------------------
@@ -47,6 +49,52 @@ pub(crate) fn expr_refers_to_table(expr: &SQLExpr, table_name: &str) -> bool {
     let mut table_finder = FindTableIdentifier::new(table_name);
     let _ = expr.visit(&mut table_finder);
     table_finder.found
+}
+
+// ---------------------------------------------------------------------------
+// UnqualifiedColumnsInSchema
+// ---------------------------------------------------------------------------
+
+/// Visitor that collects unqualified column identifiers (`SQLExpr::Identifier`, as opposed
+/// to `SQLExpr::CompoundIdentifier`) referenced in an expression tree, checking each one
+/// against a given `Schema` as it goes.
+struct UnqualifiedColumnsInSchema<'a> {
+    schema: &'a Schema,
+    found_any: bool,
+    all_in_schema: bool,
+}
+
+impl<'a> UnqualifiedColumnsInSchema<'a> {
+    fn new(schema: &'a Schema) -> Self {
+        Self {
+            schema,
+            found_any: false,
+            all_in_schema: true,
+        }
+    }
+}
+
+impl<'a> SQLVisitor for UnqualifiedColumnsInSchema<'a> {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<Self::Break> {
+        if let SQLExpr::Identifier(ident) = expr {
+            self.found_any = true;
+            if !self.schema.contains(ident.value.as_str()) {
+                self.all_in_schema = false;
+                return ControlFlow::Break(()); // short-circuit on first non-match
+            }
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// Check whether a raw SQL expression contains at least one *unqualified* column
+/// identifier, and that every unqualified identifier it contains exists in `schema`.
+pub(crate) fn sql_expr_cols_all_in_schema(expr: &SQLExpr, schema: &Schema) -> bool {
+    let mut visitor = UnqualifiedColumnsInSchema::new(schema);
+    let _ = expr.visit(&mut visitor);
+    visitor.found_any && visitor.all_in_schema
 }
 
 // ---------------------------------------------------------------------------
@@ -262,4 +310,47 @@ impl SQLVisitor for WindowFunctionFinder {
 /// Check if a SQL expression contains explicit window functions.
 pub(crate) fn expr_has_window_functions(expr: &SQLExpr) -> bool {
     expr.visit(&mut WindowFunctionFinder).is_break()
+}
+
+// ---------------------------------------------------------------------------
+// ColumnRefFinder
+// ---------------------------------------------------------------------------
+
+/// Visitor that checks if a SQL expression contains any column reference at all.
+struct ColumnRefFinder;
+
+impl SQLVisitor for ColumnRefFinder {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+        if matches!(
+            expr,
+            SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_)
+        ) {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    }
+}
+
+/// Check if a SQL expression references any column (as opposed to being a
+/// constant expression composed only of literals/operators/functions).
+pub(crate) fn expr_references_any_column(expr: &SQLExpr) -> bool {
+    expr.visit(&mut ColumnRefFinder).is_break()
+}
+
+/// Check if a SQL expression contains a subquery, in any of its forms.
+pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
+    visit_expressions(expr, |e| {
+        if matches!(
+            e,
+            SQLExpr::Subquery(_) | SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. }
+        ) {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    })
+    .is_break()
 }
