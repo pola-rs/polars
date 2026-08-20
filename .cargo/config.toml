@@ -1,0 +1,17 @@
+# Machine-specific cargo settings (PYO3 paths, RUSTFLAGS, CFLAGS, ...) are
+# written to .cargo/config.generated.toml by tools/update-cargo-env.py, which
+# runs automatically in the Makefile. This is done to prevent re-compilation
+# when running cargo check without the Makefile or rust-analyzer.
+#
+# Since this file is committed, any local changes you'd like to make should go
+# in config.local.toml, which is gitignored.
+include = [
+    { path = "config.generated.toml", optional = true },
+    { path = "config.local.toml", optional = true },
+]
+
+[unstable]
+min-publish-age = true
+
+[registry]
+global-min-publish-age = "35 days"
