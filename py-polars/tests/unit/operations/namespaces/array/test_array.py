@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import datetime
+import os
+import subprocess
+import sys
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -1071,20 +1074,35 @@ def test_array_get_broadcast_26217() -> None:
 
 @pytest.mark.debug
 def test_array_idx_size_limit_eval(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> None:
-    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
-    plmonkeypatch.setenv("POLARS_ARRAY_EVAL_IDX_SIZE_LIMIT", "20")
-    s = pl.Series([None])
-    width = 19
-    s = s.new_from_index(0, width)
-    assert (
-        pl.Series("a", [s, s, s, s], dtype=pl.Array(pl.Null, width))
-        .to_frame()
-        .select(pl.col("a").arr.eval(pl.element().len() * pl.element()))
-        .head(1)
-        .item()
-        .to_list()
-        == [None] * width
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import polars as pl
+
+s = pl.Series([None])
+width = 19
+s = s.new_from_index(0, width)
+
+assert (
+    pl.Series("a", [s, s, s, s], dtype=pl.Array(pl.Null, width))
+    .to_frame()
+    .select(pl.col("a").arr.eval(pl.element().len() * pl.element()))
+    .head(1)
+    .item()
+    .to_list()
+    == [None] * width
+)
+""",
+        ],
+        env={
+            **os.environ,
+            "POLARS_MAX_THREADS": "1",
+            "POLARS_VERBOSE": "1",
+            "POLARS_ARRAY_EVAL_IDX_SIZE_LIMIT": "20",
+        },
+        stderr=subprocess.STDOUT,
     )
 
-    captured = capfd.readouterr().err
-    assert "IdxSize limit hit; chunking branch hit" in captured
+    assert b"IdxSize limit hit; chunking branch hit" in out
