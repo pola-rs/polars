@@ -4064,7 +4064,7 @@ class Expr:
         """
         Get the single value.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         This raises an error if there is not exactly one value.
 
@@ -5504,7 +5504,7 @@ Consider using {self}.implode() instead"""
                 df = x.to_frame("x")
 
                 if x.len() == 0:
-                    return get_lazy_promise(df).collect().to_series()
+                    return get_lazy_promise(df)._collect_eager().to_series()
 
                 n_threads = thread_pool_size()
                 chunk_size = x.len() // n_threads
@@ -5527,7 +5527,9 @@ Consider using {self}.implode() instead"""
                     partition_df = df[a:b, :]
                     partitions.append(get_lazy_promise(partition_df))
 
-                out = [df.to_series() for df in F.collect_all(partitions)]
+                from polars.functions.lazy import _collect_all_eager
+
+                out = [df.to_series() for df in _collect_all_eager(partitions)]
                 return F.concat(out, rechunk=False)
 
             return self.map_batches(

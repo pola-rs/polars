@@ -109,7 +109,7 @@ def test_struct_field_group_by(df_struct: pl.DataFrame) -> None:
 
     expected = pl.DataFrame(
         data={"n": [2, 1], "names": [["Bob", "Zoe"], ["David"]]},
-        schema_overrides={"n": pl.get_index_type()},
+        schema_overrides={"n": pl.Int64},
     )
     assert_frame_equal(expected, res)
 

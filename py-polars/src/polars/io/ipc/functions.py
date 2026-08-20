@@ -55,7 +55,7 @@ def read_ipc(
     storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-    rechunk: bool = True,
+    rechunk: bool | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC (Feather v2) file.
@@ -98,6 +98,9 @@ def read_ipc(
         Only used if `row_index_name` is set.
     rechunk
         Make sure that all data is contiguous.
+
+        .. deprecated:: 1.43.2
+            Call rechunk on the returned DataFrame.
 
     Returns
     -------
@@ -144,7 +147,6 @@ def read_ipc(
             storage_options=storage_options,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
-            rechunk=rechunk,
         )
 
         if columns:
@@ -153,9 +155,22 @@ def read_ipc(
             else:
                 lf = lf.select(columns)
 
-        df = lf.collect()
+        df = lf._collect_eager()
+
+        if rechunk:
+            df = df.rechunk()
 
         return df
+
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on read_ipc() will be removed. "
+            "Consider calling "
+            "df.rechunk() on the result.",
+            version="1.43.2",
+        )
+    else:
+        rechunk = False
 
     if use_pyarrow and n_rows and not memory_map:
         msg = "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
@@ -233,20 +248,23 @@ def _read_ipc_impl(
         scan = scan_ipc(
             source,
             n_rows=n_rows,
-            rechunk=rechunk,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
         )
         if columns is None:
-            df = scan.collect()
+            df = scan._collect_eager()
         elif is_str_sequence(columns, allow_str=False):
-            df = scan.select(columns).collect()
+            df = scan.select(columns)._collect_eager()
         else:
             msg = (
                 "cannot use glob patterns and integer based projection as `columns` argument"
                 "\n\nUse columns: List[str]"
             )
             raise TypeError(msg)
+
+        if rechunk:
+            df = df.rechunk()
+
         return df
 
     projection, columns = parse_columns_arg(columns)
@@ -272,7 +290,7 @@ def read_ipc_stream(
     storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-    rechunk: bool = True,
+    rechunk: bool | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC record batch stream.
@@ -311,10 +329,23 @@ def read_ipc_stream(
     rechunk
         Make sure that all data is contiguous.
 
+        .. deprecated:: 1.43.2
+            Call rechunk on the returned DataFrame(s).
+
     Returns
     -------
     DataFrame
     """
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on read_ipc_stream() will be removed. "
+            "Consider calling "
+            "df.rechunk() on the result.",
+            version="1.43.2",
+        )
+    else:
+        rechunk = False
+
     with prepare_file_arg(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
@@ -408,7 +439,7 @@ def scan_ipc(
     *,
     n_rows: int | None = None,
     cache: bool | None = None,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     glob: bool = True,
@@ -448,6 +479,9 @@ def scan_ipc(
             File cache is no longer supported.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
+
+        .. deprecated:: 1.43.2
+            Collect into a DataFrame first, then call rechunk on the returned DataFrame.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -516,6 +550,16 @@ def scan_ipc(
     """
     # Memory Mapping is now a no-op
     _ = memory_map
+
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on scan_ipc() will be removed. "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            version="1.43.2",
+        )
+    else:
+        rechunk = False
 
     sources = get_sources(source)
 

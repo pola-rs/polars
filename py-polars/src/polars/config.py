@@ -3,21 +3,27 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Literal, TypedDict, get_args
+from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict, get_args
 
 from polars._dependencies import json
-from polars._typing import EngineType
 from polars._utils.deprecation import deprecated
+from polars._utils.monitoring import MONITORING_ENV_VAR, activate_monitoring
 from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
-from polars.lazyframe.engine_config import GPUEngine, StreamingEngine
+from polars.lazyframe.engine import Engine
+from polars.lazyframe.engine_config import (
+    SUPPORTED_ENGINE_NAMES,
+    get_engine_affinity_override,
+    set_engine_affinity_override,
+)
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Callable
     from types import TracebackType
     from typing import TypeAlias
 
-    from polars._typing import Alignment, FloatFmt
+    from polars._typing import Alignment, EngineType, FloatFmt
     from polars.io.cloud.credential_provider._providers import (
         CredentialProviderFunction,
     )
@@ -96,6 +102,47 @@ with contextlib.suppress(ImportError, NameError):
     }
 
 
+def _get_default_credential_provider() -> Any:
+    import polars.io.cloud.credential_provider._builder as builder
+
+    return builder.DEFAULT_CREDENTIAL_PROVIDER
+
+
+def _set_default_credential_provider(provider: Any) -> None:
+    import polars.io.cloud.credential_provider._builder as builder
+
+    builder.DEFAULT_CREDENTIAL_PROVIDER = provider
+
+
+# Python-object options cannot be stored in environment variables or `Config.save`.
+# Register them here so contexts and resets handle them like other options.
+_POLARS_CFG_RUNTIME_VARS: Final[
+    dict[str, tuple[Callable[[], Any], Callable[[Any], None], Any]]
+] = {
+    "set_engine_affinity": (
+        get_engine_affinity_override,
+        set_engine_affinity_override,
+        None,
+    ),
+    "set_default_credential_provider": (
+        _get_default_credential_provider,
+        _set_default_credential_provider,
+        "auto",
+    ),
+}
+
+
+def _snapshot_runtime_vars() -> dict[str, Any]:
+    """Capture the current value of every runtime-only option, by reference."""
+    return {name: get() for name, (get, _, _) in _POLARS_CFG_RUNTIME_VARS.items()}
+
+
+def _restore_runtime_vars(snapshot: dict[str, Any]) -> None:
+    """Restore runtime-only options from a `_snapshot_runtime_vars` result."""
+    for name, (_, set_, default) in _POLARS_CFG_RUNTIME_VARS.items():
+        set_(snapshot.get(name, default))
+
+
 class ConfigParameters(TypedDict, total=False):
     """Parameters supported by the polars Config."""
 
@@ -123,6 +170,8 @@ class ConfigParameters(TypedDict, total=False):
     trim_decimal_zeros: bool | None
     verbose: bool | None
     expr_depth_warning: int
+    engine_affinity: EngineType | None
+    default_credential_provider: CredentialProviderFunction | Literal["auto"] | None
     enable_monitoring: bool | None
 
     set_ascii_tables: bool | None
@@ -183,6 +232,9 @@ class Config(contextlib.ContextDecorator):
 
     _context_options: ConfigParameters | None = None
     _original_state: str = ""
+    # `save()` cannot represent runtime-only options, so they are snapshotted
+    # separately.
+    _original_runtime_state: dict[str, Any] | None = None
 
     def __init__(
         self,
@@ -266,6 +318,7 @@ class Config(contextlib.ContextDecorator):
         """
         # save original state _before_ any changes are made
         self._original_state = self.save()
+        self._original_runtime_state = _snapshot_runtime_vars()
         if restore_defaults:
             self.restore_defaults()
 
@@ -280,6 +333,8 @@ class Config(contextlib.ContextDecorator):
     def __enter__(self) -> Self:
         """Support setting Config options that are reset on scope exit."""
         self._original_state = self._original_state or self.save()
+        if self._original_runtime_state is None:
+            self._original_runtime_state = _snapshot_runtime_vars()
         if self._context_options:
             self._set_config_params(**self._context_options)
         return self
@@ -292,7 +347,10 @@ class Config(contextlib.ContextDecorator):
     ) -> None:
         """Reset any Config options that were set within the scope."""
         self.restore_defaults().load(self._original_state)
+        if self._original_runtime_state is not None:
+            _restore_runtime_vars(self._original_runtime_state)
         self._original_state = ""
+        self._original_runtime_state = None
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Config):
@@ -336,6 +394,9 @@ class Config(contextlib.ContextDecorator):
 
         cfg_load = Config()
         opts = options.get("environment", {})
+        if "POLARS_ENGINE_AFFINITY" in opts:
+            # A saved affinity value replaces any object affinity.
+            set_engine_affinity_override(None)
         for key, opt in opts.items():
             if opt is None:
                 os.environ.pop(key, None)
@@ -393,6 +454,10 @@ class Config(contextlib.ContextDecorator):
         # reset all 'direct' defaults
         for method in _POLARS_CFG_DIRECT_VARS:
             getattr(cls, method)(None)
+
+        # not representable as environment variables, so reset separately
+        for _, set_, default in _POLARS_CFG_RUNTIME_VARS.values():
+            set_(default)
 
         plr.config_reload_env_vars()
         return cls
@@ -1505,6 +1570,10 @@ class Config(contextlib.ContextDecorator):
             when calling `.collect()`. However, the query is not
             guaranteed to execute with the specified engine.
 
+            An :class:`Engine` object may also be used to configure the default. Engine
+            objects are process-local and omitted from :meth:`Config.save`; loading
+            a state containing `POLARS_ENGINE_AFFINITY` replaces the object affinity.
+
         Examples
         --------
         >>> pl.Config.set_engine_affinity("streaming")  # doctest: +SKIP
@@ -1533,25 +1602,31 @@ class Config(contextlib.ContextDecorator):
         │ 3   ┆ 6   │
         └─────┴─────┘
 
+        Set a configured engine as the default:
+
+        >>> pl.Config.set_engine_affinity(
+        ...     pl.GPUEngine(device=1, raise_on_fail=True)
+        ... )  # doctest: +SKIP
+
         Raises
         ------
         ValueError: if engine is not recognised.
-        NotImplementedError: if engine is a GPUEngine | StreamingEngine object
         """
-        if isinstance(engine, GPUEngine):
-            msg = "GPU engine with non-defaults not yet supported"
-            raise NotImplementedError(msg)
-        if isinstance(engine, StreamingEngine):
-            msg = "Streaming engine with non-defaults not yet supported"
-            raise NotImplementedError(msg)
-        supported_engines = get_args(get_args(EngineType)[0])
-        if engine not in {*supported_engines, None}:
+        if isinstance(engine, Engine):
+            # Object affinities are Python-only; clear the named affinity.
+            os.environ.pop("POLARS_ENGINE_AFFINITY", None)
+            set_engine_affinity_override(engine)
+            plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
+            return cls
+
+        if engine not in {*SUPPORTED_ENGINE_NAMES, None}:
             msg = "invalid engine"
             raise ValueError(msg)
         if engine is None:
             os.environ.pop("POLARS_ENGINE_AFFINITY", None)
         else:
             os.environ["POLARS_ENGINE_AFFINITY"] = engine
+        set_engine_affinity_override(None)
         plr.config_reload_env_var("POLARS_ENGINE_AFFINITY")
 
         return cls
@@ -1570,9 +1645,10 @@ class Config(contextlib.ContextDecorator):
         - The ``polars-cloud`` package installed in this environment
           (``pip install polars-cloud``).
 
-        Monitoring is only supported by the streaming engine, so enabling it also
-        sets the engine affinity to ``"streaming"``. Disabling it does not restore
-        the previous engine affinity.
+        Monitoring is supported by the in-memory and streaming engines, but only
+        the streaming engine collects per-node metrics. Enabling monitoring therefore
+        also sets the engine affinity to ``"streaming"``. Disabling it does not
+        restore the previous engine affinity.
 
         .. engine-support:: streaming
 
@@ -1584,24 +1660,20 @@ class Config(contextlib.ContextDecorator):
         Examples
         --------
         >>> pl.Config.enable_monitoring()  # doctest: +SKIP
+
+        Enable monitoring temporarily with ``Config``; the previous monitoring state
+        and engine affinity are restored on exit:
+
+        >>> with pl.Config(enable_monitoring=True):  # doctest: +SKIP
+        ...     lf.collect()
         """
         if active:
-            try:
-                import polars_cloud as pc
-            except ImportError as e:
-                msg = (
-                    "query monitoring requires the `polars_cloud>=0.11.0` package, which could "
-                    "not be imported. Install it into this environment "
-                    f"(e.g. `pip install 'polars-cloud>=0.11.0'`). ({e})"
-                )
-                raise ModuleNotFoundError(msg) from e
+            activate_monitoring()
 
-            pc.authenticate()
-
-            os.environ["POLARS_QUERY_MONITORING"] = "1"
+            os.environ[MONITORING_ENV_VAR] = "1"
             cls.set_engine_affinity("streaming")
         else:
-            os.environ.pop("POLARS_QUERY_MONITORING", None)
+            os.environ.pop(MONITORING_ENV_VAR, None)
 
         return cls
 
@@ -1639,14 +1711,10 @@ class Config(contextlib.ContextDecorator):
         ... )
         <class 'polars.config.Config'>
         """
-        import polars.io.cloud.credential_provider._builder
-
         if isinstance(credential_provider, str) and credential_provider != "auto":
             raise ValueError(credential_provider)
 
-        polars.io.cloud.credential_provider._builder.DEFAULT_CREDENTIAL_PROVIDER = (
-            credential_provider
-        )
+        _set_default_credential_provider(credential_provider)
 
         return cls
 

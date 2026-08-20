@@ -3137,13 +3137,16 @@ def test_scan_iceberg_row_estimate(
         for x in tbl.scan().plan_files()
     ]
 
-    deletion_files = (
-        "iceberg-position-delete",
-        {
-            0: [
-                write_position_deletes(pl.Series([1, 2])),
-            ],
-        },
+    deletion_files = (  # type: ignore[var-annotated]
+        "iceberg",
+        (
+            {
+                0: [
+                    write_position_deletes(pl.Series([1, 2])),
+                ],
+            },
+            {},
+        ),
     )
 
     q = pl.scan_parquet(

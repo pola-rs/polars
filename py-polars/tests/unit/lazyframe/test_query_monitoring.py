@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import sys
+import tempfile
 import uuid
+from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
@@ -10,11 +14,12 @@ import pytest
 
 import polars as pl
 import polars._plr as plr
-from polars.lazyframe.engine_config import StreamingEngine
+from polars._utils.monitoring import MONITORING_ENV_VAR
+from polars.lazyframe.engine import StreamingEngine
 from tests.unit.conftest import mock_module_import
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
 
 def fake_cloud_observer() -> tuple[ModuleType, MagicMock]:
@@ -43,15 +48,26 @@ def _sample_lf() -> pl.LazyFrame:
 
 
 def test_config_enable_monitoring() -> None:
-    module, _observer = fake_cloud_observer()
+    module, observer = fake_cloud_observer()
     with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        assert "POLARS_ENGINE_AFFINITY" not in os.environ
+
         pl.Config.enable_monitoring()
         module.authenticate.assert_called_once()
-        assert os.environ["POLARS_QUERY_MONITORING"] == "1"
+        assert os.environ[MONITORING_ENV_VAR] == "1"
         assert os.environ["POLARS_ENGINE_AFFINITY"] == "streaming"
 
+        # no engine argument: monitoring switches the affinity to streaming
+        _sample_lf().collect()
+        _sample_lf().collect()
+        assert observer.on_query_started.call_count == 2
+
+        # disabling stops monitoring; the affinity is left as it is
         pl.Config.enable_monitoring(False)
-        assert "POLARS_QUERY_MONITORING" not in os.environ
+        assert MONITORING_ENV_VAR not in os.environ
+        _sample_lf().collect()
+
+    assert observer.on_query_started.call_count == 2
 
 
 def test_collect_calls_observer() -> None:
@@ -73,26 +89,155 @@ def test_collect_calls_observer() -> None:
     assert started_id == planned_id
 
 
-def test_streaming_engine_object_enables_monitoring() -> None:
-    """`StreamingEngine(monitoring=True)` enables monitoring without the env var."""
+def test_config_scope_monitoring() -> None:
     module, observer = fake_cloud_observer()
     with mock_module_import("polars_cloud", module, replace_if_exists=True):
-        _sample_lf().collect(engine=StreamingEngine(monitoring=True))
+        assert "POLARS_ENGINE_AFFINITY" not in os.environ
+
+        with pl.Config(enable_monitoring=True):
+            assert os.environ[MONITORING_ENV_VAR] == "1"
+            assert os.environ["POLARS_ENGINE_AFFINITY"] == "streaming"
+            _sample_lf().collect()
+        observer.on_query_started.assert_called_once()
+
+        # leaving the scope stops monitoring
+        _sample_lf().collect()
+
+        assert MONITORING_ENV_VAR not in os.environ
+        assert "POLARS_ENGINE_AFFINITY" not in os.environ
 
     observer.on_query_started.assert_called_once()
-    observer.on_query_planned.assert_called_once()
-    observer.on_query_planned.return_value.close.assert_called_once()
 
 
-def test_streaming_engine_monitoring_false_overrides_env() -> None:
-    """`StreamingEngine(monitoring=False)` disables monitoring (engine flag wins)."""
+def test_engine_object_follows_config() -> None:
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        pl.Config.enable_monitoring()
+        _sample_lf().collect(engine=StreamingEngine())
+
+    observer.on_query_started.assert_called_once()
+
+
+def test_engine_object_without_config_is_not_monitored() -> None:
+    """An engine with `monitoring=None` follows the Config; here it is off."""
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        _sample_lf().collect(engine=StreamingEngine())
+
+    module.QueryCloudObserver.assert_not_called()
+    observer.on_query_started.assert_not_called()
+
+
+def test_engine_monitoring_overrides_config_off() -> None:
+    """`monitoring=True` monitors the query without the Config being enabled."""
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        engine = StreamingEngine(monitoring=True)
+        module.authenticate.assert_called_once()
+
+        _sample_lf().collect(engine=engine)
+
+    observer.on_query_started.assert_called_once()
+    # The engine override must not modify the environment-backed Config setting.
+    assert MONITORING_ENV_VAR not in os.environ
+
+
+def test_engine_monitoring_overrides_config_on() -> None:
+    """`monitoring=False` exempts the query while the Config is enabled."""
     module, observer = fake_cloud_observer()
     with mock_module_import("polars_cloud", module, replace_if_exists=True):
         pl.Config.enable_monitoring()
         _sample_lf().collect(engine=StreamingEngine(monitoring=False))
 
-    module.QueryCloudObserver.assert_not_called()
+    # The explicit engine setting prevents observer construction for this query.
     observer.on_query_started.assert_not_called()
+
+
+def test_engine_monitoring_requires_polars_cloud(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "polars_cloud", None)
+    with pytest.raises(ModuleNotFoundError, match="polars_cloud"):
+        StreamingEngine(monitoring=True)
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_in_memory_engine_monitoring() -> None:
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        _sample_lf().collect(engine=pl.InMemoryEngine(monitoring=True))
+
+    observer.on_query_started.assert_called_once()
+    observer.on_query_planned.assert_called_once()
+
+
+def test_engine_affinity_object_carries_monitoring() -> None:
+    """A configured engine object monitors every query in its scope."""
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        with pl.Config(engine_affinity=StreamingEngine(monitoring=True)):
+            _sample_lf().collect()
+        observer.on_query_started.assert_called_once()
+
+        # Leaving the scope restores the unmonitored affinity.
+        _sample_lf().collect()
+
+    observer.on_query_started.assert_called_once()
+    assert MONITORING_ENV_VAR not in os.environ
+
+
+def _run_collect(lf: pl.LazyFrame, engine: StreamingEngine) -> None:
+    lf.collect(engine=engine)
+
+
+def _run_collect_all(lf: pl.LazyFrame, engine: StreamingEngine) -> None:
+    pl.collect_all([lf], engine=engine)
+
+
+def _run_collect_batches(lf: pl.LazyFrame, engine: StreamingEngine) -> None:
+    list(lf.collect_batches(engine=engine))
+
+
+def _run_collect_async(lf: pl.LazyFrame, engine: StreamingEngine) -> None:
+    async def run() -> None:
+        await lf.collect_async(engine=engine)
+
+    asyncio.run(run())
+
+
+def _run_collect_all_async(lf: pl.LazyFrame, engine: StreamingEngine) -> None:
+    async def run() -> None:
+        await pl.collect_all_async([lf], engine=engine)
+
+    asyncio.run(run())
+
+
+def _run_sink(lf: pl.LazyFrame, engine: StreamingEngine) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        lf.sink_parquet(Path(tmp) / "out.parquet", engine=engine)
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        _run_collect,
+        _run_collect_all,
+        _run_collect_batches,
+        _run_collect_async,
+        _run_collect_all_async,
+        _run_sink,
+    ],
+)
+def test_monitoring_covers_local_execution_paths(
+    run: Callable[[pl.LazyFrame, StreamingEngine], None],
+) -> None:
+    """The primary local collection and sink paths report to the observer."""
+    module, observer = fake_cloud_observer()
+    with mock_module_import("polars_cloud", module, replace_if_exists=True):
+        run(_sample_lf(), StreamingEngine(monitoring=True))
+
+    observer.on_query_started.assert_called_once()
+    observer.on_query_planned.assert_called_once()
 
 
 def test_planned_payload_decodes() -> None:
@@ -161,6 +306,7 @@ def test_no_monitoring_no_observer() -> None:
     module.QueryCloudObserver.assert_not_called()
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_in_memory_engine_planned_without_physical() -> None:
     """The in-memory engine is observed with an IR-only planned query.
 

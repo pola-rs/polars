@@ -463,47 +463,51 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             .unwrap_or(usize::MAX)
                     });
 
-                    let mut truncate_len = projected_names.len();
+                    if projected_names.len() != exprs.len() {
+                        let mut truncate_len = projected_names.len();
+                        let mut height_expr_idx = usize::MAX;
 
-                    // If exprs has any column-height output, at least 1 of them must be projected.
-                    let first_column_height_idx = exprs.iter().position(|e| {
-                        matches!(
-                            aexpr_projection_height_rec(
+                        for (i, e) in exprs.iter().enumerate() {
+                            match aexpr_projection_height_rec(
                                 e.node(),
                                 self.expr_arena,
                                 self.ae_nodes_scratch,
                                 self.ae_height_scratch,
-                            ),
-                            EH::Column
-                        )
-                    });
-
-                    if let Some(column_height_idx) = first_column_height_idx
-                        && column_height_idx >= truncate_len
-                    {
-                        exprs.swap(column_height_idx, projected_names.len());
-                        truncate_len += 1;
-                    }
-
-                    if first_column_height_idx.is_none() || self.maintain_errors {
-                        let range = truncate_len..exprs.len();
-                        for i in range {
-                            match aexpr_projection_height_rec(
-                                exprs[i].node(),
-                                self.expr_arena,
-                                self.ae_nodes_scratch,
-                                self.ae_height_scratch,
                             ) {
-                                EH::Scalar | EH::Column => {},
-                                EH::Unknown | EH::Range => {
-                                    exprs.swap(i, truncate_len);
-                                    truncate_len += 1;
+                                EH::Column => {
+                                    height_expr_idx = i;
+                                    break;
                                 },
+                                EH::Unknown | EH::Range => height_expr_idx = i,
+                                EH::Scalar => height_expr_idx = usize::min(i, height_expr_idx),
                             }
                         }
-                    }
 
-                    exprs.truncate(truncate_len);
+                        if height_expr_idx != usize::MAX && height_expr_idx >= truncate_len {
+                            exprs.swap(height_expr_idx, projected_names.len());
+                            truncate_len += 1;
+                        }
+
+                        if self.maintain_errors {
+                            let range = truncate_len..exprs.len();
+                            for i in range {
+                                match aexpr_projection_height_rec(
+                                    exprs[i].node(),
+                                    self.expr_arena,
+                                    self.ae_nodes_scratch,
+                                    self.ae_height_scratch,
+                                ) {
+                                    EH::Scalar | EH::Column => {},
+                                    EH::Unknown | EH::Range => {
+                                        exprs.swap(i, truncate_len);
+                                        truncate_len += 1;
+                                    },
+                                }
+                            }
+                        }
+
+                        exprs.truncate(truncate_len);
+                    }
 
                     let schema_arc = schema;
 
