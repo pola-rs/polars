@@ -29,31 +29,41 @@ else:
 
 
 @pytest.mark.parametrize(
-    "input",
+    ("input", "dtype"),
     [
-        [[1, 2], [3, 4, 5]],
-        [1, 2, 3],
+        ([[1, 2], [3, 4, 5]], pl.List(pl.List(pl.Int32))),
+        ([1, 2, 3], pl.List(pl.Int32)),
     ],
 )
-def test_lit_list_input(input: list[Any]) -> None:
+def test_lit_list_input(input: list[Any], dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"a": [1, 2]})
     result = df.with_columns(pl.lit(input).first())
-    expected = pl.DataFrame({"a": [1, 2], "literal": [input, input]})
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "literal": pl.Series("literal", [input, input], dtype=dtype),
+        }
+    )
     assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(
-    "input",
+    ("input", "dtype"),
     [
-        ([1, 2], [3, 4, 5]),
-        (1, 2, 3),
+        (([1, 2], [3, 4, 5]), pl.List(pl.List(pl.Int32))),
+        ((1, 2, 3), pl.List(pl.Int32)),
     ],
 )
-def test_lit_tuple_input(input: tuple[Any, ...]) -> None:
+def test_lit_tuple_input(input: tuple[Any, ...], dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"a": [1, 2]})
     result = df.with_columns(pl.lit(input).first())
 
-    expected = pl.DataFrame({"a": [1, 2], "literal": [list(input), list(input)]})
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "literal": pl.Series("literal", [list(input), list(input)], dtype=dtype),
+        }
+    )
     assert_frame_equal(result, expected)
 
 
@@ -105,6 +115,49 @@ def test_list_datetime_11571() -> None:
 )
 def test_lit_int_return_type(input: int, dtype: PolarsDataType) -> None:
     assert pl.select(pl.lit(input)).to_series().dtype == dtype
+
+
+@pytest.mark.parametrize(
+    ("input", "dtype"),
+    [
+        pytest.param([1], pl.List(pl.Int32), id="list-i32"),
+        pytest.param([None, 1], pl.List(pl.Int32), id="list-null-i32"),
+        pytest.param([2**31], pl.List(pl.Int64), id="list-above-i32"),
+        pytest.param([2**63], pl.List(pl.UInt64), id="list-above-i64"),
+        pytest.param([2**127 - 1], pl.List(pl.Int128), id="list-i128-max"),
+        pytest.param([2**127], pl.List(pl.UInt128), id="list-above-i128"),
+        pytest.param([[1]], pl.List(pl.List(pl.Int32)), id="nested-list-i32"),
+        pytest.param(
+            [[None], [1]], pl.List(pl.List(pl.Int32)), id="nested-list-null-i32"
+        ),
+        pytest.param([[], [1]], pl.List(pl.List(pl.Int32)), id="nested-list-empty-i32"),
+    ],
+)
+def test_lit_list_int_return_type(input: list[Any], dtype: PolarsDataType) -> None:
+    assert pl.select(pl.lit(input)).to_series().dtype == dtype
+
+
+@pytest.mark.parametrize(
+    ("input", "dtype"),
+    [
+        pytest.param([True, False], pl.List(pl.Boolean), id="list-bool"),
+        pytest.param([None, None], pl.List(pl.Null), id="list-null"),
+        pytest.param([[], []], pl.List(pl.List(pl.Null)), id="nested-list-null"),
+    ],
+)
+def test_lit_list_fallback_return_type(input: list[Any], dtype: PolarsDataType) -> None:
+    assert pl.select(pl.lit(input)).to_series().dtype == dtype
+
+
+def test_lit_list_explicit_dtype_override() -> None:
+    assert pl.select(pl.lit([1], dtype=pl.List(pl.Int64))).to_series().dtype == pl.List(
+        pl.Int64
+    )
+
+
+def test_lit_list_mixed_depth_uses_series_inference() -> None:
+    with pytest.raises(TypeError, match="failed to determine supertype"):
+        pl.select(pl.lit([1, [2]]))
 
 
 def test_lit_unsupported_type() -> None:

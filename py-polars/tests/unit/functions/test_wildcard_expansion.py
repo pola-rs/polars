@@ -29,7 +29,7 @@ def test_concat_list_expansion() -> None:
     df = pl.select(x=[1], y=[2])
     out = df.select(z=pl.concat_list(pl.all())).to_series()
 
-    assert_series_equal(out, pl.Series("z", [[1, 2]], dtype=pl.List(pl.Int64)))
+    assert_series_equal(out, pl.Series("z", [[1, 2]], dtype=pl.List(pl.Int32)))
 
 
 def test_concat_str_expansion() -> None:

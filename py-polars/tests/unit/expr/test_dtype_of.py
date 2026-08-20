@@ -9,4 +9,4 @@ def test_dtype_of_scalar_literal_collect_dtype_26271() -> None:
 
     # These already worked but included for completeness
     assert pl.dtype_of(pl.lit("foo")).collect_dtype({}) == pl.String
-    assert pl.dtype_of(pl.lit([1])).collect_dtype({}) == pl.List(pl.Int64)
+    assert pl.dtype_of(pl.lit([1])).collect_dtype({}) == pl.List(pl.Int32)

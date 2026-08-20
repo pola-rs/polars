@@ -8995,7 +8995,7 @@ class Series:
         >>> s = pl.Series([1, 2, 2, 3])
         >>> s.replace_strict([1, 2, 3], [100, 200, 300])
         shape: (4,)
-        Series: '' [i64]
+        Series: '' [i32]
         [
             100
             200
@@ -9008,7 +9008,7 @@ class Series:
         >>> mapping = {1: 100, 2: 200, 3: 300}
         >>> s.replace_strict(mapping)
         shape: (4,)
-        Series: '' [i64]
+        Series: '' [i32]
         [
             100
             200
@@ -9026,7 +9026,7 @@ class Series:
         polars.exceptions.InvalidOperationError: incomplete mapping specified for `replace_strict`
         >>> s.replace_strict(mapping, default=-1)
         shape: (4,)
-        Series: '' [i64]
+        Series: '' [i32]
         [
             -1
             200
@@ -9054,7 +9054,7 @@ class Series:
         >>> mapping = {"x": 1, "y": 2, "z": 3}
         >>> s.replace_strict(mapping)
         shape: (3,)
-        Series: '' [i64]
+        Series: '' [i32]
         [
             1
             2
