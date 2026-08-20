@@ -3527,6 +3527,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         schema_mode : {'merge', 'overwrite'}
             How to handle differences between the incoming and table schemas.
 
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
             - If 'merge', evolve the table schema with incoming fields and
               compatible type promotions.
             - If 'overwrite', replace the table schema with the incoming schema.
