@@ -352,10 +352,14 @@ impl SQLContext {
 impl SQLContext {
     pub(crate) fn isolated(&self) -> Self {
         Self {
-            // Deep clone to isolate
+            // Deep-copy/clone to isolate
             table_map: Arc::new(RwLock::new(self.table_map.read().unwrap().clone())),
             named_windows: self.named_windows.clone(),
             cte_map: self.cte_map.clone(),
+
+            // Context-level; needs to remain visible in nested scopes.
+            // (Note: shared by Arc, no need to deep-copy)
+            function_registry: self.function_registry.clone(),
 
             ..Default::default()
         }
@@ -991,11 +995,21 @@ impl SQLContext {
             if with.recursive {
                 polars_bail!(SQLInterface: "recursive CTEs are not supported")
             }
+            let mut reference_counts = PlHashMap::<String, usize>::new();
+            let mut collector = TableIdentifierCollector::default();
+            let _ = query.visit(&mut collector);
+            for name in collector.tables {
+                *reference_counts.entry(name).or_insert(0) += 1;
+            }
+
             for cte in &with.cte_tables {
                 // Note: isolate CTE execution to prevent context state leakage
                 let cte_name = cte.alias.name.value.clone();
                 let mut lf = self.execute_isolated(|ctx| ctx.execute_query(&cte.query))?;
                 lf = self.rename_columns_from_table_alias(lf, &cte.alias)?;
+                if reference_counts.get(&cte_name).copied().unwrap_or(0) > 1 {
+                    lf = lf.cache();
+                }
                 self.register_cte(&cte_name, lf);
             }
         }

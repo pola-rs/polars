@@ -641,8 +641,18 @@ fn test_implicit_join_unqualified_column() {
             SELECT df1.a, df1.b, df3.c FROM df1
             INNER JOIN df3 ON df1.a = df3.c
         "#;
-        let actual = implicit_lf.collect().unwrap();
-        let expected = ctx.execute(explicit_sql).unwrap().collect().unwrap();
+        let actual = implicit_lf
+            .collect()
+            .unwrap()
+            .sort(["a", "b", "c"], Default::default())
+            .unwrap();
+        let expected = ctx
+            .execute(explicit_sql)
+            .unwrap()
+            .collect()
+            .unwrap()
+            .sort(["a", "b", "c"], Default::default())
+            .unwrap();
         assert!(
             actual.equals(&expected),
             "implicit join with unqualified column should match explicit join\nimplicit={actual:?}\nexplicit={expected:?}"
