@@ -299,7 +299,7 @@ fn test_lazy_query_4() -> PolarsResult<()> {
             [col("uid"), col("day")],
             [col("uid"), col("day")],
             JoinType::Inner.into(),
-        )
+        )?
         .collect()
         .unwrap();
     assert_eq!(
@@ -401,7 +401,7 @@ fn test_lazy_query_9() -> PolarsResult<()> {
             [col("Sales.City")],
             [col("Cities.City")],
             JoinType::Inner.into(),
-        )
+        )?
         .group_by([col("Cities.Country")])
         .agg([col("Sales.Amount").sum().alias("sum")])
         .sort(["sum"], Default::default())

@@ -1068,6 +1068,7 @@ impl PyLazyFrame {
             })))
             .suffix(suffix)
             .finish()
+            .map_err(PyPolarsErr::from)?
             .into())
     }
 
@@ -1118,6 +1119,7 @@ impl PyLazyFrame {
             .maintain_order(maintain_order.0)
             .build_side(build_side.0)
             .finish()
+            .map_err(PyPolarsErr::from)?
             .into())
     }
 

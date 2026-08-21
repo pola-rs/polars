@@ -663,14 +663,14 @@ impl SQLContext {
                 .join_nulls(true)
                 .left_on(lf_on)
                 .right_on(rf_on)
-                .finish();
+                .finish()?;
             joined_tbl.drop(cols([occurrence_col]))
         } else {
             let join = lf.join_builder().with(rf).how(join_type).join_nulls(true);
             let joined_tbl = match rf_cols {
                 Some(rf_cols) => join.left_on(lf_cols).right_on(rf_cols).finish(),
                 None => join.on(lf_cols).finish(),
-            };
+            }?;
             joined_tbl.unique(None, UniqueKeepStrategy::Any)
         };
         self.process_order_by(lf, &query.order_by, None)
@@ -1840,7 +1840,7 @@ impl SQLContext {
                                 maintain_order: MaintainOrderJoin::Left,
                                 build_side: None,
                             },
-                        );
+                        )?;
                 }
             }
             if !select_modifiers.replace.is_empty() {
@@ -2137,7 +2137,7 @@ impl SQLContext {
                 // Only INNER: an always-true outer join still has to emit null-extended
                 // left rows when the right side is empty, which a cross join would not.
                 return Ok(if satisfied && join_type == JoinType::Inner {
-                    builder.how(JoinType::Cross).finish()
+                    builder.how(JoinType::Cross).finish()?
                 } else {
                     // Match every row against every row, or none against none.
                     let right_key = if satisfied { lit(1i32) } else { lit(2i32) };
@@ -2145,7 +2145,7 @@ impl SQLContext {
                         .left_on([lit(1i32)])
                         .right_on([right_key])
                         .how(join_type)
-                        .finish()
+                        .finish()?
                 });
             }
         }
@@ -2173,7 +2173,7 @@ impl SQLContext {
                 .how(join_type)
                 .suffix(suffix)
                 .coalesce(coalesce_type)
-                .finish()
+                .finish()?
         } else {
             // Non-equi conditions: convert to predicates for `join_where`.
             // Any equi-conditions become equality predicates with right-side
