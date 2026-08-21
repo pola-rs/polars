@@ -130,9 +130,10 @@ def test_select_engine_is_idempotent() -> None:
         assert _select_engine(once) is once
 
 
-def test_select_engine_invalid_raises() -> None:
+@pytest.mark.parametrize("engine", ["bogus", None])
+def test_select_engine_invalid_raises(engine: Any) -> None:
     with pytest.raises(ValueError, match="Invalid engine argument"):
-        _select_engine("bogus")  # type: ignore[arg-type]
+        _select_engine(engine)
 
 
 def test_select_engine_honors_affinity(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -282,6 +283,71 @@ def test_capability_gated_operations_raise(
         call(lf, engine)
 
 
+# `_CountingEngine` has no sinks, so a lazy sink that resolved the affinity would raise
+# `NotImplementedError`. A lazy sink only builds a plan, so it must not resolve one.
+@pytest.mark.parametrize(
+    "sink",
+    [
+        lambda lf, path: lf.sink_parquet(path, lazy=True),
+        lambda lf, path: lf.sink_ipc(path, lazy=True),
+        lambda lf, path: lf.sink_csv(path, lazy=True),
+        lambda lf, path: lf.sink_ndjson(path, lazy=True),
+        lambda lf, _path: lf.sink_batches(print, lazy=True),
+    ],
+)
+def test_lazy_sink_does_not_resolve_an_engine(
+    tmp_path: Path, lf: pl.LazyFrame, sink: Callable[[pl.LazyFrame, Path], Any]
+) -> None:
+    with pl.Config(engine_affinity=_CountingEngine()):
+        assert isinstance(sink(lf, tmp_path / "out"), pl.LazyFrame)
+
+
+def test_lazy_sink_plan_is_independent_of_the_engine(
+    tmp_path: Path, lf: pl.LazyFrame
+) -> None:
+    path = tmp_path / "out.parquet"
+    engines: list[EngineType | None] = [
+        None,
+        "auto",
+        "in-memory",
+        "streaming",
+        pl.StreamingEngine(),
+    ]
+    plans = {lf.sink_parquet(path, lazy=True, engine=e).serialize() for e in engines}
+    assert len(plans) == 1
+
+
+def test_lazy_sink_plan_executes(tmp_path: Path, lf: pl.LazyFrame) -> None:
+    path = tmp_path / "out.parquet"
+    with pl.Config(engine_affinity=_CountingEngine()):
+        lf.sink_parquet(path, lazy=True).collect()
+    assert_frame_equal(pl.read_parquet(path), lf.collect(engine="in-memory"))
+
+
+def test_lazy_sink_still_rejects_an_invalid_engine_name(
+    tmp_path: Path, lf: pl.LazyFrame
+) -> None:
+    with pytest.raises(ValueError, match="Invalid engine argument"):
+        lf.sink_parquet(tmp_path / "out.parquet", lazy=True, engine="nonsense")  # type: ignore[call-overload]
+
+
+@pytest.mark.parametrize(
+    "sink",
+    [
+        lambda lf, path: lf.sink_parquet(path, engine=None),
+        lambda lf, path: lf.sink_ipc(path, engine=None),
+        lambda lf, path: lf.sink_csv(path, engine=None),
+        lambda lf, path: lf.sink_ndjson(path, engine=None),
+        lambda lf, _path: lf.sink_batches(print, engine=None),
+    ],
+)
+def test_engine_none_requires_a_lazy_sink(
+    tmp_path: Path, lf: pl.LazyFrame, sink: Callable[[pl.LazyFrame, Path], Any]
+) -> None:
+    with pytest.raises(ValueError, match=r"`engine=None`.*`lazy=True`"):
+        sink(lf, tmp_path / "out")
+
+
 @pytest.mark.parametrize(
     ("name", "engine"),
     [("in-memory", pl.InMemoryEngine()), ("streaming", pl.StreamingEngine())],
@@ -323,10 +389,10 @@ def test_engine_sink_signature_matches_lazyframe(method_name: str) -> None:
     assert "engine" in {p.name for p in lf_params}
     assert "engine" not in {p.name for p in engine_params}
 
-    # LazyFrame: (self, <target>, *, ..., engine, ...)
+    # LazyFrame: (self, <target>, *, ..., lazy, engine, ...)
     # Engine:    (self, lf, <target>, *, ...)
     assert engine_params[1].name == "lf"
-    expected = [p for p in lf_params[1:] if p.name != "engine"]
+    expected = [p for p in lf_params[1:] if p.name not in {"engine", "lazy"}]
     actual = engine_params[2:]
 
     def key(p: inspect.Parameter) -> tuple[str, Any]:

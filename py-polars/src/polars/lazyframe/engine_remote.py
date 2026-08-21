@@ -12,11 +12,10 @@ from typing import IO, TYPE_CHECKING, Any, Literal, get_args
 from polars._dependencies import import_optional
 from polars._typing import EngineTypeName, ScalingMode
 from polars._utils.various import qualified_type_name
-from polars._warnings import issue_warning
-from polars.lazyframe.engine import Engine, StreamingEngine
+from polars.lazyframe.engine import Engine
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterator, Mapping
     from pathlib import Path
 
     import polars_cloud as pc
@@ -37,7 +36,6 @@ if TYPE_CHECKING:
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.partition import PartitionBy, SinkedPathsCallback
     from polars.lazyframe.frame import LazyFrame
-    from polars.lazyframe.in_process import InProcessQuery
     from polars.lazyframe.opt_flags import QueryOptFlags
     from polars.lazyframe.query_result import QueryResult
 
@@ -49,10 +47,14 @@ class RemoteEngine(Engine):
     """
     Execute queries remotely on Polars Cloud.
 
-    Use this engine with :meth:`LazyFrame.execute`, a `LazyFrame.sink_*` method,
-    or as the default through :meth:`Config.set_engine_affinity`.
+    Use this engine with :meth:`LazyFrame.collect`, :meth:`LazyFrame.execute`, a
+    `LazyFrame.sink_*` method, or as the default through
+    :meth:`Config.set_engine_affinity`.
 
     Requires the `polars_cloud` package.
+
+    :meth:`LazyFrame.collect` and :meth:`LazyFrame.collect_batches` stream the result
+    back to this machine, which Polars Cloud only supports on a cluster context.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed
@@ -186,24 +188,27 @@ class RemoteEngine(Engine):
         optimizations: QueryOptFlags,
         background: bool = False,
         post_opt_callback: PostOptCallback | None = None,
-    ) -> DataFrame | InProcessQuery:
-        """
-        Collect `lf` remotely, then transfer the result to this machine.
-
-        Prefer `LazyFrame.execute` or a sink to avoid transferring the full
-        result.
-        """
-        issue_warning(
-            "collecting a remote query transfers the entire result to this machine; "
-            "use `LazyFrame.execute` or a `sink_*` method to avoid the round-trip.",
-            category=UserWarning,
+    ) -> DataFrame:
+        """Collect `lf` remotely, streaming the result back to this machine."""
+        self._reject_if_set(background=background, post_opt_callback=post_opt_callback)
+        # `collect` postdates the released `polars_cloud`, so its stubs may lack it
+        return self._target(lf).collect(  # type: ignore[union-attr, no-any-return]
+            optimizations=optimizations
         )
-        result = self.execute(lf, optimizations=optimizations)
-        return StreamingEngine().collect(
-            result.lazy(),
-            optimizations=optimizations,
-            background=background,
-            post_opt_callback=post_opt_callback,
+
+    def collect_batches(
+        self,
+        lf: LazyFrame,
+        *,
+        optimizations: QueryOptFlags,
+        maintain_order: bool = True,
+        chunk_size: int | None = None,
+        lazy: bool = False,
+    ) -> Iterator[DataFrame]:
+        """See :meth:`polars.LazyFrame.collect_batches`."""
+        self._reject_if_set(chunk_size=chunk_size, lazy=lazy)
+        return self._target(lf).collect_batches(  # type: ignore[union-attr, no-any-return]
+            maintain_order=maintain_order, optimizations=optimizations
         )
 
     # -- Sinks --------------------------------------------------------------------
@@ -247,13 +252,11 @@ class RemoteEngine(Engine):
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
         sinked_paths_callback: SinkedPathsCallback | None,
     ) -> None:
         """See :meth:`polars.LazyFrame.sink_parquet`."""
         self._reject_if_set(
-            lazy=lazy,
             mkdir=mkdir,
             sync_on_close=sync_on_close,
             retries=retries,
@@ -289,14 +292,12 @@ class RemoteEngine(Engine):
         retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
         _record_batch_statistics: bool,
         sinked_paths_callback: SinkedPathsCallback | None,
     ) -> None:
         """See :meth:`polars.LazyFrame.sink_ipc`."""
         self._reject_if_set(
-            lazy=lazy,
             mkdir=mkdir,
             sync_on_close=sync_on_close,
             retries=retries,
@@ -344,12 +345,10 @@ class RemoteEngine(Engine):
         retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
     ) -> None:
         """See :meth:`polars.LazyFrame.sink_csv`."""
         self._reject_if_set(
-            lazy=lazy,
             mkdir=mkdir,
             sync_on_close=sync_on_close,
             retries=retries,
