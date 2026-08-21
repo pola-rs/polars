@@ -700,6 +700,30 @@ def test_scan_csv_new_columns_28343() -> None:
     )
 
 
+@pytest.mark.write_disk
+def test_scan_csv_infer_schema_length_zero_on_wide_csv(
+    plmonkeypatch: PlMonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "wide.csv"
+
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+
+    # Create a very wide CSV
+    num_cols = 20000
+    csv_content = {f"c{i}": f"val{i}" for i in range(num_cols)}
+
+    df = pl.DataFrame(csv_content)
+    df.lazy().sink_csv(file_path)
+
+    df = pl.scan_csv(
+        file_path,
+        infer_schema_length=0,
+    ).collect()
+    assert df.width == 20_000
+
+
 def test_scan_csv_infer_schema_files() -> None:
     data = [
         b"""\
