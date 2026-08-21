@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     [
         (pl.Int64, [-1, 0, 100_000, None]),
         (pl.Float64, [-1.5, 0.0, 10.0, None]),
+        (pl.Null, [None, None]),
         (pl.Boolean, [True, False, None]),
         (pl.Binary, [b"123", b"xyz", None]),
         (pl.String, ["123", "xyz", None]),
@@ -54,6 +55,7 @@ def test_fallback_with_dtype_strict(
     [
         (pl.Int64, [1.0, 2.0]),
         (pl.Float64, [1, 2]),
+        (pl.Null, [1]),
         (pl.Boolean, [0, 1]),
         (pl.Binary, ["123", "xyz"]),
         (pl.String, [b"123", b"xyz"]),
@@ -95,6 +97,7 @@ def test_fallback_with_dtype_strict_failure(
             [False, True, 0, -1, 0.0, 2.5, date(1970, 1, 2), "5", "xyz"],
             [0.0, 1.0, 0.0, -1.0, 0.0, 2.5, 1.0, 5.0, None],
         ),
+        (pl.Null, [1, None], [None, None]),
         (
             pl.Boolean,
             [False, True, 0, -1, 0.0, 2.5, date(1970, 1, 1), "true"],
@@ -404,7 +407,7 @@ def test_fallback_with_dtype_strict_failure_enum_casting() -> None:
     dtype = pl.Enum(["a", "b"])
     values = ["a", "b", "c", None]
 
-    with pytest.raises(TypeError, match="attempted to insert 'c'"):
+    with pytest.raises(TypeError, match=r'unexpected value.*"c"'):
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
 

@@ -176,7 +176,8 @@ def test_series_sort_parametric(s: pl.Series) -> None:
             )
 
             assert_series_equal(
-                pl.Series("s", rows, s.dtype), re_decoded.struct.unnest().to_series()
+                pl.Series("s", rows, s.dtype, strict=False),
+                re_decoded.struct.unnest().to_series(),
             )
 
 
@@ -221,7 +222,8 @@ def test_df_sort_parametric(df: pl.DataFrame) -> None:
         )
 
         assert_frame_equal(
-            pl.DataFrame(rows, df.schema, orient="row"), re_decoded.struct.unnest()
+            pl.DataFrame(rows, df.schema, orient="row", strict=False),
+            re_decoded.struct.unnest(),
         )
 
 
