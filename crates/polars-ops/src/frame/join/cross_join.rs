@@ -139,6 +139,9 @@ pub(super) fn fused_cross_filter(
     suffix: Option<PlSmallStr>,
     cross_join_options: &CrossJoinOptions,
     maintain_order: MaintainOrderJoin,
+    // If this is set, we didn't do a `how=cross`, but `how=left,anti,semi` in `join_where`
+    emit_unmatched_left: bool,
+    how: &JoinType,
 ) -> PolarsResult<DataFrame> {
     let unfiltered_size = (left.height() as u64).saturating_mul(right.height() as u64);
     let chunk_size = (unfiltered_size / _set_partition_size() as u64).clamp(1, 100_000);
@@ -149,6 +152,14 @@ pub(super) fn fused_cross_filter(
         MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => true,
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => false,
     };
+    // Every left row's full run of candidate matches must stay within a single chunk so a
+    // match can be decided per-chunk; that only holds when left is the (chunked) primary side.
+    polars_ensure!(
+        !emit_unmatched_left || left_is_primary,
+        InvalidOperation: "'maintain_order={:?}' is not supported for `join_where` with 'how'={}",
+        maintain_order,
+        how
+    );
 
     let split_chunks;
     let cartesian_prod = if left_is_primary {
@@ -162,20 +173,70 @@ pub(super) fn fused_cross_filter(
     let names = _finish_join(left.clear(), right.clear(), suffix)?;
     let rename_names = names.get_column_names();
     let rename_names = &rename_names[left.width()..];
+    let len_right = right.height();
 
     let dfs = RAYON
         .install(|| {
-            cartesian_prod.par_iter().map(|(left, right)| {
-                let (mut left, right) = cross_join_dfs(left, right, None, false, maintain_order)?;
-                let mut right_columns = right.into_columns();
+            cartesian_prod.par_iter().map(|(left_chunk, right_chunk)| {
+                let (mut joined, right_taken) =
+                    cross_join_dfs(left_chunk, right_chunk, None, false, maintain_order)?;
+                let mut right_columns = right_taken.into_columns();
 
                 for (c, name) in right_columns.iter_mut().zip(rename_names) {
                     c.rename((*name).clone());
                 }
 
-                unsafe { left.hstack_mut_unchecked(&right_columns) };
+                unsafe { joined.hstack_mut_unchecked(&right_columns) };
 
-                cross_join_options.predicate.apply(left)
+                if !emit_unmatched_left {
+                    cross_join_options.predicate.apply(joined)
+                } else {
+                    let mask = cross_join_options.predicate.evaluate(&joined)?;
+
+                    let len_left = left_chunk.height();
+                    debug_assert_eq!(joined.height(), len_left * len_right);
+
+                    // Combine values and validity into one bitmap so a null bit reads as "no
+                    // match" (this is what filter has filtered)
+                    let mask_arr = mask.rechunk();
+                    let mask_arr = mask_arr.downcast_get(0).unwrap();
+                    let match_bits = match mask_arr.validity() {
+                        Some(validity) => mask_arr.values() & validity,
+                        None => mask_arr.values().clone(),
+                    };
+
+                    // Emit each left row's matches, or a single null-extended row when it has
+                    // none, so that unmatched rows keep their position in the left input's
+                    // order instead of being appended after the matched ones.
+                    let capacity = match_bits.set_bits() + len_left;
+                    let mut left_idx: Vec<IdxSize> = Vec::with_capacity(capacity);
+                    let mut right_idx: Vec<NullableIdxSize> = Vec::with_capacity(capacity);
+                    for i in 0..len_left {
+                        let run = match_bits.clone().sliced(i * len_right, len_right);
+                        if run.unset_bits() == len_right {
+                            left_idx.push(i as IdxSize);
+                            right_idx.push(NullableIdxSize::null());
+                        } else {
+                            for j in run.true_idx_iter() {
+                                left_idx.push(i as IdxSize);
+                                right_idx.push(NullableIdxSize::from(j as IdxSize));
+                            }
+                        }
+                    }
+
+                    let idx = unsafe { IdxCa::mmap_slice(PlSmallStr::EMPTY, &left_idx) };
+                    let mut out = unsafe { left_chunk.take_unchecked(&idx) };
+                    let mut right_columns = unsafe {
+                        IdxCa::with_nullable_idx(&right_idx, |idx| right.take_unchecked(idx))
+                    }
+                    .into_columns();
+                    for (c, name) in right_columns.iter_mut().zip(rename_names) {
+                        c.rename((*name).clone());
+                    }
+                    unsafe { out.hstack_mut_unchecked(&right_columns) };
+
+                    Ok(out)
+                }
             })
         })
         .collect::<PolarsResult<Vec<_>>>()?;
