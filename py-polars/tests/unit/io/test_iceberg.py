@@ -709,6 +709,33 @@ def test_sink_iceberg_partition_key_name_collision(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.write_disk
+def test_sink_iceberg_partition_key_name_collision_schema_merge(
+    tmp_path: Path,
+) -> None:
+    partition_key_name = "__POLARS_ICEBERG_PARTITION_1000"
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "partition_col", LongType())),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, IdentityTransform(), "partition_col")
+        ),
+    )
+    df = pl.DataFrame(
+        {
+            "partition_col": [1, 1, 2],
+            partition_key_name: [10, 20, 30],
+        }
+    )
+
+    df.lazy().sink_iceberg(tbl, mode="append", schema_mode="merge")
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort(partition_key_name),
+        df,
+    )
+
+
 @pytest.mark.parametrize("metrics_mode", ["none", "counts"])
 @pytest.mark.parametrize("column_override", [False, True])
 @pytest.mark.write_disk

@@ -32,7 +32,9 @@ if TYPE_CHECKING:
     from polars._typing import StorageOptionsDict
 
 
-def _partition_key_exprs(table: pyiceberg.table.Table) -> list[pl.Expr] | None:
+def _partition_key_exprs(
+    table: pyiceberg.table.Table, source_schema: pa.Schema | None = None
+) -> list[pl.Expr] | None:
     spec = table.spec()
 
     if not spec.fields:
@@ -55,6 +57,8 @@ def _partition_key_exprs(table: pyiceberg.table.Table) -> list[pl.Expr] | None:
     statistics_plan = compute_statistics_plan(schema, table.metadata.properties)
     bounds_metrics_modes = {MetricModeTypes.TRUNCATE, MetricModeTypes.FULL}
     reserved_names = {field.name for field in schema.fields}
+    if source_schema is not None:
+        reserved_names.update(source_schema.names)
     exprs: list[pl.Expr] = []
 
     for field in spec.fields:
@@ -266,7 +270,7 @@ class IcebergSinkState:
         table_metadata = table.metadata
         table_properties = table_metadata.properties
 
-        partition_key_exprs = _partition_key_exprs(table)
+        partition_key_exprs = _partition_key_exprs(table, self.source_schema)
 
         if table.sort_order().fields:
             msg = "sink to Iceberg table with sort order"
