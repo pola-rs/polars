@@ -5912,6 +5912,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if 'by' groups are provided. The `streaming` engine will only check the
             sortedness of the rows it processes.
 
+        See Also
+        --------
+        join
+        join_where
+
         Notes
         -----
         If 'by' is set, the implementation will compute the asof join over all of the
@@ -6340,6 +6345,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         See Also
         --------
         join_asof
+        join_where
 
         Examples
         --------
@@ -6537,6 +6543,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
+
+        See Also
+        --------
+        join
+        join_asof
 
         Examples
         --------
