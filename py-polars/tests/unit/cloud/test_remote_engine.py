@@ -398,7 +398,6 @@ def test_eager_operations_stay_local(tmp_path: Path) -> None:
         assert pl.sql("SELECT * FROM df", eager=True).height == 3
         reader = pl.read_csv_batched(tmp_path / "data.csv", batch_size=1)
         assert reader.next_batches(1) is not None
-        assert_frame_equal(df.lazy(), df.lazy())
         # explicitly asking for a local engine also still works
         assert pl.LazyFrame({"a": [1]}).collect(engine="in-memory").height == 1
 
@@ -411,6 +410,16 @@ def test_affinity_dispatches_lazy_queries(
         lf.execute()
     assert calls[0][2]["scaling_mode"] == "distributed"
     assert calls[-1][:2] == ("auto", "execute")
+
+
+def test_assert_frame_equal_honors_remote_affinity(
+    calls: list[tuple[Any, ...]], lf: pl.LazyFrame
+) -> None:
+    with pl.Config(engine_affinity=pl.RemoteEngine()):
+        assert_frame_equal(lf, lf)
+
+    collect_calls = [call for call in calls if call[:2] == ("auto", "collect")]
+    assert len(collect_calls) == 2
 
 
 def test_describe_honors_remote_affinity(

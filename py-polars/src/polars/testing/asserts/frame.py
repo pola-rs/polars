@@ -122,10 +122,9 @@ def assert_frame_equal(
 
     lazy = _assert_correct_input_type(left, right)
 
-    # Rust back-end function expects DataFrames so LazyFrames must be collected.
-    # `_collect_eager` keeps assertions local rather than resolving engine affinity.
+    # Rust back-end function expects DataFrames so LazyFrames must be collected
     if lazy:
-        left, right = left._collect_eager(), right._collect_eager()  # type: ignore[union-attr]
+        left, right = left.collect(), right.collect()  # type: ignore[union-attr]
 
     # Tell type checker these are now DataFrames to prevent type errors
     left, right = cast("DataFrame", left), cast("DataFrame", right)
