@@ -79,7 +79,6 @@ pub enum IRTemporalFunction {
     DatetimeFunction {
         time_unit: TimeUnit,
         time_zone: Option<TimeZone>,
-        #[cfg_attr(feature = "dsl-schema", schemars(skip))]
         strict: bool,
     },
 }
