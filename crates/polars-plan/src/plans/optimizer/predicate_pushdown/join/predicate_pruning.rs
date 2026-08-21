@@ -382,6 +382,7 @@ pub fn try_rewrite_join_type(
 
         // We are in a cross join + filter
         // Try converting to inner join
+        assert!(matches!(options.args.how, JoinType::Cross));
         let equality_conditions = take_inner_join_compatible_filters(
             acc_predicates,
             expr_arena,
@@ -411,10 +412,7 @@ pub fn try_rewrite_join_type(
 
         // Try converting cross join to double-bounded RangeJoin.
         #[cfg(feature = "iejoin")]
-        if streaming
-            && matches!(options.args.maintain_order, MaintainOrderJoin::None)
-            && matches!(options.args.how, JoinType::Cross)
-        {
+        if streaming && matches!(options.args.maintain_order, MaintainOrderJoin::None) {
             assert!(left_on.is_empty());
             let range_predicate = take_double_bounded_range_join_filter(
                 acc_predicates,
@@ -459,9 +457,7 @@ pub fn try_rewrite_join_type(
 
         // Try converting cross join to IEJoin.
         #[cfg(feature = "iejoin")]
-        if matches!(options.args.maintain_order, MaintainOrderJoin::None)
-            && left_on.len() < IEJOIN_MAX_PREDICATES
-        {
+        if matches!(options.args.maintain_order, MaintainOrderJoin::None) {
             use polars_utils::itertools::Itertools;
 
             let ie_conditions = take_iejoin_compatible_filters(

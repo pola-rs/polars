@@ -412,7 +412,7 @@ impl DslBuilder {
             input_left: Arc::new(self.0),
             input_right: Arc::new(other),
             condition: JoinCondition::Equi {
-                on: left_on.into_iter().zip(right_on.into_iter()).collect(),
+                on: left_on.into_iter().zip(right_on).collect(),
             },
             options,
         }
