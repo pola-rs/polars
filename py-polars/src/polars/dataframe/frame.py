@@ -8537,13 +8537,6 @@ class DataFrame:
         """
         Perform a join based on one or multiple (in)equality predicates.
 
-        By default (`how="inner"`), only rows where all predicates are true are
-        included in the result, and a row from either DataFrame may be included
-        multiple times in the result. `how="left"` additionally includes each
-        left row that matches no right row, with the right columns set to `null`;
-        `how="right"` does the same for unmatched right rows. `"full"`, `"semi"`,
-        `"anti"`, and `"cross"` are not yet supported here and raise.
-
         .. note::
             The row order of the input DataFrames is not preserved.
 
