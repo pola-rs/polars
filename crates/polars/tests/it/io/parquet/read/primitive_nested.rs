@@ -10,6 +10,8 @@ use super::dictionary::PrimitivePageDict;
 use super::{Array, hybrid_rle_iter};
 
 fn read_buffer<T: NativeType>(values: &[u8]) -> impl Iterator<Item = T> + '_ {
+    #[allow(clippy::chunks_exact_to_as_chunks)]
+    // chunk size depends on generic `T`, not usable as a const generic here
     let chunks = values.chunks_exact(size_of::<T>());
     chunks.map(|chunk| {
         // unwrap is infalible due to the chunk size.
