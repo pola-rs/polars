@@ -16,11 +16,11 @@ DST = "s3://my-nonexistent-bucket/output"
         pl.scan_parquet(CLOUD_SOURCE)
         .select("c", pl.lit(2))
         .with_row_index()
-        .sink_parquet(DST, lazy=True),
+        .sink_parquet(DST, lazy=True, engine=None),
         pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
         .select("a", "b")
         .filter(pl.col("a") == pl.lit(1))
-        .sink_parquet(DST, lazy=True),
+        .sink_parquet(DST, lazy=True, engine=None),
     ],
 )
 def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
@@ -36,19 +36,19 @@ def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
     [
         pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
         .select(pl.col("a").map_elements(lambda x: sum(x)))
-        .sink_parquet(DST, lazy=True),
+        .sink_parquet(DST, lazy=True, engine=None),
         pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
         .select(pl.col("b").map_batches(lambda x: sum(x)))
-        .sink_parquet(DST, lazy=True),
+        .sink_parquet(DST, lazy=True, engine=None),
         pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
         .map_batches(lambda x: x)
-        .sink_parquet(DST, lazy=True),
+        .sink_parquet(DST, lazy=True, engine=None),
         pl.scan_parquet(CLOUD_SOURCE)
         .filter(pl.col("a") < pl.lit(1).map_elements(lambda x: x + 1))
-        .sink_parquet(DST, lazy=True),
+        .sink_parquet(DST, lazy=True, engine=None),
         pl.LazyFrame({"a": [[1, 2], [3, 4, 5]], "b": [3, 4]})
         .select(pl.col("a").map_elements(lambda x: sum(x), return_dtype=pl.Int64))
-        .sink_parquet(DST, lazy=True),
+        .sink_parquet(DST, lazy=True, engine=None),
     ],
 )
 def test_prepare_cloud_plan_udf(lf: pl.LazyFrame) -> None:
@@ -60,7 +60,9 @@ def test_prepare_cloud_plan_udf(lf: pl.LazyFrame) -> None:
 
 
 def test_prepare_cloud_plan_optimization_toggle() -> None:
-    lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).sink_parquet(DST, lazy=True)
+    lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).sink_parquet(
+        DST, lazy=True, engine=None
+    )
 
     (result, _flags) = prepare_cloud_plan(
         lf,
@@ -76,10 +78,12 @@ def test_prepare_cloud_plan_optimization_toggle() -> None:
 @pytest.mark.parametrize(
     "lf",
     [
-        pl.scan_parquet("data.parquet").sink_parquet(DST, lazy=True),
-        pl.scan_ndjson(Path("data.ndjson")).sink_parquet(DST, lazy=True),
-        pl.scan_csv("data-*.csv").sink_parquet(DST, lazy=True),
-        pl.scan_ipc(["data-1.feather", "data-2.feather"]).sink_parquet(DST, lazy=True),
+        pl.scan_parquet("data.parquet").sink_parquet(DST, lazy=True, engine=None),
+        pl.scan_ndjson(Path("data.ndjson")).sink_parquet(DST, lazy=True, engine=None),
+        pl.scan_csv("data-*.csv").sink_parquet(DST, lazy=True, engine=None),
+        pl.scan_ipc(["data-1.feather", "data-2.feather"]).sink_parquet(
+            DST, lazy=True, engine=None
+        ),
     ],
 )
 def test_prepare_cloud_plan_succeed_on_local_data_source(lf: pl.LazyFrame) -> None:

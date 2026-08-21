@@ -252,13 +252,11 @@ class RemoteEngine(Engine):
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
         sinked_paths_callback: SinkedPathsCallback | None,
     ) -> None:
         """See :meth:`polars.LazyFrame.sink_parquet`."""
         self._reject_if_set(
-            lazy=lazy,
             mkdir=mkdir,
             sync_on_close=sync_on_close,
             retries=retries,
@@ -294,14 +292,12 @@ class RemoteEngine(Engine):
         retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
         _record_batch_statistics: bool,
         sinked_paths_callback: SinkedPathsCallback | None,
     ) -> None:
         """See :meth:`polars.LazyFrame.sink_ipc`."""
         self._reject_if_set(
-            lazy=lazy,
             mkdir=mkdir,
             sync_on_close=sync_on_close,
             retries=retries,
@@ -349,12 +345,10 @@ class RemoteEngine(Engine):
         retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
-        lazy: bool,
         optimizations: QueryOptFlags,
     ) -> None:
         """See :meth:`polars.LazyFrame.sink_csv`."""
         self._reject_if_set(
-            lazy=lazy,
             mkdir=mkdir,
             sync_on_close=sync_on_close,
             retries=retries,
