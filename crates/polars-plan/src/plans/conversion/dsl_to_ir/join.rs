@@ -12,7 +12,7 @@ use crate::dsl::Expr;
 #[cfg(feature = "iejoin")]
 use crate::plans::AExpr;
 
-fn check_join_keys(keys: &[Expr]) -> PolarsResult<()> {
+fn check_join_keys(keys: &mut dyn Iterator<Item = &Expr>) -> PolarsResult<()> {
     for e in keys {
         if has_expr(e, |e| matches!(e, Expr::Alias(_, _))) {
             polars_bail!(
@@ -28,24 +28,24 @@ fn check_join_keys(keys: &[Expr]) -> PolarsResult<()> {
 pub fn resolve_join(
     input_left: Either<Arc<DslPlan>, Node>,
     input_right: Either<Arc<DslPlan>, Node>,
-    left_on: Vec<Expr>,
-    right_on: Vec<Expr>,
-    predicates: Vec<Expr>,
+    condition: JoinCondition,
     mut options: JoinOptionsIR,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
-    if !predicates.is_empty() {
-        feature_gated!("iejoin", {
-            debug_assert!(left_on.is_empty() && right_on.is_empty());
-            return resolve_join_where(
-                input_left.unwrap_left(),
-                input_right.unwrap_left(),
-                predicates,
-                options,
-                ctxt,
-            );
-        })
-    }
+    let on = match condition {
+        JoinCondition::NonEqui { predicates } => {
+            feature_gated!("iejoin", {
+                return resolve_join_where(
+                    input_left.unwrap_left(),
+                    input_right.unwrap_left(),
+                    predicates,
+                    options,
+                    ctxt,
+                );
+            })
+        },
+        JoinCondition::Equi { on } => on,
+    };
 
     let owned = Arc::unwrap_or_clone;
     let mut input_left = input_left
@@ -59,14 +59,13 @@ pub fn resolve_join(
     let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
 
     if options.args.how.is_cross() {
-        polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
+        polars_ensure!(on.is_empty(), InvalidOperation: "a 'cross' join doesn't expect any join keys");
     } else {
-        polars_ensure!(left_on.len() + right_on.len() > 0, InvalidOperation: "expected join keys/predicates");
-        check_join_keys(&left_on)?;
-        check_join_keys(&right_on)?;
+        polars_ensure!(!on.is_empty(), InvalidOperation: "expected join keys/predicates");
+        check_join_keys(&mut on.iter().flat_map(|t| [&t.0, &t.1]))?;
 
         let mut turn_off_coalesce = false;
-        for e in left_on.iter().chain(right_on.iter()) {
+        for e in on.iter().flat_map(|t| [&t.0, &t.1]) {
             // Any expression that is not a simple column expression will turn of coalescing.
             turn_off_coalesce |= has_expr(e, |e| !matches!(e, Expr::Column(_)));
         }
@@ -95,21 +94,13 @@ pub fn resolve_join(
                 },
             }
         }
-
-        polars_ensure!(
-            left_on.len() == right_on.len(),
-            InvalidOperation:
-                "the number of columns given as join key (left: {}, right:{}) should be equal",
-                left_on.len(),
-                right_on.len()
-        );
     }
 
-    let mut left_on = left_on
-        .into_iter()
+    let mut left_on = on
+        .iter()
         .map(|e| {
             to_expr_ir_materialized_lit(
-                e,
+                e.0.clone(),
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
                     &schema_left,
@@ -118,11 +109,11 @@ pub fn resolve_join(
             )
         })
         .collect::<PolarsResult<Vec<_>>>()?;
-    let mut right_on = right_on
-        .into_iter()
+    let mut right_on = on
+        .iter()
         .map(|e| {
             to_expr_ir_materialized_lit(
-                e,
+                e.1.clone(),
                 &mut ExprToIRContext::new_with_opt_eager(
                     ctxt.expr_arena,
                     &schema_right,
@@ -470,7 +461,7 @@ fn resolve_join_where(
     if ctxt.opt_flags.eager() {
         ctxt.opt_flags.set(OptFlags::PREDICATE_PUSHDOWN, true);
     }
-    check_join_keys(&predicates)?;
+    check_join_keys(&mut predicates.iter())?;
     let input_left =
         to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt).context(failed_here!(join left))?;
     let input_right =
@@ -490,9 +481,7 @@ fn resolve_join_where(
     let (mut last_node, join_node) = resolve_join(
         Either::Right(input_left),
         Either::Right(input_right),
-        vec![],
-        vec![],
-        vec![],
+        Default::default(),
         options,
         ctxt,
     )?;

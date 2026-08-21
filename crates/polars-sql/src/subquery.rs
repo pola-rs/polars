@@ -357,7 +357,7 @@ impl SQLContext {
         right_on: Vec<Expr>,
         local_filters: Vec<Expr>,
         anti: bool,
-    ) -> LazyFrame {
+    ) -> PolarsResult<LazyFrame> {
         let inner_lf = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
         inner_lf.set_cached_arena(self.lp_arena, self.expr_arena);
         build_semi_anti_join(lf, inner_lf, left_on, right_on, anti)
@@ -749,7 +749,7 @@ fn build_semi_anti_join(
     left_on: Vec<Expr>,
     right_on: Vec<Expr>,
     anti: bool,
-) -> LazyFrame {
+) -> PolarsResult<LazyFrame> {
     let join_type = if anti { JoinType::Anti } else { JoinType::Semi };
     lf.clone()
         .join_builder()
