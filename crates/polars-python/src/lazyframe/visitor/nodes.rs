@@ -1,5 +1,3 @@
-#[cfg(feature = "iejoin")]
-use polars::prelude::JoinTypeOptionsIR;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::python_dsl::PythonScanSource;
 use polars::prelude::{ColumnMapping, PredicateFileSkip};
@@ -10,6 +8,8 @@ use polars_ops::prelude::AsofStrategy;
 use polars_ops::prelude::JoinType;
 use polars_plan::dsl::deletion::IcebergDeletes;
 use polars_plan::plans::{HintIR, IR};
+#[cfg(feature = "iejoin")]
+use polars_plan::prelude::JoinTypeOptionsIR;
 use polars_plan::prelude::{FileScanIR, FunctionIR, PythonPredicate, UnifiedScanArgs};
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};

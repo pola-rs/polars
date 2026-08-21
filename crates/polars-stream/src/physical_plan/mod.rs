@@ -22,11 +22,12 @@ use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    CastColumnsPolicy, ColumnsUdf, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
-    PartitionedSinkOptionsIR, PredicateFileSkip, ScanSources, TableStatistics,
+    CastColumnsPolicy, ColumnsUdf, FileSinkOptions, MissingColumnsPolicy, PartitionedSinkOptionsIR,
+    PredicateFileSkip, ScanSources, TableStatistics,
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
+use polars_plan::plans::options::JoinTypeOptionsIR;
 use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
 mod fmt;

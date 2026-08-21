@@ -14,7 +14,8 @@ use polars_utils::aliases::{InitHashMaps, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::index::idxsize_to_u64;
 
-use crate::dsl::{HConcatOptions, JoinTypeOptionsIR, SinkTypeIR, UnifiedScanArgs, UnionOptions};
+use crate::dsl::{HConcatOptions, SinkTypeIR, UnifiedScanArgs, UnionOptions};
+use crate::plans::options::JoinTypeOptionsIR;
 use crate::plans::{AExpr, ExprIR, IR};
 #[cfg(feature = "python")]
 use crate::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
