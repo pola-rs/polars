@@ -64,7 +64,6 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_df_item_by_key
-from polars._utils.parse import parse_into_expression
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -80,7 +79,7 @@ from polars._utils.various import (
     scale_bytes,
     warn_null_comparison,
 )
-from polars._utils.wrap import wrap_expr, wrap_ldf, wrap_s
+from polars._utils.wrap import wrap_ldf, wrap_s
 from polars.config import Config
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
@@ -11510,14 +11509,14 @@ class DataFrame:
         ... )
         3
         """
-        if isinstance(subset, str):
-            expr = F.col(subset)
-        elif isinstance(subset, pl.Expr):
-            expr = subset
-        elif isinstance(subset, Sequence) and len(subset) == 1:
-            expr = wrap_expr(parse_into_expression(subset[0]))
+        if subset is None:
+            expr = F.struct(F.all())
         else:
-            struct_fields = F.all() if (subset is None) else subset
+            # Bind the requested columns/expressions into a single struct column
+            # so they are counted jointly. A raw expression or selector like
+            # ``pl.col("a", "b")`` may expand to multiple columns, and calling
+            # ``expr.n_unique()`` on it directly only counts the first one.
+            struct_fields = [subset] if isinstance(subset, (str, pl.Expr)) else subset
             expr = F.struct(struct_fields)
 
         from polars.lazyframe.opt_flags import QueryOptFlags
