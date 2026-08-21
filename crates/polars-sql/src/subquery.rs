@@ -149,7 +149,7 @@ impl SQLContext {
                     right_on,
                     local_filters,
                     negated,
-                ))
+                )?)
             });
         }
         ctx.try_rewrite_exists_as_count_filter(
@@ -235,7 +235,7 @@ impl SQLContext {
             .how(JoinType::Left)
             .coalesce(JoinCoalesce::CoalesceColumns)
             .maintain_order(MaintainOrderJoin::Left)
-            .finish()
+            .finish()?
             .with_columns([col(count_name.clone()).fill_null(lit(0))]);
 
         let matches = if negated {
@@ -328,7 +328,7 @@ impl SQLContext {
         // Inline, so filtered inner frame can be reused for the correction
         let inner_lf = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
         inner_lf.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
-        let joined = build_semi_anti_join(lf, inner_lf.clone(), left_on, right_on, anti);
+        let joined = build_semi_anti_join(lf, inner_lf.clone(), left_on, right_on, anti)?;
 
         // Only `KeepTrue` "NOT IN" needs 3VL correction.
         if !(anti && filter_mode == FilterMode::KeepTrue) {
@@ -341,7 +341,7 @@ impl SQLContext {
             &right_key,
             &corr_outer,
             &corr_inner,
-        )))
+        )?))
     }
 
     // Apply the local filters to the inner relation, hand this (isolated, now
@@ -577,7 +577,7 @@ impl SQLContext {
                 .group_by(inner_on.clone())
                 .agg([agg_expr.alias(result_name.clone())]);
             let joined =
-                left_join_aggregate(lf, grouped, outer_on, inner_on, &result_name, count_like);
+                left_join_aggregate(lf, grouped, outer_on, inner_on, &result_name, count_like)?;
             return Ok(Some((joined, result_name)));
         }
 
@@ -602,7 +602,7 @@ impl SQLContext {
             vec![col(idx_name.clone())],
             &result_name,
             count_like,
-        )
+        )?
         .drop(Selector::ByName {
             names: Arc::from([idx_name]),
             strict: true,
@@ -704,7 +704,7 @@ impl SQLContext {
             .how(JoinType::Left)
             .coalesce(JoinCoalesce::CoalesceColumns)
             .maintain_order(MaintainOrderJoin::Left)
-            .finish()
+            .finish()?
             .with_columns([col(count_name.clone())
                 .fill_null(lit(0))
                 .gt(lit(0))
@@ -769,7 +769,7 @@ fn refine_not_in_anti_join(
     right_key: &Expr,
     corr_outer: &[Expr],
     corr_inner: &[Expr],
-) -> LazyFrame {
+) -> PolarsResult<LazyFrame> {
     if corr_inner.is_empty() {
         // Uncorrelated
         let flag_name = unique_column_name();
@@ -783,16 +783,16 @@ fn refine_not_in_anti_join(
             .then(lit(false))
             .otherwise(left_key.clone().is_not_null());
 
-        return joined
+        return Ok(joined
             .join_builder()
             .with(inner_lf.select([flag]))
             .how(JoinType::Cross)
-            .finish()
+            .finish()?
             .filter(keep)
             .drop(Selector::ByName {
                 names: [flag_name].into(),
                 strict: true,
-            });
+            }));
     }
 
     // Correlated
@@ -808,13 +808,13 @@ fn refine_not_in_anti_join(
     let kept_non_null = exclude_groups(
         joined.clone().filter(left_key.clone().is_not_null()),
         corr_keys(inner_lf.clone().filter(right_key.clone().is_null())),
-    );
+    )?;
     let kept_null = exclude_groups(
         joined.filter(left_key.clone().is_null()),
         corr_keys(inner_lf),
-    );
+    )?;
 
-    concat(
+    Ok(concat(
         [kept_non_null, kept_null],
         UnionArgs {
             rechunk: false,
@@ -822,7 +822,7 @@ fn refine_not_in_anti_join(
             ..Default::default()
         },
     )
-    .expect("'NOT IN' 3VL union has identical schemas")
+    .expect("'NOT IN' 3VL union has identical schemas"))
 }
 
 /// An iterator over all the minterms in an SQL boolean expression: the terms
@@ -1164,7 +1164,7 @@ fn left_join_aggregate(
     right_on: Vec<Expr>,
     result_name: &PlSmallStr,
     count_like: bool,
-) -> LazyFrame {
+) -> PolarsResult<LazyFrame> {
     let joined = outer
         .join_builder()
         .with(grouped)
@@ -1173,12 +1173,12 @@ fn left_join_aggregate(
         .how(JoinType::Left)
         .coalesce(JoinCoalesce::CoalesceColumns)
         .maintain_order(MaintainOrderJoin::Left)
-        .finish();
-    if count_like {
+        .finish()?;
+    Ok(if count_like {
         joined.with_columns([col(result_name.clone()).fill_null(lit(0))])
     } else {
         joined
-    }
+    })
 }
 
 // Peel the alias/cast wrappers SQL puts around an aggregate to reach the

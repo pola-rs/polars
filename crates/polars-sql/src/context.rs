@@ -670,7 +670,7 @@ impl SQLContext {
             let joined_tbl = match rf_cols {
                 Some(rf_cols) => join.left_on(lf_cols).right_on(rf_cols).finish(),
                 None => join.on(lf_cols).finish(),
-            };
+            }?;
             joined_tbl.unique(None, UniqueKeepStrategy::Any)
         };
         self.process_order_by(lf, &query.order_by, None)
@@ -2173,7 +2173,7 @@ impl SQLContext {
                 .how(join_type)
                 .suffix(suffix)
                 .coalesce(coalesce_type)
-                .finish()
+                .finish()?
         } else {
             // Non-equi conditions: convert to predicates for `join_where`.
             // Any equi-conditions become equality predicates with right-side
