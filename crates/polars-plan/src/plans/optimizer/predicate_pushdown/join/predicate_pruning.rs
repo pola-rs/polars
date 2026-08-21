@@ -413,8 +413,9 @@ pub fn try_rewrite_join_type(
         #[cfg(feature = "iejoin")]
         if streaming
             && matches!(options.args.maintain_order, MaintainOrderJoin::None)
-            && left_on.is_empty()
+            && matches!(options.args.how, JoinType::Cross)
         {
+            assert!(left_on.is_empty());
             let range_predicate = take_double_bounded_range_join_filter(
                 acc_predicates,
                 expr_arena,

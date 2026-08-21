@@ -35,6 +35,7 @@ pub fn resolve_join(
     let on = match condition {
         JoinCondition::NonEqui { predicates } => {
             feature_gated!("iejoin", {
+                polars_ensure!(!predicates.is_empty(), InvalidOperation: "expected join keys/predicates");
                 return resolve_join_where(
                     input_left.unwrap_left(),
                     input_right.unwrap_left(),

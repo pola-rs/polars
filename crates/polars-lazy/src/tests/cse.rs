@@ -201,7 +201,7 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
         &[col("a"), col("b")],
         &[col("a"), col("b")],
         JoinType::Left.into(),
-    );
+    )?;
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = c.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -251,19 +251,19 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
             [col("id")],
             [col("id")],
             JoinType::Semi.into(),
-        )
+        )?
         .join(
             lf1.clone().filter(col("x").neq(lit(8))),
             [col("id")],
             [col("id")],
             JoinType::Semi.into(),
-        )
+        )?
         .join(
             lf1.filter(col("x").neq(lit(8))),
             [col("id")],
             [col("id")],
             JoinType::Semi.into(),
-        );
+        )?;
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -326,7 +326,7 @@ fn test_cse_columns_projections() -> PolarsResult<()> {
         [col("A"), col("C")],
         [col("A"), col("C")],
         JoinType::Left.into(),
-    );
+    )?;
 
     let out = q.collect()?;
 
