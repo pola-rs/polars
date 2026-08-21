@@ -1,11 +1,20 @@
+use std::hash::Hash;
+
 use bitflags::bitflags;
 use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
+#[cfg(feature = "iejoin")]
+use polars_ops::frame::IEJoinOptions;
+use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinTypeOptions};
 use polars_utils::bool::UnsafeBool;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
-use crate::plans::PlSmallStr;
+use crate::dsl::JoinOptions;
+#[cfg(feature = "cse")]
+use crate::plans::ExpressionHasher;
+use crate::plans::{ExprIR, ExpressionComparator, PlSmallStr};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -316,6 +325,156 @@ impl ProjectionOptions {
             run_parallel: self.run_parallel & other.run_parallel,
             duplicate_check: self.duplicate_check & other.duplicate_check,
             should_broadcast: self.should_broadcast | other.should_broadcast,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Hash)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub struct JoinOptionsIR {
+    pub allow_parallel: bool,
+    pub force_parallel: bool,
+    pub args: JoinArgs,
+    pub options: Option<JoinTypeOptionsIR>,
+}
+
+impl JoinOptionsIR {
+    /// The match condition is exactly `left_on == right_on`.
+    pub fn is_pure_equi(&self) -> bool {
+        self.options.is_none()
+    }
+
+    /// The match condition has a non-equality component, held in `options`.
+    pub fn is_non_equi(&self) -> bool {
+        self.options.is_some()
+    }
+
+    pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
+        let Self {
+            allow_parallel,
+            force_parallel,
+            args,
+            options,
+        } = self;
+
+        *allow_parallel == other.allow_parallel
+            && *force_parallel == other.force_parallel
+            && *args == other.args
+            && match (options, &other.options) {
+                (Some(lhs), Some(rhs)) => lhs.shallow_eq(rhs, expr_cmp),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+
+    #[cfg(feature = "cse")]
+    pub(crate) fn shallow_hash<H: std::hash::Hasher>(
+        &self,
+        state: &mut H,
+        expr_hash: &impl ExpressionHasher,
+    ) {
+        let Self {
+            allow_parallel,
+            force_parallel,
+            args,
+            options,
+        } = self;
+
+        allow_parallel.hash(state);
+        force_parallel.hash(state);
+        args.hash(state);
+        std::mem::discriminant(options).hash(state);
+        if let Some(options) = options {
+            options.shallow_hash(state, expr_hash);
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, IntoStaticStr, Debug)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
+pub enum JoinTypeOptionsIR {
+    #[cfg(feature = "iejoin")]
+    IEJoin(IEJoinOptions),
+    // Fused cross join and filter. Executed by the in-memory engine; the streaming
+    // engine has no native node for this and falls back to it via `InMemoryJoin`.
+    CrossAndFilter {
+        predicate: ExprIR, // Must be elementwise.
+    },
+}
+
+impl Hash for JoinTypeOptionsIR {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use JoinTypeOptionsIR::*;
+        match self {
+            #[cfg(feature = "iejoin")]
+            IEJoin(opt) => opt.hash(state),
+            CrossAndFilter { predicate } => {
+                predicate.node().hash(state);
+            },
+        }
+    }
+}
+
+impl JoinTypeOptionsIR {
+    pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin(lhs) => matches!(other, Self::IEJoin(rhs) if lhs == rhs),
+            Self::CrossAndFilter { predicate: lhs } => {
+                matches!(other, Self::CrossAndFilter { predicate: rhs } if expr_cmp.equals(lhs, rhs))
+            },
+        }
+    }
+
+    #[cfg(feature = "cse")]
+    pub(crate) fn shallow_hash<H: std::hash::Hasher>(
+        &self,
+        state: &mut H,
+        expr_hash: &impl ExpressionHasher,
+    ) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin(options) => options.hash(state),
+            Self::CrossAndFilter { predicate } => expr_hash.hash_expr(predicate, state),
+        }
+    }
+
+    pub fn compile<C: FnOnce(&ExprIR) -> PolarsResult<Arc<dyn CrossJoinFilter>>>(
+        self,
+        plan: C,
+    ) -> PolarsResult<JoinTypeOptions> {
+        use JoinTypeOptionsIR::*;
+        match self {
+            CrossAndFilter { predicate } => {
+                let predicate = plan(&predicate)?;
+
+                Ok(JoinTypeOptions::Cross(CrossJoinOptions { predicate }))
+            },
+            #[cfg(feature = "iejoin")]
+            IEJoin(opt) => Ok(JoinTypeOptions::IEJoin(opt)),
+        }
+    }
+}
+
+impl From<JoinOptions> for JoinOptionsIR {
+    fn from(opts: JoinOptions) -> Self {
+        Self {
+            allow_parallel: opts.allow_parallel,
+            force_parallel: opts.force_parallel,
+            args: opts.args,
+            options: Default::default(),
+        }
+    }
+}
+
+impl From<JoinOptionsIR> for JoinOptions {
+    fn from(opts: JoinOptionsIR) -> Self {
+        Self {
+            allow_parallel: opts.allow_parallel,
+            force_parallel: opts.force_parallel,
+            args: opts.args,
         }
     }
 }

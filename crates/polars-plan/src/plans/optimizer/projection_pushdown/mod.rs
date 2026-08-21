@@ -21,11 +21,12 @@ use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
 use crate::constants::get_len_name;
-use crate::dsl::{FileScanIR, JoinTypeOptionsIR, PredicateFileSkip, UnionOptions};
+use crate::dsl::{FileScanIR, PredicateFileSkip, UnionOptions};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::optimizer::projection_pushdown::edge::{
     GetParentKeyAndPort as _, GetProjectionState, ParentKeyAndPort, Projection, ProjectionState,
 };
+use crate::plans::options::JoinTypeOptionsIR;
 use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::{
     AExpr, ArenaExprIter, ArenaLpIter, ExprIR, ExprOrigin, FunctionIR, IR, IRAggExpr, IRBuilder,

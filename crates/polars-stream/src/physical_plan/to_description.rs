@@ -10,13 +10,13 @@ use polars_descriptions::{
     PredicateFileSkipDescription, SortColumnDescription,
 };
 use polars_ops::frame::JoinType;
-#[cfg(feature = "iejoin")]
-use polars_plan::dsl::JoinTypeOptionsIR;
 use polars_plan::dsl::{
     FileSinkOptions, PartitionStrategyIR, PartitionedSinkOptionsIR, UnifiedSinkArgs,
 };
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::ExprIR;
+#[cfg(feature = "iejoin")]
+use polars_plan::plans::options::JoinTypeOptionsIR;
 #[cfg(feature = "python")]
 use polars_plan::plans::{ArrowPredicate, PythonOptions, PythonPredicate};
 #[cfg(feature = "dynamic_group_by")]
