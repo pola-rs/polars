@@ -1,0 +1,6 @@
+﻿polars.Series.nan\_max
+======================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.nan_max

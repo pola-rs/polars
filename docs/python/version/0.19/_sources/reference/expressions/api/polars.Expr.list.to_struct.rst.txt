@@ -1,0 +1,6 @@
+﻿polars.Expr.list.to_struct
+==========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.list.to_struct

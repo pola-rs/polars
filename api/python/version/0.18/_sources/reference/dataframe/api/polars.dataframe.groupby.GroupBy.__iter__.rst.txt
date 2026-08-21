@@ -1,0 +1,6 @@
+﻿polars.dataframe.groupby.GroupBy.\_\_iter\_\_
+=============================================
+
+.. currentmodule:: polars.dataframe.groupby
+
+.. automethod:: GroupBy.__iter__

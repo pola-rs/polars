@@ -1,0 +1,35 @@
+﻿polars.catalog.unity.ColumnInfo
+===============================
+
+.. currentmodule:: polars.catalog.unity
+
+.. autoclass:: ColumnInfo
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~ColumnInfo.__init__
+      ~ColumnInfo.get_polars_dtype
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~ColumnInfo.name
+      ~ColumnInfo.type_name
+      ~ColumnInfo.type_text
+      ~ColumnInfo.type_json
+      ~ColumnInfo.position
+      ~ColumnInfo.comment
+      ~ColumnInfo.partition_index
+   
+   

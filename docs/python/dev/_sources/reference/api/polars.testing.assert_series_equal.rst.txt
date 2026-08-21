@@ -1,0 +1,6 @@
+﻿polars.testing.assert\_series\_equal
+====================================
+
+.. currentmodule:: polars.testing
+
+.. autofunction:: assert_series_equal

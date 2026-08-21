@@ -1,0 +1,6 @@
+﻿polars.Series.cat.to
+====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.cat.to

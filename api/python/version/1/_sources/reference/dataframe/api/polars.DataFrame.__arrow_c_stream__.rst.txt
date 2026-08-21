@@ -1,0 +1,6 @@
+﻿polars.DataFrame.\_\_arrow\_c\_stream\_\_
+=========================================
+
+.. currentmodule:: polars
+
+.. automethod:: DataFrame.__arrow_c_stream__
