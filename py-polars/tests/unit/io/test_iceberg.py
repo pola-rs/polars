@@ -610,7 +610,7 @@ def test_sink_iceberg_all_types(tmp_path: Path) -> None:
         pytest.param(
             BinaryType(),
             TruncateTransform(2),
-            [b"abc", b"de", b"abc"],
+            [b"\xffabc", b"\xfede", b"\xffabc"],
             id="truncate-binary",
         ),
         pytest.param(
@@ -649,6 +649,36 @@ def test_sink_iceberg_partitioned_transforms(
     expected_partitions = {transform.transform(iceberg_type)(value) for value in values}
     actual_partitions = {task.file.partition[0] for task in tbl.scan().plan_files()}
     assert actual_partitions == expected_partitions
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_compound_partition_paths_are_unique(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "first", StringType()),
+            NestedField(2, "second", StringType()),
+            NestedField(3, "value", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, IdentityTransform(), "first"),
+            PartitionField(2, 1001, IdentityTransform(), "second"),
+        ),
+    )
+    df = pl.DataFrame(
+        {
+            "first": ["a", "a\x01"],
+            "second": ["\x01b", "b"],
+            "value": [1, 2],
+        }
+    )
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("value"), df)
+    file_paths = [task.file.file_path for task in tbl.scan().plan_files()]
+    assert len(file_paths) == 2
+    assert len(set(file_paths)) == 2
 
 
 @pytest.mark.write_disk
