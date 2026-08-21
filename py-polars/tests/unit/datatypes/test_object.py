@@ -304,7 +304,7 @@ def test_group_by_agg_object_raises_28182() -> None:
         df.lazy().group_by("group").agg(pl.col("obj")).collect()
 
 
-def test_implode_object_raises() -> None:
+def test_implode_object_raises_28182() -> None:
     df = pl.DataFrame({"obj": [object(), object()]})
 
     with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
