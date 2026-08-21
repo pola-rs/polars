@@ -2,6 +2,7 @@ use std::fmt;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
+use join::JoinCondition;
 #[cfg(feature = "pivot")]
 use polars_core::frame::PivotColumnNaming;
 use polars_utils::arena::Node;
@@ -78,11 +79,7 @@ pub enum DslPlan {
     Join {
         input_left: Arc<DslPlan>,
         input_right: Arc<DslPlan>,
-        // Invariant: left_on and right_on are equal length.
-        left_on: Vec<Expr>,
-        right_on: Vec<Expr>,
-        // Invariant: Either left_on/right_on or predicates is set (non-empty).
-        predicates: Vec<Expr>,
+        condition: JoinCondition,
         options: Arc<JoinOptions>,
     },
     /// Gathers from this table with the given indices.
@@ -204,7 +201,7 @@ impl Clone for DslPlan {
             Self::DataFrameScan { df, schema, } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(),  },
             Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },
             Self::GroupBy { input, keys, predicates, aggs, apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), predicates: predicates.clone(), aggs: aggs.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
-            Self::Join { input_left, input_right, left_on, right_on, predicates, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone(), predicates: predicates.clone() },
+            Self::Join { input_left, input_right, condition, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), condition: condition.clone(), options: options.clone() },
             Self::Gather { input, idxs, null_on_oob } => Self::Gather { input: input.clone(), idxs: idxs.clone(), null_on_oob: *null_on_oob },
             Self::HStack { input, exprs, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(),  options: options.clone() },
             Self::MatchToSchema { input, match_schema, per_column, extra_columns } => Self::MatchToSchema { input: input.clone(), match_schema: match_schema.clone(), per_column: per_column.clone(), extra_columns: *extra_columns },

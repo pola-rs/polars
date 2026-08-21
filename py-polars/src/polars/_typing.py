@@ -287,6 +287,7 @@ InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
     "inner", "left", "right", "full", "semi", "anti", "cross", "outer"
 ]  # JoinType
+JoinWhereStrategy: TypeAlias = Literal["inner", "left", "right"]  # JoinType
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
@@ -528,6 +529,7 @@ __all__ = [
     "JaxExportType",
     "JoinStrategy",
     "JoinValidation",
+    "JoinWhereStrategy",
     "Label",
     "ListToStructWidthStrategy",
     "MaintainOrderJoin",

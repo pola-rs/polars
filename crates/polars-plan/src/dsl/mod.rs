@@ -49,6 +49,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 mod iter;
+mod join;
 mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
@@ -58,6 +59,7 @@ pub use expr::*;
 #[cfg(feature = "dtype-extension")]
 pub use extension::*;
 pub use function_expr::*;
+pub use join::JoinCondition;
 pub use list::*;
 pub use match_to_schema::*;
 #[cfg(feature = "meta")]

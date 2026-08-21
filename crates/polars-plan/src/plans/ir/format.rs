@@ -225,7 +225,12 @@ impl<'a> IRDisplay<'a> {
                 // Fused cross + filter (show as nested loop join)
                 if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options {
                     let predicate = self.display_expr(predicate);
-                    let name = "NESTED LOOP";
+                    let how = &options.args.how;
+                    let name = if matches!(how, JoinType::Cross | JoinType::Inner) {
+                        "NESTED LOOP".to_string()
+                    } else {
+                        format!("{how} NESTED LOOP")
+                    };
                     write!(f, "{:indent$}{name} JOIN ON {predicate}:", "")?;
                     write!(f, "\n{:indent$}LEFT PLAN:", "")?;
                     self.with_root(*input_left)
