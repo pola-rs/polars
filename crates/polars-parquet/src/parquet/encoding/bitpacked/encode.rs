@@ -7,6 +7,8 @@ use super::{Unpackable, Unpacked};
 ///
 /// Only the first `ceil8(unpacked.len() * num_bits)` of `packed` are populated.
 pub fn encode<T: Unpackable>(unpacked: &[T], num_bits: usize, packed: &mut [u8]) {
+    #[allow(clippy::chunks_exact_to_as_chunks)]
+    // chunk size depends on generic `T`, not usable as a const generic here
     let chunks = unpacked.chunks_exact(T::Unpacked::LENGTH);
 
     let remainder = chunks.remainder();

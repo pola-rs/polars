@@ -22,6 +22,8 @@ fn read_swapped<T: NativeType, R: Read + Seek>(
     slice.resize(length * size_of::<T>(), 0);
     reader.read_exact(&mut slice)?;
 
+    #[allow(clippy::chunks_exact_to_as_chunks)]
+    // chunk size depends on generic `T`, not usable as a const generic here
     let chunks = slice.chunks_exact(size_of::<T>());
     if !is_little_endian {
         // machine is little endian, file is big endian

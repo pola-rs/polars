@@ -201,6 +201,8 @@ pub fn native_cast<T: NativeType>(page: &DataPage) -> ParquetResult<Casted<'_, T
         panic!("A primitive page data's len must be a multiple of the type");
     }
 
+    #[allow(clippy::chunks_exact_to_as_chunks)]
+    // chunk size depends on generic `T`, not usable as a const generic here
     Ok(values.chunks_exact(size_of::<T>()).map(decode::<T>))
 }
 
