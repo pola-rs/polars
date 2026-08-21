@@ -17,6 +17,8 @@ use polars_plan::plans::FusedOperator;
 #[cfg(feature = "cov")]
 use polars_plan::plans::IRCorrelationMethod;
 use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, RowEncodingVariant};
+#[cfg(feature = "cutqcut")]
+use polars_plan::plans::{BinMethod, BinOptions};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -1121,4 +1123,28 @@ pub fn repeat(args: &[Column]) -> PolarsResult<Column> {
 
 pub fn dynamic_pred(columns: &[Column], pred: &DynamicPredWeakRef) -> PolarsResult<Column> {
     pred.evaluate(columns)
+}
+
+#[cfg(feature = "cutqcut")]
+pub(super) fn bin(s: &Column, options: BinOptions) -> PolarsResult<Column> {
+    let BinOptions {
+        method,
+        labels,
+        include_intervals,
+    } = options;
+    let labels = labels.as_deref();
+    let s = s.as_materialized_series();
+
+    match &method {
+        BinMethod::Intervals { spec, right_closed } => {
+            polars_ops::prelude::bin_intervals(s, spec, labels, include_intervals, *right_closed)
+        },
+        BinMethod::Quantiles { spec, right_closed } => {
+            polars_ops::prelude::bin_quantiles(s, spec, labels, include_intervals, *right_closed)
+        },
+        BinMethod::Ranks { spec } => {
+            polars_ops::prelude::bin_ranks(s, spec, labels, include_intervals)
+        },
+    }
+    .map(Column::from)
 }
