@@ -459,6 +459,13 @@ fn resolve_join_where(
     mut options: JoinOptionsIR,
     ctxt: &mut DslConversionContext,
 ) -> PolarsResult<(Node, Node)> {
+    polars_ensure!(
+        options.args.how.supports_non_equi(),
+        InvalidOperation:
+        "'{}' join is not supported with non-equi join conditions",
+        options.args.how,
+    );
+
     // If not eager, respect the flag.
     if ctxt.opt_flags.eager() {
         ctxt.opt_flags.set(OptFlags::PREDICATE_PUSHDOWN, true);
@@ -475,7 +482,10 @@ fn resolve_join_where(
         .schema(ctxt.lp_arena)
         .into_owned();
 
-    options.args.how = JoinType::Cross;
+    // We start assuming a cross join. Take the how, to keep join information.
+    let how = std::mem::replace(&mut options.args.how, JoinType::Cross);
+    // Left and right joins coalesce. We don't want that in join_where.
+    options.args.coalesce = JoinCoalesce::KeepColumns;
 
     let (mut last_node, join_node) = resolve_join(
         Either::Right(input_left),
@@ -495,6 +505,7 @@ fn resolve_join_where(
 
     // Perform predicate validation.
     let mut upcast_exprs = Vec::<(Node, DataType)>::new();
+    let mut resolved = Vec::with_capacity(predicates.len());
     for e in predicates {
         let arena = &mut ctxt.expr_arena;
         let predicate = to_expr_ir_materialized_lit(
@@ -522,12 +533,48 @@ fn resolve_join_where(
         ctxt.conversion_optimizer
             .push_scratch(predicate.node(), ctxt.expr_arena);
 
-        let ir = IR::Filter {
-            input: last_node,
-            predicate,
-        };
+        resolved.push(predicate);
+    }
 
-        last_node = ctxt.lp_arena.add(ir);
+    if how.is_inner() {
+        // Inner join_where is lowered as cross + filters
+        for predicate in resolved {
+            let ir = IR::Filter {
+                input: last_node,
+                predicate,
+            };
+
+            last_node = ctxt.lp_arena.add(ir);
+        }
+    } else {
+        // For left and right joins, we cannot lower to cross + filters
+        // as null outputs for missing rows would not be preserved.
+        // We attach the join predicates/conditions to the joins itself
+        // and restore the original `how` join type.
+        let node = resolved
+            .iter()
+            .map(|e| e.node())
+            .reduce(|left, right| {
+                ctxt.expr_arena.add(AExpr::BinaryExpr {
+                    left,
+                    op: Operator::And,
+                    right,
+                })
+            })
+            .expect("'join_where' requires at least one predicate");
+        let predicate = ExprIR::from_node(node, ctxt.expr_arena);
+
+        let IR::Join { options, .. } = ctxt.lp_arena.get(join_node) else {
+            unreachable!()
+        };
+        let mut new_options = (**options).clone();
+        new_options.args.how = how;
+        new_options.options = Some(JoinTypeOptionsIR::CrossAndFilter { predicate });
+
+        let IR::Join { options, .. } = ctxt.lp_arena.get_mut(join_node) else {
+            unreachable!()
+        };
+        *options = Arc::new(new_options);
     }
 
     ctxt.conversion_optimizer
