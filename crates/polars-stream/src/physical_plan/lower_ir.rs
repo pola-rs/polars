@@ -1042,11 +1042,6 @@ pub fn lower_ir(
             right_on,
             options,
         } => {
-            if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate: _ }) = &options.options {
-                // Should not have been created by the optimizer.
-                panic!()
-            };
-
             #[cfg(feature = "iejoin")]
             const RANGE_JOIN_PREFER_DESCENDING: bool = false;
 
@@ -1201,11 +1196,16 @@ pub fn lower_ir(
             #[cfg(not(feature = "asof_join"))]
             let use_streaming_asof_join = false;
 
+            // A non-equality match condition is only handled natively by the range-join
+            // node; anything else falls back to the in-memory engine.
+            let match_condition_supported = options.is_none() || args.how.is_range();
+
             if (args.how.is_equi()
                 || args.how.is_semi_anti()
                 || args.how.is_cross()
                 || use_streaming_asof_join
                 || args.how.is_range())
+                && match_condition_supported
                 && !args.validation.needs_checks()
             {
                 // When lowering the expressions for the keys we need to ensure we keep around the
