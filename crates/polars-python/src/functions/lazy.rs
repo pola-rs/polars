@@ -266,6 +266,11 @@ pub fn len() -> PyExpr {
 }
 
 #[pyfunction]
+pub fn ntile(n: u32) -> PyResult<PyExpr> {
+    Ok(dsl::ntile(n).map_err(PyPolarsErr::from)?.into())
+}
+
+#[pyfunction]
 pub fn cov(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
     dsl::cov(a.inner, b.inner, ddof).into()
 }

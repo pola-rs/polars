@@ -168,6 +168,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(all(feature = "rank", not(feature = "random")))]
         F::Rank { .. } => false,
         F::Repeat => false,
+        F::NTile { .. } => false,
         #[cfg(feature = "round_series")]
         F::Clip { .. } => false,
         F::AsList => false,
