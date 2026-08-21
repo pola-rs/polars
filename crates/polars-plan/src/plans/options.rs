@@ -401,6 +401,22 @@ pub enum JoinTypeOptionsIR {
     CrossAndFilter {
         predicate: ExprIR, // Must be elementwise.
     },
+    // State only reached in streaming join
+    // Double bounded range
+    // - left_is_point → left_on.len() == 1, right_on.len() == 2
+    // - right_is_point → left_on.len() == 2, right_on.len() == 1
+    // IE OPERATAORS: - operator1 = lower bound op, operator2 = Some(upper bound op)
+    // Single bounded range
+    // - left_on.len() == 1, right_on.len() == 1
+    // IE OPERATORS: operator1 = that predicate's op, operator2 = None
+    Range {
+        ie_options: IEJoinOptions,
+        left_on: Vec<ExprIR>,
+        right_on: Vec<ExprIR>,
+    },
+    Equi {
+        on: Vec<(ExprIR, ExprIR)>,
+    },
 }
 
 impl Hash for JoinTypeOptionsIR {
