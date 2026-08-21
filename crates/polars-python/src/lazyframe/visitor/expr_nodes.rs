@@ -1545,6 +1545,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRTemporalFunction::DatetimeFunction {
                         time_unit,
                         time_zone,
+                        ..
                     } => (
                         PyTemporalFunction::DatetimeFunction,
                         Wrap(*time_unit),

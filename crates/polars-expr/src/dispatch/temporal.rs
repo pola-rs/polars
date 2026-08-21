@@ -91,8 +91,9 @@ pub fn temporal_func_to_udf(func: IRTemporalFunction) -> SpecialEq<Arc<dyn Colum
         DatetimeFunction {
             time_unit,
             time_zone,
+            strict,
         } => {
-            map_as_slice!(temporal::datetime, &time_unit, time_zone.as_ref())
+            map_as_slice!(temporal::datetime, &time_unit, time_zone.as_ref(), strict)
         },
     }
 }
@@ -102,6 +103,7 @@ pub(super) fn datetime(
     s: &[Column],
     time_unit: &TimeUnit,
     time_zone: Option<&TimeZone>,
+    strict: bool,
 ) -> PolarsResult<Column> {
     use polars_core::prelude::{DataType, DatetimeChunked};
     use polars_time::prelude::DatetimeMethods;
@@ -157,8 +159,8 @@ pub(super) fn datetime(
     let second = second.cast(&DataType::Int8)?.broadcast_owned_to(len)?;
     let second = second.i8()?;
 
-    let nanosecond = (microsecond.cast(&DataType::Int32)? * 1_000).broadcast_owned_to(len)?;
-    let nanosecond = nanosecond.i32()?;
+    let nanosecond = (microsecond.cast(&DataType::Int64)? * 1_000).broadcast_owned_to(len)?;
+    let nanosecond = nanosecond.i64()?;
 
     let ambiguous = ambiguous.cast(&DataType::String)?.broadcast_owned_to(len)?;
     let ambiguous = ambiguous.str()?;
@@ -175,6 +177,7 @@ pub(super) fn datetime(
         time_unit,
         time_zone.cloned(),
         col_name,
+        strict,
     );
     ca.map(|s| s.into_column())
 }

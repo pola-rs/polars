@@ -702,7 +702,7 @@ class PyDataFrame:
     def shrink_to_fit(self) -> None: ...
     def hash_rows(self, k0: int, k1: int, k2: int, k3: int) -> PySeries: ...
     def transpose(
-        self, keep_names_as: str | None, column_names: None | str | Sequence[str]
+        self, keep_names_as: str | None, column_names: str | Sequence[str] | None
     ) -> PyDataFrame: ...
     def upsample(
         self,
@@ -2221,6 +2221,7 @@ def datetime(
     time_unit: TimeUnit,  # Default set by Rust code
     time_zone: TimeZone | None,  # Default set by Rust code
     ambiguous: PyExpr,  # Default set by Rust code
+    strict: bool = True,
 ) -> PyExpr: ...
 def concat_lf_diagonal(
     lfs: Any, rechunk: bool, parallel: bool, to_supertypes: bool, maintain_order: bool

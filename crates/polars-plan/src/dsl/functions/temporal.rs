@@ -43,6 +43,9 @@ pub struct DatetimeArgs {
     pub time_unit: TimeUnit,
     pub time_zone: Option<TimeZone>,
     pub ambiguous: Expr,
+    /// Whether to raise an error on invalid time components. If `false`,
+    /// invalid components are set to `null` instead.
+    pub strict: bool,
 }
 
 impl Default for DatetimeArgs {
@@ -58,6 +61,7 @@ impl Default for DatetimeArgs {
             time_unit: TimeUnit::Microseconds,
             time_zone: None,
             ambiguous: lit(String::from("raise")),
+            strict: true,
         }
     }
 }
@@ -112,6 +116,10 @@ impl DatetimeArgs {
         Self { ambiguous, ..self }
     }
 
+    pub fn with_strict(self, strict: bool) -> Self {
+        Self { strict, ..self }
+    }
+
     fn all_literal(&self) -> bool {
         use Expr::*;
         [
@@ -128,7 +136,7 @@ impl DatetimeArgs {
     }
 
     fn as_literal(&self) -> Option<Expr> {
-        if self.time_zone.is_some() || !self.all_literal() {
+        if self.time_zone.is_some() || !self.all_literal() || !self.strict {
             return None;
         };
         let Expr::Literal(lv) = &self.year else {
@@ -201,6 +209,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     let time_unit = args.time_unit;
     let time_zone = args.time_zone;
     let ambiguous = args.ambiguous;
+    let strict = args.strict;
 
     let input = vec![
         year,
@@ -219,6 +228,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
             function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
                 time_unit,
                 time_zone,
+                strict,
             }),
         }),
         // TODO: follow left-hand rule in Polars 2.0.

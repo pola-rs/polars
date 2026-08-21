@@ -644,9 +644,11 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::DatetimeFunction {
                     time_unit,
                     time_zone,
+                    strict,
                 } => B::DatetimeFunction {
                     time_unit,
                     time_zone,
+                    strict,
                 },
             })
         },
