@@ -96,7 +96,11 @@ from polars.datatypes import (
 from polars.datatypes.group import DataTypeGroup
 from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.lazyframe.engine import GPUEngine
-from polars.lazyframe.engine_config import _eager_engine, _select_engine
+from polars.lazyframe.engine_config import (
+    _eager_engine,
+    _plan_engine,
+    _select_engine,
+)
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
 from polars.schema import Schema
@@ -1031,8 +1035,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
           statistics that we deem informative, and may be updated in the future.
           Using `describe` programmatically (versus interactive exploration) is
           not recommended for this reason.
-        * The statistics query honors the configured engine affinity. Once computed,
-          the statistics are collected locally to reshape the result.
+        * The statistics query honors the configured engine affinity.
 
         Examples
         --------
@@ -1172,8 +1175,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 ]
             )
 
-        # We want to compute the metrics using the selected engine, and once they have
-        # been computed, we collect them eagerly for local consumption
         df_metrics = (
             (
                 # if more than one quantile, sort the relevant columns to make them O(1)
@@ -1183,9 +1184,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 else self
             )
             .select(*metric_exprs)
-            .execute()
-            .lazy()
-            ._collect_eager()
+            .collect()
         )
 
         # reshape wide result
@@ -3017,7 +3016,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = "the `sinked_paths_callback` parameter of `sink_parquet` is considered unstable"
             issue_unstable_warning(msg)
 
-        return _select_engine(engine).sink_parquet(
+        # a lazy sink only builds a plan, so it must not resolve an engine
+        engine_ = _plan_engine(engine) if lazy else _select_engine(engine)
+        return engine_.sink_parquet(
             self,
             path,
             compression=compression,
@@ -3651,7 +3652,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = "the `sinked_paths_callback` parameter of `sink_ipc` is considered unstable"
             issue_unstable_warning(msg)
 
-        return _select_engine(engine).sink_ipc(
+        # a lazy sink only builds a plan, so it must not resolve an engine
+        engine_ = _plan_engine(engine) if lazy else _select_engine(engine)
+        return engine_.sink_ipc(
             self,
             path,
             compression=compression,
@@ -3972,7 +3975,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         PartitionBy
         """
-        return _select_engine(engine).sink_csv(
+        # a lazy sink only builds a plan, so it must not resolve an engine
+        engine_ = _plan_engine(engine) if lazy else _select_engine(engine)
+        return engine_.sink_csv(
             self,
             path,
             include_bom=include_bom,
@@ -4209,7 +4214,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         PartitionBy
         """
-        return _select_engine(engine).sink_ndjson(
+        # a lazy sink only builds a plan, so it must not resolve an engine
+        engine_ = _plan_engine(engine) if lazy else _select_engine(engine)
+        return engine_.sink_ndjson(
             self,
             path,
             compression=compression,
@@ -4319,7 +4326,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_batches(lambda df: print(df))  # doctest: +SKIP
         """
-        return _select_engine(engine).sink_batches(
+        # a lazy sink only builds a plan, so it must not resolve an engine
+        engine_ = _plan_engine(engine) if lazy else _select_engine(engine)
+        return engine_.sink_batches(
             self,
             function,
             chunk_size=chunk_size,

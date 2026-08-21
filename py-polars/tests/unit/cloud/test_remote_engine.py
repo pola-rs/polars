@@ -9,14 +9,18 @@ from __future__ import annotations
 
 import io
 import sys
+import warnings
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 class FakeQuery:
@@ -62,6 +66,31 @@ class FakeExecuteRemote:
             msg = "LazyFrameRemote.sink_ipc does not accept maintain_order"
             raise TypeError(msg)
         return self._sink("sink_ipc", uri, kwargs)
+
+    # `collect` and `collect_batches` mirror the signatures of their Polars Cloud
+    # counterparts exactly, so that a drifting keyword fails here rather than against a
+    # cluster. See `polars_cloud/query/ext.py` (`LazyFrameRemote.collect` and
+    # `.collect_batches`, added in polars-cloud `9649f1d4c`).
+    def collect(self, *, ttl: Any = None, optimizations: Any = None) -> pl.DataFrame:
+        self._calls.append((self.tag, "collect", {"ttl": ttl}))
+        # `_collect_eager` keeps the stub local even under a remote affinity
+        return self._lf._collect_eager()
+
+    def collect_batches(
+        self,
+        *,
+        maintain_order: bool = False,
+        ttl: Any = None,
+        optimizations: Any = None,
+    ) -> Iterator[pl.DataFrame]:
+        self._calls.append(
+            (
+                self.tag,
+                "collect_batches",
+                {"maintain_order": maintain_order, "ttl": ttl},
+            )
+        )
+        return iter([self._lf._collect_eager()])
 
 
 class FakeQueryResult:
@@ -192,14 +221,49 @@ def test_labels(calls: list[tuple[Any, ...]], lf: pl.LazyFrame) -> None:
     assert ("labels", ["etl"]) in calls
 
 
-def test_collect_pulls_the_result_back_and_warns(
+def test_collect_streams_the_result_back(
     calls: list[tuple[Any, ...]], lf: pl.LazyFrame
 ) -> None:
-    with pytest.warns(UserWarning, match="transfers the entire result"):
+    with warnings.catch_warnings():
+        # collecting remotely no longer carries a caveat
+        warnings.simplefilter("error", UserWarning)
         result = lf.collect(engine=pl.RemoteEngine())
 
     assert_frame_equal(result, pl.DataFrame({"a": [1, 2, 3]}))
-    assert calls[1][:2] == ("auto", "execute")
+    # the result is streamed back directly, not staged through `execute`
+    assert calls[1][:2] == ("auto", "collect")
+    assert not any(call[1] == "execute" for call in calls if len(call) > 1)
+
+
+@pytest.mark.usefixtures("_stub_cloud")
+def test_collect_rejects_background(lf: pl.LazyFrame) -> None:
+    with pytest.raises(ValueError, match="`background` is not supported"):
+        lf.collect(engine=pl.RemoteEngine(), background=True)
+
+
+def test_collect_batches_dispatches(
+    calls: list[tuple[Any, ...]], lf: pl.LazyFrame
+) -> None:
+    batches = list(lf.collect_batches(engine=pl.RemoteEngine()))
+    assert_frame_equal(pl.concat(batches), pl.DataFrame({"a": [1, 2, 3]}))
+    # Polars Cloud defaults `maintain_order` to `False`; the Polars default wins
+    assert calls[1] == (
+        "auto",
+        "collect_batches",
+        {"maintain_order": True, "ttl": None},
+    )
+
+    list(lf.collect_batches(engine=pl.RemoteEngine(), maintain_order=False))
+    assert calls[-1][2]["maintain_order"] is False
+
+
+@pytest.mark.parametrize("kwargs", [{"chunk_size": 100}, {"lazy": True}])
+@pytest.mark.usefixtures("_stub_cloud")
+def test_collect_batches_rejects_unsupported_options(
+    lf: pl.LazyFrame, kwargs: dict[str, Any]
+) -> None:
+    with pytest.raises(ValueError, match="not supported by the remote engine"):
+        lf.collect_batches(engine=pl.RemoteEngine(), **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -236,7 +300,6 @@ def test_sink_forwards_options(calls: list[tuple[Any, ...]], lf: pl.LazyFrame) -
 @pytest.mark.parametrize(
     ("method", "kwargs"),
     [
-        ("sink_parquet", {"lazy": True}),
         ("sink_parquet", {"mkdir": True}),
         ("sink_parquet", {"sync_on_close": "data"}),
         ("sink_csv", {"compression": "gzip"}),
@@ -256,6 +319,19 @@ def test_sink_rejects_unsupported_options(
         getattr(lf, method)("s3://bucket/out/", engine=pl.RemoteEngine(), **kwargs)
 
 
+@pytest.mark.usefixtures("_stub_cloud")
+def test_lazy_sink_builds_a_plan_locally(lf: pl.LazyFrame, tmp_path: Path) -> None:
+    # `LazyFrame.remote` is not stubbed here, so any dispatch would fail on the missing
+    # `pc.LazyFrameRemote`. This is how Polars Cloud builds the plan it ships.
+    path = tmp_path / "out.parquet"
+    with pl.Config(engine_affinity=pl.RemoteEngine()):
+        plan = lf.sink_parquet(path, lazy=True)
+
+    assert isinstance(plan, pl.LazyFrame)
+    plan.collect(engine="in-memory")
+    assert pl.read_parquet(path).height == 3
+
+
 @pytest.mark.parametrize("path", [io.BytesIO(), Path("local/path")])
 def test_sink_rejects_non_uri_target(
     calls: list[tuple[Any, ...]], lf: pl.LazyFrame, path: Any
@@ -269,7 +345,6 @@ def test_sink_rejects_non_uri_target(
     ("operation", "call"),
     [
         ("collect_async", lambda lf, e: lf.collect_async(engine=e)),
-        ("collect_batches", lambda lf, e: lf.collect_batches(engine=e)),
         ("collect_all", lambda lf, e: pl.collect_all([lf], engine=e)),
         # a Python callback cannot run on a worker
         ("sink_batches", lambda lf, e: lf.sink_batches(print, engine=e)),
@@ -297,6 +372,7 @@ def test_plan_methods_never_reach_polars_cloud(lf: pl.LazyFrame) -> None:
     assert lf.explain(engine=engine) == lf.explain(engine="streaming")
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 @pytest.mark.usefixtures("_stub_cloud")
 def test_eager_operations_stay_local(tmp_path: Path) -> None:
     # None of these may reach `polars_cloud`: `LazyFrame.remote` is not stubbed here,
@@ -304,6 +380,7 @@ def test_eager_operations_stay_local(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
     df.write_parquet(tmp_path / "data.parquet")
     df.write_ipc(tmp_path / "data.ipc")
+    df.write_csv(tmp_path / "data.csv")
 
     with pl.Config(engine_affinity=pl.RemoteEngine()):
         assert df.filter(pl.col("a") > 1).height == 2
@@ -319,6 +396,9 @@ def test_eager_operations_stay_local(tmp_path: Path) -> None:
         assert pl.concat([df, df]).height == 6
         assert len(pl.align_frames(df, df, on="a")) == 2
         assert pl.sql("SELECT * FROM df", eager=True).height == 3
+        reader = pl.read_csv_batched(tmp_path / "data.csv", batch_size=1)
+        assert reader.next_batches(1) is not None
+        assert_frame_equal(df.lazy(), df.lazy())
         # explicitly asking for a local engine also still works
         assert pl.LazyFrame({"a": [1]}).collect(engine="in-memory").height == 1
 
@@ -347,4 +427,4 @@ def test_describe_honors_remote_affinity(
         "min",
         "max",
     ]
-    assert any(call[:2] == ("auto", "execute") for call in calls)
+    assert any(call[:2] == ("auto", "collect") for call in calls)

@@ -66,6 +66,19 @@ def _eager_engine() -> Engine:
     return _IN_MEMORY_ENGINE
 
 
+def _plan_engine(engine: EngineType) -> Engine:
+    """
+    Return the engine that builds a lazy sink plan.
+
+    A lazy sink only attaches a sink node to the plan, so the engine is never used.
+    Resolving the configured affinity would be wrong: it may select an engine that
+    cannot build a plan at all, such as a remote one.
+    """
+    if isinstance(engine, str) and engine != "auto":
+        _engine_from_name(engine)  # reject an invalid name without using the engine
+    return _IN_MEMORY_ENGINE
+
+
 def _engine_from_name(engine: EngineTypeName) -> Engine:
     """Resolve an explicit engine name without applying the configured affinity."""
     if engine == "gpu":

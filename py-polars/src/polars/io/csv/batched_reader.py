@@ -82,7 +82,8 @@ class BatchedCsvReader:
         # Trigger empty data.
         if raise_if_empty:
             q.collect_schema()
-        self._reader = q.collect_batches(chunk_size=batch_size)
+        # reading a local file is local work, so never resolve the engine affinity
+        self._reader = q.collect_batches(chunk_size=batch_size, engine="streaming")
 
     def next_batches(self, n: int) -> list[DataFrame] | None:
         """
