@@ -3320,6 +3320,7 @@ name = "polars-error"
 version = "0.55.1"
 dependencies = [
  "avro-schema",
+ "libc",
  "object_store",
  "parking_lot",
  "polars-arrow-format",
