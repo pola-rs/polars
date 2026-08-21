@@ -800,8 +800,7 @@ def test_cast_options_ignore_extra_columns() -> None:
     ("scan_func", "write_func"),
     [
         (pl.scan_parquet, pl.DataFrame.write_parquet),
-        # TODO: Fix for all other formats
-        # (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
         # (pl.scan_csv, pl.DataFrame.write_csv),
         # (pl.scan_ndjson, pl.DataFrame.write_ndjson),
     ],

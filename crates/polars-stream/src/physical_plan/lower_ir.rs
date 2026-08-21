@@ -866,6 +866,9 @@ pub fn lower_ir(
                         #[cfg(feature = "parquet")]
                         FileScanIR::Parquet { .. } => unified_scan_args.extra_columns_policy,
 
+                        #[cfg(feature = "ipc")]
+                        FileScanIR::Ipc { .. } => unified_scan_args.extra_columns_policy,
+
                         _ => {
                             if unified_scan_args.projection.is_some() {
                                 ExtraColumnsPolicy::Ignore

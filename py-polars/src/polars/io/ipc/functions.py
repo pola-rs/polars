@@ -452,6 +452,7 @@ def scan_ipc(
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
     include_file_paths: str | None = None,
+    extra_columns: Literal["ignore", "raise"] = "raise",
     _record_batch_statistics: bool = False,
 ) -> LazyFrame:
     """
@@ -547,6 +548,12 @@ def scan_ipc(
         Whether to try parsing hive values as date/datetime types.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
+    extra_columns
+        Configuration for behavior when extra columns outside of the
+        defined schema are encountered in the data:
+
+        * `ignore`: Silently ignores.
+        * `raise`: Raises an error.
     """
     # Memory Mapping is now a no-op
     _ = memory_map
@@ -599,6 +606,7 @@ def scan_ipc(
             cache=cache_deprecated,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,
+            extra_columns=extra_columns,
         ),
     )
 
