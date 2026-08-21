@@ -679,6 +679,104 @@ def test_sink_iceberg_partition_key_name_collision(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("metrics_mode", ["none", "counts"])
+@pytest.mark.parametrize("column_override", [False, True])
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_requires_bounds_metrics(
+    tmp_path: Path, *, metrics_mode: str, column_override: bool
+) -> None:
+    from pyiceberg.table import TableProperties
+
+    property_name = (
+        f"{TableProperties.METRICS_MODE_COLUMN_CONF_PREFIX}.partition_col"
+        if column_override
+        else TableProperties.DEFAULT_WRITE_METRICS_MODE
+    )
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "partition_col", LongType()),
+            NestedField(2, "value", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, IdentityTransform(), "partition_col")
+        ),
+        properties={property_name: metrics_mode},
+    )
+
+    with pytest.raises(
+        NotImplementedError,
+        match=rf"partition_col.*'{metrics_mode}' metrics.*requires lower and upper bounds",
+    ):
+        pl.LazyFrame({"partition_col": [7, 7], "value": [1, 2]}).sink_iceberg(
+            tbl, mode="append"
+        )
+
+    assert tbl.current_snapshot() is None
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_allows_bounds_metrics_override(
+    tmp_path: Path,
+) -> None:
+    from pyiceberg.table import TableProperties
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "partition_col", LongType()),
+            NestedField(2, "value", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, IdentityTransform(), "partition_col")
+        ),
+        properties={
+            TableProperties.DEFAULT_WRITE_METRICS_MODE: "none",
+            f"{TableProperties.METRICS_MODE_COLUMN_CONF_PREFIX}.partition_col": "full",
+        },
+    )
+    df = pl.DataFrame({"partition_col": [7, 7, 8], "value": [1, 2, 3]})
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("value"), df)
+    assert {task.file.partition[0] for task in tbl.scan().plan_files()} == {7, 8}
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_rejects_nested_source(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(
+                1,
+                "nested",
+                StructType(NestedField(2, "partition_col", LongType())),
+            ),
+            NestedField(3, "value", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(2, 1000, IdentityTransform(), "partition_col")
+        ),
+    )
+
+    with pytest.raises(
+        NotImplementedError,
+        match=(
+            r"partition_col.*nested\.partition_col.*'counts' metrics.*"
+            r"requires lower and upper bounds"
+        ),
+    ):
+        pl.LazyFrame(
+            {
+                "nested": [{"partition_col": 7}],
+                "value": [1],
+            }
+        ).sink_iceberg(tbl, mode="append")
+
+    assert tbl.current_snapshot() is None
+
+
 @pytest.mark.parametrize(
     ("iceberg_type", "transform", "values"),
     [

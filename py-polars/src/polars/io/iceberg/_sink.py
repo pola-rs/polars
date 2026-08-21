@@ -38,6 +38,7 @@ def _partition_key_exprs(table: pyiceberg.table.Table) -> list[pl.Expr] | None:
     if not spec.fields:
         return None
 
+    from pyiceberg.io.pyarrow import MetricModeTypes, compute_statistics_plan
     from pyiceberg.transforms import (
         DayTransform,
         HourTransform,
@@ -51,11 +52,27 @@ def _partition_key_exprs(table: pyiceberg.table.Table) -> list[pl.Expr] | None:
     import polars as pl
 
     schema = table.schema()
+    statistics_plan = compute_statistics_plan(schema, table.metadata.properties)
+    bounds_metrics_modes = {MetricModeTypes.TRUNCATE, MetricModeTypes.FULL}
     reserved_names = {field.name for field in schema.fields}
     exprs: list[pl.Expr] = []
 
     for field in spec.fields:
         source_field = schema.find_field(field.source_id)
+        statistics = statistics_plan.get(field.source_id)
+        if statistics is None or statistics.mode.type not in bounds_metrics_modes:
+            source_name = schema.find_column_name(field.source_id)
+            metrics_mode = (
+                statistics.mode.type.value if statistics is not None else "unavailable"
+            )
+            msg = (
+                "sink to Iceberg table with partition field "
+                f"'{field.name}' on source column '{source_name}' with "
+                f"'{metrics_mode}' metrics; partition value inference requires "
+                "lower and upper bounds"
+            )
+            raise NotImplementedError(msg)
+
         source_type = source_field.field_type
         transform = field.transform
         expr = pl.col(source_field.name)
