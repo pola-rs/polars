@@ -147,7 +147,7 @@ pub fn rows_to_schema_supertypes(
     rows: &[Row],
     infer_schema_length: Option<usize>,
 ) -> PolarsResult<Schema> {
-    let dtypes = rows_to_supertypes(rows, infer_schema_length)?;
+    let dtypes = rows_to_supertypes(rows, infer_schema_length, None)?;
     let schema = dtypes_to_schema(dtypes);
     Ok(schema)
 }
@@ -156,17 +156,48 @@ pub fn rows_to_schema_supertypes(
 pub fn rows_to_supertypes(
     rows: &[Row],
     infer_schema_length: Option<usize>,
+    row_mask: Option<&[bool]>,
 ) -> PolarsResult<Vec<DataType>> {
     polars_ensure!(!rows.is_empty(), NoData: "no rows, cannot infer schema");
 
     let max_infer = infer_schema_length.unwrap_or(rows.len());
 
-    let mut dtypes: Vec<PlIndexSet<DataType>> = vec![PlIndexSet::new(); rows[0].0.len()];
-    for row in rows.iter().take(max_infer) {
-        for (val, dtypes_set) in row.0.iter().zip(dtypes.iter_mut()) {
-            dtypes_set.insert(val.into());
-        }
-    }
+    let row_len = rows[0].0.len();
+    let (count, row_mask) = match row_mask {
+        Some(mask) => {
+            let count = mask.iter().filter(|&&b| b).count();
+            // If all items are included in the mask, we can discard it.
+            if count == row_len {
+                (count, None)
+            } else {
+                (count, row_mask)
+            }
+        },
+        None => (row_len, None),
+    };
+    let mut dtypes: Vec<PlIndexSet<DataType>> = vec![PlIndexSet::new(); count];
+
+    match row_mask {
+        Some(mask) => {
+            for row in rows.iter().take(max_infer) {
+                let row_iter = row
+                    .0
+                    .iter()
+                    .zip(mask.iter())
+                    .filter_map(|(v, &use_value)| if use_value { Some(v) } else { None });
+                for (val, dtypes_set) in row_iter.zip(dtypes.iter_mut()) {
+                    dtypes_set.insert(val.into());
+                }
+            }
+        },
+        None => {
+            for row in rows.iter().take(max_infer) {
+                for (val, dtypes_set) in row.0.iter().zip(dtypes.iter_mut()) {
+                    dtypes_set.insert(val.into());
+                }
+            }
+        },
+    };
 
     dtypes
         .into_iter()
