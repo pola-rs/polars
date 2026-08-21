@@ -3318,6 +3318,10 @@ fn expr_cols_all_in_schema(expr: &Expr, schema: &Schema) -> bool {
     found_cols && all_in_schema
 }
 
+fn expr_has_columns(expr: &Expr) -> bool {
+    expr.into_iter().any(|e| matches!(e, Expr::Column(_)))
+}
+
 /// Determine which parsed join expressions actually belong in `left_om` and which in `right_on`.
 ///
 /// This needs to be handled carefully because in SQL joins you can write "join on" constraints
@@ -3397,6 +3401,13 @@ fn determine_left_right_join_on(
         ((true, true), (false, true)) => Ok((vec![left_on], vec![right_on])),
         ((true, false), (true, true)) => Ok((vec![left_on], vec![right_on])),
         ((false, true), (true, true)) => Ok((vec![right_on], vec![left_on])),
+        // a scalar expression belongs on the side opposite the column expression
+        ((false, true), (false, false)) if !expr_has_columns(&right_on) => {
+            Ok((vec![right_on], vec![left_on]))
+        },
+        ((false, false), (true, false)) if !expr_has_columns(&left_on) => {
+            Ok((vec![right_on], vec![left_on]))
+        },
         // pass through as-is
         _ => Ok((vec![left_on], vec![right_on])),
     }
