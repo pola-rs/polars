@@ -654,17 +654,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Join {
             input_left,
             input_right,
-            left_on,
-            right_on,
-            predicates,
+            condition,
             options,
         } => {
             return join::resolve_join(
                 Either::Left(input_left),
                 Either::Left(input_right),
-                left_on,
-                right_on,
-                predicates,
+                condition,
                 JoinOptionsIR::from(Arc::unwrap_or_clone(options)),
                 ctxt,
             )
