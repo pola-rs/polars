@@ -97,7 +97,7 @@ pub fn replace_datetime(
         hour,
         minute,
         second,
-        &nanosecond,
+        nanosecond,
         ambiguous,
         &ca.time_unit(),
         ca.time_zone().clone(),
