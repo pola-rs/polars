@@ -160,30 +160,22 @@ where
     }
 
     // Handle bulk.
-    let mut true_chunks = rest_true.chunks_exact(64);
-    let mut false_chunks = rest_false.chunks_exact(64);
-    let mut out_chunks = rest_out.chunks_exact_mut(64);
-    let combined = true_chunks
-        .by_ref()
-        .zip(false_chunks.by_ref())
-        .zip(out_chunks.by_ref());
+    let (true_chunks, true_remainder) = rest_true.as_chunks::<64>();
+    let (false_chunks, false_remainder) = rest_false.as_chunks::<64>();
+    let (out_chunks, out_remainder) = rest_out.as_chunks_mut::<64>();
+    let combined = true_chunks.iter().zip(false_chunks).zip(out_chunks);
     for (i, ((tc, fc), oc)) in combined.enumerate() {
         let m = unsafe { *aligned.bulk().get_unchecked(i) };
-        process_chunk(
-            m,
-            tc.try_into().unwrap(),
-            fc.try_into().unwrap(),
-            oc.try_into().unwrap(),
-        );
+        process_chunk(m, tc, fc, oc);
     }
 
     // Handle suffix.
     if aligned.suffix_bitlen() > 0 {
         process_var(
             aligned.suffix(),
-            true_chunks.remainder(),
-            false_chunks.remainder(),
-            out_chunks.into_remainder(),
+            true_remainder,
+            false_remainder,
+            out_remainder,
         );
     }
 
@@ -226,21 +218,21 @@ where
     }
 
     // Handle bulk.
-    let mut true_chunks = rest_true.chunks_exact(64);
-    let mut out_chunks = rest_out.chunks_exact_mut(64);
-    let combined = true_chunks.by_ref().zip(out_chunks.by_ref());
+    let (true_chunks, true_remainder) = rest_true.as_chunks::<64>();
+    let (out_chunks, out_remainder) = rest_out.as_chunks_mut::<64>();
+    let combined = true_chunks.iter().zip(out_chunks);
     for (i, (tc, oc)) in combined.enumerate() {
         let m = unsafe { *aligned.bulk().get_unchecked(i) } ^ xor_inverter;
-        process_chunk(m, tc.try_into().unwrap(), if_false, oc.try_into().unwrap());
+        process_chunk(m, tc, if_false, oc);
     }
 
     // Handle suffix.
     if aligned.suffix_bitlen() > 0 {
         scalar::if_then_else_broadcast_false_scalar_rest(
             aligned.suffix() ^ xor_inverter,
-            true_chunks.remainder(),
+            true_remainder,
             if_false,
-            out_chunks.into_remainder(),
+            out_remainder,
         );
     }
 
@@ -269,10 +261,10 @@ where
     scalar::if_then_else_broadcast_both_scalar_rest(aligned.prefix(), if_true, if_false, start_out);
 
     // Handle bulk.
-    let mut out_chunks = rest_out.chunks_exact_mut(64);
-    for (i, oc) in out_chunks.by_ref().enumerate() {
+    let (out_chunks, out_remainder) = rest_out.as_chunks_mut::<64>();
+    for (i, oc) in out_chunks.iter_mut().enumerate() {
         let m = unsafe { *aligned.bulk().get_unchecked(i) };
-        generate_chunk(m, if_true, if_false, oc.try_into().unwrap());
+        generate_chunk(m, if_true, if_false, oc);
     }
 
     // Handle suffix.
@@ -281,7 +273,7 @@ where
             aligned.suffix(),
             if_true,
             if_false,
-            out_chunks.into_remainder(),
+            out_remainder,
         );
     }
 
