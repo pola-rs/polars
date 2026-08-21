@@ -174,6 +174,9 @@ impl StructArray {
     /// # Implementation
     /// This operation is `O(F)` where `F` is the number of fields.
     pub fn slice(&mut self, offset: usize, length: usize) {
+        let _ = offset
+            .checked_add(length)
+            .expect("offset + length overflowed");
         assert!(
             offset + length <= self.len(),
             "offset + length may not exceed length of array"
