@@ -1208,7 +1208,7 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// fn anti_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    /// fn anti_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> PolarsResult<LazyFrame> {
     ///         ldf
     ///         .anti_join(other, col("foo"), col("bar").cast(DataType::String))
     /// }
@@ -1351,7 +1351,7 @@ impl LazyFrame {
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
     ///
-    /// fn example(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    /// fn example(ldf: LazyFrame, other: LazyFrame) -> PolarsResult<LazyFrame> {
     ///         ldf
     ///         .join(other, [col("foo"), col("bar")], [col("foo"), col("bar")], JoinArgs::new(JoinType::Inner))
     /// }
