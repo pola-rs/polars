@@ -28,7 +28,7 @@ import polars._reexport as pl
 from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_s
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, ModuleUpgradeRequiredError
 from polars.io._utils import null_count_dtype
 
 if TYPE_CHECKING:
@@ -53,6 +53,38 @@ _temporal_conversions: dict[str, Callable[..., datetime | date]] = {
 ICEBERG_TIME_TO_NS: int = 1000
 
 
+def _new_pyiceberg_scan(
+    tbl: Table,
+    *,
+    snapshot_id: int | None,
+    from_snapshot_id_exclusive: int | None,
+    to_snapshot_id_inclusive: int | None,
+    selected_fields: tuple[str, ...] = ("*",),
+    limit: int | None = None,
+) -> Any:
+    if from_snapshot_id_exclusive is None and to_snapshot_id_inclusive is None:
+        return tbl.scan(
+            snapshot_id=snapshot_id,
+            selected_fields=selected_fields,
+            limit=limit,
+        )
+
+    scan_factory = getattr(tbl, "incremental_append_scan", None)
+    if scan_factory is None:
+        msg = (
+            "incremental append scans require a newer PyIceberg version that "
+            "provides `Table.incremental_append_scan()`"
+        )
+        raise ModuleUpgradeRequiredError(msg)
+
+    return scan_factory(
+        from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+        to_snapshot_id_inclusive=to_snapshot_id_inclusive,
+        selected_fields=selected_fields,
+        limit=limit,
+    )
+
+
 # PyIceberg on Windows uses `file://C:/` rather than `file:///C:/`.
 def _normalize_windows_iceberg_file_uri(path: str) -> str:
     if path.startswith("file://") and not path.startswith("file:///"):
@@ -67,6 +99,8 @@ def _scan_pyarrow_dataset_impl(
     iceberg_table_filter: Any | None = None,
     n_rows: int | None = None,
     snapshot_id: int | None = None,
+    from_snapshot_id_exclusive: int | None = None,
+    to_snapshot_id_inclusive: int | None = None,
     **kwargs: Any,  # noqa: ARG001
 ) -> tuple[Iterable[DataFrame], bool]:
     """
@@ -84,6 +118,10 @@ def _scan_pyarrow_dataset_impl(
         Materialize only n rows from the arrow dataset.
     snapshot_id:
         The snapshot ID to scan from.
+    from_snapshot_id_exclusive
+        The exclusive start of an incremental append scan.
+    to_snapshot_id_inclusive
+        The inclusive end of an incremental append scan.
     batch_size
         The maximum row count for scanned pyarrow record batches.
     kwargs:
@@ -98,7 +136,13 @@ def _scan_pyarrow_dataset_impl(
     that could not be converted
     to pyarrow and need to be applied as post-predicate.
     """
-    scan = tbl.scan(limit=n_rows, snapshot_id=snapshot_id)
+    scan = _new_pyiceberg_scan(
+        tbl,
+        snapshot_id=snapshot_id,
+        from_snapshot_id_exclusive=from_snapshot_id_exclusive,
+        to_snapshot_id_inclusive=to_snapshot_id_inclusive,
+        limit=n_rows,
+    )
 
     if with_columns is not None:
         if not with_columns:
