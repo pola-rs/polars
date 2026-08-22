@@ -33,9 +33,9 @@ def assert_schema_equal(
     Parameters
     ----------
     left_schema
-        The first DataFrame or LazyFrame to compare.
+        The first schema to compare, as a Schema or schema dictionary.
     right_schema
-        The second DataFrame or LazyFrame to compare.
+        The second schema to compare, as a Schema or schema dictionary.
     check_column_order
         Requires column order to match.
     check_dtypes
