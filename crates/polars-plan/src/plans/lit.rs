@@ -1,11 +1,14 @@
 use std::hash::{Hash, Hasher};
+use std::ops::Deref;
 
+#[cfg(feature = "dtype-time")]
+use arrow::temporal_conversions::NANOSECONDS_IN_DAY;
 #[cfg(feature = "temporal")]
 use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
-use polars_core::utils::materialize_dyn_int;
+use polars_core::utils::{NoNull, materialize_dyn_int};
 use polars_ops::series::new_int_range;
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::{TotalEq, TotalHash};
@@ -315,6 +318,73 @@ impl LiteralValue {
             },
             lv => lv,
         }
+    }
+
+    /// Turn this literal into a [`Column`].
+    ///
+    /// Scalar literals produce a length-1 column, `Series` and `Range` literals produce a
+    /// column of their natural length.
+    pub fn to_column(&self, name: PlSmallStr) -> PolarsResult<Column> {
+        use LiteralValue as L;
+        let column = match self {
+            L::Scalar(sc) => {
+                #[cfg(feature = "dtype-time")]
+                if let AnyValue::Time(v) = sc.value() {
+                    if !(0..NANOSECONDS_IN_DAY).contains(v) {
+                        polars_bail!(
+                            InvalidOperation: "value `{v}` is out-of-range for `time` which can be 0 - {}",
+                            NANOSECONDS_IN_DAY - 1
+                        );
+                    }
+                }
+
+                sc.clone().into_column(name)
+            },
+            L::Series(s) => s.deref().clone().into_column(),
+            lv @ L::Dyn(_) => Series::from_any_values(name, &[lv.to_any_value().unwrap()], false)
+                .unwrap()
+                .into_column(),
+            L::Range(RangeLiteralValue { low, high, dtype }) => {
+                let low = *low;
+                let high = *high;
+                match dtype {
+                    DataType::Int32 => {
+                        polars_ensure!(
+                            low >= i32::MIN as i128 && high <= i32::MAX as i128,
+                            ComputeError: "range not within bounds of `Int32`: [{}, {}]", low, high
+                        );
+                        let low = low as i32;
+                        let high = high as i32;
+                        let ca: NoNull<Int32Chunked> = (low..high).collect();
+                        ca.into_inner().into_column()
+                    },
+                    DataType::Int64 => {
+                        polars_ensure!(
+                            low >= i64::MIN as i128 && high <= i64::MAX as i128,
+                            ComputeError: "range not within bounds of `Int32`: [{}, {}]", low, high
+                        );
+                        let low = low as i64;
+                        let high = high as i64;
+                        let ca: NoNull<Int64Chunked> = (low..high).collect();
+                        ca.into_inner().into_column()
+                    },
+                    DataType::UInt32 => {
+                        polars_ensure!(
+                            low >= u32::MIN as i128 && high <= u32::MAX as i128,
+                            ComputeError: "range not within bounds of `UInt32`: [{}, {}]", low, high
+                        );
+                        let low = low as u32;
+                        let high = high as u32;
+                        let ca: NoNull<UInt32Chunked> = (low..high).collect();
+                        ca.into_inner().into_column()
+                    },
+                    dt => polars_bail!(
+                        InvalidOperation: "datatype `{}` is not supported as range", dt
+                    ),
+                }
+            },
+        };
+        Ok(column)
     }
 
     pub fn is_scalar(&self) -> bool {
