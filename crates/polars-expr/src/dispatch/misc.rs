@@ -703,11 +703,25 @@ pub(super) fn entropy(s: &Column, base: f64, normalize: bool) -> PolarsResult<Co
     }
 }
 
+// The log/exp kernels cast to Float64 and unwrap, so input that can't be cast
+// crashes (nested and categorical/binary panic, Struct segfaults). Require
+// numeric input, like `pow` and the trigonometric functions do.
+#[cfg(feature = "log")]
+fn ensure_numeric(c: &Column, op: &str) -> PolarsResult<()> {
+    polars_ensure!(
+        c.dtype().is_numeric(),
+        InvalidOperation: "`{}` operation not supported for dtype `{}`", op, c.dtype()
+    );
+    Ok(())
+}
+
 #[cfg(feature = "log")]
 pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
     assert_eq!(columns.len(), 2);
+    ensure_numeric(&columns[0], "log")?;
+    ensure_numeric(&columns[1], "log")?;
     Column::apply_broadcasting_binary_elementwise(&columns[0], &columns[1], Series::log)
 }
 
@@ -715,6 +729,7 @@ pub(super) fn log(columns: &[Column]) -> PolarsResult<Column> {
 pub(super) fn log1p(s: &Column) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
+    ensure_numeric(s, "log1p")?;
     Ok(s.as_materialized_series().log1p().into())
 }
 
@@ -722,6 +737,7 @@ pub(super) fn log1p(s: &Column) -> PolarsResult<Column> {
 pub(super) fn exp(s: &Column) -> PolarsResult<Column> {
     use polars_ops::series::LogSeries;
 
+    ensure_numeric(s, "exp")?;
     Ok(s.as_materialized_series().exp().into())
 }
 
