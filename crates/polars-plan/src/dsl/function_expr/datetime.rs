@@ -80,6 +80,7 @@ pub enum TemporalFunction {
     DatetimeFunction {
         time_unit: TimeUnit,
         time_zone: Option<TimeZone>,
+        strict: bool,
     },
 }
 

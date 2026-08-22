@@ -79,6 +79,7 @@ pub enum IRTemporalFunction {
     DatetimeFunction {
         time_unit: TimeUnit,
         time_zone: Option<TimeZone>,
+        strict: bool,
     },
 }
 
@@ -145,6 +146,7 @@ impl IRTemporalFunction {
             DatetimeFunction {
                 time_unit,
                 time_zone,
+                ..
             } => Ok(Field::new(
                 PlSmallStr::from_static("datetime"),
                 DataType::Datetime(*time_unit, time_zone.clone()),

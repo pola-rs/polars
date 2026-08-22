@@ -418,9 +418,11 @@ pub(super) fn convert_functions(
                 T::DatetimeFunction {
                     time_unit,
                     time_zone,
+                    strict,
                 } => IT::DatetimeFunction {
                     time_unit,
                     time_zone,
+                    strict,
                 },
             })
         },

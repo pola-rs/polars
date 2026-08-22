@@ -2225,6 +2225,7 @@ def datetime(
     time_unit: TimeUnit,  # Default set by Rust code
     time_zone: TimeZone | None,  # Default set by Rust code
     ambiguous: PyExpr,  # Default set by Rust code
+    strict: bool = True,
 ) -> PyExpr: ...
 def concat_lf_diagonal(
     lfs: Any, rechunk: bool, parallel: bool, to_supertypes: bool, maintain_order: bool

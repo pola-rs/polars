@@ -143,3 +143,119 @@ def test_datetime_from_empty_column() -> None:
 
     assert df.select(datetime=pl.datetime("year", 1, 1)).shape == (0, 1)
     assert df.with_columns(datetime=pl.datetime("year", 1, 1)).shape == (0, 2)
+
+
+@pytest.mark.parametrize(
+    "components",
+    [
+        [2025, 13, 1, 0, 0, 0, 0],
+        [2025, 1, 32, 0, 0, 0, 0],
+        [2025, 2, 29, 0, 0, 0, 0],
+        [2025, 1, 1, 25, 0, 0, 0],
+        [2025, 1, 1, 0, 60, 0, 0],
+        [2025, 1, 1, 0, 0, 60, 0],
+        [2025, 1, 1, 0, 0, 0, 2_000_000],
+    ],
+)
+def test_datetime_invalid_component_non_strict(components: list[int]) -> None:
+    result = pl.select(pl.datetime(*components, strict=False))
+    assert result.item() is None
+
+
+def test_datetime_invalid_component_non_strict_time_zone() -> None:
+    result = pl.select(pl.datetime(2025, 1, 1, 0, 0, 60, time_zone="UTC", strict=False))
+    assert result.item() is None
+
+
+def test_datetime_invalid_component_strict_explicit() -> None:
+    msg = r"Invalid time components \(0, 0, 60, 0\) supplied"
+    with pytest.raises(ComputeError, match=msg):
+        pl.select(pl.datetime(2025, 1, 1, 0, 0, 60, strict=True))
+
+
+def test_datetime_invalid_component_non_strict_row_wise() -> None:
+    result = pl.DataFrame(
+        {
+            "year": [2024, 2024, 2024],
+            "month": [1, 1, 1],
+            "day": [1, 1, 1],
+            "hour": [1, 1, 1],
+            "minute": [1, 1, 1],
+            "second": [1, 63, None],
+        }
+    ).select(
+        pl.datetime("year", "month", "day", "hour", "minute", "second", strict=False)
+    )
+
+    expected = pl.DataFrame(
+        {
+            "datetime": [
+                datetime(2024, 1, 1, 1, 1, 1),
+                None,
+                None,
+            ]
+        }
+    )
+    assert_series_equal(result["datetime"], expected["datetime"])
+
+
+def test_datetime_invalid_component_non_strict_valid_rows_preserved() -> None:
+    result = pl.DataFrame(
+        {
+            "year": [2024, 2024, 2024],
+            "month": [1, 1, 1],
+            "day": [1, 1, 1],
+            "hour": [1, 1, 1],
+            "minute": [1, 2, 3],
+            "second": [1, 2, 3],
+        }
+    ).select(
+        pl.datetime("year", "month", "day", "hour", "minute", "second", strict=False)
+    )
+
+    assert result["datetime"].to_list() == [
+        datetime(2024, 1, 1, 1, 1, 1),
+        datetime(2024, 1, 1, 1, 2, 2),
+        datetime(2024, 1, 1, 1, 3, 3),
+    ]
+
+
+def test_datetime_valid_component_non_strict() -> None:
+    result = pl.select(pl.datetime(2025, 1, 2, 3, 4, 5, strict=False))
+    assert result.item() == datetime(2025, 1, 2, 3, 4, 5)
+
+
+def test_datetime_out_of_ns_range_non_strict() -> None:
+    # 2263-01-01 is outside the i64 nanosecond range; `strict=False` yields null.
+    result = pl.select(pl.datetime(2263, 1, 1, time_unit="ns", strict=False))
+    assert result.item() is None
+
+
+def test_datetime_out_of_ns_range_strict() -> None:
+    with pytest.raises(ComputeError, match="out of range for nanosecond precision"):
+        pl.select(pl.datetime(2263, 1, 1, time_unit="ns"))
+
+
+def test_datetime_non_existent_time_zone_time_non_strict() -> None:
+    # `strict` only governs invalid date/time components; non-existent local
+    # times are still handled by the `ambiguous` parameter.
+    with pytest.raises(ComputeError, match="non-existent"):
+        pl.select(
+            pl.datetime(2024, 3, 10, 2, 30, time_zone="America/New_York", strict=False)
+        )
+
+
+def test_datetime_ambiguous_time_zone_null_non_strict() -> None:
+    result = pl.select(
+        pl.datetime(
+            2018,
+            10,
+            28,
+            2,
+            30,
+            time_zone="Europe/Brussels",
+            ambiguous="null",
+            strict=False,
+        )
+    )
+    assert result.item() is None

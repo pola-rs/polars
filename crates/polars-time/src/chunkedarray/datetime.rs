@@ -217,11 +217,12 @@ pub trait DatetimeMethods: AsDatetime {
         hour: &Int8Chunked,
         minute: &Int8Chunked,
         second: &Int8Chunked,
-        nanosecond: &Int32Chunked,
+        nanosecond: &Int64Chunked,
         ambiguous: &StringChunked,
         time_unit: &TimeUnit,
         time_zone: Option<TimeZone>,
         name: PlSmallStr,
+        strict: bool,
     ) -> PolarsResult<DatetimeChunked> {
         let ca: Int64Chunked = year
             .iter()
@@ -237,25 +238,46 @@ pub trait DatetimeMethods: AsDatetime {
                 {
                     NaiveDate::from_ymd_opt(y, m as u32, d as u32).map_or_else(
                         // We have an invalid date.
-                        || polars_bail!(ComputeError: "Invalid date components ({y}, {m}, {d}) supplied"),
+                        || {
+                            if strict {
+                                polars_bail!(ComputeError: "Invalid date components ({y}, {m}, {d}) supplied")
+                            } else {
+                                Ok(None)
+                            }
+                        },
                         // We have a valid date.
                         |date| {
-                            date.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32)
-                                .map_or_else(
-                                    // We have invalid time components for the specified date.
-                                    || polars_bail!(ComputeError: "Invalid time components ({h}, {mnt}, {s}, {ns}) supplied"),
-                                    // We have a valid time.
-                                    |ndt| {
-                                        let t = ndt.and_utc();
-                                        Ok(Some(match time_unit {
-                                            TimeUnit::Milliseconds => t.timestamp_millis(),
-                                            TimeUnit::Microseconds => t.timestamp_micros(),
-                                            TimeUnit::Nanoseconds => {
-                                                t.timestamp_nanos_opt().unwrap()
-                                            },
-                                        }))
-                                    },
-                                )
+                            let invalid_time = || {
+                                if strict {
+                                    polars_bail!(ComputeError: "Invalid time components ({h}, {mnt}, {s}, {ns}) supplied")
+                                } else {
+                                    Ok(None)
+                                }
+                            };
+                            // Validate in i64 first: `ns as u32` would silently
+                            // truncate out-of-range values into valid ones.
+                            if !(0..1_000_000_000).contains(&ns) {
+                                return invalid_time();
+                            }
+                            match date.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32) {
+                                // We have invalid time components for the specified date.
+                                None => invalid_time(),
+                                // We have a valid time.
+                                Some(ndt) => {
+                                    let t = ndt.and_utc();
+                                    Ok(Some(match time_unit {
+                                        TimeUnit::Milliseconds => t.timestamp_millis(),
+                                        TimeUnit::Microseconds => t.timestamp_micros(),
+                                        TimeUnit::Nanoseconds => match t.timestamp_nanos_opt() {
+                                            Some(ts) => ts,
+                                            None if !strict => return Ok(None),
+                                            None => polars_bail!(
+                                                ComputeError: "datetime {ndt} is out of range for nanosecond precision"
+                                            ),
+                                        },
+                                    }))
+                                },
+                            }
                         },
                     )
                 } else {

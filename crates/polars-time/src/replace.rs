@@ -85,7 +85,10 @@ pub fn replace_datetime(
     let hour = &resolve_component(hour, || ca.hour(), n)?;
     let minute = &resolve_component(minute, || ca.minute(), n)?;
     let second = &resolve_component(second, || ca.second(), n)?;
-    let nanosecond = &resolve_component(nanosecond, || ca.nanosecond(), n)?;
+    let nanosecond = resolve_component(nanosecond, || ca.nanosecond(), n)?
+        .into_series()
+        .cast(&DataType::Int64)?;
+    let nanosecond = nanosecond.i64()?;
 
     let mut out = DatetimeChunked::new_from_parts(
         year,
@@ -99,6 +102,7 @@ pub fn replace_datetime(
         &ca.time_unit(),
         ca.time_zone().clone(),
         ca.name().clone(),
+        true,
     )?;
 
     // Ensure nulls are propagated. A component can only end up null when `ca` is null at that
