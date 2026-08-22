@@ -166,6 +166,9 @@ impl BooleanArray {
     /// This function panics iff `offset + length > self.len()`.
     #[inline]
     pub fn slice(&mut self, offset: usize, length: usize) {
+        let _ = offset
+            .checked_add(length)
+            .expect("offset + length overflowed");
         assert!(
             offset + length <= self.len(),
             "the offset of the new Buffer cannot exceed the existing length"
