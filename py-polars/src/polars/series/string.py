@@ -237,17 +237,21 @@ class StringNameSpace(_NamespaceSuggestMixin):
         ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
-        Convert a String column into a Date/Datetime/Time column.
+        Convert a String column into a Date/Datetime/Time/Duration column.
 
         Parameters
         ----------
         dtype
-            The data type to convert to. Can be either Date, Datetime, or Time.
+            The data type to convert to. Can be Date, Datetime, Time, or Duration.
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
+            Duration parsing requires an explicit format composed of ``%H``, ``%M``,
+            ``%S``, and an optional fractional component such as ``%.3f``. The
+            highest-order component is unbounded, so ``"104:00:00"`` is valid for
+            ``"%H:%M:%S"``.
         strict
             Raise an error if any conversion fails.
         exact
