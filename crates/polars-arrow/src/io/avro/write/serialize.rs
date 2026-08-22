@@ -103,6 +103,13 @@ fn list_required<'a, O: Offset>(array: &'a ListArray<O>, schema: &AvroSchema) ->
         .windows(2)
         .map(|w| (w[1] - w[0]).to_usize() as i64);
 
+    // For sliced arrays, the values array is not sliced but offsets are adjusted.
+    // Skip past the values before the first offset.
+    let first_offset = array.offsets().first().to_usize();
+    for _ in 0..first_offset {
+        inner.next();
+    }
+
     Box::new(BufStreamingIterator::new(
         lengths,
         move |length, buf| {
@@ -129,6 +136,13 @@ fn list_optional<'a, O: Offset>(array: &'a ListArray<O>, schema: &AvroSchema) ->
         .windows(2)
         .map(|w| (w[1] - w[0]).to_usize() as i64);
     let lengths = ZipValidity::new_with_validity(lengths, array.validity());
+
+    // For sliced arrays, the values array is not sliced but offsets are adjusted.
+    // Skip past the values before the first offset.
+    let first_offset = array.offsets().first().to_usize();
+    for _ in 0..first_offset {
+        inner.next();
+    }
 
     Box::new(BufStreamingIterator::new(
         lengths,
