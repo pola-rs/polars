@@ -518,10 +518,9 @@ pub enum PhysNodeKind {
     InMemoryJoin {
         input_left: PhysStream,
         input_right: PhysStream,
-        left_on: Vec<ExprIR>,
-        right_on: Vec<ExprIR>,
         args: JoinArgs,
-        options: Option<JoinTypeOptionsIR>,
+        /// Holds the match condition, including the join keys.
+        options: JoinTypeOptionsIR,
     },
 
     #[cfg(feature = "merge_sorted")]

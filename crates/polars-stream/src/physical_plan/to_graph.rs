@@ -1089,8 +1089,6 @@ fn to_graph_rec<'a>(
         InMemoryJoin {
             input_left,
             input_right,
-            left_on,
-            right_on,
             args,
             options,
         } => {
@@ -1110,8 +1108,6 @@ fn to_graph_rec<'a>(
                 input_left: left_node,
                 input_right: right_node,
                 schema: node.output_schema(0).clone(),
-                left_on: left_on.clone(),
-                right_on: right_on.clone(),
                 options: Arc::new(JoinOptionsIR {
                     allow_parallel: true,
                     force_parallel: false,

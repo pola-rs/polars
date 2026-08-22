@@ -161,12 +161,8 @@ impl IR {
                 input_left: _,
                 input_right: _,
                 schema: _,
-                left_on,
-                right_on,
                 options,
             } => {
-                hash_exprs(left_on, state);
-                hash_exprs(right_on, state);
                 options.shallow_hash(state, expr_hash);
             },
             IR::Gather {

@@ -16,8 +16,6 @@ pub(super) fn process_join(
     expr_arena: &mut Arena<AExpr>,
     mut input_left: Node,
     mut input_right: Node,
-    mut left_on: Vec<ExprIR>,
-    mut right_on: Vec<ExprIR>,
     mut schema: SchemaRef,
     mut options: Arc<JoinOptionsIR>,
     mut acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
@@ -28,8 +26,6 @@ pub(super) fn process_join(
             IR::Join {
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 schema,
                 options,
             },
@@ -57,10 +53,10 @@ pub(super) fn process_join(
         &schema_left,
         &schema_right,
         &mut schema,
-        &options,
-        &mut left_on,
-        &mut right_on,
+        &mut options,
     )?;
+
+    let (mut left_on, mut right_on) = options.options.key_vecs();
 
     let opt_post_select = try_rewrite_join_type(
         &schema_left,
@@ -87,8 +83,6 @@ pub(super) fn process_join(
             IR::Join {
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 schema,
                 options,
             },
@@ -416,8 +410,6 @@ pub(super) fn process_join(
         IR::Join {
             input_left,
             input_right,
-            left_on,
-            right_on,
             schema,
             options,
         },
@@ -479,13 +471,13 @@ fn try_reduce_redundant_join_keys(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
     output_schema: &mut SchemaRef,
-    options: &Arc<JoinOptionsIR>,
-    left_on: &mut Vec<ExprIR>,
-    right_on: &mut Vec<ExprIR>,
+    options: &mut Arc<JoinOptionsIR>,
 ) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
-    if left_on.len() <= 1 {
+    if options.options.left_on_len() <= 1 {
         return Ok(None);
     }
+
+    let (left_on, right_on) = options.options.key_vecs();
 
     // Only filter a side when removed rows from that side cannot contribute to the join output.
     let reduce_left = match options.args.how {
@@ -511,8 +503,8 @@ fn try_reduce_redundant_join_keys(
 
     if reduce_left {
         collect_redundant_join_key_filters(
-            left_on,
-            right_on,
+            &left_on,
+            &right_on,
             options.args.nulls_equal,
             &mut remove_key,
             &mut pushdown_left,
@@ -523,8 +515,8 @@ fn try_reduce_redundant_join_keys(
 
     if reduce_right {
         collect_redundant_join_key_filters(
-            right_on,
-            left_on,
+            &right_on,
+            &left_on,
             options.args.nulls_equal,
             &mut remove_key,
             &mut pushdown_right,
@@ -556,17 +548,11 @@ fn try_reduce_redundant_join_keys(
             new_right_on.push(r.clone());
         }
     }
-    *left_on = new_left_on;
-    *right_on = new_right_on;
+    Arc::make_mut(options)
+        .options
+        .set_keys(new_left_on, new_right_on);
 
-    *output_schema = det_join_schema(
-        schema_left,
-        schema_right,
-        left_on,
-        right_on,
-        options,
-        expr_arena,
-    )?;
+    *output_schema = det_join_schema(schema_left, schema_right, options, expr_arena)?;
 
     let original_names = original_schema.iter_names().collect::<Vec<_>>();
     let new_names = output_schema.iter_names().collect::<Vec<_>>();

@@ -165,8 +165,6 @@ pub fn rewrite_hive(
                 input_left,
                 input_right,
                 schema,
-                left_on,
-                right_on,
                 options,
             } if let (MaintainOrderJoin::None, true, Some(hive_left), Some(hive_right)) = (
                 &options.args.maintain_order,
@@ -184,7 +182,7 @@ pub fn rewrite_hive(
                 let mut hive_cols: Option<(usize, PlSmallStr, PlSmallStr)> = None;
                 let hive_left_schema = hive_left.schema();
                 let hive_right_schema = hive_right.schema();
-                for (l, r) in left_on.iter().zip(right_on.iter()) {
+                for (l, r) in options.options.left_on().zip(options.options.right_on()) {
                     let l = expr_arena.get(l.node());
                     let r = expr_arena.get(r.node());
                     if let (AExpr::Column(l), AExpr::Column(r)) = (l, r) {
@@ -298,8 +296,6 @@ pub fn rewrite_hive(
                             branches.push(ir_arena.add(IR::Join {
                                 input_left: branch_left,
                                 input_right: branch_right,
-                                left_on: left_on.clone(),
-                                right_on: right_on.clone(),
                                 schema: schema.clone(),
                                 options: options.clone(),
                             }));
@@ -319,8 +315,6 @@ pub fn rewrite_hive(
                 Ok(IR::Join {
                     input_left,
                     input_right,
-                    left_on,
-                    right_on,
                     schema,
                     options,
                 })

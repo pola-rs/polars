@@ -658,17 +658,14 @@ pub fn phys_props(
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
-            left_on,
-            right_on,
             args,
-            #[cfg(feature = "iejoin")]
             options,
-            ..
         } => {
+            let (left_on, right_on) = options.key_vecs();
             let generic_join = || PhysicalPropsDescription::InMemoryJoin {
                 how: format!("{}", args.how),
-                left_on: fmt_exprs(left_on, expr_arena),
-                right_on: fmt_exprs(right_on, expr_arena),
+                left_on: fmt_exprs(&left_on, expr_arena),
+                right_on: fmt_exprs(&right_on, expr_arena),
                 nulls_equal: args.nulls_equal,
                 coalesce: fmt_from_static_str(args.coalesce),
                 maintain_order: fmt_from_static_str(args.maintain_order),
@@ -693,8 +690,8 @@ pub fn phys_props(
                     } = asof_options.as_ref();
 
                     PhysicalPropsDescription::InMemoryAsOfJoin {
-                        left_on: fmt_exprs(left_on, expr_arena),
-                        right_on: fmt_exprs(right_on, expr_arena),
+                        left_on: fmt_exprs(&left_on, expr_arena),
+                        right_on: fmt_exprs(&right_on, expr_arena),
                         left_by: left_by
                             .as_ref()
                             .map(|v| v.iter().map(ToString::to_string).collect()),
@@ -717,10 +714,14 @@ pub fn phys_props(
                 },
                 #[cfg(feature = "iejoin")]
                 JoinType::IEJoin => match options {
-                    Some(JoinTypeOptionsIR::IEJoin(polars_ops::frame::IEJoinOptions {
-                        operator1,
-                        operator2,
-                    })) => {
+                    JoinTypeOptionsIR::IEJoin {
+                        ie_options:
+                            polars_ops::frame::IEJoinOptions {
+                                operator1,
+                                operator2,
+                            },
+                        ..
+                    } => {
                         use polars_ops::prelude::InequalityOperator;
 
                         let to_description = |o: &InequalityOperator| match o {
@@ -731,8 +732,8 @@ pub fn phys_props(
                         };
 
                         PhysicalPropsDescription::InMemoryIEJoin {
-                            left_on: fmt_exprs(left_on, expr_arena),
-                            right_on: fmt_exprs(right_on, expr_arena),
+                            left_on: fmt_exprs(&left_on, expr_arena),
+                            right_on: fmt_exprs(&right_on, expr_arena),
                             inequality_operators: if let Some(operator2) = operator2 {
                                 vec![to_description(operator1), to_description(operator2)]
                             } else {
