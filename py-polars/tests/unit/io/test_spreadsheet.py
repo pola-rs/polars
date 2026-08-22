@@ -168,8 +168,15 @@ def test_read_excel_multiple_worksheets(
         sheet_name=["test2", "test1"],
         **params,
     )
-    for frames in (frames_by_id, frames_by_name):
+    frames_by_selector_fn = read_spreadsheet(
+        spreadsheet_path,
+        sheet_id=None,
+        sheet_name=lambda name: name in ["test2", "test1"],
+        **params,
+    )
+    for frames in (frames_by_id, frames_by_name, frames_by_selector_fn):
         assert list(frames_by_name) == ["test2", "test1"]
+        assert sorted(frames_by_selector_fn) == ["test1", "test2"]
 
         expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
         expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
