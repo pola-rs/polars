@@ -32,7 +32,7 @@ use crate::sql_expr::{
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
-    expr_refers_to_table,
+    expr_refers_to_table, sql_expr_cols_all_in_schema,
 };
 use crate::subquery::{LowerScope, SubqueryBindings};
 use crate::table_functions::PolarsTableFunctions;
@@ -352,10 +352,14 @@ impl SQLContext {
 impl SQLContext {
     pub(crate) fn isolated(&self) -> Self {
         Self {
-            // Deep clone to isolate
+            // Deep-copy/clone to isolate
             table_map: Arc::new(RwLock::new(self.table_map.read().unwrap().clone())),
             named_windows: self.named_windows.clone(),
             cte_map: self.cte_map.clone(),
+
+            // Context-level; needs to remain visible in nested scopes.
+            // (Note: shared by Arc, no need to deep-copy)
+            function_registry: self.function_registry.clone(),
 
             ..Default::default()
         }
@@ -659,14 +663,14 @@ impl SQLContext {
                 .join_nulls(true)
                 .left_on(lf_on)
                 .right_on(rf_on)
-                .finish();
+                .finish()?;
             joined_tbl.drop(cols([occurrence_col]))
         } else {
             let join = lf.join_builder().with(rf).how(join_type).join_nulls(true);
             let joined_tbl = match rf_cols {
                 Some(rf_cols) => join.left_on(lf_cols).right_on(rf_cols).finish(),
                 None => join.on(lf_cols).finish(),
-            };
+            }?;
             joined_tbl.unique(None, UniqueKeepStrategy::Any)
         };
         self.process_order_by(lf, &query.order_by, None)
@@ -991,11 +995,21 @@ impl SQLContext {
             if with.recursive {
                 polars_bail!(SQLInterface: "recursive CTEs are not supported")
             }
+            let mut reference_counts = PlHashMap::<String, usize>::new();
+            let mut collector = TableIdentifierCollector::default();
+            let _ = query.visit(&mut collector);
+            for name in collector.tables {
+                *reference_counts.entry(name).or_insert(0) += 1;
+            }
+
             for cte in &with.cte_tables {
                 // Note: isolate CTE execution to prevent context state leakage
                 let cte_name = cte.alias.name.value.clone();
                 let mut lf = self.execute_isolated(|ctx| ctx.execute_query(&cte.query))?;
                 lf = self.rename_columns_from_table_alias(lf, &cte.alias)?;
+                if reference_counts.get(&cte_name).copied().unwrap_or(0) > 1 {
+                    lf = lf.cache();
+                }
                 self.register_cte(&cte_name, lf);
             }
         }
@@ -1826,7 +1840,7 @@ impl SQLContext {
                                 maintain_order: MaintainOrderJoin::Left,
                                 build_side: None,
                             },
-                        );
+                        )?;
                 }
             }
             if !select_modifiers.replace.is_empty() {
@@ -2123,7 +2137,7 @@ impl SQLContext {
                 // Only INNER: an always-true outer join still has to emit null-extended
                 // left rows when the right side is empty, which a cross join would not.
                 return Ok(if satisfied && join_type == JoinType::Inner {
-                    builder.how(JoinType::Cross).finish()
+                    builder.how(JoinType::Cross).finish()?
                 } else {
                     // Match every row against every row, or none against none.
                     let right_key = if satisfied { lit(1i32) } else { lit(2i32) };
@@ -2131,7 +2145,7 @@ impl SQLContext {
                         .left_on([lit(1i32)])
                         .right_on([right_key])
                         .how(join_type)
-                        .finish()
+                        .finish()?
                 });
             }
         }
@@ -2159,7 +2173,7 @@ impl SQLContext {
                 .how(join_type)
                 .suffix(suffix)
                 .coalesce(coalesce_type)
-                .finish()
+                .finish()?
         } else {
             // Non-equi conditions: convert to predicates for `join_where`.
             // Any equi-conditions become equality predicates with right-side
@@ -2214,8 +2228,13 @@ impl SQLContext {
             );
             let left_schema = self.get_frame_schema(lf)?;
             let right_schema = self.get_frame_schema(&mut rf)?;
-            let (join_expr, residual) =
-                extract_join_predicates(&remaining_where, &joined_table_names, &r_name);
+            let (join_expr, residual) = extract_join_predicates(
+                &remaining_where,
+                &joined_table_names,
+                &r_name,
+                &left_schema,
+                &right_schema,
+            );
 
             *lf = if let Some(on_expr) = join_expr {
                 self.process_join(
@@ -3645,8 +3664,16 @@ fn combine_and_conditions(conditions: Vec<SQLExpr>) -> Option<SQLExpr> {
 }
 
 /// Check if a SQL expression is a join condition (equi or non-equi comparison) that bridges
-/// the given left table set and the right table (both sides must be qualified).
-fn is_join_comparison(expr: &SQLExpr, left_tables: &[String], right_table: &str) -> bool {
+/// the given left table set and the right table. Operands are matched via qualified table
+/// references first, falling back to schema membership for unqualified columns; an operand
+/// found in both schemas (or neither) is ambiguous and matches neither side.
+fn is_join_comparison(
+    expr: &SQLExpr,
+    left_tables: &[String],
+    right_table: &str,
+    left_schema: &Schema,
+    right_schema: &Schema,
+) -> bool {
     if let SQLExpr::BinaryOp {
         left,
         op:
@@ -3659,18 +3686,25 @@ fn is_join_comparison(expr: &SQLExpr, left_tables: &[String], right_table: &str)
         right,
     } = expr
     {
-        let left_refs_right = expr_refers_to_table(left, right_table);
-        let right_refs_right = expr_refers_to_table(right, right_table);
+        let operand_side = |operand: &SQLExpr| -> (bool, bool) {
+            let refs_right = expr_refers_to_table(operand, right_table);
+            let refs_left = left_tables
+                .iter()
+                .any(|t| expr_refers_to_table(operand, t.as_str()));
+            if refs_right || refs_left {
+                (refs_right, refs_left)
+            } else {
+                let in_right = sql_expr_cols_all_in_schema(operand, right_schema);
+                let in_left = sql_expr_cols_all_in_schema(operand, left_schema);
+                (in_right && !in_left, in_left && !in_right)
+            }
+        };
 
-        let left_refs_any_left = left_tables
-            .iter()
-            .any(|t| expr_refers_to_table(left, t.as_str()));
-        let right_refs_any_left = left_tables
-            .iter()
-            .any(|t| expr_refers_to_table(right, t.as_str()));
+        let (left_is_right, left_is_left) = operand_side(left);
+        let (right_is_right, right_is_left) = operand_side(right);
 
         // One side references a left table, the other references the right table
-        (left_refs_right && right_refs_any_left) || (right_refs_right && left_refs_any_left)
+        (left_is_right && right_is_left) || (right_is_right && left_is_left)
     } else {
         false
     }
@@ -3682,6 +3716,8 @@ fn extract_join_predicates(
     where_expr: &Option<SQLExpr>,
     left_tables: &[String],
     right_table: &str,
+    left_schema: &Schema,
+    right_schema: &Schema,
 ) -> (Option<SQLExpr>, Option<SQLExpr>) {
     let Some(expr) = where_expr else {
         return (None, None);
@@ -3690,7 +3726,7 @@ fn extract_join_predicates(
     let mut join_conds = Vec::new();
     let mut filter_conds = Vec::new();
     for cond in conditions {
-        if is_join_comparison(cond, left_tables, right_table) {
+        if is_join_comparison(cond, left_tables, right_table, left_schema, right_schema) {
             join_conds.push(cond.clone());
         } else {
             filter_conds.push(cond.clone());

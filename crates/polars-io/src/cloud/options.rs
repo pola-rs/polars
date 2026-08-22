@@ -178,22 +178,29 @@ impl From<CloudRetryConfig> for object_store::RetryConfig {
 
         return out;
 
+        // Retry acts as a 'shock absorber' for the adaptive HTTP rate-limiter.
+        // Two bounds matter for stability and convergence.
+        // - Floor (earliest possible backoff exhaustion) = `max_retries` *
+        //   `init_backoff`. Must be large enough to give the rate-limiter time
+        //   to adapt.
+        // - Ceiling = `retry_timeout`. Must cover convergence after an overshoot
+        //   plus queue drain at the reduced rate.
         static DEFAULTS: LazyLock<object_store::RetryConfig> =
             LazyLock::new(|| object_store::RetryConfig {
                 backoff: object_store::BackoffConfig {
                     init_backoff: Duration::from_millis(parse_env_var(
-                        100,
+                        250,
                         "POLARS_CLOUD_RETRY_INIT_BACKOFF_MS",
                     )),
                     max_backoff: Duration::from_millis(parse_env_var(
-                        15 * 1000,
+                        5 * 1000,
                         "POLARS_CLOUD_RETRY_MAX_BACKOFF_MS",
                     )),
                     base: parse_env_var(2., "POLARS_CLOUD_RETRY_BASE_MULTIPLIER"),
                 },
-                max_retries: parse_env_var(2, "POLARS_CLOUD_MAX_RETRIES"),
+                max_retries: parse_env_var(8, "POLARS_CLOUD_MAX_RETRIES"),
                 retry_timeout: Duration::from_millis(parse_env_var(
-                    10 * 1000,
+                    30 * 1000,
                     "POLARS_CLOUD_RETRY_TIMEOUT_MS",
                 )),
             });

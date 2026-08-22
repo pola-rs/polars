@@ -355,26 +355,33 @@ pub fn prepare_projection(schema: &ArrowSchema, mut projection: Vec<usize>) -> P
 
 pub fn apply_projection(
     chunk: RecordBatchT<Box<dyn Array>>,
-    map: &[usize],
+    indices: &[usize],
 ) -> RecordBatchT<Box<dyn Array>> {
     let length = chunk.len();
 
     // re-order according to projection
     let (schema, arrays) = chunk.into_schema_and_arrays();
-    let mut new_schema = schema.as_ref().clone();
-    let mut new_arrays = arrays.clone();
 
-    map.iter().enumerate().for_each(|(old, new)| {
-        let (old_name, old_field) = schema.get_at_index(old).unwrap();
-        let (new_name, new_field) = new_schema.get_at_index_mut(*new).unwrap();
+    let mut gather_indices = vec![0; indices.len()];
 
-        *new_name = old_name.clone();
-        *new_field = old_field.clone();
+    for (from, &to) in indices.iter().enumerate() {
+        gather_indices[to] = from
+    }
 
-        new_arrays[*new] = arrays[old].clone();
-    });
+    let (arrays, schema): (Vec<Box<dyn Array>>, ArrowSchema) = gather_indices
+        .iter()
+        .map(|&i| {
+            (
+                arrays[i].clone(),
+                schema
+                    .get_at_index(i)
+                    .map(|(l, r)| (l.clone(), r.clone()))
+                    .unwrap(),
+            )
+        })
+        .unzip();
 
-    RecordBatchT::new(length, Arc::new(new_schema), new_arrays)
+    RecordBatchT::new(length, Arc::new(schema), arrays)
 }
 
 #[cfg(test)]

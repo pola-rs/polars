@@ -143,6 +143,7 @@ if TYPE_CHECKING:
         JoinBuildSide,
         JoinStrategy,
         JoinValidation,
+        JoinWhereStrategy,
         Label,
         MaintainOrderJoin,
         Orientation,
@@ -3364,6 +3365,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         target: str | pyiceberg.table.Table,
         *,
         mode: Literal["append", "overwrite"],
+        schema_mode: Literal["merge", "overwrite"] | None = None,
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog
         | polars.io.iceberg.IcebergCatalogConfig
@@ -3387,6 +3389,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             - If 'append', will add new data.
             - If 'overwrite', will replace table with new data.
+        schema_mode : {'merge', 'overwrite'}
+            How to handle differences between the incoming and table schemas.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
+            - If 'merge', evolve the table schema with incoming fields and
+              compatible type promotions.
+            - If 'overwrite', replace the table schema with the incoming schema.
+              This requires ``mode='overwrite'``.
+            - If None, require the schemas to match.
         snapshot_properties
             Custom properties to add to the Iceberg snapshot summary.
         catalog
@@ -3410,6 +3424,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sink_state = IcebergSinkState.new(
             target,
             mode=mode,
+            schema_mode=schema_mode,
             snapshot_properties=snapshot_properties,
             catalog=catalog,
             storage_options=storage_options,
@@ -5897,6 +5912,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if 'by' groups are provided. The `streaming` engine will only check the
             sortedness of the rows it processes.
 
+        See Also
+        --------
+        join
+        join_where
+
         Notes
         -----
         If 'by' is set, the implementation will compute the asof join over all of the
@@ -6325,6 +6345,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         See Also
         --------
         join_asof
+        join_where
 
         Examples
         --------
@@ -6495,16 +6516,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         other: LazyFrame,
         *predicates: Expr | Iterable[Expr],
+        how: JoinWhereStrategy = "inner",
         suffix: str = "_right",
     ) -> LazyFrame:
         """
         Perform a join based on one or multiple (in)equality predicates.
 
-        This performs an inner join, so only rows where all predicates are true
-        are included in the result, and a row from either DataFrame may be included
-        multiple times in the result.
-
-        .. engine-support:: in-memory, streaming, partially-distributed
+        .. engine-support:: in-memory, partially-streaming, partially-distributed
 
         .. note::
             The row order of the input DataFrames is not preserved.
@@ -6521,8 +6539,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
+        how : {'inner', 'left', 'right'}
+            Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
+
+        See Also
+        --------
+        join
+        join_asof
 
         Examples
         --------
@@ -6581,6 +6606,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         │ 102 ┆ 160 ┆ 16  ┆ 4     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
+
+        Pass `how="left"` to additionally keep left rows that match nothing, with the
+        right columns set to `null`.
+
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ...     how="left",
+        ... ).collect()
+        shape: (6, 8)
+        ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
+        │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---         │
+        │ i64 ┆ i64 ┆ i64 ┆ i64   ┆ i64  ┆ i64  ┆ i64  ┆ i64         │
+        ╞═════╪═════╪═════╪═══════╪══════╪══════╪══════╪═════════════╡
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 498  ┆ 130  ┆ 13   ┆ 2           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 102 ┆ 160 ┆ 16  ┆ 4     ┆ null ┆ null ┆ null ┆ null        │
+        └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
         """
         require_same_type(self, other)
 
@@ -6590,6 +6638,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self._ldf.join_where(
                 other._ldf,
                 pyexprs,
+                how,
                 suffix,
             )
         )
@@ -6609,7 +6658,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Selects rows from this LazyFrame at the given indices.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, partially-distributed
 
         .. warning::
             This functionality is experimental. It may be
@@ -8004,7 +8053,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the LazyFrame as the sum of their null value count.
 
-        .. engine-support:: in-memory, streaming
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------

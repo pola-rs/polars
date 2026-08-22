@@ -762,11 +762,10 @@ fn create_physical_plan_impl(
 
                         let execution_state = ExecutionState::default();
 
-                        Ok(Arc::new(move |df: DataFrame| {
-                            let mask = phys_expr.evaluate(&df, &execution_state)?;
+                        Ok(Arc::new(move |df: &DataFrame| {
+                            let mask = phys_expr.evaluate(df, &execution_state)?;
                             let mask = mask.as_materialized_series();
-                            let mask = mask.bool()?;
-                            df.filter_seq(mask)
+                            PolarsResult::Ok(mask.bool()?.clone())
                         }))
                     })
                 })
