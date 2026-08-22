@@ -263,20 +263,20 @@ impl<'a> IRDotDisplay<'a> {
             Join {
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 options,
                 ..
             } => {
                 recurse!(*input_left);
                 recurse!(*input_right);
 
+                let (left_keys, right_keys) = options.options.key_vecs();
+
                 write_label(f, id, |f| {
                     write!(f, "JOIN {}", options.args.how)?;
 
-                    if !left_on.is_empty() {
-                        let left_on = self.display_exprs(left_on);
-                        let right_on = self.display_exprs(right_on);
+                    if !left_keys.is_empty() {
+                        let left_on = self.display_exprs(&left_keys);
+                        let right_on = self.display_exprs(&right_keys);
                         write!(f, "\nleft: {left_on};\nright: {right_on}")?
                     }
                     Ok(())

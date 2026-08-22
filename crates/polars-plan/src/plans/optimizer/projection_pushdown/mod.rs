@@ -21,11 +21,12 @@ use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
 use crate::constants::get_len_name;
-use crate::dsl::{FileScanIR, JoinTypeOptionsIR, PredicateFileSkip, UnionOptions};
+use crate::dsl::{FileScanIR, PredicateFileSkip, UnionOptions};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::optimizer::projection_pushdown::edge::{
     GetParentKeyAndPort as _, GetProjectionState, ParentKeyAndPort, Projection, ProjectionState,
 };
+use crate::plans::options::JoinTypeOptionsIR;
 use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::{
     AExpr, ArenaExprIter, ArenaLpIter, ExprIR, ExprOrigin, FunctionIR, IR, IRAggExpr, IRBuilder,
@@ -879,8 +880,6 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 let IR::Join {
                     schema: output_schema_arc,
-                    left_on,
-                    right_on,
                     options,
                     ..
                 } = storage.get_mut(key)
@@ -909,7 +908,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 if options.args.should_coalesce()
                     && let JoinType::Right = &options.args.how
                 {
-                    coalesced_to_right.extend(left_on.iter().map(|expr| {
+                    coalesced_to_right.extend(options.options.left_on().map(|expr| {
                         let node = match self.expr_arena.get(expr.node()) {
                             AExpr::Cast {
                                 expr,
@@ -932,7 +931,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 let mut pred_used_names_iter = None;
                 let mut has_cross_filter = false;
 
-                if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) = &options.options {
+                if let JoinTypeOptionsIR::CrossAndFilter { predicate } = &options.options {
                     pred_used_names_iter =
                         Some(aexpr_to_leaf_names_iter(predicate.node(), self.expr_arena));
                     has_cross_filter = true;
@@ -977,12 +976,12 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
 
                 // Add projections required by the join itself
-                for expr_ir in left_on.as_slice() {
+                for expr_ir in options.options.left_on() {
                     project_left
                         .extend(aexpr_to_leaf_names_iter(expr_ir.node(), self.expr_arena).cloned())
                 }
 
-                for expr_ir in right_on.as_slice() {
+                for expr_ir in options.options.right_on() {
                     project_right
                         .extend(aexpr_to_leaf_names_iter(expr_ir.node(), self.expr_arena).cloned())
                 }
@@ -1005,10 +1004,11 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 // Turn on coalesce if non-coalesced keys are not included in projection. Reduces materialization.
                 if !options.args.should_coalesce()
                     && matches!(options.args.how, JoinType::Inner | JoinType::Left)
-                    && left_on
-                        .iter()
+                    && options
+                        .options
+                        .left_on()
                         .all(|e| matches!(self.expr_arena.get(e.node()), AExpr::Column(_)))
-                    && right_on.iter().all(|e| {
+                    && options.options.right_on().all(|e| {
                         let AExpr::Column(name) = self.expr_arena.get(e.node()) else {
                             return false;
                         };
@@ -1045,8 +1045,6 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 let new_output_schema = det_join_schema(
                     &new_input_schema_left,
                     &new_input_schema_right,
-                    left_on,
-                    right_on,
                     options,
                     self.expr_arena,
                 )
@@ -1086,7 +1084,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                     if !orig_to_new_name_map.is_empty() {
                         if has_cross_filter {
-                            let Some(JoinTypeOptionsIR::CrossAndFilter { predicate }) =
+                            let JoinTypeOptionsIR::CrossAndFilter { predicate } =
                                 &mut Arc::make_mut(options).options
                             else {
                                 unreachable!()
