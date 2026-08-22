@@ -181,19 +181,15 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
             should_broadcast: *should_broadcast,
         },
         IR::Invalid => IrPropsDescription::Invalid,
-        IR::Join {
-            left_on,
-            right_on,
-            options,
-            ..
-        } => {
+        IR::Join { options, .. } => {
             let o = options.as_ref();
             let args = &o.args;
+            let (left_on, right_on) = o.options.key_vecs();
 
             let generic_join = || IrPropsDescription::Join {
                 how: args.how.to_string(),
-                left_on: fmt_exprs(left_on, expr_arena),
-                right_on: fmt_exprs(right_on, expr_arena),
+                left_on: fmt_exprs(&left_on, expr_arena),
+                right_on: fmt_exprs(&right_on, expr_arena),
                 nulls_equal: args.nulls_equal,
                 coalesce: fmt_from_static_str(args.coalesce),
                 maintain_order: fmt_from_static_str(args.maintain_order),
@@ -206,12 +202,12 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 JoinType::Cross => IrPropsDescription::CrossJoin {
                     maintain_order: fmt_from_static_str(args.maintain_order),
                     slice: args.slice,
-                    predicate: o.options.as_ref().and_then(|x| match x {
+                    predicate: match &o.options {
                         JoinTypeOptionsIR::CrossAndFilter { predicate } => {
                             Some(fmt_predicate(predicate, expr_arena))
                         },
                         _ => None,
-                    }),
+                    },
                     suffix: args.suffix.as_ref().map(ToString::to_string),
                 },
                 #[cfg(feature = "asof_join")]
@@ -229,8 +225,8 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                     } = asof_options.as_ref();
 
                     IrPropsDescription::AsOfJoin {
-                        left_on: fmt_exprs(left_on, expr_arena),
-                        right_on: fmt_exprs(right_on, expr_arena),
+                        left_on: fmt_exprs(&left_on, expr_arena),
+                        right_on: fmt_exprs(&right_on, expr_arena),
                         left_by: left_by
                             .as_ref()
                             .map(|v| v.iter().map(ToString::to_string).collect()),
@@ -253,12 +249,16 @@ pub fn ir_props(ir: &IR, expr_arena: &Arena<AExpr>) -> IrPropsDescription {
                 },
                 #[cfg(feature = "iejoin")]
                 JoinType::IEJoin => match &o.options {
-                    Some(JoinTypeOptionsIR::IEJoin(polars_ops::frame::IEJoinOptions {
-                        operator1,
-                        operator2,
-                    })) => IrPropsDescription::IEJoin {
-                        left_on: fmt_exprs(left_on, expr_arena),
-                        right_on: fmt_exprs(right_on, expr_arena),
+                    JoinTypeOptionsIR::IEJoin {
+                        ie_options:
+                            polars_ops::frame::IEJoinOptions {
+                                operator1,
+                                operator2,
+                            },
+                        ..
+                    } => IrPropsDescription::IEJoin {
+                        left_on: fmt_exprs(&left_on, expr_arena),
+                        right_on: fmt_exprs(&right_on, expr_arena),
                         inequality_operators: if let Some(operator2) = operator2 {
                             vec![
                                 fmt_from_static_str(operator1),

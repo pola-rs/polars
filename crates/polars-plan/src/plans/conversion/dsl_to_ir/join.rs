@@ -364,15 +364,17 @@ pub fn resolve_join(
     let schema_left = schema_left.into_owned();
     let schema_right = schema_right.into_owned();
 
-    let join_schema = det_join_schema(
-        &schema_left,
-        &schema_right,
-        &left_on,
-        &right_on,
-        &options,
-        ctxt.expr_arena,
-    )
-    .context(failed_here!(join schema resolving))?;
+    options.options = {
+        let on = left_on.into_iter().zip(right_on).collect();
+        match &options.args.how {
+            #[cfg(feature = "asof_join")]
+            JoinType::AsOf(_) => JoinTypeOptionsIR::AsOf { on },
+            _ => JoinTypeOptionsIR::Equi { on },
+        }
+    };
+
+    let join_schema = det_join_schema(&schema_left, &schema_right, &options, ctxt.expr_arena)
+        .context(failed_here!(join schema resolving))?;
 
     if key_cols_coalesced {
         input_left = if as_with_columns_l.is_empty() {
@@ -402,8 +404,6 @@ pub fn resolve_join(
         input_left,
         input_right,
         schema: join_schema.clone(),
-        left_on,
-        right_on,
         options: Arc::new(options),
     };
     let join_node = ctxt.lp_arena.add(ir);
@@ -559,7 +559,7 @@ fn resolve_join_where(
         };
         let mut new_options = (**options).clone();
         new_options.args.how = how;
-        new_options.options = Some(JoinTypeOptionsIR::CrossAndFilter { predicate });
+        new_options.options = JoinTypeOptionsIR::CrossAndFilter { predicate };
 
         let IR::Join { options, .. } = ctxt.lp_arena.get_mut(join_node) else {
             unreachable!()

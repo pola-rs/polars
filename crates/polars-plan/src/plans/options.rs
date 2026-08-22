@@ -1,4 +1,5 @@
 use std::hash::Hash;
+use std::iter;
 
 use bitflags::bitflags;
 use polars_core::prelude::*;
@@ -7,6 +8,7 @@ use polars_core::utils::SuperTypeOptions;
 use polars_ops::frame::IEJoinOptions;
 use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinArgs, JoinTypeOptions};
 use polars_utils::bool::UnsafeBool;
+use polars_utils::itertools::Itertools;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -14,6 +16,7 @@ use strum_macros::IntoStaticStr;
 use crate::dsl::JoinOptions;
 #[cfg(feature = "cse")]
 use crate::plans::ExpressionHasher;
+use crate::plans::ir::inputs::{Exprs, ExprsMut};
 use crate::plans::{ExprIR, ExpressionComparator, PlSmallStr};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -335,18 +338,18 @@ pub struct JoinOptionsIR {
     pub allow_parallel: bool,
     pub force_parallel: bool,
     pub args: JoinArgs,
-    pub options: Option<JoinTypeOptionsIR>,
+    pub options: JoinTypeOptionsIR,
 }
 
 impl JoinOptionsIR {
     /// The match condition is exactly `left_on == right_on`.
     pub fn is_pure_equi(&self) -> bool {
-        self.options.is_none()
+        !self.options.is_non_equi()
     }
 
     /// The match condition has a non-equality component, held in `options`.
     pub fn is_non_equi(&self) -> bool {
-        self.options.is_some()
+        self.options.is_non_equi()
     }
 
     pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
@@ -360,11 +363,7 @@ impl JoinOptionsIR {
         *allow_parallel == other.allow_parallel
             && *force_parallel == other.force_parallel
             && *args == other.args
-            && match (options, &other.options) {
-                (Some(lhs), Some(rhs)) => lhs.shallow_eq(rhs, expr_cmp),
-                (None, None) => true,
-                _ => false,
-            }
+            && options.shallow_eq(&other.options, expr_cmp)
     }
 
     #[cfg(feature = "cse")]
@@ -383,10 +382,7 @@ impl JoinOptionsIR {
         allow_parallel.hash(state);
         force_parallel.hash(state);
         args.hash(state);
-        std::mem::discriminant(options).hash(state);
-        if let Some(options) = options {
-            options.shallow_hash(state, expr_hash);
-        }
+        options.shallow_hash(state, expr_hash);
     }
 }
 
@@ -394,53 +390,95 @@ impl JoinOptionsIR {
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "snake_case")]
 pub enum JoinTypeOptionsIR {
-    #[cfg(feature = "iejoin")]
-    IEJoin(IEJoinOptions),
-    // Fused cross join and filter. Executed by the in-memory engine; the streaming
-    // engine has no native node for this and falls back to it via `InMemoryJoin`.
-    CrossAndFilter {
-        predicate: ExprIR, // Must be elementwise.
+    /// The match condition is `left == right` for every key pair.
+    ///
+    /// An empty `on` is a plain cross join.
+    Equi {
+        on: Vec<(ExprIR, ExprIR)>,
     },
-    // State only reached in streaming join
-    // Double bounded range
-    // - left_is_point → left_on.len() == 1, right_on.len() == 2
-    // - right_is_point → left_on.len() == 2, right_on.len() == 1
-    // IE OPERATAORS: - operator1 = lower bound op, operator2 = Some(upper bound op)
-    // Single bounded range
-    // - left_on.len() == 1, right_on.len() == 1
-    // IE OPERATORS: operator1 = that predicate's op, operator2 = None
+    /// Backwards/forwards/nearest match on a single key pair. The strategy, tolerance
+    /// and `by` group keys live in [`JoinType::AsOf`].
+    #[cfg(feature = "asof_join")]
+    AsOf {
+        on: Vec<(ExprIR, ExprIR)>,
+    },
+    /// Inequality join over one or two arbitrary predicates.
+    ///
+    /// `operator1` relates the first key pair, `operator2` the second.
+    #[cfg(feature = "iejoin")]
+    IEJoin {
+        ie_options: IEJoinOptions,
+        left_on: Vec<ExprIR>,
+        right_on: Vec<ExprIR>,
+    },
+    /// `point ∈ [lower, upper]`. Only reached by the streaming engine.
+    ///
+    /// The side with one key holds the point, the other holds the bounds:
+    /// - double bounded: bound side has 2 keys, `operator1` is the lower bound op and
+    ///   `operator2` the upper.
+    /// - single bounded: both sides have 1 key and `operator2` is `None`.
+    #[cfg(feature = "iejoin")]
     Range {
         ie_options: IEJoinOptions,
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
     },
-    Equi {
-        on: Vec<(ExprIR, ExprIR)>,
+    // Fused cross join and filter. Executed by the in-memory engine; the streaming
+    // engine has no native node for this and falls back to it via `InMemoryJoin`.
+    CrossAndFilter {
+        predicate: ExprIR, // Must be elementwise.
     },
+}
+
+impl Default for JoinTypeOptionsIR {
+    fn default() -> Self {
+        Self::Equi { on: Vec::new() }
+    }
 }
 
 impl Hash for JoinTypeOptionsIR {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        use JoinTypeOptionsIR::*;
-        match self {
-            #[cfg(feature = "iejoin")]
-            IEJoin(opt) => opt.hash(state),
-            CrossAndFilter { predicate } => {
-                predicate.node().hash(state);
-            },
+        std::mem::discriminant(self).hash(state);
+
+        #[cfg(feature = "iejoin")]
+        if let Self::IEJoin { ie_options, .. } | Self::Range { ie_options, .. } = self {
+            ie_options.hash(state);
+        }
+
+        self.exprs().count().hash(state);
+        for expr in self.exprs() {
+            expr.node().hash(state);
         }
     }
 }
 
 impl JoinTypeOptionsIR {
     pub(crate) fn shallow_eq(&self, other: &Self, expr_cmp: &impl ExpressionComparator) -> bool {
-        match self {
-            #[cfg(feature = "iejoin")]
-            Self::IEJoin(lhs) => matches!(other, Self::IEJoin(rhs) if lhs == rhs),
-            Self::CrossAndFilter { predicate: lhs } => {
-                matches!(other, Self::CrossAndFilter { predicate: rhs } if expr_cmp.equals(lhs, rhs))
-            },
+        if std::mem::discriminant(self) != std::mem::discriminant(other) {
+            return false;
         }
+
+        #[cfg(feature = "iejoin")]
+        if let (
+            Self::IEJoin { ie_options, .. } | Self::Range { ie_options, .. },
+            Self::IEJoin {
+                ie_options: other_ie,
+                ..
+            }
+            | Self::Range {
+                ie_options: other_ie,
+                ..
+            },
+        ) = (self, other)
+            && ie_options != other_ie
+        {
+            return false;
+        }
+
+        // Equal discriminants, so both sides hold the same shape and `exprs()` walks them
+        // in the same order.
+        self.exprs()
+            .eq_by_(other.exprs(), |l, r| expr_cmp.equals(l, r))
     }
 
     #[cfg(feature = "cse")]
@@ -450,29 +488,197 @@ impl JoinTypeOptionsIR {
         expr_hash: &impl ExpressionHasher,
     ) {
         std::mem::discriminant(self).hash(state);
-        match self {
-            #[cfg(feature = "iejoin")]
-            Self::IEJoin(options) => options.hash(state),
-            Self::CrossAndFilter { predicate } => expr_hash.hash_expr(predicate, state),
+
+        #[cfg(feature = "iejoin")]
+        if let Self::IEJoin { ie_options, .. } | Self::Range { ie_options, .. } = self {
+            ie_options.hash(state);
+        }
+
+        self.exprs().count().hash(state);
+        for expr in self.exprs() {
+            expr_hash.hash_expr(expr, state);
         }
     }
 
     pub fn compile<C: FnOnce(&ExprIR) -> PolarsResult<Arc<dyn CrossJoinFilter>>>(
         self,
         plan: C,
-    ) -> PolarsResult<JoinTypeOptions> {
+    ) -> PolarsResult<Option<JoinTypeOptions>> {
         use JoinTypeOptionsIR::*;
         match self {
             CrossAndFilter { predicate } => {
                 let predicate = plan(&predicate)?;
 
-                Ok(JoinTypeOptions::Cross(CrossJoinOptions { predicate }))
+                Ok(Some(JoinTypeOptions::Cross(CrossJoinOptions { predicate })))
             },
             #[cfg(feature = "iejoin")]
-            IEJoin(opt) => Ok(JoinTypeOptions::IEJoin(opt)),
+            IEJoin { ie_options, .. } | Range { ie_options, .. } => {
+                Ok(Some(JoinTypeOptions::IEJoin(ie_options)))
+            },
+            Equi { .. } => Ok(None),
+            #[cfg(feature = "asof_join")]
+            AsOf { .. } => Ok(None),
         }
     }
+
+    /// The keys of the two variants that store them as pairs.
+    ///
+    /// The only place `Equi`/`AsOf` are matched apart; every accessor below goes through it.
+    /// They cannot share an or-pattern arm because rustc rejects `#[cfg]` on one alternative.
+    fn key_pairs(&self) -> Option<&Vec<(ExprIR, ExprIR)>> {
+        match self {
+            Self::Equi { on } => Some(on),
+            #[cfg(feature = "asof_join")]
+            Self::AsOf { on } => Some(on),
+            _ => None,
+        }
+    }
+
+    /// See [`Self::key_pairs`].
+    fn key_pairs_mut(&mut self) -> Option<&mut Vec<(ExprIR, ExprIR)>> {
+        match self {
+            Self::Equi { on } => Some(on),
+            #[cfg(feature = "asof_join")]
+            Self::AsOf { on } => Some(on),
+            _ => None,
+        }
+    }
+
+    /// The left-hand side keys, in positional order.
+    ///
+    /// For [`Self::Range`] this can differ in length from [`Self::right_on`], so only zip the
+    /// two sides once the condition is known not to be a range.
+    pub fn left_on(&self) -> Exprs<'_> {
+        if let Some(on) = self.key_pairs() {
+            return Exprs::pair_lhs(on);
+        }
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin { left_on, .. } | Self::Range { left_on, .. } => Exprs::slice(left_on),
+            _ => Exprs::Empty,
+        }
+    }
+
+    /// The right-hand side keys, in positional order. Same caveat as [`Self::left_on`].
+    pub fn right_on(&self) -> Exprs<'_> {
+        if let Some(on) = self.key_pairs() {
+            return Exprs::pair_rhs(on);
+        }
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin { right_on, .. } | Self::Range { right_on, .. } => Exprs::slice(right_on),
+            _ => Exprs::Empty,
+        }
+    }
+
+    pub fn left_on_len(&self) -> usize {
+        if let Some(on) = self.key_pairs() {
+            return on.len();
+        }
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin { left_on, .. } | Self::Range { left_on, .. } => left_on.len(),
+            _ => 0,
+        }
+    }
+
+    pub fn right_on_len(&self) -> usize {
+        if let Some(on) = self.key_pairs() {
+            return on.len();
+        }
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin { right_on, .. } | Self::Range { right_on, .. } => right_on.len(),
+            _ => 0,
+        }
+    }
+
+    pub fn key_vecs(&self) -> (Vec<ExprIR>, Vec<ExprIR>) {
+        (
+            self.left_on().cloned().collect(),
+            self.right_on().cloned().collect(),
+        )
+    }
+
+    /// Every left key, then every right key, then any fused predicate.
+    ///
+    /// The order must stay in sync with [`Self::exprs_mut`].
+    pub fn exprs(&self) -> Exprs<'_> {
+        if let Some(on) = self.key_pairs() {
+            return Exprs::pair_sides(on);
+        }
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin {
+                left_on, right_on, ..
+            }
+            | Self::Range {
+                left_on, right_on, ..
+            } => Exprs::double_slice(left_on, right_on),
+            Self::CrossAndFilter { predicate } => Exprs::single(predicate),
+            _ => Exprs::Empty,
+        }
+    }
+
+    /// See [`Self::exprs`]. Yields in the same order.
+    pub fn exprs_mut(&mut self) -> ExprsMut<'_> {
+        // Checked first so the mutable borrow does not span the match below.
+        if self.key_pairs().is_some() {
+            return ExprsMut::pair_sides(self.key_pairs_mut().unwrap());
+        }
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin {
+                left_on, right_on, ..
+            }
+            | Self::Range {
+                left_on, right_on, ..
+            } => ExprsMut::double_slice(left_on, right_on),
+            Self::CrossAndFilter { predicate } => ExprsMut::single(predicate),
+            _ => ExprsMut::Empty,
+        }
+    }
+
+    /// Replace the keys, keeping the current variant.
+    ///
+    /// # Panics
+    /// On [`Self::CrossAndFilter`], which holds no keys, or on a length mismatch where the
+    /// variant stores keys in pairs.
+    pub fn set_keys(&mut self, left: Vec<ExprIR>, right: Vec<ExprIR>) {
+        if let Some(on) = self.key_pairs_mut() {
+            *on = left.into_iter().zip_eq(right).collect();
+            return;
+        }
+        match self {
+            #[cfg(feature = "iejoin")]
+            Self::IEJoin {
+                left_on, right_on, ..
+            }
+            | Self::Range {
+                left_on, right_on, ..
+            } => {
+                *left_on = left;
+                *right_on = right;
+            },
+            _ => panic!("cross join filter holds no keys"),
+        }
+    }
+
+    /// The match condition is exactly `left == right` for every key pair.
+    ///
+    /// True for [`Self::AsOf`] too: its strategy and tolerance live in [`JoinType::AsOf`],
+    /// not in the match condition.
+    pub fn is_pure_equi(&self) -> bool {
+        !self.is_non_equi()
+    }
+
+    /// The match condition has a non-equality component.
+    pub fn is_non_equi(&self) -> bool {
+        self.key_pairs().is_none()
+    }
 }
+
+
 
 impl From<JoinOptions> for JoinOptionsIR {
     fn from(opts: JoinOptions) -> Self {
