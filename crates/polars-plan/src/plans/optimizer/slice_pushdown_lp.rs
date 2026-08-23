@@ -499,16 +499,10 @@ impl SlicePushDown {
                     input_left,
                     input_right,
                     schema,
-                    left_on,
-                    right_on,
                     mut options,
                 },
                 Some(state),
-            ) if !matches!(
-                options.options,
-                Some(JoinTypeOptionsIR::CrossAndFilter { .. })
-            ) =>
-            {
+            ) if !matches!(options.options, JoinTypeOptionsIR::CrossAndFilter { .. }) => {
                 if let Some(existing_slice) = &mut Arc::make_mut(&mut options).args.slice {
                     return if let Some(combined) = combine_outer_inner_slice(
                         state,
@@ -522,8 +516,6 @@ impl SlicePushDown {
                             input_left,
                             input_right,
                             schema,
-                            left_on,
-                            right_on,
                             options,
                         };
                         self.pushdown_and_continue(lp, None, lp_arena, expr_arena)
@@ -532,8 +524,6 @@ impl SlicePushDown {
                             input_left,
                             input_right,
                             schema,
-                            left_on,
-                            right_on,
                             options,
                         };
                         self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena)
@@ -611,8 +601,6 @@ impl SlicePushDown {
                     input_left,
                     input_right,
                     schema,
-                    left_on,
-                    right_on,
                     options,
                 })
             },

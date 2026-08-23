@@ -122,8 +122,7 @@ pub enum IR {
         input_left: Node,
         input_right: Node,
         schema: SchemaRef,
-        left_on: Vec<ExprIR>,
-        right_on: Vec<ExprIR>,
+        /// Holds the match condition, including the join keys.
         options: Arc<JoinOptionsIR>,
     },
     Gather {

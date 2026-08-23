@@ -399,16 +399,24 @@ impl DslBuilder {
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         options: Arc<JoinOptions>,
-    ) -> Self {
-        DslPlan::Join {
+    ) -> PolarsResult<Self> {
+        polars_ensure!(
+            left_on.len() == right_on.len(),
+            InvalidOperation:
+                "the number of columns given as join key (left: {}, right:{}) should be equal",
+                left_on.len(),
+                right_on.len()
+        );
+
+        Ok(DslPlan::Join {
             input_left: Arc::new(self.0),
             input_right: Arc::new(other),
-            left_on,
-            right_on,
-            predicates: Default::default(),
+            condition: JoinCondition::Equi {
+                on: left_on.into_iter().zip(right_on).collect(),
+            },
             options,
         }
-        .into()
+        .into())
     }
 
     pub fn gather(self, idxs: DslPlan, null_on_oob: bool) -> Self {

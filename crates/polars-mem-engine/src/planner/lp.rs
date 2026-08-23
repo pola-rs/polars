@@ -708,8 +708,6 @@ fn create_physical_plan_impl(
         Join {
             input_left,
             input_right,
-            left_on,
-            right_on,
             options,
             schema,
             ..
@@ -733,14 +731,15 @@ fn create_physical_plan_impl(
                 options.allow_parallel
             };
 
+            let (key_left, key_right) = options.options.key_vecs();
             let left_on = create_physical_expressions_from_irs(
-                &left_on,
+                &key_left,
                 expr_arena,
                 &schema_left,
                 &mut ExpressionConversionState::new(true),
             )?;
             let right_on = create_physical_expressions_from_irs(
-                &right_on,
+                &key_right,
                 expr_arena,
                 &schema_right,
                 &mut ExpressionConversionState::new(true),
@@ -749,28 +748,22 @@ fn create_physical_plan_impl(
 
             // Convert the join options, to the physical join options. This requires the physical
             // planner, so we do this last minute.
-            let join_type_options = options
-                .options
-                .map(|o| {
-                    o.compile(|e| {
-                        let phys_expr = create_physical_expr(
-                            e,
-                            expr_arena,
-                            &schema,
-                            &mut ExpressionConversionState::new(false),
-                        )?;
+            let join_type_options = options.options.compile(|e| {
+                let phys_expr = create_physical_expr(
+                    e,
+                    expr_arena,
+                    &schema,
+                    &mut ExpressionConversionState::new(false),
+                )?;
 
-                        let execution_state = ExecutionState::default();
+                let execution_state = ExecutionState::default();
 
-                        Ok(Arc::new(move |df: DataFrame| {
-                            let mask = phys_expr.evaluate(&df, &execution_state)?;
-                            let mask = mask.as_materialized_series();
-                            let mask = mask.bool()?;
-                            df.filter_seq(mask)
-                        }))
-                    })
-                })
-                .transpose()?;
+                Ok(Arc::new(move |df: &DataFrame| {
+                    let mask = phys_expr.evaluate(df, &execution_state)?;
+                    let mask = mask.as_materialized_series();
+                    PolarsResult::Ok(mask.bool()?.clone())
+                }))
+            })?;
 
             Ok(Box::new(executors::JoinExec::new(
                 input_left,

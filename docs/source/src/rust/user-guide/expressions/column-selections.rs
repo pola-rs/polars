@@ -17,16 +17,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			    NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(), NaiveDate::from_ymd_opt(2022, 1, 1).unwrap().and_hms_opt(0, 0, 2).unwrap(), Duration::parse("1s"),ClosedWindow::Both, TimeUnit::Milliseconds, None)?,
     )?
     .with_row_index("index".into(), None)?;
-    println!("{}", &df);
+    println!("{}", df);
     // --8<-- [end:selectors_df]
 
     // --8<-- [start:all]
     let out = df.clone().lazy().select([col("*")]).collect()?;
-    println!("{}", &out);
+    println!("{}", out);
 
     // Is equivalent to
     let out = df.clone().lazy().select([all().as_expr()]).collect()?;
-    println!("{}", &out);
+    println!("{}", out);
     // --8<-- [end:all]
 
     // --8<-- [start:exclude]
@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .select([all().exclude_cols(["logged_at", "index"]).as_expr()])
         .collect()?;
-    println!("{}", &out);
+    println!("{}", out);
     // --8<-- [end:exclude]
 
     // --8<-- [start:expansion_by_names]
@@ -47,12 +47,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .dt()
             .to_string("%Y-%h-%d")])
         .collect()?;
-    println!("{}", &out);
+    println!("{}", out);
     // --8<-- [end:expansion_by_names]
 
     // --8<-- [start:expansion_by_regex]
     let out = df.clone().lazy().select([col("^.*(as|sa).*$")]).collect()?;
-    println!("{}", &out);
+    println!("{}", out);
     // --8<-- [end:expansion_by_regex]
 
     // --8<-- [start:expansion_by_dtype]
@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .collect()?;
     // gives different result than python as the id col is i32 in rust
-    println!("{}", &out);
+    println!("{}", out);
     // --8<-- [end:expansion_by_dtype]
 
     // --8<-- [start:selectors_intro]

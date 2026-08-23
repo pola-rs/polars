@@ -103,8 +103,8 @@ requirements-all:  ## Install/refresh all Python requirements (including those n
 	$(MAKE) requirements EXTRA_REQUIREMENTS=py-polars/requirements-ci.txt
 	
 # We set environment variables which will cause unnecessary re-builds if other cargo commands
-# (not run through maturin/Makefile) are ran. By updating .cargo/config.toml those environment
-# variables are sticky.
+# (not run through maturin/Makefile) are ran. By updating .cargo/config.generated.toml (which is
+# gitignored and included from .cargo/config.toml) those environment variables are sticky.
 .PHONY: update-cargo-env
 update-cargo-env: $(VENV_BIN)/python
 	@RUSTFLAGS="$(RUSTFLAGS)" CFLAGS="$(CFLAGS)" $(VENV_BIN)/python tools/update-cargo-env.py
