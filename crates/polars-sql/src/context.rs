@@ -1822,12 +1822,15 @@ impl SQLContext {
                     // the output height. We do this by projecting independently and then joining
                     // back the original frame on the row index.
                     const NAME: PlSmallStr = PlSmallStr::from_static("__PL_INDEX");
-                    lf = lf
+                    // The row index pairs the two sides, so both must read one
+                    // materialisation of the frame.
+                    let cached = lf.cache();
+                    lf = cached
                         .clone()
                         .select(projections)
                         .with_row_index(NAME, None)
                         .join(
-                            lf.with_row_index(NAME, None),
+                            cached.with_row_index(NAME, None),
                             [col(NAME)],
                             [col(NAME)],
                             JoinArgs {

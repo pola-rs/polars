@@ -1,4 +1,6 @@
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -6,6 +8,9 @@ import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 @pytest.mark.parametrize(
@@ -454,6 +459,20 @@ def _subquery_ctx() -> pl.SQLContext[pl.LazyFrame]:
             "ANTI JOIN",
             [(1, 10), (2, 10)],
         ),
+        # Outer query joins the same table the subquery reads.
+        (
+            "SELECT c_custkey FROM customer, lineitem WHERE l_okey = c_custkey"
+            " AND c_custkey IN (SELECT c_custkey FROM customer WHERE c_acctbal >= 20)",
+            "SEMI JOIN",
+            [2, 5],
+        ),
+        # Same, with the inner columns reached through the alias.
+        (
+            "SELECT c_custkey FROM customer, lineitem WHERE l_okey = c_custkey"
+            " AND c_custkey IN (SELECT x.c_custkey FROM customer x WHERE x.c_acctbal >= 20)",
+            "SEMI JOIN",
+            [2, 5],
+        ),
         # NOT IN should follow SQL three-valued logic (ref: issue #28433).
         (
             "SELECT c_custkey FROM customer"
@@ -513,6 +532,32 @@ def test_sql_subquery_to_join(
     expected_rows = [t if isinstance(t, tuple) else (t,) for t in expected]
     expected_df = pl.DataFrame(expected_rows, schema=result.schema, orient="row")
     assert_frame_equal(result, expected_df, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "SELECT a FROM t1 WHERE EXISTS"
+            " (SELECT 1 FROM t1 AS x WHERE x.b < t1.b) ORDER BY a",
+            {"a": [3]},
+        ),
+        (
+            "SELECT a FROM t1 WHERE NOT EXISTS"
+            " (SELECT 1 FROM t1 AS x WHERE x.b < t1.b) ORDER BY a",
+            {"a": [1, 2]},
+        ),
+    ],
+)
+def test_self_referencing_subquery_qualified_correlation(
+    query: str, expected: dict[str, Sequence[Any]]
+) -> None:
+    assert_sql_matches(
+        frames={"t1": pl.DataFrame({"a": [1, 2, 3], "b": [10, 10, 30]})},
+        query=query,
+        compare_with="duckdb",
+        expected=expected,
+    )
 
 
 @pytest.mark.parametrize(

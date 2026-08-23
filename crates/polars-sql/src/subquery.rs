@@ -17,6 +17,7 @@ use sqlparser::ast::Distinct;
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, GroupByExpr, Ident, Query, Select,
     SelectItem, SetExpr, TableWithJoins, UnaryOperator as SQLUnaryOperator, VisitMut, VisitorMut,
+    visit_expressions,
 };
 
 use crate::SQLContext;
@@ -186,7 +187,7 @@ impl SQLContext {
             {
                 corr_preds.push(pred);
             } else if let Some(filter) =
-                self.try_parse_inner_only_expr(conj, inner_schema, outer_schema)?
+                self.try_parse_inner_only_expr(conj, inner_names, inner_schema)?
             {
                 local_filters.push(filter);
             } else {
@@ -216,7 +217,7 @@ impl SQLContext {
 
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
 
-        let outer_indexed = lf.clone().with_row_index(idx_name.clone(), None);
+        let outer_indexed = row_indexed_once(lf.clone(), idx_name.clone());
         let matched = outer_indexed
             .clone()
             .join_builder()
@@ -293,11 +294,14 @@ impl SQLContext {
         };
         // The membership key must be a plain expression over the inner relation;
         // any alias it carries is cosmetic and not allowed in a join key.
-        let Some(right_key) = ctx.try_parse_inner_only_expr(proj, &inner_schema, outer_schema)?
+        let Some(right_key) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)?
         else {
             return Ok(None);
         };
         let right_key = right_key.meta().undo_aliases();
+        if !usable_as_join_key(&left_key) || !usable_as_join_key(&right_key) {
+            return Ok(None);
+        }
 
         let SubqueryConjuncts {
             mut left_on,
@@ -404,7 +408,7 @@ impl SQLContext {
                 right_on.push(col(inner_key));
                 continue;
             }
-            let Some(filter) = self.try_parse_inner_only_expr(conj, inner_schema, outer_schema)?
+            let Some(filter) = self.try_parse_inner_only_expr(conj, inner_names, inner_schema)?
             else {
                 return Ok(None);
             };
@@ -423,19 +427,13 @@ impl SQLContext {
     fn try_parse_inner_only_expr(
         &mut self,
         sql_expr: &SQLExpr,
+        inner_names: &PlHashSet<String>,
         inner_schema: &Schema,
-        outer_schema: &Schema,
     ) -> PolarsResult<Option<Expr>> {
-        let expr = parse_sql_expr(sql_expr, self, Some(inner_schema))?;
-        // A nested subquery parses to `Expr::SubPlan`, which is only valid after
-        // `process_subqueries` lowering; it can't be used as a plain expression.
-        if has_expr(&expr, |e| matches!(e, Expr::SubPlan(_, _))) {
+        if !binds_to_inner_relation(sql_expr, inner_names, inner_schema) {
             return Ok(None);
         }
-        let only_inner = expr_to_leaf_column_names_iter(&expr).all(|name| {
-            inner_schema.contains(name.as_str()) && !outer_schema.contains(name.as_str())
-        });
-        Ok(only_inner.then_some(expr))
+        Ok(Some(parse_sql_expr(sql_expr, self, Some(inner_schema))?))
     }
 
     // Lower every correlated subquery reachable from `expr` into a decorrelated
@@ -533,7 +531,7 @@ impl SQLContext {
             {
                 corr_preds.push(pred);
             } else if let Some(filter) =
-                ctx.try_parse_inner_only_expr(conj, &inner_schema, outer_schema)?
+                ctx.try_parse_inner_only_expr(conj, &inner_names, &inner_schema)?
             {
                 local_filters.push(filter);
             } else {
@@ -584,7 +582,7 @@ impl SQLContext {
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
         let idx_name = format_pl_smallstr!("{prefix}idx");
 
-        let outer_indexed = lf.with_row_index(idx_name.clone(), None);
+        let outer_indexed = row_indexed_once(lf, idx_name.clone());
         let matched = outer_indexed
             .clone()
             .join_builder()
@@ -641,7 +639,7 @@ impl SQLContext {
                 {
                     corr_preds.push(pred);
                 } else if let Some(filter) =
-                    ctx.try_parse_inner_only_expr(conj, &inner_schema, outer_schema)?
+                    ctx.try_parse_inner_only_expr(conj, &inner_names, &inner_schema)?
                 {
                     local_filters.push(filter);
                 } else {
@@ -685,7 +683,7 @@ impl SQLContext {
 
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
 
-        let outer_indexed = lf.with_row_index(idx_name.clone(), None);
+        let outer_indexed = row_indexed_once(lf, idx_name.clone());
         let matched = outer_indexed
             .clone()
             .join_builder()
@@ -906,6 +904,51 @@ fn correlation_key_pair(
     }
 }
 
+// Whether every column the expression references resolves to the inner relation,
+// so it can be evaluated against the inner frame alone. A qualified name resolves
+// through its qualifier: only an inner relation's name or alias counts as inner.
+// An unqualified name binds to the innermost scope that has it, so the inner
+// schema wins over the outer one.
+fn binds_to_inner_relation(
+    expr: &SQLExpr,
+    inner_names: &PlHashSet<String>,
+    inner_schema: &Schema,
+) -> bool {
+    // A nested subquery is its own scope, which this cannot resolve against.
+    if expr_contains_subquery(expr) {
+        return false;
+    }
+    visit_expressions(expr, |e| {
+        let resolves = match e {
+            SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_) => qualifier_and_name(e)
+                .is_some_and(|(qualifier, name)| {
+                    qualifier.is_none_or(|q| inner_names.contains(q)) && inner_schema.contains(name)
+                }),
+            _ => true,
+        };
+        if resolves {
+            ControlFlow::Continue(())
+        } else {
+            ControlFlow::Break(())
+        }
+    })
+    .is_continue()
+}
+
+// Split an identifier into its optional table qualifier and its bare column name.
+// Catalog and schema prefixes are dropped, matching how `get_table_name` builds
+// `inner_names`.
+fn qualifier_and_name(expr: &SQLExpr) -> Option<(Option<&str>, &str)> {
+    match expr {
+        SQLExpr::Identifier(ident) => Some((None, ident.value.as_str())),
+        SQLExpr::CompoundIdentifier(parts) => {
+            let (last, init) = parts.split_last()?;
+            Some((init.last().map(|q| q.value.as_str()), last.value.as_str()))
+        },
+        _ => None,
+    }
+}
+
 // Classify a correlation operand as an inner- or outer-query column and return
 // its bare name. A qualified identifier (`tbl.col`) resolves by its qualifier:
 // an inner relation's name/alias means inner, anything else means outer (so
@@ -918,19 +961,8 @@ fn classify_correlation_column(
     inner_schema: &Schema,
     outer_schema: &Schema,
 ) -> Option<(CorrelationSide, PlSmallStr)> {
-    let (qualifier, name): (Option<&str>, PlSmallStr) = match expr {
-        SQLExpr::Identifier(ident) => (None, ident.value.as_str().into()),
-        SQLExpr::CompoundIdentifier(parts) => {
-            let (last, init) = parts.split_last()?;
-            // Only the table part: catalog/schema prefixes are dropped, just
-            // as `get_table_name` drops them when building `inner_names`.
-            (
-                init.last().map(|q| q.value.as_str()),
-                last.value.as_str().into(),
-            )
-        },
-        _ => return None,
-    };
+    let (qualifier, name) = qualifier_and_name(expr)?;
+    let name: PlSmallStr = name.into();
     match qualifier {
         Some(q) if inner_names.contains(q) => inner_schema
             .contains(name.as_str())
@@ -1149,6 +1181,35 @@ impl VisitorMut for CorrelatedLowering<'_> {
         self.changed = true;
         ControlFlow::Continue(())
     }
+}
+
+// Whether an expression can serve as a join key. Join keys must be elementwise,
+// so that every key is as long as the frame it is built from. Anything this does
+// not recognise declines the rewrite, which costs an optimisation rather than
+// correctness.
+fn usable_as_join_key(expr: &Expr) -> bool {
+    match expr {
+        Expr::Column(_) | Expr::Literal(_) => true,
+        Expr::Alias(inner, _) | Expr::Cast { expr: inner, .. } => usable_as_join_key(inner),
+        Expr::BinaryExpr { left, op: _, right } => {
+            usable_as_join_key(left) && usable_as_join_key(right)
+        },
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => {
+            usable_as_join_key(predicate) && usable_as_join_key(truthy) && usable_as_join_key(falsy)
+        },
+        _ => false,
+    }
+}
+
+// Row-index a frame so the index can serve as a row identity key. The result is
+// cached: the index identifies the same row only if every consumer reads one
+// materialisation.
+fn row_indexed_once(lf: LazyFrame, name: PlSmallStr) -> LazyFrame {
+    lf.with_row_index(name, None).cache()
 }
 
 fn prefixed_inner(prefix: &str, name: &str) -> PlSmallStr {
