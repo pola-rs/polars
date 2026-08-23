@@ -14,8 +14,8 @@ use polars_utils::aliases::PlHashSet;
 use polars_utils::{format_pl_smallstr, unique_column_name};
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Query,
-    Select, SelectItem, SetExpr, TableWithJoins, UnaryOperator as SQLUnaryOperator, VisitMut,
-    VisitorMut, visit_expressions,
+    Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
+    UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor, VisitorMut, visit_expressions,
 };
 
 use crate::SQLContext;
@@ -1218,6 +1218,80 @@ pub(crate) enum SubqueryKind {
     Exists,
     /// `IN`, keyed by its left-hand side: one subquery can serve several.
     In(Box<SQLExpr>),
+}
+
+/// Whether a subquery reads a qualifier it does not declare, which is what
+/// correlates it with the query around it.
+pub(crate) fn is_correlated_subquery(query: &Query) -> bool {
+    #[derive(Default)]
+    struct Declared(PlHashSet<String>);
+
+    impl Visitor for Declared {
+        type Break = ();
+
+        fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
+            if let Some(name) = get_table_name(factor) {
+                self.0.insert(name);
+            }
+            ControlFlow::Continue(())
+        }
+    }
+
+    let mut declared = Declared::default();
+    let _ = query.visit(&mut declared);
+
+    struct Foreign<'a>(&'a PlHashSet<String>);
+
+    impl Visitor for Foreign<'_> {
+        type Break = ();
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            match qualifier_and_name(expr) {
+                Some((Some(qualifier), _)) if !self.0.contains(qualifier) => ControlFlow::Break(()),
+                _ => ControlFlow::Continue(()),
+            }
+        }
+    }
+
+    query.visit(&mut Foreign(&declared.0)).is_break()
+}
+
+/// Rewrite `x = ANY (subquery)` to `x IN (subquery)` and `x <> ALL (subquery)`
+/// to `x NOT IN (subquery)`, which they are equivalent to.
+struct DesugarQuantified;
+
+impl VisitorMut for DesugarQuantified {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+        let (left, right, negated) = match &*expr {
+            SQLExpr::AnyOp {
+                left,
+                compare_op: SQLBinaryOperator::Eq,
+                right,
+                ..
+            } => (left, right, false),
+            SQLExpr::AllOp {
+                left,
+                compare_op: SQLBinaryOperator::NotEq,
+                right,
+            } => (left, right, true),
+            _ => return ControlFlow::Continue(()),
+        };
+        let SQLExpr::Subquery(subquery) = right.as_ref() else {
+            return ControlFlow::Continue(());
+        };
+        *expr = SQLExpr::InSubquery {
+            expr: left.clone(),
+            subquery: subquery.clone(),
+            negated,
+        };
+        ControlFlow::Continue(())
+    }
+}
+
+pub(crate) fn desugar_quantified_subqueries(stmt: &mut Statement) {
+    let _ = VisitMut::visit(stmt, &mut DesugarQuantified);
 }
 
 /// Which correlated-subquery node kinds a lowering pass should claim.

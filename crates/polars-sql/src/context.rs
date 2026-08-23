@@ -34,7 +34,7 @@ use crate::sql_visitors::{
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
     expr_refers_to_table, sql_expr_cols_all_in_schema,
 };
-use crate::subquery::{LowerScope, SubqueryBindings};
+use crate::subquery::{LowerScope, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 
@@ -307,14 +307,16 @@ impl SQLContext {
             ..Default::default()
         });
 
-        let ast = parser
+        let mut ast = parser
             .try_with_sql(query)
             .map_err(to_sql_interface_err)?
             .parse_statements()
             .map_err(to_sql_interface_err)?;
 
         polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
-        let res = self.execute_statement(ast.first().unwrap())?;
+        let stmt = ast.first_mut().unwrap();
+        desugar_quantified_subqueries(stmt);
+        let res = self.execute_statement(stmt)?;
 
         // Ensure the result uses the proper arenas.
         // This will instantiate new arenas with a new version.
