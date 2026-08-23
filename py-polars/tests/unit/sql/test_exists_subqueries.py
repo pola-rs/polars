@@ -259,3 +259,42 @@ def test_uncorrelated_exists_in_expression_position() -> None:
         compare_with="duckdb",
         expected={"a": [1]},
     )
+
+
+def test_decorrelated_exists_is_order_independent() -> None:
+    # The decorrelated EXISTS keys outer rows by row index, so the frame it
+    # indexes must be materialised once. Two instantiations of the same
+    # LazyFrame may emit rows in different orders, which pairs unrelated rows
+    # and silently changes which rows pass the filter.
+    n = 200_000
+    fact = pl.DataFrame(
+        {
+            "ord": [i // 2 for i in range(n)],
+            "wh": [(i % 2) if (i // 2) % 5 else 0 for i in range(n)],
+            "dk": [i % 500 for i in range(n)],
+            "ak": [i % 300 for i in range(n)],
+            "v": [float(i % 97) for i in range(n)],
+        }
+    )
+    dim_d = pl.DataFrame(
+        {"dk": list(range(500)), "keep_d": [i % 2 == 0 for i in range(500)]}
+    )
+    dim_a = pl.DataFrame(
+        {
+            "ak": list(range(300)),
+            "st": ["GA" if i % 3 == 0 else "XX" for i in range(300)],
+        }
+    )
+    query = """
+        SELECT count(DISTINCT ord) AS n_ord, sum(v) AS sv
+        FROM fact, dim_d, dim_a
+        WHERE fact.dk = dim_d.dk AND dim_d.keep_d = TRUE
+          AND fact.ak = dim_a.ak AND dim_a.st = 'GA'
+          AND EXISTS (SELECT 1 FROM fact AS f2
+                      WHERE fact.ord = f2.ord AND fact.wh <> f2.wh)
+        ORDER BY count(DISTINCT ord)
+    """
+    ctx = pl.SQLContext(fact=fact, dim_d=dim_d, dim_a=dim_a)
+    expected = ctx.execute(query).collect(engine="in-memory").row(0)
+    results = {ctx.execute(query).collect(engine="streaming").row(0) for _ in range(8)}
+    assert results == {expected}

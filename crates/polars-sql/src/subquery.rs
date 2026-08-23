@@ -217,7 +217,7 @@ impl SQLContext {
 
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
 
-        let outer_indexed = lf.clone().with_row_index(idx_name.clone(), None);
+        let outer_indexed = lf.clone().with_row_index(idx_name.clone(), None).cache();
         let matched = outer_indexed
             .clone()
             .join_builder()
@@ -579,7 +579,7 @@ impl SQLContext {
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
         let idx_name = format_pl_smallstr!("{prefix}idx");
 
-        let outer_indexed = lf.with_row_index(idx_name.clone(), None);
+        let outer_indexed = lf.with_row_index(idx_name.clone(), None).cache();
         let matched = outer_indexed
             .clone()
             .join_builder()
@@ -680,7 +680,7 @@ impl SQLContext {
 
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
 
-        let outer_indexed = lf.with_row_index(idx_name.clone(), None);
+        let outer_indexed = lf.with_row_index(idx_name.clone(), None).cache();
         let matched = outer_indexed
             .clone()
             .join_builder()
