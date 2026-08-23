@@ -299,6 +299,9 @@ impl SQLContext {
             return Ok(None);
         };
         let right_key = right_key.meta().undo_aliases();
+        if !usable_as_join_key(&left_key) || !usable_as_join_key(&right_key) {
+            return Ok(None);
+        }
 
         let SubqueryConjuncts {
             mut left_on,
@@ -1177,6 +1180,28 @@ impl VisitorMut for CorrelatedLowering<'_> {
         };
         self.changed = true;
         ControlFlow::Continue(())
+    }
+}
+
+// Whether an expression can serve as a join key. Join keys must be elementwise,
+// so that every key is as long as the frame it is built from. Anything this does
+// not recognise declines the rewrite, which costs an optimisation rather than
+// correctness.
+fn usable_as_join_key(expr: &Expr) -> bool {
+    match expr {
+        Expr::Column(_) | Expr::Literal(_) => true,
+        Expr::Alias(inner, _) | Expr::Cast { expr: inner, .. } => usable_as_join_key(inner),
+        Expr::BinaryExpr { left, op: _, right } => {
+            usable_as_join_key(left) && usable_as_join_key(right)
+        },
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => {
+            usable_as_join_key(predicate) && usable_as_join_key(truthy) && usable_as_join_key(falsy)
+        },
+        _ => false,
     }
 }
 
