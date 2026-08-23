@@ -1535,7 +1535,7 @@ impl SQLContext {
                     lf,
                     &schema,
                     e,
-                    LowerScope::ScalarAndExists,
+                    LowerScope::ScalarAndPredicates,
                     &mut bindings,
                 )?;
                 if let Cow::Owned(lowered) = lowered {
@@ -1555,7 +1555,7 @@ impl SQLContext {
                     lf,
                     &schema,
                     having,
-                    LowerScope::ScalarAndExists,
+                    LowerScope::ScalarAndPredicates,
                     &mut bindings,
                 )?;
                 changed |= matches!(lowered, Cow::Owned(_));
@@ -2089,7 +2089,7 @@ impl SQLContext {
                     lf,
                     &exists_schema,
                     e,
-                    LowerScope::ScalarAndExists,
+                    LowerScope::ScalarAndPredicates,
                     &mut bindings,
                 )?;
                 lowered_residuals.push(lowered);
@@ -2683,7 +2683,7 @@ impl SQLContext {
                     lf,
                     &schema,
                     &ob.expr,
-                    LowerScope::ScalarAndExists,
+                    LowerScope::ScalarAndPredicates,
                     &mut bindings,
                 )?;
 

@@ -45,7 +45,7 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
 }
 
 /// Represents a boolean-typed NULL literal (aka: SQL "UNKNOWN" truth value).
-fn sql_unknown() -> Expr {
+pub(crate) fn sql_unknown() -> Expr {
     lit(NULL).cast(DataType::Boolean)
 }
 
