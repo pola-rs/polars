@@ -1038,8 +1038,6 @@ pub fn lower_ir(
             input_left,
             input_right,
             schema: _,
-            left_on,
-            right_on,
             options,
         } => {
             #[cfg(feature = "iejoin")]
@@ -1049,8 +1047,7 @@ pub fn lower_ir(
             let (mut input_left, mut input_right) = (*input_left, *input_right);
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
             let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
-            let left_on = left_on.clone();
-            let right_on = right_on.clone();
+            let (left_on, right_on) = options.options.key_vecs();
             let get_expr_name = |e: &ExprIR| e.output_name().clone();
             let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
@@ -1198,7 +1195,7 @@ pub fn lower_ir(
 
             // A non-equality match condition is only handled natively by the range-join
             // node; anything else falls back to the in-memory engine.
-            let match_condition_supported = options.is_none() || args.how.is_range();
+            let match_condition_supported = options.is_pure_equi() || args.how.is_range();
 
             if (args.how.is_equi()
                 || args.how.is_semi_anti()
@@ -1297,7 +1294,11 @@ pub fn lower_ir(
                     _ if args.how.is_range() => {
                         use crate::nodes::joins::range_join::left_is_point;
 
-                        let Some(JoinTypeOptionsIR::IEJoin(range_options)) = options else {
+                        let JoinTypeOptionsIR::Range {
+                            ie_options: range_options,
+                            ..
+                        } = options
+                        else {
                             unreachable!()
                         };
 
@@ -1392,8 +1393,6 @@ pub fn lower_ir(
                 PhysNodeKind::InMemoryJoin {
                     input_left: phys_left,
                     input_right: phys_right,
-                    left_on,
-                    right_on,
                     args,
                     options,
                 }
