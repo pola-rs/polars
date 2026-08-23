@@ -12,12 +12,10 @@ use polars_plan::prelude::{AggExpr, Selector};
 use polars_plan::utils::{expr_to_leaf_column_names_iter, has_expr};
 use polars_utils::aliases::PlHashSet;
 use polars_utils::{format_pl_smallstr, unique_column_name};
-#[cfg(feature = "semi_anti_join")]
-use sqlparser::ast::Distinct;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, GroupByExpr, Ident, Query, Select,
-    SelectItem, SetExpr, TableWithJoins, UnaryOperator as SQLUnaryOperator, VisitMut, VisitorMut,
-    visit_expressions,
+    BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Query,
+    Select, SelectItem, SetExpr, TableWithJoins, UnaryOperator as SQLUnaryOperator, VisitMut,
+    VisitorMut, visit_expressions,
 };
 
 use crate::SQLContext;
