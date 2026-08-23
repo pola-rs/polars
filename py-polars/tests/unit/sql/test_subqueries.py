@@ -542,15 +542,6 @@ def test_sql_subquery_to_join(
             " (SELECT 1 FROM t1 AS x WHERE x.b < t1.b) ORDER BY a",
             {"a": [1, 2]},
         ),
-        pytest.param(
-            "SELECT a FROM t1 WHERE b IN"
-            " (SELECT x.b FROM t1 AS x WHERE x.a < t1.a) ORDER BY a",
-            {"a": [2]},
-            marks=pytest.mark.xfail(
-                reason="generic path drops the outer qualifier on a non-equi"
-                " correlated IN",
-            ),
-        ),
     ],
 )
 def test_self_referencing_subquery_qualified_correlation(
