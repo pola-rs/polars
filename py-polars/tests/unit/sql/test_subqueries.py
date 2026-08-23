@@ -680,3 +680,54 @@ def test_correlated_in_subquery_in_select_list(
         ),
         compare_with="duckdb",
     )
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "b = ANY (SELECT x.b FROM t1 AS x WHERE x.a < o.a)",
+        "b <> ALL (SELECT x.b FROM t1 AS x WHERE x.a < o.a)",
+        "b = ANY (SELECT x.b FROM t1 AS x WHERE x.a = o.a)",
+        "b <> ALL (SELECT x.b FROM t1 AS x WHERE x.a = o.a)",
+        "b = ANY (SELECT b FROM t1 WHERE a > 1)",
+        "b <> ALL (SELECT b FROM t1 WHERE a > 999)",
+    ],
+)
+def test_quantified_subquery_matches_in(
+    predicate: str, correlated_in_frames: dict[str, pl.DataFrame]
+) -> None:
+    assert_sql_matches(
+        frames=correlated_in_frames,
+        query=f"SELECT a FROM t1 o WHERE {predicate} ORDER BY a",
+        compare_with="duckdb",
+    )
+
+
+@pytest.mark.parametrize("op", [">", "<", ">=", "<="])
+@pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
+def test_quantified_subquery_correlated_ordering_rejected(
+    op: str, quantifier: str
+) -> None:
+    ctx = pl.SQLContext(t1=pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
+    with pytest.raises(SQLInterfaceError, match="correlated subquery"):
+        ctx.execute(
+            f"SELECT a FROM t1 WHERE b {op} {quantifier}"
+            f" (SELECT x.b FROM t1 AS x WHERE x.a < t1.a)"
+        ).collect()
+
+
+@pytest.mark.parametrize("op", [">", "<", ">=", "<="])
+@pytest.mark.parametrize("quantifier", ["ANY", "ALL"])
+def test_quantified_subquery_uncorrelated_ordering(op: str, quantifier: str) -> None:
+    # MAX keeps the subquery single-row; a multi-row one hits a separate limit.
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}),
+            "t2": pl.DataFrame({"y": [5, 15, 25]}),
+        },
+        query=(
+            f"SELECT a FROM t1 WHERE b {op} {quantifier}"
+            f" (SELECT MAX(y) FROM t2) ORDER BY a"
+        ),
+        compare_with="duckdb",
+    )
