@@ -635,6 +635,17 @@ def test_subquery_unsupported_positions_report_sql_errors() -> None:
         )
 
 
+@pytest.fixture
+def correlated_in_frames() -> dict[str, pl.DataFrame]:
+    # Nulls on both sides, and an outer row whose candidate set is empty.
+    return {
+        "t1": pl.DataFrame(
+            {"a": [1, 2, 3, 4, None], "b": [10, None, 30, 10, 20]},
+            schema={"a": pl.Int64, "b": pl.Int64},
+        )
+    }
+
+
 @pytest.mark.parametrize(
     "predicate",
     [
@@ -642,34 +653,27 @@ def test_subquery_unsupported_positions_report_sql_errors() -> None:
         "b NOT IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a)",
         "b IN (SELECT x.b FROM t1 AS x WHERE x.a = o.a)",
         "b NOT IN (SELECT x.b FROM t1 AS x WHERE x.a = o.a)",
-        "b IN (SELECT x.b FROM t1 AS x WHERE x.a > 99)",
-        "b NOT IN (SELECT x.b FROM t1 AS x WHERE x.a > 99)",
+        # Correlated, but no inner row ever matches: the candidate set is empty
+        # for every outer row.
+        "b IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a AND x.b > 999)",
+        "b NOT IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a AND x.b > 999)",
     ],
 )
-def test_correlated_in_subquery(predicate: str) -> None:
-    # Nulls on both sides, and an outer row whose candidate set is empty.
-    frames = {
-        "t1": pl.DataFrame(
-            {"a": [1, 2, 3, 4, None], "b": [10, None, 30, 10, 20]},
-            schema={"a": pl.Int64, "b": pl.Int64},
-        )
-    }
+def test_correlated_in_subquery(
+    predicate: str, correlated_in_frames: dict[str, pl.DataFrame]
+) -> None:
     assert_sql_matches(
-        frames=frames,
+        frames=correlated_in_frames,
         query=f"SELECT a FROM t1 o WHERE {predicate} ORDER BY a",
         compare_with="duckdb",
     )
 
 
-def test_correlated_in_subquery_in_select_list() -> None:
-    frames = {
-        "t1": pl.DataFrame(
-            {"a": [1, 2, 3, 4, None], "b": [10, None, 30, 10, 20]},
-            schema={"a": pl.Int64, "b": pl.Int64},
-        )
-    }
+def test_correlated_in_subquery_in_select_list(
+    correlated_in_frames: dict[str, pl.DataFrame],
+) -> None:
     assert_sql_matches(
-        frames=frames,
+        frames=correlated_in_frames,
         query=(
             "SELECT a, b IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a) AS m"
             " FROM t1 o ORDER BY a"

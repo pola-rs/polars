@@ -20,7 +20,7 @@ use sqlparser::ast::{
 
 use crate::SQLContext;
 use crate::context::{CORRELATED_COL_PREFIX, FilterMode, get_table_name};
-use crate::sql_expr::{parse_sql_expr, sql_unknown};
+use crate::sql_expr::{parse_sql_expr, sql_in_membership};
 use crate::sql_visitors::expr_contains_subquery;
 
 impl SQLContext {
@@ -675,7 +675,6 @@ impl SQLContext {
 
         let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
         let set_name = format_pl_smallstr!("{prefix}set");
-        let result_name = format_pl_smallstr!("{prefix}res");
 
         let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
         let rename_from: Vec<PlSmallStr> = inner_schema.iter_names().cloned().collect();
@@ -734,23 +733,14 @@ impl SQLContext {
         // An outer row with no matching inner rows joins to null, which is the
         // empty candidate set rather than an unknown one.
         let set = col(set_name.clone());
-        let set_is_empty = set
-            .clone()
-            .is_null()
-            .or(set.clone().list().len().eq(lit(0u32)));
-        let set_has_null = set.clone().list().contains(lit(NULL), true);
-        let is_in = when(set_is_empty)
-            .then(lit(false))
-            .when(needle.clone().is_null())
-            .then(sql_unknown())
-            .otherwise(needle.is_in(set, false).or(set_has_null.and(sql_unknown())));
-        let joined = joined
-            .with_columns([is_in.alias(result_name.clone())])
-            .drop(Selector::ByName {
-                names: Arc::from([set_name]),
-                strict: true,
-            });
-        Ok(Some((joined, result_name)))
+        let is_in = sql_in_membership(
+            needle.is_in(set.clone(), false),
+            set.clone(),
+            set.clone().is_null().or(set.list().len().eq(lit(0u32))),
+        );
+        // The boolean replaces the candidate list in place.
+        let joined = joined.with_columns([is_in.alias(set_name.clone())]);
+        Ok(Some((joined, set_name)))
     }
 
     // Attempt the decorrelation of a single `EXISTS` subquery into a boolean flag

@@ -49,6 +49,16 @@ pub(crate) fn sql_unknown() -> Expr {
     lit(NULL).cast(DataType::Boolean)
 }
 
+// SQL `IN` under three-valued logic: false against an empty candidate set,
+// otherwise membership, which is already unknown for a null needle, widened to
+// unknown when a miss could be hiding behind a null in the set.
+pub(crate) fn sql_in_membership(membership: Expr, value_set: Expr, set_is_empty: Expr) -> Expr {
+    let set_has_null = value_set.list().contains(lit(NULL), true);
+    when(set_is_empty)
+        .then(lit(false))
+        .otherwise(membership.or(set_has_null.and(sql_unknown())))
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
 /// Categorises the type of (allowed) subquery constraint
@@ -1255,15 +1265,11 @@ impl SQLExprVisitor<'_> {
             unreachable!("SingleColumn subquery must lower to a SubPlan");
         };
         let value_set = col(cols[0].0.clone()).first();
-        let needle_is_null = expr.clone().is_null();
-        let membership = expr.is_in(subquery_result, false);
-        let set_has_null = value_set.clone().list().contains(lit(NULL), true);
-        let set_is_empty = value_set.list().len().eq(lit(0u32));
-        let is_in = when(set_is_empty)
-            .then(lit(false))
-            .when(needle_is_null)
-            .then(sql_unknown())
-            .otherwise(membership.or(set_has_null.and(sql_unknown())));
+        let is_in = sql_in_membership(
+            expr.is_in(subquery_result, false),
+            value_set.clone(),
+            value_set.list().len().eq(lit(0u32)),
+        );
 
         Ok(if negated { is_in.not() } else { is_in })
     }
