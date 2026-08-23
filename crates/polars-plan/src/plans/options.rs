@@ -1,5 +1,4 @@
 use std::hash::Hash;
-use std::iter;
 
 use bitflags::bitflags;
 use polars_core::prelude::*;
