@@ -460,8 +460,6 @@ impl PredicatePushDown {
             Join {
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 schema,
                 options,
             } => process_join(
@@ -470,8 +468,6 @@ impl PredicatePushDown {
                 expr_arena,
                 input_left,
                 input_right,
-                left_on,
-                right_on,
                 schema,
                 options,
                 acc_predicates,
