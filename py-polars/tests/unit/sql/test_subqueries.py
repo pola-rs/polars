@@ -1,4 +1,6 @@
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -6,6 +8,9 @@ import polars as pl
 from polars.exceptions import SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 @pytest.mark.parametrize(
@@ -545,7 +550,7 @@ def test_sql_subquery_to_join(
     ],
 )
 def test_self_referencing_subquery_qualified_correlation(
-    query: str, expected: dict[str, list[int]]
+    query: str, expected: dict[str, Sequence[Any]]
 ) -> None:
     assert_sql_matches(
         frames={"t1": pl.DataFrame({"a": [1, 2, 3], "b": [10, 10, 30]})},
