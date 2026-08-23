@@ -304,22 +304,20 @@ pub fn try_rewrite_join_type(
 ) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
     // A non-equi condition is attached directly to the join, so this must still run even
     // with nothing pushed down from above.
-    let has_attached_predicate = matches!(
-        &options.options,
-        JoinTypeOptionsIR::CrossAndFilter { .. }
-    ) || {
-        #[cfg(feature = "iejoin")]
-        {
-            matches!(
-                &options.options,
-                JoinTypeOptionsIR::IEJoin { .. } | JoinTypeOptionsIR::Range { .. }
-            )
-        }
-        #[cfg(not(feature = "iejoin"))]
-        {
-            false
-        }
-    };
+    let has_attached_predicate =
+        matches!(&options.options, JoinTypeOptionsIR::CrossAndFilter { .. }) || {
+            #[cfg(feature = "iejoin")]
+            {
+                matches!(
+                    &options.options,
+                    JoinTypeOptionsIR::IEJoin { .. } | JoinTypeOptionsIR::Range { .. }
+                )
+            }
+            #[cfg(not(feature = "iejoin"))]
+            {
+                false
+            }
+        };
     if acc_predicates.is_empty() && !has_attached_predicate {
         return Ok(None);
     }
@@ -368,9 +366,9 @@ pub fn try_rewrite_join_type(
         }
 
         if matches!(&options.options, JoinTypeOptionsIR::CrossAndFilter { .. }) {
-            let JoinTypeOptionsIR::CrossAndFilter { predicate } = std::mem::take(
-                &mut Arc::make_mut(options).options,
-            ) else {
+            let JoinTypeOptionsIR::CrossAndFilter { predicate } =
+                std::mem::take(&mut Arc::make_mut(options).options)
+            else {
                 unreachable!()
             };
 
@@ -684,24 +682,12 @@ pub fn try_rewrite_join_type(
     let original_output_schema = match (&original_join_type, &new_join_type) {
         (JoinType::Right, _) | (_, JoinType::Right) => std::mem::replace(
             output_schema,
-            det_join_schema(
-                schema_left,
-                schema_right,
-                options,
-                expr_arena,
-            )
-            .unwrap(),
+            det_join_schema(schema_left, schema_right, options, expr_arena).unwrap(),
         ),
         _ => {
             debug_assert_eq!(
                 output_schema,
-                &det_join_schema(
-                    schema_left,
-                    schema_right,
-                    options,
-                    expr_arena,
-                )
-                .unwrap()
+                &det_join_schema(schema_left, schema_right, options, expr_arena,).unwrap()
             );
             output_schema.clone()
         },

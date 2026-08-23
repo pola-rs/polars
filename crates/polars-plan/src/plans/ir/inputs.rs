@@ -403,7 +403,11 @@ impl<'a> Exprs<'a> {
 
     /// All left-hand sides, then all right-hand sides.
     pub(crate) fn pair_sides(on: &'a [(ExprIR, ExprIR)]) -> Self {
-        Self::PairSides(on.iter().map(pair_lhs as _).chain(on.iter().map(pair_rhs as _)))
+        Self::PairSides(
+            on.iter()
+                .map(pair_lhs as _)
+                .chain(on.iter().map(pair_rhs as _)),
+        )
     }
 }
 

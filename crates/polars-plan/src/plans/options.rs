@@ -393,15 +393,11 @@ pub enum JoinTypeOptionsIR {
     /// The match condition is `left == right` for every key pair.
     ///
     /// An empty `on` is a plain cross join.
-    Equi {
-        on: Vec<(ExprIR, ExprIR)>,
-    },
+    Equi { on: Vec<(ExprIR, ExprIR)> },
     /// Backwards/forwards/nearest match on a single key pair. The strategy, tolerance
     /// and `by` group keys live in [`JoinType::AsOf`].
     #[cfg(feature = "asof_join")]
-    AsOf {
-        on: Vec<(ExprIR, ExprIR)>,
-    },
+    AsOf { on: Vec<(ExprIR, ExprIR)> },
     /// Inequality join over one or two arbitrary predicates.
     ///
     /// `operator1` relates the first key pair, `operator2` the second.
@@ -677,8 +673,6 @@ impl JoinTypeOptionsIR {
         self.key_pairs().is_none()
     }
 }
-
-
 
 impl From<JoinOptions> for JoinOptionsIR {
     fn from(opts: JoinOptions) -> Self {
