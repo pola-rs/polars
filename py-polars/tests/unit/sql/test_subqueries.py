@@ -633,3 +633,50 @@ def test_subquery_unsupported_positions_report_sql_errors() -> None:
         pl.sql(
             "SELECT * FROM df1 JOIN df2 ON (SELECT COUNT(*) FROM df2) > 0", eager=True
         )
+
+
+@pytest.fixture
+def correlated_in_frames() -> dict[str, pl.DataFrame]:
+    # Nulls on both sides, and an outer row whose candidate set is empty.
+    return {
+        "t1": pl.DataFrame(
+            {"a": [1, 2, 3, 4, None], "b": [10, None, 30, 10, 20]},
+            schema={"a": pl.Int64, "b": pl.Int64},
+        )
+    }
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "b IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a)",
+        "b NOT IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a)",
+        "b IN (SELECT x.b FROM t1 AS x WHERE x.a = o.a)",
+        "b NOT IN (SELECT x.b FROM t1 AS x WHERE x.a = o.a)",
+        # Correlated, but no inner row ever matches: the candidate set is empty
+        # for every outer row.
+        "b IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a AND x.b > 999)",
+        "b NOT IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a AND x.b > 999)",
+    ],
+)
+def test_correlated_in_subquery(
+    predicate: str, correlated_in_frames: dict[str, pl.DataFrame]
+) -> None:
+    assert_sql_matches(
+        frames=correlated_in_frames,
+        query=f"SELECT a FROM t1 o WHERE {predicate} ORDER BY a",
+        compare_with="duckdb",
+    )
+
+
+def test_correlated_in_subquery_in_select_list(
+    correlated_in_frames: dict[str, pl.DataFrame],
+) -> None:
+    assert_sql_matches(
+        frames=correlated_in_frames,
+        query=(
+            "SELECT a, b IN (SELECT x.b FROM t1 AS x WHERE x.a < o.a) AS m"
+            " FROM t1 o ORDER BY a"
+        ),
+        compare_with="duckdb",
+    )
