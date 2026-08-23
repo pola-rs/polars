@@ -262,10 +262,8 @@ def test_uncorrelated_exists_in_expression_position() -> None:
 
 
 def test_decorrelated_exists_is_order_independent() -> None:
-    # The decorrelated EXISTS keys outer rows by row index, so the frame it
-    # indexes must be materialised once. Two instantiations of the same
-    # LazyFrame may emit rows in different orders, which pairs unrelated rows
-    # and silently changes which rows pass the filter.
+    # Needs several morsels and a joined outer frame: a smaller or unjoined
+    # fixture has a stable row order and passes either way.
     n = 200_000
     fact = pl.DataFrame(
         {

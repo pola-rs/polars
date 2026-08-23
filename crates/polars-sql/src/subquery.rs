@@ -217,7 +217,7 @@ impl SQLContext {
 
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
 
-        let outer_indexed = lf.clone().with_row_index(idx_name.clone(), None).cache();
+        let outer_indexed = row_indexed_once(lf.clone(), idx_name.clone());
         let matched = outer_indexed
             .clone()
             .join_builder()
@@ -579,7 +579,7 @@ impl SQLContext {
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
         let idx_name = format_pl_smallstr!("{prefix}idx");
 
-        let outer_indexed = lf.with_row_index(idx_name.clone(), None).cache();
+        let outer_indexed = row_indexed_once(lf, idx_name.clone());
         let matched = outer_indexed
             .clone()
             .join_builder()
@@ -680,7 +680,7 @@ impl SQLContext {
 
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
 
-        let outer_indexed = lf.with_row_index(idx_name.clone(), None).cache();
+        let outer_indexed = row_indexed_once(lf, idx_name.clone());
         let matched = outer_indexed
             .clone()
             .join_builder()
@@ -1178,6 +1178,13 @@ impl VisitorMut for CorrelatedLowering<'_> {
         self.changed = true;
         ControlFlow::Continue(())
     }
+}
+
+// Row-index a frame so the index can serve as a row identity key. The result is
+// cached: the index identifies the same row only if every consumer reads one
+// materialisation.
+fn row_indexed_once(lf: LazyFrame, name: PlSmallStr) -> LazyFrame {
+    lf.with_row_index(name, None).cache()
 }
 
 fn prefixed_inner(prefix: &str, name: &str) -> PlSmallStr {
