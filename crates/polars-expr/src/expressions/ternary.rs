@@ -1,5 +1,3 @@
-use std::cell::{LazyCell, OnceCell};
-
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_plan::prelude::*;
