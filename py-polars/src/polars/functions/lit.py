@@ -15,9 +15,29 @@ from polars._dependencies import (
     torch,
 )
 from polars._dependencies import numpy as np
+from polars._utils.constants import (
+    I32_MAX,
+    I32_MIN,
+    I64_MAX,
+    I64_MIN,
+    I128_MAX,
+    I128_MIN,
+    U64_MAX,
+)
 from polars._utils.wrap import wrap_expr
 from polars.datatype_expr import DataTypeExpr
-from polars.datatypes import BaseExtension, Date, Datetime, Duration, Object
+from polars.datatypes import (
+    BaseExtension,
+    Date,
+    Datetime,
+    Duration,
+    Int32,
+    Int64,
+    Int128,
+    List,
+    Object,
+    UInt64,
+)
 from polars.datatypes.convert import DataTypeMappings
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -26,6 +46,65 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     from polars import Expr
     from polars._typing import PolarsDataType, TimeUnit
+
+
+def _integer_literal_dtype_from_bounds(
+    min_value: int, max_value: int
+) -> PolarsDataType | None:
+    if min_value >= I32_MIN and max_value <= I32_MAX:
+        return Int32
+    if min_value >= I64_MIN and max_value <= I64_MAX:
+        return Int64
+    if min_value >= 0 and max_value <= U64_MAX:
+        return UInt64
+    if min_value >= I128_MIN and max_value <= I128_MAX:
+        return Int128
+    return None
+
+
+def _integer_sequence_literal_dtype(
+    value: list[Any] | tuple[Any, ...],
+) -> PolarsDataType | None:
+    depth: int | None = None
+    min_value: int | None = None
+    max_value: int | None = None
+
+    def visit(item: Any, current_depth: int) -> bool:
+        nonlocal depth, min_value, max_value
+
+        if item is None:
+            return True
+        if isinstance(item, bool):
+            return False
+        if isinstance(item, int):
+            if depth is None:
+                depth = current_depth
+                min_value = item
+                max_value = item
+            elif depth != current_depth:
+                return False
+            else:
+                assert min_value is not None
+                assert max_value is not None
+                min_value = min(min_value, item)
+                max_value = max(max_value, item)
+            return True
+        if isinstance(item, (list, tuple)):
+            return all(visit(v, current_depth + 1) for v in item)
+        return False
+
+    if not visit(value, 0):
+        return None
+    if depth is None or min_value is None or max_value is None:
+        return None
+
+    if (dtype := _integer_literal_dtype_from_bounds(min_value, max_value)) is None:
+        return None
+
+    for _ in range(depth):
+        dtype = List(dtype)
+
+    return dtype
 
 
 def lit(
@@ -54,7 +133,7 @@ def lit(
     Expected datatypes:
 
     - `pl.lit([])` -> empty List<Null>
-    - `pl.lit([1, 2, 3])` -> List<i64>
+    - `pl.lit([1, 2, 3])` -> List<i32>
     - `pl.lit(pl.Series([]))`-> empty Series Null
     - `pl.lit(pl.Series([1, 2, 3]))` -> Series Int64
     - `pl.lit(None)` -> Null
@@ -184,9 +263,13 @@ def lit(
         return lit(pl.Series("literal", value.numpy(force=False), dtype=dtype))
 
     elif isinstance(value, (list, tuple)):
+        literal_dtype: PolarsDataType | None = dtype
+        if literal_dtype is None:
+            literal_dtype = _integer_sequence_literal_dtype(value)
+
         return wrap_expr(
             plr.lit(
-                pl.Series("literal", [value], dtype=dtype)._s,
+                pl.Series("literal", [value], dtype=literal_dtype)._s,
                 allow_object,
                 is_scalar=True,
             )

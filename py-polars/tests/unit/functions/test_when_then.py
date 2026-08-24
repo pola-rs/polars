@@ -98,7 +98,7 @@ def test_when_then_implicit_none() -> None:
 def test_when_then_empty_list_5547() -> None:
     out = pl.DataFrame({"a": []}).select([pl.when(pl.col("a") > 1).then([1])])
     assert out.shape == (0, 1)
-    assert out.dtypes == [pl.List(pl.Int64)]
+    assert out.dtypes == [pl.List(pl.Int32)]
 
 
 def test_nested_when_then_and_wildcard_expansion_6284() -> None:
