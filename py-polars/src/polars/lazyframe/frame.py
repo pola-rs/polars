@@ -34,9 +34,6 @@ from polars._typing import (
     ParquetMetadata,
 )
 from polars._utils.convert import negate_duration_string, parse_as_duration_string
-from polars._utils.deprecation import (
-    issue_deprecation_warning,
-)
 from polars._utils.expired import (
     RemovedParameter,
     RenamedParameter,
@@ -8139,12 +8136,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             elif aggregate_function == "len":
                 agg = agg.len()
             elif aggregate_function == "count":
-                issue_deprecation_warning(
-                    "`aggregate_function='count'` input for `pivot` is deprecated."
-                    " Please use `aggregate_function='len'`.",
-                    version="0.20.5",
-                )
-                agg = agg.len()
+                msg = "use of `aggregate_function='count'` should be replaced with `aggregate_function='len'`."
+                raise ValueError(msg)
             else:
                 msg = f"invalid input for `aggregate_function` argument: {aggregate_function!r}"
                 raise ValueError(msg)
