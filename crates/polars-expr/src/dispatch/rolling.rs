@@ -191,7 +191,12 @@ pub(super) fn rolling_corr_cov(
     let mean_x = x.rolling_mean(rolling_options.clone())?;
     let mean_y = y.rolling_mean(rolling_options.clone())?;
 
-    let ddof_value = if is_corr { 1u8 } else { cov_options.ddof };
+    assert!(is_corr == cov_options.ddof.is_none());
+    let ddof_value = if is_corr {
+        1u8
+    } else {
+        cov_options.ddof.unwrap_or(1)
+    };
     let ddof = Series::new(
         PlSmallStr::EMPTY,
         &[AnyValue::from(ddof_value).cast(&dtype)],

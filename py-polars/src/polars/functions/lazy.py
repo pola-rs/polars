@@ -2567,7 +2567,6 @@ def rolling_corr(
     *,
     window_size: int,
     min_samples: int | None = None,
-    ddof: int = 1,
 ) -> Expr:
     """
     Compute the rolling correlation between two columns/ expressions.
@@ -2589,27 +2588,14 @@ def rolling_corr(
     min_samples
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
-    ddof
-        Has no effect, do not use.
-
-        .. deprecated:: 1.40.0
     """
-    if ddof != 1:
-        issue_deprecation_warning(
-            "the `ddof` parameter for `rolling_corr` is deprecated."
-            " Correlation is invariant of `ddof`.",
-            version="1.40.0",
-        )
-
     if min_samples is None:
         min_samples = window_size
     if isinstance(a, str):
         a = F.col(a)
     if isinstance(b, str):
         b = F.col(b)
-    return wrap_expr(
-        plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_samples, ddof)
-    )
+    return wrap_expr(plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_samples))
 
 
 @overload
