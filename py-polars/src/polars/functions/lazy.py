@@ -33,7 +33,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars._plr as plr
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Awaitable, Callable, Collection, Iterable, Sequence
     from typing import Literal
 
@@ -51,11 +50,6 @@ if TYPE_CHECKING:
     from polars.lazyframe.opt_flags import (
         QueryOptFlags,
     )
-
-    if sys.version_info >= (3, 13):
-        pass
-    else:
-        pass
 
 
 def field(name: str | list[str]) -> Expr:
