@@ -3,11 +3,18 @@ from __future__ import annotations
 import contextlib
 import functools
 
-from polars._utils.deprecation import issue_deprecation_warning
-from polars._utils.expired import RemovedParameter
+from polars._utils.expired import RemovedParameter, removed_parameters
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PyOptFlags
+
+
+_REMOVED_COLLAPSE_JOINS = RemovedParameter(
+    name="collapse_joins",
+    deprecated_in="1.33.1",
+    removed_in="2.0",
+    hint="Use `predicate_pushdown` instead.",
+)
 
 
 class QueryOptFlags:
@@ -19,6 +26,7 @@ class QueryOptFlags:
         at any point without it being considered a breaking change.
     """
 
+    @removed_parameters(_REMOVED_COLLAPSE_JOINS)
     def __init__(
         self,
         *,
@@ -29,7 +37,6 @@ class QueryOptFlags:
         comm_subplan_elim: None | bool = None,
         comm_subexpr_elim: None | bool = None,
         cluster_with_columns: None | bool = None,
-        collapse_joins: None | bool = None,
         check_order_observe: None | bool = None,
         fast_projection: None | bool = None,
         sort_collapse: None | bool = None,
@@ -44,7 +51,6 @@ class QueryOptFlags:
             comm_subplan_elim=comm_subplan_elim,
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
             check_order_observe=check_order_observe,
             fast_projection=fast_projection,
             sort_collapse=sort_collapse,
@@ -58,6 +64,7 @@ class QueryOptFlags:
         return optflags
 
     @staticmethod
+    @removed_parameters(_REMOVED_COLLAPSE_JOINS)
     def none(
         *,
         predicate_pushdown: None | bool = None,
@@ -67,7 +74,6 @@ class QueryOptFlags:
         comm_subplan_elim: None | bool = None,
         comm_subexpr_elim: None | bool = None,
         cluster_with_columns: None | bool = None,
-        collapse_joins: None | bool = None,
         check_order_observe: None | bool = None,
         fast_projection: None | bool = None,
         sort_collapse: None | bool = None,
@@ -84,13 +90,13 @@ class QueryOptFlags:
             comm_subplan_elim=comm_subplan_elim,
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
             check_order_observe=check_order_observe,
             fast_projection=fast_projection,
             sort_collapse=sort_collapse,
             pre_partition_hive=pre_partition_hive,
         )
 
+    @removed_parameters(_REMOVED_COLLAPSE_JOINS)
     def update(
         self,
         *,
@@ -101,7 +107,6 @@ class QueryOptFlags:
         comm_subplan_elim: None | bool = None,
         comm_subexpr_elim: None | bool = None,
         cluster_with_columns: None | bool = None,
-        collapse_joins: None | bool = None,
         check_order_observe: None | bool = None,
         fast_projection: None | bool = None,
         sort_collapse: None | bool = None,
@@ -122,14 +127,6 @@ class QueryOptFlags:
             self.comm_subexpr_elim = comm_subexpr_elim
         if cluster_with_columns is not None:
             self.cluster_with_columns = cluster_with_columns
-        if collapse_joins is not None:
-            issue_deprecation_warning(
-                "the `collapse_joins` parameter for `QueryOptFlags` is deprecated. "
-                "Use `predicate_pushdown` instead.",
-                version="1.33.1",
-            )
-            if not collapse_joins:
-                self.predicate_pushdown = False
         if check_order_observe is not None:
             self.check_order_observe = check_order_observe
         if fast_projection is not None:
