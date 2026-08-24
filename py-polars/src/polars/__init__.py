@@ -535,10 +535,8 @@ if not TYPE_CHECKING:
 
         if name in dir(dtgroup):
             msg = (
-                (
-                    f"`{name}` was deprecated in version 1.0.0. Define your own data type groups or "
-                    "use the `polars.selectors` module for selecting columns of a certain data type."
-                ),
+                f"`{name}` was deprecated in version 1.0.0. Define your own data type groups or "
+                "use the `polars.selectors` module for selecting columns of a certain data type."
             )
             raise exceptions.AttributeRemovedError(msg)
 
