@@ -10,7 +10,6 @@ from polars._dependencies import _check_for_numpy
 from polars._dependencies import numpy as np
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
-    issue_deprecation_warning,
 )
 from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.parse import (
