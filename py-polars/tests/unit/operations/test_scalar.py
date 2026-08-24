@@ -130,3 +130,8 @@ def test_elementwise_over_broadcast_scalar(expr: pl.Expr) -> None:
     assert_frame_equal(
         broadcast.select(expr).collect(), materialized.select(expr).collect()
     )
+
+
+def test_elementwise_over_empty_scalar() -> None:
+    df = pl.DataFrame({"a": [1]}).with_columns(b=pl.lit(5)).head(0)
+    assert df.select(pl.col("b").is_null()).to_dict(as_series=False) == {"b": []}

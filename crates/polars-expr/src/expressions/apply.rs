@@ -642,11 +642,12 @@ impl PhysicalExpr for ApplyExpr {
 
 fn constant_broadcast_len(inputs: &[Column]) -> Option<usize> {
     let len = inputs.iter().map(|c| c.len()).max()?;
-    if len == 1 {
+    if len <= 1 {
         return None;
     }
+    // Only a single row, or a scalar already at the full length, can be repeated.
     inputs
         .iter()
-        .all(|c| c.len() == 1 || matches!(c, Column::Scalar(_)))
+        .all(|c| c.len() == 1 || (c.len() == len && matches!(c, Column::Scalar(_))))
         .then_some(len)
 }
