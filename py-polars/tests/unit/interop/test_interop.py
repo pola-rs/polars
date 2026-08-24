@@ -271,9 +271,11 @@ def test_from_arrow_with_bigquery_metadata() -> None:
 
     expected_data = {"id": [1, 2], "num": [None, None], "val": [None, None]}
     expected_schema = {"id": pl.Int64, "num": pl.Int32, "val": pl.String}
+    df = pl.from_arrow(arrow_tbl)
+    assert isinstance(df, pl.DataFrame)
     assert_frame_equal(
+        df.select(pl.all().ext.storage()).unnest("misc"),
         pl.DataFrame(expected_data, schema=expected_schema),
-        pl.from_arrow(arrow_tbl).unnest("misc"),  # type: ignore[union-attr]
     )
 
 
