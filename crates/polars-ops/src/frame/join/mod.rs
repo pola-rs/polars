@@ -134,18 +134,31 @@ pub trait DataFrameJoinOps: IntoDf {
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
 
+        // Backstop: a non-equality match condition combined with a join type whose
+        // implementation does not yet track unmatched rows must not silently produce
+        // inner-join results.
+        polars_ensure!(
+            args.how.supports_non_equi_options(&options),
+            InvalidOperation:
+            "'{}' join is not supported with non-equi join conditions",
+            args.how,
+        );
+
+        #[cfg(feature = "cross_join")]
+        if let Some(JoinTypeOptions::Cross(cross_options)) = &options {
+            assert!(args.slice.is_none());
+            return fused_cross_filter(
+                left_df,
+                other,
+                args.suffix.clone(),
+                cross_options,
+                args.maintain_order,
+                args.how.emits_unmatched_left(),
+                &args.how,
+            );
+        }
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = args.how {
-            if let Some(JoinTypeOptions::Cross(cross_options)) = &options {
-                assert!(args.slice.is_none());
-                return fused_cross_filter(
-                    left_df,
-                    other,
-                    args.suffix.clone(),
-                    cross_options,
-                    args.maintain_order,
-                );
-            }
             return left_df.cross_join(other, args.suffix.clone(), args.slice, args.maintain_order);
         }
 
@@ -228,10 +241,7 @@ pub trait DataFrameJoinOps: IntoDf {
         };
 
         #[cfg(feature = "iejoin")]
-        if let JoinType::IEJoin = args.how {
-            let Some(JoinTypeOptions::IEJoin(options)) = options else {
-                unreachable!()
-            };
+        if let Some(JoinTypeOptions::IEJoin(ie_options)) = options {
             let func = if RAYON.current_num_threads() > 1
                 && !left_df.shape_has_zero()
                 && !other.shape_has_zero()
@@ -240,14 +250,22 @@ pub trait DataFrameJoinOps: IntoDf {
             } else {
                 iejoin::iejoin
             };
+            let emit_unmatched = if args.how.emits_unmatched_left() {
+                iejoin::EmitUnmatched::Left
+            } else if args.how.emits_unmatched_right() {
+                iejoin::EmitUnmatched::Right
+            } else {
+                iejoin::EmitUnmatched::None
+            };
             return func(
                 left_df,
                 other,
                 selected_left,
                 selected_right,
-                &options,
+                &ie_options,
                 args.suffix,
                 args.slice,
+                emit_unmatched,
             );
         }
 

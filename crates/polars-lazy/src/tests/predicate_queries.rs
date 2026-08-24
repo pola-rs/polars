@@ -178,7 +178,7 @@ fn test_filter_nulls_created_by_join() -> PolarsResult<()> {
     let out = a
         .clone()
         .lazy()
-        .join(b.clone(), [col("key")], [col("key")], JoinType::Left.into())
+        .join(b.clone(), [col("key")], [col("key")], JoinType::Left.into())?
         .filter(col("flag").is_null())
         .collect()?;
     let expected = df![
@@ -190,7 +190,7 @@ fn test_filter_nulls_created_by_join() -> PolarsResult<()> {
 
     let out = a
         .lazy()
-        .join(b, [col("key")], [col("key")], JoinType::Left.into())
+        .join(b, [col("key")], [col("key")], JoinType::Left.into())?
         .filter(col("flag").is_null())
         .with_predicate_pushdown(false)
         .collect()?;
@@ -234,7 +234,7 @@ fn test_predicate_on_join_suffix_4788() -> PolarsResult<()> {
         .left_on([col("y")])
         .right_on([col("y")])
         .suffix("_")
-        .finish()
+        .finish()?
         .filter(col("x").eq(1))
         .with_comm_subplan_elim(false);
 
@@ -267,7 +267,7 @@ fn test_push_join_col_predicates_to_both_sides_7247() -> PolarsResult<()> {
         [col("a"), col("b")],
         [col("a"), col("b2")],
         JoinArgs::new(JoinType::Inner),
-    );
+    )?;
     let q = df
         .filter(col("a").eq(lit("a1")))
         .filter(col("a").eq(col("c")));
@@ -301,7 +301,7 @@ fn test_push_join_col_predicates_to_both_sides_semi_12565() -> PolarsResult<()> 
         [col("a"), col("b")],
         [col("a"), col("b2")],
         JoinArgs::new(JoinType::Semi),
-    );
+    )?;
     let q = df.filter(col("a").eq(lit("a1")));
 
     predicate_at_all_scans(q.clone());

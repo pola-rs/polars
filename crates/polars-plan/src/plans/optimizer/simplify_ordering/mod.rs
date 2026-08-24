@@ -317,8 +317,6 @@ impl SimplifyIRNodeOrder<'_> {
                 input_left: _,
                 input_right: _,
                 schema: _,
-                left_on,
-                right_on,
                 options,
             } => {
                 use polars_ops::prelude::JoinType;
@@ -328,11 +326,11 @@ impl SimplifyIRNodeOrder<'_> {
                 let mut eos = expr_order_simplifier!();
 
                 let ae_nodes_scratch = self.ae_nodes_scratch.get();
-                ae_nodes_scratch.extend(left_on.iter().map(|eir| eir.node()));
+                ae_nodes_scratch.extend(options.options.left_on().map(|eir| eir.node()));
                 let left_keys_observable = eos.simplify_projected_exprs(ae_nodes_scratch, false);
 
                 ae_nodes_scratch.clear();
-                ae_nodes_scratch.extend(right_on.iter().map(|eir| eir.node()));
+                ae_nodes_scratch.extend(options.options.right_on().map(|eir| eir.node()));
                 let right_keys_observable = eos.simplify_projected_exprs(ae_nodes_scratch, false);
 
                 // Join keys should be elementwise.

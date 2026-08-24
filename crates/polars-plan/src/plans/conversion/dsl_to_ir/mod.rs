@@ -654,17 +654,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Join {
             input_left,
             input_right,
-            left_on,
-            right_on,
-            predicates,
+            condition,
             options,
         } => {
             return join::resolve_join(
                 Either::Left(input_left),
                 Either::Left(input_right),
-                left_on,
-                right_on,
-                predicates,
+                condition,
                 JoinOptionsIR::from(Arc::unwrap_or_clone(options)),
                 ctxt,
             )
@@ -1393,7 +1389,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     debug_assert!(unified_sink_args.sinked_paths_callback.is_none());
 
                     unified_sink_args.sinked_paths_callback =
-                        Some(SinkedPathsCallback::IcebergCommit(state));
+                        Some(SinkedPathsCallback::IcebergCommit(Box::new(state)));
 
                     return to_alp_impl(*plan, &mut ctxt);
                 })

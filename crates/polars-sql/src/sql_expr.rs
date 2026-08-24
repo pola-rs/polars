@@ -31,6 +31,7 @@ use sqlparser::tokenizer::Token;
 
 use crate::SQLContext;
 use crate::functions::SQLFunctionVisitor;
+use crate::subquery::is_correlated_subquery;
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
     timeunit_from_precision,
@@ -45,8 +46,34 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
 }
 
 /// Represents a boolean-typed NULL literal (aka: SQL "UNKNOWN" truth value).
-fn sql_unknown() -> Expr {
+pub(crate) fn sql_unknown() -> Expr {
     lit(NULL).cast(DataType::Boolean)
+}
+
+// A correlated subquery here would be evaluated against its own scope, where an
+// outer column resolves to a like-named table.
+fn quantified_subquery_unsupported(
+    compare_op: &SQLBinaryOperator,
+    right: &SQLExpr,
+) -> PolarsResult<()> {
+    if let SQLExpr::Subquery(query) = right {
+        polars_ensure!(
+            !is_correlated_subquery(query),
+            SQLInterface: "ANY/ALL with `{}` and a correlated subquery is not currently supported",
+            compare_op
+        );
+    }
+    Ok(())
+}
+
+// SQL `IN` under three-valued logic: false against an empty candidate set,
+// otherwise membership, which is already unknown for a null needle, widened to
+// unknown when a miss could be hiding behind a null in the set.
+pub(crate) fn sql_in_membership(membership: Expr, value_set: Expr, set_is_empty: Expr) -> Expr {
+    let set_has_null = value_set.list().contains(lit(NULL), true);
+    when(set_is_empty)
+        .then(lit(false))
+        .otherwise(membership.or(set_has_null.and(sql_unknown())))
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -845,6 +872,7 @@ impl SQLExprVisitor<'_> {
         compare_op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
+        quantified_subquery_unsupported(compare_op, right)?;
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
 
@@ -868,6 +896,7 @@ impl SQLExprVisitor<'_> {
         compare_op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
+        quantified_subquery_unsupported(compare_op, right)?;
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
 
@@ -1255,15 +1284,11 @@ impl SQLExprVisitor<'_> {
             unreachable!("SingleColumn subquery must lower to a SubPlan");
         };
         let value_set = col(cols[0].0.clone()).first();
-        let needle_is_null = expr.clone().is_null();
-        let membership = expr.is_in(subquery_result, false);
-        let set_has_null = value_set.clone().list().contains(lit(NULL), true);
-        let set_is_empty = value_set.list().len().eq(lit(0u32));
-        let is_in = when(set_is_empty)
-            .then(lit(false))
-            .when(needle_is_null)
-            .then(sql_unknown())
-            .otherwise(membership.or(set_has_null.and(sql_unknown())));
+        let is_in = sql_in_membership(
+            expr.is_in(subquery_result, false),
+            value_set.clone(),
+            value_set.list().len().eq(lit(0u32)),
+        );
 
         Ok(if negated { is_in.not() } else { is_in })
     }
@@ -1605,7 +1630,11 @@ pub(crate) fn resolve_compound_identifier(
     // inference priority: table > struct > column
     let ident_root = &idents[0];
     let mut remaining_idents = idents.iter().skip(1);
-    let mut lf = ctx.get_table_from_current_scope(&ident_root.value);
+    let mut lf = if ctx.relation_in_scope(&ident_root.value) {
+        ctx.get_table_from_current_scope(&ident_root.value)
+    } else {
+        None
+    };
 
     // get schema from table (or the active/default schema)
     let schema = if let Some(ref mut lf) = lf {

@@ -549,6 +549,168 @@ def test_sink_iceberg_all_types(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+def test_sink_iceberg_schema_merge(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", IntegerType()),
+            NestedField(2, "existing", StringType()),
+        ),
+    )
+    original_schema = tbl.schema()
+
+    pl.DataFrame(
+        {
+            "id": pl.Series([1], dtype=pl.Int32),
+            "existing": ["old"],
+        }
+    ).lazy().sink_iceberg(tbl, mode="append")
+
+    pl.DataFrame(
+        {
+            "id": pl.Series([2], dtype=pl.Int64),
+            "new": ["new"],
+        }
+    ).lazy().sink_iceberg(tbl, mode="append", schema_mode="merge")
+
+    schema = tbl.schema()
+    assert schema.find_field("id").field_id == original_schema.find_field("id").field_id
+    assert schema.find_field("id").field_type == LongType()
+    assert (
+        schema.find_field("existing").field_id
+        == original_schema.find_field("existing").field_id
+    )
+    assert schema.find_field("new").field_id > original_schema.highest_field_id
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("id"),
+        pl.DataFrame(
+            {
+                "id": pl.Series([1, 2], dtype=pl.Int64),
+                "existing": ["old", None],
+                "new": [None, "new"],
+            }
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_schema_merge_nested(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(
+                1,
+                "payload",
+                StructType(
+                    NestedField(2, "id", LongType()),
+                    NestedField(3, "existing", StringType()),
+                ),
+            ),
+        ),
+    )
+    pl.DataFrame(
+        {
+            "payload": pl.Series(
+                [{"id": 1, "existing": "old"}],
+                dtype=pl.Struct({"id": pl.Int64, "existing": pl.String}),
+            )
+        }
+    ).lazy().sink_iceberg(tbl, mode="append")
+
+    pl.DataFrame(
+        {
+            "payload": pl.Series(
+                [{"id": 2, "new": "new"}],
+                dtype=pl.Struct({"id": pl.Int64, "new": pl.String}),
+            )
+        }
+    ).lazy().sink_iceberg(tbl, mode="append", schema_mode="merge")
+
+    assert tbl.schema().find_field("payload.id").field_id == 2
+    assert tbl.schema().find_field("payload.existing").field_id == 3
+    assert tbl.schema().find_field("payload.new").field_id == 4
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("payload"),
+        pl.DataFrame(
+            {
+                "payload": pl.Series(
+                    [
+                        {"id": 1, "existing": "old", "new": None},
+                        {"id": 2, "existing": None, "new": "new"},
+                    ],
+                    dtype=pl.Struct(
+                        {
+                            "id": pl.Int64,
+                            "existing": pl.String,
+                            "new": pl.String,
+                        }
+                    ),
+                )
+            }
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_schema_overwrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "id", LongType()),
+            NestedField(2, "old", StringType()),
+        ),
+    )
+    pl.LazyFrame({"id": [1], "old": ["old"]}).sink_iceberg(tbl, mode="append")
+
+    commit_table = tbl.catalog.commit_table
+    commit_count = 0
+
+    def count_commit(*args: Any, **kwargs: Any) -> Any:
+        nonlocal commit_count
+        commit_count += 1
+        return commit_table(*args, **kwargs)
+
+    monkeypatch.setattr(tbl.catalog, "commit_table", count_commit)
+
+    replacement = pl.DataFrame(
+        {
+            "id": ["new"],
+            "new": pl.Series(
+                [{"value": 2}],
+                dtype=pl.Struct({"value": pl.Int64}),
+            ),
+        }
+    ).lazy()
+    replacement.sink_iceberg(
+        tbl,
+        mode="overwrite",
+        schema_mode="overwrite",
+    )
+
+    schema = tbl.schema()
+    assert commit_count == 1
+    assert [field.name for field in schema.fields] == ["id", "new"]
+    assert schema.find_field("id").field_type == StringType()
+    assert schema.find_field("new").field_type.is_struct
+    assert schema.find_field("new.value").field_type == LongType()
+    assert all(field.field_id > 2 for field in schema.fields)
+    assert schema.find_field("new.value").field_id > 2
+    assert_frame_equal(pl.scan_iceberg(tbl).collect(), replacement.collect())
+
+    with pytest.raises(
+        ValueError,
+        match="schema_mode='overwrite' requires mode='overwrite'",
+    ):
+        replacement.sink_iceberg(
+            tbl,
+            mode="append",
+            schema_mode="overwrite",
+        )
+
+
+@pytest.mark.write_disk
 def test_sink_iceberg_snapshot_properties(tmp_path: Path) -> None:
     tbl, _ = new_iceberg_table(
         tmp_path,
@@ -754,8 +916,12 @@ def test_sink_iceberg_pickle(tmp_path: Path) -> None:
     assert new_md_path == tbl.metadata_location
 
     snapshot_properties = {"run-id": "pickled-run"}
-    sink_state = IcebergSinkState.new(tbl, snapshot_properties=snapshot_properties)
-    sink_q = sink_state.attach_sink(pl.LazyFrame({"a": 2}))
+    sink_state = IcebergSinkState.new(
+        tbl,
+        schema_mode="merge",
+        snapshot_properties=snapshot_properties,
+    )
+    sink_q = sink_state.attach_sink(pl.LazyFrame({"a": 2, "b": "x"}))
     sink_q = pickle.loads(pickle.dumps(sink_q))
     sink_q.collect()
 
@@ -768,7 +934,7 @@ def test_sink_iceberg_pickle(tmp_path: Path) -> None:
 
     assert_frame_equal(
         pl.scan_iceberg(tbl).collect(),
-        pl.DataFrame({"a": [2, 1]}),
+        pl.DataFrame({"a": [2, 1], "b": ["x", None]}),
     )
     current_snapshot = tbl.current_snapshot()
     assert current_snapshot is not None

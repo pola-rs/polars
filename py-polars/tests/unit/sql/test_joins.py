@@ -7,7 +7,11 @@ from typing import Any
 import pytest
 
 import polars as pl
-from polars.exceptions import SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    InvalidOperationError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
@@ -398,6 +402,84 @@ def test_non_equi_joins(constraint: str) -> None:
     )
 
 
+def test_non_equi_left_join() -> None:
+    # https://github.com/pola-rs/polars/issues/28875
+    ctx = pl.SQLContext(
+        v=pl.LazyFrame({"key": ["A", "B", "C"], "lo": [0, 0, 0], "hi": [10, 10, 10]}),
+        s=pl.LazyFrame({"key": ["A", "A", "B"], "t": [5, 7, 50]}),
+    )
+    got = ctx.execute(
+        """
+        SELECT v.key AS key, s.t AS t
+        FROM v LEFT JOIN s
+          ON s.key = v.key AND s.t > v.lo AND s.t <= v.hi
+        """
+    ).collect()
+    assert sorted(got.iter_rows(), key=str) == [
+        ("A", 5),
+        ("A", 7),
+        ("B", None),
+        ("C", None),
+    ]
+
+
+def test_non_equi_left_join_null_keys() -> None:
+    # Rows with a null join-key value can never satisfy an inequality predicate and
+    # must be null-extended, not silently dropped.
+    ctx = pl.SQLContext(
+        v=pl.LazyFrame({"lo": [0, None, 5]}),
+        s=pl.LazyFrame({"t": [1, 2, 3]}),
+    )
+    got = ctx.execute("SELECT v.lo, s.t FROM v LEFT JOIN s ON s.t > v.lo").collect()
+    assert sorted(got.iter_rows(), key=str) == [
+        (0, 1),
+        (0, 2),
+        (0, 3),
+        (5, None),
+        (None, None),
+    ]
+
+
+def test_non_equi_right_join_pure() -> None:
+    # A pure (no equality key) non-equi RIGHT JOIN is implemented by flipping the
+    # inputs, so verify the flip preserves column naming/order and null-extension.
+    ctx = pl.SQLContext(
+        v=pl.LazyFrame({"lo": [0, 5]}),
+        s=pl.LazyFrame({"t": [1, 6]}),
+    )
+    got = ctx.execute("SELECT v.lo, s.t FROM v RIGHT JOIN s ON s.t > v.lo").collect()
+    assert sorted(got.iter_rows(), key=str) == [
+        (0, 1),
+        (0, 6),
+        (5, 6),
+    ]
+
+
+@pytest.mark.parametrize(
+    "join_type",
+    ["RIGHT", "FULL", "LEFT SEMI", "LEFT ANTI"],
+)
+def test_non_equi_outer_joins_unsupported(join_type: str) -> None:
+    # A non-equi ON clause routes through `join_where`. LEFT is implemented
+    # (see test_non_equi_left_join above); the others are not yet.
+    # See https://github.com/pola-rs/polars/issues/28875
+    ctx = pl.SQLContext(
+        v=pl.LazyFrame({"key": ["A", "B", "C"], "lo": [0, 0, 0], "hi": [10, 10, 10]}),
+        s=pl.LazyFrame({"key": ["A", "A", "B"], "t": [5, 7, 50]}),
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match="join is not supported with non-equi join conditions",
+    ):
+        ctx.execute(
+            f"""
+            SELECT v.key AS key
+            FROM v {join_type} JOIN s
+              ON s.key = v.key AND s.t > v.lo AND s.t <= v.hi
+            """
+        ).collect()
+
+
 @pytest.mark.parametrize(
     ("query", "expected"),
     [
@@ -436,6 +518,16 @@ def test_non_equi_joins(constraint: str) -> None:
             """,
             {"a": [2, 3], "c": [3, 4]},
         ),
+        # bridging table listed *after* the relation it connects: df3 has no predicate
+        # against df1, only against df2, which comes later in the FROM clause.
+        (
+            """
+            SELECT df1.a, df3.c
+            FROM df1, df3, df2
+            WHERE df1.a = df2.a AND df2.b = df3.b
+            """,
+            {"a": [2, 3], "c": [3, 4]},
+        ),
         # no bridging predicate at all => cross join (cartesian product)
         (
             "SELECT df1.a, df3.c FROM df1, df3",
@@ -470,6 +562,32 @@ def test_implicit_joins(query: str, expected: dict[str, Any]) -> None:
         check_dtypes=False,
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize(
+    "from_clause",
+    [
+        "df1, df2, df3",  # already connected in source order
+        "df1, df3, df2",  # df3 only reaches df1 through df2, which is listed later
+        "df3, df1, df2",  # base table is the one needing an intermediary
+    ],
+)
+def test_implicit_joins_avoid_cartesian_product(from_clause: str) -> None:
+    # every permutation here is fully connected by the WHERE predicates
+    ctx = pl.SQLContext(
+        df1=pl.DataFrame({"a": [1, 2, 3], "b": [2, 3, 4]}),
+        df2=pl.DataFrame({"a": [2, 3, 9], "b": [3, 4, 9]}),
+        df3=pl.DataFrame({"a": [2, 3, 8], "b": [3, 4, 8], "c": [3, 4, 8]}),
+    )
+    query = f"""
+        SELECT df1.a, df3.c
+        FROM {from_clause}
+        WHERE df1.a = df2.a AND df2.b = df3.b
+    """
+    assert "CROSS JOIN" not in ctx.execute(query).explain()
+
+    result = ctx.execute(query).collect().sort("a")
+    assert result.to_dict(as_series=False) == {"a": [2, 3], "c": [3, 4]}
 
 
 def test_implicit_self_join() -> None:

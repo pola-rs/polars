@@ -1364,6 +1364,13 @@ fn inline_or_prune_cast(
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
+    // Casting to `Unknown(Any)` carries no information and
+    // the engine treats it as a no-op (see `Series::cast_with_options`), so
+    // prune the cast entirely to keep planner and engine consistent.
+    if let DataType::Unknown(UnknownKind::Any) = dtype {
+        return Ok(Some(aexpr.clone()));
+    }
+
     if !dtype.is_known() {
         return Ok(None);
     }

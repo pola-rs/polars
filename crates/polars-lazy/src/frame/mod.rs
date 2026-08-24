@@ -1208,13 +1208,18 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// fn anti_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    /// fn anti_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> PolarsResult<LazyFrame> {
     ///         ldf
     ///         .anti_join(other, col("foo"), col("bar").cast(DataType::String))
     /// }
     /// ```
     #[cfg(feature = "semi_anti_join")]
-    pub fn anti_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+    pub fn anti_join<E: Into<Expr>>(
+        self,
+        other: LazyFrame,
+        left_on: E,
+        right_on: E,
+    ) -> PolarsResult<LazyFrame> {
         self.join(
             other,
             [left_on.into()],
@@ -1232,6 +1237,7 @@ impl LazyFrame {
             vec![],
             JoinArgs::new(JoinType::Cross).with_suffix(suffix),
         )
+        .unwrap()
     }
 
     /// Left outer join this query with another lazy query.
@@ -1257,6 +1263,7 @@ impl LazyFrame {
             [right_on.into()],
             JoinArgs::new(JoinType::Left),
         )
+        .unwrap()
     }
 
     /// Inner join this query with another lazy query.
@@ -1282,6 +1289,7 @@ impl LazyFrame {
             [right_on.into()],
             JoinArgs::new(JoinType::Inner),
         )
+        .unwrap()
     }
 
     /// Full outer join this query with another lazy query.
@@ -1307,6 +1315,7 @@ impl LazyFrame {
             [right_on.into()],
             JoinArgs::new(JoinType::Full),
         )
+        .unwrap()
     }
 
     /// Left semi join this query with another lazy query.
@@ -1333,6 +1342,7 @@ impl LazyFrame {
             [right_on.into()],
             JoinArgs::new(JoinType::Semi),
         )
+        .unwrap()
     }
 
     /// Generic function to join two LazyFrames.
@@ -1351,7 +1361,7 @@ impl LazyFrame {
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
     ///
-    /// fn example(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
+    /// fn example(ldf: LazyFrame, other: LazyFrame) -> PolarsResult<LazyFrame> {
     ///         ldf
     ///         .join(other, [col("foo"), col("bar")], [col("foo"), col("bar")], JoinArgs::new(JoinType::Inner))
     /// }
@@ -1362,7 +1372,7 @@ impl LazyFrame {
         left_on: E,
         right_on: E,
         args: JoinArgs,
-    ) -> LazyFrame {
+    ) -> PolarsResult<LazyFrame> {
         let left_on = left_on.as_ref().to_vec();
         let right_on = right_on.as_ref().to_vec();
 
@@ -1375,7 +1385,7 @@ impl LazyFrame {
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         args: JoinArgs,
-    ) -> LazyFrame {
+    ) -> PolarsResult<LazyFrame> {
         let JoinArgs {
             how,
             validation,
@@ -2279,7 +2289,7 @@ impl JoinBuilder {
     }
 
     /// Finish builder
-    pub fn finish(self) -> LazyFrame {
+    pub fn finish(self) -> PolarsResult<LazyFrame> {
         let opt_state = self.lf.opt_state;
         let other = self.other.expect("'with' not set in join builder");
 
@@ -2307,9 +2317,9 @@ impl JoinBuilder {
                     args,
                 }
                 .into(),
-            )
+            )?
             .build();
-        LazyFrame::from_logical_plan(lp, opt_state)
+        Ok(LazyFrame::from_logical_plan(lp, opt_state))
     }
 
     // Finish with join predicates
@@ -2394,9 +2404,7 @@ impl JoinBuilder {
         let lp = DslPlan::Join {
             input_left: Arc::new(self.lf.logical_plan),
             input_right: Arc::new(other.logical_plan),
-            left_on: Default::default(),
-            right_on: Default::default(),
-            predicates,
+            condition: JoinCondition::NonEqui { predicates },
             options: Arc::from(options),
         };
 

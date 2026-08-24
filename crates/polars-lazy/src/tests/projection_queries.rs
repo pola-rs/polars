@@ -27,7 +27,7 @@ fn test_join_suffix_and_drop() -> PolarsResult<()> {
         .left_on([col("sireid")])
         .right_on([col("id")])
         .suffix("_sire")
-        .finish()
+        .finish()?
         .drop(cols(["sireid"]))
         .collect()?;
 
@@ -103,7 +103,7 @@ fn scan_join_same_file() -> PolarsResult<()> {
                 [col("category")],
                 [col("category")],
                 JoinType::Inner.into(),
-            )
+            )?
             .with_comm_subplan_elim(cse);
         let out = q.collect()?;
         assert_eq!(
@@ -159,7 +159,7 @@ fn test_coalesce_toggle_projection_pushdown() -> PolarsResult<()> {
                 coalesce: JoinCoalesce::KeepColumns,
                 ..Default::default()
             },
-        )
+        )?
         .select([col("a"), col("b")])
         .to_alp_optimized()?;
 

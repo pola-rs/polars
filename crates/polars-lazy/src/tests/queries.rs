@@ -299,7 +299,7 @@ fn test_lazy_query_4() -> PolarsResult<()> {
             [col("uid"), col("day")],
             [col("uid"), col("day")],
             JoinType::Inner.into(),
-        )
+        )?
         .collect()
         .unwrap();
     assert_eq!(
@@ -401,7 +401,7 @@ fn test_lazy_query_9() -> PolarsResult<()> {
             [col("Sales.City")],
             [col("Cities.City")],
             JoinType::Inner.into(),
-        )
+        )?
         .group_by([col("Cities.Country")])
         .agg([col("Sales.Amount").sum().alias("sum")])
         .sort(["sum"], Default::default())
@@ -2044,5 +2044,36 @@ fn test_named_udfs() -> PolarsResult<()> {
         DataFrame::new_infer_height(vec![Column::new("a".into(), vec![2, 4, 6, 8])])?,
     );
 
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "iejoin")]
+fn test_join_where_left_maintain_order() -> PolarsResult<()> {
+    // `maintain_order` is not reachable from `join_where` in Python. A non-`None`
+    // `maintain_order` also forces the nested-loop algorithm rather than IEJoin, so this
+    // is the only way to cover null-extended rows keeping their left-input position.
+    use polars_ops::frame::MaintainOrderJoin;
+
+    let a: Vec<i32> = (0..2000).collect();
+    let left = df!["a" => a]?.lazy();
+    let right = df!["b" => [0, 1]]?.lazy();
+
+    let got = left
+        .join_builder()
+        .with(right)
+        .how(JoinType::Left)
+        .maintain_order(MaintainOrderJoin::Left)
+        .join_where(vec![col("a").gt(col("b")), col("a").lt(lit(1000))])
+        .collect()?;
+
+    let a = Vec::from(got.column("a")?.i32()?);
+    let a: Vec<i32> = a.into_iter().map(Option::unwrap).collect();
+    assert!(
+        a.windows(2).all(|w| w[0] <= w[1]),
+        "left order not maintained"
+    );
+    // 998 left rows match both right rows, `a == 1` matches one, and 1001 are unmatched.
+    assert_eq!(a.len(), 998 * 2 + 1 + 1001);
     Ok(())
 }

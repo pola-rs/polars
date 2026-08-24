@@ -78,7 +78,7 @@ def test_struct_field_selection(order_by: str, df_struct: pl.DataFrame) -> None:
         SELECT
           -- validate table alias resolution
           frame.json_msg.id AS ID,
-          self.json_msg.name AS NAME,
+          frame.json_msg.name AS NAME,
           json_msg.age AS AGE
         FROM
           self AS frame
