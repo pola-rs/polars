@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import pickle
+import re
 import warnings
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -15,6 +16,7 @@ from deltalake.exceptions import DeltaError, TableNotFoundError
 from deltalake.table import TableMerger
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.cloud.credential_provider._builder import (
     _init_credential_provider_builder,
@@ -376,15 +378,10 @@ def test_sink_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     df_supported.lazy().sink_delta(partitioned_tbl_uri, mode="overwrite")
 
 
-@pytest.mark.write_disk
-def test_write_delta_overwrite_schema_deprecated(
-    df: pl.DataFrame, tmp_path: Path
-) -> None:
-    df = df.select(pl.col(pl.Int64))
-    with pytest.deprecated_call():
-        df.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
-    result = pl.read_delta(tmp_path)
-    assert_frame_equal(df, result)
+def test_write_delta_overwrite_schema_removed(df: pl.DataFrame) -> None:
+    msg = 'Use the `delta_write_options` parameter instead and pass `{"schema_mode": "overwrite"}`.'
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        df.write_delta("", mode="overwrite", overwrite_schema=True)  # type: ignore[call-overload]
 
 
 @pytest.mark.write_disk

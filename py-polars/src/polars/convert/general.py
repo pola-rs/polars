@@ -21,10 +21,11 @@ from polars._utils.construction.dataframe import (
     sequence_to_pydf,
 )
 from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyseries
-from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
+from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
+    removed_parameters,
 )
-from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.various import (
     _cast_repr_strings_with_schema,
@@ -806,13 +807,17 @@ def _extract_table(data: str) -> tuple[str, TableRepr] | None:
     return None
 
 
-@deprecate_renamed_parameter("tbl", "data", version="0.20.17")
+@removed_parameters(
+    RenamedParameter(
+        name="tbl",
+        new_name="data",
+        deprecated_in="0.20.17",
+        removed_in="2.0",
+    ),
+)
 def from_repr(data: str) -> DataFrame | Series:
     """
     Construct a Polars DataFrame or Series from its string representation.
-
-    .. versionchanged:: 0.20.17
-        The `tbl` parameter was renamed to `data`.
 
     Parameters
     ----------

@@ -11,7 +11,7 @@ from polars._dependencies import _check_for_pandas, _check_for_pyarrow
 from polars._dependencies import pandas as pd
 from polars._dependencies import pyarrow as pa
 from polars._typing import FrameType
-from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.expired import RenamedParameter, removed_parameters
 from polars._utils.pycapsule import is_pycapsule
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import _get_stack_locals, qualified_type_name
@@ -138,7 +138,14 @@ class SQLContext(Generic[FrameType]):
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("eager_execution", "eager", version="0.20.31")
+    @removed_parameters(
+        RenamedParameter(
+            name="eager_execution",
+            new_name="eager",
+            deprecated_in="0.20.31",
+            removed_in="2.0",
+        ),
+    )
     def __init__(
         self,
         frames: Mapping[str, CompatibleFrameType | None] | None = None,
@@ -149,9 +156,6 @@ class SQLContext(Generic[FrameType]):
     ) -> None:
         """
         Initialize a new `SQLContext`.
-
-        .. versionchanged:: 0.20.31
-            The `eager_execution` parameter was renamed `eager`.
 
         Parameters
         ----------

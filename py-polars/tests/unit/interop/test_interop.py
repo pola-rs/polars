@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
@@ -14,6 +15,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import (
+    ArgumentRemovedError,
     ComputeError,
     DuplicateError,
     InvalidOperationError,
@@ -413,6 +415,12 @@ def test_from_fixed_size_binary_list() -> None:
     s = cast("pl.Series", pl.from_arrow(arrow_array))
     assert s.dtype == pl.List(pl.Binary)
     assert s.to_list() == val
+
+
+def test_from_repr_tbl_removed() -> None:
+    msg = "It was renamed to 'data'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.from_repr(tbl="")  # type: ignore[call-arg]
 
 
 def test_dataframe_from_repr() -> None:
