@@ -377,7 +377,7 @@ def test_to_numpy_chunked_temporal_nested() -> None:
 
 def test_zero_copy_only_removed() -> None:
     s = pl.Series([1, 2])
-    msg = "the argument 'zero_copy_only' for 'Series.to_numpy'"
+    msg = "Use the `allow_copy` parameter instead"
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         s.to_numpy(zero_copy_only=True)  # type: ignore[call-arg]
 

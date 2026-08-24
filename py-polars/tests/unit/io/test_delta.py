@@ -379,7 +379,7 @@ def test_sink_delta(df: pl.DataFrame, tmp_path: Path) -> None:
 
 
 def test_write_delta_overwrite_schema_removed(df: pl.DataFrame) -> None:
-    msg = "the argument 'overwrite_schema' for 'DataFrame.write_delta'"
+    msg = 'Use the `delta_write_options` parameter instead and pass `{"schema_mode": "overwrite"}`.'
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         df.write_delta("", mode="overwrite", overwrite_schema=True)  # type: ignore[call-overload]
 
