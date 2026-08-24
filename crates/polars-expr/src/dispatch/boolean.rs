@@ -7,6 +7,7 @@ use polars_core::runtime::RAYON;
 use polars_ops::prelude::SeriesMethods;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRBooleanFunction;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::TotalOrdWrap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -145,12 +146,14 @@ fn is_between(s: &[Column], closed: polars_ops::series::ClosedInterval) -> Polar
 fn is_in(s: &mut [Column], nulls_equal: bool) -> PolarsResult<Column> {
     let left = &s[0];
     let other = &s[1];
-    polars_ops::prelude::is_in(
-        left.as_materialized_series(),
-        other.as_materialized_series(),
-        nulls_equal,
-    )
-    .map(IntoColumn::into_column)
+    // Don't blow up the haystack in case of scalar.
+    let haystack = other.as_materialized_series_maintain_scalar();
+
+    let out = polars_ops::prelude::is_in(left.as_materialized_series(), &haystack, nulls_equal)?
+        .into_column();
+
+    // In case of scalar, broadcast back to original length
+    out.broadcast_owned_to(broadcast_len([left, other])?)
 }
 
 #[cfg(feature = "is_close")]
