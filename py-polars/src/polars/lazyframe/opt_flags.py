@@ -9,14 +9,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyOptFlags
 
 
-_REMOVED_COLLAPSE_JOINS = RemovedParameter(
-    name="collapse_joins",
-    deprecated_in="1.33.1",
-    removed_in="2.0",
-    hint="Use `predicate_pushdown` instead.",
-)
-
-
 class QueryOptFlags:
     """
     The set of the optimizations considered during query optimization.
@@ -26,7 +18,14 @@ class QueryOptFlags:
         at any point without it being considered a breaking change.
     """
 
-    @removed_parameters(_REMOVED_COLLAPSE_JOINS)
+    @removed_parameters(
+        RemovedParameter(
+            name="collapse_joins",
+            deprecated_in="1.33.1",
+            removed_in="2.0",
+            hint="Use `predicate_pushdown` instead.",
+        ),
+    )
     def __init__(
         self,
         *,
@@ -64,7 +63,14 @@ class QueryOptFlags:
         return optflags
 
     @staticmethod
-    @removed_parameters(_REMOVED_COLLAPSE_JOINS)
+    @removed_parameters(
+        RemovedParameter(
+            name="collapse_joins",
+            deprecated_in="1.33.1",
+            removed_in="2.0",
+            hint="Use `predicate_pushdown` instead.",
+        ),
+    )
     def none(
         *,
         predicate_pushdown: None | bool = None,
@@ -96,7 +102,14 @@ class QueryOptFlags:
             pre_partition_hive=pre_partition_hive,
         )
 
-    @removed_parameters(_REMOVED_COLLAPSE_JOINS)
+    @removed_parameters(
+        RemovedParameter(
+            name="collapse_joins",
+            deprecated_in="1.33.1",
+            removed_in="2.0",
+            hint="Use `predicate_pushdown` instead.",
+        ),
+    )
     def update(
         self,
         *,
