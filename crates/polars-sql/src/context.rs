@@ -2219,7 +2219,8 @@ impl SQLContext {
     /// Process implicit (comma-separated) joins from `FROM t1, t2, ...` syntax.
     ///
     /// Extracts join predicates from the WHERE clause, joining each additional table with
-    /// either an INNER JOIN (cross-table predicates found) or a CROSS JOIN (no predicates)
+    /// either an INNER JOIN (cross-table predicates found) or a CROSS JOIN (no predicates).
+    /// Tables are joined in the order they become connectable rather than source order.
     /// Returns the residual WHERE conditions not consumed as join predicates.
     fn process_implicit_joins(
         &mut self,
@@ -2238,6 +2239,9 @@ impl SQLContext {
                 joined_table_names.push(name);
             }
         }
+        // Resolving is `&mut self`, so all relations must be resolved up-front rather than
+        // mid-probe while picking a join order below.
+        let mut pending = Vec::with_capacity(from.len() - 1);
         for tbl_expr in from.iter().skip(1) {
             let mut rf = self.execute_from_statement(tbl_expr)?;
             let r_name = get_table_name(&tbl_expr.relation).unwrap_or_default();
@@ -2245,8 +2249,30 @@ impl SQLContext {
                 !r_name.is_empty(),
                 SQLInterface: "implicit joins require named tables; please provide an alias"
             );
-            let left_schema = self.get_frame_schema(lf)?;
             let right_schema = self.get_frame_schema(&mut rf)?;
+            pending.push((tbl_expr, rf, r_name, right_schema));
+        }
+
+        // Each round takes the first pending relation with a join predicate against the
+        // tables joined so far; relations with no predicate yet are deferred. Genuinely
+        // disconnected relations fall through to a cross join, in source order.
+        while !pending.is_empty() {
+            let left_schema = self.get_frame_schema(lf)?;
+            let next = pending
+                .iter()
+                .position(|(_, _, r_name, right_schema)| {
+                    extract_join_predicates(
+                        &remaining_where,
+                        &joined_table_names,
+                        r_name,
+                        &left_schema,
+                        right_schema,
+                    )
+                    .0
+                    .is_some()
+                })
+                .unwrap_or(0);
+            let (tbl_expr, rf, r_name, right_schema) = pending.remove(next);
             let (join_expr, residual) = extract_join_predicates(
                 &remaining_where,
                 &joined_table_names,
