@@ -710,11 +710,35 @@ where
         }));
 
         let mut ca = unsafe { ChunkTakeUnchecked::take_unchecked(self, &gather_idxs) };
-        ca.set_validity(combine_validities_and(
+        let combined_validity = combine_validities_and(
             Some(validity),
             ca.rechunk_validity().as_ref(),
-        ));
-        ca
+        );
+
+        if self.dtype().is_struct() {
+            // `set_validity` panics for struct dtypes (it requires
+            // `set_outer_validity` instead). Route through
+            // `Series::with_validity`, which dispatches to
+            // `with_outer_validity` for structs.
+            let chunks = ca.chunks().clone();
+            let name = ca.name().clone();
+            // SAFETY: chunks came from a `ChunkedArray<T>`.
+            let s = unsafe {
+                Series::from_chunks_and_dtype_unchecked(name, chunks, self.dtype())
+            };
+            let s = s.with_validity(combined_validity);
+            // SAFETY: chunks came from a `Series` with the same type.
+            unsafe {
+                Self::from_chunks_and_dtype(
+                    s.name().clone(),
+                    s.chunks().clone(),
+                    self.dtype().clone(),
+                )
+            }
+        } else {
+            ca.set_validity(combined_validity);
+            ca
+        }
     }
 }
 
