@@ -9,9 +9,7 @@
 #[inline]
 pub fn tick_counter() -> u64 {
     cfg_select! {
-        target_arch = "x86_64" => {
-            unsafe { core::arch::x86_64::_rdtsc() }
-        }
+        target_arch = "x86_64" => unsafe { core::arch::x86_64::_rdtsc() },
 
         target_arch = "aarch64" => {
             let cnt: u64;
@@ -23,7 +21,7 @@ pub fn tick_counter() -> u64 {
                 );
             }
             cnt
-        }
+        },
 
         _ => {
             use std::sync::LazyLock;
@@ -31,6 +29,6 @@ pub fn tick_counter() -> u64 {
 
             static REFERENCE_INSTANT: LazyLock<Instant> = LazyLock::new(Instant::now);
             REFERENCE_INSTANT.elapsed().as_nanos() as u64
-        }
+        },
     }
 }
