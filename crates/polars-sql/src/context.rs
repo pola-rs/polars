@@ -220,6 +220,9 @@ pub struct SQLContext {
 
     cte_map: PlHashMap<String, LazyFrame>,
     table_aliases: PlHashMap<String, String>,
+    /// Relations the current `FROM` declares, which are the only ones a
+    /// qualified column may name.
+    active_relations: PlHashSet<String>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
 }
@@ -231,6 +234,7 @@ impl Default for SQLContext {
             table_map: Default::default(),
             cte_map: Default::default(),
             table_aliases: Default::default(),
+            active_relations: Default::default(),
             joined_aliases: Default::default(),
             named_windows: Default::default(),
             lp_arena: Default::default(),
@@ -400,6 +404,12 @@ impl SQLContext {
 
     pub(crate) fn get_frame_schema(&mut self, frame: &mut LazyFrame) -> PolarsResult<SchemaRef> {
         frame.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
+    }
+
+    /// Whether `name` may be used as a table qualifier. Nothing is known before
+    /// a `FROM` is processed, so anything is allowed until then.
+    pub(super) fn relation_in_scope(&self, name: &str) -> bool {
+        self.active_relations.is_empty() || self.active_relations.contains(name)
     }
 
     pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
@@ -1439,10 +1449,14 @@ impl SQLContext {
         // Get `FROM` table/data
         let mut implicit_join_filter: Option<SQLExpr> = None;
         let (mut lf, base_table_name) = if select_stmt.from.is_empty() {
+            self.active_relations.clear();
             (DataFrame::new(1, vec![])?.lazy(), None)
         } else {
             let from = &select_stmt.from;
             let first = from.first().unwrap();
+            // Set before the relations are resolved, so a join constraint
+            // resolves against them.
+            self.active_relations = declared_relations(from);
             let mut lf = self.execute_from_statement(first)?;
             let base_name = get_table_name(&first.relation);
             if from.len() > 1 {
@@ -3200,6 +3214,29 @@ pub(crate) fn is_correlated_result_col(name: &str) -> bool {
 }
 
 /// Extract the table name (or alias) from a TableFactor.
+/// A nested join is flattened rather than bound to its alias, so its own
+/// relations are declared too.
+fn declared_relations(from: &[TableWithJoins]) -> PlHashSet<String> {
+    fn walk(tbl: &TableWithJoins, names: &mut PlHashSet<String>) {
+        let factors = std::iter::once(&tbl.relation).chain(tbl.joins.iter().map(|j| &j.relation));
+        for factor in factors {
+            names.extend(get_table_name(factor));
+            if let TableFactor::NestedJoin {
+                table_with_joins, ..
+            } = factor
+            {
+                walk(table_with_joins, names);
+            }
+        }
+    }
+
+    let mut names = PlHashSet::new();
+    for tbl in from {
+        walk(tbl, &mut names);
+    }
+    names
+}
+
 pub(crate) fn get_table_name(factor: &TableFactor) -> Option<String> {
     match factor {
         TableFactor::Table { name, alias, .. } => {

@@ -1630,7 +1630,11 @@ pub(crate) fn resolve_compound_identifier(
     // inference priority: table > struct > column
     let ident_root = &idents[0];
     let mut remaining_idents = idents.iter().skip(1);
-    let mut lf = ctx.get_table_from_current_scope(&ident_root.value);
+    let mut lf = if ctx.relation_in_scope(&ident_root.value) {
+        ctx.get_table_from_current_scope(&ident_root.value)
+    } else {
+        None
+    };
 
     // get schema from table (or the active/default schema)
     let schema = if let Some(ref mut lf) = lf {
