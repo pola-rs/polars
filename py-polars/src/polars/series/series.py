@@ -54,6 +54,7 @@ from polars._utils.deprecation import (
 )
 from polars._utils.expired import (
     RemovedParameter,
+    RenamedParameter,
     getattr_fallback,
     raise_for_removed_attributes,
     removed_parameters,
@@ -4448,7 +4449,14 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    @deprecate_renamed_parameter("strict", "check_dtypes", version="0.20.31")
+    @removed_parameters(
+        RenamedParameter(
+            name="strict",
+            new_name="check_dtypes",
+            deprecated_in="0.20.31",
+            removed_in="2.0",
+        ),
+    )
     def equals(
         self,
         other: Series,
@@ -4459,9 +4467,6 @@ class Series(metaclass=_Meta):
     ) -> bool:
         """
         Check whether the Series is equal to another Series.
-
-        .. versionchanged:: 0.20.31
-            The `strict` parameter was renamed `check_dtypes`.
 
         Parameters
         ----------
