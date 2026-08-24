@@ -120,7 +120,7 @@ impl PhysicalExpr for TernaryExpr {
         // Nulls count as false.
         let true_count = mask.num_trues();
         let false_count = mask.len() - true_count;
-        
+
         let mask_bitmap = {
             let arr = mask.downcast_as_array();
             match arr.validity() {
