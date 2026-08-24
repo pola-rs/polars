@@ -731,3 +731,42 @@ def test_quantified_subquery_uncorrelated_ordering(op: str, quantifier: str) -> 
         ),
         compare_with="duckdb",
     )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # An alias replaces the table name, as in Postgres.
+        "SELECT t1.a FROM t1 AS f",
+        # Shapes no lowering claims, which reach qualifier resolution.
+        "SELECT a FROM t1 WHERE b IN"
+        " (SELECT x.b FROM t1 AS x WHERE x.a < t1.a LIMIT 5)",
+        "SELECT a FROM t1 WHERE b IN"
+        " (SELECT x.b FROM t1 AS x WHERE x.a < t1.a GROUP BY x.b)",
+    ],
+)
+def test_qualifier_must_name_a_declared_relation(query: str) -> None:
+    ctx = pl.SQLContext(t1=pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}))
+    with pytest.raises(SQLInterfaceError, match="no table or struct column named"):
+        ctx.execute(query).collect()
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT f.a FROM t1 AS f ORDER BY a",
+        "SELECT t1.a FROM t1 ORDER BY a",
+        "SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a ORDER BY a",
+        "SELECT a FROM t1 o WHERE b IN"
+        " (SELECT x.b FROM t1 AS x WHERE x.a < o.a) ORDER BY a",
+    ],
+)
+def test_qualifier_naming_a_declared_relation(query: str) -> None:
+    assert_sql_matches(
+        frames={
+            "t1": pl.DataFrame({"a": [1, 2, 3], "b": [10, 20, 30]}),
+            "t2": pl.DataFrame({"a": [2, 3, 4]}),
+        },
+        query=query,
+        compare_with="duckdb",
+    )
