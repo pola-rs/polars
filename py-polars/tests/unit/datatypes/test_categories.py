@@ -70,10 +70,28 @@ def test_local_categories_gc() -> None:
 def test_categories_lookup(cats: pl.Categories) -> None:
     vals = ["foo", "bar", None, "moo", "bar", "moo", "foo", None]
     df = pl.DataFrame({"x": vals}, schema={"x": pl.Categorical(cats)})
-    cat_vals = pl.Series("x", [cats[v] for v in vals], dtype=cats.physical())
+    # `cats[...]` rejects None, so nulls have to be guarded when mapping a
+    # nullable column through the lookup.
+    cat_vals = pl.Series(
+        "x", [None if v is None else cats[v] for v in vals], dtype=cats.physical()
+    )
     assert_series_equal(cat_vals, df["x"].cat.physical())
-    cat_strs = pl.Series("x", [cats[v] for v in cat_vals])
+    cat_strs = pl.Series("x", [None if v is None else cats[v] for v in cat_vals])
     assert_series_equal(cat_strs, df["x"].cast(pl.String))
+
+
+@pytest.mark.parametrize("cats", CATS)
+def test_categories_lookup_raises(cats: pl.Categories) -> None:
+    pl.DataFrame({"x": ["foo"]}, schema={"x": pl.Categorical(cats)})
+
+    with pytest.raises(KeyError):
+        cats["not-a-category"]
+
+    with pytest.raises(IndexError, match="category index out of range"):
+        cats[9999]
+
+    with pytest.raises(TypeError, match="expected str or int"):
+        cats[None]  # type: ignore[index]
 
 
 def test_concat_cat_mismatch() -> None:
