@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import pickle
+import re
 import subprocess
 import sys
 
@@ -84,13 +85,16 @@ def test_categories_lookup(cats: pl.Categories) -> None:
 def test_categories_lookup_raises(cats: pl.Categories) -> None:
     pl.DataFrame({"x": ["foo"]}, schema={"x": pl.Categorical(cats)})
 
-    with pytest.raises(KeyError):
+    msg = "'not-a-category'"
+    with pytest.raises(KeyError, match=re.escape(msg)):
         cats["not-a-category"]
 
-    with pytest.raises(IndexError, match="category index out of range"):
+    msg = "category index out of range: 9999"
+    with pytest.raises(IndexError, match=re.escape(msg)):
         cats[9999]
 
-    with pytest.raises(TypeError, match="expected str or int"):
+    msg = "invalid key type <class 'NoneType'>; expected str or int"
+    with pytest.raises(TypeError, match=re.escape(msg)):
         cats[None]  # type: ignore[index]
 
 
