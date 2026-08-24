@@ -437,7 +437,6 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
             Column or literal, ranging from 0-59.
         microsecond
             Column or literal, ranging from 0-999999.
-
         ambiguous
             Determine how to handle daylight savings time (DST)
             ambiguous datetimes (e.g., when the clock falls back and the

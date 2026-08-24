@@ -139,12 +139,10 @@ class StringNameSpace(_NamespaceSuggestMixin):
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
-
         ambiguous
             Determine how to handle daylight savings time (DST)
             ambiguous datetimes (e.g., when the clock falls back and the
-            same local time occurs twice). This does not apply to
-            unparsable or malformed date strings (use `strict=False` instead):
+            same local time occurs twice).
 
             - 'earliest': use the earliest datetime
             - 'latest': use the latest datetime
@@ -263,12 +261,10 @@ class StringNameSpace(_NamespaceSuggestMixin):
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
-
         ambiguous
             Determine how to handle daylight savings time (DST)
             ambiguous datetimes (e.g., when the clock falls back and the
-            same local time occurs twice). This does not apply to
-            unparsable or malformed date strings (use `strict=False` instead):
+            same local time occurs twice).
 
             - 'earliest': use the earliest datetime
             - 'latest': use the latest datetime
