@@ -58,9 +58,6 @@ from polars._utils.construction import (
     series_to_pydf,
 )
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import (
-    issue_deprecation_warning,
-)
 from polars._utils.expired import (
     RemovedParameter,
     RenamedParameter,
@@ -4741,7 +4738,6 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
-        overwrite_schema: bool | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
@@ -4753,18 +4749,25 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["merge"],
-        overwrite_schema: bool | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_merge_options: dict[str, Any],
     ) -> deltalake.table.TableMerger: ...
 
+    @removed_parameters(
+        RemovedParameter(
+            name="overwrite_schema",
+            deprecated_in="0.20.14",
+            removed_in="2.0",
+            hint="Use the `delta_write_options` parameter instead and pass"
+            ' `{"schema_mode": "overwrite"}`.',
+        ),
+    )
     def write_delta(
         self,
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
-        overwrite_schema: bool | None = None,
         storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -4788,12 +4791,6 @@ class DataFrame:
             - If 'ignore', will not write anything if table already exists.
             - If 'merge', return a `TableMerger` object to merge data from the DataFrame
               with the existing data.
-        overwrite_schema
-            If True, allows updating the schema of the table.
-
-            .. deprecated:: 0.20.14
-                Use the parameter `delta_write_options` instead and pass
-                `{"schema_mode": "overwrite"}`.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
@@ -4933,13 +4930,6 @@ class DataFrame:
         ...     .execute()
         ... )  # doctest: +SKIP
         """
-        if overwrite_schema is not None:
-            issue_deprecation_warning(
-                "the parameter `overwrite_schema` for `write_delta` is deprecated."
-                ' Use the parameter `delta_write_options` instead and pass `{"schema_mode": "overwrite"}`.',
-                version="0.20.14",
-            )
-
         from polars.io.delta._utils import (
             _check_for_unsupported_types,
             _check_if_delta_available,
@@ -5005,9 +4995,6 @@ class DataFrame:
         else:
             if delta_write_options is None:
                 delta_write_options = {}
-
-            if overwrite_schema:
-                delta_write_options["schema_mode"] = "overwrite"
 
             write_deltalake(
                 table_or_uri=target,
