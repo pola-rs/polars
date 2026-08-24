@@ -44,14 +44,6 @@ with contextlib.suppress(ImportError):
     )
 
 
-_REMOVED_RETRIES = RemovedParameter(
-    name="retries",
-    deprecated_in="1.37.1",
-    removed_in="2.0",
-    hint='Pass {"max_retries": n} via `storage_options` instead.',
-)
-
-
 class Catalog:
     """
     Unity catalog client.
@@ -186,7 +178,14 @@ class Catalog:
     ) -> tuple[dict[str, str] | None, dict[str, str], int]:
         return self._client.get_table_credentials(table_id=table_id, write=write)
 
-    @removed_parameters(_REMOVED_RETRIES)
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint='Pass {"max_retries": n} via `storage_options` instead.',
+        ),
+    )
     def scan_table(
         self,
         catalog_name: str,

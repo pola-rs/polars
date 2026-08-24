@@ -35,28 +35,6 @@ if TYPE_CHECKING:
     from polars.io.cloud import CredentialProviderFunction
 
 
-_REMOVED_FILE_CACHE_TTL = RemovedParameter(
-    name="file_cache_ttl",
-    deprecated_in="1.40.0",
-    removed_in="2.0",
-    hint="The file cache is no longer supported.",
-)
-
-_REMOVED_CACHE = RemovedParameter(
-    name="cache",
-    deprecated_in="1.40.0",
-    removed_in="2.0",
-    hint="The file cache is no longer supported.",
-)
-
-_REMOVED_RETRIES = RemovedParameter(
-    name="retries",
-    deprecated_in="1.37.1",
-    removed_in="2.0",
-    hint='Pass {"max_retries": n} via `storage_options` instead.',
-)
-
-
 @removed_parameters(
     RenamedParameter(
         name="row_count_name",
@@ -372,7 +350,26 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
         removed_in="2.0",
     ),
 )
-@removed_parameters(_REMOVED_RETRIES, _REMOVED_FILE_CACHE_TTL, _REMOVED_CACHE)
+@removed_parameters(
+    RemovedParameter(
+        name="retries",
+        deprecated_in="1.37.1",
+        removed_in="2.0",
+        hint='Pass {"max_retries": n} via `storage_options` instead.',
+    ),
+    RemovedParameter(
+        name="file_cache_ttl",
+        deprecated_in="1.40.0",
+        removed_in="2.0",
+        hint="The file cache is no longer supported.",
+    ),
+    RemovedParameter(
+        name="cache",
+        deprecated_in="1.40.0",
+        removed_in="2.0",
+        hint="The file cache is no longer supported.",
+    ),
+)
 def scan_ipc(
     source: (
         str
