@@ -9,10 +9,13 @@ import polars.selectors as cs
 from polars._dependencies import _check_for_numpy
 from polars._dependencies import numpy as np
 from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
-from polars._utils.expired import RemovedParameter, removed_parameters
+from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
+    removed_parameters,
+)
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
@@ -50,6 +53,14 @@ if TYPE_CHECKING:
     from polars.lazyframe.opt_flags import (
         QueryOptFlags,
     )
+
+
+_REMOVED_MIN_PERIODS = RenamedParameter(
+    name="min_periods",
+    new_name="min_samples",
+    deprecated_in="1.21.0",
+    removed_in="2.0",
+)
 
 
 def field(name: str | list[str]) -> Expr:
@@ -2516,7 +2527,7 @@ def from_epoch(
     raise ValueError(msg)
 
 
-@deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+@removed_parameters(_REMOVED_MIN_PERIODS)
 def rolling_cov(
     a: str | Expr,
     b: str | Expr,
@@ -2530,9 +2541,6 @@ def rolling_cov(
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
-
-    .. versionchanged:: 1.21.0
-        The `min_periods` parameter was renamed `min_samples`.
 
     Parameters
     ----------
@@ -2560,7 +2568,7 @@ def rolling_cov(
     )
 
 
-@deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+@removed_parameters(_REMOVED_MIN_PERIODS)
 def rolling_corr(
     a: str | Expr,
     b: str | Expr,
@@ -2574,9 +2582,6 @@ def rolling_corr(
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
-
-    .. versionchanged:: 1.21.0
-        The `min_periods` parameter was renamed `min_samples`.
 
     Parameters
     ----------

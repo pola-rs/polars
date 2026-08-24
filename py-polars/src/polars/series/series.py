@@ -190,6 +190,14 @@ class _Meta(type):
             )
 
 
+_REMOVED_MIN_PERIODS = RenamedParameter(
+    name="min_periods",
+    new_name="min_samples",
+    deprecated_in="1.21.0",
+    removed_in="2.0",
+)
+
+
 @expr_dispatch
 class Series(metaclass=_Meta):
     """
@@ -2855,7 +2863,7 @@ class Series(metaclass=_Meta):
         )
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def cumulative_eval(
         self, expr: Expr, *, min_samples: int = 1, parallel: bool = False
     ) -> Series:
@@ -2865,9 +2873,6 @@ class Series(metaclass=_Meta):
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6365,7 +6370,7 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_min(
         self,
         window_size: int,
@@ -6383,9 +6388,6 @@ class Series(metaclass=_Meta):
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6546,7 +6548,7 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_max(
         self,
         window_size: int,
@@ -6564,9 +6566,6 @@ class Series(metaclass=_Meta):
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6727,7 +6726,7 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_mean(
         self,
         window_size: int,
@@ -6745,9 +6744,6 @@ class Series(metaclass=_Meta):
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6908,7 +6904,7 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_sum(
         self,
         window_size: int,
@@ -6926,9 +6922,6 @@ class Series(metaclass=_Meta):
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7092,7 +7085,7 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_std(
         self,
         window_size: int,
@@ -7111,9 +7104,6 @@ class Series(metaclass=_Meta):
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7280,7 +7270,7 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_var(
         self,
         window_size: int,
@@ -7299,9 +7289,6 @@ class Series(metaclass=_Meta):
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7335,7 +7322,7 @@ class Series(metaclass=_Meta):
         """
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_map(
         self,
         function: Callable[[Series], Any],
@@ -7351,9 +7338,6 @@ class Series(metaclass=_Meta):
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7523,7 +7507,7 @@ class Series(metaclass=_Meta):
         """
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_median(
         self,
         window_size: int,
@@ -7541,9 +7525,6 @@ class Series(metaclass=_Meta):
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7711,7 +7692,7 @@ class Series(metaclass=_Meta):
         """  # noqa: W505
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_quantile(
         self,
         quantile: float,
@@ -7731,9 +7712,6 @@ class Series(metaclass=_Meta):
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -9016,7 +8994,7 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def ewm_mean(
         self,
         *,
@@ -9030,9 +9008,6 @@ class Series(metaclass=_Meta):
     ) -> Series:
         r"""
         Compute exponentially-weighted moving average.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -9298,7 +9273,7 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def ewm_std(
         self,
         *,
@@ -9313,9 +9288,6 @@ class Series(metaclass=_Meta):
     ) -> Series:
         r"""
         Compute exponentially-weighted moving standard deviation.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -9386,7 +9358,7 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def ewm_var(
         self,
         *,
@@ -9401,9 +9373,6 @@ class Series(metaclass=_Meta):
     ) -> Series:
         r"""
         Compute exponentially-weighted moving variance.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
