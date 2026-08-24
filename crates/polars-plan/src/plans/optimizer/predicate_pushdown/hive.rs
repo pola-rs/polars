@@ -182,7 +182,7 @@ pub fn rewrite_hive(
                 let mut hive_cols: Option<(usize, PlSmallStr, PlSmallStr)> = None;
                 let hive_left_schema = hive_left.schema();
                 let hive_right_schema = hive_right.schema();
-                for (l, r) in options.options.left_on().zip(options.options.right_on()) {
+                for (l, r) in options.options.key_pairs().unwrap_or_default() {
                     let l = expr_arena.get(l.node());
                     let r = expr_arena.get(r.node());
                     if let (AExpr::Column(l), AExpr::Column(r)) = (l, r) {
