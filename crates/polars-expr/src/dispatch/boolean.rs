@@ -146,14 +146,13 @@ fn is_between(s: &[Column], closed: polars_ops::series::ClosedInterval) -> Polar
 fn is_in(s: &mut [Column], nulls_equal: bool) -> PolarsResult<Column> {
     let left = &s[0];
     let other = &s[1];
-    // A scalar haystack repeats one list. At unit length `is_in` hashes it once
-    // instead of scanning a copy of it per row.
-    let needle = other.as_materialized_series_maintain_scalar();
+    // Don't blow up the haystack in case of scalar.
+    let haystack = other.as_materialized_series_maintain_scalar();
 
-    let out = polars_ops::prelude::is_in(left.as_materialized_series(), &needle, nulls_equal)?
+    let out = polars_ops::prelude::is_in(left.as_materialized_series(), &haystack, nulls_equal)?
         .into_column();
 
-    // Shrinking the haystack shrinks the result along with it.
+    // In case of scalar, broadcast back to original length
     out.broadcast_owned_to(broadcast_len([left, other])?)
 }
 

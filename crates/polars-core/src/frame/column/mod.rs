@@ -247,8 +247,7 @@ impl Column {
         }
     }
 
-    /// The backing [`Series`] if there already is one. Never materialises a
-    /// scalar column.
+    /// Get the [`ScalarColumn`] as [`Series`] if it was already materialized.
     #[inline]
     pub fn lazy_as_materialized_series(&self) -> Option<&Series> {
         match self {
@@ -1885,7 +1884,7 @@ impl Column {
     pub fn n_chunks(&self) -> usize {
         match self {
             Column::Series(s) => s.n_chunks(),
-            Column::Scalar(s) => s.lazy_as_materialized_series().map_or(1, |x| x.n_chunks()),
+            Column::Scalar(s) => 1,
         }
     }
 

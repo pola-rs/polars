@@ -442,6 +442,8 @@ impl PhysicalExpr for ApplyExpr {
             self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
 
+        // If the function is elementwise and all columns are scalar
+        // we can only evaluate once and then broadcast.
         let constant_len = if self.flags.is_elementwise() {
             constant_broadcast_len(&inputs)
         } else {
@@ -638,9 +640,6 @@ impl PhysicalExpr for ApplyExpr {
     }
 }
 
-/// The length to broadcast to when every input repeats one value across its rows,
-/// so an elementwise function only has to be evaluated on the first row. `None`
-/// when an input varies per row, or when the length is already 1.
 fn constant_broadcast_len(inputs: &[Column]) -> Option<usize> {
     let len = inputs.iter().map(|c| c.len()).max()?;
     if len == 1 {
