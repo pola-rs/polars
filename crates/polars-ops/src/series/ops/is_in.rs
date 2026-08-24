@@ -672,7 +672,7 @@ pub fn is_in(
         #[cfg(feature = "dtype-categorical")]
         dt @ DataType::Categorical(_, _) | dt @ DataType::Enum(_, _) => {
             with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
-                is_in_cat_and_enum(s.cat::<$C>().unwrap(), other, nulls_equal)
+                is_in_cat_and_enum(needle.cat::<$C>().unwrap(), haystack, nulls_equal)
             })
         },
         DataType::String => {

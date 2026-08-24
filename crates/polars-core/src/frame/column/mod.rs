@@ -1884,7 +1884,7 @@ impl Column {
     pub fn n_chunks(&self) -> usize {
         match self {
             Column::Series(s) => s.n_chunks(),
-            Column::Scalar(s) => 1,
+            Column::Scalar(_s) => 1,
         }
     }
 
