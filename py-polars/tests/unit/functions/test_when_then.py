@@ -819,3 +819,14 @@ def test_when_then_in_group_by_aggregated_22922() -> None:
     )
     expected = pl.DataFrame({"group": ["x", "y"], "expr": [3, None]})
     assert_frame_equal(out, expected)
+
+
+def test_when_then_nested_null_28941() -> None:
+    df = pl.DataFrame({"a": [None, 1.0], "b": [True, True]})
+    out = df.select(
+        pl.when(pl.col("a") >= 0)
+        .then(pl.col("a"))
+        .otherwise(pl.when(pl.col("b")).then(-2.0).otherwise(-1.0))
+    )
+    expected = pl.DataFrame({"a": [-2.0, 1.0]})
+    assert_frame_equal(out, expected)

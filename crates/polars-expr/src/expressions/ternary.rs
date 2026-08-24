@@ -120,13 +120,20 @@ impl PhysicalExpr for TernaryExpr {
         // Nulls count as false.
         let true_count = mask.num_trues();
         let false_count = mask.len() - true_count;
+        
+        let mask_bitmap = {
+            let arr = mask.downcast_as_array();
+            match arr.validity() {
+                Some(validity) => arr.values() & validity,
+                None => arr.values().clone(),
+            }
+        };
 
         let op_truthy = || {
             let mut mask_df = df.clone();
             if !self.truthy_mask_columns.is_empty() && false_count != 0 {
-                let mask = mask.downcast_as_array().values();
                 for c in &self.truthy_mask_columns {
-                    mask_df.with_column(df.column(c).unwrap().mask(mask))?;
+                    mask_df.with_column(df.column(c).unwrap().mask(&mask_bitmap))?;
                 }
             }
             self.truthy.evaluate(&mask_df, &state)
@@ -134,9 +141,8 @@ impl PhysicalExpr for TernaryExpr {
         let op_falsy = || {
             let mut mask_df = df.clone();
             if !self.falsy_mask_columns.is_empty() && true_count != 0 {
-                let mask = !mask.downcast_as_array().values();
                 for c in &self.falsy_mask_columns {
-                    mask_df.with_column(df.column(c).unwrap().mask(&mask))?;
+                    mask_df.with_column(df.column(c).unwrap().mask(&!&mask_bitmap))?;
                 }
             }
             self.falsy.evaluate(&mask_df, &state)
