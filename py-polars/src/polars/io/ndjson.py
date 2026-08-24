@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Literal
 
 from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
+from polars._utils.expired import RenamedParameter, removed_parameters
 from polars._utils.various import is_path_or_str_sequence, normalize_filepath
 from polars._utils.wrap import wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
@@ -183,8 +183,20 @@ def read_ndjson(
     )._collect_eager()
 
 
-@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
-@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@removed_parameters(
+    RenamedParameter(
+        name="row_count_name",
+        new_name="row_index_name",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RenamedParameter(
+        name="row_count_offset",
+        new_name="row_index_offset",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+)
 def scan_ndjson(
     source: (
         str
