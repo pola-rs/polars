@@ -34,7 +34,7 @@ use crate::sql_visitors::{
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
     expr_refers_to_table, sql_expr_cols_all_in_schema,
 };
-use crate::subquery::{LowerScope, SubqueryBindings};
+use crate::subquery::{LowerScope, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
 use crate::types::map_sql_dtype_to_polars;
 
@@ -220,6 +220,9 @@ pub struct SQLContext {
 
     cte_map: PlHashMap<String, LazyFrame>,
     table_aliases: PlHashMap<String, String>,
+    /// Relations the current `FROM` declares, which are the only ones a
+    /// qualified column may name.
+    active_relations: PlHashSet<String>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
 }
@@ -231,6 +234,7 @@ impl Default for SQLContext {
             table_map: Default::default(),
             cte_map: Default::default(),
             table_aliases: Default::default(),
+            active_relations: Default::default(),
             joined_aliases: Default::default(),
             named_windows: Default::default(),
             lp_arena: Default::default(),
@@ -307,14 +311,16 @@ impl SQLContext {
             ..Default::default()
         });
 
-        let ast = parser
+        let mut ast = parser
             .try_with_sql(query)
             .map_err(to_sql_interface_err)?
             .parse_statements()
             .map_err(to_sql_interface_err)?;
 
         polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
-        let res = self.execute_statement(ast.first().unwrap())?;
+        let stmt = ast.first_mut().unwrap();
+        desugar_quantified_subqueries(stmt);
+        let res = self.execute_statement(stmt)?;
 
         // Ensure the result uses the proper arenas.
         // This will instantiate new arenas with a new version.
@@ -398,6 +404,12 @@ impl SQLContext {
 
     pub(crate) fn get_frame_schema(&mut self, frame: &mut LazyFrame) -> PolarsResult<SchemaRef> {
         frame.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
+    }
+
+    /// Whether `name` may be used as a table qualifier. Nothing is known before
+    /// a `FROM` is processed, so anything is allowed until then.
+    pub(super) fn relation_in_scope(&self, name: &str) -> bool {
+        self.active_relations.is_empty() || self.active_relations.contains(name)
     }
 
     pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
@@ -1437,10 +1449,14 @@ impl SQLContext {
         // Get `FROM` table/data
         let mut implicit_join_filter: Option<SQLExpr> = None;
         let (mut lf, base_table_name) = if select_stmt.from.is_empty() {
+            self.active_relations.clear();
             (DataFrame::new(1, vec![])?.lazy(), None)
         } else {
             let from = &select_stmt.from;
             let first = from.first().unwrap();
+            // Set before the relations are resolved, so a join constraint
+            // resolves against them.
+            self.active_relations = declared_relations(from);
             let mut lf = self.execute_from_statement(first)?;
             let base_name = get_table_name(&first.relation);
             if from.len() > 1 {
@@ -1535,7 +1551,7 @@ impl SQLContext {
                     lf,
                     &schema,
                     e,
-                    LowerScope::ScalarAndExists,
+                    LowerScope::ScalarAndPredicates,
                     &mut bindings,
                 )?;
                 if let Cow::Owned(lowered) = lowered {
@@ -1555,7 +1571,7 @@ impl SQLContext {
                     lf,
                     &schema,
                     having,
-                    LowerScope::ScalarAndExists,
+                    LowerScope::ScalarAndPredicates,
                     &mut bindings,
                 )?;
                 changed |= matches!(lowered, Cow::Owned(_));
@@ -1822,12 +1838,15 @@ impl SQLContext {
                     // the output height. We do this by projecting independently and then joining
                     // back the original frame on the row index.
                     const NAME: PlSmallStr = PlSmallStr::from_static("__PL_INDEX");
-                    lf = lf
+                    // The row index pairs the two sides, so both must read one
+                    // materialisation of the frame.
+                    let cached = lf.cache();
+                    lf = cached
                         .clone()
                         .select(projections)
                         .with_row_index(NAME, None)
                         .join(
-                            lf.with_row_index(NAME, None),
+                            cached.with_row_index(NAME, None),
                             [col(NAME)],
                             [col(NAME)],
                             JoinArgs {
@@ -2086,7 +2105,7 @@ impl SQLContext {
                     lf,
                     &exists_schema,
                     e,
-                    LowerScope::ScalarAndExists,
+                    LowerScope::ScalarAndPredicates,
                     &mut bindings,
                 )?;
                 lowered_residuals.push(lowered);
@@ -2680,7 +2699,7 @@ impl SQLContext {
                     lf,
                     &schema,
                     &ob.expr,
-                    LowerScope::ScalarAndExists,
+                    LowerScope::ScalarAndPredicates,
                     &mut bindings,
                 )?;
 
@@ -3195,6 +3214,29 @@ pub(crate) fn is_correlated_result_col(name: &str) -> bool {
 }
 
 /// Extract the table name (or alias) from a TableFactor.
+/// A nested join is flattened rather than bound to its alias, so its own
+/// relations are declared too.
+fn declared_relations(from: &[TableWithJoins]) -> PlHashSet<String> {
+    fn walk(tbl: &TableWithJoins, names: &mut PlHashSet<String>) {
+        let factors = std::iter::once(&tbl.relation).chain(tbl.joins.iter().map(|j| &j.relation));
+        for factor in factors {
+            names.extend(get_table_name(factor));
+            if let TableFactor::NestedJoin {
+                table_with_joins, ..
+            } = factor
+            {
+                walk(table_with_joins, names);
+            }
+        }
+    }
+
+    let mut names = PlHashSet::new();
+    for tbl in from {
+        walk(tbl, &mut names);
+    }
+    names
+}
+
 pub(crate) fn get_table_name(factor: &TableFactor) -> Option<String> {
     match factor {
         TableFactor::Table { name, alias, .. } => {

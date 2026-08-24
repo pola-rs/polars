@@ -340,13 +340,18 @@ pub(crate) fn expr_references_any_column(expr: &SQLExpr) -> bool {
     expr.visit(&mut ColumnRefFinder).is_break()
 }
 
+/// Whether this expression node is itself a subquery, in any of its forms.
+pub(crate) fn is_subquery_expr(expr: &SQLExpr) -> bool {
+    matches!(
+        expr,
+        SQLExpr::Subquery(_) | SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. }
+    )
+}
+
 /// Check if a SQL expression contains a subquery, in any of its forms.
 pub(crate) fn expr_contains_subquery(expr: &SQLExpr) -> bool {
     visit_expressions(expr, |e| {
-        if matches!(
-            e,
-            SQLExpr::Subquery(_) | SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. }
-        ) {
+        if is_subquery_expr(e) {
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())

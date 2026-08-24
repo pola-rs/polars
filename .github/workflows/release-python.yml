@@ -345,7 +345,6 @@ jobs:
           target: ${{ matrix.target }}
           args: >
             --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
-            --features numa
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --out dist
           manylinux: auto
