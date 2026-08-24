@@ -1884,7 +1884,9 @@ impl Column {
     pub fn n_chunks(&self) -> usize {
         match self {
             Column::Series(s) => s.n_chunks(),
-            Column::Scalar(_s) => 1,
+            // A materialized scalar column can hold more than one chunk, and those
+            // chunks still have to take part in alignment.
+            Column::Scalar(s) => s.lazy_as_materialized_series().map_or(1, |x| x.n_chunks()),
         }
     }
 
