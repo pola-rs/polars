@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.wrap import wrap_ldf
-from polars.io.cloud._utils import NoPickleOption
+from polars.io.cloud._utils import NoPickleOption, POLARS_STORAGE_CONFIG_KEYS
 from polars.io.delta._dataset import DeltaDataset
 
 if TYPE_CHECKING:
@@ -345,8 +345,22 @@ def scan_delta(
     if table is not None and (
         table._storage_options is not None or storage_options is not None
     ):
+        # delta-rs requires all storage-option values to be strings, but polars
+        # parses the keys below as typed values. Convert string values coming
+        # from a DeltaTable back into the expected types so the table can be
+        # re-scanned with polars.
+        table_storage_options = dict(table._storage_options or {})
+        for key in POLARS_STORAGE_CONFIG_KEYS:
+            value = table_storage_options.get(key)
+            if isinstance(value, str):
+                try:
+                    table_storage_options[key] = (
+                        float(value) if key == "retry_base_multiplier" else int(value)
+                    )
+                except ValueError:
+                    pass  # keep the original string; polars raises a clear error
         storage_options = {
-            **(table._storage_options or {}),
+            **table_storage_options,
             **(storage_options or {}),
         }
 
