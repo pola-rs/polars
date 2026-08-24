@@ -48,9 +48,6 @@ from polars._utils.convert import (
     time_to_int,
     timedelta_to_int,
 )
-from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
-)
 from polars._utils.expired import (
     RemovedParameter,
     RenamedParameter,
@@ -4982,15 +4979,19 @@ class Series(metaclass=_Meta):
         # tensor.rename(self.name)
         return tensor
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        ),
+    )
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Array:
         """
         Return the underlying Arrow array.
 
         If the Series contains only a single chunk this operation is zero copy.
-
-        .. versionchanged:: 1.24
-            The `future` parameter was renamed `compat_level`.
 
         Parameters
         ----------
