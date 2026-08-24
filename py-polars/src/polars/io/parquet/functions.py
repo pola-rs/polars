@@ -48,14 +48,6 @@ if TYPE_CHECKING:
     from polars.io.scan_options import ScanCastOptions
 
 
-_REMOVED_RETRIES = RemovedParameter(
-    name="retries",
-    deprecated_in="1.37.1",
-    removed_in="2.0",
-    hint='Pass {"max_retries": n} via `storage_options` instead.',
-)
-
-
 @removed_parameters(
     RenamedParameter(
         name="row_count_name",
@@ -70,7 +62,14 @@ _REMOVED_RETRIES = RemovedParameter(
         removed_in="2.0",
     ),
 )
-@removed_parameters(_REMOVED_RETRIES)
+@removed_parameters(
+    RemovedParameter(
+        name="retries",
+        deprecated_in="1.37.1",
+        removed_in="2.0",
+        hint='Pass {"max_retries": n} via `storage_options` instead.',
+    ),
+)
 def read_parquet(
     source: FileSource,
     *,
@@ -384,7 +383,14 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     return scan_parquet(source).collect_schema()
 
 
-@removed_parameters(_REMOVED_RETRIES)
+@removed_parameters(
+    RemovedParameter(
+        name="retries",
+        deprecated_in="1.37.1",
+        removed_in="2.0",
+        hint='Pass {"max_retries": n} via `storage_options` instead.',
+    ),
+)
 def read_parquet_metadata(
     source: str | Path | IO[bytes] | bytes,
     storage_options: StorageOptionsDict | None = None,
@@ -461,7 +467,14 @@ def read_parquet_metadata(
         removed_in="2.0",
     ),
 )
-@removed_parameters(_REMOVED_RETRIES)
+@removed_parameters(
+    RemovedParameter(
+        name="retries",
+        deprecated_in="1.37.1",
+        removed_in="2.0",
+        hint='Pass {"max_retries": n} via `storage_options` instead.',
+    ),
+)
 def scan_parquet(
     source: FileSource,
     *,

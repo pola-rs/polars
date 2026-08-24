@@ -55,14 +55,6 @@ if TYPE_CHECKING:
     )
 
 
-_REMOVED_MIN_PERIODS = RenamedParameter(
-    name="min_periods",
-    new_name="min_samples",
-    deprecated_in="1.21.0",
-    removed_in="2.0",
-)
-
-
 def field(name: str | list[str]) -> Expr:
     """
     Select a field in the current `struct.with_fields` scope.
@@ -2527,7 +2519,14 @@ def from_epoch(
     raise ValueError(msg)
 
 
-@removed_parameters(_REMOVED_MIN_PERIODS)
+@removed_parameters(
+    RenamedParameter(
+        name="min_periods",
+        new_name="min_samples",
+        deprecated_in="1.21.0",
+        removed_in="2.0",
+    ),
+)
 def rolling_cov(
     a: str | Expr,
     b: str | Expr,
@@ -2568,7 +2567,14 @@ def rolling_cov(
     )
 
 
-@removed_parameters(_REMOVED_MIN_PERIODS)
+@removed_parameters(
+    RenamedParameter(
+        name="min_periods",
+        new_name="min_samples",
+        deprecated_in="1.21.0",
+        removed_in="2.0",
+    ),
+)
 def rolling_corr(
     a: str | Expr,
     b: str | Expr,
