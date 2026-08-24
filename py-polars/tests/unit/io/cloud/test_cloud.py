@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import subprocess
 import sys
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
 from polars.io.cloud._utils import _is_aws_cloud
 
 if TYPE_CHECKING:
@@ -200,3 +202,22 @@ pl.scan_csv("hf://...").collect()
         raise AssertionError
 
     assert b"Bearer of news" in capture
+
+
+@pytest.mark.parametrize(
+    "func",
+    [
+        pl.read_parquet,
+        pl.read_parquet_metadata,
+        pl.scan_parquet,
+        pl.scan_ipc,
+        pl.read_ndjson,
+        pl.scan_ndjson,
+    ],
+)
+def test_retries_removed(func: Any) -> None:
+    msg = "the argument 'retries'"
+    hint = 'Pass {"max_retries": n} via `storage_options` instead.'
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)) as exc:
+        func("s3://.../...", retries=3)
+    assert hint in str(exc.value)

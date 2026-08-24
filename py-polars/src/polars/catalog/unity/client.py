@@ -7,7 +7,7 @@ import os
 import sys
 from typing import TYPE_CHECKING, Any, Literal
 
-from polars._utils.deprecation import issue_deprecation_warning
+from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
 from polars.catalog.unity.models import (
@@ -42,6 +42,14 @@ with contextlib.suppress(ImportError):
         table_info_cls=TableInfo,
         column_info_cls=ColumnInfo,
     )
+
+
+_REMOVED_RETRIES = RemovedParameter(
+    name="retries",
+    deprecated_in="1.37.1",
+    removed_in="2.0",
+    hint='Pass {"max_retries": n} via `storage_options` instead.',
+)
 
 
 class Catalog:
@@ -178,6 +186,7 @@ class Catalog:
     ) -> tuple[dict[str, str] | None, dict[str, str], int]:
         return self._client.get_table_credentials(table_id=table_id, write=write)
 
+    @removed_parameters(_REMOVED_RETRIES)
     def scan_table(
         self,
         catalog_name: str,
@@ -190,7 +199,6 @@ class Catalog:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> LazyFrame:
         """
         Retrieve the metadata of the specified table.
@@ -233,23 +241,12 @@ class Catalog:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
 
         """
         table_info = self.get_table_info(catalog_name, namespace, table_name)
         storage_location, data_source_format = _extract_location_and_data_format(
             table_info, "scan table"
         )
-
-        if retries is not None:
-            msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-            issue_deprecation_warning(msg)
-            storage_options = storage_options or {}
-            storage_options["max_retries"] = retries
 
         credential_provider, storage_options = self._init_credentials(  # type: ignore[assignment]
             credential_provider,
