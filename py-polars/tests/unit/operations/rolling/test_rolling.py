@@ -2456,18 +2456,73 @@ def test_rolling_rank_min_samples_28102() -> None:
     )
 
 
-def test_rolling_min_periods_removed() -> None:
+# Every callable carrying the `min_periods` -> `min_samples` removal, paired with
+# a call that trips it. `test_min_periods_removed_covers_every_site` keeps this in
+# sync with the decorators themselves.
+_MIN_PERIODS_CALLS: dict[str, Callable[[pl.Series], object]] = {
+    "Series.cumulative_eval": lambda s: s.cumulative_eval(
+        pl.element().sum(),
+        min_periods=1,  # type: ignore[call-arg]
+    ),
+    "Series.ewm_mean": lambda s: s.ewm_mean(com=1, min_periods=1),  # type: ignore[call-arg]
+    "Series.ewm_std": lambda s: s.ewm_std(com=1, min_periods=1),  # type: ignore[call-arg]
+    "Series.ewm_var": lambda s: s.ewm_var(com=1, min_periods=1),  # type: ignore[call-arg]
+    "Series.rolling_map": lambda s: s.rolling_map(
+        lambda x: x.sum(),
+        2,
+        min_periods=1,  # type: ignore[call-arg]
+    ),
+    "Series.rolling_max": lambda s: s.rolling_max(2, min_periods=1),  # type: ignore[call-arg]
+    "Series.rolling_mean": lambda s: s.rolling_mean(2, min_periods=1),  # type: ignore[call-arg]
+    "Series.rolling_median": lambda s: s.rolling_median(2, min_periods=1),  # type: ignore[call-arg]
+    "Series.rolling_min": lambda s: s.rolling_min(2, min_periods=1),  # type: ignore[call-arg]
+    "Series.rolling_quantile": lambda s: s.rolling_quantile(
+        0.5,
+        window_size=2,
+        min_periods=1,  # type: ignore[call-arg]
+    ),
+    "Series.rolling_std": lambda s: s.rolling_std(2, min_periods=1),  # type: ignore[call-arg]
+    "Series.rolling_sum": lambda s: s.rolling_sum(2, min_periods=1),  # type: ignore[call-arg]
+    "Series.rolling_var": lambda s: s.rolling_var(2, min_periods=1),  # type: ignore[call-arg]
+    "rolling_corr": lambda _s: pl.rolling_corr(
+        "a",
+        "b",
+        window_size=2,
+        min_periods=1,  # type: ignore[call-arg]
+    ),
+    "rolling_cov": lambda _s: pl.rolling_cov(
+        "a",
+        "b",
+        window_size=2,
+        min_periods=1,  # type: ignore[call-arg]
+    ),
+}
+
+
+def _min_periods_sites() -> set[str]:
+    """Names of every callable that still carries the `min_periods` removal."""
+    found = set()
+    for owner, prefix in ((pl.Series, "Series."), (pl, "")):
+        for name in dir(owner):
+            try:
+                obj = getattr(owner, name)
+            except AttributeError:
+                continue
+            params = getattr(obj, "__removed_parameters__", ())
+            if isinstance(params, tuple) and any(
+                getattr(p, "name", None) == "min_periods" for p in params
+            ):
+                found.add(prefix + name)
+    return found
+
+
+@pytest.mark.parametrize("name", list(_MIN_PERIODS_CALLS))
+def test_min_periods_removed(name: str) -> None:
+    s = pl.Series("a", [1.0, 2.0, 3.0])
     msg = "It was renamed to 'min_samples'."
-    s = pl.Series("a", [1, 2, 3])
-
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
-        s.rolling_mean(window_size=2, min_periods=1)  # type: ignore[call-arg]
+        _MIN_PERIODS_CALLS[name](s)
 
-    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
-        s.cumulative_eval(pl.element().sum(), min_periods=1)  # type: ignore[call-arg]
 
-    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
-        pl.rolling_cov("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]
-
-    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
-        pl.rolling_corr("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]
+def test_min_periods_removed_covers_every_site() -> None:
+    assert _min_periods_sites() == set(_MIN_PERIODS_CALLS)
