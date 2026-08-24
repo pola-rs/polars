@@ -21,7 +21,7 @@ use sqlparser::ast::{
 use crate::SQLContext;
 use crate::context::{CORRELATED_COL_PREFIX, FilterMode, get_table_name};
 use crate::sql_expr::{parse_sql_expr, sql_in_membership};
-use crate::sql_visitors::expr_contains_subquery;
+use crate::sql_visitors::{expr_contains_subquery, is_subquery_expr};
 
 impl SQLContext {
     // Entry point: offer each WHERE conjunct to the rewrite, returning the
@@ -274,15 +274,9 @@ impl SQLContext {
             return Ok(None);
         };
 
-        let left_key = parse_sql_expr(lhs, self, Some(outer_schema))?
-            .meta()
-            .undo_aliases();
-        if has_expr(&left_key, |e| matches!(e, Expr::SubPlan(_, _)))
-            || !expr_to_leaf_column_names_iter(&left_key)
-                .all(|name| outer_schema.contains(name.as_str()))
-        {
+        let Some(left_key) = self.try_parse_outer_only_expr(lhs, outer_schema)? else {
             return Ok(None);
-        }
+        };
 
         let mut ctx = self.isolated();
         let Some((inner_names, inner_lf, inner_schema)) =
@@ -417,6 +411,26 @@ impl SQLContext {
             right_on,
             local_filters,
         }))
+    }
+
+    // Parse an outer-query expression, or `None` if it doesn't stand on the outer
+    // relation alone: an unlowered subquery, or a column the outer frame lacks.
+    // Any alias is cosmetic here and stripped.
+    fn try_parse_outer_only_expr(
+        &mut self,
+        sql_expr: &SQLExpr,
+        outer_schema: &Schema,
+    ) -> PolarsResult<Option<Expr>> {
+        let expr = parse_sql_expr(sql_expr, self, Some(outer_schema))?
+            .meta()
+            .undo_aliases();
+        if has_expr(&expr, |e| matches!(e, Expr::SubPlan(_, _)))
+            || !expr_to_leaf_column_names_iter(&expr)
+                .all(|name| outer_schema.contains(name.as_str()))
+        {
+            return Ok(None);
+        }
+        Ok(Some(expr))
     }
 
     // Parse a subquery expression as one over the inner relation only, or `None`
@@ -633,15 +647,9 @@ impl SQLContext {
             return Ok(None);
         };
 
-        let needle = parse_sql_expr(lhs, self, Some(outer_schema))?
-            .meta()
-            .undo_aliases();
-        if has_expr(&needle, |e| matches!(e, Expr::SubPlan(_, _)))
-            || !expr_to_leaf_column_names_iter(&needle)
-                .all(|name| outer_schema.contains(name.as_str()))
-        {
+        let Some(needle) = self.try_parse_outer_only_expr(lhs, outer_schema)? else {
             return Ok(None);
-        }
+        };
 
         let mut ctx = self.isolated();
         let Some((inner_names, inner_lf, inner_schema)) =
@@ -1050,12 +1058,10 @@ fn binds_to_inner_relation(
     inner_names: &PlHashSet<String>,
     inner_schema: &Schema,
 ) -> bool {
-    // A nested subquery is its own scope, which this cannot resolve against.
-    if expr_contains_subquery(expr) {
-        return false;
-    }
     visit_expressions(expr, |e| {
         let resolves = match e {
+            // A nested subquery is its own scope, which this cannot resolve against.
+            _ if is_subquery_expr(e) => false,
             SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_) => qualifier_and_name(e)
                 .is_some_and(|(qualifier, name)| {
                     qualifier.is_none_or(|q| inner_names.contains(q)) && inner_schema.contains(name)
