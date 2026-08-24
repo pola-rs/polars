@@ -770,3 +770,33 @@ def test_qualifier_naming_a_declared_relation(query: str) -> None:
         query=query,
         compare_with="duckdb",
     )
+
+
+def _scalar_subquery_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "t1": pl.DataFrame({"k": [1, 2], "v": [10, 20]}),
+        "t2": pl.DataFrame({"b": [1, 2], "a": [100, 200]}),
+        "foo": pl.DataFrame({"a": [7, 7, 7]}),
+    }
+
+
+@pytest.mark.parametrize("aggregate", ["SUM(x.a)", "SUM(a)", "COUNT(*)", "MAX(x.a)"])
+def test_correlated_scalar_subquery_aggregate(aggregate: str) -> None:
+    assert_sql_matches(
+        frames=_scalar_subquery_frames(),
+        query=(
+            f"SELECT k, (SELECT {aggregate} FROM t2 x WHERE x.b = t1.k) AS s"
+            f" FROM t1 ORDER BY k"
+        ),
+        compare_with="duckdb",
+    )
+
+
+def test_correlated_scalar_subquery_rejects_foreign_qualifier() -> None:
+    # `foo` is registered but is not a relation of the subquery, so its column
+    # must not be read as one of the subquery's own.
+    ctx = pl.SQLContext(frames=_scalar_subquery_frames())
+    with pytest.raises(SQLInterfaceError, match="no table or struct column named"):
+        ctx.execute(
+            "SELECT k, (SELECT SUM(foo.a) FROM t2 x WHERE x.b = t1.k) AS s FROM t1"
+        ).collect()
