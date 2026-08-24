@@ -856,8 +856,16 @@ def test_append_no_upcast_27345() -> None:
 
 @pytest.mark.parametrize(
     ("name", "match"),
+    [("from_json", "use `Expr.deserialize` instead")],
+)
+def test_expr_removed_classmethods(name: str, match: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(pl.Expr, name)
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
     [
-        ("from_json", "use `Expr.deserialize` instead"),
         (
             "rechunk",
             "rechunking within a query is not well-defined. "
