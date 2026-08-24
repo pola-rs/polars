@@ -1289,3 +1289,32 @@ def test_predicate_pushdown_with_cse_sink_cross_filter_28287(
     lf.sink_parquet(f, engine=engine)  # type: ignore[call-overload]
     f.seek(0)
     assert_frame_equal(pl.read_parquet(f), pl.DataFrame({"x": 2, "y": 20}))
+
+
+def test_streaming_engine_fused_filter_drop() -> None:
+    q = (
+        pl.LazyFrame({"x": [0, 1], "y": [False, True], "z": "Z"})
+        .filter("y")
+        .select("x", "z")
+    )
+
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert phys_plan.index("project 2 / 3") > phys_plan.index("filter")
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 1, "z": "Z"}))
+
+
+def test_projection_pushdown_select_prune_expr_28729() -> None:
+    q = (
+        pl.LazyFrame({"x": [0, 1, 2]})
+        .join(
+            pl.LazyFrame({"x": [1, 1]}).select(pl.min("x").alias("x_rhs_sum")),
+            how="cross",
+        )
+        .select("x")
+    )
+
+    assert_frame_equal(
+        q.collect().sort("x"),
+        pl.DataFrame({"x": [0, 1, 2]}),
+    )

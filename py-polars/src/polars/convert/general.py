@@ -21,9 +21,10 @@ from polars._utils.construction.dataframe import (
     sequence_to_pydf,
 )
 from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyseries
-from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
+from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
+    removed_parameters,
 )
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.various import (
@@ -31,7 +32,6 @@ from polars._utils.various import (
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_df, wrap_s
-from polars._warnings import issue_warning
 from polars.datatypes import N_INFER_DEFAULT, Categorical, String
 from polars.exceptions import NoDataError
 
@@ -49,7 +49,6 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
     )
-    from polars.interchange.protocol import SupportsInterchange
 
 
 def from_dict(
@@ -808,13 +807,17 @@ def _extract_table(data: str) -> tuple[str, TableRepr] | None:
     return None
 
 
-@deprecate_renamed_parameter("tbl", "data", version="0.20.17")
+@removed_parameters(
+    RenamedParameter(
+        name="tbl",
+        new_name="data",
+        deprecated_in="0.20.17",
+        removed_in="2.0",
+    ),
+)
 def from_repr(data: str) -> DataFrame | Series:
     """
     Construct a Polars DataFrame or Series from its string representation.
-
-    .. versionchanged:: 0.20.17
-        The `tbl` parameter was renamed to `data`.
 
     Parameters
     ----------
@@ -1107,19 +1110,21 @@ def _from_series_repr(m: re.Match[str]) -> Series:
         ).to_series()
 
 
+@removed_parameters(
+    RemovedParameter(name="allow_copy", deprecated_in="1.23.0", removed_in="2.0.0")
+)
 def from_dataframe(
-    df: SupportsInterchange | ArrowArrayExportable | ArrowStreamExportable,
+    df: ArrowArrayExportable | ArrowStreamExportable,
     *,
-    allow_copy: bool | None = None,
     rechunk: bool = True,
 ) -> DataFrame:
     """
     Build a Polars DataFrame from any dataframe supporting the PyCapsule Interface.
 
-    .. versionchanged:: 1.23.0
+    .. versionchanged:: 2.0
 
-       `from_dataframe` uses the PyCapsule Interface instead of the Dataframe
-       Interchange Protocol for conversion, only using the latter as a fallback.
+        `from_dataframe` used to fall back to the Interchange Protocol, but this
+        functionality has been removed.
 
     Parameters
     ----------
@@ -1129,8 +1134,8 @@ def from_dataframe(
         Allow memory to be copied to perform the conversion. If set to False, may cause
         conversions that are not zero-copy to fail.
 
-        .. deprecated: 1.23.0
-            `allow_copy` is deprecated and will be removed in a future version.
+        .. versionchanged:: 2.0
+            `allow_copy` was removed
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
 
@@ -1138,10 +1143,8 @@ def from_dataframe(
     -----
     - Details on the PyCapsule Interface:
       https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html.
-    - Details on the Python dataframe interchange protocol:
-      https://data-apis.org/dataframe-protocol/latest/index.html.
       Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is
-      a more efficient method of conversion.
+      a more efficient method of conversion and is recommended when possible.
 
     Examples
     --------
@@ -1160,25 +1163,8 @@ def from_dataframe(
     │ 2   ┆ 4.0 ┆ y   │
     └─────┴─────┴─────┘
     """
-    if allow_copy is not None:
-        issue_deprecation_warning(
-            "`allow_copy` is deprecated and will be removed in a future version.",
-            version="1.23",
-        )
-    else:
-        allow_copy = True
-    if is_pycapsule(df):
-        try:
-            return pycapsule_to_frame(df, rechunk=rechunk)
-        except Exception as exc:
-            issue_warning(
-                f"Failed to convert dataframe using PyCapsule Interface with exception: {exc!r}.\n"
-                "Falling back to Dataframe Interchange Protocol, which is known to be less robust.",
-                UserWarning,
-            )
-    from polars.interchange.from_dataframe import from_dataframe
+    if not is_pycapsule(df):
+        msg = f"expected object supporting the PyCapsule Interface, got {qualified_type_name(df)!r}"
+        raise TypeError(msg)
 
-    result = from_dataframe(df, allow_copy=allow_copy)  # type: ignore[arg-type]
-    if rechunk:
-        return result.rechunk()
-    return result
+    return pycapsule_to_frame(df, rechunk=rechunk)

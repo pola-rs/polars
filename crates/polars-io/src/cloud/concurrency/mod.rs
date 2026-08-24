@@ -19,7 +19,7 @@ mod admission;
 mod model;
 mod regime;
 
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -35,6 +35,7 @@ pub use regime::{Regime, RegimeState};
 const SAMPLE_QUEUE_CAPACITY: usize = 8192;
 
 use crate::cloud::concurrency_config::get_random_access_chunk_size;
+use crate::cloud::http_rate_limit::PacingBudget;
 
 #[derive(Clone, Copy, Debug)]
 pub struct IoSample {
@@ -55,7 +56,9 @@ pub struct ControllerConfig {
     // Lower limit for the byte-based budget - needed to avoid deadlock.
     floor_byte_budget: u64,
     // Count-based request budget.
-    request_budget: u32,
+    request_budget: u64,
+    // Lower limit for the count-based budget.
+    floor_request_budget: u64,
     // Controller regime update frequency.
     control_interval: Duration,
     // Total budget only resizes if the relative changes exceeds this threshold
@@ -85,8 +88,9 @@ impl Default for ControllerConfig {
             // Must be >=larger than target_chunk_size to avoid potential deadlock.
             floor_byte_budget: target_chunk_size,
 
-            // Count-based budget, currently fixed
+            // Count-based budget.
             request_budget: get_request_budget(),
+            floor_request_budget: get_floor_request_budget(),
             control_interval: Duration::from_millis(100),
             budget_resize_threshold: 0.05,
         }
@@ -120,18 +124,36 @@ fn get_init_byte_budget(target_chunk_size: u64) -> u64 {
 }
 
 /// Maximum number of requests concurrently in flight.
-pub fn get_request_budget() -> u32 {
+pub fn get_request_budget() -> u64 {
     // Since object_store/reqwest use HTTP/1 with a connection pool, this value controls the
     // max concurrent TCP sessions to S3 for the pipeline.
     // When modifying this value, consider the max_thread count configuration(s), the OS limitations
     // (e.g., ulimit -n), and any cloud infrastructure limitations.
     std::env::var("POLARS_INFLIGHT_REQUEST_BUDGET")
         .map(|x| {
-            x.parse::<NonZeroU32>()
+            x.parse::<NonZeroU64>()
                 .unwrap_or_else(|_| panic!("invalid value for POLARS_INFLIGHT_REQUEST_BUDGET: {x}"))
                 .get()
         })
         .unwrap_or(512)
+        .max(1)
+}
+
+/// Minimum number of requests concurrently in flight, if demand is there.
+pub fn get_floor_request_budget() -> u64 {
+    // Since object_store/reqwest use HTTP/1 with a connection pool, this value controls the
+    // max concurrent TCP sessions to S3 for the pipeline.
+    // When modifying this value, consider the max_thread count configuration(s), the OS limitations
+    // (e.g., ulimit -n), and any cloud infrastructure limitations.
+    std::env::var("POLARS_INFLIGHT_FLOOR_REQUEST_BUDGET")
+        .map(|x| {
+            x.parse::<NonZeroU64>()
+                .unwrap_or_else(|_| {
+                    panic!("invalid value for POLARS_INFLIGHT_FLOOR_REQUEST_BUDGET: {x}")
+                })
+                .get()
+        })
+        .unwrap_or(polars_config::config().max_threads() as u64)
         .max(1)
 }
 
@@ -145,7 +167,7 @@ pub struct ConcurrencyController {
 }
 
 impl ConcurrencyController {
-    pub fn new(config: ControllerConfig) -> Self {
+    pub fn new(config: ControllerConfig, pacing_budget: Option<PacingBudget>) -> Self {
         let sample_queue = Arc::new(ArrayQueue::new(SAMPLE_QUEUE_CAPACITY));
         let samples_dropped = Arc::new(RelaxedCell::new_u64(0));
 
@@ -153,6 +175,7 @@ impl ConcurrencyController {
             config.init_byte_budget,
             config.floor_byte_budget,
             config.request_budget,
+            config.floor_request_budget,
         ));
 
         let control_task = Self::spawn_control_loop(
@@ -160,6 +183,7 @@ impl ConcurrencyController {
             samples_dropped.clone(),
             inflight_budget.clone(),
             config.clone(),
+            pacing_budget,
         );
 
         Self {
@@ -196,6 +220,7 @@ impl ConcurrencyController {
         samples_dropped: Arc<RelaxedCell<u64>>,
         admission: Arc<InFlightBudget>,
         config: ControllerConfig,
+        pacing_budget: Option<PacingBudget>,
     ) -> tokio::task::JoinHandle<()> {
         if polars_config::config().verbose() {
             eprintln!(
@@ -214,6 +239,14 @@ impl ConcurrencyController {
                 ticker.tick().await;
                 let now = Instant::now();
 
+                // Limit concurrency to the pacing budget from the rate-limiter.
+                if let Some(ref pacing_budget) = pacing_budget {
+                    let rate = pacing_budget.rate();
+                    let horizon_s = pacing_budget.horizon().as_secs_f64();
+                    let request_budget = rate * horizon_s;
+                    admission.resize_request_budget(request_budget as u64);
+                }
+
                 // Update model statistics and step regime.
                 let (state, signal, dropped, bw_hwm_held) = {
                     for _ in 0..SAMPLE_QUEUE_CAPACITY {
@@ -230,7 +263,7 @@ impl ConcurrencyController {
 
                 if !matches!(state, RegimeState::WarmIdle { .. }) {
                     // Compute base BDP
-                    let base_budget = match (state, signal) {
+                    let base_byte_budget = match (state, signal) {
                         (RegimeState::Init, _) | (_, None) => config.init_byte_budget,
                         (_, Some(signal)) => signal.bdp_bytes().max(config.init_byte_budget),
                     };
@@ -245,21 +278,21 @@ impl ConcurrencyController {
                         // Unreachable.
                         RegimeState::WarmIdle { .. } => 1.0,
                     };
-                    let target_budget = (base_budget as f64 * gain) as u64;
+                    let target_byte_budget = (base_byte_budget as f64 * gain) as u64;
 
                     // Resize if needed.
                     let current_byte_budget = admission.current_byte_budget();
                     let threshold = config.budget_resize_threshold;
                     let should_resize = match current_byte_budget {
-                        0 => target_budget > 0,
+                        0 => target_byte_budget > 0,
                         current => {
-                            let ratio = target_budget as f64 / current as f64;
+                            let ratio = target_byte_budget as f64 / current as f64;
                             ratio < (1.0 - threshold) || ratio > (1.0 + threshold)
                         },
                     };
 
                     if should_resize {
-                        admission.resize_byte_budget(target_budget);
+                        admission.resize_byte_budget(target_byte_budget);
                     }
                 }
 

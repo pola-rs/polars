@@ -9,9 +9,9 @@ import polars.functions as F
 from polars import concat as plconcat
 from polars._dependencies import import_optional
 from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
+from polars._utils.expired import RenamedParameter, removed_parameters
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     is_int_sequence,
@@ -51,8 +51,20 @@ if TYPE_CHECKING:
     from polars.io.scan_options import ScanCastOptions
 
 
-@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
-@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@removed_parameters(
+    RenamedParameter(
+        name="row_count_name",
+        new_name="row_index_name",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RenamedParameter(
+        name="row_count_offset",
+        new_name="row_index_offset",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+)
 def read_parquet(
     source: FileSource,
     *,
@@ -276,7 +288,7 @@ def read_parquet(
         name, offset = row_index
         lf = lf.with_row_index(name, offset)
 
-    return lf.collect()
+    return lf._collect_eager()
 
 
 def _read_parquet_with_pyarrow(
@@ -447,8 +459,20 @@ def read_parquet_metadata(
     )
 
 
-@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
-@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@removed_parameters(
+    RenamedParameter(
+        name="row_count_name",
+        new_name="row_index_name",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RenamedParameter(
+        name="row_count_offset",
+        new_name="row_index_offset",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+)
 def scan_parquet(
     source: FileSource,
     *,

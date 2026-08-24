@@ -1,7 +1,9 @@
 #[cfg(feature = "array_to_struct")]
 use polars_buffer::Buffer;
-use polars_core::utils::slice_offsets;
+use polars_core::utils::{slice_offsets, try_get_supertype};
+use polars_ops::chunked_array::array::is_supported_array_dot_dtype;
 
+use super::schema::function_sum_output_dtype;
 use super::*;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
@@ -11,6 +13,7 @@ pub enum IRArrayFunction {
     Min,
     Max,
     Sum,
+    Dot,
     ToList,
     Std(u8),
     Var(u8),
@@ -69,6 +72,43 @@ impl IRArrayFunction {
                 .ensure_is_array()?
                 .map_to_list_and_array_inner_dtype(),
             Sum => mapper.ensure_is_array()?.nested_sum_type(),
+            Dot => {
+                let args = mapper.args();
+                polars_ensure!(
+                    args.len() == 2,
+                    InvalidOperation: "arr.dot expects two arguments, got {}", args.len()
+                );
+
+                let (lhs_inner, lhs_width) = match args[0].dtype() {
+                    DataType::Array(inner, width) => (inner.as_ref(), *width),
+                    dtype => polars_bail!(
+                        InvalidOperation:
+                        "expected Array datatype for array operation, got: {dtype:?}"
+                    ),
+                };
+                let (rhs_inner, rhs_width) = match args[1].dtype() {
+                    DataType::Array(inner, width) => (inner.as_ref(), *width),
+                    dtype => polars_bail!(
+                        InvalidOperation:
+                        "arr.dot expects Array inputs, got {dtype}"
+                    ),
+                };
+
+                polars_ensure!(
+                    lhs_width == rhs_width,
+                    ShapeMismatch:
+                    "arr.dot requires equal array widths, got {lhs_width} and {rhs_width}"
+                );
+                let inner_dtype = try_get_supertype(lhs_inner, rhs_inner)?;
+                polars_ensure!(
+                    is_supported_array_dot_dtype(&inner_dtype),
+                    InvalidOperation:
+                    "arr.dot does not support input dtypes {} and {} with supertype {inner_dtype}",
+                    args[0].dtype(), args[1].dtype()
+                );
+
+                mapper.with_dtype(function_sum_output_dtype(&inner_dtype))
+            },
             ToList => mapper
                 .ensure_is_array()?
                 .try_map_dtype(map_array_dtype_to_list_dtype),
@@ -116,6 +156,8 @@ impl IRArrayFunction {
             A::CountMatches => FunctionOptions::elementwise(),
             A::Concat => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
+            A::Dot => FunctionOptions::elementwise()
+                .with_casting_rules(CastingRules::cast_to_supertypes()),
             A::Length
             | A::Min
             | A::Max
@@ -177,6 +219,7 @@ impl Display for IRArrayFunction {
             Min => "min",
             Max => "max",
             Sum => "sum",
+            Dot => "dot",
             ToList => "to_list",
             Std(_) => "std",
             Var(_) => "var",

@@ -1,7 +1,8 @@
 use std::sync::Arc;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::Notify;
 
 /// Byte-granularity budget with dynamic resize.
 ///
@@ -101,21 +102,83 @@ impl ByteBudget {
     }
 }
 
-/// Request_count-based budget with fixed size.
 #[derive(Debug)]
 pub(super) struct RequestBudget {
-    budget: usize,
-    semaphore: Arc<Semaphore>,
-    // // Budget in use for in-flight traffic.
-    // inflight: AtomicU64,
+    // Current budget, measured in count, reflecting the maximum allowed in-flight.
+    current_budget: AtomicU64,
+    // Lowest allowed budget for the current_budget.
+    floor_budget: u64,
+    // Count in use for in-flight traffic, as allowed by the current_budget.
+    inflight_in_use: AtomicU64,
+    waiters: Notify,
 }
 
 impl RequestBudget {
-    fn new(budget: usize) -> Self {
+    fn new(initial: u64, floor_budget: u64) -> Self {
         Self {
-            budget,
-            semaphore: Arc::new(Semaphore::new(budget)),
+            current_budget: AtomicU64::new(initial),
+            floor_budget,
+            inflight_in_use: AtomicU64::new(0),
+            waiters: Notify::new(),
         }
+    }
+
+    /// Acquire a count-based permit. The call site is responsible for capping the
+    /// request size to prevent deadlock.
+    async fn acquire_one(&self) {
+        let n = 1;
+
+        loop {
+            let cap = self.current_budget.load(Ordering::Acquire);
+            let inflight = self.inflight_in_use.load(Ordering::Acquire);
+
+            if inflight + n <= cap {
+                if self
+                    .inflight_in_use
+                    .compare_exchange_weak(
+                        inflight,
+                        inflight + n,
+                        Ordering::AcqRel,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    // Fits.
+                    self.waiters.notify_one();
+                    return;
+                }
+                continue;
+            }
+
+            // Doesn't fit: register, re-check, park.
+            let notified = self.waiters.notified();
+            let cap = self.current_budget.load(Ordering::Acquire);
+            let inflight = self.inflight_in_use.load(Ordering::Acquire);
+            if inflight + n <= cap {
+                continue;
+            }
+            notified.await;
+        }
+    }
+
+    fn release_one(&self) {
+        let n = 1;
+
+        self.inflight_in_use.fetch_sub(n, Ordering::AcqRel);
+        self.waiters.notify_one();
+    }
+
+    fn resize(&self, new: u64) {
+        let new = new.max(self.floor_budget);
+        let old = self.current_budget.swap(new, Ordering::AcqRel);
+        if new > old {
+            // Grow: maybe someone can now proceed.
+            self.waiters.notify_waiters();
+        }
+    }
+
+    fn inflight_in_use(&self) -> u64 {
+        self.inflight_in_use.load(Ordering::Relaxed)
     }
 }
 
@@ -126,8 +189,8 @@ pub struct InFlightStats {
     // May exceed 1.0 transiently after a budget shrink, while
     // previously-admitted traffic drains. Expected, not a bug.
     pub bytes_saturation: f64,
-    pub request_budget: usize,
-    pub requests_in_use: usize,
+    pub request_budget: u64,
+    pub requests_in_use: u64,
     pub requests_saturation: f64,
 }
 
@@ -141,11 +204,15 @@ impl InFlightBudget {
     pub fn new(
         initial_byte_budget: u64,
         floor_byte_budget: u64,
-        initial_request_budget: u32,
+        initial_request_budget: u64,
+        floor_request_budget: u64,
     ) -> Self {
         let inflight_budget = Self {
             byte_budget: Arc::new(ByteBudget::new(initial_byte_budget, floor_byte_budget)),
-            request_budget: Arc::new(RequestBudget::new(initial_request_budget as usize)),
+            request_budget: Arc::new(RequestBudget::new(
+                initial_request_budget,
+                floor_request_budget,
+            )),
         };
 
         if polars_config::config().verbose() {
@@ -153,8 +220,12 @@ impl InFlightBudget {
                 "[InFlightConcurrency]: \
                 initial_byte_budget: {}, \
                 floor_byte_budget: {}, \
-                request_budget: {}",
-                initial_byte_budget, floor_byte_budget, initial_request_budget
+                request_budget: {}, \
+                floor_request_budget: {}",
+                initial_byte_budget,
+                floor_byte_budget,
+                initial_request_budget,
+                floor_request_budget
             );
         }
 
@@ -171,24 +242,20 @@ impl InFlightBudget {
 
         // Guard immediately — synchronous, so there's no cancellation
         // window between reservation and guard.
-        let bytes = ByteReservation {
+        let bytes = BytesReservation {
             budget: self.byte_budget.clone(),
             n_bytes,
         };
 
-        // Request permit. If we're cancelled here, `bytes` drops and
-        // releases the reservation (and notifies a waiter).
-        let req_permit = self
-            .request_budget
-            .semaphore
-            .clone()
-            .acquire_owned()
-            .await
-            .expect("semaphore closed");
+        self.request_budget.acquire_one().await;
+
+        let request = RequestReservation {
+            budget: self.request_budget.clone(),
+        };
 
         InFlightPermit {
-            _byte_reservation: bytes,
-            _req_permit: req_permit,
+            _bytes_reservation: bytes,
+            _req_permit: request,
         }
     }
 
@@ -204,6 +271,10 @@ impl InFlightBudget {
         self.byte_budget.resize(new);
     }
 
+    pub fn resize_request_budget(&self, new: u64) {
+        self.request_budget.resize(new);
+    }
+
     pub fn stats(&self) -> InFlightStats {
         let bytes_budget = self.byte_budget.current_budget();
         let bytes_in_use = self.byte_budget.inflight_in_use();
@@ -213,8 +284,8 @@ impl InFlightBudget {
             0.0
         };
 
-        let request_budget = self.request_budget.budget;
-        let requests_in_use = request_budget - self.request_budget.semaphore.available_permits();
+        let request_budget = self.request_budget.current_budget.load(Relaxed);
+        let requests_in_use = self.request_budget.inflight_in_use();
         let requests_saturation = if request_budget > 0 {
             requests_in_use as f64 / request_budget as f64
         } else {
@@ -232,18 +303,28 @@ impl InFlightBudget {
     }
 }
 
-struct ByteReservation {
+struct BytesReservation {
     budget: Arc<ByteBudget>,
     n_bytes: u64,
 }
 
-impl Drop for ByteReservation {
+impl Drop for BytesReservation {
     fn drop(&mut self) {
         self.budget.release(self.n_bytes);
     }
 }
 
+struct RequestReservation {
+    budget: Arc<RequestBudget>,
+}
+
+impl Drop for RequestReservation {
+    fn drop(&mut self) {
+        self.budget.release_one();
+    }
+}
+
 pub struct InFlightPermit {
-    _byte_reservation: ByteReservation,
-    _req_permit: OwnedSemaphorePermit,
+    _bytes_reservation: BytesReservation,
+    _req_permit: RequestReservation,
 }

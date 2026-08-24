@@ -58,14 +58,12 @@ from polars._utils.construction import (
     series_to_pydf,
 )
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import (
-    deprecated,
-    issue_deprecation_warning,
-)
 from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
     getattr_fallback,
     raise_for_removed_attributes,
-    removed_renamed_parameter,
+    removed_parameters,
 )
 from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse import parse_into_expression
@@ -124,7 +122,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import (
         Callable,
         Collection,
@@ -170,6 +167,7 @@ if TYPE_CHECKING:
         JoinBuildSide,
         JoinStrategy,
         JoinValidation,
+        JoinWhereStrategy,
         Label,
         MaintainOrderJoin,
         MultiColSelector,
@@ -197,15 +195,9 @@ if TYPE_CHECKING:
     )
     from polars._utils.various import NoDefault
     from polars.config import TableFormatNames
-    from polars.interchange.dataframe import PolarsDataFrame
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.partition import PartitionBy
     from polars.ml.torch import PolarsDataset
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -1033,62 +1025,6 @@ class DataFrame:
 
         return arr
 
-    @deprecated(
-        "Support for the dataframe interchange protocol is deprecated since version 1.40.0"
-    )
-    def __dataframe__(
-        self,
-        nan_as_null: bool = False,  # noqa: FBT001
-        allow_copy: bool = True,  # noqa: FBT001
-    ) -> PolarsDataFrame:
-        """
-        Convert to a dataframe object implementing the dataframe interchange protocol.
-
-        .. deprecated:: 1.40.0
-            Support for the Dataframe Interchange Protocol is deprecated.
-
-        Parameters
-        ----------
-        nan_as_null
-            Overwrite null values in the data with `NaN`.
-
-            .. warning::
-                This functionality has not been implemented and the parameter will be
-                removed in a future version.
-                Setting this to `True` will raise a `NotImplementedError`.
-        allow_copy
-            Allow memory to be copied to perform the conversion. If set to `False`,
-            causes conversions that are not zero-copy to fail.
-
-        Notes
-        -----
-        Details on the Python dataframe interchange protocol:
-        https://data-apis.org/dataframe-protocol/latest/index.html
-
-        Examples
-        --------
-        Convert a Polars DataFrame to a generic dataframe object and access some
-        properties.
-
-        >>> df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
-        >>> dfi = df.__dataframe__()  # doctest: +SKIP
-        >>> dfi.num_rows()  # doctest: +SKIP
-        2
-        >>> dfi.get_column(1).dtype  # doctest: +SKIP
-        (<DtypeKind.FLOAT: 2>, 64, 'g', '=')
-        """
-        if nan_as_null:
-            msg = (
-                "functionality for `nan_as_null` has not been implemented and the"
-                " parameter will be removed in a future version"
-                "\n\nUse the default `nan_as_null=False`."
-            )
-            raise NotImplementedError(msg)
-
-        from polars.interchange.dataframe import PolarsDataFrame
-
-        return PolarsDataFrame(self, allow_copy=allow_copy)
-
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""
         if isinstance(other, DataFrame):
@@ -1744,8 +1680,13 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    @removed_renamed_parameter(
-        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        )
     )
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Table:
         """
@@ -1931,6 +1872,15 @@ class DataFrame:
         """
         return self.rows(named=True)
 
+    @removed_parameters(
+        RemovedParameter(
+            name="use_pyarrow",
+            deprecated_in="0.20.28",
+            removed_in="2.0",
+            hint="Polars now uses its native engine for conversion to NumPy by default."
+            " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
+        )
+    )
     def to_numpy(
         self,
         *,
@@ -1938,7 +1888,6 @@ class DataFrame:
         writable: bool = False,
         allow_copy: bool = True,
         structured: bool = False,
-        use_pyarrow: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this DataFrame to a NumPy ndarray.
@@ -1974,15 +1923,6 @@ class DataFrame:
             returned instead.
 
             .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
-
-        use_pyarrow
-            Use `pyarrow.Array.to_numpy
-            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-
-            function for the conversion to NumPy if necessary.
-
-            .. deprecated:: 0.20.28
-                Polars now uses its native engine by default for conversion to NumPy.
 
         Examples
         --------
@@ -2048,13 +1988,6 @@ class DataFrame:
         array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
               dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
         """  # noqa: W505
-        if use_pyarrow is not None:
-            issue_deprecation_warning(
-                "the `use_pyarrow` parameter for `DataFrame.to_numpy` is deprecated."
-                " Polars now uses its native engine by default for conversion to NumPy.",
-                version="0.20.28",
-            )
-
         if structured:
             if not allow_copy and not self.is_empty():
                 msg = "copy not allowed: cannot create structured array without copying data"
@@ -2067,10 +2000,9 @@ class DataFrame:
                     arr = s.struct.unnest().to_numpy(
                         structured=True,
                         allow_copy=True,
-                        use_pyarrow=use_pyarrow,
                     )
                 else:
-                    arr = s.to_numpy(use_pyarrow=use_pyarrow)
+                    arr = s.to_numpy()
 
                 if s.dtype == String and not s.has_nulls():
                     arr = arr.astype(str, copy=False)
@@ -3033,7 +2965,6 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int | None = ...,
     ) -> str: ...
 
     @overload
@@ -3060,9 +2991,16 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int | None = ...,
     ) -> None: ...
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
+    )
     def write_csv(
         self,
         file: str | Path | IO[str] | IO[bytes] | None = None,
@@ -3088,7 +3026,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> str | None:
         """
         Write to comma-separated values (CSV) file.
@@ -3197,11 +3134,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
 
         Examples
         --------
@@ -3259,7 +3191,6 @@ class DataFrame:
             quote_style=quote_style,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             optimizations=QueryOptFlags._eager(),
             engine=engine,
         )
@@ -3930,7 +3861,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3945,11 +3875,21 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> None: ...
 
-    @removed_renamed_parameter(
-        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        ),
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        ),
     )
     def write_ipc(
         self,
@@ -3962,7 +3902,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -4010,11 +3949,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
 
         Examples
         --------
@@ -4057,7 +3991,6 @@ class DataFrame:
                 record_batch_size=record_batch_size,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
-                retries=retries,
                 optimizations=QueryOptFlags._eager(),
                 engine="streaming",
             )
@@ -4081,8 +4014,13 @@ class DataFrame:
         compat_level: CompatLevel | None = None,
     ) -> None: ...
 
-    @removed_renamed_parameter(
-        "future", "compat_level", deprecated_in="1.1", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        )
     )
     def write_ipc_stream(
         self,
@@ -4142,6 +4080,14 @@ class DataFrame:
         self._df.write_ipc_stream(file, compression, compat_level_py)
         return file if return_bytes else None  # type: ignore[return-value]
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
+    )
     def write_parquet(
         self,
         file: str | Path | IO[bytes],
@@ -4159,7 +4105,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
         mkdir: bool = False,
@@ -4249,11 +4194,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         metadata
             A dictionary or callback to add key-values to the file-level Parquet
             metadata.
@@ -4389,7 +4329,6 @@ class DataFrame:
             data_page_size=data_page_size,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             metadata=metadata,
             arrow_schema=arrow_schema,
             engine=engine,
@@ -4799,7 +4738,6 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
-        overwrite_schema: bool | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
@@ -4811,18 +4749,25 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["merge"],
-        overwrite_schema: bool | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_merge_options: dict[str, Any],
     ) -> deltalake.table.TableMerger: ...
 
+    @removed_parameters(
+        RemovedParameter(
+            name="overwrite_schema",
+            deprecated_in="0.20.14",
+            removed_in="2.0",
+            hint="Use the `delta_write_options` parameter instead and pass"
+            ' `{"schema_mode": "overwrite"}`.',
+        ),
+    )
     def write_delta(
         self,
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
-        overwrite_schema: bool | None = None,
         storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -4846,12 +4791,6 @@ class DataFrame:
             - If 'ignore', will not write anything if table already exists.
             - If 'merge', return a `TableMerger` object to merge data from the DataFrame
               with the existing data.
-        overwrite_schema
-            If True, allows updating the schema of the table.
-
-            .. deprecated:: 0.20.14
-                Use the parameter `delta_write_options` instead and pass
-                `{"schema_mode": "overwrite"}`.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
@@ -4991,13 +4930,6 @@ class DataFrame:
         ...     .execute()
         ... )  # doctest: +SKIP
         """
-        if overwrite_schema is not None:
-            issue_deprecation_warning(
-                "the parameter `overwrite_schema` for `write_delta` is deprecated."
-                ' Use the parameter `delta_write_options` instead and pass `{"schema_mode": "overwrite"}`.',
-                version="0.20.14",
-            )
-
         from polars.io.delta._utils import (
             _check_for_unsupported_types,
             _check_if_delta_available,
@@ -5063,9 +4995,6 @@ class DataFrame:
         else:
             if delta_write_options is None:
                 delta_write_options = {}
-
-            if overwrite_schema:
-                delta_write_options["schema_mode"] = "overwrite"
 
             write_deltalake(
                 table_or_uri=target,
@@ -5322,7 +5251,7 @@ class DataFrame:
         return (
             self.lazy()
             .rename(mapping, strict=strict)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def insert_column(self, index: int, column: IntoExprColumn) -> DataFrame:
@@ -5568,7 +5497,7 @@ class DataFrame:
         return (
             self.lazy()
             .filter(*predicates, **constraints)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def remove(
@@ -5715,7 +5644,7 @@ class DataFrame:
         return (
             self.lazy()
             .remove(*predicates, **constraints)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     @overload
@@ -5745,8 +5674,13 @@ class DataFrame:
         return_type: Literal["frame", "self"],
     ) -> DataFrame: ...
 
-    @removed_renamed_parameter(
-        "return_as_string", "return_type", deprecated_in="1.35.0", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="return_as_string",
+            new_name="return_type",
+            deprecated_in="1.35.0",
+            removed_in="2.0",
+        )
     )
     def glimpse(
         self,
@@ -6194,7 +6128,7 @@ class DataFrame:
                 multithreaded=multithreaded,
                 maintain_order=maintain_order,
             )
-            .collect(optimizations=optimizations)
+            ._collect_eager(optimizations=optimizations)
         )
 
     def sql(self, query: str, *, table_name: str = "self") -> DataFrame:
@@ -6289,8 +6223,13 @@ class DataFrame:
             ctx.register(name=name, frame=self)
             return ctx.execute(query)
 
-    @removed_renamed_parameter(
-        "descending", "reverse", deprecated_in="1.0.0", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
     )
     def top_k(
         self,
@@ -6370,15 +6309,19 @@ class DataFrame:
         optimizations = QueryOptFlags._eager()
         optimizations.slice_pushdown = True
         optimizations.predicate_pushdown = True
-
         return (
             self.lazy()
             .top_k(k, by=by, reverse=reverse)
-            .collect(optimizations=optimizations)
+            ._collect_eager(optimizations=optimizations)
         )
 
-    @removed_renamed_parameter(
-        "descending", "reverse", deprecated_in="1.0.0", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
     )
     def bottom_k(
         self,
@@ -6458,11 +6401,10 @@ class DataFrame:
         optimizations = QueryOptFlags._eager()
         optimizations.slice_pushdown = True
         optimizations.predicate_pushdown = True
-
         return (
             self.lazy()
             .bottom_k(k, by=by, reverse=reverse)
-            .collect(optimizations=optimizations)
+            ._collect_eager(optimizations=optimizations)
         )
 
     def equals(self, other: DataFrame, *, null_equal: bool = True) -> bool:
@@ -6772,7 +6714,9 @@ class DataFrame:
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         return (
-            self.lazy().drop_nans(subset).collect(optimizations=QueryOptFlags._eager())
+            self.lazy()
+            .drop_nans(subset)
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def drop_nulls(
@@ -6893,7 +6837,9 @@ class DataFrame:
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         return (
-            self.lazy().drop_nulls(subset).collect(optimizations=QueryOptFlags._eager())
+            self.lazy()
+            .drop_nulls(subset)
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def pipe(
@@ -7279,8 +7225,10 @@ class DataFrame:
             self, *by, **named_by, maintain_order=maintain_order, predicates=None
         )
 
-    @removed_renamed_parameter(
-        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
     )
     def rolling(
         self,
@@ -7439,8 +7387,10 @@ class DataFrame:
             predicates=None,
         )
 
-    @removed_renamed_parameter(
-        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
     )
     def group_by_dynamic(
         self,
@@ -7762,8 +7712,10 @@ class DataFrame:
             predicates=None,
         )
 
-    @removed_renamed_parameter(
-        "by", "group_by", deprecated_in="0.20.14", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
     )
     def upsample(
         self,
@@ -7982,6 +7934,11 @@ class DataFrame:
             will error. Currently, the `in-memory` engine cannot check the sortedness
             if 'by' groups are provided. The `streaming` engine will only check the
             sortedness of the rows it processes.
+
+        See Also
+        --------
+        join
+        join_where
 
         Examples
         --------
@@ -8218,11 +8175,16 @@ class DataFrame:
                 allow_exact_matches=allow_exact_matches,
                 check_sortedness=check_sortedness,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    @removed_renamed_parameter(
-        "join_nulls", "nulls_equal", deprecated_in="1.24", removed_in="2.0"
+    @removed_parameters(
+        RenamedParameter(
+            name="join_nulls",
+            new_name="nulls_equal",
+            deprecated_in="1.24",
+            removed_in="2.0",
+        )
     )
     def join(
         self,
@@ -8371,6 +8333,7 @@ class DataFrame:
         See Also
         --------
         join_asof
+        join_where
 
         Examples
         --------
@@ -8494,7 +8457,7 @@ class DataFrame:
                 maintain_order=maintain_order,
                 build_side=build_side,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     @unstable()
@@ -8502,14 +8465,11 @@ class DataFrame:
         self,
         other: DataFrame,
         *predicates: Expr | Iterable[Expr],
+        how: JoinWhereStrategy = "inner",
         suffix: str = "_right",
     ) -> DataFrame:
         """
         Perform a join based on one or multiple (in)equality predicates.
-
-        This performs an inner join, so only rows where all predicates are true
-        are included in the result, and a row from either DataFrame may be included
-        multiple times in the result.
 
         .. note::
             The row order of the input DataFrames is not preserved.
@@ -8526,8 +8486,15 @@ class DataFrame:
             (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
+        how : {'inner', 'left', 'right'}
+            Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
+
+        See Also
+        --------
+        join
+        join_asof
 
         Examples
         --------
@@ -8586,6 +8553,29 @@ class DataFrame:
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         │ 102 ┆ 160 ┆ 16  ┆ 4     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
+
+        Pass `how="left"` to additionally keep left rows that match nothing, with the
+        right columns set to `null`.
+
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ...     how="left",
+        ... )
+        shape: (6, 8)
+        ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
+        │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---         │
+        │ i64 ┆ i64 ┆ i64 ┆ i64   ┆ i64  ┆ i64  ┆ i64  ┆ i64         │
+        ╞═════╪═════╪═════╪═══════╪══════╪══════╪══════╪═════════════╡
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 498  ┆ 130  ┆ 13   ┆ 2           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 102 ┆ 160 ┆ 16  ┆ 4     ┆ null ┆ null ┆ null ┆ null        │
+        └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
         """
         require_same_type(self, other)
 
@@ -8596,9 +8586,10 @@ class DataFrame:
             .join_where(
                 other.lazy(),
                 *predicates,
+                how=how,
                 suffix=suffix,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     @unstable()
@@ -8656,7 +8647,7 @@ class DataFrame:
         return (
             self.lazy()
             .gather(indices, null_on_oob=null_on_oob)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def map_rows(
@@ -9000,7 +8991,7 @@ class DataFrame:
         return (
             self.lazy()
             .drop(*columns, strict=strict)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def drop_in_place(self, name: str) -> Series:
@@ -9127,7 +9118,7 @@ class DataFrame:
         return (
             self.lazy()
             .cast(dtypes, strict=strict)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def clear(self, n: int = 0) -> DataFrame:
@@ -9441,7 +9432,7 @@ class DataFrame:
         return (
             self.lazy()
             .fill_null(value, strategy, limit, matches_supertype=matches_supertype)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def fill_nan(self, value: Expr | int | float | None) -> DataFrame:
@@ -9490,7 +9481,11 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().fill_nan(value).collect(optimizations=QueryOptFlags._eager())
+        return (
+            self.lazy()
+            .fill_nan(value)
+            ._collect_eager(optimizations=QueryOptFlags._eager())
+        )
 
     def explode(
         self,
@@ -9565,10 +9560,14 @@ class DataFrame:
                 empty_as_null=empty_as_null,
                 keep_nulls=keep_nulls,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    @removed_renamed_parameter("columns", "on", deprecated_in="1.0.0", removed_in="2.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="columns", new_name="on", deprecated_in="1.0.0", removed_in="2.0"
+        )
+    )
     def pivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
@@ -9794,7 +9793,7 @@ class DataFrame:
                 separator=separator,
                 column_naming=column_naming,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def unpivot(
@@ -9861,11 +9860,17 @@ class DataFrame:
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        on = None if on is None else _expand_selectors(self, on)
-        index_expanded = [] if index is None else _expand_selectors(self, index)
+        from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self._from_pydf(
-            self._df.unpivot(on, index_expanded, value_name, variable_name)
+        return (
+            self.lazy()
+            .unpivot(
+                on=on,
+                index=index,
+                variable_name=variable_name,
+                value_name=value_name,
+            )
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def unstack(
@@ -10262,7 +10267,7 @@ class DataFrame:
         return (
             self.lazy()
             .shift(n, fill_value=fill_value)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     @unstable()
@@ -10509,7 +10514,7 @@ class DataFrame:
         return (
             self.lazy()
             .select(*exprs, **named_exprs)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def select_seq(
@@ -10540,7 +10545,7 @@ class DataFrame:
         return (
             self.lazy()
             .select_seq(*exprs, **named_exprs)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def with_columns(
@@ -10675,7 +10680,7 @@ class DataFrame:
         return (
             self.lazy()
             .with_columns(*exprs, **named_exprs)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def with_columns_seq(
@@ -10715,7 +10720,7 @@ class DataFrame:
         return (
             self.lazy()
             .with_columns_seq(*exprs, **named_exprs)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     @overload
@@ -10785,7 +10790,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().max().collect(optimizations=QueryOptFlags._eager())
+        return self.lazy().max()._collect_eager(optimizations=QueryOptFlags._eager())
 
     def max_horizontal(self) -> Series:
         """
@@ -10840,7 +10845,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().min().collect(optimizations=QueryOptFlags._eager())
+        return self.lazy().min()._collect_eager(optimizations=QueryOptFlags._eager())
 
     def min_horizontal(self) -> Series:
         """
@@ -10895,7 +10900,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().sum().collect(optimizations=QueryOptFlags._eager())
+        return self.lazy().sum()._collect_eager(optimizations=QueryOptFlags._eager())
 
     def sum_horizontal(self, *, ignore_nulls: bool = True) -> Series:
         """
@@ -10959,7 +10964,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().mean().collect(optimizations=QueryOptFlags._eager())
+        return self.lazy().mean()._collect_eager(optimizations=QueryOptFlags._eager())
 
     def mean_horizontal(self, *, ignore_nulls: bool = True) -> Series:
         """
@@ -11038,7 +11043,9 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().std(ddof).collect(optimizations=QueryOptFlags._eager())
+        return (
+            self.lazy().std(ddof)._collect_eager(optimizations=QueryOptFlags._eager())
+        )
 
     def var(self, ddof: int = 1) -> DataFrame:
         """
@@ -11081,7 +11088,9 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().var(ddof).collect(optimizations=QueryOptFlags._eager())
+        return (
+            self.lazy().var(ddof)._collect_eager(optimizations=QueryOptFlags._eager())
+        )
 
     def median(self) -> DataFrame:
         """
@@ -11108,7 +11117,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().median().collect(optimizations=QueryOptFlags._eager())
+        return self.lazy().median()._collect_eager(optimizations=QueryOptFlags._eager())
 
     def product(self) -> DataFrame:
         """
@@ -11180,7 +11189,7 @@ class DataFrame:
         return (
             self.lazy()
             .quantile(quantile, interpolation)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def to_dummies(
@@ -11408,7 +11417,7 @@ class DataFrame:
         return (
             self.lazy()
             .unique(subset=subset, keep=keep, maintain_order=maintain_order)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def n_unique(self, subset: str | Expr | Sequence[str | Expr] | None = None) -> int:
@@ -11483,7 +11492,7 @@ class DataFrame:
         df = (
             self.lazy()
             .select(expr.n_unique())
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
         return 0 if df.is_empty() else df.row(0)[0]
 
@@ -12513,7 +12522,7 @@ class DataFrame:
         return (
             self.lazy()
             .unnest(columns, *more_columns, separator=separator)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def corr(self, *, label: str | None = None, **kwargs: Any) -> DataFrame:
@@ -12683,7 +12692,7 @@ class DataFrame:
         return (
             self.lazy()
             .merge_sorted(other.lazy(), key, maintain_order=maintain_order)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def set_sorted(
@@ -12720,7 +12729,7 @@ class DataFrame:
         return (
             self.lazy()
             .set_sorted(column, descending=descending, nulls_last=nulls_last)
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     @unstable()
@@ -12878,7 +12887,7 @@ class DataFrame:
                 include_nulls=include_nulls,
                 maintain_order=maintain_order,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def count(self) -> DataFrame:
@@ -12902,7 +12911,7 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self.lazy().count().collect(optimizations=QueryOptFlags._eager())
+        return self.lazy().count()._collect_eager(optimizations=QueryOptFlags._eager())
 
     def show(
         self,
@@ -13275,7 +13284,7 @@ class DataFrame:
                 integer_cast=integer_cast,
                 float_cast=float_cast,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def _to_metadata(
@@ -13350,6 +13359,7 @@ class DataFrame:
                 self,
                 name,
                 {
+                    "__dataframe__": "the dataframe interchange protocol is not supported anymore. Consider using `to_arrow` or `to_pandas` instead.",
                     "melt": "use `DataFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
                     "with_row_count": "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
                     "approx_n_unique": "use `select(pl.all().approx_n_unique())` instead.",

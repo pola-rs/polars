@@ -1,6 +1,4 @@
 use super::*;
-#[cfg(feature = "algorithm_group_by")]
-use crate::frame::group_by::*;
 use crate::prelude::*;
 
 impl private::PrivateSeries for SeriesWrap<StringChunked> {

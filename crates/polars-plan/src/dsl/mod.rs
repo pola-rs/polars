@@ -4,8 +4,6 @@
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
 pub use cat::*;
-#[cfg(feature = "rolling_window_by")]
-pub(crate) use polars_time::prelude::*;
 
 mod arithmetic;
 mod arity;
@@ -51,6 +49,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 mod iter;
+mod join;
 mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
@@ -60,6 +59,7 @@ pub use expr::*;
 #[cfg(feature = "dtype-extension")]
 pub use extension::*;
 pub use function_expr::*;
+pub use join::JoinCondition;
 pub use list::*;
 pub use match_to_schema::*;
 #[cfg(feature = "meta")]
@@ -261,12 +261,16 @@ impl Expr {
         self.map_unary(FunctionExpr::ArgUnique)
     }
 
-    /// Get the index value that has the minimum value.
+    /// Get an index of a minimal value.
+    ///
+    /// In the case of a tie, this may return the index of any of the minimum values.
     pub fn arg_min(self) -> Self {
         self.map_unary(FunctionExpr::ArgMin)
     }
 
-    /// Get the index value that has the maximum value.
+    /// Get an index of a maximum value.
+    ///
+    /// In the case of a tie, this may return the index of any of the maximum values.
     pub fn arg_max(self) -> Self {
         self.map_unary(FunctionExpr::ArgMax)
     }

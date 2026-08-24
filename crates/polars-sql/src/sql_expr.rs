@@ -12,7 +12,7 @@ use std::ops::Div;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_plan::plans::DynLiteralValue;
-use polars_plan::prelude::typed_lit;
+use polars_plan::prelude::{has_expr, typed_lit};
 use polars_time::Duration;
 use polars_time::chunkedarray::StringMethods;
 use polars_utils::unique_column_name;
@@ -31,6 +31,7 @@ use sqlparser::tokenizer::Token;
 
 use crate::SQLContext;
 use crate::functions::SQLFunctionVisitor;
+use crate::subquery::is_correlated_subquery;
 use crate::types::{
     bitstring_to_bytes_literal, is_iso_date, is_iso_datetime, is_iso_time, map_sql_dtype_to_polars,
     timeunit_from_precision,
@@ -45,18 +46,47 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
 }
 
 /// Represents a boolean-typed NULL literal (aka: SQL "UNKNOWN" truth value).
-fn sql_unknown() -> Expr {
+pub(crate) fn sql_unknown() -> Expr {
     lit(NULL).cast(DataType::Boolean)
+}
+
+// A correlated subquery here would be evaluated against its own scope, where an
+// outer column resolves to a like-named table.
+fn quantified_subquery_unsupported(
+    compare_op: &SQLBinaryOperator,
+    right: &SQLExpr,
+) -> PolarsResult<()> {
+    if let SQLExpr::Subquery(query) = right {
+        polars_ensure!(
+            !is_correlated_subquery(query),
+            SQLInterface: "ANY/ALL with `{}` and a correlated subquery is not currently supported",
+            compare_op
+        );
+    }
+    Ok(())
+}
+
+// SQL `IN` under three-valued logic: false against an empty candidate set,
+// otherwise membership, which is already unknown for a null needle, widened to
+// unknown when a miss could be hiding behind a null in the set.
+pub(crate) fn sql_in_membership(membership: Expr, value_set: Expr, set_is_empty: Expr) -> Expr {
+    let set_has_null = value_set.list().contains(lit(NULL), true);
+    when(set_is_empty)
+        .then(lit(false))
+        .otherwise(membership.or(set_has_null.and(sql_unknown())))
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
 /// Categorises the type of (allowed) subquery constraint
 pub enum SubqueryRestriction {
-    /// Subquery must return a single column
+    /// Subquery must return a single column, used as a list of candidate
+    /// values (eg: the RHS of `[NOT] IN`).
     SingleColumn,
+    /// Subquery must return a single column, reduced to a scalar value
+    /// (eg: a comparison/arithmetic operand, or a SELECT-list/HAVING expr).
+    SingleValue,
     // SingleRow,
-    // SingleValue,
     // Any
 }
 
@@ -218,6 +248,7 @@ impl SQLExprVisitor<'_> {
                 polars_bail!(SQLSyntax: "complex field access chains are currently unsupported: {:?}", access_chain[0])
             },
             SQLExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
+            SQLExpr::Exists { subquery, negated } => self.visit_exists(subquery, *negated),
             SQLExpr::Extract {
                 field,
                 syntax: _,
@@ -232,19 +263,30 @@ impl SQLExprVisitor<'_> {
                 negated,
             } => {
                 let expr = self.visit_expr(expr)?;
-                let elems = self.visit_array_expr(list, false, Some(&expr))?;
-                let set_has_null = matches!(
-                    &elems,
-                    Expr::Literal(LiteralValue::Series(s)) if s.null_count() > 0
-                );
-                let membership = expr.is_in(elems.implode(false), false);
-                let is_in = if set_has_null {
-                    // Non-match against sets containing NULL is unknown, not FALSE
-                    membership.or(sql_unknown())
+                // Prefer the all-literal `is_in` fast path, which predicate pushdown can
+                // use. A non-literal element, or an aggregate on the left, falls back to an
+                // OR-chain of equality comparisons.
+                let expr_is_aggregate = has_expr(&expr, |e| matches!(e, Expr::Agg(_) | Expr::Len));
+                let elements = if expr_is_aggregate {
+                    None
                 } else {
-                    membership
+                    self.array_expr_to_series(list).ok()
                 };
-                Ok(if *negated { is_in.not() } else { is_in })
+                match elements {
+                    Some(elems) => {
+                        let elems = self.cast_array_elements_for(elems, Some(&expr))?;
+                        let set_has_null = elems.null_count() > 0;
+                        let membership = expr.is_in(lit(elems.implode()?.into_series()), false);
+                        let is_in = if set_has_null {
+                            // Non-match against sets containing NULL is unknown, not FALSE
+                            membership.or(sql_unknown())
+                        } else {
+                            membership
+                        };
+                        Ok(if *negated { is_in.not() } else { is_in })
+                    },
+                    None => self.visit_in_list_fallback(expr, list, *negated),
+                }
             },
             SQLExpr::InSubquery {
                 expr,
@@ -319,7 +361,9 @@ impl SQLExprVisitor<'_> {
                     .contains(self.visit_expr(pattern)?, true);
                 Ok(if *negated { matches.not() } else { matches })
             },
-            SQLExpr::Subquery(_) => polars_bail!(SQLInterface: "unexpected subquery"),
+            SQLExpr::Subquery(subquery) => {
+                self.visit_subquery(subquery, SubqueryRestriction::SingleValue)
+            },
             SQLExpr::Substring {
                 expr,
                 substring_from,
@@ -375,27 +419,30 @@ impl SQLExprVisitor<'_> {
         subquery: &Subquery,
         restriction: SubqueryRestriction,
     ) -> PolarsResult<Expr> {
-        if subquery.with.is_some() {
-            polars_bail!(SQLSyntax: "SQL subquery cannot be a CTE 'WITH' clause");
-        }
         // note: we have to execute subqueries in an isolated scope to prevent
         // propagating any context/arena mutation into the rest of the query
         let lf = self
             .ctx
-            .execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
+            .execute_isolated(|ctx| ctx.execute_query(subquery))?;
 
-        if restriction == SubqueryRestriction::SingleColumn {
-            let new_name = unique_column_name();
-            return Ok(Expr::SubPlan(
-                SpecialEq::new(Arc::new(lf.logical_plan)),
-                // TODO: pass the implode depending on expr.
-                vec![(
-                    new_name.clone(),
-                    first().as_expr().implode(true).alias(new_name.clone()),
-                )],
-            ));
+        let new_name = unique_column_name();
+        let reduce_expr = match restriction {
+            SubqueryRestriction::SingleColumn => first().as_expr().implode(true),
+            SubqueryRestriction::SingleValue => first().as_expr().item(true),
         };
-        polars_bail!(SQLInterface: "subquery type not supported");
+        Ok(Expr::SubPlan(
+            SpecialEq::new(Arc::new(lf.logical_plan)),
+            vec![(new_name.clone(), reduce_expr.alias(new_name))],
+        ))
+    }
+
+    /// Visit a `[NOT] EXISTS (subquery)` expression that no earlier rewrite claimed,
+    /// which is to say one in a position that doesn't support it.
+    fn visit_exists(&mut self, subquery: &Subquery, _negated: bool) -> PolarsResult<Expr> {
+        polars_bail!(
+            SQLInterface:
+            "EXISTS subquery is not currently supported in this position: {:?}", subquery
+        )
     }
 
     /// Visit a single SQL identifier.
@@ -579,18 +626,6 @@ impl SQLExprVisitor<'_> {
         op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
-        // check for (unsupported) scalar subquery comparisons
-        if matches!(left, SQLExpr::Subquery(_)) || matches!(right, SQLExpr::Subquery(_)) {
-            let (suggestion, str_op) = match op {
-                SQLBinaryOperator::NotEq => ("; use 'NOT IN' instead", "!=".to_string()),
-                SQLBinaryOperator::Eq => ("; use 'IN' instead", format!("{op}")),
-                _ => ("", format!("{op}")),
-            };
-            polars_bail!(
-                SQLSyntax: "subquery comparisons with '{str_op}' are not supported{suggestion}"
-            );
-        }
-
         // need special handling for interval offsets and comparisons
         let (lhs, mut rhs) = match (left, op, right) {
             (_, SQLBinaryOperator::Minus, SQLExpr::Interval(v)) => {
@@ -837,6 +872,7 @@ impl SQLExprVisitor<'_> {
         compare_op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
+        quantified_subquery_unsupported(compare_op, right)?;
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
 
@@ -860,6 +896,7 @@ impl SQLExprVisitor<'_> {
         compare_op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
+        quantified_subquery_unsupported(compare_op, right)?;
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
 
@@ -874,17 +911,40 @@ impl SQLExprVisitor<'_> {
         }
     }
 
-    /// Visit a SQL `ARRAY` list (including `IN` values).
-    fn visit_array_expr(
+    /// Fallback for `[NOT] IN (e1, e2, ...)` when the element list contains
+    /// one or more non-literal expressions (eg: column references or arithmetic).
+    ///
+    /// Builds `expr = e1 OR expr = e2 OR ...` (negated with a trailing `NOT`, if
+    /// applicable), which carries SQL's three-valued logic: `1 IN (2, NULL)` is
+    /// unknown, not FALSE.
+    fn visit_in_list_fallback(
         &mut self,
-        elements: &[SQLExpr],
-        result_as_element: bool,
-        dtype_expr_match: Option<&Expr>,
+        expr: Expr,
+        list: &[SQLExpr],
+        negated: bool,
     ) -> PolarsResult<Expr> {
-        let mut elems = self.array_expr_to_series(elements)?;
+        polars_ensure!(!list.is_empty(), SQLSyntax: "IN list must not be empty");
+        let mut elements = list.iter();
+        let first = self.visit_expr(elements.next().unwrap())?;
+        let mut membership = expr.clone().eq(first);
+        for e in elements {
+            let e = self.visit_expr(e)?;
+            membership = membership.or(expr.clone().eq(e));
+        }
+        Ok(if negated {
+            membership.not()
+        } else {
+            membership
+        })
+    }
 
-        // handle implicit temporal strings, eg: "dt IN ('2024-04-30','2024-05-01')".
-        // (not yet as versatile as the temporal string conversions in visit_binary_op)
+    /// Handle implicit temporal strings, eg: "dt IN ('2024-04-30','2024-05-01')".
+    /// (not yet as versatile as the temporal string conversions in visit_binary_op)
+    fn cast_array_elements_for(
+        &self,
+        elems: Series,
+        dtype_expr_match: Option<&Expr>,
+    ) -> PolarsResult<Series> {
         if let (Some(Expr::Column(name)), Some(schema)) =
             (dtype_expr_match, self.active_schema.as_ref())
         {
@@ -894,11 +954,23 @@ impl SQLExprVisitor<'_> {
                         dtype,
                         DataType::Date | DataType::Time | DataType::Datetime(_, _)
                     ) {
-                        elems = elems.strict_cast(dtype)?;
+                        return elems.strict_cast(dtype);
                     }
                 }
             }
         }
+        Ok(elems)
+    }
+
+    /// Visit a SQL `ARRAY` list (including `IN` values).
+    fn visit_array_expr(
+        &mut self,
+        elements: &[SQLExpr],
+        result_as_element: bool,
+        dtype_expr_match: Option<&Expr>,
+    ) -> PolarsResult<Expr> {
+        let elems = self.array_expr_to_series(elements)?;
+        let elems = self.cast_array_elements_for(elems, dtype_expr_match)?;
 
         // if we are parsing the list as an element in a series, implode.
         // otherwise, return the series as-is.
@@ -1212,12 +1284,11 @@ impl SQLExprVisitor<'_> {
             unreachable!("SingleColumn subquery must lower to a SubPlan");
         };
         let value_set = col(cols[0].0.clone()).first();
-        let membership = expr.is_in(subquery_result, false);
-        let set_has_null = value_set.clone().list().contains(lit(NULL), true);
-        let set_is_empty = value_set.list().len().eq(lit(0u32));
-        let is_in = when(set_is_empty)
-            .then(lit(false))
-            .otherwise(membership.or(set_has_null.and(sql_unknown())));
+        let is_in = sql_in_membership(
+            expr.is_in(subquery_result, false),
+            value_set.clone(),
+            value_set.list().len().eq(lit(0u32)),
+        );
 
         Ok(if negated { is_in.not() } else { is_in })
     }

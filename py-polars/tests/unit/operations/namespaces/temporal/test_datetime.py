@@ -1410,22 +1410,6 @@ def test_series_datetime_timeunits(
     assert list(s.dt.microsecond()) == [v.microsecond for v in s]
 
 
-def test_dt_median_deprecated() -> None:
-    values = [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)]
-    s = pl.Series(values)
-    with pytest.deprecated_call():
-        result = s.dt.median()
-    assert result == s.median()
-
-
-def test_dt_mean_deprecated() -> None:
-    values = [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15)]
-    s = pl.Series(values)
-    with pytest.deprecated_call():
-        result = s.dt.mean()
-    assert result == s.mean()
-
-
 @pytest.mark.parametrize(
     "dtype",
     [

@@ -7,7 +7,6 @@ pub mod file_provider;
 pub mod iceberg_sink_state;
 pub mod sink;
 pub use polars_config::Engine;
-use polars_core::error::PolarsResult;
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
 use polars_io::csv::write::CsvWriterOptions;
@@ -17,9 +16,6 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::ndjson::NDJsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
-#[cfg(feature = "iejoin")]
-use polars_ops::frame::IEJoinOptions;
-use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinTypeOptions};
 use polars_ops::prelude::{JoinArgs, JoinType};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::DynamicGroupOptions;
@@ -38,7 +34,6 @@ use strum_macros::IntoStaticStr;
 
 use super::Expr;
 use crate::dsl::Selector;
-use crate::plans::ExprIR;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -75,69 +70,6 @@ impl Default for StrptimeOptions {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, IntoStaticStr, Debug)]
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
-#[strum(serialize_all = "snake_case")]
-pub enum JoinTypeOptionsIR {
-    #[cfg(feature = "iejoin")]
-    IEJoin(IEJoinOptions),
-    // Fused cross join and filter (only used in the in-memory engine)
-    CrossAndFilter {
-        predicate: ExprIR, // Must be elementwise.
-    },
-}
-
-impl Hash for JoinTypeOptionsIR {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        use JoinTypeOptionsIR::*;
-        match self {
-            #[cfg(feature = "iejoin")]
-            IEJoin(opt) => opt.hash(state),
-            CrossAndFilter { predicate } => {
-                predicate.node().hash(state);
-            },
-        }
-    }
-}
-
-impl JoinTypeOptionsIR {
-    pub fn compile<C: FnOnce(&ExprIR) -> PolarsResult<Arc<dyn CrossJoinFilter>>>(
-        self,
-        plan: C,
-    ) -> PolarsResult<JoinTypeOptions> {
-        use JoinTypeOptionsIR::*;
-        match self {
-            CrossAndFilter { predicate } => {
-                let predicate = plan(&predicate)?;
-
-                Ok(JoinTypeOptions::Cross(CrossJoinOptions { predicate }))
-            },
-            #[cfg(feature = "iejoin")]
-            IEJoin(opt) => Ok(JoinTypeOptions::IEJoin(opt)),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Hash)]
-#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
-pub struct JoinOptionsIR {
-    pub allow_parallel: bool,
-    pub force_parallel: bool,
-    pub args: JoinArgs,
-    pub options: Option<JoinTypeOptionsIR>,
-}
-
-impl From<JoinOptions> for JoinOptionsIR {
-    fn from(opts: JoinOptions) -> Self {
-        Self {
-            allow_parallel: opts.allow_parallel,
-            force_parallel: opts.force_parallel,
-            args: opts.args,
-            options: Default::default(),
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -154,16 +86,6 @@ impl Default for JoinOptions {
             force_parallel: false,
             // Todo!: make default
             args: JoinArgs::new(JoinType::Left),
-        }
-    }
-}
-
-impl From<JoinOptionsIR> for JoinOptions {
-    fn from(opts: JoinOptionsIR) -> Self {
-        Self {
-            allow_parallel: opts.allow_parallel,
-            force_parallel: opts.force_parallel,
-            args: opts.args,
         }
     }
 }

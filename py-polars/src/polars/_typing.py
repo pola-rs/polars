@@ -8,7 +8,6 @@ from typing import (
     Any,
     Literal,
     Protocol,
-    TypedDict,
     TypeVar,
     Union,
 )
@@ -18,7 +17,8 @@ if TYPE_CHECKING:
     from decimal import Decimal
     from typing import TypeAlias
 
-    from sqlalchemy.engine import Connection, Engine
+    from sqlalchemy.engine import Connection
+    from sqlalchemy.engine import Engine as AlchemyEngine
     from sqlalchemy.ext.asyncio import (
         AsyncConnection,
         AsyncEngine,
@@ -30,8 +30,9 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._dependencies import numpy as np
+    from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
-    from polars.lazyframe.engine_config import GPUEngine
+    from polars.lazyframe.engine import Engine
     from polars.selectors import Selector
 
 
@@ -211,7 +212,7 @@ DefaultFieldValues: TypeAlias = tuple[
     Literal["iceberg"], tuple[dict[int, Union["Series", str]], dict[int, "Series"]]
 ]
 DeletionFiles: TypeAlias = (
-    tuple[Literal["iceberg-position-delete"], dict[int, list[str]]]
+    tuple[Literal["iceberg"], tuple[dict[int, list[str]], dict[int, str]]]
     | tuple[Literal["delta-deletion-vector"], Callable[["DataFrame"], "DataFrame"]]
 )
 FillNullStrategy: TypeAlias = Literal[
@@ -283,8 +284,10 @@ AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofS
 ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
-    "inner", "left", "right", "full", "semi", "anti", "cross", "outer"
+    "inner", "left", "right", "full", "semi", "anti", "cross"
 ]  # JoinType
+JoinWhereStrategy: TypeAlias = Literal["inner", "left", "right"]  # JoinType
+ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
 ConcatMethod = Literal[
@@ -369,18 +372,9 @@ ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
 # typevars for core polars types
 PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
-BufferInfo: TypeAlias = tuple[int, int, int]
 
 # type alias for supported spreadsheet engines
 ExcelSpreadsheetEngine: TypeAlias = Literal["calamine", "openpyxl", "xlsx2csv"]
-
-
-class SeriesBuffers(TypedDict):
-    """Underlying buffers of a Series."""
-
-    values: Series
-    validity: Series | None
-    offsets: Series | None
 
 
 # minimal protocol definitions that can reasonably represent
@@ -403,7 +397,7 @@ class Cursor(BasicCursor):
         """Fetch results in batches."""
 
 
-AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
+AlchemyConnection: TypeAlias = Union["Connection", "AlchemyEngine", "Session"]
 AlchemyAsyncConnection: TypeAlias = Union[
     "AsyncConnection", "AsyncEngine", "AsyncSession", "async_sessionmaker[AsyncSession]"
 ]
@@ -436,11 +430,25 @@ SingleColSelector: TypeAlias = SingleIndexSelector | SingleNameSelector
 MultiColSelector: TypeAlias = MultiIndexSelector | MultiNameSelector | BooleanMask
 
 # LazyFrame engine selection
-EngineType: TypeAlias = Union[
-    Literal["auto", "in-memory", "streaming", "gpu"], "GPUEngine"
-]
+EngineTypeName: TypeAlias = Literal["auto", "in-memory", "streaming", "gpu"]
+EngineType: TypeAlias = Union[EngineTypeName, "Engine"]
 
 PlanStage: TypeAlias = Literal["ir", "physical"]
+
+# Post-optimization callback receiving a Rust `NodeTraverser` and optional duration
+# in nanoseconds.
+PostOptCallback: TypeAlias = Callable[[Any, int | None], None]
+
+
+# Result of an async collect, resolved either through asyncio or gevent.
+AsyncResultT = TypeVar("AsyncResultT")
+AsyncResult: TypeAlias = Union[
+    "_GeventDataFrameResult[AsyncResultT]", "_AioDataFrameResult[AsyncResultT]"
+]
+
+# Remote execution on Polars Cloud; mirrors `polars_cloud._typing`
+ScalingMode: TypeAlias = Literal["auto", "single-node", "distributed"]
+PlanTypePreference: TypeAlias = Literal["dot", "plain"]
 
 FileSource: TypeAlias = (
     str
@@ -458,7 +466,6 @@ JSONEncoder = Callable[[Any], bytes] | Callable[[Any], str]
 DeprecationType: TypeAlias = Literal[
     "function",
     "renamed_parameter",
-    "streaming_parameter",
     "nonkeyword_arguments",
     "parameter_as_multi_positional",
 ]
@@ -472,7 +479,6 @@ __all__ = [
     "AsofJoinStrategy",
     "AvroCompression",
     "BooleanMask",
-    "BufferInfo",
     "CategoricalOrdering",
     "ClosedInterval",
     "ColumnFormatDict",
@@ -493,6 +499,7 @@ __all__ = [
     "DeprecationType",
     "Endianness",
     "EngineType",
+    "EngineTypeName",
     "EpochTimeUnit",
     "ExcelSpreadsheetEngine",
     "ExplainFormat",
@@ -510,6 +517,7 @@ __all__ = [
     "JaxExportType",
     "JoinStrategy",
     "JoinValidation",
+    "JoinWhereStrategy",
     "Label",
     "MaintainOrderJoin",
     "MapElementsStrategy",
@@ -527,6 +535,7 @@ __all__ = [
     "ParametricProfileNames",
     "ParquetCompression",
     "PivotAgg",
+    "PlanTypePreference",
     "PolarsDataType",
     "PolarsIntegerType",
     "PolarsTemporalType",
@@ -537,12 +546,12 @@ __all__ = [
     "RankMethod",
     "Roll",
     "RowTotalsDefinition",
+    "ScalingMode",
     "SchemaDefinition",
     "SchemaDict",
     "SearchSortedSide",
     "SelectorType",
     "SerializationFormat",
-    "SeriesBuffers",
     "SingleColSelector",
     "SingleIndexSelector",
     "SingleNameSelector",

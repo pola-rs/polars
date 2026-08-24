@@ -522,6 +522,14 @@ def test_array_expr_visitor() -> None:
             (_expr_nodes.ArrayFunction.Max,),
         ),
         (
+            pl.col("x").arr.dot(pl.col("y")),
+            {
+                "x": pl.Array(pl.Float64, 3),
+                "y": pl.Array(pl.Float64, 3),
+            },
+            (_expr_nodes.ArrayFunction.Dot,),
+        ),
+        (
             pl.col("x").arr.to_list(),
             {"x": pl.Array(pl.Int64, 3)},
             (_expr_nodes.ArrayFunction.ToList,),

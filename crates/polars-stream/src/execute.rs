@@ -332,6 +332,7 @@ pub fn execute_graph(
         }
         graph.update_all_states(&state, metrics.as_deref())?;
 
+        #[cfg(debug_assertions)]
         if let Some(m) = metrics.as_ref() {
             m.lock().flush(&graph.pipes);
         }

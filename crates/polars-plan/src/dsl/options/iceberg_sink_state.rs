@@ -20,12 +20,17 @@ pub struct IcebergSinkState {
 
     pub table_name: PlSmallStr,
     pub mode: IcebergCommitMode,
+    pub schema_mode: Option<IcebergSchemaMode>,
+    pub snapshot_properties: BTreeMap<PlSmallStr, PlSmallStr>,
     pub iceberg_storage_properties: BTreeMap<PlSmallStr, PlSmallStr>,
 
     pub sink_uuid_str: String,
 
     #[cfg(feature = "python")]
     pub table_: Option<PythonObject>, // NoPickleOption[pyiceberg.table.Table]
+
+    #[cfg(feature = "python")]
+    pub source_schema: Option<PythonObject>, // pyarrow.Schema
 
     #[cfg(feature = "python")]
     pub commit_result_df: Option<PythonObject>, // NoPickleOption[pl.DataFrame]
@@ -39,6 +44,14 @@ pub enum IcebergCommitMode {
     Overwrite,
 }
 
+#[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum IcebergSchemaMode {
+    Merge,
+    Overwrite,
+}
+
 #[cfg(feature = "python")]
 mod _python_impl {
     use std::convert::Infallible;
@@ -48,7 +61,7 @@ mod _python_impl {
     use pyo3::types::PyString;
     use pyo3::{Borrowed, Bound, FromPyObject, IntoPyObject, Py, PyAny, PyErr, PyResult, Python};
 
-    use super::{IcebergCommitMode, IcebergSinkState};
+    use super::{IcebergCommitMode, IcebergSchemaMode, IcebergSinkState};
 
     impl IcebergSinkState {
         pub(crate) fn into_sink_state_obj(self) -> PyResult<Py<PyAny>> {
@@ -84,6 +97,36 @@ mod _python_impl {
                 v => {
                     return Err(PyValueError::new_err(format!(
                         "invalid iceberg commit mode: '{v}'"
+                    )));
+                },
+            })
+        }
+    }
+
+    impl<'py> IntoPyObject<'py> for IcebergSchemaMode {
+        type Target = PyString;
+        type Output = Bound<'py, Self::Target>;
+        type Error = Infallible;
+
+        fn into_pyobject(self, py: pyo3::Python<'py>) -> Result<Self::Output, Self::Error> {
+            match self {
+                Self::Merge => "merge",
+                Self::Overwrite => "overwrite",
+            }
+            .into_pyobject(py)
+        }
+    }
+
+    impl<'a, 'py> FromPyObject<'a, 'py> for IcebergSchemaMode {
+        type Error = PyErr;
+
+        fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+            Ok(match &*ob.extract::<PyBackedStr>()? {
+                "merge" => Self::Merge,
+                "overwrite" => Self::Overwrite,
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "invalid iceberg schema mode: '{v}'"
                     )));
                 },
             })

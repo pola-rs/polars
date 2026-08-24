@@ -150,13 +150,17 @@ impl ListNameSpace {
         )
     }
 
-    /// Return the index of the minimal value of every sublist
+    /// Return the index of the minimal value of every sublist.
+    ///
+    /// In the case of a tie, this may return the index of any of the minimum values.
     pub fn arg_min(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::ListExpr(ListFunction::ArgMin))
     }
 
-    /// Return the index of the maximum value of every sublist
+    /// Return the index of the maximum value of every sublist.
+    ///
+    /// In the case of a tie, this may return the index of any of the maximum values.
     pub fn arg_max(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::ListExpr(ListFunction::ArgMax))

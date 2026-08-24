@@ -137,7 +137,7 @@ jobs:
           # Make sure we use the Polars we're about to build.
           uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
           pip install --no-deps -e .
-          maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml
+          maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml --features numa
 
       - name: Run doctests
         if: github.event_name == 'pull_request' && matrix.python-version == '3.14' && matrix.os == 'ubuntu-latest' && !matrix.variant

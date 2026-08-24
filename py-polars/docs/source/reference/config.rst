@@ -9,6 +9,7 @@ Config options
 .. autosummary::
    :toctree: api/
 
+    Config.enable_monitoring
     Config.set_ascii_tables
     Config.set_decimal_separator
     Config.set_default_credential_provider

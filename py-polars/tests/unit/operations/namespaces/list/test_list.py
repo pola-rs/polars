@@ -566,10 +566,12 @@ def test_list_slice_5866() -> None:
 def test_list_gather() -> None:
     s = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8]])
     # mypy: we make it work, but idiomatic is `arr.get`.
-    assert s.list.gather(0).to_list() == [[1], [4], [6]]  # type: ignore[arg-type]
     assert s.list.gather([0, 1]).to_list() == [[1, 2], [4, 5], [6, 7]]
-
     assert s.list.gather([-1, 1]).to_list() == [[3, 2], [5, 5], [8, 7]]
+
+    msg = "`list.gather` indices must be a list of integers, not a flat dyn int. Use `implode` to wrap the flat value into a list."
+    with pytest.raises(InvalidOperationError, match=re.escape(msg)):
+        s.list.gather(0)  # type: ignore[arg-type]
 
     # use another list to make sure negative indices are respected
     gatherer = pl.Series([[-1, 1], [-1, 1], [-1, -2]])
@@ -985,6 +987,12 @@ def test_list_get_with_null() -> None:
 def test_list_sum_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
     assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.get_index_type()
+
+
+def test_list_sum_decimal_schema() -> None:
+    dtype = pl.Decimal(10, 2)
+    q = pl.LazyFrame(schema={"x": pl.List(dtype)})
+    assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == dtype
 
 
 def test_list_concat_struct_19279() -> None:

@@ -27,6 +27,8 @@ class ExprCatNameSpace:
         """
         Return the byte-length of the string representation of each value.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -69,6 +71,8 @@ class ExprCatNameSpace:
     def len_chars(self) -> Expr:
         """
         Return the number of characters of the string representation of each value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -117,6 +121,8 @@ class ExprCatNameSpace:
     def starts_with(self, prefix: str) -> Expr:
         """
         Check if string representations of values start with a substring.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -173,6 +179,8 @@ class ExprCatNameSpace:
         """
         Check if string representations of values end with a substring.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         suffix
@@ -225,6 +233,8 @@ class ExprCatNameSpace:
     def slice(self, offset: int, length: int | None = None) -> Expr:
         """
         Extract a substring from the string representation of each value.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -297,6 +307,8 @@ class ExprCatNameSpace:
 
         The input must be of the physical type of the categorical or enum dtype.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         dtype
@@ -315,6 +327,8 @@ class ExprCatNameSpace:
     def physical(self) -> Expr:
         """
         Get the physical values of a categorical or enum data type.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         .. warning::
             This functionality is currently considered **unstable**. It may be

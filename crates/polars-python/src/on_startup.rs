@@ -138,12 +138,27 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
 
             let mut btp = BacktracePrinter::default();
             if let Some(bp) = polars_base_path() {
-                btp = btp.dependency_predicate(Box::new(move |frame: &Frame| -> bool {
+                let is_non_polars_frame = Box::new(move |frame: &Frame| -> bool {
                     if let Some(file) = frame.filename.as_ref().and_then(|f| f.canonicalize().ok()) {
                         !file.starts_with(&bp)
                     } else {
                         default_is_dependency_frame(frame)
                     }
+                });
+                btp = btp.dependency_predicate(is_non_polars_frame.clone());
+
+                btp = btp.path_display(Box::new(move |path: &Path, frame: &Frame| {
+                    // Remove ./ from the start of relative paths, regularly breaks VS Code ctrl+click fuzzy find.
+                    let p = path.to_string_lossy();
+                    let p = p.strip_prefix("./").unwrap_or(&p).to_owned();
+
+                    // Dim paths of non-Polars frames.
+                    let color = is_non_polars_frame(frame).then(|| {
+                        let mut color = ColorSpec::new();
+                        color.set_dimmed(true);
+                        color
+                    });
+                    (p, color)
                 }));
             }
 

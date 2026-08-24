@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
-use polars_core::prelude::{
-    ChunkExpandAtIndex, Column, DataType, IDX_DTYPE, IntoColumn, ListChunked, SortOptions,
-};
+use polars_core::error::{PolarsContext, PolarsResult, polars_bail, polars_ensure};
+use polars_core::prelude::{Column, DataType, IDX_DTYPE, IntoColumn, ListChunked, SortOptions};
 use polars_core::utils::CustomIterTools;
 use polars_ops::prelude::{ListNameSpaceImpl, slice_broadcast_list};
 use polars_plan::dsl::{ColumnsUdf, ReshapeDimension, SpecialEq};
 use polars_plan::plans::IRListFunction;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUdf>> {
@@ -232,11 +231,12 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
 }
 
 pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
+    let broadcast_len = broadcast_len(s.iter()).context("list concat")?;
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
     // TODO! don't auto cast here, but implode beforehand.
-    let mut first_ca = match first.try_list() {
+    let first_ca = match first.try_list() {
         Some(ca) => ca,
         None => {
             first = first
@@ -245,15 +245,8 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
             first.list().unwrap()
         },
     }
-    .clone();
-
-    if first_ca.len() == 1 && !other.is_empty() {
-        let broadcast_len = other.iter().map(|s| s.len()).filter(|l| *l != 1).max();
-        if let Some(l) = broadcast_len {
-            first_ca = first_ca.new_from_index(0, l)
-        }
-    }
-
+    .clone()
+    .broadcast_owned_to(broadcast_len)?;
     first_ca.lst_concat(other).map(IntoColumn::into_column)
 }
 

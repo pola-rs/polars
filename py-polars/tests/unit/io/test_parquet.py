@@ -43,7 +43,6 @@ if TYPE_CHECKING:
     from tests.unit.conftest import MemoryUsage
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_round_trip(df: pl.DataFrame) -> None:
     f = io.BytesIO()
     df.write_parquet(f)
@@ -51,7 +50,6 @@ def test_round_trip(df: pl.DataFrame) -> None:
     assert_frame_equal(pl.read_parquet(f), df)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_scan_round_trip(df: pl.DataFrame) -> None:
     f = io.BytesIO()
     df.write_parquet(f)
@@ -830,7 +828,6 @@ def test_parquet_string_rle_encoding() -> None:
     )
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_sliced_dict_with_nulls_14904() -> None:
     df = (
         pl.DataFrame({"x": [None, None]})
@@ -2541,7 +2538,6 @@ def test_dict_masked(
     )
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_categorical_sliced_20017() -> None:
     f = io.BytesIO()
     df = (
@@ -2622,10 +2618,7 @@ c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10
     f.seek(0)
 
     q = (
-        pl.scan_parquet(
-            f,
-            parallel="prefiltered",
-        )
+        pl.scan_parquet(f, parallel="prefiltered")
         .filter(
             pl.col("c0") == 1,
         )
@@ -2716,7 +2709,6 @@ def test_parquet_unsupported_dictionary_to_pl_17945() -> None:
     )
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_parquet_cast_to_cat() -> None:
     t = pa.table(
         {
@@ -3213,6 +3205,34 @@ def test_filter_on_logical_dtype_22252() -> None:
     pl.Series("a", [datetime(1996, 10, 5)]).to_frame().write_parquet(f)
     f.seek(0)
     pl.scan_parquet(f).filter(pl.col.a.dt.weekday() == 6).collect()
+
+
+@pytest.mark.parametrize("parallel", ["prefiltered", "none"])
+@pytest.mark.parametrize("coerce_timestamps", ["ms", "us"])
+def test_filter_pyarrow_timestamp_seconds_28609(
+    parallel: ParallelStrategy,
+    coerce_timestamps: Literal["ms", "us"],
+) -> None:
+    f = io.BytesIO()
+    pq.write_table(
+        pa.table(
+            {
+                "ts": pa.array([datetime(2022, 1, 1)] * 5, type=pa.timestamp("s")),
+                "val": pa.array(range(5), type=pa.int64()),
+            }
+        ),
+        f,
+        coerce_timestamps=coerce_timestamps,
+    )
+
+    f.seek(0)
+    target = pl.read_parquet(f)["ts"][0]
+    f.seek(0)
+    result = (
+        pl.scan_parquet(f, parallel=parallel).filter(pl.col("ts") == target).collect()
+    )
+
+    assert result.height == 5
 
 
 def test_filter_nan_22289() -> None:
@@ -4481,6 +4501,7 @@ def test_parquet_prefilter_fixed_size_binary_27781() -> None:
     )
 
 
+@pytest.mark.write_disk
 def test_parquet_writes_field_id(tmp_path: Path) -> None:
     lf = pl.LazyFrame(
         {"a": [1, 2, 3], "b": ["a", "b", "c"], "c": ["x", "y", "z"]},
@@ -4504,3 +4525,30 @@ def test_parquet_writes_field_id(tmp_path: Path) -> None:
         for i in range(len(written_schema))
     ]
     assert field_ids == [b"1", b"2", b"3"]
+
+
+@pytest.mark.parametrize("n", [8, 9, 10])
+@pytest.mark.write_disk
+def test_parquet_max_cached_scans_28661(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    n: int,
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    frames = []
+    for i in range(n):
+        p = tmp_path / f"{i}.parquet"
+        pl.DataFrame({"a": [i], "b": [float(i)]}).write_parquet(p)
+        frames.append(pl.scan_parquet(p))
+
+    capfd.readouterr()
+    pl.concat(frames).collect()
+
+    # Test becomes stale if the following raises. Unfortunately this
+    # only works when running the test in isolation.
+    err = capfd.readouterr().err
+    if "parquet max cached metadata scans:" in err:
+        assert "parquet max cached metadata scans: 8" in err, err

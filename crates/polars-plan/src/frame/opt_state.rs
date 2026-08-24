@@ -2,7 +2,10 @@ use bitflags::bitflags;
 
 const DEFAULT_OPT_FLAGS: OptFlags = OptFlags::from_bits_truncate(
     OptFlags::all().bits()
-        & !(OptFlags::STREAMING.bits() | OptFlags::EAGER.bits() | OptFlags::GPU.bits()),
+        & !(OptFlags::STREAMING.bits()
+            | OptFlags::EAGER.bits()
+            | OptFlags::GPU.bits()
+            | OptFlags::QUERY_MONITORING.bits()),
 );
 
 bitflags! {
@@ -47,6 +50,8 @@ bitflags! {
         /// Pre-partition hive partitioned joins or group-by's
         /// Only works if PREDICATE_PUSHDOWN is set
         const PARTITION_HIVE = 1 << 17;
+        /// Observe this query with the registered observer.
+        const QUERY_MONITORING = 1 << 18;
     }
 }
 
@@ -95,6 +100,10 @@ impl OptFlags {
 
     pub fn streaming(&self) -> bool {
         self.contains(OptFlags::STREAMING)
+    }
+
+    pub fn query_monitoring(&self) -> bool {
+        self.contains(OptFlags::QUERY_MONITORING)
     }
 
     pub fn partition_hive(&self) -> bool {

@@ -8,25 +8,24 @@ import polars.functions as F
 import polars.selectors as cs
 from polars._dependencies import _check_for_numpy
 from polars._dependencies import numpy as np
-from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
-    deprecate_streaming_parameter,
-    deprecated,
     issue_deprecation_warning,
 )
+from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
 )
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import extend_bool, qualified_type_name
-from polars._utils.wrap import wrap_df, wrap_expr, wrap_s
+from polars._utils.wrap import wrap_expr, wrap_s
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 from polars.datatypes._parse import parse_into_datatype_expr
+from polars.lazyframe.engine_config import _eager_engine, _select_engine
 from polars.lazyframe.opt_flags import (
     DEFAULT_QUERY_OPT_FLAGS,
-    forward_old_opt_flags,
+    REMOVED_OLD_OPT_FLAGS,
 )
 from polars.meta.index_type import get_index_type
 
@@ -34,12 +33,12 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars._plr as plr
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Awaitable, Callable, Collection, Iterable, Sequence
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import (
+        AsyncResult,
         CorrelationMethod,
         EngineType,
         EpochTimeUnit,
@@ -47,14 +46,10 @@ if TYPE_CHECKING:
         PolarsDataType,
         QuantileMethod,
     )
+    from polars._utils.async_ import _GeventDataFrameResult
     from polars.lazyframe.opt_flags import (
         QueryOptFlags,
     )
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 def field(name: str | list[str]) -> Expr:
@@ -225,11 +220,8 @@ def count(*columns: str) -> Expr:
     └───────┘
     """
     if not columns:
-        issue_deprecation_warning(
-            "`pl.count()` is deprecated. Please use `pl.len()` instead.",
-            version="0.20.5",
-        )
-        return F.len().alias("count")
+        msg = "`pl.count()` takes at least one argument. If you want to count the number of rows, please use `pl.len()` instead."
+        raise TypeError(msg)
     return F.col(*columns).count()
 
 
@@ -1748,52 +1740,6 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
 
 
-@deprecated("`arctan2d` is deprecated; use `arctan2` followed by `.degrees()` instead.")
-def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
-    """
-    Compute two argument arctan in degrees.
-
-    .. deprecated:: 1.0.0
-        Use `arctan2` followed by :meth:`Expr.degrees` instead.
-
-    Returns the angle (in degrees) in the plane between the positive x-axis
-    and the ray from the origin to (x,y).
-
-    Parameters
-    ----------
-    y
-        Column name or Expression.
-    x
-        Column name or Expression.
-
-    Examples
-    --------
-    >>> c = (2**0.5) / 2
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "y": [c, -c, c, -c],
-    ...         "x": [c, c, -c, -c],
-    ...     }
-    ... )
-    >>> df.select(  # doctest: +SKIP
-    ...     pl.arctan2d("y", "x").alias("atan2d"),
-    ...     pl.arctan2("y", "x").alias("atan2"),
-    ... )
-    shape: (4, 2)
-    ┌────────┬───────────┐
-    │ atan2d ┆ atan2     │
-    │ ---    ┆ ---       │
-    │ f64    ┆ f64       │
-    ╞════════╪═══════════╡
-    │ 45.0   ┆ 0.785398  │
-    │ -45.0  ┆ -0.785398 │
-    │ 135.0  ┆ 2.356194  │
-    │ -135.0 ┆ -2.356194 │
-    └────────┴───────────┘
-    """
-    return arctan2(y, x).degrees()
-
-
 def exclude(
     columns: str | PolarsDataType | Collection[str] | Collection[PolarsDataType],
     *more_columns: str | PolarsDataType,
@@ -1983,20 +1929,19 @@ def arg_sort_by(
     )
 
 
+def _collect_all_eager(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+) -> list[DataFrame]:
+    """Collect internal eager operations locally."""
+    return _eager_engine().collect_all(lazy_frames, optimizations=optimizations)
+
+
 @overload
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
-    type_coercion: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = False,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
     lazy: Literal[False] = False,
@@ -2007,37 +1952,24 @@ def collect_all(
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
-    type_coercion: bool = True,
-    predicate_pushdown: bool = True,
-    projection_pushdown: bool = True,
-    simplify_expression: bool = True,
-    no_optimization: bool = False,
-    slice_pushdown: bool = True,
-    comm_subplan_elim: bool = True,
-    comm_subexpr_elim: bool = True,
-    cluster_with_columns: bool = True,
-    collapse_joins: bool = True,
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
     lazy: Literal[True],
 ) -> LazyFrame: ...
 
 
-@deprecate_streaming_parameter()
-@forward_old_opt_flags()
+@removed_parameters(
+    RemovedParameter(
+        name="streaming",
+        deprecated_in="1.25.0",
+        removed_in="2.0",
+        hint='Use `engine="streaming"` instead.',
+    ),
+    *REMOVED_OLD_OPT_FLAGS,
+)
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
-    type_coercion: bool = True,  # noqa: ARG001
-    predicate_pushdown: bool = True,  # noqa: ARG001
-    projection_pushdown: bool = True,  # noqa: ARG001
-    simplify_expression: bool = True,  # noqa: ARG001
-    no_optimization: bool = False,  # noqa: ARG001
-    slice_pushdown: bool = True,  # noqa: ARG001
-    comm_subplan_elim: bool = True,  # noqa: ARG001
-    comm_subexpr_elim: bool = True,  # noqa: ARG001
-    cluster_with_columns: bool = True,  # noqa: ARG001
-    collapse_joins: bool = True,  # noqa: ARG001
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
     lazy: bool = False,
@@ -2054,56 +1986,6 @@ def collect_all(
     ----------
     lazy_frames
         A list of LazyFrames to collect.
-    type_coercion
-        Do type coercion optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    predicate_pushdown
-        Do predicate pushdown optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    projection_pushdown
-        Do projection pushdown optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    simplify_expression
-        Run simplify expressions optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    no_optimization
-        Turn off optimizations.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    slice_pushdown
-        Slice pushdown optimization.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    comm_subplan_elim
-        Will try to cache branching subplans that occur on self-joins or unions.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    comm_subexpr_elim
-        Common subexpressions will be cached and reused.
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    cluster_with_columns
-        Combine sequential independent calls to with_columns
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
-    collapse_joins
-        Collapse a join and filters into a faster join
-
-        .. deprecated:: 1.30.0
-            Use the `optimizations` parameters.
     optimizations
         The optimization passes done during query optimization.
 
@@ -2111,7 +1993,8 @@ def collect_all(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     engine
-        Select the engine used to process the query (default ``"auto"``):
+        Select the engine used to process the query (default ``"auto"``).
+        A :class:`~.Engine` instance may also be passed. Supported engine names are:
 
         * ``"auto"``: use the engine set by
           :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -2148,26 +2031,18 @@ def collect_all(
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
-    lfs = [lf._ldf for lf in lazy_frames]
     if lazy:
         msg = "the `lazy` parameter of `collect_all` is considered unstable."
         issue_unstable_warning(msg)
 
         from polars.lazyframe import LazyFrame
 
+        lfs = [lf._ldf for lf in lazy_frames]
         ldf = plr.collect_all_lazy(lfs, optimizations._pyoptflags)
         lf = LazyFrame._from_pyldf(ldf)
         return lf
 
-    from polars.lazyframe.frame import _select_engine
-
-    engine = _select_engine(engine)
-    out = plr.collect_all(lfs, engine, optimizations._pyoptflags)
-
-    # wrap the pydataframes into dataframe
-    result = [wrap_df(pydf) for pydf in out]
-
-    return result
+    return _select_engine(engine).collect_all(lazy_frames, optimizations=optimizations)
 
 
 @overload
@@ -2191,7 +2066,14 @@ def collect_all_async(
 
 
 @unstable()
-@deprecate_streaming_parameter()
+@removed_parameters(
+    RemovedParameter(
+        name="streaming",
+        deprecated_in="1.25.0",
+        removed_in="2.0",
+        hint='Use `engine="streaming"` instead.',
+    )
+)
 def collect_all_async(
     lazy_frames: Iterable[LazyFrame],
     *,
@@ -2226,7 +2108,8 @@ def collect_all_async(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     engine
-        Select the engine used to process the query (default ``"auto"``):
+        Select the engine used to process the query (default ``"auto"``).
+        A :class:`~.Engine` instance may also be passed. Supported engine names are:
 
         * ``"auto"``: use the engine set by
           :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
@@ -2267,12 +2150,8 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
-    result: (
-        _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
-    ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-    lfs = [lf._ldf for lf in lazy_frames]
-    plr.collect_all_with_callback(
-        lfs, engine, optimizations._pyoptflags, result._callback_all
+    result: AsyncResult[list[DataFrame]] = _select_engine(engine).collect_all_async(
+        lazy_frames, optimizations=optimizations, gevent=gevent
     )
     return result
 

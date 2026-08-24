@@ -13,9 +13,10 @@ use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_mem_engine::scan_predicate::create_scan_predicate;
 use polars_plan::dsl::{
-    FileSinkOptions, JoinOptionsIR, PartitionStrategyIR, PartitionedSinkOptionsIR, ScanSources,
+    FileSinkOptions, PartitionStrategyIR, PartitionedSinkOptionsIR, ScanSources,
 };
 use polars_plan::plans::expr_ir::ExprIR;
+use polars_plan::plans::options::JoinOptionsIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
 use polars_plan::prelude::FunctionFlags;
 use polars_utils::arena::{Arena, Node};
@@ -201,12 +202,23 @@ fn to_graph_rec<'a>(
             }
         },
 
-        Filter { predicate, input } => {
+        Filter {
+            predicate,
+            input,
+            projection,
+        } => {
             let input_schema = input.output_schema(ctx.phys_sm);
             let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
-                nodes::filter::FilterNode::new(phys_predicate_expr),
+                nodes::filter::FilterNode::new(
+                    phys_predicate_expr,
+                    projection.as_ref().map(|(x, _)| {
+                        x.iter()
+                            .map(|name| input_schema.index_of(name).unwrap())
+                            .collect()
+                    }),
+                ),
                 [(input_key, input.port)],
             )
         },
@@ -1080,8 +1092,6 @@ fn to_graph_rec<'a>(
         InMemoryJoin {
             input_left,
             input_right,
-            left_on,
-            right_on,
             args,
             options,
         } => {
@@ -1101,8 +1111,6 @@ fn to_graph_rec<'a>(
                 input_left: left_node,
                 input_right: right_node,
                 schema: node.output_schema(0).clone(),
-                left_on: left_on.clone(),
-                right_on: right_on.clone(),
                 options: Arc::new(JoinOptionsIR {
                     allow_parallel: true,
                     force_parallel: false,

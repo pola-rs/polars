@@ -469,6 +469,96 @@ def test_raise_invalid_input_join_where() -> None:
         df.join_where(df)
 
 
+def test_join_where_how_left() -> None:
+    # https://github.com/pola-rs/polars/issues/28875
+    left = pl.LazyFrame({"a": [1, 2, 3]})
+    right = pl.LazyFrame({"b": [2]})
+
+    got = left.join_where(right, pl.col("a") > pl.col("b"), how="left").sort("a")
+    expected = pl.LazyFrame({"a": [1, 2, 3], "b": [None, None, 2]})
+    assert_frame_equal(got.collect(), expected.collect())
+
+
+def test_join_where_how_right() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3]})
+    right = pl.LazyFrame({"b": [2]})
+
+    got = left.join_where(right, pl.col("a") > pl.col("b"), how="right")
+    expected = pl.LazyFrame({"a": [3], "b": [2]})
+    assert_frame_equal(got.collect(), expected.collect())
+
+
+@pytest.mark.parametrize("how", ["full", "semi", "anti", "cross"])
+def test_join_where_how_unsupported(how: str) -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3]})
+    right = pl.LazyFrame({"b": [2]})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="join is not supported with non-equi join conditions",
+    ):
+        left.join_where(
+            right,
+            pl.col("a") > pl.col("b"),
+            how=how,  # type: ignore[arg-type]
+        ).collect()
+
+
+def test_join_where_how_left_dataframe() -> None:
+    left = pl.DataFrame({"a": [1, 2, 3]})
+    right = pl.DataFrame({"b": [2]})
+
+    got = left.join_where(right, pl.col("a") > pl.col("b"), how="left").sort("a")
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": [None, None, 2]})
+    assert_frame_equal(got, expected)
+
+
+def test_join_where_how_left_external_filter_not_folded_into_on() -> None:
+    # A `.filter()` chained after `join_where(..., how="left")` is a genuine post-join
+    # WHERE condition: it is evaluated on the joined result and is allowed to remove
+    # null-extended rows (standard SQL semantics). It must not be folded into the join's
+    # own ON condition, which would instead turn "matched, then filtered out by WHERE"
+    # into "never matched, so null-extended" -- producing rows that should not exist.
+    left = pl.LazyFrame({"a": [1], "join_key": [1]})
+    right = pl.LazyFrame({"b": [2], "other_key": [2]})
+
+    # `a > b` (the ON condition) matches: a=1 is not > b=2, so nothing matches and the
+    # left row is null-extended under a plain `join_where`.
+    baseline = left.join_where(right, pl.col("a") > pl.col("b"), how="left")
+    assert baseline.collect().to_dict(as_series=False) == {
+        "a": [1],
+        "join_key": [1],
+        "b": [None],
+        "other_key": [None],
+    }
+
+    # Now make the ON condition match (a=1, b=0), so there IS a real match, and add an
+    # unrelated post-join WHERE (`join_key == other_key`) that is False for that match.
+    # The row must be dropped entirely, not re-null-extended.
+    right_matching = pl.LazyFrame({"b": [0], "other_key": [2]})
+    q = left.join_where(right_matching, pl.col("a") > pl.col("b"), how="left").filter(
+        pl.col("join_key") == pl.col("other_key")
+    )
+    assert q.collect().height == 0
+
+
+def test_join_where_how_left_external_filter_not_folded_into_on_nested_loop() -> None:
+    # Same as `test_join_where_how_left_external_filter_not_folded_into_on`, but the ON
+    # condition mixes an inequality with an equality on unrelated columns, which is not
+    # representable by IEJoin and so forces the nested-loop (`CrossAndFilter`) algorithm
+    # instead -- a separate code path with its own risk of merging the external WHERE
+    # into the join's own condition.
+    left = pl.LazyFrame({"a": [1], "c": [1], "join_key": [1]})
+    right = pl.LazyFrame({"b": [0], "d": [1], "other_key": [2]})
+    q = left.join_where(
+        right,
+        pl.col("a") > pl.col("b"),
+        pl.col("c") == pl.col("d"),
+        how="left",
+    ).filter(pl.col("join_key") == pl.col("other_key"))
+    assert q.collect().height == 0
+
+
 def test_ie_join_use_keys_multiple() -> None:
     a = pl.LazyFrame({"a": [1, 2, 3], "x": [7, 2, 1]})
     b = pl.LazyFrame({"b": [2, 2, 2], "x": [7, 1, 3]})

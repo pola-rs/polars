@@ -37,11 +37,11 @@ impl IOWriter {
         } = self;
 
         let (mut file, sync_on_close) = file.await?;
-        let mut buffered_file = file.as_buffered();
+        let mut buffered_file = file.as_buffered_writable();
 
         let mut parquet_writer = BatchedWriter::new(
             std::sync::Mutex::new(FileWriter::new_with_parquet_schema(
-                &mut *buffered_file,
+                &mut buffered_file,
                 Arc::unwrap_or_clone(arrow_schema),
                 Arc::unwrap_or_clone(schema_descriptor),
                 write_options,
@@ -66,9 +66,10 @@ impl IOWriter {
 
         parquet_writer.finish()?;
         drop(parquet_writer);
+        buffered_file.flush()?;
         drop(buffered_file);
 
-        file.close(sync_on_close)?;
+        file.close(sync_on_close).await?;
 
         Ok(())
     }

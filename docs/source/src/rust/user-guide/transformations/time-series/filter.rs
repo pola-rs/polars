@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap()
         .finish()
         .unwrap();
-    println!("{}", &df);
+    println!("{}", df);
     // --8<-- [end:df]
 
     // --8<-- [start:filter]
@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .filter(col("Date").eq(lit(NaiveDate::new(1995, 10, 16).unwrap())))
         .collect()?;
-    println!("{}", &filtered_df);
+    println!("{}", filtered_df);
     // --8<-- [end:filter]
 
     // --8<-- [start:range]
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .and(col("Date").lt(lit(NaiveDate::new(1995, 11, 1).unwrap()))),
         )
         .collect()?;
-    println!("{}", &filtered_range_df);
+    println!("{}", filtered_range_df);
     // --8<-- [end:range]
 
     // --8<-- [start:negative]
@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .filter(col("ts").dt().year().lt(-1300))
         .collect()?;
-    println!("{}", &negative_dates_filtered_df);
+    println!("{}", negative_dates_filtered_df);
     // --8<-- [end:negative]
 
     Ok(())

@@ -341,7 +341,6 @@ def test_parse_invalid_function(func: str) -> None:
     "ignore:invalid value encountered:RuntimeWarning",
     "ignore:.*without specifying `return_dtype`:polars.exceptions.MapWithoutReturnDtypeWarning",
 )
-@pytest.mark.may_fail_auto_streaming  # dtype not set
 @pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
 def test_parse_apply_functions(
     col: str, func: str, expr_repr: str, dtype: Literal["self"] | pl.DataType | None
@@ -552,7 +551,6 @@ def test_parse_apply_series(
     assert_series_equal(expected_series, result_series, check_dtypes=False)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_expr_exact_warning_message() -> None:
     red, green, end_escape = (
         ("\x1b[31m", "\x1b[32m", "\x1b[0m")

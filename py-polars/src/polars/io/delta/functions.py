@@ -139,7 +139,7 @@ def read_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... )  # doctest: +SKIP
     """
-    df = scan_delta(
+    lf = scan_delta(
         source=source,
         version=version,
         storage_options=storage_options,
@@ -150,8 +150,9 @@ def read_delta(
     )
 
     if columns is not None:
-        df = df.select(columns)
-    return df.collect()
+        lf = lf.select(columns)
+
+    return lf._collect_eager()
 
 
 def scan_delta(

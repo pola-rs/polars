@@ -1,5 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 //! DataFrame module.
+use std::borrow::Cow;
+
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
 use polars_utils::UnitVec;
@@ -21,7 +23,6 @@ mod arithmetic;
 pub mod builder;
 mod chunks;
 pub use chunks::chunk_df_for_writing;
-mod broadcast;
 pub mod column;
 mod dataframe;
 mod filter;
@@ -917,15 +918,7 @@ impl DataFrame {
     /// Add a new column to this [`DataFrame`] or replace an existing one. Broadcasts unit-length
     /// columns.
     pub fn with_column(&mut self, mut column: Column) -> PolarsResult<&mut Self> {
-        if column.len() != self.height() && column.len() == 1 {
-            column = column.new_from_index(0, self.height());
-        }
-
-        polars_ensure!(
-            column.len() == self.height(),
-            ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
-            column.len(), self.height(),
-        );
+        column.broadcast_in_place_to(self.height())?;
 
         if let Some(i) = self.get_column_index(column.name()) {
             *unsafe { self.columns_mut() }.get_mut(i).unwrap() = column
@@ -972,16 +965,7 @@ impl DataFrame {
         mut column: Column,
         output_schema: &Schema,
     ) -> PolarsResult<&mut Self> {
-        if column.len() != self.height() && column.len() == 1 {
-            column = column.new_from_index(0, self.height());
-        }
-
-        polars_ensure!(
-            column.len() == self.height(),
-            ShapeMismatch:
-            "unable to add a column of length {} to a DataFrame of height {}",
-            column.len(), self.height(),
-        );
+        column.broadcast_in_place_to(self.height())?;
 
         let i = output_schema
             .index_of(column.name())
@@ -1159,7 +1143,22 @@ impl DataFrame {
                 Ok(self.clear())
             }
         } else {
-            let new_columns: Vec<Column> = self.try_apply_columns_par(|s| s.filter(mask))?;
+            // Rechunk when not all chunks are aligned. This avoid O(n*m) overhead,
+            // where n = number of chunks, and m = number of columns.
+            let all_chunks_aligned = !self.should_rechunk()
+                && self
+                    .materialized_column_iter()
+                    .next()
+                    .is_some_and(|s| s.chunk_lengths().eq(mask.chunk_lengths()));
+
+            let mask = if all_chunks_aligned {
+                Cow::Borrowed(mask)
+            } else {
+                mask.rechunk()
+            };
+
+            let new_columns: Vec<Column> =
+                self.try_apply_columns_par(|s| s.filter(mask.as_ref()))?;
             let out = unsafe {
                 DataFrame::new_unchecked(new_columns[0].len(), new_columns).with_schema_from(self)
             };
@@ -1179,7 +1178,19 @@ impl DataFrame {
                 Ok(self.clear())
             }
         } else {
-            let new_columns: Vec<Column> = self.try_apply_columns(|s| s.filter(mask))?;
+            let all_chunks_aligned = !self.should_rechunk()
+                && self
+                    .materialized_column_iter()
+                    .next()
+                    .is_some_and(|s| s.chunk_lengths().eq(mask.chunk_lengths()));
+
+            let mask = if all_chunks_aligned {
+                Cow::Borrowed(mask)
+            } else {
+                mask.rechunk()
+            };
+
+            let new_columns: Vec<Column> = self.try_apply_columns(|s| s.filter(mask.as_ref()))?;
             let out = unsafe {
                 DataFrame::new_unchecked(new_columns[0].len(), new_columns).with_schema_from(self)
             };
@@ -1353,36 +1364,35 @@ impl DataFrame {
     }
 
     pub fn rename_many<'a>(
-        &mut self,
+        mut self,
         renames: impl Iterator<Item = (&'a str, PlSmallStr)>,
-    ) -> PolarsResult<&mut Self> {
-        let mut schema_arc = self.schema().clone();
-        let schema = Arc::make_mut(&mut schema_arc);
+    ) -> PolarsResult<Self> {
+        let schema = self.schema().clone();
 
         for (from, to) in renames {
             if from == to.as_str() {
                 continue;
             }
 
-            polars_ensure!(
-                !schema.contains(&to),
-                Duplicate: "column rename attempted with already existing name \"{to}\""
-            );
+            let idx = schema
+                .index_of(from)
+                .ok_or_else(|| polars_err!(col_not_found = from))?;
 
-            match schema.get_full(from) {
-                None => polars_bail!(col_not_found = from),
-                Some((idx, _, _)) => {
-                    let (n, _) = schema.get_at_index_mut(idx).unwrap();
-                    *n = to.clone();
-                    unsafe { self.columns_mut() }
-                        .get_mut(idx)
-                        .unwrap()
-                        .rename(to);
-                },
-            }
+            unsafe { self.columns_mut() }
+                .get_mut(idx)
+                .unwrap()
+                .rename(to);
         }
 
-        unsafe { self.set_schema(schema_arc) };
+        // Check for duplicates.
+        let schema = Schema::from_iter_check_duplicates(
+            self.columns()
+                .iter()
+                .map(|c| c.name().clone())
+                .zip_eq(schema.iter_values().cloned()),
+        )?;
+
+        unsafe { self.set_schema(Arc::new(schema)) };
 
         Ok(self)
     }
@@ -1786,20 +1796,10 @@ impl DataFrame {
             )
         })?;
 
-        let mut new_col = f(col).into_column();
-
-        if new_col.len() != df_height && new_col.len() == 1 {
-            new_col = new_col.new_from_index(0, df_height);
-        }
-
-        polars_ensure!(
-            new_col.len() == df_height,
-            ShapeMismatch:
-            "apply_at_idx: resulting Series has length {} while the DataFrame has height {}",
-            new_col.len(), df_height
-        );
-
-        new_col = new_col.with_name(col.name().clone());
+        let new_col = f(col)
+            .into_column()
+            .with_name(col.name().clone())
+            .broadcast_owned_to(df_height)?;
         let col_before = std::mem::replace(col, new_col);
 
         if col.dtype() == col_before.dtype() {

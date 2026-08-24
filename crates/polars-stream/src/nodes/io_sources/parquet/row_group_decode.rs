@@ -372,6 +372,7 @@ fn decode_column_in_filter(
             let p = ColumnPredicateExpr::new(
                 arrow_field.name.clone(),
                 DataType::from_arrow_field(arrow_field),
+                arrow_field.dtype.clone(),
                 column_predicate.clone(),
                 specialized.clone(),
             );

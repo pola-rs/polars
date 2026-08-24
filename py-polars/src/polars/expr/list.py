@@ -34,6 +34,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
         This is syntactic sugar for :meth:`Expr.list.get`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         item
@@ -59,6 +61,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def all(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether all boolean values in a list are true.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -96,6 +100,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def any(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether any boolean value in a list is true.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -136,6 +142,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
         Null values count towards the total.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -160,6 +168,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def drop_nulls(self) -> Expr:
         """
         Drop all null values in the list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         The original order of the remaining elements is preserved.
 
@@ -191,6 +201,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     ) -> Expr:
         """
         Sample from this list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -253,6 +265,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Sum all the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Notes
         -----
         If there are no non-null elements in a row, the output is `0`.
@@ -277,6 +291,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Compute the max value of the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
@@ -296,6 +312,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def min(self) -> Expr:
         """
         Compute the min value of the lists in the array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -317,6 +335,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Compute the mean value of the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
@@ -337,6 +357,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Compute the median value of the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
@@ -356,6 +378,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def std(self, ddof: int = 1) -> Expr:
         """
         Compute the std value of the lists in the array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -384,6 +408,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Compute the var value of the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         ddof
@@ -410,6 +436,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort the lists in this column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -452,6 +480,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Reverse the arrays in the list.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -474,7 +504,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
-        Get the unique/distinct values in the list.
+        Get the unique/distinct values in every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -502,7 +534,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def n_unique(self) -> Expr:
         """
-        Count the number of unique values in every sub-lists.
+        Count the number of unique values in every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -527,6 +561,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """
         Concat the arrays in a Series dtype List in linear time.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -570,7 +606,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         null_on_oob: bool = False,
     ) -> Expr:
         """
-        Get the value by index in the sublists.
+        Get the value by index in every sublist.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         So index `0` would return the first item of every sublist
         and index `-1` would return the last item of every sublist
@@ -611,7 +649,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         null_on_oob: bool = False,
     ) -> Expr:
         """
-        Take sublists by multiple indices.
+        Take sub-lists by multiple indices.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         The indices may be defined in a single column, or by sublists in another
         column of dtype `List`.
@@ -650,7 +690,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         offset: int | IntoExprColumn = 0,
     ) -> Expr:
         """
-        Take every n-th value start from offset in sublists.
+        Take every n-th value start from offset in every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -690,7 +732,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def first(self) -> Expr:
         """
-        Get the first value of the sublists.
+        Get the first value of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -711,7 +755,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def last(self) -> Expr:
         """
-        Get the last value of the sublists.
+        Get the last value of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -733,7 +779,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     @unstable()
     def item(self, *, allow_empty: bool = False) -> Expr:
         """
-        Get the single value of the sublists.
+        Get the single value of the sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         This errors if the sublist length is not exactly one.
 
@@ -783,7 +831,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
-        Check if sublists contain the given item.
+        Check if sub-lists contain the given item.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -817,9 +867,11 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """
-        Join all string items in a sublist and place a separator between them.
+        Join all string items in a sub-list and place a separator between them.
 
         This errors if inner type of list `!= String`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -869,7 +921,13 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def arg_min(self) -> Expr:
         """
-        Retrieve the index of the minimal value in every sublist.
+        Retrieve an index of a minimal value in every sublist.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -899,7 +957,13 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def arg_max(self) -> Expr:
         """
-        Retrieve the index of the maximum value in every sublist.
+        Retrieve the index of the maximum value in every sub-list.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -929,7 +993,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
-        Calculate the first discrete difference between shifted items of every sublist.
+        Calculate the first discrete difference between shifted items of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -978,7 +1044,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def shift(self, n: int | IntoExprColumn = 1) -> Expr:
         """
-        Shift list values by the given number of indices.
+        Shift every sub-lists values by the given number of indices.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1027,7 +1095,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         self, offset: int | str | Expr, length: int | str | Expr | None = None
     ) -> Expr:
         """
-        Slice every sublist.
+        Slice every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1068,7 +1138,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def head(self, n: int | str | Expr = 5) -> Expr:
         """
-        Slice the first `n` values of every sublist.
+        Slice the first `n` values of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1093,7 +1165,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def tail(self, n: int | str | Expr = 5) -> Expr:
         """
-        Slice the last `n` values of every sublist.
+        Slice the last `n` values of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1119,7 +1193,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def explode(self, *, empty_as_null: bool = False, keep_nulls: bool = True) -> Expr:
         """
-        Returns a column with a separate row for every list element.
+        Returns a column with a separate row for every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1163,6 +1239,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Count how often the value produced by `element` occurs.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         element
@@ -1191,6 +1269,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def to_array(self, width: int) -> Expr:
         """
         Convert a List column into an Array column with the same inner data type.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1224,6 +1304,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def to_struct(self, fields: Sequence[str]) -> Expr:
         """
         Convert the Series of type `List` to a Series of type `Struct`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1291,7 +1373,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def eval(self, expr: Expr, *, parallel: bool = False) -> Expr:
         """
-        Run any polars expression against the lists' elements.
+        Run any polars expression against every lists' elements.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1331,6 +1415,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def agg(self, expr: Expr) -> Expr:
         """
         Run any polars aggregation expression against the lists' elements.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1374,6 +1460,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Filter elements in each list by a boolean expression.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         predicate
@@ -1403,6 +1491,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def set_union(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET UNION between the elements in this list and the elements of `other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1443,6 +1533,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def set_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1486,6 +1578,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         other
@@ -1523,6 +1617,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def set_symmetric_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------

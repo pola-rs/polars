@@ -57,7 +57,7 @@ fn test_full_outer_join_with_column_2988() -> PolarsResult<()> {
             JoinArgs::new(JoinType::Full)
                 .with_maintain_order(MaintainOrderJoin::LeftRight)
                 .with_coalesce(JoinCoalesce::CoalesceColumns),
-        )
+        )?
         .with_columns([col("key1")])
         .collect()?;
     assert_eq!(out.get_column_names(), &["key1", "key2", "val1", "val2"]);

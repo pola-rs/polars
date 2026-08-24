@@ -4,6 +4,16 @@ use polars_core::utils::materialize_dyn_int;
 
 use super::*;
 
+pub(super) fn function_sum_output_dtype(dtype: &DataType) -> DataType {
+    match dtype {
+        // Preserve existing function-expression schema behavior. Core reductions
+        // promote Decimal precision, while these expressions currently do not.
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => dtype.clone(),
+        dtype => sum_output_dtype(dtype),
+    }
+}
+
 impl IRFunctionExpr {
     pub(crate) fn get_field(&self, fields: &[Field]) -> PolarsResult<Field> {
         use IRFunctionExpr::*;
@@ -299,6 +309,8 @@ impl IRFunctionExpr {
                     polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(breaks) + 1 labels");
                     l.clone()
                 } else {
+                    use polars_ops::series::compute_labels;
+
                     compute_labels(breaks, *left_closed)?
                 };
                 let enum_dtype = DataType::from_frozen_categories(FrozenCategories::new(
@@ -713,17 +725,11 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub fn sum_dtype(&self) -> PolarsResult<Field> {
-        use DataType::*;
-        self.map_dtype(|dtype| match dtype {
-            Int8 | UInt8 | Int16 | UInt16 => Int64,
-            Boolean => IDX_DTYPE,
-            dt => dt.clone(),
-        })
+        self.map_dtype(function_sum_output_dtype)
     }
 
     pub fn nested_sum_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
-        use DataType::*;
         let dt = first.dtype().inner_dtype().cloned().ok_or_else(|| {
             polars_err!(
                 InvalidOperation:"expected List or Array type, got dtype: {}",
@@ -731,11 +737,7 @@ impl<'a> FieldsMapper<'a> {
             )
         })?;
 
-        match dt {
-            Boolean => first.coerce(IDX_DTYPE),
-            UInt8 | Int8 | Int16 | UInt16 => first.coerce(Int64),
-            _ => first.coerce(dt),
-        }
+        first.coerce(function_sum_output_dtype(&dt));
         Ok(first)
     }
 

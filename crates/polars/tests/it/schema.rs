@@ -329,7 +329,7 @@ fn test_getters() {
     test_case!(schema, get_full, name: "a", (0, &"a".into(), &UInt64));
     test_case!(schema, get_field, name: "a", Field::new("a".into(), UInt64));
     test_case!(schema, get_at_index, index: 1, (&"b".into(), &Int32));
-    test_case!(schema, get_at_index_mut, index: 1, (&mut "b".into(), &mut Int32));
+    test_case!(schema, get_at_index_mut, index: 1, (&"b".into(), &mut Int32));
 
     assert!(schema.contains("a"));
     assert!(!schema.contains("NOT_FOUND"));

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import warnings
 from collections import OrderedDict
 from datetime import date, datetime, time
@@ -13,6 +14,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import (
+    ArgumentRemovedError,
     NoDataError,
     ParameterCollisionError,
 )
@@ -503,7 +505,6 @@ def test_read_invalid_worksheet(
         (pl.read_ods, "path_ods_mixed", {}),
     ],
 )
-@pytest.mark.may_fail_auto_streaming
 def test_read_mixed_dtype_columns(
     read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
     source: str,
@@ -1507,3 +1508,13 @@ def test_spreadsheet_no_resource_warning(
         warnings.simplefilter("error", ResourceWarning)
         read_spreadsheet(spreadsheet_path, **params)
         read_spreadsheet(spreadsheet_path, sheet_id=0, **params)
+
+
+def test_read_excel_renamed_options_removed() -> None:
+    msg = "It was renamed to 'engine_options'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.read_excel(BytesIO(), xlsx2csv_options={})  # type: ignore[call-overload]
+
+    msg = "It was renamed to 'read_options'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.read_excel(BytesIO(), read_csv_options={})  # type: ignore[call-overload]

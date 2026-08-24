@@ -292,6 +292,16 @@ def pl_dtype_from_iceberg_field(field: NestedField) -> pl.DataType:
     return field_polars_dtype
 
 
+def load_puffin_deletion_file(puffin_bytes: bytes) -> dict[str, pl.Series]:
+    import pyiceberg.table.puffin
+
+    import polars as pl
+
+    positions = pyiceberg.table.puffin.PuffinFile(puffin_bytes).to_vector()
+
+    return {k: pl.Series(v).reinterpret(dtype=pl.UInt64) for k, v in positions.items()}
+
+
 class IdentityTransformedPartitionValuesBuilder:
     def __init__(
         self,

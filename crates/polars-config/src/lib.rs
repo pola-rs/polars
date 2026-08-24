@@ -103,6 +103,15 @@ const DNS_LOG_THRESHOLD_MS: &str = "POLARS_DNS_LOG_THRESHOLD_MS";
 /// Sentinel meaning "env var not set / logging disabled".
 const DNS_LOG_THRESHOLD_DISABLED: u64 = u64::MAX;
 
+const NUMA_AWARE: &str = "POLARS_NUMA_AWARE";
+const DEFAULT_NUMA_AWARE: bool = false;
+
+const NUMA_MOCK_REGIONS: &str = "POLARS_NUMA_MOCK_REGIONS";
+const DEFAULT_NUMA_MOCK_REGIONS: u64 = 0;
+
+const DISABLE_HTTP_RATE_LIMIT: &str = "POLARS_DISABLE_HTTP_RATE_LIMIT";
+const DEFAULT_DISABLE_HTTP_RATE_LIMIT: bool = false;
+
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
     VERBOSE,
@@ -153,6 +162,9 @@ static KNOWN_OPTIONS: &[&str] = &[
     JOIN_SAMPLE_LIMIT,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
     DNS_LOG_THRESHOLD_MS,
+    NUMA_AWARE,
+    NUMA_MOCK_REGIONS,
+    DISABLE_HTTP_RATE_LIMIT,
 ];
 
 pub struct Config {
@@ -183,6 +195,9 @@ pub struct Config {
     join_sample_limit: AtomicU64,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
     dns_log_threshold_ms: AtomicU64,
+    numa_aware: AtomicBool,
+    numa_mock_regions: AtomicU64,
+    disable_http_rate_limit: AtomicBool,
 }
 
 impl Config {
@@ -225,6 +240,9 @@ impl Config {
             ),
             allow_nested_cspe: AtomicBool::new(DEFAULT_ALLOW_NESTED_CSPE),
             dns_log_threshold_ms: AtomicU64::new(DNS_LOG_THRESHOLD_DISABLED),
+            numa_aware: AtomicBool::new(DEFAULT_NUMA_AWARE),
+            numa_mock_regions: AtomicU64::new(DEFAULT_NUMA_MOCK_REGIONS),
+            disable_http_rate_limit: AtomicBool::new(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
         };
         cfg.reload_env_vars();
         cfg
@@ -380,6 +398,21 @@ impl Config {
             DNS_LOG_THRESHOLD_MS => self.dns_log_threshold_ms.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DNS_LOG_THRESHOLD_DISABLED),
+                Ordering::Relaxed,
+            ),
+            NUMA_AWARE => self.numa_aware.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_NUMA_AWARE),
+                Ordering::Relaxed,
+            ),
+            NUMA_MOCK_REGIONS => self.numa_mock_regions.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_NUMA_MOCK_REGIONS),
+                Ordering::Relaxed,
+            ),
+            DISABLE_HTTP_RATE_LIMIT => self.disable_http_rate_limit.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
                 Ordering::Relaxed,
             ),
             _ => {
@@ -544,6 +577,21 @@ impl Config {
             DNS_LOG_THRESHOLD_DISABLED => None,
             ms => Some(Duration::from_millis(ms)),
         }
+    }
+
+    #[inline(always)]
+    pub fn numa_aware(&self) -> bool {
+        self.numa_aware.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn numa_mock_regions(&self) -> u64 {
+        self.numa_mock_regions.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn disable_http_rate_limit(&self) -> bool {
+        self.disable_http_rate_limit.load(Ordering::Relaxed)
     }
 }
 

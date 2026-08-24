@@ -8,6 +8,7 @@ use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
+use polars_ops::series::new_int_range;
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 #[cfg(feature = "serde")]
@@ -566,7 +567,7 @@ impl Literal for NaiveDateTime {
         let ts = jiff::tz::TimeZone::UTC
             .to_timestamp(self)
             .expect("datetime out-of-range");
-        if in_nanoseconds_window(&self) {
+        if polars_time::in_nanoseconds_window(&self) {
             Expr::Literal(
                 Scalar::new_datetime(
                     i64::try_from(ts.as_nanosecond()).unwrap(),

@@ -155,6 +155,10 @@ class CredentialProviderAWS(CachingCredentialProvider):
         at any point without it being considered a breaking change.
     """
 
+    profile_name: str | None
+    region_name: str | None
+    assume_role: AWSAssumeRoleKWArgs | None
+
     def __init__(  # noqa: D417 (TODO)
         self,
         *,
@@ -324,6 +328,11 @@ class CredentialProviderAzure(CachingCredentialProvider):
         This functionality is considered **unstable**. It may be changed
         at any point without it being considered a breaking change.
     """
+
+    account_name: str | None
+    scopes: list[str]
+    tenant_id: str | None
+    credential: Any | None
 
     def __init__(
         self,

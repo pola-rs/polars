@@ -19,14 +19,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "groups" => &["a", "a", "a", "b", "b", "a", "a"],
         "values" => &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
     )?;
-    println!("{}", &df);
+    println!("{}", df);
     // --8<-- [end:df]
 
     // --8<-- [start:upsample]
     let out1 = df
         .upsample::<[String; 0]>([], "time", Duration::parse("15m"))?
         .fill_null(FillNullStrategy::Forward(None))?;
-    println!("{}", &out1);
+    println!("{}", out1);
     // --8<-- [end:upsample]
 
     // --8<-- [start:upsample2]
@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_columns([col("values").interpolate(InterpolationMethod::Linear)])
         .collect()?
         .fill_null(FillNullStrategy::Forward(None))?;
-    println!("{}", &out2);
+    println!("{}", out2);
     // --8<-- [end:upsample2]
     Ok(())
 }

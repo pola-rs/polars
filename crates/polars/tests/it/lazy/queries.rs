@@ -181,7 +181,7 @@ fn test_sorted_path_joins() -> PolarsResult<()> {
             [col("a")],
             [col("a")],
             JoinArgs::new(JoinType::Left).with_maintain_order(MaintainOrderJoin::LeftRight),
-        )
+        )?
         .collect()?;
 
     let s = out.column("a")?;

@@ -1,4 +1,5 @@
 mod builder;
+mod canonical;
 mod determinism;
 mod equality;
 mod evaluate;
@@ -14,9 +15,12 @@ mod traverse;
 
 use std::hash::{Hash, Hasher};
 
-pub use determinism::{is_inherently_nondeterministic, is_inherently_nondeterministic_top_level};
+pub use canonical::{CanonicalExprId, CanonicalExprMap, CanonicalExprMapWithArena};
+pub use determinism::{
+    is_inherently_nondeterministic, is_inherently_nondeterministic_excluding_udfs_top_level,
+    is_inherently_nondeterministic_top_level,
+};
 pub use function_expr::*;
-pub(crate) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;

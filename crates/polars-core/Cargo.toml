@@ -70,6 +70,7 @@ proptest = ["dep:proptest", "dtype-u8", "dtype-u16", "dtype-i8", "dtype-i16", "d
 random = ["rand", "rand_distr"]
 algorithm_group_by = []
 default = ["algorithm_group_by"]
+numa = ["polars-async/numa"]
 lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes

@@ -22,12 +22,12 @@ use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    CastColumnsPolicy, ColumnsUdf, ExtraColumnsPolicy, FileSinkOptions, JoinTypeOptionsIR,
-    MissingColumnsPolicy, PartitionedSinkOptionsIR, PredicateFileSkip, ScanSources,
-    TableStatistics,
+    CastColumnsPolicy, ColumnsUdf, ExtraColumnsPolicy, FileSinkOptions, MissingColumnsPolicy,
+    PartitionedSinkOptionsIR, PredicateFileSkip, ScanSources, TableStatistics,
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
+use polars_plan::plans::options::JoinTypeOptionsIR;
 use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
 mod fmt;
@@ -35,6 +35,7 @@ mod io;
 mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
+mod to_description;
 mod to_graph;
 
 pub use fmt::{NodeStyle, visualize_plan};
@@ -47,6 +48,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::{UnitVec, unitvec};
 use slotmap::{SecondaryMap, SlotMap};
+pub use to_description::physical_plan_to_description;
 pub use to_graph::physical_plan_to_graph;
 
 pub use self::lower_ir::StreamingLowerIRContext;
@@ -101,6 +103,10 @@ impl PhysNode {
 
     pub fn kind(&self) -> &PhysNodeKind {
         &self.kind
+    }
+
+    pub fn kind_mut(&mut self) -> &mut PhysNodeKind {
+        &mut self.kind
     }
 }
 
@@ -208,6 +214,8 @@ pub enum PhysNodeKind {
     Filter {
         input: PhysStream,
         predicate: ExprIR,
+        /// (projected columns, num_input_columns).
+        projection: Option<(Vec<PlSmallStr>, usize)>,
     },
 
     SimpleProjection {
@@ -511,10 +519,9 @@ pub enum PhysNodeKind {
     InMemoryJoin {
         input_left: PhysStream,
         input_right: PhysStream,
-        left_on: Vec<ExprIR>,
-        right_on: Vec<ExprIR>,
         args: JoinArgs,
-        options: Option<JoinTypeOptionsIR>,
+        /// Holds the match condition, including the join keys.
+        options: JoinTypeOptionsIR,
     },
 
     #[cfg(feature = "merge_sorted")]
@@ -558,7 +565,24 @@ pub enum PhysNodeKind {
 fn visit_node_inputs_mut(
     roots: Vec<PhysNodeKey>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    mut visit: impl FnMut(&mut PhysStream),
+    visit: impl FnMut(&mut PhysStream),
+) {
+    _visit_nodes_impl(roots, phys_sm, |_, _| (), visit)
+}
+
+fn visit_nodes_mut(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    visit: impl FnMut(PhysNodeKey, &mut SlotMap<PhysNodeKey, PhysNode>),
+) {
+    _visit_nodes_impl(roots, phys_sm, visit, |_| ())
+}
+
+fn _visit_nodes_impl(
+    roots: Vec<PhysNodeKey>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    mut visit_node: impl FnMut(PhysNodeKey, &mut SlotMap<PhysNodeKey, PhysNode>),
+    mut visit_input: impl FnMut(&mut PhysStream),
 ) {
     let mut to_visit = roots;
     let mut seen: SecondaryMap<PhysNodeKey, ()> =
@@ -603,19 +627,19 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::PeakMinMax { input, .. }
             | PhysNodeKind::IsSorted { input, .. } => {
                 rec!(input.node);
-                visit(input);
+                visit_input(input);
             },
 
             #[cfg(feature = "interpolate")]
             PhysNodeKind::Interpolate { input, .. } => {
                 rec!(input.node);
-                visit(input);
+                visit_input(input);
             },
 
             #[cfg(feature = "is_first_distinct")]
             PhysNodeKind::IsFirstDistinct { input, .. } => {
                 rec!(input.node);
-                visit(input);
+                visit_input(input);
             },
 
             #[cfg(any(
@@ -625,24 +649,24 @@ fn visit_node_inputs_mut(
             ))]
             PhysNodeKind::StrptimeInfer { input, .. } => {
                 rec!(input.node);
-                visit(input);
+                visit_input(input);
             },
 
             #[cfg(feature = "dynamic_group_by")]
             PhysNodeKind::DynamicGroupBy { input, .. } => {
                 rec!(input.node);
-                visit(input);
+                visit_input(input);
             },
             #[cfg(feature = "dynamic_group_by")]
             PhysNodeKind::RollingGroupBy { input, .. } => {
                 rec!(input.node);
-                visit(input);
+                visit_input(input);
             },
 
             #[cfg(feature = "cum_agg")]
             PhysNodeKind::CumAgg { input, .. } => {
                 rec!(input.node);
-                visit(input);
+                visit_input(input);
             },
 
             PhysNodeKind::InMemoryJoin {
@@ -677,8 +701,8 @@ fn visit_node_inputs_mut(
             } => {
                 rec!(input_left.node);
                 rec!(input_right.node);
-                visit(input_left);
-                visit(input_right);
+                visit_input(input_left);
+                visit_input(input_right);
             },
 
             #[cfg(feature = "iejoin")]
@@ -689,8 +713,8 @@ fn visit_node_inputs_mut(
             } => {
                 rec!(input_left.node);
                 rec!(input_right.node);
-                visit(input_left);
-                visit(input_right);
+                visit_input(input_left);
+                visit_input(input_right);
             },
 
             #[cfg(feature = "merge_sorted")]
@@ -701,22 +725,22 @@ fn visit_node_inputs_mut(
             } => {
                 rec!(input_left.node);
                 rec!(input_right.node);
-                visit(input_left);
-                visit(input_right);
+                visit_input(input_left);
+                visit_input(input_right);
             },
 
             PhysNodeKind::Gather { input, idxs, .. } => {
                 rec!(input.node);
                 rec!(idxs.node);
-                visit(input);
-                visit(idxs);
+                visit_input(input);
+                visit_input(idxs);
             },
 
             PhysNodeKind::TopK { input, k, .. } => {
                 rec!(input.node);
                 rec!(k.node);
-                visit(input);
-                visit(k);
+                visit_input(input);
+                visit_input(k);
             },
 
             PhysNodeKind::DynamicSlice {
@@ -727,9 +751,9 @@ fn visit_node_inputs_mut(
                 rec!(input.node);
                 rec!(offset.node);
                 rec!(length.node);
-                visit(input);
-                visit(offset);
-                visit(length);
+                visit_input(input);
+                visit_input(offset);
+                visit_input(length);
             },
 
             PhysNodeKind::Shift {
@@ -742,18 +766,18 @@ fn visit_node_inputs_mut(
                 if let Some(fill) = fill {
                     rec!(fill.node);
                 }
-                visit(input);
-                visit(offset);
+                visit_input(input);
+                visit_input(offset);
                 if let Some(fill) = fill {
-                    visit(fill);
+                    visit_input(fill);
                 }
             },
 
             PhysNodeKind::Repeat { value, repeats } => {
                 rec!(value.node);
                 rec!(repeats.node);
-                visit(value);
-                visit(repeats);
+                visit_input(value);
+                visit_input(repeats);
             },
 
             PhysNodeKind::GroupBy { inputs, .. }
@@ -763,14 +787,14 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::ColumnarFunction { inputs, .. } => {
                 for input in inputs {
                     rec!(input.node);
-                    visit(input);
+                    visit_input(input);
                 }
             },
 
             PhysNodeKind::SinkMultiple { sinks } => {
                 for sink in sinks {
                     rec!(*sink);
-                    visit(&mut PhysStream::first(*sink));
+                    visit_input(&mut PhysStream::first(*sink));
                 }
             },
 
@@ -780,9 +804,11 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::EwmVar { input, options: _ }
             | PhysNodeKind::EwmStd { input, options: _ } => {
                 rec!(input.node);
-                visit(input)
+                visit_input(input)
             },
         }
+
+        visit_node(node, phys_sm);
     }
 }
 
@@ -843,6 +869,53 @@ fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey
     });
 }
 
+fn fuse_drops(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+    visit_nodes_mut(roots, phys_sm, |key, phys_sm| {
+        let PhysNodeKind::SimpleProjection { input, .. } = phys_sm[key].kind() else {
+            return;
+        };
+        let len_before_drop = input.output_schema(phys_sm).len();
+        let input = input.node;
+
+        let Some([simple_proj_node, input_node]) = phys_sm.get_disjoint_mut([key, input]) else {
+            return;
+        };
+
+        if input_node.output_schemas.len() != 1 {
+            return;
+        }
+
+        let PhysNodeKind::SimpleProjection { input: _, columns } = simple_proj_node.kind_mut()
+        else {
+            unreachable!()
+        };
+
+        let has_rename = columns.iter().any(|(k, v)| k != v);
+
+        // TODO: Figure out why `input_schema.try_project` fails below with e.g. "\"_POLARS_TMP_7253\" not found"
+        if has_rename {
+            return;
+        }
+
+        match input_node.kind_mut() {
+            PhysNodeKind::Filter {
+                input: _,
+                predicate: _,
+                projection: projection @ None,
+            } => *projection = Some((Vec::from_iter(columns.keys().cloned()), len_before_drop)),
+
+            _ => return,
+        }
+
+        let input_schema = input_node.output_schema_mut(0);
+        *input_schema = Arc::new(input_schema.try_project(columns.keys()).unwrap());
+
+        if !has_rename && simple_proj_node.output_schemas.len() == 1 {
+            std::mem::swap(simple_proj_node, input_node);
+        }
+    });
+}
+
 pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
@@ -866,5 +939,6 @@ pub fn build_physical_plan(
     )?;
     insert_multiplexers(vec![phys_root.node], phys_sm);
     split_multiplexers(vec![phys_root.node], phys_sm);
+    fuse_drops(vec![phys_root.node], phys_sm);
     Ok(phys_root.node)
 }

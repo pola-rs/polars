@@ -137,6 +137,128 @@ def test_in_not_in_null_3vl(predicate: str, expected: list[int]) -> None:
     assert res["a"].to_list() == expected
 
 
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        # column-derived elements (no literals at all)
+        ("a IN (b - 1, b)", [1]),
+        ("a NOT IN (b - 1, b)", [2]),
+        # arithmetic-only elements
+        ("a IN (1 + 1, 3 * 3)", [2]),
+        # mixed literal + column elements
+        ("a IN (b - 2, 100)", [2]),
+        ("a NOT IN (b - 2, 100)", [1]),
+    ],
+)
+def test_in_not_in_non_literal_elements(predicate: str, expected: list[int]) -> None:
+    # elements referencing columns/arithmetic expressions bypass the literal
+    # fast path and fall back to an OR-chain of equality comparisons
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [2, 4, None]}, schema={"a": pl.Int64, "b": pl.Int64}
+    )
+    res = df.sql(f'SELECT a FROM self WHERE {predicate} ORDER BY "a"')
+    assert res["a"].to_list() == expected
+
+
+@pytest.mark.parametrize(
+    ("predicate", "expected"),
+    [
+        # set (non-literal) contains an unmatched NULL element -> unknown, not FALSE
+        ("a IN (b, 999)", []),
+        ("a NOT IN (b, 999)", [1, 2]),
+        # an actual match still wins even though the set also has a NULL element
+        ("a IN (b, 2)", [2]),
+        ("a NOT IN (b, 2)", [1]),
+    ],
+)
+def test_in_not_in_null_3vl_non_literal_elements(
+    predicate: str, expected: list[int]
+) -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [2, 4, None]}, schema={"a": pl.Int64, "b": pl.Int64}
+    )
+    res = df.sql(f'SELECT a FROM self WHERE {predicate} ORDER BY "a"')
+    assert res["a"].to_list() == expected
+
+
+def test_in_list_column_elements_larger_mixed_list() -> None:
+    # A longer, fully-mixed IN list (literal + column + arithmetic elements),
+    # using a 4th row so that every element in the list is exercised for at
+    # least one row (including the always-excluded row with a NULL `b`).
+    df = pl.DataFrame(
+        {"a": [1, 2, 3, 4], "b": [2, 4, None, 10]},
+        schema={"a": pl.Int64, "b": pl.Int64},
+    )
+    # `a NOT IN (b - 1, 100)`: row a=4,b=10 -> set {9, 100}, no match -> included
+    res = df.sql('SELECT a FROM self WHERE a NOT IN (b - 1, 100) ORDER BY "a"')
+    assert res["a"].to_list() == [2, 4]
+
+    # `a IN (b - 1, 100, b * 2)`:
+    #   a=1,b=2  -> {1, 100, 4}  -> match (1)
+    #   a=2,b=4  -> {3, 100, 8}  -> no match
+    #   a=3,b=NULL -> {NULL, 100, NULL} -> unknown (excluded)
+    #   a=4,b=10 -> {9, 100, 20} -> no match
+    res = df.sql('SELECT a FROM self WHERE a IN (b - 1, 100, b * 2) ORDER BY "a"')
+    assert res["a"].to_list() == [1]
+
+
+def test_in_list_null_three_valued_logic_select_list() -> None:
+    # Raw (unfiltered) boolean value of a literal IN-list membership test,
+    # including a NULL left-hand operand, which a WHERE-filter-based test
+    # cannot distinguish from FALSE.
+    df = pl.DataFrame({"x": [1]})
+
+    def three_valued(sql_expr: str) -> bool | None:
+        value = df.sql(f"SELECT {sql_expr} AS r FROM self")["r"].to_list()[0]
+        return bool(value) if value is not None else None
+
+    # `1 IN (2, NULL)` -> unknown, not FALSE
+    assert three_valued("1 IN (2, NULL)") is None
+    # `1 NOT IN (2, NULL)` -> unknown
+    assert three_valued("1 NOT IN (2, NULL)") is None
+    # `1 IN (1, NULL)` -> TRUE (an actual match wins over the NULL element)
+    assert three_valued("1 IN (1, NULL)") is True
+    # `1 NOT IN (1, NULL)` -> FALSE
+    assert three_valued("1 NOT IN (1, NULL)") is False
+    # NULL on the left-hand side is always unknown
+    assert three_valued("(1 * NULL) IN (1, 2)") is None
+    assert three_valued("(1 * NULL) IN (x, 2)") is None
+
+
+def test_in_list_null_three_valued_logic_with_column_elements() -> None:
+    # Same NULL semantics as above, but with a non-literal (column) element
+    # list, so the OR-chain fallback is exercised instead of the literal
+    # fast path.
+    df = pl.DataFrame(
+        {
+            "x": [1, 1, 1],
+            "y": [2, 1, 2],
+            "z": [None, None, None],
+        },
+        schema={"x": pl.Int64, "y": pl.Int64, "z": pl.Int64},
+    )
+    res = df.sql("SELECT x IN (y, z) AS r FROM self")["r"].to_list()
+    # row0: x=1, y=2, z=NULL -> no match, set has NULL -> unknown
+    # row1: x=1, y=1, z=NULL -> match on y -> TRUE
+    # row2: x=1, y=2, z=NULL -> same as row0 -> unknown
+    assert res == [None, True, None]
+
+
+def test_in_all_literal_fast_path_unaffected() -> None:
+    # regression: an all-literal IN list must still lower to a single `is_in`
+    # against an imploded Series (load-bearing for predicate pushdown), not
+    # the OR-chain fallback used for non-literal elements.
+    df = pl.DataFrame({"a": [1, 2, 3, 4]}).lazy()
+    with pl.SQLContext(df=df, eager=False) as ctx:
+        lf = ctx.execute("SELECT a FROM df WHERE a IN (1, 2, 4)")
+        plan = lf.explain(optimized=False)
+        assert "is_in" in plan, plan
+        assert " or " not in plan, plan
+
+        res = lf.collect()
+    assert res["a"].to_list() == [1, 2, 4]
+
+
 def test_not_in_null_subquery_3vl() -> None:
     t = pl.DataFrame({"a": [1, 2, None, 3]}, schema={"a": pl.Int64})
     u = pl.DataFrame({"b": [1, None, 4]}, schema={"b": pl.Int64})
@@ -155,6 +277,47 @@ def test_not_in_null_subquery_3vl() -> None:
             "SELECT a FROM t WHERE a NOT IN (SELECT b FROM u WHERE b > 100)"
             " ORDER BY a NULLS FIRST"
         ) == [None, 1, 2, 3]
+
+
+@pytest.mark.parametrize(
+    ("needle", "set_values", "expected_in", "expected_not_in"),
+    [
+        # empty right-hand set: IN is FALSE / NOT IN is TRUE, regardless of
+        # the left-hand operand, even when it is NULL
+        ("1", [], False, True),
+        ("NULL", [], False, True),
+        # NULL on the left is unknown against a non-empty set, whether or
+        # not the set itself contains a NULL
+        ("NULL", [2, 3, 4], None, None),
+        ("NULL", [2, 3, None], None, None),
+        # value absent, set has no NULLs -> FALSE / TRUE
+        ("1", [2, 3, 4], False, True),
+        # value absent, set has a NULL -> unknown (the NULL might have matched)
+        ("1", [2, 3, None], None, None),
+        # an actual match wins over a NULL elsewhere in the set
+        ("2", [2, 3, None], True, False),
+    ],
+)
+def test_in_not_in_subquery_select_list_3vl(
+    needle: str,
+    set_values: list[int | None],
+    expected_in: bool | None,
+    expected_not_in: bool | None,
+) -> None:
+    # `[NOT] IN (subquery)` projected directly in the SELECT list (as opposed
+    # to used as a WHERE-clause filter): exercises the empty-subquery-result
+    # and NULL-needle 3VL semantics standalone.
+    u = pl.DataFrame({"v": set_values}, schema={"v": pl.Int64})
+    with pl.SQLContext(u=u) as ctx:
+        res_in = ctx.execute(f"SELECT {needle} IN (SELECT v FROM u) AS r", eager=True)[
+            "r"
+        ].to_list()
+        res_not_in = ctx.execute(
+            f"SELECT {needle} NOT IN (SELECT v FROM u) AS r", eager=True
+        )["r"].to_list()
+
+    assert res_in == [expected_in]
+    assert res_not_in == [expected_not_in]
 
 
 def test_is_between(foods_ipc_path: Path) -> None:

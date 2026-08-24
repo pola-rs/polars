@@ -37,8 +37,6 @@ mod sortedness;
 mod stack_opt;
 
 use collapse_and_project::SimpleProjectionAndCollapse;
-#[cfg(feature = "cse")]
-pub use cse::NaiveExprMerger;
 use delay_rechunk::DelayRechunk;
 pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
@@ -144,7 +142,6 @@ pub fn optimize(
             let members = get_or_init_members!();
             if (members.has_sink_multiple || members.has_joins_or_unions)
                 && members.has_duplicate_scans()
-                && !members.has_cache
             {
                 if verbose {
                     eprintln!("found multiple sources; run comm_subplan_elim")
@@ -259,7 +256,7 @@ pub fn optimize(
 
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
-    if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
+    if comm_subexpr_elim {
         let mut optimizer = CommonSubExprOptimizer::new(
             opt_flags.contains(OptFlags::STREAMING) | opt_flags.contains(OptFlags::GPU),
         );

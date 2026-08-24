@@ -142,7 +142,7 @@ impl Error for PolarsError {
 impl Display for PolarsError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         use PolarsError::*;
-        match self {
+        match self.clone().context_trace() {
             ComputeError(msg)
             | InvalidOperation(msg)
             | OutOfBounds(msg)

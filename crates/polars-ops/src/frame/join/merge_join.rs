@@ -309,22 +309,38 @@ pub fn gather_and_postprocess(
         None => DataFrame::full_null(right.schema(), gather_left.unwrap().len()),
     };
 
-    // Coalsesce the key columns
-    if args.how == JoinType::Left && should_coalesce {
-        for c in left_on {
-            if right.schema().contains(c) {
-                right.drop_in_place(c.as_str())?;
-            }
-        }
-    } else if args.how == JoinType::Right && should_coalesce {
-        for c in right_on {
-            if left.schema().contains(c) {
-                left.drop_in_place(c.as_str())?;
-            }
+    // Coalesce the key columns.
+    if should_coalesce {
+        match args.how {
+            JoinType::Inner | JoinType::Left => {
+                for c in left_on {
+                    if right.schema().contains(c) {
+                        right.drop_in_place(c.as_str())?;
+                    }
+                }
+            },
+            JoinType::Right => {
+                for c in right_on {
+                    if left.schema().contains(c) {
+                        left.drop_in_place(c.as_str())?;
+                    }
+                }
+            },
+            JoinType::Full => {
+                for (left_keycol, right_keycol) in Iterator::zip(left_on.iter(), right_on.iter()) {
+                    let left_col = left.column(left_keycol).unwrap();
+                    let right_col = right.column(right_keycol).unwrap();
+                    let coalesced =
+                        coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
+                    left.replace(left_keycol, coalesced).unwrap();
+                    right.drop_in_place(right_keycol).unwrap();
+                }
+            },
+            _ => unreachable!(),
         }
     }
 
-    // Rename any right columns to "{}_right"
+    // Rename any duplicate right columns to "{}_right".
     let left_cols: PlHashSet<_> = left.columns().iter().map(Column::name).cloned().collect();
     let right_cols_vec = right.get_column_names_owned();
     let renames = right_cols_vec
@@ -334,38 +350,13 @@ pub fn gather_and_postprocess(
             let renamed = format_pl_smallstr!("{}{}", c, args.suffix());
             (c.as_str(), renamed)
         });
-    right.rename_many(renames).unwrap();
+    right = right.rename_many(renames).unwrap();
 
+    // Merge left and right and drop unused output columns.
     left.hstack_mut(right.columns())?;
-
-    if args.how == JoinType::Full && should_coalesce {
-        // Coalesce key columns
-        for (left_keycol, right_keycol) in Iterator::zip(left_on.iter(), right_on.iter()) {
-            let right_keycol = format_pl_smallstr!("{}{}", right_keycol, args.suffix());
-            let left_col = left.column(left_keycol).unwrap();
-            let right_col = left.column(&right_keycol).unwrap();
-            let coalesced = coalesce_columns(&[left_col.clone(), right_col.clone()]).unwrap();
-            left.replace(left_keycol, coalesced)
-                .unwrap()
-                .drop_in_place(&right_keycol)
-                .unwrap();
-        }
-    }
-
-    if should_coalesce {
-        for col in left_on {
-            if left.schema().contains(col) && !output_schema.contains(col) {
-                left.drop_in_place(col).unwrap();
-            }
-        }
-        for col in right_on {
-            let renamed = match left.schema().contains(col) {
-                true => Cow::Owned(format_pl_smallstr!("{}{}", col, args.suffix())),
-                false => Cow::Borrowed(col),
-            };
-            if left.schema().contains(&renamed) && !output_schema.contains(&renamed) {
-                left.drop_in_place(&renamed).unwrap();
-            }
+    for col in left_on {
+        if left.schema().contains(col) && !output_schema.contains(col) {
+            left.drop_in_place(col).unwrap();
         }
     }
 

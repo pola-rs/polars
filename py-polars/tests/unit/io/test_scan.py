@@ -696,7 +696,6 @@ def test_async_path_expansion_bracket_17629(tmp_path: Path) -> None:
     "method",
     ["parquet", "csv", "ipc", "ndjson"],
 )
-@pytest.mark.may_fail_auto_streaming  # unsupported negative slice offset -1 for CSV source
 def test_scan_in_memory(method: str) -> None:
     f = io.BytesIO()
     df = pl.DataFrame(
@@ -1497,6 +1496,7 @@ def test_scan_sink_error_captures_path() -> None:
     ],
 )
 @pytest.mark.parametrize("partitioned", [True, False])
+@pytest.mark.debug
 @pytest.mark.write_disk
 def test_scan_metrics(
     plmonkeypatch: PlMonkeyPatch,
@@ -1560,6 +1560,7 @@ def test_scan_metrics(
     assert_frame_equal(out, df)
 
 
+@pytest.mark.debug
 @pytest.mark.write_disk
 def test_scan_sink_metrics_multiple_phases(
     plmonkeypatch: PlMonkeyPatch,

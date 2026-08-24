@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import re
 import sys
 import textwrap
 import warnings
@@ -18,6 +19,7 @@ import zstandard
 import polars as pl
 from polars._utils.various import normalize_filepath
 from polars.exceptions import (
+    ArgumentRemovedError,
     ComputeError,
     DuplicateError,
     InvalidOperationError,
@@ -1146,6 +1148,94 @@ def test_fallback_chrono_parser(chunk_override: None) -> None:
     assert df.null_count().row(0) == (0, 0)
 
 
+def test_csv_datetime_fallback_contract(chunk_override: None, tmp_path: Path) -> None:
+    data = """\
+a
+NULL
+2020-01-01 01:02:03
+2020-01-02 01:02:03.1
+2020-01-03T01:02:03.123
+2020-01-04T010203.123456
+invalid
+2020/01/05 01:02
+"""
+    path = tmp_path / "datetime-fallback.csv"
+    path.write_text(data)
+
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [
+                    None,
+                    datetime(2020, 1, 1, 1, 2, 3),
+                    datetime(2020, 1, 2, 1, 2, 3, 100_000),
+                    datetime(2020, 1, 3, 1, 2, 3, 123_000),
+                    datetime(2020, 1, 4, 1, 2, 3, 123_456),
+                    None,
+                    datetime(2020, 1, 5, 1, 2),
+                ],
+                dtype=pl.Datetime("us"),
+            )
+        }
+    )
+
+    assert_frame_equal(
+        pl.read_csv(
+            path,
+            schema_overrides={"a": pl.Datetime("us")},
+            null_values="NULL",
+            ignore_errors=True,
+        ),
+        expected,
+    )
+    assert_frame_equal(
+        pl.scan_csv(
+            path,
+            schema_overrides={"a": pl.Datetime("us")},
+            null_values="NULL",
+            ignore_errors=True,
+        ).collect(),
+        expected,
+    )
+
+    with pytest.raises(ComputeError):
+        pl.read_csv(
+            path,
+            schema_overrides={"a": pl.Datetime("us")},
+            null_values="NULL",
+        )
+
+
+def test_csv_datetime_fallback_independent_of_execution_chunks(
+    chunk_override: None,
+) -> None:
+    values = [
+        "2020-01-01 01:02:03",
+        "2020-01-02 01:02:03.1",
+        "2020-01-03T01:02:03.123",
+        "2020/01/04 01:02",
+    ]
+    expected_values = [
+        datetime(2020, 1, 1, 1, 2, 3),
+        datetime(2020, 1, 2, 1, 2, 3, 100_000),
+        datetime(2020, 1, 3, 1, 2, 3, 123_000),
+        datetime(2020, 1, 4, 1, 2),
+    ]
+    repeats = 1_024
+    data = "a\n" + "\n".join(values * repeats)
+    expected = pl.Series(
+        "a",
+        expected_values * repeats,
+        dtype=pl.Datetime("us"),
+    ).to_frame()
+
+    result = pl.read_csv(
+        data.encode(),
+        schema_overrides={"a": pl.Datetime("us")},
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_tz_aware_try_parse_dates(chunk_override: None) -> None:
     data = (
         "a,b,c,d\n"
@@ -1198,6 +1288,35 @@ a
                     "2020-01-03T00:00:00.132547698",
                 ]
             ).str.to_datetime(time_unit=time_unit)
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_csv_mixed_datetime_formats_respect_time_unit(
+    chunk_override: None, time_unit: TimeUnit
+) -> None:
+    data = """\
+a
+2020-01-01
+2020-01-02 03:04
+2020-01-03T04:05:06
+"""
+    result = pl.read_csv(
+        io.StringIO(data),
+        schema_overrides={"a": pl.Datetime(time_unit)},
+    )
+    expected = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [
+                    datetime(2020, 1, 1),
+                    datetime(2020, 1, 2, 3, 4),
+                    datetime(2020, 1, 3, 4, 5, 6),
+                ],
+                dtype=pl.Datetime(time_unit),
+            )
         }
     )
     assert_frame_equal(result, expected)
@@ -2223,24 +2342,10 @@ def test_read_csv_decimal_type_decimal_comma_24414(chunk_override: None) -> None
     assert_frame_equal(out_dot, out)
 
 
-def test_read_csv_dtypes_deprecated(chunk_override: None) -> None:
-    csv = textwrap.dedent(
-        """\
-        a,b,c
-        1,2,3
-        4,5,6
-        """
-    )
-    f = io.StringIO(csv)
-
-    with pytest.deprecated_call():
-        df = pl.read_csv(f, dtypes=[pl.Int8, pl.Int8, pl.Int8])  # type: ignore[call-arg]
-
-    expected = pl.DataFrame(
-        {"a": [1, 4], "b": [2, 5], "c": [3, 6]},
-        schema={"a": pl.Int8, "b": pl.Int8, "c": pl.Int8},
-    )
-    assert_frame_equal(df, expected)
+def test_read_csv_dtypes_removed() -> None:
+    msg = "It was renamed to 'schema_overrides'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.read_csv(io.StringIO(), dtypes=[pl.Int8, pl.Int8, pl.Int8])  # type: ignore[call-arg]
 
 
 def test_projection_applied_on_file_with_no_rows_16606(
@@ -2471,7 +2576,6 @@ def test_csv_invalid_quoted_comment_line(chunk_override: None) -> None:
     ).to_dict(as_series=False) == {"ColA": [1], "ColB": [2]}
 
 
-@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_csv_compressed_new_columns_19916(chunk_override: None) -> None:
     n_rows = 100
 

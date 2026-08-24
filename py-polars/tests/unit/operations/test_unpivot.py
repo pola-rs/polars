@@ -1,4 +1,5 @@
 import datetime
+from functools import partial
 from typing import Any
 
 import pytest
@@ -6,6 +7,32 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.testing import assert_frame_equal
+
+
+def _assert_unpivot_equal(
+    data: dict[str, Any],
+    *,
+    on: Any,
+    index: Any,
+    expected: list[pl.Series],
+    variable_name: str | None = None,
+    value_name: str | None = None,
+    predicate: pl.Expr | None = None,
+) -> None:
+    """Assert that eager and lazy unpivot agree with each other and `expected` data."""
+
+    def _unpivot(frame: pl.DataFrame | pl.LazyFrame) -> Any:
+        result = frame.unpivot(
+            on, index=index, variable_name=variable_name, value_name=value_name
+        )
+        return result if predicate is None else result.filter(predicate)
+
+    df_result = _unpivot(pl.DataFrame(data))
+    lf_result = _unpivot(pl.LazyFrame(data)).collect()
+    expected_result = pl.DataFrame(expected)
+
+    assert_frame_equal(df_result, lf_result, check_row_order=False)
+    assert_frame_equal(df_result, expected_result, check_row_order=False)
 
 
 def test_unpivot() -> None:
@@ -99,7 +126,7 @@ def test_unpivot_categorical() -> None:
             "2": pl.Series(["b", "c"], dtype=pl.Categorical),
         }
     )
-    out = df.unpivot(["1", "2"], index="index")
+    out = df.unpivot(["1", "2"], index="index").sort("variable", "value")
     assert out.dtypes == [pl.Int64, pl.String, pl.Categorical()]
     assert out.to_dict(as_series=False) == {
         "index": [0, 1, 0, 1],
@@ -113,85 +140,122 @@ def test_unpivot_index_not_found_23165() -> None:
         pl.DataFrame({"a": [1]}).unpivot(index="b")
 
 
-def assert_eq_df_lf_impl(
-    data: Any, expr: Any, on: Any, index: Any, expected_data: list[pl.Series]
+@pytest.mark.parametrize("on", [[], ["b"], None])
+@pytest.mark.parametrize(
+    ("variable_name", "value_name"), [("a", "value"), ("variable", "a")]
+)
+def test_unpivot_name_collides_with_existing_column(
+    on: Any, variable_name: str, value_name: str
 ) -> None:
-    df_result = expr(pl.DataFrame(data), on, index)
-    lf_result = expr(pl.LazyFrame(data), on, index).collect()
-    expected_result = pl.DataFrame(expected_data)
+    data = {"a": ["x", "y"], "b": [1, 3]}
+    match = "duplicate column name 'a'"
 
-    assert_frame_equal(df_result, lf_result, check_row_order=False)
-    assert_frame_equal(df_result, expected_result, check_row_order=False)
+    with pytest.raises(pl.exceptions.DuplicateError, match=match):
+        pl.DataFrame(data).unpivot(
+            on,
+            index="a",
+            variable_name=variable_name,
+            value_name=value_name,
+        )
+
+    lf = pl.LazyFrame(data).unpivot(
+        on,
+        index="a",
+        variable_name=variable_name,
+        value_name=value_name,
+    )
+    with pytest.raises(pl.exceptions.DuplicateError, match=match):
+        lf.collect_schema()
+    with pytest.raises(pl.exceptions.DuplicateError, match=match):
+        lf.collect()
+
+
+@pytest.mark.parametrize("on", [[], ["b"], None, "empty_frame"])
+def test_unpivot_variable_name_collides_with_value_name(on: Any) -> None:
+    if on == "empty_frame":
+        on = data = None
+    else:
+        data = {"a": ["x", "y"], "b": [1, 3]}
+
+    # `variable_name` and `value_name` cannot be the same
+    match = "duplicate column name 'v'"
+    with pytest.raises(pl.exceptions.DuplicateError, match=match):
+        pl.DataFrame(data).unpivot(on, index="a", variable_name="v", value_name="v")
+
+    lf = pl.LazyFrame(data).unpivot(on, index="a", variable_name="v", value_name="v")
+    with pytest.raises(pl.exceptions.DuplicateError, match=match):
+        lf.collect_schema()
+    with pytest.raises(pl.exceptions.DuplicateError, match=match):
+        lf.collect()
 
 
 def test_unpivot_empty_on_25474() -> None:
-    data = {
-        "a": ["x", "y"],
-        "b": [1, 3],
-        "c": [2, 4],
-        "d": ["str_a", "str_b"],
-    }
+    assert_unpivot = partial(
+        _assert_unpivot_equal,
+        data={
+            "a": ["x", "y"],
+            "b": [1, 3],
+            "c": [2, 4],
+            "d": ["str_a", "str_b"],
+        },
+        variable_name="var",
+        value_name="val",
+    )
 
-    def assert_eq_df_lf(on: Any, index: Any, expected_data: list[pl.Series]) -> None:
-        def logic(frame: Any, on: Any, index: Any) -> Any:
-            return frame.unpivot(on, index=index, variable_name="var", value_name="val")
-
-        return assert_eq_df_lf_impl(data, logic, on, index, expected_data)
-
-    assert_eq_df_lf(
-        pl.selectors.numeric(),
-        "a",
-        [
+    assert_unpivot(
+        on=pl.selectors.numeric(),
+        index="a",
+        expected=[
             pl.Series("a", ["x", "y", "x", "y"], dtype=pl.String),
             pl.Series("var", ["b", "b", "c", "c"], dtype=pl.String),
             pl.Series("val", [1, 3, 2, 4], dtype=pl.Int64),
         ],
     )
 
-    assert_eq_df_lf(
-        pl.selectors.date(),
-        "a",
-        [
+    assert_unpivot(
+        on=pl.selectors.date(),
+        index="a",
+        expected=[
             pl.Series("a", [], dtype=pl.String),
             pl.Series("var", [], dtype=pl.String),
             pl.Series("val", [], dtype=pl.Null),
         ],
     )
 
-    assert_eq_df_lf(
-        pl.selectors.date(),
-        "b",
-        [
+    assert_unpivot(
+        on=pl.selectors.date(),
+        index="b",
+        expected=[
             pl.Series("b", [], dtype=pl.Int64),
             pl.Series("var", [], dtype=pl.String),
             pl.Series("val", [], dtype=pl.Null),
         ],
     )
 
-    assert_eq_df_lf(
-        [],
-        "a",
-        [
+    assert_unpivot(
+        on=[],
+        index="a",
+        expected=[
             pl.Series("a", [], dtype=pl.String),
             pl.Series("var", [], dtype=pl.String),
             pl.Series("val", [], dtype=pl.Null),
         ],
     )
 
-    assert_eq_df_lf(
-        None,
-        "a",
-        [
+    assert_unpivot(
+        on=None,
+        index="a",
+        expected=[
             pl.Series("a", ["x", "y", "x", "y", "x", "y"], dtype=pl.String),
             pl.Series("var", ["b", "b", "c", "c", "d", "d"], dtype=pl.String),
             pl.Series("val", ["1", "3", "2", "4", "str_a", "str_b"], dtype=pl.String),
         ],
     )
 
-    assert_eq_df_lf(
-        None,
-        ["b", "a"],
-        [
+    assert_unpivot(
+        on=None,
+        index=["b", "a"],
+        expected=[
             pl.Series("b", [1, 3, 1, 3], dtype=pl.Int64),
             pl.Series("a", ["x", "y", "x", "y"], dtype=pl.String),
             pl.Series("var", ["c", "c", "d", "d"], dtype=pl.String),
@@ -204,23 +268,21 @@ def test_unpivot_predicate_pd() -> None:
     day_a = datetime.date(2995, 4, 3)
     day_b = datetime.date(2333, 4, 3)
 
-    data = {
-        "a": ["x", "y", "z"],
-        "b": [1, 3, 1],
-        "c": [2, 4, 7],
-        "d": [day_a, day_a, day_b],
-    }
+    assert_unpivot = partial(
+        _assert_unpivot_equal,
+        data={
+            "a": ["x", "y", "z"],
+            "b": [1, 3, 1],
+            "c": [2, 4, 7],
+            "d": [day_a, day_a, day_b],
+        },
+        predicate=pl.col.b == 1,
+    )
 
-    def assert_eq_df_lf(on: Any, index: Any, expected_data: list[pl.Series]) -> None:
-        def logic(frame: Any, on: Any, index: Any) -> Any:
-            return frame.unpivot(on, index=index).filter(pl.col.b == 1)
-
-        return assert_eq_df_lf_impl(data, logic, on, index, expected_data)
-
-    assert_eq_df_lf(
-        None,
-        ["b", "a"],
-        [
+    assert_unpivot(
+        on=None,
+        index=["b", "a"],
+        expected=[
             pl.Series("b", [1, 1, 1, 1], dtype=pl.Int64),
             pl.Series("a", ["x", "z", "x", "z"], dtype=pl.String),
             pl.Series("variable", ["c", "c", "d", "d"], dtype=pl.String),
@@ -228,10 +290,10 @@ def test_unpivot_predicate_pd() -> None:
         ],
     )
 
-    assert_eq_df_lf(
-        pl.selectors.date(),
-        ["b", "a"],
-        [
+    assert_unpivot(
+        on=pl.selectors.date(),
+        index=["b", "a"],
+        expected=[
             pl.Series("b", [1, 1], dtype=pl.Int64),
             pl.Series("a", ["x", "z"], dtype=pl.String),
             pl.Series("variable", ["d", "d"], dtype=pl.String),
@@ -243,35 +305,29 @@ def test_unpivot_predicate_pd() -> None:
 def test_unpivot_filter_opt() -> None:
     data = {"a": [5, 2, 8, 2], "b": [99, 33, 77, 44]}
 
-    def assert_eq_df_lf(
-        on: Any, index: Any, filter_pred: Any, expected_data: list[pl.Series]
-    ) -> None:
-        def logic(frame: Any, on: Any, index: Any) -> Any:
-            return frame.unpivot(on, index=index).filter(filter_pred)
-
-        return assert_eq_df_lf_impl(data, logic, on, index, expected_data)
-
-    assert_eq_df_lf(
-        "b",
-        "a",
-        pl.col.a == 2,
-        [
+    _assert_unpivot_equal(
+        data,
+        on="b",
+        index="a",
+        expected=[
             pl.Series("a", [2, 2], dtype=pl.Int64),
             pl.Series("variable", ["b", "b"], dtype=pl.String),
             pl.Series("value", [33, 44], dtype=pl.Int64),
         ],
+        predicate=pl.col.a == 2,
     )
 
-    assert_eq_df_lf(
-        "b",
-        ["b", "a"],
-        pl.col.b != 33,
-        [
+    _assert_unpivot_equal(
+        data,
+        on="b",
+        index=["b", "a"],
+        expected=[
             pl.Series("b", [99, 77, 44], dtype=pl.Int64),
             pl.Series("a", [5, 8, 2], dtype=pl.Int64),
             pl.Series("variable", ["b", "b", "b"], dtype=pl.String),
             pl.Series("value", [99, 77, 44], dtype=pl.Int64),
         ],
+        predicate=pl.col.b != 33,
     )
 
 
@@ -309,4 +365,47 @@ def test_unpivot_projection_pushdown_schema_25720() -> None:
                 pl.Series("x", [1.0], dtype=pl.Float64),
             ]
         ),
+    )
+
+
+def test_unpivot_selector_parsing_parity() -> None:
+    data = {"a": ["x", "y"], "v_1": [1, 3], "v_2": [2, 4]}
+
+    assert_unpivot = partial(_assert_unpivot_equal, data)
+
+    on_both_v_columns = [
+        pl.Series("a", ["x", "y", "x", "y"], dtype=pl.String),
+        pl.Series("variable", ["v_1", "v_1", "v_2", "v_2"], dtype=pl.String),
+        pl.Series("value", [1, 3, 2, 4], dtype=pl.Int64),
+    ]
+
+    # regex patterns are expanded, whether given bare or inside a list
+    assert_unpivot(on="^v_.*$", index="a", expected=on_both_v_columns)
+    assert_unpivot(on=["^v_.*$"], index="a", expected=on_both_v_columns)
+
+    # wildcard selects every column, leaving no index columns
+    assert_unpivot(
+        on="*",
+        index=None,
+        expected=[
+            pl.Series(
+                "variable", ["a", "a", "v_1", "v_1", "v_2", "v_2"], dtype=pl.String
+            ),
+            pl.Series("value", ["x", "y", "1", "3", "2", "4"], dtype=pl.String),
+        ],
+    )
+
+    # name repeated in `index` is deduplicated
+    assert_unpivot(on=["v_1", "v_2"], index=["a", "a"], expected=on_both_v_columns)
+
+    # mixing names and selectors in `index` still gives schema order
+    assert_unpivot(
+        on=["v_2"],
+        index=["v_1", cs.string()],
+        expected=[
+            pl.Series("a", ["x", "y"], dtype=pl.String),
+            pl.Series("v_1", [1, 3], dtype=pl.Int64),
+            pl.Series("variable", ["v_2", "v_2"], dtype=pl.String),
+            pl.Series("value", [2, 4], dtype=pl.Int64),
+        ],
     )
