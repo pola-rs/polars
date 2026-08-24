@@ -246,6 +246,16 @@ impl Column {
             _ => None,
         }
     }
+
+    /// The backing [`Series`] if there already is one. Never materialises a
+    /// scalar column.
+    #[inline]
+    pub fn lazy_as_materialized_series(&self) -> Option<&Series> {
+        match self {
+            Column::Series(s) => Some(s),
+            Column::Scalar(s) => s.lazy_as_materialized_series(),
+        }
+    }
     #[inline]
     pub fn as_scalar_column(&self) -> Option<&ScalarColumn> {
         match self {

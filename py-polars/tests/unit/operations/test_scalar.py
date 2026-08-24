@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -103,3 +105,28 @@ def test_split_scalar_21581() -> None:
         "next_a": [2.0, 3.0],
         "lit": [False, False],
     }
+
+
+def _broadcast_and_materialized(values: list[Any]) -> tuple[pl.LazyFrame, pl.LazyFrame]:
+    series = pl.Series("l", [values], dtype=pl.List(pl.Int64))
+    broadcast = pl.LazyFrame({"a": [1, 2, 3]}).with_columns(pl.lit(series).first())
+    materialized = pl.LazyFrame({"a": [1, 2, 3], "l": [values] * 3})
+    return broadcast, materialized
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("l").list.len(),
+        pl.col("l").list.sum(),
+        pl.col("l").list.contains(30),
+        pl.col("l").list.get(0, null_on_oob=True),
+        pl.col("a").is_in(pl.col("l")),
+        pl.col("a").is_in(pl.col("l"), nulls_equal=True),
+    ],
+)
+def test_elementwise_over_broadcast_scalar(expr: pl.Expr) -> None:
+    broadcast, materialized = _broadcast_and_materialized([10, None, 30])
+    assert_frame_equal(
+        broadcast.select(expr).collect(), materialized.select(expr).collect()
+    )

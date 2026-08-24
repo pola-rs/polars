@@ -442,12 +442,33 @@ impl PhysicalExpr for ApplyExpr {
             self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
 
-        if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
-            self.eval_and_flatten(&mut inputs)
+        let constant_len = if self.flags.is_elementwise() {
+            constant_broadcast_len(&inputs)
+        } else {
+            None
+        };
+        if constant_len.is_some() {
+            for c in inputs.iter_mut() {
+                if c.len() > 1 {
+                    *c = c.new_from_index(0, 1);
+                }
+            }
+        }
+
+        let out = if self.flags.contains(FunctionFlags::ALLOW_RENAME) {
+            self.eval_and_flatten(&mut inputs)?
         } else {
             let in_name = inputs[0].name().clone();
-            Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
-        }
+            self.eval_and_flatten(&mut inputs)?.with_name(in_name)
+        };
+
+        Ok(match constant_len {
+            Some(len) => {
+                debug_assert_eq!(out.len(), 1);
+                out.new_from_index(0, len)
+            },
+            None => out,
+        })
     }
 
     #[allow(clippy::ptr_arg)]
@@ -615,4 +636,18 @@ impl PhysicalExpr for ApplyExpr {
         self.flags.returns_scalar()
             || (self.function_operates_on_scalar && self.flags.is_length_preserving())
     }
+}
+
+/// The length to broadcast to when every input repeats one value across its rows,
+/// so an elementwise function only has to be evaluated on the first row. `None`
+/// when an input varies per row, or when the length is already 1.
+fn constant_broadcast_len(inputs: &[Column]) -> Option<usize> {
+    let len = inputs.iter().map(|c| c.len()).max()?;
+    if len == 1 {
+        return None;
+    }
+    inputs
+        .iter()
+        .all(|c| c.len() == 1 || matches!(c, Column::Scalar(_)))
+        .then_some(len)
 }
