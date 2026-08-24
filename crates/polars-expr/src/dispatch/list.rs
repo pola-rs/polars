@@ -71,11 +71,7 @@ pub(super) fn contains(args: &mut [Column], nulls_equal: bool) -> PolarsResult<C
     );
     // Don't blow up the haystack in case of scalar.
     let haystack = list.as_materialized_series_maintain_scalar();
-    let mut ca = polars_ops::prelude::is_in(
-        item.as_materialized_series(),
-        &haystack,
-        nulls_equal,
-    )?;
+    let mut ca = polars_ops::prelude::is_in(item.as_materialized_series(), &haystack, nulls_equal)?;
     ca.rename(list.name().clone());
     // In case of scalar, broadcast back to original length
     ca.into_column()
