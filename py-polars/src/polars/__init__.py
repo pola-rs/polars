@@ -127,7 +127,6 @@ from polars.functions import (
     approx_n_unique,
     arange,
     arctan2,
-    arctan2d,
     arg_sort_by,
     arg_where,
     business_day_count,
@@ -428,7 +427,6 @@ __all__ = [
     "approx_n_unique",
     "arange",
     "arctan2",
-    "arctan2d",
     "arg_sort_by",
     "coalesce",
     "col",
@@ -525,30 +523,22 @@ if not TYPE_CHECKING:
 
         # Deprecate re-export of exceptions at top-level
         if name in dir(exceptions):
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                message=(
-                    f"accessing `{name}` from the top-level `polars` module was deprecated "
-                    "in version 1.0.0. Import it directly from the `polars.exceptions` module "
-                    f"instead, e.g.: `from polars.exceptions import {name}`"
-                ),
+            msg = (
+                f"accessing `{name}` from the top-level `polars` module was deprecated "
+                "in version 1.0.0. Import it directly from the `polars.exceptions` module "
+                f"instead, e.g.: `from polars.exceptions import {name}`"
             )
-            return getattr(exceptions, name)
+            raise exceptions.AttributeRemovedError(msg)
 
         # Deprecate data type groups at top-level
         import polars.datatypes.group as dtgroup
 
         if name in dir(dtgroup):
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                message=(
-                    f"`{name}` was deprecated in version 1.0.0. Define your own data type groups or "
-                    "use the `polars.selectors` module for selecting columns of a certain data type."
-                ),
+            msg = (
+                f"`{name}` was deprecated in version 1.0.0. Define your own data type groups or "
+                "use the `polars.selectors` module for selecting columns of a certain data type."
             )
-            return getattr(dtgroup, name)
+            raise exceptions.AttributeRemovedError(msg)
 
         msg = f"module {__name__!r} has no attribute {name!r}"
         raise AttributeError(msg)

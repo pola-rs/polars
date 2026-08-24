@@ -15,10 +15,7 @@ import polars._reexport as pl
 from polars import from_arrow
 from polars import functions as F
 from polars._dependencies import _PYARROW_AVAILABLE, import_optional
-from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
-)
+from polars._utils.expired import RenamedParameter, removed_parameters
 from polars._utils.various import (
     deduplicate_names,
     is_non_empty_sequence_of,
@@ -242,8 +239,20 @@ def read_excel(
 ) -> dict[str, pl.DataFrame]: ...
 
 
-@deprecate_renamed_parameter("xlsx2csv_options", "engine_options", version="0.20.6")
-@deprecate_renamed_parameter("read_csv_options", "read_options", version="0.20.7")
+@removed_parameters(
+    RenamedParameter(
+        name="xlsx2csv_options",
+        new_name="engine_options",
+        deprecated_in="0.20.6",
+        removed_in="2.0",
+    ),
+    RenamedParameter(
+        name="read_csv_options",
+        new_name="read_options",
+        deprecated_in="0.20.7",
+        removed_in="2.0",
+    ),
+)
 def read_excel(
     source: FileSource | memoryview[int],
     *,
@@ -271,10 +280,6 @@ def read_excel(
         Support loading data from a list (or glob pattern) of multiple workbooks.
     .. versionchanged:: 1.0
         Default engine is now "calamine" (was "xlsx2csv").
-    .. versionchanged:: 0.20.7
-        The `read_csv_options` parameter was renamed `read_options`.
-    .. versionchanged:: 0.20.6
-        The `xlsx2csv_options` parameter was renamed `engine_options`.
 
     Parameters
     ----------
@@ -921,10 +926,8 @@ def _csv_buffer_to_frame(
     date_cols = []
     if schema_overrides:
         if csv_dtypes := read_options.get("dtypes", {}):
-            issue_deprecation_warning(
-                "the `dtypes` parameter for `read_csv` is deprecated. It has been renamed to `schema_overrides`.",
-                version="0.20.31",
-            )
+            msg = "the `dtypes` parameter for `read_csv` has been renamed to `schema_overrides`."
+            raise TypeError(msg)
 
         csv_schema_overrides = cast(
             "SchemaDict", read_options.get("schema_overrides", csv_dtypes)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import re
 import sys
 import textwrap
 import warnings
@@ -18,6 +19,7 @@ import zstandard
 import polars as pl
 from polars._utils.various import normalize_filepath
 from polars.exceptions import (
+    ArgumentRemovedError,
     ComputeError,
     DuplicateError,
     InvalidOperationError,
@@ -2340,24 +2342,10 @@ def test_read_csv_decimal_type_decimal_comma_24414(chunk_override: None) -> None
     assert_frame_equal(out_dot, out)
 
 
-def test_read_csv_dtypes_deprecated(chunk_override: None) -> None:
-    csv = textwrap.dedent(
-        """\
-        a,b,c
-        1,2,3
-        4,5,6
-        """
-    )
-    f = io.StringIO(csv)
-
-    with pytest.deprecated_call():
-        df = pl.read_csv(f, dtypes=[pl.Int8, pl.Int8, pl.Int8])  # type: ignore[call-arg]
-
-    expected = pl.DataFrame(
-        {"a": [1, 4], "b": [2, 5], "c": [3, 6]},
-        schema={"a": pl.Int8, "b": pl.Int8, "c": pl.Int8},
-    )
-    assert_frame_equal(df, expected)
+def test_read_csv_dtypes_removed() -> None:
+    msg = "It was renamed to 'schema_overrides'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.read_csv(io.StringIO(), dtypes=[pl.Int8, pl.Int8, pl.Int8])  # type: ignore[call-arg]
 
 
 def test_projection_applied_on_file_with_no_rows_16606(

@@ -50,10 +50,10 @@ from polars._utils.convert import (
 )
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
-    issue_deprecation_warning,
 )
 from polars._utils.expired import (
     RemovedParameter,
+    RenamedParameter,
     getattr_fallback,
     raise_for_removed_attributes,
     removed_parameters,
@@ -4448,7 +4448,14 @@ class Series(metaclass=_Meta):
         ]
         """
 
-    @deprecate_renamed_parameter("strict", "check_dtypes", version="0.20.31")
+    @removed_parameters(
+        RenamedParameter(
+            name="strict",
+            new_name="check_dtypes",
+            deprecated_in="0.20.31",
+            removed_in="2.0",
+        ),
+    )
     def equals(
         self,
         other: Series,
@@ -4459,9 +4466,6 @@ class Series(metaclass=_Meta):
     ) -> bool:
         """
         Check whether the Series is equal to another Series.
-
-        .. versionchanged:: 0.20.31
-            The `strict` parameter was renamed `check_dtypes`.
 
         Parameters
         ----------
@@ -4797,14 +4801,20 @@ class Series(metaclass=_Meta):
             removed_in="2.0",
             hint="Polars now uses its native engine for conversion to NumPy by default."
             " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
-        )
+        ),
+        RemovedParameter(
+            name="zero_copy_only",
+            deprecated_in="0.20.10",
+            removed_in="2.0",
+            hint="Use the `allow_copy` parameter instead, which is the inverse of"
+            " `zero_copy_only`.",
+        ),
     )
     def to_numpy(
         self,
         *,
         writable: bool = False,
         allow_copy: bool = True,
-        zero_copy_only: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to a NumPy ndarray.
@@ -4826,14 +4836,6 @@ class Series(metaclass=_Meta):
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
-        zero_copy_only
-            Raise an exception if the conversion to a NumPy would require copying
-            the underlying data. Data copy occurs, for example, when the Series contains
-            nulls or non-numeric types.
-
-            .. deprecated:: 0.20.10
-                Use the `allow_copy` parameter instead, which is the inverse of this
-                one.
 
         Examples
         --------
@@ -4874,14 +4876,6 @@ class Series(metaclass=_Meta):
         array([[1, 2, 3],
                [4, 5, 6]])
         """  # noqa: W505
-        if zero_copy_only is not None:
-            issue_deprecation_warning(
-                "the `zero_copy_only` parameter for `Series.to_numpy` is deprecated."
-                " Use the `allow_copy` parameter instead, which is the inverse of `zero_copy_only`.",
-                version="0.20.10",
-            )
-            allow_copy = not zero_copy_only
-
         return self._s.to_numpy(writable=writable, allow_copy=allow_copy)
 
     @unstable()
