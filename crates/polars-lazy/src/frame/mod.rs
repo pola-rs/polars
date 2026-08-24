@@ -1166,7 +1166,7 @@ impl LazyFrame {
     /// use polars_lazy::prelude::*;
     /// fn anti_join_dataframes(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .anti_join(other, col("foo"), col("bar").cast(DataType::String))
+    ///         .anti_join(other, col("foo"), col("bar").cast(DataType::String)).unwrap()
     /// }
     /// ```
     #[cfg(feature = "semi_anti_join")]
@@ -1319,7 +1319,7 @@ impl LazyFrame {
     ///
     /// fn example(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .join(other, [col("foo"), col("bar")], [col("foo"), col("bar")], JoinArgs::new(JoinType::Inner))
+    ///         .join(other, [col("foo"), col("bar")], [col("foo"), col("bar")], JoinArgs::new(JoinType::Inner)).unwrap()
     /// }
     /// ```
     pub fn join<E: AsRef<[Expr]>>(
