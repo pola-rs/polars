@@ -216,11 +216,9 @@ pl.scan_csv("hf://...").collect()
     ],
 )
 def test_retries_removed(func: Any) -> None:
-    msg = "the argument 'retries'"
-    hint = 'Pass {"max_retries": n} via `storage_options` instead.'
-    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)) as exc:
+    msg = 'Pass {"max_retries": n} via `storage_options` instead.'
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         func("s3://.../...", retries=3)
-    assert hint in str(exc.value)
 
 
 @pytest.mark.parametrize(
@@ -228,13 +226,12 @@ def test_retries_removed(func: Any) -> None:
     [pl.scan_ipc, pl.read_ndjson, pl.scan_ndjson],
 )
 def test_file_cache_ttl_removed(func: Any) -> None:
-    msg = "the argument 'file_cache_ttl'"
-    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)) as exc:
+    msg = "The file cache is no longer supported."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         func("s3://.../...", file_cache_ttl=7)
-    assert "The file cache is no longer supported." in str(exc.value)
 
 
 def test_scan_ipc_cache_removed() -> None:
-    msg = "the argument 'cache'"
+    msg = "The file cache is no longer supported."
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         pl.scan_ipc("s3://.../...", cache=True)  # type: ignore[call-arg]

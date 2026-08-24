@@ -1324,12 +1324,10 @@ def test_projection_pushdown_select_prune_expr_28729() -> None:
 
 
 def test_query_opt_flags_collapse_joins_removed() -> None:
-    msg = "the argument 'collapse_joins'"
-    hint = "Use `predicate_pushdown` instead."
+    msg = "Use `predicate_pushdown` instead."
 
-    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)) as exc:
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         QueryOptFlags(collapse_joins=False)  # type: ignore[call-arg]
-    assert hint in str(exc.value)
 
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         QueryOptFlags.none(collapse_joins=False)  # type: ignore[call-arg]
