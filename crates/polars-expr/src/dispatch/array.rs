@@ -5,6 +5,7 @@ use polars_ops::prelude::array::ArrayNameSpace;
 use polars_plan::dsl::DslNameGenerator;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRArrayFunction;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
@@ -137,13 +138,13 @@ pub(super) fn contains(s: &[Column], nulls_equal: bool) -> PolarsResult<Column> 
     polars_ensure!(matches!(array.dtype(), DataType::Array(_, _)),
         SchemaMismatch: "invalid series dtype: expected `Array`, got `{}`", array.dtype(),
     );
-    let mut ca = polars_ops::series::is_in(
-        item.as_materialized_series(),
-        array.as_materialized_series(),
-        nulls_equal,
-    )?;
+    // Don't blow up the haystack in case of scalar.
+    let haystack = array.as_materialized_series_maintain_scalar();
+    let mut ca = polars_ops::series::is_in(item.as_materialized_series(), &haystack, nulls_equal)?;
     ca.rename(array.name().clone());
-    Ok(ca.into_column())
+    // In case of scalar, broadcast back to original length
+    ca.into_column()
+        .broadcast_owned_to(broadcast_len([array, item])?)
 }
 
 #[cfg(feature = "array_count")]
