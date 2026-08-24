@@ -509,10 +509,11 @@ impl SQLContext {
         };
 
         // The projection must be a scalar aggregate over the inner relation.
-        let agg_expr = parse_sql_expr(proj, &mut ctx, Some(&inner_schema))?;
-        if has_expr(&agg_expr, |e| matches!(e, Expr::SubPlan(_, _)))
-            || !has_expr(&agg_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len))
-        {
+        let Some(agg_expr) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)?
+        else {
+            return Ok(None);
+        };
+        if !has_expr(&agg_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
             return Ok(None);
         }
         let count_like = matches!(
