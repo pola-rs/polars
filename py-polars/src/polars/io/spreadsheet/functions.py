@@ -17,7 +17,6 @@ from polars import functions as F
 from polars._dependencies import _PYARROW_AVAILABLE, import_optional
 from polars._utils.deprecation import (
     deprecate_renamed_parameter,
-    issue_deprecation_warning,
 )
 from polars._utils.various import (
     deduplicate_names,
@@ -921,10 +920,8 @@ def _csv_buffer_to_frame(
     date_cols = []
     if schema_overrides:
         if csv_dtypes := read_options.get("dtypes", {}):
-            issue_deprecation_warning(
-                "the `dtypes` parameter for `read_csv` is deprecated. It has been renamed to `schema_overrides`.",
-                version="0.20.31",
-            )
+            msg = "the `dtypes` parameter for `read_csv` has been renamed to `schema_overrides`."
+            raise TypeError(msg)
 
         csv_schema_overrides = cast(
             "SchemaDict", read_options.get("schema_overrides", csv_dtypes)
