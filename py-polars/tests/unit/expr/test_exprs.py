@@ -884,13 +884,18 @@ def test_removed_methods(name: str, msg: str) -> None:
 
 
 def test_removed_to_struct_parameters() -> None:
-    # TODO: [amber] Needs msg
+    upper_bound_msg = (
+        "Pass the field names explicitly via `fields` instead, e.g."
+        ' `fields=[f"field_{i}" for i in range(upper_bound)]`.'
+    )
+    n_field_strategy_msg = "Pass the field names explicitly via `fields`."
+
     expr = pl.col("a").list
-    with pytest.raises(ArgumentRemovedError, match="upper_bound"):
+    with pytest.raises(ArgumentRemovedError, match=re.escape(upper_bound_msg)):
         expr.to_struct(upper_bound=2)  # type: ignore[call-arg]
-    with pytest.raises(ArgumentRemovedError, match="n_field_strategy"):
+    with pytest.raises(ArgumentRemovedError, match=re.escape(n_field_strategy_msg)):
         expr.to_struct(n_field_strategy="max_width")  # type: ignore[call-arg]
 
     series = pl.Series("a", [[1, 2]]).list
-    with pytest.raises(ArgumentRemovedError, match="upper_bound"):
+    with pytest.raises(ArgumentRemovedError, match=re.escape(upper_bound_msg)):
         series.to_struct(upper_bound=2)  # type: ignore[call-arg]

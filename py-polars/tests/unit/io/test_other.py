@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -193,13 +194,16 @@ def test_no_glob(
     ],
 )
 def test_removed_rechunk_parameter(function_name: str) -> None:
-    # TODO: [amber] Needs msg
-    with pytest.raises(ArgumentRemovedError, match="'rechunk'"):
+    msg = "call `rechunk()` on the resulting dataframe if you need contiguous memory."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         getattr(pl, function_name)("nonexistent", rechunk=True)
 
 
 @pytest.mark.parametrize("function_name", ["read_parquet", "scan_parquet"])
 def test_removed_allow_missing_columns_parameter(function_name: str) -> None:
-    # TODO: [amber] Needs msg
-    with pytest.raises(ArgumentRemovedError, match="'allow_missing_columns'"):
+    msg = (
+        "Pass one of `('insert', 'raise')`; `allow_missing_columns=True`"
+        " corresponds to `missing_columns='insert'`."
+    )
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         getattr(pl, function_name)("nonexistent", allow_missing_columns=True)

@@ -32,12 +32,12 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.parametrize(
-    ("name", "match"),
+    ("name", "msg"),
     [
-        ("count", "use `GroupBy.len` instead."),
+        ("count", "`GroupBy.count` was renamed; use `GroupBy.len` instead."),
     ],
 )
-def test_removed_methods(name: str, match: str) -> None:
+def test_removed_methods(name: str, msg: str) -> None:
     df = pl.DataFrame(schema={"a": pl.Int64})
     groupers = [
         df.group_by("a"),
@@ -45,9 +45,8 @@ def test_removed_methods(name: str, match: str) -> None:
         df.group_by_dynamic("a", every="1i"),
         df.lazy().group_by("a"),
     ]
-    # TODO: [amber] Needs msg
     for grouper in groupers:
-        with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
             getattr(grouper, name)
 
 
