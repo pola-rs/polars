@@ -204,7 +204,6 @@ pub struct Config {
     numa_aware: AtomicBool,
     numa_mock_regions: AtomicU64,
     disable_http_rate_limit: AtomicBool,
-    
 
     // Derived from others.
     ooc_memory_prefetch_bytes: AtomicU64,
