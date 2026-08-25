@@ -721,21 +721,14 @@ def test_raise_on_different_results_20104() -> None:
 
 
 @pytest.mark.parametrize("fill_value", [None, -1])
-def test_shift_with_null_deprecated_24105(fill_value: Any) -> None:
+def test_shift_with_null_raises(fill_value: Any) -> None:
     df = pl.DataFrame({"x": [1, 2, 3]})
-    df_shift = None
-    with pytest.deprecated_call(  # @2.0
-        match=r"shift value 'n' is null, which currently returns a column of null values. This will become an error in the future.",
+    with pytest.raises(
+        ComputeError, match=re.escape("shift value 'n' must not be null.")
     ):
-        df_shift = df.select(
+        df.select(
             pl.col.x.shift(pl.col.x.filter(pl.col.x > 3).first(), fill_value=fill_value)
         )
-    # Check that the result is a column of nulls, even if the fill_value is different
-    assert_frame_equal(
-        df_shift,
-        pl.DataFrame({"x": [None, None, None]}),
-        check_dtypes=False,
-    )
 
 
 def test_raies_on_mismatch_column_length_24500() -> None:
