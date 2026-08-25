@@ -1732,6 +1732,29 @@ def test_cspe_nested_cache_does_not_block_pushable_filters() -> None:
     )
 
 
+def test_cspe_nested_cache_under_shared_subplan_28945() -> None:
+    cached = pl.LazyFrame({"x": [1]}).cache()
+    base = pl.concat([pl.LazyFrame({"x": [2]}), cached.filter(pl.col("x") > 0)])
+    frames = [base.filter(pl.col("x") == 1), base.filter(pl.col("x") == 2)]
+
+    for actual, expected in zip(
+        pl.collect_all(frames),
+        pl.collect_all(frames, optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        strict=True,
+    ):
+        assert_frame_equal(actual, expected)
+
+
+def test_cspe_nested_cache_under_shared_subplan_no_union_28945() -> None:
+    cached = pl.LazyFrame({"x": [1, 2, 3]}).cache()
+    q = pl.concat([cached.filter(pl.col("x") > 1), cached.filter(pl.col("x") > 1)])
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+
+
 def test_cse_single_scalar_does_not_broadcast_28407() -> None:
     e = pl.lit(5).abs()
     q = pl.LazyFrame({"a": [1, 2, 3]}).select((e + e).alias("o"))
