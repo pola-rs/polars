@@ -899,6 +899,19 @@ class GroupBy:
         """
         return self.agg(F.all().sum())
 
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "count": "`GroupBy.count` was renamed; use `GroupBy.len` instead.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
+
 
 class RollingGroupBy:
     """
@@ -1073,6 +1086,19 @@ class RollingGroupBy:
             .map_groups(function, schema)
             ._collect_eager(optimizations=QueryOptFlags.none())
         )
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "count": "`GroupBy.count` was renamed; use `GroupBy.len` instead.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
 
 
 class DynamicGroupBy:

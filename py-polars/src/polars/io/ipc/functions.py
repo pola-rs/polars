@@ -48,6 +48,11 @@ if TYPE_CHECKING:
         deprecated_in="0.20.4",
         removed_in="2.0",
     ),
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
+    ),
 )
 def read_ipc(
     source: str | Path | IO[bytes] | bytes,
@@ -211,6 +216,11 @@ def read_ipc(
         deprecated_in="0.20.4",
         removed_in="2.0",
     ),
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
+    ),
 )
 def read_ipc_stream(
     source: str | Path | IO[bytes] | bytes,
@@ -348,6 +358,11 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
         new_name="row_index_offset",
         deprecated_in="0.20.4",
         removed_in="2.0",
+    ),
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
     ),
 )
 @removed_parameters(

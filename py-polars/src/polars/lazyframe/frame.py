@@ -8256,6 +8256,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
+    @removed_parameters(
+        RemovedParameter(
+            name="no_optimizations",
+            deprecated_in="1.39.3",
+            removed_in="2.0",
+            hint="Use the `predicate_pushdown`, `projection_pushdown`, and `slice_pushdown` flags instead.",
+        ),
+    )
     def map_batches(
         self,
         function: Callable[[DataFrame], DataFrame],

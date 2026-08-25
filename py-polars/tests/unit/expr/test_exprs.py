@@ -11,7 +11,11 @@ import pytest
 
 import polars as pl
 from polars._plr import InvalidOperationError
-from polars.exceptions import AttributeRemovedError, ChronoFormatWarning
+from polars.exceptions import (
+    ArgumentRemovedError,
+    AttributeRemovedError,
+    ChronoFormatWarning,
+)
 from polars.expr.string import _validate_format_argument
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import (
@@ -855,27 +859,43 @@ def test_append_no_upcast_27345() -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "match"),
+    ("name", "msg"),
     [("from_json", "use `Expr.deserialize` instead")],
 )
-def test_expr_removed_classmethods(name: str, match: str) -> None:
-    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+def test_expr_removed_classmethods(name: str, msg: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
         getattr(pl.Expr, name)
 
 
 @pytest.mark.parametrize(
-    ("name", "match"),
+    ("name", "msg"),
     [
-        (
-            "rechunk",
-            "rechunking within a query is not well-defined. "
-            "Use `df.rechunk()` after collecting the results instead.",
-        ),
         ("register_plugin", "use `polars.plugins.register_plugin_function` instead"),
         ("shrink_dtype", "use `Series.shrink_dtype` instead"),
         ("where", "use `filter` instead"),
+        ("agg_groups", "use `df.with_row_index().group_by(...).agg(pl.col('index'))`"),
+        ("flatten", "use `Expr.list.explode(keep_nulls=False, empty_as_null=False)`"),
+        ("rechunk", "Use `df.rechunk()` after collecting the results instead."),
     ],
 )
-def test_expr_removed_methods(name: str, match: str) -> None:
-    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+def test_removed_methods(name: str, msg: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
         getattr(pl.col("a"), name)
+
+
+def test_removed_to_struct_parameters() -> None:
+    upper_bound_msg = (
+        "Pass the field names explicitly via `fields` instead, e.g."
+        ' `fields=[f"field_{i}" for i in range(upper_bound)]`.'
+    )
+    n_field_strategy_msg = "Pass the field names explicitly via `fields`."
+
+    expr = pl.col("a").list
+    with pytest.raises(ArgumentRemovedError, match=re.escape(upper_bound_msg)):
+        expr.to_struct(upper_bound=2)  # type: ignore[call-arg]
+    with pytest.raises(ArgumentRemovedError, match=re.escape(n_field_strategy_msg)):
+        expr.to_struct(n_field_strategy="max_width")  # type: ignore[call-arg]
+
+    series = pl.Series("a", [[1, 2]]).list
+    with pytest.raises(ArgumentRemovedError, match=re.escape(upper_bound_msg)):
+        series.to_struct(upper_bound=2)  # type: ignore[call-arg]
