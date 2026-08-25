@@ -18,7 +18,7 @@ def scan_pyarrow_dataset(
     batch_size: int | None = None,
 ) -> LazyFrame:
     """
-    Scan a pyarrow dataset.
+    Scan a PyArrow :class:`~pyarrow.dataset.Dataset`.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed
@@ -29,29 +29,29 @@ def scan_pyarrow_dataset(
     Parameters
     ----------
     source
-        Pyarrow dataset to scan.
+        PyArrow :class:`~pyarrow.dataset.Dataset` to scan.
     allow_pyarrow_filter
-        Allow predicates to be pushed down to pyarrow. This can lead to different
-        results if comparisons are done with null values as pyarrow handles this
+        Allow predicates to be pushed down to PyArrow. This can lead to different
+        results if comparisons are done with null values as PyArrow handles this
         different than polars does.
     batch_size
-        The maximum row count for scanned pyarrow record batches.
+        The maximum row count for scanned PyArrow record batches.
 
     Warnings
     --------
-    Don't use this if you accept untrusted user inputs. Predicates will be evaluated
-    with python 'eval'. There is sanitation in place, but it is a possible attack
-    vector.
-    This method can only can push down predicates that are allowed by PyArrow
-    (e.g. not the full Polars API).
+    * Don't use this if you accept untrusted user inputs. Predicates will be
+      evaluated with Python 'eval'. There is sanitation in place, but it is
+      a possible attack vector.
+    * This method can only push down predicates that are allowed by PyArrow
+      (e.g. not the full Polars API).
 
     If :func:`scan_parquet` works for your source, you should use that instead.
 
     Notes
     -----
     When using partitioning, the appropriate `partitioning` option must be set on
-    `pyarrow.dataset.dataset` before passing to Polars or the partitioned-on column(s)
-    may not get passed to Polars.
+    the :func:`~pyarrow.dataset.dataset` function or the partitioned-on column(s)
+    may not be passed to Polars.
 
     Examples
     --------
