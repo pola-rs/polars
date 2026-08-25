@@ -46,24 +46,12 @@ def write_scans(tmp_path: Path, **frames: pl.DataFrame) -> dict[str, pl.LazyFram
     return scans
 
 
-def shared_key_frames(
-    tmp_path: Path, *, stray_key_in_dim_b: bool = False
-) -> dict[str, pl.LazyFrame]:
-    """The same star schema, but each key is named the same on both sides.
+def shared_key_star(*, stray_key_in_dim_b: bool = False) -> dict[str, pl.DataFrame]:
+    """A star schema whose keys are named the same on both sides.
 
     Coalescing folds such a pair into one column whichever side ends up left, so
     these joins may be reordered.
     """
-    fact = pl.DataFrame(
-        {
-            "k_a": [i % 50 for i in range(1000)],
-            "k_b": [i % 20 for i in range(1000)],
-            "f_val": list(range(1000)),
-        }
-    )
-    dim_a = pl.DataFrame(
-        {"k_a": list(range(50)), "a_flag": [i == 7 for i in range(50)]}
-    )
     dim_b = pl.DataFrame(
         {"k_b": list(range(20)), "b_name": [f"b{i}" for i in range(20)]}
     )
@@ -71,7 +59,27 @@ def shared_key_frames(
         # Holds `k_a` without being joined on it, so `k_a` would survive twice.
         dim_b = dim_b.with_columns(k_a=pl.col("k_b"))
 
-    return write_scans(tmp_path, fact=fact, dim_a=dim_a, dim_b=dim_b)
+    return {
+        "fact": pl.DataFrame(
+            {
+                "k_a": [i % 50 for i in range(1000)],
+                "k_b": [i % 20 for i in range(1000)],
+                "f_val": list(range(1000)),
+            }
+        ),
+        "dim_a": pl.DataFrame(
+            {"k_a": list(range(50)), "a_flag": [i == 7 for i in range(50)]}
+        ),
+        "dim_b": dim_b,
+    }
+
+
+def shared_key_frames(
+    tmp_path: Path, *, stray_key_in_dim_b: bool = False
+) -> dict[str, pl.LazyFrame]:
+    return write_scans(
+        tmp_path, **shared_key_star(stray_key_in_dim_b=stray_key_in_dim_b)
+    )
 
 
 def shared_key_query(frames: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
@@ -150,21 +158,8 @@ def test_unsafe_clusters_are_left_alone(
 
 
 def in_memory_star() -> pl.LazyFrame:
-    """The star schema of `star_frames`, held in memory rather than on disk."""
-    fact = pl.LazyFrame(
-        {
-            "k_a": [i % 50 for i in range(1000)],
-            "k_b": [i % 20 for i in range(1000)],
-            "f_val": list(range(1000)),
-        }
-    )
-    dim_a = pl.LazyFrame(
-        {"k_a": list(range(50)), "a_flag": [i == 7 for i in range(50)]}
-    )
-    dim_b = pl.LazyFrame(
-        {"k_b": list(range(20)), "b_name": [f"b{i}" for i in range(20)]}
-    )
-    return fact.join(dim_b, on="k_b").join(dim_a.filter(pl.col("a_flag")), on="k_a")
+    """The `shared_key_frames` star schema, held in memory rather than on disk."""
+    return shared_key_query({n: df.lazy() for n, df in shared_key_star().items()})
 
 
 def test_in_memory_frames_are_reordered() -> None:

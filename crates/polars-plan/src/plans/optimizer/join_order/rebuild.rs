@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
-use polars_core::schema::Schema;
 use polars_utils::arena::{Arena, Node};
 
 use super::cluster::Cluster;
@@ -52,7 +51,7 @@ pub(super) fn rebuild(
         is_placed[next] = true;
     }
 
-    if !same_column_order(&acc_schema, &cluster.output_schema) {
+    if acc_schema != cluster.output_schema {
         acc_node = ir_arena.add(IR::SimpleProjection {
             input: acc_node,
             columns: cluster.output_schema.clone(),
@@ -76,8 +75,4 @@ fn keys_joining(cluster: &Cluster, is_placed: &[bool], candidate: usize) -> Vec<
         }
     }
     on
-}
-
-fn same_column_order(a: &Schema, b: &Schema) -> bool {
-    a.len() == b.len() && a.iter_names().zip(b.iter_names()).all(|(x, y)| x == y)
 }

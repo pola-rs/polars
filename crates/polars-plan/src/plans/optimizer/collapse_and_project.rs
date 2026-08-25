@@ -41,9 +41,7 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
             Select { input, expr, .. } => {
                 if !self.processed.contains(&node) {
                     // First check if we can apply the optimization before we allocate.
-                    if !expr.iter().all(|e| {
-                        matches!(expr_arena.get(e.node()), AExpr::Column(name) if e.output_name() == name)
-                    }) {
+                    if !expr.iter().all(|e| e.plain_column(expr_arena).is_some()) {
                         self.processed.insert(node);
                         return Ok(None);
                     }

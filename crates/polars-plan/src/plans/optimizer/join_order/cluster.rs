@@ -9,7 +9,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use polars_core::prelude::PlIndexSet;
+use polars_core::prelude::{PlIndexMap, PlIndexSet};
 use polars_core::schema::SchemaRef;
 use polars_ops::frame::JoinValidation;
 use polars_utils::arena::{Arena, Node};
@@ -96,7 +96,7 @@ impl Cluster {
 
 /// Whether a join node may be reordered against its neighbours.
 ///
-/// Coalescing joins pass here but are constrained further in [`coalesced_names`]:
+/// Coalescing joins pass here but are constrained further in [`coalesce_keys`]:
 /// coalescing folds a key pair into one column under the left name, so only pairs of
 /// identically named columns survive the inputs being swapped.
 fn reorderable(options: &JoinOptionsIR) -> bool {
@@ -179,8 +179,8 @@ pub(super) fn extract(
     }
 
     let coalesced = if options.args.should_coalesce() {
-        let names = coalesced_names(&leaves, &edges, expr_arena)?;
-        edges = close_over_names(&leaves, &edges, &names, expr_arena);
+        let (names, closed) = coalesce_keys(&leaves, &edges, expr_arena)?;
+        edges = closed;
         names
     } else {
         PlIndexSet::default()
@@ -279,7 +279,7 @@ fn peel_projections(mut node: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AEx
             // A `select` of plain columns is the same thing before `fast_projection`
             // (which runs after this pass) rewrites it into one.
             IR::Select { input, expr, .. }
-                if expr.iter().all(|e| plain_column(e, expr_arena).is_some()) =>
+                if expr.iter().all(|e| e.plain_column(expr_arena).is_some()) =>
             {
                 *input
             },
@@ -332,88 +332,42 @@ fn column_names_are_unambiguous(leaves: &[Leaf], coalesced: &PlIndexSet<PlSmallS
         .all(|name| coalesced.contains(name.as_str()) || seen.insert(name.as_str()))
 }
 
-/// The names a coalescing cluster folds away, or `None` if it cannot be reordered.
+/// The names a coalescing cluster folds away, and the edges closed over them, or
+/// `None` if the cluster cannot be reordered.
 ///
 /// Coalescing keeps the left key's column and drops the right one, so a pair naming
 /// different columns would rename the output when the inputs swap. Only pairs of
 /// identically named plain columns are accepted.
-fn coalesced_names(
+///
+/// Equality is transitive across a run of inner joins, so the edges on a name are
+/// replaced by the clique over every leaf holding it. Without those implied edges an
+/// order could join two holders over some other key and leave both columns behind.
+fn coalesce_keys(
     leaves: &[Leaf],
     edges: &[Edge],
     expr_arena: &Arena<AExpr>,
-) -> Option<PlIndexSet<PlSmallStr>> {
-    let mut names = PlIndexSet::default();
+) -> Option<(PlIndexSet<PlSmallStr>, Vec<Edge>)> {
+    let mut by_name: PlIndexMap<PlSmallStr, Vec<&Edge>> = PlIndexMap::default();
     for edge in edges {
-        let name = plain_column(&edge.left_key, expr_arena)?;
-        if plain_column(&edge.right_key, expr_arena) != Some(name) {
+        let name = edge.left_key.plain_column(expr_arena)?;
+        if edge.right_key.plain_column(expr_arena) != Some(name) {
             return None;
         }
-        names.insert(name.clone());
+        by_name.entry(name.clone()).or_default().push(edge);
     }
 
-    for name in &names {
-        if !folds_into_one_column(name, leaves, edges, expr_arena) {
-            return None;
-        }
-    }
-    Some(names)
-}
-
-/// Whether every leaf holding `name` collapses into a single column of that name.
-///
-/// The dtypes have to agree because coalescing keeps the left column, so the output
-/// dtype would otherwise depend on the order. Reachability over the edges on `name`
-/// is what [`close_over_names`] needs to make the collapse hold in every order.
-fn folds_into_one_column(
-    name: &PlSmallStr,
-    leaves: &[Leaf],
-    edges: &[Edge],
-    expr_arena: &Arena<AExpr>,
-) -> bool {
-    let mut parent: Vec<usize> = (0..leaves.len()).collect();
-    for edge in edges_on(name, edges, expr_arena) {
-        let (left, right) = (
-            find(&mut parent, edge.left_leaf),
-            find(&mut parent, edge.right_leaf),
-        );
-        parent[left] = right;
-    }
-
-    let mut holders = leaves
-        .iter()
-        .enumerate()
-        .filter(|(_, leaf)| leaf.schema.contains(name.as_str()));
-    let Some((first, first_leaf)) = holders.next() else {
-        return false;
-    };
-    let root = find(&mut parent, first);
-    let dtype = first_leaf.schema.get(name.as_str());
-
-    holders.all(|(i, leaf)| find(&mut parent, i) == root && leaf.schema.get(name.as_str()) == dtype)
-}
-
-/// Replace the edges with the transitive closure over each coalesced name.
-///
-/// Equality is transitive across a run of inner joins, so any two leaves holding a
-/// coalesced name can be joined on it directly. Without the implied edges an order
-/// could join two of them over some other key, leaving both columns behind.
-fn close_over_names(
-    leaves: &[Leaf],
-    edges: &[Edge],
-    names: &PlIndexSet<PlSmallStr>,
-    expr_arena: &Arena<AExpr>,
-) -> Vec<Edge> {
     let mut closed = Vec::with_capacity(edges.len());
-    for name in names {
-        // Every edge on `name` reads the same column on both sides, so any of them
-        // supplies the key expressions for the whole clique.
-        let template = edges_on(name, edges, expr_arena)
-            .next()
-            .expect("name came from an edge");
+    for (name, on_name) in &by_name {
         let holders: Vec<usize> = (0..leaves.len())
             .filter(|&i| leaves[i].schema.contains(name.as_str()))
             .collect();
+        if !folds_into_one_column(name, &holders, on_name, leaves) {
+            return None;
+        }
 
+        // Every edge on `name` reads the same column on both sides, so any of them
+        // supplies the key expressions for the whole clique.
+        let template = on_name[0];
         for (nth, &left_leaf) in holders.iter().enumerate() {
             for &right_leaf in &holders[nth + 1..] {
                 closed.push(Edge {
@@ -425,17 +379,39 @@ fn close_over_names(
             }
         }
     }
-    closed
+
+    Some((by_name.into_keys().collect(), closed))
 }
 
-fn edges_on<'a>(
-    name: &'a PlSmallStr,
-    edges: &'a [Edge],
-    expr_arena: &'a Arena<AExpr>,
-) -> impl Iterator<Item = &'a Edge> + 'a {
-    edges
-        .iter()
-        .filter(move |edge| plain_column(&edge.left_key, expr_arena) == Some(name))
+/// Whether every leaf holding `name` collapses into a single column of that name.
+///
+/// The dtypes have to agree because coalescing keeps the left column, so the output
+/// dtype would otherwise depend on the order. Reachability over the edges on `name`
+/// is what makes the clique sound: joining two leaves that were not already connected
+/// by this name would drop rows the original query kept.
+fn folds_into_one_column(
+    name: &PlSmallStr,
+    holders: &[usize],
+    edges: &[&Edge],
+    leaves: &[Leaf],
+) -> bool {
+    let mut parent: Vec<usize> = (0..leaves.len()).collect();
+    for edge in edges {
+        let (left, right) = (
+            find(&mut parent, edge.left_leaf),
+            find(&mut parent, edge.right_leaf),
+        );
+        parent[left] = right;
+    }
+
+    let Some((&first, rest)) = holders.split_first() else {
+        return false;
+    };
+    let root = find(&mut parent, first);
+    let dtype = leaves[first].schema.get(name.as_str());
+
+    rest.iter()
+        .all(|&i| find(&mut parent, i) == root && leaves[i].schema.get(name.as_str()) == dtype)
 }
 
 fn find(parent: &mut [usize], mut i: usize) -> usize {
@@ -444,17 +420,6 @@ fn find(parent: &mut [usize], mut i: usize) -> usize {
         i = parent[i];
     }
     i
-}
-
-/// The column a key reads, if the key is that column under its own name.
-///
-/// Coalescing matches the two sides by the keys' output names, so a key that renames
-/// what it reads does not name the column that is kept or the one that is dropped.
-fn plain_column<'a>(key: &ExprIR, expr_arena: &'a Arena<AExpr>) -> Option<&'a PlSmallStr> {
-    match expr_arena.get(key.node()) {
-        AExpr::Column(name) if key.output_name_inner().get() == Some(name) => Some(name),
-        _ => None,
-    }
 }
 
 /// Which leaf of `range` a key expression reads from, or `None` if that is not
