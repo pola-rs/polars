@@ -4,10 +4,7 @@ import contextlib
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Literal
 
-from polars._utils.deprecation import (
-    issue_deprecation_warning,
-)
-from polars._utils.expired import RenamedParameter, removed_parameters
+from polars._utils.expired import RemovedParameter, RenamedParameter, removed_parameters
 from polars._utils.various import is_path_or_str_sequence, normalize_filepath
 from polars._utils.wrap import wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
@@ -25,6 +22,20 @@ if TYPE_CHECKING:
     from polars.io.cloud import CredentialProviderFunction
 
 
+@removed_parameters(
+    RemovedParameter(
+        name="retries",
+        deprecated_in="1.37.1",
+        removed_in="2.0",
+        hint='Pass {"max_retries": n} via `storage_options` instead.',
+    ),
+    RemovedParameter(
+        name="file_cache_ttl",
+        deprecated_in="1.39.0",
+        removed_in="2.0",
+        hint="The file cache is no longer supported.",
+    ),
+)
 def read_ndjson(
     source: str
     | Path
@@ -47,8 +58,6 @@ def read_ndjson(
     ignore_errors: bool = False,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int | None = None,
-    file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
 ) -> DataFrame:
     r"""
@@ -112,18 +121,6 @@ def read_ndjson(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-    retries
-        Number of retries if accessing a cloud instance fails.
-
-        .. deprecated:: 1.37.1
-            Pass {"max_retries": n} via `storage_options` instead.
-    file_cache_ttl
-        Amount of time to keep downloaded cloud files since their last access time,
-        in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
-        (which defaults to 1 hour) if not given.
-
-        .. deprecated:: 1.39.0
-            File cache is no longer supported.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
 
@@ -154,10 +151,6 @@ def read_ndjson(
     │ 3   ┆ 8   │
     └─────┴─────┘
     """
-    if file_cache_ttl is not None:
-        msg = "the `file_cache_ttl` parameter was deprecated in 1.39.0"
-        issue_deprecation_warning(msg)
-
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "read_ndjson"
     )
@@ -176,10 +169,8 @@ def read_ndjson(
         row_index_offset=row_index_offset,
         ignore_errors=ignore_errors,
         include_file_paths=include_file_paths,
-        retries=retries,
         storage_options=storage_options,
         credential_provider=credential_provider_builder,  # type: ignore[arg-type]
-        file_cache_ttl=None,
     )._collect_eager()
 
 
@@ -195,6 +186,20 @@ def read_ndjson(
         new_name="row_index_offset",
         deprecated_in="0.20.4",
         removed_in="2.0",
+    ),
+)
+@removed_parameters(
+    RemovedParameter(
+        name="retries",
+        deprecated_in="1.37.1",
+        removed_in="2.0",
+        hint='Pass {"max_retries": n} via `storage_options` instead.',
+    ),
+    RemovedParameter(
+        name="file_cache_ttl",
+        deprecated_in="1.39.0",
+        removed_in="2.0",
+        hint="The file cache is no longer supported.",
     ),
 )
 def scan_ndjson(
@@ -221,8 +226,6 @@ def scan_ndjson(
     ignore_errors: bool = False,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int | None = None,
-    file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
 ) -> LazyFrame:
     """
@@ -290,18 +293,6 @@ def scan_ndjson(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-    retries
-        Number of retries if accessing a cloud instance fails.
-
-        .. deprecated:: 1.37.1
-            Pass {"max_retries": n} via `storage_options` instead.
-    file_cache_ttl
-        Amount of time to keep downloaded cloud files since their last access time,
-        in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
-        (which defaults to 1 hour) if not given.
-
-        .. deprecated:: 1.39.0
-            File cache is no longer supported.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
@@ -322,16 +313,6 @@ def scan_ndjson(
     if infer_schema_length == 0:
         msg = "'infer_schema_length' should be positive"
         raise ValueError(msg)
-
-    if retries is not None:
-        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-        issue_deprecation_warning(msg)
-        storage_options = storage_options or {}
-        storage_options["max_retries"] = retries
-
-    if file_cache_ttl is not None:
-        msg = "file cache is no longer supported as of 1.39.0."
-        issue_deprecation_warning(msg)
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_ndjson"

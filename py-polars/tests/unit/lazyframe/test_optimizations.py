@@ -1,12 +1,15 @@
 import datetime as dt
 import io
 import itertools
+import re
 
 import pyarrow as pa
 import pyarrow.dataset as pad
 import pytest
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
+from polars.lazyframe.opt_flags import QueryOptFlags
 from polars.testing import assert_frame_equal
 
 
@@ -1318,3 +1321,16 @@ def test_projection_pushdown_select_prune_expr_28729() -> None:
         q.collect().sort("x"),
         pl.DataFrame({"x": [0, 1, 2]}),
     )
+
+
+def test_query_opt_flags_collapse_joins_removed() -> None:
+    msg = "Use `predicate_pushdown` instead."
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        QueryOptFlags(collapse_joins=False)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        QueryOptFlags.none(collapse_joins=False)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        QueryOptFlags().update(collapse_joins=False)  # type: ignore[call-arg]
