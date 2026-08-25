@@ -28,7 +28,11 @@ if TYPE_CHECKING:
     import pyiceberg.catalog
     import pyiceberg.table
     from pyiceberg.io import FileIO
-    from pyiceberg.io.pyarrow import DataFileStatistics
+    from pyiceberg.io.pyarrow import (
+        DataFileStatistics,
+        MetricModeTypes,
+        StatisticsCollector,
+    )
     from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionSpec
     from pyiceberg.schema import Schema
@@ -109,20 +113,13 @@ def _data_files_with_nested_partitions(
     file_io: FileIO,
     nested_source_ids: set[int],
 ) -> Iterable[DataFile]:
-    import pyarrow.parquet as pq
     from pyiceberg.io.pyarrow import (
         MetricModeTypes,
         MetricsMode,
-        _check_pyarrow_schema_compatible,
         compute_statistics_plan,
-        data_file_statistics_from_parquet_metadata,
         parquet_path_to_id_mapping,
     )
-    from pyiceberg.manifest import (
-        DataFile,
-        DataFileContent,
-        FileFormat,
-    )
+    from pyiceberg.utils.concurrent import ExecutorFactory
 
     schema = table_metadata.schema()
     statistics_plan = compute_statistics_plan(schema, table_metadata.properties)
@@ -136,48 +133,79 @@ def _data_files_with_nested_partitions(
         )
     parquet_column_mapping = parquet_path_to_id_mapping(schema)
 
-    for file_path in file_paths:
-        input_file = file_io.new_input(file_path)
-        with input_file.open() as input_stream:
-            parquet_metadata = pq.read_metadata(input_stream)
+    executor = ExecutorFactory.get_or_create()
+    futures = [
+        executor.submit(
+            _data_file_with_nested_partitions,
+            table_metadata,
+            file_path,
+            file_io,
+            statistics_plan,
+            parquet_column_mapping,
+            nested_metrics_modes,
+        )
+        for file_path in file_paths
+    ]
+    return [future.result() for future in futures]
 
-        _check_pyarrow_schema_compatible(
-            schema, parquet_metadata.schema.to_arrow_schema()
-        )
-        statistics = data_file_statistics_from_parquet_metadata(
-            parquet_metadata=parquet_metadata,
-            stats_columns=statistics_plan,
-            parquet_column_mapping=parquet_column_mapping,
-        )
-        partition = _infer_partition_from_statistics(
-            statistics, table_metadata.spec(), schema
-        )
-        serialized_statistics = statistics.to_serialized_dict()
-        for source_id, metrics_mode in nested_metrics_modes.items():
-            serialized_statistics["lower_bounds"].pop(source_id, None)
-            serialized_statistics["upper_bounds"].pop(source_id, None)
-            if metrics_mode is MetricModeTypes.NONE:
-                serialized_statistics["value_counts"].pop(source_id, None)
-                serialized_statistics["null_value_counts"].pop(source_id, None)
-                serialized_statistics["nan_value_counts"].pop(source_id, None)
 
-        data_file_args = {
-            "content": DataFileContent.DATA,
-            "file_path": file_path,
-            "file_format": FileFormat.PARQUET,
-            "partition": partition,
-            "file_size_in_bytes": len(input_file),
-            "sort_order_id": None,
-            "spec_id": table_metadata.default_spec_id,
-            "equality_ids": None,
-            "key_metadata": None,
-            **serialized_statistics,
-        }
-        factory = getattr(DataFile, "from_args", None)
-        if factory is None:
-            yield DataFile(**data_file_args)
-        else:
-            yield factory(**data_file_args)
+def _data_file_with_nested_partitions(
+    table_metadata: TableMetadata,
+    file_path: str,
+    file_io: FileIO,
+    statistics_plan: dict[int, StatisticsCollector],
+    parquet_column_mapping: dict[str, int],
+    nested_metrics_modes: dict[int, MetricModeTypes],
+) -> DataFile:
+    import pyarrow.parquet as pq
+    from pyiceberg.io.pyarrow import (
+        MetricModeTypes,
+        _check_pyarrow_schema_compatible,
+        data_file_statistics_from_parquet_metadata,
+    )
+    from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
+
+    schema = table_metadata.schema()
+    input_file = file_io.new_input(file_path)
+    with input_file.open() as input_stream:
+        parquet_metadata = pq.read_metadata(input_stream)
+
+    _check_pyarrow_schema_compatible(
+        schema, parquet_metadata.schema.to_arrow_schema()
+    )
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=parquet_metadata,
+        stats_columns=statistics_plan,
+        parquet_column_mapping=parquet_column_mapping,
+    )
+    partition = _infer_partition_from_statistics(
+        statistics, table_metadata.spec(), schema
+    )
+    serialized_statistics = statistics.to_serialized_dict()
+    for source_id, metrics_mode in nested_metrics_modes.items():
+        serialized_statistics["lower_bounds"].pop(source_id, None)
+        serialized_statistics["upper_bounds"].pop(source_id, None)
+        if metrics_mode is MetricModeTypes.NONE:
+            serialized_statistics["value_counts"].pop(source_id, None)
+            serialized_statistics["null_value_counts"].pop(source_id, None)
+            serialized_statistics["nan_value_counts"].pop(source_id, None)
+
+    data_file_args = {
+        "content": DataFileContent.DATA,
+        "file_path": file_path,
+        "file_format": FileFormat.PARQUET,
+        "partition": partition,
+        "file_size_in_bytes": len(input_file),
+        "sort_order_id": None,
+        "spec_id": table_metadata.default_spec_id,
+        "equality_ids": None,
+        "key_metadata": None,
+        **serialized_statistics,
+    }
+    factory = getattr(DataFile, "from_args", None)
+    if factory is None:
+        return DataFile(**data_file_args)
+    return factory(**data_file_args)
 
 
 def _add_files(
@@ -459,6 +487,10 @@ class IcebergSinkState:
         table = self.table()
         table_metadata = table.metadata
         table_properties = table_metadata.properties
+
+        if self.schema_mode == "overwrite" and table.spec().fields:
+            msg = "schema_mode='overwrite' is not supported for partitioned Iceberg tables"
+            raise NotImplementedError(msg)
 
         partition_key_exprs = _partition_key_exprs(table, self.source_schema)
 

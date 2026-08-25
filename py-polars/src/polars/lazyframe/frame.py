@@ -3430,8 +3430,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         not supported.
 
         ``mode="overwrite"`` replaces all table data; dynamic partition overwrite
-        is not supported. Tables with sort orders or custom location providers are
-        also not supported.
+        is not supported. ``schema_mode="overwrite"`` is not supported for
+        partitioned tables. Tables with sort orders or custom location providers
+        are also not supported.
         """
         from polars.io.iceberg._sink import IcebergSinkState
 

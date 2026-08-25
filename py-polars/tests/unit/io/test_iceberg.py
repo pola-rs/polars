@@ -914,6 +914,41 @@ def test_sink_iceberg_partitioned_deeply_nested_source_transform(
     assert {task.file.partition[0] for task in tbl.scan().plan_files()} == {10, 20}
 
 
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_nested_source_overwrite(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(
+                1,
+                "nested",
+                StructType(NestedField(2, "partition_col", LongType())),
+            ),
+            NestedField(3, "value", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(2, 1000, IdentityTransform(), "partition_col")
+        ),
+    )
+    pl.LazyFrame(
+        {
+            "nested": [{"partition_col": 1}, {"partition_col": 2}],
+            "value": [1, 2],
+        }
+    ).sink_iceberg(tbl, mode="append")
+    replacement = pl.DataFrame(
+        {
+            "nested": [{"partition_col": 3}, {"partition_col": 3}],
+            "value": [3, 4],
+        }
+    )
+
+    replacement.lazy().sink_iceberg(tbl, mode="overwrite")
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("value"), replacement)
+    assert {task.file.partition[0] for task in tbl.scan().plan_files()} == {3}
+
+
 @pytest.mark.parametrize(
     ("iceberg_type", "transform", "values"),
     [
@@ -1107,6 +1142,31 @@ def test_sink_iceberg_schema_overwrite(
 
 
 @pytest.mark.write_disk
+def test_sink_iceberg_partitioned_schema_overwrite_unsupported(
+    tmp_path: Path,
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, IdentityTransform(), "a")
+        ),
+    )
+
+    with pytest.raises(
+        NotImplementedError,
+        match="schema_mode='overwrite' is not supported for partitioned Iceberg tables",
+    ):
+        pl.LazyFrame({"a": [1]}).sink_iceberg(
+            tbl,
+            mode="overwrite",
+            schema_mode="overwrite",
+        )
+
+    assert tbl.current_snapshot() is None
+
+
+@pytest.mark.write_disk
 def test_sink_iceberg_snapshot_properties(tmp_path: Path) -> None:
     tbl, _ = new_iceberg_table(
         tmp_path,
@@ -1236,9 +1296,17 @@ def test_sink_iceberg_partitioned_object_storage(
         tmp_path,
         schema=IcebergSchema(
             NestedField(1, "a", LongType()),
-            NestedField(2, "b", LongType()),
+            NestedField(
+                2,
+                "nested",
+                StructType(NestedField(3, "b", LongType())),
+            ),
+            NestedField(4, "value", LongType()),
         ),
-        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "a")),
+        partition_spec=PartitionSpec(
+            PartitionField(1, 1000, IdentityTransform(), "a"),
+            PartitionField(3, 1001, TruncateTransform(10), "b_truncated"),
+        ),
         properties={
             TableProperties.OBJECT_STORE_ENABLED: "true",
             TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS: (
@@ -1246,12 +1314,23 @@ def test_sink_iceberg_partitioned_object_storage(
             ),
         },
     )
-    df = pl.DataFrame({"a": [1, 1, 2], "b": [1, 2, 3]})
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 2],
+            "nested": [{"b": 11}, {"b": 12}, {"b": 21}],
+            "value": [1, 2, 3],
+        }
+    )
 
     df.lazy().sink_iceberg(tbl, mode="append")
 
-    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("b"), df)
-    file_paths = [task.file.file_path for task in tbl.scan().plan_files()]
+    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("value"), df)
+    tasks = list(tbl.scan().plan_files())
+    assert {(task.file.partition[0], task.file.partition[1]) for task in tasks} == {
+        (1, 10),
+        (2, 20),
+    }
+    file_paths = [task.file.file_path for task in tasks]
     assert len(file_paths) == 2
     assert len(file_paths) == len(set(file_paths))
 
