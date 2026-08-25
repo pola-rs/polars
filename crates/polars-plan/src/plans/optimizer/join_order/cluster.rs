@@ -6,12 +6,14 @@
 //!
 //! Anything not known to be safe to reorder across ends the cluster instead.
 
+use std::ops::Range;
 use std::sync::Arc;
 
 use polars_core::prelude::PlIndexSet;
 use polars_core::schema::SchemaRef;
 use polars_ops::frame::JoinValidation;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
 use super::stats::{LeafStats, leaf_stats};
@@ -94,14 +96,13 @@ impl Cluster {
 
 /// Whether a join node may be reordered against its neighbours.
 ///
-/// Coalescing joins are excluded: they fold the two key columns into one and keep the
-/// left name, so swapping the inputs of `a.join(b, left_on="xk", right_on="yk")`
-/// would rename the output column from `xk` to `yk`.
+/// Coalescing joins pass here but are constrained further in [`coalesced_names`]:
+/// coalescing folds a key pair into one column under the left name, so only pairs of
+/// identically named columns survive the inputs being swapped.
 fn reorderable(options: &JoinOptionsIR) -> bool {
     let args = &options.args;
 
     matches!(args.how, JoinType::Inner)
-        && !args.should_coalesce()
         && args.slice.is_none()
         && matches!(args.maintain_order, MaintainOrderJoin::None)
         // Validation checks a named side for uniqueness; reordering would point it
@@ -110,6 +111,17 @@ fn reorderable(options: &JoinOptionsIR) -> bool {
         // A forced build side refers to this specific join, so leave it alone.
         && args.build_side.is_none()
         && matches!(&options.options, JoinTypeOptionsIR::Equi { on } if !on.is_empty())
+}
+
+/// A key pair as written, together with the leaves either side of its join.
+///
+/// A key expression is resolved by name against its own input, so the sides have to
+/// be looked up separately; the same name can occur on both.
+struct RawKey {
+    left_key: ExprIR,
+    right_key: ExprIR,
+    left_leaves: Range<usize>,
+    right_leaves: Range<usize>,
 }
 
 /// Extract the cluster rooted at `root`, or `None` if it cannot be reordered.
@@ -127,8 +139,8 @@ pub(super) fn extract(
     let options = options.clone();
 
     let mut leaf_nodes = Vec::new();
-    let mut key_pairs = Vec::new();
-    collect(root, ir_arena, &options, &mut leaf_nodes, &mut key_pairs);
+    let mut raw_keys = Vec::new();
+    collect(root, ir_arena, &options, &mut leaf_nodes, &mut raw_keys);
 
     if leaf_nodes.len() < MIN_LEAVES {
         return None;
@@ -147,27 +159,28 @@ pub(super) fn extract(
         });
     }
 
-    // Every column name must belong to exactly one leaf. A shared name is suffixed
-    // on collision, and which side gets the suffix depends on which ends up left, so
-    // reordering could rename columns.
-    if !column_names_are_disjoint(&leaves) {
-        return None;
-    }
-
-    let mut edges = Vec::with_capacity(key_pairs.len());
-    for (left_key, right_key) in key_pairs {
-        let left_leaf = owning_leaf(&left_key, &leaves, expr_arena)?;
-        let right_leaf = owning_leaf(&right_key, &leaves, expr_arena)?;
-        // A key pair inside one leaf is a filter, not a join condition.
-        if left_leaf == right_leaf {
-            return None;
-        }
+    let mut edges = Vec::with_capacity(raw_keys.len());
+    for raw in raw_keys {
+        let left_leaf = owning_leaf(&raw.left_key, &leaves, raw.left_leaves, expr_arena)?;
+        let right_leaf = owning_leaf(&raw.right_key, &leaves, raw.right_leaves, expr_arena)?;
         edges.push(Edge {
             left_leaf,
             right_leaf,
-            left_key,
-            right_key,
+            left_key: raw.left_key,
+            right_key: raw.right_key,
         });
+    }
+
+    let coalesced = if options.args.should_coalesce() {
+        let names = coalesced_names(&leaves, &edges, expr_arena)?;
+        edges = close_over_names(&leaves, &edges, &names, expr_arena);
+        names
+    } else {
+        PlIndexSet::default()
+    };
+
+    if !column_names_are_unambiguous(&leaves, &coalesced) {
+        return None;
     }
 
     let output_schema = ir_arena.get(root).schema(ir_arena).into_owned();
@@ -191,7 +204,7 @@ fn collect(
     ir_arena: &Arena<IR>,
     root_options: &JoinOptionsIR,
     leaves: &mut Vec<Node>,
-    key_pairs: &mut Vec<(ExprIR, ExprIR)>,
+    key_pairs: &mut Vec<RawKey>,
 ) {
     // Column-narrowing projections commonly sit between joins. They preserve rows
     // and rename nothing, so look past them for the join underneath; otherwise
@@ -205,11 +218,22 @@ fn collect(
             options,
             ..
         } if reorderable(options) && same_settings(options, root_options) => {
-            if let Some(on) = options.options.key_pairs() {
-                key_pairs.extend(on.iter().cloned());
-            }
+            // Each side's leaves land in one contiguous run, which is the range the
+            // keys of that side resolve against.
+            let start = leaves.len();
             collect(*input_left, ir_arena, root_options, leaves, key_pairs);
+            let mid = leaves.len();
             collect(*input_right, ir_arena, root_options, leaves, key_pairs);
+            let end = leaves.len();
+
+            if let Some(on) = options.options.key_pairs() {
+                key_pairs.extend(on.iter().map(|(left_key, right_key)| RawKey {
+                    left_key: left_key.clone(),
+                    right_key: right_key.clone(),
+                    left_leaves: start..mid,
+                    right_leaves: mid..end,
+                }));
+            }
         },
         // Keep the unpeeled node: a projection on a leaf still narrows it.
         _ => leaves.push(node),
@@ -233,7 +257,7 @@ fn peel_projections(mut node: Node, ir_arena: &Arena<IR>) -> Node {
 ///
 /// The suffix is excluded because the SQL frontend names it after the right-hand
 /// table, so no two joins agree on it. This is only sound while
-/// [`column_names_are_disjoint`] holds, since a suffix only applies on a collision.
+/// [`column_names_are_unambiguous`] holds, since a suffix only applies on a collision.
 ///
 /// Destructured so that a new `JoinArgs` field is a compile error here.
 fn same_settings(a: &JoinOptionsIR, b: &JoinOptionsIR) -> bool {
@@ -259,22 +283,159 @@ fn same_settings(a: &JoinOptionsIR, b: &JoinOptionsIR) -> bool {
         && a.force_parallel == b.force_parallel
 }
 
-fn column_names_are_disjoint(leaves: &[Leaf]) -> bool {
+/// Whether every column name in the cluster identifies exactly one output column.
+///
+/// A name held by two leaves is suffixed on collision, and which side gets the suffix
+/// depends on which ends up left, so reordering could rename columns. Coalesced key
+/// names are the exception: they are folded into one column rather than suffixed.
+fn column_names_are_unambiguous(leaves: &[Leaf], coalesced: &PlIndexSet<PlSmallStr>) -> bool {
     let total: usize = leaves.iter().map(|l| l.schema.len()).sum();
     let mut seen = PlIndexSet::with_capacity_and_hasher(total, Default::default());
     leaves
         .iter()
         .flat_map(|l| l.schema.iter_names())
-        .all(|name| seen.insert(name.as_str()))
+        .all(|name| coalesced.contains(name.as_str()) || seen.insert(name.as_str()))
 }
 
-/// Which leaf a key expression reads from, or `None` if that is not exactly one leaf.
-fn owning_leaf(key: &ExprIR, leaves: &[Leaf], expr_arena: &Arena<AExpr>) -> Option<usize> {
+/// The names a coalescing cluster folds away, or `None` if it cannot be reordered.
+///
+/// Coalescing keeps the left key's column and drops the right one, so a pair naming
+/// different columns would rename the output when the inputs swap. Only pairs of
+/// identically named plain columns are accepted.
+fn coalesced_names(
+    leaves: &[Leaf],
+    edges: &[Edge],
+    expr_arena: &Arena<AExpr>,
+) -> Option<PlIndexSet<PlSmallStr>> {
+    let mut names = PlIndexSet::default();
+    for edge in edges {
+        let name = plain_column(&edge.left_key, expr_arena)?;
+        if plain_column(&edge.right_key, expr_arena) != Some(name) {
+            return None;
+        }
+        names.insert(name.clone());
+    }
+
+    for name in &names {
+        if !folds_into_one_column(name, leaves, edges, expr_arena) {
+            return None;
+        }
+    }
+    Some(names)
+}
+
+/// Whether every leaf holding `name` collapses into a single column of that name.
+///
+/// The dtypes have to agree because coalescing keeps the left column, so the output
+/// dtype would otherwise depend on the order. Reachability over the edges on `name`
+/// is what [`close_over_names`] needs to make the collapse hold in every order.
+fn folds_into_one_column(
+    name: &PlSmallStr,
+    leaves: &[Leaf],
+    edges: &[Edge],
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    let mut parent: Vec<usize> = (0..leaves.len()).collect();
+    for edge in edges_on(name, edges, expr_arena) {
+        let (left, right) = (
+            find(&mut parent, edge.left_leaf),
+            find(&mut parent, edge.right_leaf),
+        );
+        parent[left] = right;
+    }
+
+    let mut holders = leaves
+        .iter()
+        .enumerate()
+        .filter(|(_, leaf)| leaf.schema.contains(name.as_str()));
+    let Some((first, first_leaf)) = holders.next() else {
+        return false;
+    };
+    let root = find(&mut parent, first);
+    let dtype = first_leaf.schema.get(name.as_str());
+
+    holders.all(|(i, leaf)| find(&mut parent, i) == root && leaf.schema.get(name.as_str()) == dtype)
+}
+
+/// Replace the edges with the transitive closure over each coalesced name.
+///
+/// Equality is transitive across a run of inner joins, so any two leaves holding a
+/// coalesced name can be joined on it directly. Without the implied edges an order
+/// could join two of them over some other key, leaving both columns behind.
+fn close_over_names(
+    leaves: &[Leaf],
+    edges: &[Edge],
+    names: &PlIndexSet<PlSmallStr>,
+    expr_arena: &Arena<AExpr>,
+) -> Vec<Edge> {
+    let mut closed = Vec::with_capacity(edges.len());
+    for name in names {
+        // Every edge on `name` reads the same column on both sides, so any of them
+        // supplies the key expressions for the whole clique.
+        let template = edges_on(name, edges, expr_arena)
+            .next()
+            .expect("name came from an edge");
+        let holders: Vec<usize> = (0..leaves.len())
+            .filter(|&i| leaves[i].schema.contains(name.as_str()))
+            .collect();
+
+        for (nth, &left_leaf) in holders.iter().enumerate() {
+            for &right_leaf in &holders[nth + 1..] {
+                closed.push(Edge {
+                    left_leaf,
+                    right_leaf,
+                    left_key: template.left_key.clone(),
+                    right_key: template.right_key.clone(),
+                });
+            }
+        }
+    }
+    closed
+}
+
+fn edges_on<'a>(
+    name: &'a PlSmallStr,
+    edges: &'a [Edge],
+    expr_arena: &'a Arena<AExpr>,
+) -> impl Iterator<Item = &'a Edge> + 'a {
+    edges
+        .iter()
+        .filter(move |edge| plain_column(&edge.left_key, expr_arena) == Some(name))
+}
+
+fn find(parent: &mut [usize], mut i: usize) -> usize {
+    while parent[i] != i {
+        parent[i] = parent[parent[i]];
+        i = parent[i];
+    }
+    i
+}
+
+/// The column a key reads, if the key is that column under its own name.
+///
+/// Coalescing matches the two sides by the keys' output names, so a key that renames
+/// what it reads does not name the column that is kept or the one that is dropped.
+fn plain_column<'a>(key: &ExprIR, expr_arena: &'a Arena<AExpr>) -> Option<&'a PlSmallStr> {
+    match expr_arena.get(key.node()) {
+        AExpr::Column(name) if key.output_name_inner().get() == Some(name) => Some(name),
+        _ => None,
+    }
+}
+
+/// Which leaf of `range` a key expression reads from, or `None` if that is not
+/// exactly one leaf.
+fn owning_leaf(
+    key: &ExprIR,
+    leaves: &[Leaf],
+    range: Range<usize>,
+    expr_arena: &Arena<AExpr>,
+) -> Option<usize> {
     let mut owner = None;
     for name in aexpr_to_leaf_names_iter(key.node(), expr_arena) {
-        let found = leaves
+        let found = leaves[range.clone()]
             .iter()
-            .position(|leaf| leaf.schema.contains(name.as_str()))?;
+            .position(|leaf| leaf.schema.contains(name.as_str()))?
+            + range.start;
         match owner {
             None => owner = Some(found),
             // A key spanning two leaves cannot be attributed to one side.

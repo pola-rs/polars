@@ -64,11 +64,18 @@ pub(super) fn rebuild(
 
 /// The key pairs bridging the already-joined leaves and `candidate`, oriented so the
 /// accumulated side comes first.
+///
+/// The same pair can be reached through several placed leaves once transitively
+/// implied edges are in play, and a join may not name a key twice.
 fn keys_joining(cluster: &Cluster, is_placed: &[bool], candidate: usize) -> Vec<(ExprIR, ExprIR)> {
-    cluster
-        .bridging(is_placed, candidate)
-        .map(|bridge| (bridge.placed_key.clone(), bridge.candidate_key.clone()))
-        .collect()
+    let mut on: Vec<(ExprIR, ExprIR)> = Vec::new();
+    for bridge in cluster.bridging(is_placed, candidate) {
+        let pair = (bridge.placed_key.clone(), bridge.candidate_key.clone());
+        if !on.contains(&pair) {
+            on.push(pair);
+        }
+    }
+    on
 }
 
 fn same_column_order(a: &Schema, b: &Schema) -> bool {

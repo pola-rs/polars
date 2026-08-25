@@ -63,8 +63,8 @@ bitflags! {
         /// This estimates rather than rewrites, so it can pick a worse plan when the
         /// estimates are poor. Off by default.
         ///
-        /// Only applies to non-coalescing joins, so a plain `join(on=...)` is not
-        /// affected.
+        /// Coalescing joins are only reordered when both sides of every key name the
+        /// same column, since coalescing keeps the left name.
         const JOIN_ORDER = 1 << 19;
     }
 }
