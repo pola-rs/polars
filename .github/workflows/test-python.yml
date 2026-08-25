@@ -12,6 +12,7 @@ on:
     branches:
       - main
       - "2.0"
+      - "1.x"
     paths:
       - Cargo.lock
       - crates/**

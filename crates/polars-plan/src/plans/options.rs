@@ -516,11 +516,11 @@ impl JoinTypeOptionsIR {
         }
     }
 
-    /// The keys of the two variants that store them as pairs.
+    /// The keys as `(left, right)` pairs, or `None` if the condition does not equate them.
     ///
     /// The only place `Equi`/`AsOf` are matched apart; every accessor below goes through it.
     /// They cannot share an or-pattern arm because rustc rejects `#[cfg]` on one alternative.
-    fn key_pairs(&self) -> Option<&Vec<(ExprIR, ExprIR)>> {
+    pub fn key_pairs(&self) -> Option<&[(ExprIR, ExprIR)]> {
         match self {
             Self::Equi { on } => Some(on),
             #[cfg(feature = "asof_join")]
@@ -541,8 +541,8 @@ impl JoinTypeOptionsIR {
 
     /// The left-hand side keys, in positional order.
     ///
-    /// For [`Self::Range`] this can differ in length from [`Self::right_on`], so only zip the
-    /// two sides once the condition is known not to be a range.
+    /// For [`Self::Range`] this can differ in length from [`Self::right_on`]; to pair the
+    /// two sides, use [`Self::key_pairs`] instead of zipping them.
     pub fn left_on(&self) -> Exprs<'_> {
         if let Some(on) = self.key_pairs() {
             return Exprs::pair_lhs(on);

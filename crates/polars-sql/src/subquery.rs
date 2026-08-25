@@ -12,17 +12,16 @@ use polars_plan::prelude::{AggExpr, Selector};
 use polars_plan::utils::{expr_to_leaf_column_names_iter, has_expr};
 use polars_utils::aliases::PlHashSet;
 use polars_utils::{format_pl_smallstr, unique_column_name};
-#[cfg(feature = "semi_anti_join")]
-use sqlparser::ast::Distinct;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, Expr as SQLExpr, GroupByExpr, Ident, Query, Select,
-    SelectItem, SetExpr, TableWithJoins, UnaryOperator as SQLUnaryOperator, VisitMut, VisitorMut,
+    BinaryOperator as SQLBinaryOperator, Distinct, Expr as SQLExpr, GroupByExpr, Ident, Query,
+    Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
+    UnaryOperator as SQLUnaryOperator, Visit, VisitMut, Visitor, VisitorMut, visit_expressions,
 };
 
 use crate::SQLContext;
 use crate::context::{CORRELATED_COL_PREFIX, FilterMode, get_table_name};
-use crate::sql_expr::parse_sql_expr;
-use crate::sql_visitors::expr_contains_subquery;
+use crate::sql_expr::{parse_sql_expr, sql_in_membership};
+use crate::sql_visitors::{expr_contains_subquery, is_subquery_expr};
 
 impl SQLContext {
     // Entry point: offer each WHERE conjunct to the rewrite, returning the
@@ -186,7 +185,7 @@ impl SQLContext {
             {
                 corr_preds.push(pred);
             } else if let Some(filter) =
-                self.try_parse_inner_only_expr(conj, inner_schema, outer_schema)?
+                self.try_parse_inner_only_expr(conj, inner_names, inner_schema)?
             {
                 local_filters.push(filter);
             } else {
@@ -216,7 +215,7 @@ impl SQLContext {
 
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
 
-        let outer_indexed = lf.clone().with_row_index(idx_name.clone(), None);
+        let outer_indexed = row_indexed_once(lf.clone(), idx_name.clone());
         let matched = outer_indexed
             .clone()
             .join_builder()
@@ -275,15 +274,9 @@ impl SQLContext {
             return Ok(None);
         };
 
-        let left_key = parse_sql_expr(lhs, self, Some(outer_schema))?
-            .meta()
-            .undo_aliases();
-        if has_expr(&left_key, |e| matches!(e, Expr::SubPlan(_, _)))
-            || !expr_to_leaf_column_names_iter(&left_key)
-                .all(|name| outer_schema.contains(name.as_str()))
-        {
+        let Some(left_key) = self.try_parse_outer_only_expr(lhs, outer_schema)? else {
             return Ok(None);
-        }
+        };
 
         let mut ctx = self.isolated();
         let Some((inner_names, inner_lf, inner_schema)) =
@@ -293,11 +286,14 @@ impl SQLContext {
         };
         // The membership key must be a plain expression over the inner relation;
         // any alias it carries is cosmetic and not allowed in a join key.
-        let Some(right_key) = ctx.try_parse_inner_only_expr(proj, &inner_schema, outer_schema)?
+        let Some(right_key) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)?
         else {
             return Ok(None);
         };
         let right_key = right_key.meta().undo_aliases();
+        if !usable_as_join_key(&left_key) || !usable_as_join_key(&right_key) {
+            return Ok(None);
+        }
 
         let SubqueryConjuncts {
             mut left_on,
@@ -404,7 +400,7 @@ impl SQLContext {
                 right_on.push(col(inner_key));
                 continue;
             }
-            let Some(filter) = self.try_parse_inner_only_expr(conj, inner_schema, outer_schema)?
+            let Some(filter) = self.try_parse_inner_only_expr(conj, inner_names, inner_schema)?
             else {
                 return Ok(None);
             };
@@ -417,25 +413,39 @@ impl SQLContext {
         }))
     }
 
+    // Parse an outer-query expression, or `None` if it doesn't stand on the outer
+    // relation alone: an unlowered subquery, or a column the outer frame lacks.
+    // Any alias is cosmetic here and stripped.
+    fn try_parse_outer_only_expr(
+        &mut self,
+        sql_expr: &SQLExpr,
+        outer_schema: &Schema,
+    ) -> PolarsResult<Option<Expr>> {
+        let expr = parse_sql_expr(sql_expr, self, Some(outer_schema))?
+            .meta()
+            .undo_aliases();
+        if has_expr(&expr, |e| matches!(e, Expr::SubPlan(_, _)))
+            || !expr_to_leaf_column_names_iter(&expr)
+                .all(|name| outer_schema.contains(name.as_str()))
+        {
+            return Ok(None);
+        }
+        Ok(Some(expr))
+    }
+
     // Parse a subquery expression as one over the inner relation only, or `None`
     // if it references any outer column (a correlation shape we don't handle) or
     // contains a nested subquery.
     fn try_parse_inner_only_expr(
         &mut self,
         sql_expr: &SQLExpr,
+        inner_names: &PlHashSet<String>,
         inner_schema: &Schema,
-        outer_schema: &Schema,
     ) -> PolarsResult<Option<Expr>> {
-        let expr = parse_sql_expr(sql_expr, self, Some(inner_schema))?;
-        // A nested subquery parses to `Expr::SubPlan`, which is only valid after
-        // `process_subqueries` lowering; it can't be used as a plain expression.
-        if has_expr(&expr, |e| matches!(e, Expr::SubPlan(_, _))) {
+        if !binds_to_inner_relation(sql_expr, inner_names, inner_schema) {
             return Ok(None);
         }
-        let only_inner = expr_to_leaf_column_names_iter(&expr).all(|name| {
-            inner_schema.contains(name.as_str()) && !outer_schema.contains(name.as_str())
-        });
-        Ok(only_inner.then_some(expr))
+        Ok(Some(parse_sql_expr(sql_expr, self, Some(inner_schema))?))
     }
 
     // Lower every correlated subquery reachable from `expr` into a decorrelated
@@ -513,10 +523,11 @@ impl SQLContext {
         };
 
         // The projection must be a scalar aggregate over the inner relation.
-        let agg_expr = parse_sql_expr(proj, &mut ctx, Some(&inner_schema))?;
-        if has_expr(&agg_expr, |e| matches!(e, Expr::SubPlan(_, _)))
-            || !has_expr(&agg_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len))
-        {
+        let Some(agg_expr) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)?
+        else {
+            return Ok(None);
+        };
+        if !has_expr(&agg_expr, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
             return Ok(None);
         }
         let count_like = matches!(
@@ -533,7 +544,7 @@ impl SQLContext {
             {
                 corr_preds.push(pred);
             } else if let Some(filter) =
-                ctx.try_parse_inner_only_expr(conj, &inner_schema, outer_schema)?
+                ctx.try_parse_inner_only_expr(conj, &inner_names, &inner_schema)?
             {
                 local_filters.push(filter);
             } else {
@@ -584,7 +595,7 @@ impl SQLContext {
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
         let idx_name = format_pl_smallstr!("{prefix}idx");
 
-        let outer_indexed = lf.with_row_index(idx_name.clone(), None);
+        let outer_indexed = row_indexed_once(lf, idx_name.clone());
         let matched = outer_indexed
             .clone()
             .join_builder()
@@ -608,6 +619,137 @@ impl SQLContext {
             strict: true,
         });
         Ok(Some((joined, result_name)))
+    }
+
+    // Attempt the decorrelation of a correlated `IN (subquery)` into a boolean
+    // column. The correlated candidate values are collected per outer row into a
+    // list, and membership is then evaluated against that list under SQL's
+    // three-valued logic. An uncorrelated subquery is left to the generic path.
+    fn try_decorrelate_in_subquery(
+        &mut self,
+        lf: LazyFrame,
+        outer_schema: &Schema,
+        lhs: &SQLExpr,
+        subquery: &Query,
+    ) -> PolarsResult<Option<(LazyFrame, PlSmallStr)>> {
+        let Some(select) = eligible_subquery_select(subquery) else {
+            return Ok(None);
+        };
+        if matches!(&select.distinct, Some(Distinct::On(_))) {
+            return Ok(None);
+        }
+        let [SelectItem::UnnamedExpr(proj) | SelectItem::ExprWithAlias { expr: proj, .. }] =
+            select.projection.as_slice()
+        else {
+            return Ok(None);
+        };
+        let Some(selection) = &select.selection else {
+            return Ok(None);
+        };
+
+        let Some(needle) = self.try_parse_outer_only_expr(lhs, outer_schema)? else {
+            return Ok(None);
+        };
+
+        let mut ctx = self.isolated();
+        let Some((inner_names, inner_lf, inner_schema)) =
+            ctx.resolve_subquery_from(&select.from[0])?
+        else {
+            return Ok(None);
+        };
+        let Some(value) = ctx.try_parse_inner_only_expr(proj, &inner_names, &inner_schema)? else {
+            return Ok(None);
+        };
+        let value = value.meta().undo_aliases();
+
+        let mut corr_preds = Vec::new();
+        let mut local_filters = Vec::new();
+        for conj in MintermIter::new(selection) {
+            if let Some(pred) =
+                scalar_correlation_predicate(conj, &inner_names, &inner_schema, outer_schema)
+            {
+                corr_preds.push(pred);
+            } else if let Some(filter) =
+                ctx.try_parse_inner_only_expr(conj, &inner_names, &inner_schema)?
+            {
+                local_filters.push(filter);
+            } else {
+                return Ok(None);
+            }
+        }
+        // No correlation: the generic `IN` path already handles this.
+        if corr_preds.is_empty() {
+            return Ok(None);
+        }
+
+        let prefix = format_pl_smallstr!("{CORRELATED_COL_PREFIX}{}_", unique_column_name());
+        let set_name = format_pl_smallstr!("{prefix}set");
+
+        let inner_filtered = local_filters.into_iter().fold(inner_lf, LazyFrame::filter);
+        let rename_from: Vec<PlSmallStr> = inner_schema.iter_names().cloned().collect();
+        let rename_to: Vec<PlSmallStr> = rename_from
+            .iter()
+            .map(|name| prefixed_inner(&prefix, name))
+            .collect();
+        let inner_renamed = inner_filtered.rename(&rename_from, &rename_to, true);
+        inner_renamed.set_cached_arena(ctx.lp_arena, ctx.expr_arena);
+
+        let value = value.map_expr(|e| match e {
+            Expr::Column(name) if inner_schema.contains(name.as_str()) => {
+                col(prefixed_inner(&prefix, &name))
+            },
+            other => other,
+        });
+
+        // Grouping collects the candidate values of each outer row into a list.
+        let joined = if corr_preds.iter().all(|p| p.op == SQLBinaryOperator::Eq) {
+            let outer_on: Vec<Expr> = corr_preds.iter().map(|p| col(p.outer.clone())).collect();
+            let inner_on: Vec<Expr> = corr_preds
+                .iter()
+                .map(|p| col(prefixed_inner(&prefix, &p.inner)))
+                .collect();
+            let grouped = inner_renamed
+                .group_by(inner_on.clone())
+                .agg([value.alias(set_name.clone())]);
+            left_join_aggregate(lf, grouped, outer_on, inner_on, &set_name, false)?
+        } else {
+            let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
+            let idx_name = format_pl_smallstr!("{prefix}idx");
+            let outer_indexed = row_indexed_once(lf, idx_name.clone());
+            let matched = outer_indexed
+                .clone()
+                .join_builder()
+                .with(inner_renamed)
+                .how(JoinType::Inner)
+                .join_where(join_preds);
+            let grouped = matched
+                .group_by([col(idx_name.clone())])
+                .agg([value.alias(set_name.clone())]);
+            left_join_aggregate(
+                outer_indexed,
+                grouped,
+                vec![col(idx_name.clone())],
+                vec![col(idx_name.clone())],
+                &set_name,
+                false,
+            )?
+            .drop(Selector::ByName {
+                names: Arc::from([idx_name]),
+                strict: true,
+            })
+        };
+
+        // An outer row with no matching inner rows joins to null, which is the
+        // empty candidate set rather than an unknown one.
+        let set = col(set_name.clone());
+        let is_in = sql_in_membership(
+            needle.is_in(set.clone(), false),
+            set.clone(),
+            set.clone().is_null().or(set.list().len().eq(lit(0u32))),
+        );
+        // The boolean replaces the candidate list in place.
+        let joined = joined.with_columns([is_in.alias(set_name.clone())]);
+        Ok(Some((joined, set_name)))
     }
 
     // Attempt the decorrelation of a single `EXISTS` subquery into a boolean flag
@@ -641,7 +783,7 @@ impl SQLContext {
                 {
                     corr_preds.push(pred);
                 } else if let Some(filter) =
-                    ctx.try_parse_inner_only_expr(conj, &inner_schema, outer_schema)?
+                    ctx.try_parse_inner_only_expr(conj, &inner_names, &inner_schema)?
                 {
                     local_filters.push(filter);
                 } else {
@@ -685,7 +827,7 @@ impl SQLContext {
 
         let join_preds: Vec<Expr> = corr_preds.iter().map(|p| p.to_expr(&prefix)).collect();
 
-        let outer_indexed = lf.with_row_index(idx_name.clone(), None);
+        let outer_indexed = row_indexed_once(lf, idx_name.clone());
         let matched = outer_indexed
             .clone()
             .join_builder()
@@ -906,6 +1048,49 @@ fn correlation_key_pair(
     }
 }
 
+// Whether every column the expression references resolves to the inner relation,
+// so it can be evaluated against the inner frame alone. A qualified name resolves
+// through its qualifier: only an inner relation's name or alias counts as inner.
+// An unqualified name binds to the innermost scope that has it, so the inner
+// schema wins over the outer one.
+fn binds_to_inner_relation(
+    expr: &SQLExpr,
+    inner_names: &PlHashSet<String>,
+    inner_schema: &Schema,
+) -> bool {
+    visit_expressions(expr, |e| {
+        let resolves = match e {
+            // A nested subquery is its own scope, which this cannot resolve against.
+            _ if is_subquery_expr(e) => false,
+            SQLExpr::Identifier(_) | SQLExpr::CompoundIdentifier(_) => qualifier_and_name(e)
+                .is_some_and(|(qualifier, name)| {
+                    qualifier.is_none_or(|q| inner_names.contains(q)) && inner_schema.contains(name)
+                }),
+            _ => true,
+        };
+        if resolves {
+            ControlFlow::Continue(())
+        } else {
+            ControlFlow::Break(())
+        }
+    })
+    .is_continue()
+}
+
+// Split an identifier into its optional table qualifier and its bare column name.
+// Catalog and schema prefixes are dropped, matching how `get_table_name` builds
+// `inner_names`.
+fn qualifier_and_name(expr: &SQLExpr) -> Option<(Option<&str>, &str)> {
+    match expr {
+        SQLExpr::Identifier(ident) => Some((None, ident.value.as_str())),
+        SQLExpr::CompoundIdentifier(parts) => {
+            let (last, init) = parts.split_last()?;
+            Some((init.last().map(|q| q.value.as_str()), last.value.as_str()))
+        },
+        _ => None,
+    }
+}
+
 // Classify a correlation operand as an inner- or outer-query column and return
 // its bare name. A qualified identifier (`tbl.col`) resolves by its qualifier:
 // an inner relation's name/alias means inner, anything else means outer (so
@@ -918,19 +1103,8 @@ fn classify_correlation_column(
     inner_schema: &Schema,
     outer_schema: &Schema,
 ) -> Option<(CorrelationSide, PlSmallStr)> {
-    let (qualifier, name): (Option<&str>, PlSmallStr) = match expr {
-        SQLExpr::Identifier(ident) => (None, ident.value.as_str().into()),
-        SQLExpr::CompoundIdentifier(parts) => {
-            let (last, init) = parts.split_last()?;
-            // Only the table part: catalog/schema prefixes are dropped, just
-            // as `get_table_name` drops them when building `inner_names`.
-            (
-                init.last().map(|q| q.value.as_str()),
-                last.value.as_str().into(),
-            )
-        },
-        _ => return None,
-    };
+    let (qualifier, name) = qualifier_and_name(expr)?;
+    let name: PlSmallStr = name.into();
     match qualifier {
         Some(q) if inner_names.contains(q) => inner_schema
             .contains(name.as_str())
@@ -1042,21 +1216,106 @@ fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
 /// A set is only valid while its columns are still present and still mean the same thing
 /// per row, so it may be shared across passes over one frame but must be started afresh
 /// once the frame has been re-projected or aggregated.
-pub(crate) type SubqueryBindings = Vec<(Query, bool, PlSmallStr)>;
+pub(crate) type SubqueryBindings = Vec<(Query, SubqueryKind, PlSmallStr)>;
+
+/// Which predicate a lowered subquery column answers.
+#[derive(Clone, PartialEq)]
+pub(crate) enum SubqueryKind {
+    Scalar,
+    Exists,
+    /// `IN`, keyed by its left-hand side: one subquery can serve several.
+    In(Box<SQLExpr>),
+}
+
+/// Whether a subquery reads a qualifier it does not declare, which is what
+/// correlates it with the query around it.
+pub(crate) fn is_correlated_subquery(query: &Query) -> bool {
+    #[derive(Default)]
+    struct Declared(PlHashSet<String>);
+
+    impl Visitor for Declared {
+        type Break = ();
+
+        fn pre_visit_table_factor(&mut self, factor: &TableFactor) -> ControlFlow<()> {
+            if let Some(name) = get_table_name(factor) {
+                self.0.insert(name);
+            }
+            ControlFlow::Continue(())
+        }
+    }
+
+    let mut declared = Declared::default();
+    let _ = query.visit(&mut declared);
+
+    struct Foreign<'a>(&'a PlHashSet<String>);
+
+    impl Visitor for Foreign<'_> {
+        type Break = ();
+
+        fn pre_visit_expr(&mut self, expr: &SQLExpr) -> ControlFlow<()> {
+            match qualifier_and_name(expr) {
+                Some((Some(qualifier), _)) if !self.0.contains(qualifier) => ControlFlow::Break(()),
+                _ => ControlFlow::Continue(()),
+            }
+        }
+    }
+
+    query.visit(&mut Foreign(&declared.0)).is_break()
+}
+
+/// Rewrite `x = ANY (subquery)` to `x IN (subquery)` and `x <> ALL (subquery)`
+/// to `x NOT IN (subquery)`, which they are equivalent to.
+struct DesugarQuantified;
+
+impl VisitorMut for DesugarQuantified {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &mut SQLExpr) -> ControlFlow<()> {
+        let (left, right, negated) = match &*expr {
+            SQLExpr::AnyOp {
+                left,
+                compare_op: SQLBinaryOperator::Eq,
+                right,
+                ..
+            } => (left, right, false),
+            SQLExpr::AllOp {
+                left,
+                compare_op: SQLBinaryOperator::NotEq,
+                right,
+            } => (left, right, true),
+            _ => return ControlFlow::Continue(()),
+        };
+        let SQLExpr::Subquery(subquery) = right.as_ref() else {
+            return ControlFlow::Continue(());
+        };
+        *expr = SQLExpr::InSubquery {
+            expr: left.clone(),
+            subquery: subquery.clone(),
+            negated,
+        };
+        ControlFlow::Continue(())
+    }
+}
+
+pub(crate) fn desugar_quantified_subqueries(stmt: &mut Statement) {
+    let _ = VisitMut::visit(stmt, &mut DesugarQuantified);
+}
 
 /// Which correlated-subquery node kinds a lowering pass should claim.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LowerScope {
-    /// Scalar subqueries only, leaving `[NOT] EXISTS` for the semi/anti join rewrite.
+    /// Scalar subqueries only, leaving predicate subqueries for the semi/anti join rewrite.
     ScalarOnly,
-    /// Scalar subqueries and `[NOT] EXISTS`.
-    ScalarAndExists,
+    /// Scalar subqueries and the predicate subqueries `[NOT] EXISTS` and `[NOT] IN`.
+    ScalarAndPredicates,
 }
 
 fn lowerable_kind(expr: &SQLExpr, scope: LowerScope) -> bool {
     match expr {
         SQLExpr::Subquery(_) => true,
-        SQLExpr::Exists { .. } => scope == LowerScope::ScalarAndExists,
+        SQLExpr::Exists { .. } | SQLExpr::InSubquery { .. } => {
+            scope == LowerScope::ScalarAndPredicates
+        },
         _ => false,
     }
 }
@@ -1077,33 +1336,38 @@ struct CorrelatedLowering<'a> {
 impl CorrelatedLowering<'_> {
     /// Lower `subquery` (or reuse an earlier identical lowering), returning the
     /// materialised column name, or `None` if it can't be soundly lowered.
-    fn lower(&mut self, subquery: &Query, exists: bool) -> PolarsResult<Option<PlSmallStr>> {
+    fn lower(&mut self, subquery: &Query, kind: SubqueryKind) -> PolarsResult<Option<PlSmallStr>> {
         if let Some((_, _, name)) = self
             .bindings
             .iter()
-            .find(|(q, is_exists, _)| *is_exists == exists && q == subquery)
+            .find(|(q, bound, _)| *bound == kind && q == subquery)
         {
             return Ok(Some(name.clone()));
         }
         // The frame is cloned rather than moved so it survives a declined lowering.
-        let lowered = if exists {
-            self.ctx.try_decorrelate_exists_subquery(
+        let lowered = match &kind {
+            SubqueryKind::Exists => self.ctx.try_decorrelate_exists_subquery(
                 self.lf.clone(),
                 self.outer_schema,
                 subquery,
-            )?
-        } else {
-            self.ctx.try_decorrelate_scalar_subquery(
+            )?,
+            SubqueryKind::Scalar => self.ctx.try_decorrelate_scalar_subquery(
                 self.lf.clone(),
                 self.outer_schema,
                 subquery,
-            )?
+            )?,
+            SubqueryKind::In(lhs) => self.ctx.try_decorrelate_in_subquery(
+                self.lf.clone(),
+                self.outer_schema,
+                lhs,
+                subquery,
+            )?,
         };
         let Some((new_lf, name)) = lowered else {
             return Ok(None);
         };
         self.lf = new_lf;
-        self.bindings.push((subquery.clone(), exists, name.clone()));
+        self.bindings.push((subquery.clone(), kind, name.clone()));
         Ok(Some(name))
     }
 }
@@ -1126,17 +1390,25 @@ impl VisitorMut for CorrelatedLowering<'_> {
         if self.query_depth > 0 || !lowerable_kind(expr, self.scope) {
             return ControlFlow::Continue(());
         }
-        let (subquery, exists, negated) = match &*expr {
-            SQLExpr::Subquery(subquery) => (subquery.as_ref(), false, false),
-            SQLExpr::Exists { subquery, negated } => (subquery.as_ref(), true, *negated),
+        let (subquery, kind, negated) = match &*expr {
+            SQLExpr::Subquery(subquery) => (subquery.as_ref(), SubqueryKind::Scalar, false),
+            SQLExpr::Exists { subquery, negated } => {
+                (subquery.as_ref(), SubqueryKind::Exists, *negated)
+            },
+            SQLExpr::InSubquery {
+                expr: lhs,
+                subquery,
+                negated,
+            } => (subquery.as_ref(), SubqueryKind::In(lhs.clone()), *negated),
             _ => unreachable!("guarded by lowerable_kind"),
         };
-        let name = match self.lower(subquery, exists) {
+        let name = match self.lower(subquery, kind) {
             Ok(Some(name)) => name,
             Ok(None) => return ControlFlow::Continue(()),
             Err(e) => return ControlFlow::Break(e),
         };
-        // `EXISTS` is never NULL, so negating it needs no three-valued-logic care.
+        // `EXISTS` is never NULL; `IN` may be, and negating a NULL keeps it NULL,
+        // which is what SQL asks for.
         let resolved = SQLExpr::Identifier(Ident::new(name.as_str()));
         *expr = if negated {
             SQLExpr::UnaryOp {
@@ -1149,6 +1421,35 @@ impl VisitorMut for CorrelatedLowering<'_> {
         self.changed = true;
         ControlFlow::Continue(())
     }
+}
+
+// Whether an expression can serve as a join key. Join keys must be elementwise,
+// so that every key is as long as the frame it is built from. Anything this does
+// not recognise declines the rewrite, which costs an optimisation rather than
+// correctness.
+fn usable_as_join_key(expr: &Expr) -> bool {
+    match expr {
+        Expr::Column(_) | Expr::Literal(_) => true,
+        Expr::Alias(inner, _) | Expr::Cast { expr: inner, .. } => usable_as_join_key(inner),
+        Expr::BinaryExpr { left, op: _, right } => {
+            usable_as_join_key(left) && usable_as_join_key(right)
+        },
+        Expr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => {
+            usable_as_join_key(predicate) && usable_as_join_key(truthy) && usable_as_join_key(falsy)
+        },
+        _ => false,
+    }
+}
+
+// Row-index a frame so the index can serve as a row identity key. The result is
+// cached: the index identifies the same row only if every consumer reads one
+// materialisation.
+fn row_indexed_once(lf: LazyFrame, name: PlSmallStr) -> LazyFrame {
+    lf.with_row_index(name, None).cache()
 }
 
 fn prefixed_inner(prefix: &str, name: &str) -> PlSmallStr {

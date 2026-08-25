@@ -4404,6 +4404,15 @@ def test_read_parquet_legacy_nested_maps_27159(io_files_path: Path) -> None:
     assert_frame_equal(pl.scan_parquet(path).collect(), expected)
 
 
+def test_read_parquet_concatenated_gzip_members_28787(io_files_path: Path) -> None:
+    path = io_files_path / "concatenated_gzip_members.parquet"
+
+    expected = pl.DataFrame({"long_col": range(1, 514)}, schema={"long_col": pl.UInt64})
+
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(pl.scan_parquet(path).collect(), expected)
+
+
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("mode", "expected_est"),

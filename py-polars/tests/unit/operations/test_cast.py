@@ -1047,19 +1047,15 @@ def test_lit_cast_arithmetic_matrix_schema(
     lit_dtype: PolarsDataType,
     op: Callable[[pl.Expr, pl.Expr], pl.Expr],
 ) -> None:
-    # Note (hacky): simply casting to 'pl.Unknown' would create
-    # `Unknown(UnknownKind::Any())` which is not what we want: the
-    # default maps to `Unknown(UnknownKind::Int(_)))` so we adjust
+    # A materialized column cannot have dtype `Unknown`, so for that case we
+    # rely on dtype inference (i64). `pl.lit(1, pl.Unknown)` is equivalent to
+    # `pl.lit(1)` and produces a dynamic int literal (see GH issue #24431).
     df = (
         pl.DataFrame({"a": [1]})
         if col_dtype == pl.Unknown
         else pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
     )
-    q = (
-        df.lazy().select(op(pl.col("a"), pl.lit(1)))
-        if lit_dtype == pl.Unknown
-        else df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
-    )
+    q = df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
     assert q.collect_schema() == q.collect().schema
 
 
@@ -1120,3 +1116,42 @@ def test_cast_categorical_to_int_deprecated(dtype: PolarsDataType) -> None:
 
     expected = pl.Series("a", [2, 0, 1], dtype=pl.UInt32)
     assert_series_equal(actual, expected)
+
+
+def test_lit_unknown_dtype_consistency_24431() -> None:
+    df = pl.DataFrame({"a": [1]}, schema={"a": pl.Float32})
+
+    q = df.lazy().select(pl.col("a") / pl.lit(1, pl.Unknown))
+    assert q.collect_schema()["a"] == pl.Float32
+    assert q.collect().schema["a"] == pl.Float32
+
+    # `dtype=pl.Unknown` behaves identically to passing no dtype
+    for v in [1, 1.5, "a", None]:
+        assert pl.select(pl.lit(v, pl.Unknown)).schema == pl.select(pl.lit(v)).schema
+
+    # explicit cast to `pl.Unknown` is pruned: planner and engine agree
+    q = pl.LazyFrame({"a": [1]}).select(pl.lit(1).cast(pl.Unknown))
+    assert q.collect_schema() == q.collect().schema
+
+
+@pytest.mark.parametrize("col_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("op", [operator.mul, operator.truediv])
+def test_cast_to_unknown_arithmetic_matrix_schema_24431(
+    col_dtype: PolarsDataType,
+    op: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    # Casting to `pl.Unknown` is a no-op: the engine treats it as identity
+    # and the planner prunes the cast, so it must not change dtypes or
+    # break planner/engine consistency.
+    df = pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
+    q_ref = df.lazy().select(op(pl.col("a"), pl.lit(1)))
+
+    # cast on the literal
+    q = df.lazy().select(op(pl.col("a"), pl.lit(1).cast(pl.Unknown)))
+    assert q.collect_schema() == q.collect().schema
+    assert q.collect_schema() == q_ref.collect_schema()
+
+    # cast on the column
+    q = df.lazy().select(op(pl.col("a").cast(pl.Unknown), pl.lit(1)))
+    assert q.collect_schema() == q.collect().schema
+    assert q.collect_schema() == q_ref.collect_schema()

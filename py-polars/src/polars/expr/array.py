@@ -286,7 +286,7 @@ class ExprArrayNameSpace:
         .. engine-support:: in-memory, streaming, distributed
 
         Both inputs must contain equal-width arrays. Their inner data types are cast
-        to a common supertype, which must be ``Float32`` or ``Float64``.
+        to a common supertype, which must be an integer, ``Float32``, or ``Float64``.
         An input with one row is broadcast against the other input.
         If either input Array is null for a row, the result for that row is null.
 
@@ -302,13 +302,19 @@ class ExprArrayNameSpace:
         Elements are paired by position.
 
         Pairs where either element is null do not contribute to the sum. If a
-        non-null row has no pairs where both elements are valid, the result is
-        ``0.0``.
+        non-null row has no pairs where both elements are valid, the result is zero.
 
-        Accumulation and output use the common floating-point data type. NaN and
-        infinity follow floating-point multiplication and addition semantics.
-        Results are not guaranteed to be bitwise identical to mathematically
-        equivalent expressions that use a different reduction path.
+        Integer operations use wrapping arithmetic. Each pair is multiplied in the
+        common inner data type before the product is converted to the ``arr.sum``
+        accumulator type. Therefore, an ``Int64`` output does not prevent
+        multiplication from overflowing in ``Int8``, ``UInt8``, ``Int16``, or
+        ``UInt16``. Accumulation may also wrap in the output type. To avoid wrapping,
+        cast both Array inputs to a type that can represent each product and the final
+        sum before calling ``dot``.
+
+        NaN and infinity follow floating-point multiplication and addition
+        semantics. Floating-point results are not guaranteed to be bitwise identical
+        to mathematically equivalent expressions that use a different reduction path.
 
         Examples
         --------
@@ -346,6 +352,28 @@ class ExprArrayNameSpace:
         │ 8.0  │
         │ 18.0 │
         └──────┘
+
+        Integer multiplication can wrap before accumulator promotion.
+
+        >>> a = pl.Series("a", [[100, 100]], dtype=pl.Array(pl.Int8, 2))
+        >>> b = pl.Series("b", [[2, 2]], dtype=pl.Array(pl.Int8, 2))
+        >>> a.arr.dot(b)
+        shape: (1,)
+        Series: 'a' [i64]
+        [
+            -112
+        ]
+
+        Cast both inputs before ``dot`` to perform multiplication and accumulation in
+        a type that can represent the result.
+
+        >>> wide = pl.Array(pl.Int64, 2)
+        >>> a.cast(wide).arr.dot(b.cast(wide))
+        shape: (1,)
+        Series: 'a' [i64]
+        [
+            400
+        ]
         """
         if isinstance(other, Sequence) and not isinstance(other, (str, bytes)):
             other = list(other)

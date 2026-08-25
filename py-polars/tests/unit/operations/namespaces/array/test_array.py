@@ -10,6 +10,7 @@ import polars as pl
 import polars.selectors as cs
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
@@ -231,6 +232,7 @@ def test_arr_dot_query_vector_expansion() -> None:
     [
         pytest.param(pl.Float32, pl.Float64, pl.Float64, id="f32-f64"),
         pytest.param(pl.Int32, pl.Float32, pl.Float64, id="i32-f32"),
+        pytest.param(pl.Int8, pl.Int16, pl.Int64, id="i8-i16"),
         pytest.param(pl.UInt64, pl.Int64, pl.Float64, id="u64-i64"),
     ],
 )
@@ -405,20 +407,91 @@ def test_arr_dot_wide(
     )
 
 
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_arr_dot_integer_dtype(dtype: pl.DataType) -> None:
+    lhs = pl.Series(
+        "a",
+        [[1, None], [None, None], [3, 4]],
+        dtype=pl.Array(dtype, 2),
+    )
+    rhs = pl.Series(
+        "b",
+        [[10, 20], [30, 40], [50, 60]],
+        dtype=pl.Array(dtype, 2),
+    )
+    assert_series_equal(lhs.arr.dot(rhs), (lhs * rhs).arr.sum())
+
+    empty = pl.Series("a", [], dtype=pl.Array(dtype, 2))
+    assert_series_equal(empty.arr.dot(empty), (empty * empty).arr.sum())
+
+
+def test_arr_dot_integer_overflow() -> None:
+    df = pl.DataFrame(
+        {
+            "lhs": [[100, 100]],
+            "rhs": [[2, 2]],
+        },
+        schema={
+            "lhs": pl.Array(pl.Int8, 2),
+            "rhs": pl.Array(pl.Int8, 2),
+        },
+    )
+    q = df.lazy().select(pl.col("lhs").arr.dot("rhs"))
+
+    assert q.collect_schema() == {"lhs": pl.Int64}
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"lhs": [-112]}, schema={"lhs": pl.Int64}),
+    )
+
+    wide_dtype = pl.Array(pl.Int64, 2)
+    assert (
+        df.select(
+            pl.col("lhs").cast(wide_dtype).arr.dot(pl.col("rhs").cast(wide_dtype))
+        ).item()
+        == 400
+    )
+
+
+def test_arr_dot_integer_query_vector_coercion() -> None:
+    lhs = pl.Series("lhs", [[100, 100]], dtype=pl.Array(pl.Int8, 2))
+
+    assert_series_equal(
+        lhs.arr.dot([2, 2]),
+        pl.Series("lhs", [400], dtype=pl.Int64),
+    )
+
+
 @pytest.mark.parametrize(
-    "values",
+    ("dtype", "maximum", "expected"),
     [
-        pytest.param([[1, 2]], id="non-empty"),
-        pytest.param([], id="empty"),
+        (pl.Int32, 2**31 - 1, -(2**31)),
+        (pl.UInt32, 2**32 - 1, 0),
     ],
 )
-def test_arr_dot_unsupported_integer_dtype(values: list[list[int]]) -> None:
-    ints = pl.Series("a", values, dtype=pl.Array(pl.Int64, 2))
+def test_arr_dot_integer_accumulation_overflow(
+    dtype: pl.DataType,
+    maximum: int,
+    expected: int,
+) -> None:
+    lhs = pl.Series("lhs", [[maximum, 1]], dtype=pl.Array(dtype, 2))
+    rhs = pl.Series("rhs", [[1, 1]], dtype=pl.Array(dtype, 2))
+
+    assert_series_equal(
+        lhs.arr.dot(rhs),
+        pl.Series("lhs", [expected], dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize("dtype", [pl.Boolean, pl.Float16, pl.Decimal(10, 2)])
+def test_arr_dot_unsupported_inner_dtype(dtype: pl.DataType) -> None:
+    lf = pl.LazyFrame(schema={"a": pl.Array(dtype, 2)})
+
     with pytest.raises(
         InvalidOperationError,
-        match="supports inputs with a Float32 or Float64 supertype",
+        match=r"arr\.dot does not support input dtypes",
     ):
-        ints.arr.dot(ints)
+        lf.select(pl.col("a").arr.dot("a")).collect_schema()
 
 
 def test_arr_dot_non_array_operand() -> None:

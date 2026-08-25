@@ -69,13 +69,13 @@ pub(super) fn contains(args: &mut [Column], nulls_equal: bool) -> PolarsResult<C
     polars_ensure!(matches!(list.dtype(), DataType::List(_)),
         SchemaMismatch: "invalid series dtype: expected `List`, got `{}`", list.dtype(),
     );
-    let mut ca = polars_ops::prelude::is_in(
-        item.as_materialized_series(),
-        list.as_materialized_series(),
-        nulls_equal,
-    )?;
+    // Don't blow up the haystack in case of scalar.
+    let haystack = list.as_materialized_series_maintain_scalar();
+    let mut ca = polars_ops::prelude::is_in(item.as_materialized_series(), &haystack, nulls_equal)?;
     ca.rename(list.name().clone());
-    Ok(ca.into_column())
+    // In case of scalar, broadcast back to original length
+    ca.into_column()
+        .broadcast_owned_to(broadcast_len([list, item])?)
 }
 
 #[cfg(feature = "list_drop_nulls")]
