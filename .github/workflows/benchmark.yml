@@ -11,6 +11,7 @@ on:
     branches:
       - main
       - "2.0"
+      - "1.x"
     paths:
       - crates/**
       - Cargo.toml
