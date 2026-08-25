@@ -355,7 +355,8 @@ class SQLContext(Generic[FrameType]):
         query
             A valid string SQL query.
         eager
-            Apply the query eagerly, returning `DataFrame` instead of `LazyFrame`.
+            Execute the query immediately, returning a `DataFrame` instead of
+            `LazyFrame`.
             If unset, the value of the init-time "eager" parameter will be used.
             Note that the query itself is always executed in lazy-mode; this
             parameter only impacts the type of the returned frame.
@@ -426,7 +427,7 @@ class SQLContext(Generic[FrameType]):
         └────────┴─────────────┴─────────┘
         """
         res = wrap_ldf(self._ctxt.execute(query))
-        return res._collect_eager() if (eager or self._eager_execution) else res
+        return res.collect() if eager or self._eager_execution else res
 
     def register(self, name: str, frame: CompatibleFrameType | None) -> Self:
         """
