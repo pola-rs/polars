@@ -189,6 +189,7 @@ def test_credential_provider_aws_import_error_with_requested_profile(
         q.collect()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_scan_no_parameters(
@@ -223,6 +224,7 @@ endpoint_url = http://localhost:333
     assert "[CredentialProviderAWS]: Loaded endpoint_url: http://localhost:333" in lines
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_serde(
@@ -257,6 +259,7 @@ endpoint_url = http://localhost:777
         q.collect()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 @pytest.mark.write_disk
 def test_credential_provider_aws_endpoint_url_with_storage_options(
@@ -302,6 +305,7 @@ endpoint_url = http://localhost:333
     assert "[CredentialProviderAWS]: Loaded endpoint_url: http://localhost:333" in lines
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.parametrize(
     "storage_options",
     [
@@ -358,6 +362,7 @@ aws_secret_access_key=Z
     plmonkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(creds_file_path))
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_credential_provider_python_builder_cache(
     plmonkeypatch: PlMonkeyPatch,
@@ -620,11 +625,12 @@ credential_process = "{sys.executable}" -c "from pathlib import Path; print(Path
         "updated_credentials",
     ),
     [
-        (
+        pytest.param(
             pl.CredentialProviderAWS,
             "s3://.../...",
             {"aws_access_key_id": "initial", "aws_secret_access_key": "initial"},
             {"aws_access_key_id": "updated", "aws_secret_access_key": "updated"},
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961"),
         ),
         (
             pl.CredentialProviderAzure,
@@ -775,6 +781,7 @@ def test_credential_provider_init_from_partition_target(
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     user_provider = Mock(
@@ -814,6 +821,7 @@ def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     assert user_provider.call_count == 4
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_credential_provider_global_config(plmonkeypatch: PlMonkeyPatch) -> None:
     import polars as pl
@@ -890,6 +898,7 @@ def test_credential_provider_global_config(plmonkeypatch: PlMonkeyPatch) -> None
         get_q().collect()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 @pytest.mark.slow
 def test_cache_user_credential_provider_pickle(
     plmonkeypatch: PlMonkeyPatch,
