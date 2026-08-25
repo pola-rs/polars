@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
 
 ON = pl.QueryOptFlags(join_order=True)
 OFF = pl.QueryOptFlags(join_order=False)
@@ -324,21 +328,27 @@ def test_with_columns_on_a_leaf_is_estimated(tmp_path: Path) -> None:
     )
 
 
+def between_joins(
+    frames: dict[str, pl.LazyFrame],
+    step: Callable[[pl.LazyFrame], pl.LazyFrame],
+) -> pl.LazyFrame:
+    """The star query with `step` applied between the two joins."""
+    inner = frames["fact"].join(
+        frames["dim_b"], left_on="f_dim_b", right_on="b_key", coalesce=False
+    )
+    return step(inner).join(
+        frames["dim_a"].filter(pl.col("a_flag")),
+        left_on="f_dim_a",
+        right_on="a_key",
+        coalesce=False,
+    )
+
+
 def joins_around(
     frames: dict[str, pl.LazyFrame], middle: pl.Expr | str
 ) -> pl.LazyFrame:
     """The star query with a projection sitting between the two joins."""
-    return (
-        frames["fact"]
-        .join(frames["dim_b"], left_on="f_dim_b", right_on="b_key", coalesce=False)
-        .select("f_dim_a", "f_val", middle)
-        .join(
-            frames["dim_a"].filter(pl.col("a_flag")),
-            left_on="f_dim_a",
-            right_on="a_key",
-            coalesce=False,
-        )
-    )
+    return between_joins(frames, lambda lf: lf.select("f_dim_a", "f_val", middle))
 
 
 def test_projection_between_joins_keeps_one_cluster(tmp_path: Path) -> None:
@@ -364,3 +374,64 @@ def test_computed_projection_between_joins_is_not_dropped(tmp_path: Path) -> Non
     assert_frame_equal(
         lf.collect(optimizations=OFF).sort(pl.all()), result.sort(pl.all())
     )
+
+
+def assert_reordered(lf: pl.LazyFrame, scans: list[str]) -> pl.DataFrame:
+    """Check the pass reorders `lf` to `scans` without changing what it returns."""
+    assert scan_order(lf.explain(optimizations=ON)) == scans
+
+    off = lf.collect(optimizations=OFF)
+    on = lf.collect(optimizations=ON)
+    assert off.height > 0
+    assert on.columns == off.columns
+    assert_frame_equal(off.sort(pl.all()), on.sort(pl.all()))
+    return on
+
+
+def test_rename_between_joins_keeps_one_cluster(tmp_path: Path) -> None:
+    # A rename reaches the IR as a `select` naming its output differently. The
+    # rebuilt joins read the leaves directly, so the rename has to travel down to
+    # the leaf holding the column.
+    lf = between_joins(star_frames(tmp_path), lambda lf: lf.rename({"f_val": "val"}))
+
+    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
+    assert "val" in assert_reordered(lf, ["fact", "dim_a", "dim_b"]).columns
+
+
+def test_rename_of_a_join_key_between_joins(tmp_path: Path) -> None:
+    # The renamed column is the key the outer join is written on, so the key
+    # expression has to be rewritten along with the leaf.
+    frames = star_frames(tmp_path)
+    lf = (
+        frames["fact"]
+        .join(frames["dim_b"], left_on="f_dim_b", right_on="b_key", coalesce=False)
+        .rename({"f_dim_a": "a_ref"})
+        .join(
+            frames["dim_a"].filter(pl.col("a_flag")),
+            left_on="a_ref",
+            right_on="a_key",
+            coalesce=False,
+        )
+    )
+
+    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
+    assert "a_ref" in assert_reordered(lf, ["fact", "dim_a", "dim_b"]).columns
+
+
+def test_projection_reading_one_column_twice_is_left_alone(tmp_path: Path) -> None:
+    # Two output columns read `f_val`, which no rename of the leaf can produce.
+    lf = between_joins(
+        star_frames(tmp_path),
+        lambda lf: lf.select(pl.all(), pl.col("f_val").alias("copy")),
+    )
+    assert lf.explain(optimizations=ON) == lf.explain(optimizations=OFF)
+
+
+def test_rename_onto_a_dropped_column_is_left_alone(tmp_path: Path) -> None:
+    # The projection drops `f_dim_b` and renames `f_val` onto it. `fact` still holds
+    # both, so pushing the rename down would give it two columns of that name.
+    lf = between_joins(
+        star_frames(tmp_path),
+        lambda lf: lf.select("f_dim_a", pl.col("f_val").alias("f_dim_b")),
+    )
+    assert lf.explain(optimizations=ON) == lf.explain(optimizations=OFF)

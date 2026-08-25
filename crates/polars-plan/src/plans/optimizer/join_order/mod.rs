@@ -30,7 +30,7 @@ mod stats;
 pub(super) fn join_order(
     root: Node,
     ir_arena: &mut Arena<IR>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Node> {
     // Common-subplan elimination runs earlier, so a cached subtree can be reached
     // from several parents. Rewriting it once per parent would give caches that
@@ -43,7 +43,7 @@ pub(super) fn join_order(
 fn rewrite(
     node: Node,
     ir_arena: &mut Arena<IR>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
     rewritten: &mut PlIndexMap<Node, Node>,
 ) -> PolarsResult<Node> {
     if let Some(&done) = rewritten.get(&node) {

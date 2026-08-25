@@ -10,18 +10,26 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use polars_core::prelude::{PlIndexMap, PlIndexSet};
-use polars_core::schema::SchemaRef;
+use polars_core::schema::{Schema, SchemaRef};
 use polars_ops::frame::JoinValidation;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
 use super::stats::{LeafStats, leaf_stats};
-use crate::plans::{AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, aexpr_to_leaf_names_iter};
+use crate::plans::{
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, OutputName, ProjectionOptions,
+    aexpr_to_leaf_names_iter,
+};
 use crate::prelude::{JoinArgs, JoinType, MaintainOrderJoin};
+use crate::utils::rename_columns;
 
 /// With two leaves there is only one order, so a cluster needs at least three.
 const MIN_LEAVES: usize = 3;
+
+/// Renames carrying names from somewhere inside a cluster up into the namespace the
+/// cluster root uses. A name absent from the map is unchanged.
+type Renames = PlIndexMap<PlSmallStr, PlSmallStr>;
 
 pub(super) struct Leaf {
     pub(super) node: Node,
@@ -113,6 +121,12 @@ fn reorderable(options: &JoinOptionsIR) -> bool {
         && matches!(&options.options, JoinTypeOptionsIR::Equi { on } if !on.is_empty())
 }
 
+/// A leaf as found, with the renames that carry its columns into the root namespace.
+struct RawLeaf {
+    node: Node,
+    renames: Arc<Renames>,
+}
+
 /// A key pair as written, together with the leaves either side of its join.
 ///
 /// A key expression is resolved by name against its own input, so the sides have to
@@ -122,13 +136,15 @@ struct RawKey {
     right_key: ExprIR,
     left_leaves: Range<usize>,
     right_leaves: Range<usize>,
+    /// Renames carrying this join's namespace up to the root's.
+    renames: Arc<Renames>,
 }
 
 /// Extract the cluster rooted at `root`, or `None` if it cannot be reordered.
 pub(super) fn extract(
     root: Node,
-    ir_arena: &Arena<IR>,
-    expr_arena: &Arena<AExpr>,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
 ) -> Option<Cluster> {
     let IR::Join { options, .. } = ir_arena.get(root) else {
         return None;
@@ -138,27 +154,29 @@ pub(super) fn extract(
     }
     let options = options.clone();
 
-    let mut leaf_nodes = Vec::new();
+    let mut raw_leaves = Vec::new();
     let mut raw_keys = Vec::new();
     collect(
         root,
         ir_arena,
         expr_arena,
         &options,
-        &mut leaf_nodes,
+        &Arc::new(Renames::default()),
+        &mut raw_leaves,
         &mut raw_keys,
     );
 
-    if leaf_nodes.len() < MIN_LEAVES {
+    if raw_leaves.len() < MIN_LEAVES {
         return None;
     }
 
     // Every leaf needs an estimate. Ordering on partial information would order by
     // which leaves happened to be measurable.
-    let mut leaves = Vec::with_capacity(leaf_nodes.len());
-    for node in leaf_nodes {
-        let stats = leaf_stats(node, ir_arena, expr_arena)?;
-        let schema = ir_arena.get(node).schema(ir_arena).into_owned();
+    let mut leaves = Vec::with_capacity(raw_leaves.len());
+    for raw in raw_leaves {
+        let stats = leaf_stats(raw.node, ir_arena, expr_arena)?;
+        let schema = ir_arena.get(raw.node).schema(ir_arena).into_owned();
+        let (node, schema) = rename_leaf(raw.node, schema, &raw.renames, ir_arena, expr_arena)?;
         leaves.push(Leaf {
             node,
             schema,
@@ -168,13 +186,15 @@ pub(super) fn extract(
 
     let mut edges = Vec::with_capacity(raw_keys.len());
     for raw in raw_keys {
-        let left_leaf = owning_leaf(&raw.left_key, &leaves, raw.left_leaves, expr_arena)?;
-        let right_leaf = owning_leaf(&raw.right_key, &leaves, raw.right_leaves, expr_arena)?;
+        let left_key = normalize_key(&raw.left_key, &raw.renames, expr_arena);
+        let right_key = normalize_key(&raw.right_key, &raw.renames, expr_arena);
+        let left_leaf = owning_leaf(&left_key, &leaves, raw.left_leaves, expr_arena)?;
+        let right_leaf = owning_leaf(&right_key, &leaves, raw.right_leaves, expr_arena)?;
         edges.push(Edge {
             left_leaf,
             right_leaf,
-            left_key: raw.left_key,
-            right_key: raw.right_key,
+            left_key,
+            right_key,
         });
     }
 
@@ -211,13 +231,13 @@ fn collect(
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
     root_options: &JoinOptionsIR,
-    leaves: &mut Vec<Node>,
+    renames: &Arc<Renames>,
+    leaves: &mut Vec<RawLeaf>,
     key_pairs: &mut Vec<RawKey>,
 ) {
-    // Column-narrowing projections commonly sit between joins. They preserve rows
-    // and rename nothing, so look past them for the join underneath; otherwise
-    // almost every join is its own cluster.
-    let peeled = peel_projections(node, ir_arena, expr_arena);
+    // Column projections commonly sit between joins. They preserve rows, so look past
+    // them for the join underneath; otherwise almost every join is its own cluster.
+    let (peeled, peeled_renames) = peel_projections(node, ir_arena, expr_arena, renames);
 
     match ir_arena.get(peeled) {
         IR::Join {
@@ -234,6 +254,7 @@ fn collect(
                 ir_arena,
                 expr_arena,
                 root_options,
+                &peeled_renames,
                 leaves,
                 key_pairs,
             );
@@ -243,6 +264,7 @@ fn collect(
                 ir_arena,
                 expr_arena,
                 root_options,
+                &peeled_renames,
                 leaves,
                 key_pairs,
             );
@@ -254,38 +276,142 @@ fn collect(
                     right_key: right_key.clone(),
                     left_leaves: start..mid,
                     right_leaves: mid..end,
+                    renames: peeled_renames.clone(),
                 }));
             }
         },
-        // Keep the unpeeled node: a projection on a leaf still narrows it.
-        _ => leaves.push(node),
+        // Keep the unpeeled node, and with it the renames as they stood above it: a
+        // projection on a leaf still narrows it, and its own renames are already
+        // part of its schema.
+        _ => leaves.push(RawLeaf {
+            node,
+            renames: renames.clone(),
+        }),
     }
 }
 
-/// Strip any chain of column-narrowing projections to reach the node beneath.
+/// Strip any chain of column projections to reach the node beneath, composing the
+/// renames they apply along the way.
 ///
 /// Dropping an interior projection widens the rows flowing through the rebuilt joins.
 /// Projection pushdown runs after this pass and narrows them again against the new
 /// order, and the cluster is projected back to its original schema, so the extra
 /// columns are not observable.
 ///
-/// That argument only holds for a projection which selects existing columns and
-/// nothing more: one that computes or renames a column cannot be dropped, because the
-/// restoring projection can only pick columns out of what the joins produce.
-fn peel_projections(mut node: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Node {
+/// That argument only holds for a projection which reads existing columns and nothing
+/// more: one that computes a column cannot be dropped, because the restoring
+/// projection can only pick columns out of what the joins produce. A projection that
+/// renames can, as long as the rename is carried down to the leaf that holds the
+/// column, which is what the returned map records.
+fn peel_projections(
+    mut node: Node,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+    renames: &Arc<Renames>,
+) -> (Node, Arc<Renames>) {
+    let mut renames = renames.clone();
     loop {
         node = match ir_arena.get(node) {
             IR::SimpleProjection { input, .. } => *input,
             // A `select` of plain columns is the same thing before `fast_projection`
-            // (which runs after this pass) rewrites it into one.
-            IR::Select { input, expr, .. }
-                if expr.iter().all(|e| e.plain_column(expr_arena).is_some()) =>
-            {
+            // (which runs after this pass) rewrites it into one. A `rename` reaches
+            // the IR as such a `select` too, with the new name as the output name.
+            IR::Select { input, expr, .. } => {
+                let Some(composed) = compose_renames(expr, &renames, expr_arena) else {
+                    return (node, renames);
+                };
+                renames = Arc::new(composed);
                 *input
             },
-            _ => return node,
+            _ => return (node, renames),
         };
     }
+}
+
+/// `renames` pulled through a projection, so that it maps the names of the
+/// projection's *input* to the root namespace.
+///
+/// `None` if the projection does something no rename of the leaves can reproduce:
+/// computing a column, or reading one column out under two names.
+fn compose_renames(
+    expr: &[ExprIR],
+    renames: &Renames,
+    expr_arena: &Arena<AExpr>,
+) -> Option<Renames> {
+    let mut out = Renames::with_capacity_and_hasher(expr.len(), Default::default());
+    for e in expr {
+        let AExpr::Column(read) = expr_arena.get(e.node()) else {
+            return None;
+        };
+        let output_name = e.output_name();
+        let target = renames.get(output_name).unwrap_or(output_name);
+        // Reading one column out under two names is not a rename, and pushing it down
+        // would leave the leaf holding only one of them.
+        if out.insert(read.clone(), target.clone()).is_some() {
+            return None;
+        }
+    }
+    out.retain(|read, target| read != target);
+    Some(out)
+}
+
+/// A leaf rewritten so that its columns carry the names the cluster root uses.
+///
+/// Reordering rebuilds the joins over the leaves directly, so a rename that sat
+/// between two of those joins has to travel down to the leaf holding the column.
+/// `None` if it cannot, which leaves the cluster alone.
+fn rename_leaf(
+    node: Node,
+    schema: SchemaRef,
+    renames: &Renames,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<(Node, SchemaRef)> {
+    if !schema.iter_names().any(|name| renames.contains_key(name)) {
+        return Some((node, schema));
+    }
+
+    let mut expr = Vec::with_capacity(schema.len());
+    let mut renamed = Schema::with_capacity(schema.len());
+    for (name, dtype) in schema.iter() {
+        let new = renames.get(name).unwrap_or(name);
+        let mut e = ExprIR::from_column_name(name.clone(), expr_arena);
+        if new != name {
+            e.set_alias(new.clone());
+        }
+        expr.push(e);
+        // The projection this rename came from may have dropped a column of the new
+        // name; the leaf still holds it, and two columns cannot share a name.
+        renamed.try_insert(new.clone(), dtype.clone()).ok()?;
+    }
+
+    let schema = Arc::new(renamed);
+    let node = ir_arena.add(IR::Select {
+        input: node,
+        expr,
+        schema: schema.clone(),
+        options: ProjectionOptions {
+            run_parallel: false,
+            duplicate_check: false,
+            should_broadcast: false,
+        },
+    });
+    Some((node, schema))
+}
+
+/// A join key rewritten into the names the cluster root uses.
+fn normalize_key(key: &ExprIR, renames: &Renames, expr_arena: &mut Arena<AExpr>) -> ExprIR {
+    if renames.is_empty() {
+        return key.clone();
+    }
+    let node = rename_columns(key.node(), expr_arena, renames);
+    let renamed = |name: &PlSmallStr| renames.get(name).unwrap_or(name).clone();
+    let output_name = match key.output_name_inner() {
+        OutputName::ColumnLhs(name) => OutputName::ColumnLhs(renamed(name)),
+        OutputName::Alias(name) => OutputName::Alias(renamed(name)),
+        other => other.clone(),
+    };
+    ExprIR::new(node, output_name)
 }
 
 /// Whether two joins agree on everything that survives being rebuilt.
