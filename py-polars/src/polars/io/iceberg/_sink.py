@@ -170,9 +170,7 @@ def _data_file_with_nested_partitions(
     with input_file.open() as input_stream:
         parquet_metadata = pq.read_metadata(input_stream)
 
-    _check_pyarrow_schema_compatible(
-        schema, parquet_metadata.schema.to_arrow_schema()
-    )
+    _check_pyarrow_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
     statistics = data_file_statistics_from_parquet_metadata(
         parquet_metadata=parquet_metadata,
         stats_columns=statistics_plan,

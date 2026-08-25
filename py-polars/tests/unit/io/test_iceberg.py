@@ -1148,9 +1148,7 @@ def test_sink_iceberg_partitioned_schema_overwrite_unsupported(
     tbl, _ = new_iceberg_table(
         tmp_path,
         schema=IcebergSchema(NestedField(1, "a", LongType())),
-        partition_spec=PartitionSpec(
-            PartitionField(1, 1000, IdentityTransform(), "a")
-        ),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "a")),
     )
 
     with pytest.raises(
