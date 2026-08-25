@@ -79,9 +79,9 @@ def _forward_getattr(
 
     Ensures that errors for (e.g.) removed methods are also raised on the Series
     side. Names that the Expr namespace does not recognise fall back to the
-    class' own `__getattr__`.
+    class' own `__getattr__` (if any).
     """
-    original_getattr = cls.__getattr__
+    original_getattr = getattr(cls, "__getattr__", None)
 
     def __getattr__(self: Any, name: str) -> Any:
         # note: a dummy Expr suffices; we only want the namespace's __getattr__
@@ -94,7 +94,11 @@ def _forward_getattr(
         except AttributeRemovedError:
             raise
         except AttributeError:
-            return original_getattr(self, name)
+            if original_getattr is not None:
+                return original_getattr(self, name)
+            else:
+                msg = f"{type(self).__name__!r} object has no attribute {name!r}"
+                raise AttributeError(msg, name=name, obj=self) from None
 
     return __getattr__
 
