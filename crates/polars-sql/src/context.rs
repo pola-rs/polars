@@ -3669,9 +3669,7 @@ fn process_join_constraint(
     ctx: &mut SQLContext,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>, Vec<Expr>)> {
     match constraint {
-        JoinConstraint::On(expr @ SQLExpr::BinaryOp { .. }) => {
-            process_join_on(ctx, expr, tbl_left, tbl_right)
-        },
+        JoinConstraint::On(expr) => process_join_on(ctx, expr, tbl_left, tbl_right),
         JoinConstraint::Using(idents) if !idents.is_empty() => {
             let using: Vec<Expr> = idents
                 .iter()
