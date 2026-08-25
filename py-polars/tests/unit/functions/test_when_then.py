@@ -830,3 +830,37 @@ def test_when_then_nested_null_28941() -> None:
     )
     expected = pl.DataFrame({"a": [-2.0, 1.0]})
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("true_len", [0, 1, 8])
+@pytest.mark.parametrize("false_len", [0, 1, 8])
+@pytest.mark.parametrize("null_len", [0, 1, 8])
+@pytest.mark.parametrize("broadcast_then", [True, False])
+@pytest.mark.parametrize("broadcast_otherwise", [True, False])
+def test_when_otherwise_broadcast(
+    true_len: int,
+    false_len: int,
+    null_len: int,
+    broadcast_then: bool,
+    broadcast_otherwise: bool,
+) -> None:
+    input = [True] * true_len + [False] * false_len + [None] * null_len
+    df = pl.DataFrame(
+        {
+            "x": input,
+            "t": [1] * len(input),
+            "o": [2] * len(input),
+        },
+        schema={"x": pl.Boolean, "t": pl.Int64, "o": pl.Int64},
+    )
+    out = df.select(
+        pl.when("x")
+        .then(pl.lit(1, dtype=pl.Int64).alias("t") if broadcast_then else pl.col.t)
+        .otherwise(
+            pl.lit(2, dtype=pl.Int64).alias("o") if broadcast_otherwise else pl.col.o
+        )
+    )
+    expected = pl.DataFrame(
+        {"t": [1 if x else 2 for x in input]}, schema={"t": pl.Int64}
+    )
+    assert_frame_equal(out, expected)
