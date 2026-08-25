@@ -765,12 +765,8 @@ def test_rolling_cov_corr_nulls() -> None:
         }
     )
 
-    val_1 = df1.select(
-        pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5, ddof=1)
-    )
-    val_2 = df2.select(
-        pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5, ddof=1)
-    )
+    val_1 = df1.select(pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5))
+    val_2 = df2.select(pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5))
 
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.62204709]})
     df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.62204709]})
@@ -778,12 +774,8 @@ def test_rolling_cov_corr_nulls() -> None:
     assert_frame_equal(val_1, df1_expected, abs_tol=0.0000001)
     assert_frame_equal(val_2, df2_expected, abs_tol=0.0000001)
 
-    val_1 = df1.select(
-        pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5, ddof=1)
-    )
-    val_2 = df2.select(
-        pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5, ddof=1)
-    )
+    val_1 = df1.select(pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5))
+    val_2 = df2.select(pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5))
 
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.009445]})
     df2_expected = pl.DataFrame({"a": [None, None, None, None, None, 0.009445]})
@@ -2419,18 +2411,6 @@ def test_rolling_corr_ddof_invariant_27013() -> None:
 
     r1 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5))["x"][-1]
     assert r1 == pytest.approx(1.0)
-
-    with pytest.warns(DeprecationWarning, match="ddof"):
-        r0 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5, ddof=0))[
-            "x"
-        ][-1]
-    with pytest.warns(DeprecationWarning, match="ddof"):
-        r2 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5, ddof=2))[
-            "x"
-        ][-1]
-
-    assert r0 == pytest.approx(1.0)
-    assert r2 == pytest.approx(1.0)
 
 
 def test_rolling_streaming_ensures_sorted_27231(plmonkeypatch: PlMonkeyPatch) -> None:
