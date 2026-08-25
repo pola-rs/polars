@@ -11,7 +11,7 @@ import pytest
 
 import polars as pl
 from polars._plr import InvalidOperationError
-from polars.exceptions import ChronoFormatWarning
+from polars.exceptions import AttributeRemovedError, ChronoFormatWarning
 from polars.expr.string import _validate_format_argument
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import (
@@ -74,12 +74,6 @@ def test_filter_where() -> None:
     )
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
     assert_frame_equal(result_filter, expected)
-
-    with pytest.deprecated_call():
-        result_where = df.group_by("a", maintain_order=True).agg(
-            pl.col("b").where(pl.col("b") > 4).alias("c")
-        )
-    assert_frame_equal(result_where, expected)
 
     # apply filter constraints using kwargs
     df = pl.DataFrame(
@@ -774,21 +768,6 @@ def test_slice() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_cloud  # reason: shrink_dtype
-def test_function_expr_scalar_identification_18755() -> None:
-    # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
-    with pytest.warns(
-        DeprecationWarning,
-        match=r"use `Series\.shrink_dtype` instead",
-    ):
-        assert_frame_equal(
-            pl.DataFrame({"a": [1, 2]}).with_columns(
-                pl.lit(5, pl.Int64).shrink_dtype().alias("b")
-            ),
-            pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int64)}),
-        )
-
-
 @pytest.mark.parametrize(
     ("format", "bad_pattern"),
     [
@@ -873,3 +852,30 @@ def test_reinterpret_errors_13659() -> None:
 def test_append_no_upcast_27345() -> None:
     with pytest.raises(pl.exceptions.SchemaError):
         pl.select(pl.lit("Bob").append(1, upcast=False))
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [("from_json", "use `Expr.deserialize` instead")],
+)
+def test_expr_removed_classmethods(name: str, match: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(pl.Expr, name)
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        (
+            "rechunk",
+            "rechunking within a query is not well-defined. "
+            "Use `df.rechunk()` after collecting the results instead.",
+        ),
+        ("register_plugin", "use `polars.plugins.register_plugin_function` instead"),
+        ("shrink_dtype", "use `Series.shrink_dtype` instead"),
+        ("where", "use `filter` instead"),
+    ],
+)
+def test_expr_removed_methods(name: str, match: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(pl.col("a"), name)

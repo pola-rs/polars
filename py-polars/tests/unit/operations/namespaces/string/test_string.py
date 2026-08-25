@@ -9,6 +9,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import (
+    AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
@@ -2450,3 +2451,15 @@ def test_str_split_regex_scalar_string_expr() -> None:
     )
 
     assert_frame_equal(out, expected)
+
+
+def test_str_concat_removed() -> None:
+    s = pl.Series(["1", None, "2", None])
+    with pytest.raises(
+        AttributeRemovedError, match=re.escape("use `str.join` instead")
+    ):
+        s.str.concat()  # type: ignore[attr-defined]
+    with pytest.raises(
+        AttributeRemovedError, match=re.escape("use `str.join` instead")
+    ):
+        s.to_frame().select(pl.all().str.concat())  # type: ignore[attr-defined]
