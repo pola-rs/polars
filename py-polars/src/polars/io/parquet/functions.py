@@ -64,7 +64,7 @@ if TYPE_CHECKING:
     RemovedParameter(
         name="rechunk",
         removed_in="2.0",
-        hint="call `rechunk()` on the resulting dataframe if you need contiguous memory.",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
     ),
     RenamedParameter(
         name="allow_missing_columns",
@@ -481,7 +481,7 @@ def read_parquet_metadata(
     RemovedParameter(
         name="rechunk",
         removed_in="2.0",
-        hint="call `rechunk()` on the resulting dataframe if you need contiguous memory.",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
     ),
     RenamedParameter(
         name="allow_missing_columns",

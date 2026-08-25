@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     RemovedParameter(
         name="rechunk",
         removed_in="2.0",
-        hint="call `rechunk()` on the resulting dataframe if you need contiguous memory.",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
     ),
 )
 def read_ndjson(
@@ -195,7 +195,7 @@ def read_ndjson(
     RemovedParameter(
         name="rechunk",
         removed_in="2.0",
-        hint="call `rechunk()` on the resulting dataframe if you need contiguous memory.",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
     ),
 )
 @removed_parameters(

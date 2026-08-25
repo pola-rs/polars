@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     RemovedParameter(
         name="rechunk",
         removed_in="2.0",
-        hint="call `rechunk()` on the resulting dataframe if you need contiguous memory.",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
     ),
 )
 def read_ipc(
@@ -219,7 +219,7 @@ def read_ipc(
     RemovedParameter(
         name="rechunk",
         removed_in="2.0",
-        hint="call `rechunk()` on the resulting dataframe if you need contiguous memory.",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
     ),
 )
 def read_ipc_stream(
@@ -362,7 +362,7 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
     RemovedParameter(
         name="rechunk",
         removed_in="2.0",
-        hint="call `rechunk()` on the resulting dataframe if you need contiguous memory.",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
     ),
 )
 @removed_parameters(

@@ -194,7 +194,7 @@ def test_no_glob(
     ],
 )
 def test_removed_rechunk_parameter(function_name: str) -> None:
-    msg = "call `rechunk()` on the resulting dataframe if you need contiguous memory."
+    msg = "call `rechunk()` on the resulting Dataframe if you need contiguous memory."
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         getattr(pl, function_name)("nonexistent", rechunk=True)
 
