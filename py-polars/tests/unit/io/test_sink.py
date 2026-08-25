@@ -764,6 +764,7 @@ print("OK", end="")
 
 
 @pytest.mark.write_disk
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 def test_sink_upload_chunk_size_config(
     tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,
@@ -805,6 +806,7 @@ def test_sink_upload_chunk_size_config(
 
 
 @pytest.mark.write_disk
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 def test_sink_upload_chunk_size_config_partitioned(
     tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,

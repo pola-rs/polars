@@ -1463,6 +1463,7 @@ def test_scan_expand_paths_no_glob(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 def test_scan_sink_error_captures_path() -> None:
     storage_options = {
         "aws_endpoint_url": "http://localhost:333",
