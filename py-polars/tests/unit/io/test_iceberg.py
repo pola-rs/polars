@@ -801,37 +801,117 @@ def test_sink_iceberg_partitioned_allows_bounds_metrics_override(
 
 
 @pytest.mark.write_disk
-def test_sink_iceberg_partitioned_rejects_nested_source(tmp_path: Path) -> None:
+@pytest.mark.parametrize("nested_metrics_mode", [None, "none"])
+def test_sink_iceberg_partitioned_nested_source_name_collision(
+    tmp_path: Path, nested_metrics_mode: str | None
+) -> None:
+    from pyiceberg.table import TableProperties
+
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(
+                2,
+                "b",
+                StructType(NestedField(3, "a", LongType())),
+            ),
+            NestedField(4, "value", LongType()),
+        ),
+        partition_spec=PartitionSpec(
+            PartitionField(3, 1000, IdentityTransform(), "nested_a")
+        ),
+        properties=(
+            {
+                f"{TableProperties.METRICS_MODE_COLUMN_CONF_PREFIX}.b.a": nested_metrics_mode
+            }
+            if nested_metrics_mode is not None
+            else None
+        ),
+    )
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 2, 2, 3],
+            "b": [{"a": 10}, {"a": 11}, {"a": 10}, {"a": 11}, None],
+            "value": [1, 2, 3, 4, 5],
+        }
+    )
+
+    df.lazy().sink_iceberg(tbl, mode="append")
+
+    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("value"), df)
+    data_files = [task.file for task in tbl.scan().plan_files()]
+    top_level_source_id = tbl.schema().find_field("a").field_id
+    nested_source_id = tbl.schema().find_field("b.a").field_id
+    assert {data_file.partition[0] for data_file in data_files} == {10, 11, None}
+    assert all(
+        top_level_source_id in (data_file.lower_bounds or {})
+        for data_file in data_files
+    )
+    assert all(
+        nested_source_id not in (data_file.lower_bounds or {})
+        for data_file in data_files
+    )
+    assert all(
+        nested_source_id not in (data_file.upper_bounds or {})
+        for data_file in data_files
+    )
+    if nested_metrics_mode == "none":
+        assert all(
+            nested_source_id not in (data_file.value_counts or {})
+            for data_file in data_files
+        )
+        assert all(
+            nested_source_id not in (data_file.null_value_counts or {})
+            for data_file in data_files
+        )
+    else:
+        assert all(
+            nested_source_id in (data_file.value_counts or {})
+            for data_file in data_files
+        )
+
+
+@pytest.mark.write_disk
+def test_sink_iceberg_partitioned_deeply_nested_source_transform(
+    tmp_path: Path,
+) -> None:
     tbl, _ = new_iceberg_table(
         tmp_path,
         schema=IcebergSchema(
             NestedField(
                 1,
-                "nested",
-                StructType(NestedField(2, "partition_col", LongType())),
+                "outer",
+                StructType(
+                    NestedField(
+                        2,
+                        "inner",
+                        StructType(NestedField(3, "value", LongType())),
+                    )
+                ),
             ),
-            NestedField(3, "value", LongType()),
+            NestedField(4, "row", LongType()),
         ),
         partition_spec=PartitionSpec(
-            PartitionField(2, 1000, IdentityTransform(), "partition_col")
+            PartitionField(3, 1000, TruncateTransform(10), "value_truncated")
         ),
     )
+    df = pl.DataFrame(
+        {
+            "outer": [
+                {"inner": {"value": 11}},
+                {"inner": {"value": 12}},
+                {"inner": {"value": 21}},
+                {"inner": {"value": 22}},
+            ],
+            "row": [1, 2, 3, 4],
+        }
+    )
 
-    with pytest.raises(
-        NotImplementedError,
-        match=(
-            r"partition_col.*nested\.partition_col.*'counts' metrics.*"
-            r"requires lower and upper bounds"
-        ),
-    ):
-        pl.LazyFrame(
-            {
-                "nested": [{"partition_col": 7}],
-                "value": [1],
-            }
-        ).sink_iceberg(tbl, mode="append")
+    df.lazy().sink_iceberg(tbl, mode="append")
 
-    assert tbl.current_snapshot() is None
+    assert_frame_equal(pl.scan_iceberg(tbl).collect().sort("row"), df)
+    assert {task.file.partition[0] for task in tbl.scan().plan_files()} == {10, 20}
 
 
 @pytest.mark.parametrize(

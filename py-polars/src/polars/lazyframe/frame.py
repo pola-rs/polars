@@ -3423,9 +3423,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         -----
         Partitioned writes support identity, year, month, day, hour, and truncate
         transforms. Truncation is supported for integer, long, string, and binary
-        source columns. Partition source columns must be top-level fields and use
-        an Iceberg metrics mode that records lower and upper bounds (``full`` or
-        ``truncate``). Bucket, void, and decimal truncation are not supported.
+        source columns, including fields nested within structs. Top-level partition
+        source columns must use an Iceberg metrics mode that records lower and upper
+        bounds (``full`` or ``truncate``). Bucket, void, and decimal truncation are
+        not supported.
 
         ``mode="overwrite"`` replaces all table data; dynamic partition overwrite
         is not supported. Tables with sort orders or custom location providers are
