@@ -38,8 +38,17 @@ if TYPE_CHECKING:
     ],
 )
 def test_removed_methods(name: str, match: str) -> None:
-    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
-        getattr(pl.LazyFrame().group_by("a"), name)
+    df = pl.DataFrame(schema={"a": pl.Int64})
+    groupers = [
+        df.group_by("a"),
+        df.rolling("a", period="1i"),
+        df.group_by_dynamic("a", every="1i"),
+        df.lazy().group_by("a"),
+    ]
+    # TODO: [amber] Needs msg
+    for grouper in groupers:
+        with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+            getattr(grouper, name)
 
 
 def test_group_by() -> None:

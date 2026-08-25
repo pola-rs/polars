@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Any
 
@@ -6,7 +7,8 @@ import pytest
 from hypothesis import given, settings
 
 import polars as pl
-from polars.exceptions import ArgumentRemovedError
+import polars.testing.parametric as parametric
+from polars.exceptions import ArgumentRemovedError, AttributeRemovedError
 from polars.testing.parametric import (
     column,
     dataframes,
@@ -291,3 +293,9 @@ def test_dataframes_allowed_dtypes_integer_cols(df: pl.DataFrame) -> None:
 def test_series_chunked_deprecated(data: st.DataObject) -> None:
     data.draw(series(chunked=True))
     data.draw(dataframes(chunked=True))
+
+
+def test_removed_create_list_strategy() -> None:
+    msg = "`create_list_strategy` was removed in version 2.0; use `lists` instead."
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
+        parametric.create_list_strategy  # type: ignore[attr-defined]

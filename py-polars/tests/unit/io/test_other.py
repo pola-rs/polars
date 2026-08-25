@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -173,3 +174,32 @@ def test_no_glob(
 
     for func in scan_funcs:
         assert_frame_equal(func(paths[0], glob=False).lazy().collect(), df)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    "function_name",
+    [
+        "read_csv",
+        "scan_csv",
+        "read_delta",
+        "scan_delta",
+        "read_ipc",
+        "read_ipc_stream",
+        "scan_ipc",
+        "read_ndjson",
+        "scan_ndjson",
+        "read_parquet",
+        "scan_parquet",
+    ],
+)
+def test_removed_rechunk_parameter(function_name: str) -> None:
+    # TODO: [amber] Needs msg
+    with pytest.raises(ArgumentRemovedError, match="'rechunk'"):
+        getattr(pl, function_name)("nonexistent", rechunk=True)
+
+
+@pytest.mark.parametrize("function_name", ["read_parquet", "scan_parquet"])
+def test_removed_allow_missing_columns_parameter(function_name: str) -> None:
+    # TODO: [amber] Needs msg
+    with pytest.raises(ArgumentRemovedError, match="'allow_missing_columns'"):
+        getattr(pl, function_name)("nonexistent", allow_missing_columns=True)

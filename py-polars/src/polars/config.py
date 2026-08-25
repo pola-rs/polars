@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict, get_args
 
 from polars._dependencies import json
 from polars._typing import EngineType
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.monitoring import MONITORING_ENV_VAR, activate_monitoring
 from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
@@ -1689,3 +1690,14 @@ class Config(contextlib.ContextDecorator):
         importing Polars.
         """
         plr.config_reload_env_vars()
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {"set_auto_structify": None},
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)

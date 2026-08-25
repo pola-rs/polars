@@ -35,6 +35,11 @@ if TYPE_CHECKING:
         removed_in="2.0",
         hint="The file cache is no longer supported.",
     ),
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting dataframe if you need contiguous memory.",
+    ),
 )
 def read_ndjson(
     source: str
@@ -186,6 +191,11 @@ def read_ndjson(
         new_name="row_index_offset",
         deprecated_in="0.20.4",
         removed_in="2.0",
+    ),
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting dataframe if you need contiguous memory.",
     ),
 )
 @removed_parameters(

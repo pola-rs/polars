@@ -540,5 +540,16 @@ if not TYPE_CHECKING:
             )
             raise exceptions.AttributeRemovedError(msg)
 
+        # Functions removed in 2.0
+        removed = {
+            "arctan2d": "use `arctan2` followed by `.degrees()` instead.",
+            "groups": "use `df.with_row_index().group_by(...).agg(pl.col('index'))` instead.",
+            "read_csv_batched": "use `scan_csv` instead, in conjunction with `LazyFrame.collect(engine='streaming')`.",
+            "threadpool_size": "it was renamed; use `thread_pool_size` instead.",
+        }
+        if name in removed:
+            msg = f"`{name}` was removed in version 2.0; {removed[name]}"
+            raise exceptions.AttributeRemovedError(msg)
+
         msg = f"module {__name__!r} has no attribute {name!r}"
         raise AttributeError(msg)

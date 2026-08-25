@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.unstable import unstable
 from polars.series.utils import expr_dispatch
 
@@ -229,3 +230,18 @@ class CatNameSpace:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
         """
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "is_local": "Categoricals no longer have a local scope.",
+                    "to_local": "Categoricals no longer have a local scope.",
+                    "uses_lexical_ordering": "Categoricals are now always ordered lexically.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)

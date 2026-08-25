@@ -14,6 +14,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import (
+    AttributeRemovedError,
     ComputeError,
     InvalidOperationError,
     SchemaError,
@@ -679,3 +680,9 @@ def test_enum_struct_slice_25821() -> None:
     )
     res = df.select(pl.col.x.list.head(1))
     assert res.to_dict(as_series=False) == {"x": [[{"y": "a"}]]}
+
+
+def test_removed_union() -> None:
+    msg = "construct the combined `Enum` explicitly"
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
+        pl.Enum(["a"]).union  # type: ignore[attr-defined]

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
@@ -335,3 +336,19 @@ class ExprCatNameSpace:
             changed at any point without it being considered a breaking change.
         """
         return wrap_expr(self._pyexpr.cat_physical())
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    # TODO: [amber] Check error message
+                    "get_categories": "to get the distinct values present in a"
+                    " Categorical column, use `unique()`. For the fixed category"
+                    " list of an Enum, use its `dtype.categories`.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)

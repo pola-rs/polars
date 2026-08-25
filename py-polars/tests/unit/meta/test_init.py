@@ -44,3 +44,17 @@ def test_version() -> None:
         f"`static PYPOLARS_VERSION` ({lhs}) at `crates/polars-python/src/c_api/mod.rs` "
         f"does not match importlib package metadata version ({rhs})"
     )
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        ("arctan2d", "use `arctan2` followed by `.degrees()` instead."),
+        ("groups", "use `df.with_row_index().group_by(...).agg(pl.col('index'))`"),
+        ("read_csv_batched", "use `scan_csv` instead"),
+        ("threadpool_size", "it was renamed; use `thread_pool_size` instead."),
+    ],
+)
+def test_removed_functions(name: str, match: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(pl, name)

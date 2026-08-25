@@ -1124,18 +1124,13 @@ def from_dataframe(
     .. versionchanged:: 2.0
 
         `from_dataframe` used to fall back to the Interchange Protocol, but this
-        functionality has been removed.
+        functionality has been removed. The `allow_copy` parameter was removed
+        along with it.
 
     Parameters
     ----------
     df
         Object supporting the dataframe PyCapsule Interface.
-    allow_copy
-        Allow memory to be copied to perform the conversion. If set to False, may cause
-        conversions that are not zero-copy to fail.
-
-        .. versionchanged:: 2.0
-            `allow_copy` was removed
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
 

@@ -8255,6 +8255,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
+    @removed_parameters(
+        RemovedParameter(
+            name="no_optimizations",
+            deprecated_in="1.39.3",
+            removed_in="2.0",
+            # TODO: [amber] Fix this error message
+            hint="The `_pushdown` parameters now default to `False`, so this parameter is no longer needed.",
+        ),
+    )
     def map_batches(
         self,
         function: Callable[[DataFrame], DataFrame],

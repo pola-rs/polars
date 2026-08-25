@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import operator
 import pickle
+import re
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -12,6 +13,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
+from polars.exceptions import AttributeRemovedError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.strategies.core import series
 
@@ -1028,3 +1030,25 @@ def test_categories_to_dict(data: st.DataObject) -> None:
             s.unique(maintain_order=True).cast(pl.String).drop_nulls().to_list()
         )
     }
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        ("get_categories", "use `unique()`"),  # TODO: [amber] Huh?
+        ("is_local", "Categoricals no longer have a local scope."),
+        ("to_local", "Categoricals no longer have a local scope."),
+        ("uses_lexical_ordering", "Categoricals are now always ordered lexically."),
+    ],
+)
+def test_removed_cat_methods(name: str, match: str) -> None:
+    s = pl.Series(["a", "b"], dtype=pl.Categorical)
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(s.cat, name)
+
+
+def test_removed_cat_methods_expr() -> None:
+    with pytest.raises(
+        AttributeRemovedError, match=re.escape("use `unique()`")
+    ):  # TODO: [amber] Huh?
+        pl.col("a").cat.get_categories  # type: ignore[attr-defined]
