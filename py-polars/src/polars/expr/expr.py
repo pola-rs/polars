@@ -12449,9 +12449,7 @@ class Expr(metaclass=_Meta):
                     "shrink_dtype": "use `Series.shrink_dtype` instead.",
                     "where": "use `filter` instead.",
                     "agg_groups": "use `df.with_row_index().group_by(...).agg(pl.col('index'))` instead.",
-                    # TODO: [amber] Fix error message
-                    "flatten": "use `Expr.list.explode(keep_nulls=False, empty_as_null=False)` instead,"
-                    " which provides the behavior you likely expect.",
+                    "flatten": "use `Expr.list.explode(keep_nulls=False, empty_as_null=False)` instead.",
                 },
                 version="2.0",
             )

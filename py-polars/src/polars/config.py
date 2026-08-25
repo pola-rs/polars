@@ -196,7 +196,20 @@ class ConfigParameters(TypedDict, total=False):
     set_engine_affinity: EngineType | None
 
 
-class Config(contextlib.ContextDecorator):
+class _Meta(type):
+    if not TYPE_CHECKING:
+
+        def __getattr__(cls, name: str) -> Any:
+            raise_for_removed_attributes(
+                cls,
+                name,
+                {"set_auto_structify": None},
+                version="2.0",
+            )
+            return getattr_fallback(cls, super(), name, meta=True)
+
+
+class Config(contextlib.ContextDecorator, metaclass=_Meta):
     """
     Configure polars; offers options for table formatting and more.
 
@@ -1690,14 +1703,3 @@ class Config(contextlib.ContextDecorator):
         importing Polars.
         """
         plr.config_reload_env_vars()
-
-    if not TYPE_CHECKING:
-
-        def __getattr__(self, name: str) -> Any:
-            raise_for_removed_attributes(
-                self,
-                name,
-                {"set_auto_structify": None},
-                version="2.0",
-            )
-            return getattr_fallback(self, super(), name)

@@ -1062,9 +1062,7 @@ class Enum(DataType):
                 self,
                 name,
                 {
-                    # TODO: [amber] Check error message
-                    "union": "enums are ordered sets, and a union cannot preserve"
-                    " both orderings; construct the combined `Enum` explicitly, e.g."
+                    "union": "construct the combined `Enum` explicitly, e.g."
                     " `pl.Enum([*lhs.categories, *rhs.categories])`.",
                 },
                 version="2.0",

@@ -182,8 +182,8 @@ def test_map_batches_no_return_dtype_25601(
 def test_removed_no_optimizations_parameter() -> None:
     lf = pl.LazyFrame({"a": [1]})
     msg = (
-        "The `_pushdown` parameters now default to `False`,"
-        " so this parameter is no longer needed."
+        "Use the `predicate_pushdown`, `projection_pushdown`,"
+        " and `slice_pushdown` flags instead."
     )
     with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
         lf.map_batches(lambda df: df, no_optimizations=True)  # type: ignore[call-arg]

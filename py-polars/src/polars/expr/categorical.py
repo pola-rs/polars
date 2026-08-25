@@ -344,9 +344,8 @@ class ExprCatNameSpace:
                 self,
                 name,
                 {
-                    # TODO: [amber] Check error message
                     "get_categories": "to get the distinct values present in a"
-                    " Categorical column, use `unique()`. For the fixed category"
+                    " Categorical column, use `Expr.unique()`. For the fixed category"
                     " list of an Enum, use its `dtype.categories`.",
                 },
                 version="2.0",

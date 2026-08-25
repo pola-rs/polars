@@ -875,7 +875,7 @@ def test_expr_removed_classmethods(name: str, msg: str) -> None:
         ("where", "use `filter` instead"),
         ("agg_groups", "use `df.with_row_index().group_by(...).agg(pl.col('index'))`"),
         ("flatten", "use `Expr.list.explode(keep_nulls=False, empty_as_null=False)`"),
-        ("rechunk", "use `df.rechunk()` after collecting the results instead."),
+        ("rechunk", "Use `df.rechunk()` after collecting the results instead."),
     ],
 )
 def test_removed_methods(name: str, msg: str) -> None:

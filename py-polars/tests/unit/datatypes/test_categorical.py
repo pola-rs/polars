@@ -1035,7 +1035,7 @@ def test_categories_to_dict(data: st.DataObject) -> None:
 @pytest.mark.parametrize(
     ("name", "match"),
     [
-        ("get_categories", "use `unique()`"),  # TODO: [amber] Huh?
+        ("get_categories", "use `Expr.unique()`"),
         ("is_local", "Categoricals no longer have a local scope."),
         ("to_local", "Categoricals no longer have a local scope."),
         ("uses_lexical_ordering", "Categoricals are now always ordered lexically."),
@@ -1048,7 +1048,6 @@ def test_removed_cat_methods(name: str, match: str) -> None:
 
 
 def test_removed_cat_methods_expr() -> None:
-    with pytest.raises(
-        AttributeRemovedError, match=re.escape("use `unique()`")
-    ):  # TODO: [amber] Huh?
+    msg = "use `Expr.unique()`"
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
         pl.col("a").cat.get_categories  # type: ignore[attr-defined]
