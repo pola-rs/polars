@@ -139,6 +139,12 @@ impl SpillContextPolicy {
     }
 }
 
+pub(crate) enum ReinsertReason {
+    Unspill,
+    Unpin,
+    SpillCancelled,
+}
+
 pub(crate) struct SpillContextInner {
     staging: ThreadLocal<Mutex<LocalStagingArea>>,
     staging_empty: AtomicBool,
@@ -234,7 +240,14 @@ impl SpillContextInner {
         }
     }
 
-    pub(crate) fn reinsert(&self, token: &Arc<dyn DynSpillToken>, reg_id: u32, ctx_id: u64) {
+    pub(crate) fn reinsert(
+        &self,
+        token: &Arc<dyn DynSpillToken>,
+        reg_id: u32,
+        ctx_id: u64,
+        _reason: ReinsertReason,
+    ) {
+        // TODO: use reason to place token in appropriate spot.
         let mut local = self.staging.get_or_default().lock().unwrap();
         if ctx_id != self.context_id.load(Ordering::Relaxed) {
             return;

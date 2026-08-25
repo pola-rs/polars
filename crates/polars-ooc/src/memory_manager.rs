@@ -123,7 +123,7 @@ impl MemoryManager {
 
                 polars_async::executor::spawn(TaskPriority::High, async move {
                     // Spill, or reinsert if a failure.
-                    match spillable.try_spill(ctx.clone(), reg_id) {
+                    match spillable.clone().try_spill(ctx.clone(), reg_id) {
                         Ok(spill_success) => {
                             if spill_success.await {
                                 if !successful_spill.0.swap(true, Ordering::Relaxed) {
@@ -131,14 +131,15 @@ impl MemoryManager {
                                         strong.stats().finish_exploration_event(true);
                                     }
                                 }
-                            } else {
-                                ctx.0.reinsert(&spillable, reg_id, ctx.1);
-                            }
 
-                            MEMORY_MANAGER.spills_exist.store(true, Ordering::Release);
+                                MEMORY_MANAGER.spills_exist.store(true, Ordering::Release);
+                            } else {
+                                // A racy pin interrupted us, the value is still in memory.
+                                spillable.cancel_spill_attempt_and_reinsert(reg_id, ctx.1);
+                            }
                         },
                         Err(TrySpillError::Pinned) => {
-                            ctx.0.reinsert(&spillable, reg_id, ctx.1);
+                            spillable.cancel_spill_attempt_and_reinsert(reg_id, ctx.1);
                         },
                         Err(TrySpillError::AlreadySpilled) => {},
                     }
@@ -217,15 +218,13 @@ impl MemoryManager {
             let mut candidates = Vec::new();
             ctx.0.drain_while(|cand, reg_id| {
                 if cand.can_spill()
-                    && let Some(sz) = cand.estimate_byte_size()
+                    && let Some(sz) = cand.clone().estimate_byte_size()
                     && sz as u64 >= min_spill
                 {
                     total_est_spill += sz as u64;
                     candidates.push((cand, reg_id, sz));
                 } else {
-                    if !cand.is_spilled_or_dropped() {
-                        ctx.0.reinsert(&cand, reg_id, ctx.1);
-                    }
+                    cand.cancel_spill_attempt_and_reinsert(reg_id, ctx.1);
                 }
 
                 num_considered += 1;
