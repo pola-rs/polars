@@ -40,6 +40,7 @@ class QueryOptFlags:
         fast_projection: None | bool = None,
         sort_collapse: None | bool = None,
         pre_partition_hive: None | bool = None,
+        join_order: None | bool = None,
     ) -> None:
         self._pyoptflags = PyOptFlags.default()
         self.update(
@@ -54,6 +55,7 @@ class QueryOptFlags:
             fast_projection=fast_projection,
             sort_collapse=sort_collapse,
             pre_partition_hive=pre_partition_hive,
+            join_order=join_order,
         )
 
     @classmethod
@@ -84,6 +86,7 @@ class QueryOptFlags:
         fast_projection: None | bool = None,
         sort_collapse: None | bool = None,
         pre_partition_hive: None | bool = None,
+        join_order: None | bool = None,
     ) -> QueryOptFlags:
         """Create new empty set off optimizations."""
         optflags = QueryOptFlags()
@@ -100,6 +103,7 @@ class QueryOptFlags:
             fast_projection=fast_projection,
             sort_collapse=sort_collapse,
             pre_partition_hive=pre_partition_hive,
+            join_order=join_order,
         )
 
     @removed_parameters(
@@ -124,6 +128,7 @@ class QueryOptFlags:
         fast_projection: None | bool = None,
         sort_collapse: None | bool = None,
         pre_partition_hive: None | bool = None,
+        join_order: None | bool = None,
     ) -> QueryOptFlags:
         """Update the current optimization flags."""
         if predicate_pushdown is not None:
@@ -148,6 +153,8 @@ class QueryOptFlags:
             self.sort_collapse = sort_collapse
         if pre_partition_hive is not None:
             self.pre_partition_hive = pre_partition_hive
+        if join_order is not None:
+            self.join_order = join_order
 
         return self
 
@@ -269,6 +276,19 @@ class QueryOptFlags:
     def pre_partition_hive(self, value: bool) -> None:
         self._pyoptflags.pre_partition_hive = value
 
+    @property
+    def join_order(self) -> bool:
+        """Reorder runs of inner equi-joins by estimated cardinality.
+
+        Only applies to non-coalescing joins, so a plain ``join(on=...)`` is
+        unaffected.
+        """
+        return self._pyoptflags.join_order
+
+    @join_order.setter
+    def join_order(self, value: bool) -> None:
+        self._pyoptflags.join_order = value
+
     def __str__(self) -> str:
         return f"""
 QueryOptFlags {{
@@ -286,6 +306,7 @@ QueryOptFlags {{
     fast_projection: {self.fast_projection}
     sort_collapse: {self.sort_collapse}
     pre_partition_hive: {self.pre_partition_hive}
+    join_order: {self.join_order}
 
     eager: {self._pyoptflags.eager}
     streaming: {self._pyoptflags.streaming}
