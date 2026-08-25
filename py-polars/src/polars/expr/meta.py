@@ -1,26 +1,20 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import polars._reexport as pl
-from polars._utils.deprecation import deprecated
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.serde import serialize_polars_object
 from polars._utils.various import display_dot_graph
 from polars._utils.wrap import wrap_expr
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
-    import sys
     from io import IOBase
     from pathlib import Path
 
     from polars import Expr
     from polars._typing import SchemaDict, SerializationFormat
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 class ExprMetaNameSpace:
@@ -365,22 +359,6 @@ class ExprMetaNameSpace:
         return serialize_polars_object(serializer, file, format)
 
     @overload
-    def write_json(self, file: None = ...) -> str: ...
-
-    @overload
-    def write_json(self, file: IOBase | str | Path) -> None: ...
-
-    @deprecated("`meta.write_json` was renamed; use `meta.serialize` instead")
-    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
-        """
-        Write expression to json.
-
-        .. deprecated:: 0.20.11
-            This method has been renamed to :meth:`serialize`.
-        """
-        return self.serialize(file, format="json")
-
-    @overload
     def tree_format(
         self,
         *,
@@ -466,3 +444,14 @@ class ExprMetaNameSpace:
 
     def _replace_element(self, expr: Expr) -> Expr:
         return wrap_expr(self._pyexpr.meta_replace_element(expr._pyexpr))
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {"write_json": "use `meta.serialize` instead."},
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)

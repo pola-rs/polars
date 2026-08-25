@@ -49,7 +49,6 @@ Manipulation/selection
     Expr.round_sig_figs
     Expr.sample
     Expr.shift
-    Expr.shrink_dtype
     Expr.shuffle
     Expr.slice
     Expr.sort
@@ -60,4 +59,3 @@ Manipulation/selection
     Expr.top_k_by
     Expr.truncate
     Expr.upper_bound
-    Expr.where
