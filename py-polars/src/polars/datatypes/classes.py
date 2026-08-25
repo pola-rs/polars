@@ -1055,6 +1055,20 @@ class Enum(DataType):
         class_name = self.__class__.__name__
         return f"{class_name}(categories={self.categories.to_list()!r})"
 
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "union": "construct the combined `Enum` explicitly, e.g."
+                    " `pl.Enum([*lhs.categories, *rhs.categories])`.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
+
 
 class Object(ObjectType):
     """Data type for wrapping arbitrary Python objects."""

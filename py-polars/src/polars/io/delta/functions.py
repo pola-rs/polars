@@ -4,6 +4,7 @@ import importlib
 import importlib.util
 from typing import TYPE_CHECKING, Any
 
+from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.wrap import wrap_ldf
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.delta._dataset import DeltaDataset
@@ -20,6 +21,13 @@ if TYPE_CHECKING:
     from polars.io.cloud import CredentialProviderFunction
 
 
+@removed_parameters(
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
+    ),
+)
 def read_delta(
     source: str | Path | DeltaTable,
     *,
@@ -155,6 +163,13 @@ def read_delta(
     return lf._collect_eager()
 
 
+@removed_parameters(
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
+    ),
+)
 def scan_delta(
     source: str | Path | DeltaTable,
     *,

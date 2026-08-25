@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars import functions as F
+from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin
@@ -1301,6 +1302,19 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.list_to_array(width))
 
+    @removed_parameters(
+        RemovedParameter(
+            name="n_field_strategy",
+            deprecated_in="1.20.0",
+            removed_in="2.0",
+            hint="Pass the field names explicitly via `fields`.",
+        ),
+        RemovedParameter(
+            name="upper_bound",
+            removed_in="2.0",
+            hint='Pass the field names explicitly via `fields` instead, e.g. `fields=[f"field_{i}" for i in range(upper_bound)]`.',
+        ),
+    )
     def to_struct(self, fields: Sequence[str]) -> Expr:
         """
         Convert the Series of type `List` to a Series of type `Struct`.

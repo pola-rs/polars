@@ -61,6 +61,18 @@ if TYPE_CHECKING:
         deprecated_in="0.20.4",
         removed_in="2.0",
     ),
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
+    ),
+    RenamedParameter(
+        name="allow_missing_columns",
+        new_name="missing_columns",
+        deprecated_in="1.30.0",
+        removed_in="2.0",
+        hint="Pass one of `('insert', 'raise')`; `allow_missing_columns=True` corresponds to `missing_columns='insert'`.",
+    ),
 )
 @removed_parameters(
     RemovedParameter(
@@ -465,6 +477,18 @@ def read_parquet_metadata(
         new_name="row_index_offset",
         deprecated_in="0.20.4",
         removed_in="2.0",
+    ),
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
+    ),
+    RenamedParameter(
+        name="allow_missing_columns",
+        new_name="missing_columns",
+        deprecated_in="1.30.0",
+        removed_in="2.0",
+        hint="Pass one of `('insert', 'raise')`; `allow_missing_columns=True` corresponds to `missing_columns='insert'`.",
     ),
 )
 @removed_parameters(

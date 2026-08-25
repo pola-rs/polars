@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict, get_args
 
 from polars._dependencies import json
 from polars._typing import EngineType
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.monitoring import MONITORING_ENV_VAR, activate_monitoring
 from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
@@ -195,7 +196,20 @@ class ConfigParameters(TypedDict, total=False):
     set_engine_affinity: EngineType | None
 
 
-class Config(contextlib.ContextDecorator):
+class _Meta(type):
+    if not TYPE_CHECKING:
+
+        def __getattr__(cls, name: str) -> Any:
+            raise_for_removed_attributes(
+                cls,
+                name,
+                {"set_auto_structify": None},
+                version="2.0",
+            )
+            return getattr_fallback(cls, super(), name, meta=True)
+
+
+class Config(contextlib.ContextDecorator, metaclass=_Meta):
     """
     Configure polars; offers options for table formatting and more.
 
