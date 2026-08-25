@@ -175,6 +175,8 @@ def test_dataset_provider_predicate_not_lowered(df: pl.DataFrame) -> None:
 def test_dataset_provider_predicate_partial(df: pl.DataFrame) -> None:
     # Unconvertible conjuncts are dropped, the rest is still lowered.
     assert (
-        lowered_predicate(df, (pl.col("id") > 3) & (pl.col("id") % 2 == 0), partial=True)
+        lowered_predicate(
+            df, (pl.col("id") > 3) & (pl.col("id") % 2 == 0), partial=True
+        )
         == "(pa.compute.field('id') > 3)"
     )
