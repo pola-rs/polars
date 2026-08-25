@@ -3,6 +3,8 @@
 //! The search is greedy over left-deep plans. [`order`] is the only place the order
 //! is decided, so a different search can replace it on its own.
 
+use polars_utils::pl_str::PlSmallStr;
+
 use super::cluster::Cluster;
 use super::stats::{join_cardinality, key_domain};
 
@@ -63,14 +65,113 @@ pub(super) fn order(cluster: &Cluster) -> Vec<usize> {
 
 /// Product of the key domains bridging `candidate` to the placed leaves, or `None`
 /// if it is not connected to them at all.
+///
+/// Several edges can carry the same key: the implied edges of a coalesced name reach
+/// every leaf holding it. They are all estimates of that one key's domain, so they
+/// contribute one factor between them rather than one each, and the smallest wins.
+/// Only keys that are actually independent multiply.
+///
+/// A key with no output name cannot be matched up, so it counts on its own.
 fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -> Option<f64> {
-    let mut product = None;
+    let mut per_key: Vec<(Option<&PlSmallStr>, f64)> = Vec::new();
+
     for bridge in cluster.bridging(is_placed, candidate) {
         let domain = key_domain(
             &cluster.leaves[bridge.placed_leaf].stats,
             &cluster.leaves[candidate].stats,
         );
-        *product.get_or_insert(1.0) *= domain;
+        let name = bridge.candidate_key.output_name_inner().get();
+
+        match per_key
+            .iter_mut()
+            .find(|(seen, _)| name.is_some() && *seen == name)
+        {
+            Some((_, smallest)) => *smallest = smallest.min(domain),
+            None => per_key.push((name, domain)),
+        }
     }
-    product
+
+    (!per_key.is_empty()).then(|| per_key.iter().map(|(_, domain)| domain).product())
+}
+
+#[cfg(test)]
+mod tests {
+    use polars_core::prelude::{DataType, Schema};
+    use polars_utils::arena::{Arena, Node};
+
+    use super::super::cluster::{Edge, Leaf};
+    use super::super::stats::LeafStats;
+    use super::*;
+    use crate::plans::{AExpr, ExprIR, JoinOptionsIR, JoinTypeOptionsIR};
+    use crate::prelude::JoinArgs;
+
+    fn dummy_options() -> std::sync::Arc<JoinOptionsIR> {
+        std::sync::Arc::new(JoinOptionsIR {
+            allow_parallel: true,
+            force_parallel: false,
+            args: JoinArgs::default(),
+            options: JoinTypeOptionsIR::Equi { on: Vec::new() },
+        })
+    }
+
+    fn leaf(node: usize, rows: f64) -> Leaf {
+        let mut schema = Schema::default();
+        schema.insert("k".into(), DataType::Int64);
+        Leaf {
+            node: Node(node),
+            schema: schema.into(),
+            stats: LeafStats {
+                filtered: rows,
+                unfiltered: rows,
+            },
+        }
+    }
+
+    /// The implied edges of a coalesced name reach every leaf holding it, so a
+    /// candidate can bridge the same key to several placed leaves. Multiplying one
+    /// factor per edge would divide by that key's domain more than once.
+    #[test]
+    fn one_key_reached_twice_divides_once() {
+        let mut expr_arena = Arena::new();
+        let key = ExprIR::from_column_name("k".into(), &mut expr_arena);
+
+        let leaves = vec![leaf(0, 100.0), leaf(1, 200.0), leaf(2, 400.0)];
+        // The clique over the three holders of `k`.
+        let edges = vec![
+            Edge {
+                left_leaf: 0,
+                right_leaf: 1,
+                left_key: key.clone(),
+                right_key: key.clone(),
+            },
+            Edge {
+                left_leaf: 0,
+                right_leaf: 2,
+                left_key: key.clone(),
+                right_key: key.clone(),
+            },
+            Edge {
+                left_leaf: 1,
+                right_leaf: 2,
+                left_key: key.clone(),
+                right_key: key.clone(),
+            },
+        ];
+
+        let cluster = Cluster {
+            leaves,
+            edges,
+            output_schema: Schema::default().into(),
+            options: dummy_options(),
+        };
+
+        // Leaves 0 and 1 placed, 2 the candidate: it bridges on `k` to both.
+        let two_edges = key_domain_product(&cluster, &[true, true, false], 2).unwrap();
+        // Only leaf 0 placed: the same key reached once.
+        let one_edge = key_domain_product(&cluster, &[true, false, false], 2).unwrap();
+
+        // The smallest of the estimates of `k`'s domain, counted a single time.
+        assert_eq!(two_edges, 100.0);
+        assert_eq!(one_edge, 100.0);
+    }
 }
