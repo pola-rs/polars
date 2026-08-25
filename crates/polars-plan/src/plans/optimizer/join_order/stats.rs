@@ -1,8 +1,9 @@
 //! Row-count estimates for join ordering.
 //!
-//! The only statistic read from the plan is a scan's row count; the rest are
-//! constants and assumptions. Anything that cannot be estimated makes the whole
-//! cluster non-reorderable rather than producing a guess.
+//! The only statistics read from the plan are row counts: a scan's estimate and an
+//! in-memory frame's height. Everything else is constants and assumptions. Anything
+//! that cannot be estimated makes the whole cluster non-reorderable rather than
+//! producing a guess.
 
 use polars_utils::arena::{Arena, Node};
 use recursive::recursive;
@@ -33,8 +34,8 @@ pub(super) struct LeafStats {
 
 /// Estimate the rows produced by a leaf subtree.
 ///
-/// `None` means the subtree is not modelled (a group-by, a union, a non-file
-/// source), which leaves the whole cluster alone.
+/// `None` means the subtree is not modelled (a union, a distinct, a python scan),
+/// which leaves the whole cluster alone.
 #[recursive]
 pub(super) fn leaf_stats(
     node: Node,
@@ -63,6 +64,40 @@ pub(super) fn leaf_stats(
             })
         },
 
+        // An in-memory frame carries its rows with it, so the count is exact.
+        IR::DataFrameScan { df, .. } => {
+            let rows = (df.height() as f64).max(MIN_CARDINALITY);
+            Some(LeafStats {
+                filtered: rows,
+                unfiltered: rows,
+            })
+        },
+
+        // A group-by emits one row per distinct key, which is never more than its
+        // input and is exactly one when there is no key at all.
+        IR::GroupBy {
+            input,
+            keys,
+            options,
+            apply,
+            ..
+        } => {
+            // A user function may emit any number of rows per group, and a
+            // rolling or dynamic group-by counts windows rather than keys.
+            if apply.is_some() || options.is_rolling() || options.is_dynamic() {
+                return None;
+            }
+            let inner = leaf_stats(*input, ir_arena, expr_arena)?;
+            let cap = match options.slice {
+                Some((_, len)) => len as f64,
+                None => f64::INFINITY,
+            };
+            Some(LeafStats {
+                filtered: n_groups(inner.filtered, keys.len()).min(cap),
+                unfiltered: n_groups(inner.unfiltered, keys.len()).min(cap),
+            })
+        },
+
         // A filter above the scan is equivalent to one pushed into it; predicate
         // pushdown normally leaves none here, but a leaf need not be a bare scan.
         IR::Filter { input, predicate } => {
@@ -81,10 +116,23 @@ pub(super) fn leaf_stats(
             leaf_stats(*input, ir_arena, expr_arena)
         },
 
-        // Anything else (group-by, union, distinct, sort with slice, python scan, ...)
-        // is not modelled. Do not guess.
+        // Anything else (union, distinct, sort with slice, python scan, ...) is not
+        // modelled. Do not guess.
         _ => None,
     }
+}
+
+/// Estimated distinct combinations of `n_keys` grouping keys over `rows` rows.
+///
+/// No distinct counts are available, so this interpolates between the two ends that
+/// are known: no keys is a single group, and any number of keys is at most one group
+/// per row. Each key added moves the estimate closer to the input.
+fn n_groups(rows: f64, n_keys: usize) -> f64 {
+    if n_keys == 0 {
+        return MIN_CARDINALITY;
+    }
+    let exponent = n_keys as f64 / (n_keys as f64 + 1.0);
+    rows.powf(exponent).clamp(MIN_CARDINALITY, rows)
 }
 
 /// Number of `AND` conjuncts in a predicate.
@@ -176,6 +224,21 @@ mod tests {
 
         let out = join_cardinality(acc, item.filtered, key_domain(&inventory, &item));
         assert!((out - acc).abs() < 1.0, "got {out}");
+    }
+
+    /// The two ends of the group-count estimate are known exactly; only what lies
+    /// between them is assumed.
+    #[test]
+    fn group_count_is_bounded_by_one_and_the_input() {
+        // No key at all is a global aggregate.
+        assert_eq!(n_groups(1_000_000.0, 0), 1.0);
+        // One group per row is the most a group-by can emit.
+        assert!(n_groups(1000.0, 8) <= 1000.0);
+        assert_eq!(n_groups(1.0, 3), 1.0);
+        // Adding a key can only move the estimate towards the input.
+        let by_keys: Vec<f64> = (1..6).map(|k| n_groups(1_000_000.0, k)).collect();
+        assert!(by_keys.windows(2).all(|w| w[0] < w[1]), "{by_keys:?}");
+        assert!(by_keys.iter().all(|&g| g < 1_000_000.0), "{by_keys:?}");
     }
 
     #[test]

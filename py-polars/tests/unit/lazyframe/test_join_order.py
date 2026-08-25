@@ -149,14 +149,76 @@ def test_unsafe_clusters_are_left_alone(
     assert lf.explain(optimizations=ON) == lf.explain(optimizations=OFF)
 
 
-def test_in_memory_frames_are_left_alone() -> None:
-    # No scan metadata means no row estimate, so the pass skips the cluster.
-    fact = pl.LazyFrame({"f_a": [1, 2, 3], "f_b": [1, 2, 3]})
-    dim_a = pl.LazyFrame({"a_key": [1, 2, 3]})
-    dim_b = pl.LazyFrame({"b_key": [1, 2, 3]})
+def in_memory_star() -> pl.LazyFrame:
+    """The star schema of `star_frames`, held in memory rather than on disk."""
+    fact = pl.LazyFrame(
+        {
+            "k_a": [i % 50 for i in range(1000)],
+            "k_b": [i % 20 for i in range(1000)],
+            "f_val": list(range(1000)),
+        }
+    )
+    dim_a = pl.LazyFrame(
+        {"k_a": list(range(50)), "a_flag": [i == 7 for i in range(50)]}
+    )
+    dim_b = pl.LazyFrame(
+        {"k_b": list(range(20)), "b_name": [f"b{i}" for i in range(20)]}
+    )
+    return fact.join(dim_b, on="k_b").join(dim_a.filter(pl.col("a_flag")), on="k_a")
 
-    lf = fact.join(dim_a, left_on="f_a", right_on="a_key", coalesce=False).join(
-        dim_b, left_on="f_b", right_on="b_key", coalesce=False
+
+def test_in_memory_frames_are_reordered() -> None:
+    # An in-memory frame knows its own height, so it needs no scan metadata.
+    lf = in_memory_star()
+
+    off = lf.collect(optimizations=OFF)
+    on = lf.collect(optimizations=ON)
+
+    assert lf.explain(optimizations=ON) != lf.explain(optimizations=OFF)
+    assert off.height > 0
+    assert on.columns == off.columns
+    assert_frame_equal(off.sort(pl.all()), on.sort(pl.all()))
+
+
+def test_group_by_leaf_is_estimated(tmp_path: Path) -> None:
+    frames = star_frames(tmp_path)
+    # A group-by emits at most one row per input row, so `dim_a` is still the
+    # smaller side and is folded in first.
+    rollup = frames["fact"].group_by("f_dim_a", "f_dim_b").agg(pl.col("f_val").sum())
+    lf = rollup.join(
+        frames["dim_b"], left_on="f_dim_b", right_on="b_key", coalesce=False
+    ).join(
+        frames["dim_a"].filter(pl.col("a_flag")),
+        left_on="f_dim_a",
+        right_on="a_key",
+        coalesce=False,
+    )
+
+    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
+    assert scan_order(lf.explain(optimizations=ON)) == ["fact", "dim_a", "dim_b"]
+
+    off = lf.collect(optimizations=OFF)
+    on = lf.collect(optimizations=ON)
+    assert off.height > 0
+    assert on.columns == off.columns
+    assert_frame_equal(off.sort(pl.all()), on.sort(pl.all()))
+
+
+def test_group_by_with_a_user_function_is_left_alone(tmp_path: Path) -> None:
+    frames = star_frames(tmp_path)
+    # `map_groups` can emit any number of rows per group, so the count is unknown.
+    rollup = (
+        frames["fact"]
+        .group_by("f_dim_a", "f_dim_b")
+        .map_groups(lambda df: df.head(1), schema=None)
+    )
+    lf = rollup.join(
+        frames["dim_b"], left_on="f_dim_b", right_on="b_key", coalesce=False
+    ).join(
+        frames["dim_a"].filter(pl.col("a_flag")),
+        left_on="f_dim_a",
+        right_on="a_key",
+        coalesce=False,
     )
     assert lf.explain(optimizations=ON) == lf.explain(optimizations=OFF)
 
