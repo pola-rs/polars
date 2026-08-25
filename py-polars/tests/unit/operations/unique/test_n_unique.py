@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 
 
 def test_n_unique() -> None:
@@ -77,3 +78,24 @@ def test_n_unique_array() -> None:
     assert df["arr"].dtype == pl.Array
     assert df.select(pl.col("arr")).n_unique() == 3
     assert df.select(pl.col("arr").n_unique()).item() == 3
+
+
+def test_n_unique_multi_column_expression_gh28903() -> None:
+    # gh-28903: n_unique() was ignoring additional columns when subset is a
+    # multi-column expression or selector.
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5, 6],
+            "A": [1, 2, 3, 4, 1, 2],
+            "B": [1, 2, 3, 1, 1, 1],
+        }
+    )
+    # A & B together have 5 unique rows: (1,1),(2,2),(3,3),(4,1),(1,1),(2,1) -> 5
+    assert df.n_unique(subset=pl.col("A", "B")) == 5
+    assert df.n_unique(subset=cs.by_name("B", "A")) == 5
+    assert df.n_unique(subset=pl.exclude("id")) == 5
+    assert df.n_unique(subset=[cs.by_name("A", "B")]) == 5
+    assert df.n_unique(subset=[pl.col("B", "id")]) == 6
+    # single-column and list paths must still work
+    assert df.n_unique(subset="A") == 4
+    assert df.n_unique(subset=["A", "B"]) == 5

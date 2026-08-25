@@ -64,7 +64,10 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_df_item_by_key
-from polars._utils.parse import parse_into_expression
+from polars._utils.parse import (
+    parse_into_expression,
+    parse_into_list_of_expressions_require_selectors,
+)
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -11545,15 +11548,14 @@ class DataFrame:
         ... )
         3
         """
-        if isinstance(subset, str):
-            expr = F.col(subset)
-        elif isinstance(subset, pl.Expr):
-            expr = subset
-        elif isinstance(subset, Sequence) and len(subset) == 1:
-            expr = wrap_expr(parse_into_expression(subset[0]))
+        if subset is None:
+            expr = F.struct(F.all())
         else:
-            struct_fields = F.all() if (subset is None) else subset
-            expr = F.struct(struct_fields)
+            expanded = [
+                wrap_expr(e)
+                for e in parse_into_list_of_expressions_require_selectors(subset)
+            ]
+            expr = F.struct(expanded)
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 
