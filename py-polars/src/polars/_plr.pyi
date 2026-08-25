@@ -2131,7 +2131,7 @@ class PyOptFlags:
 
 # functions.lazy
 def rolling_corr(
-    x: PyExpr, y: PyExpr, window_size: int, min_periods: int, ddof: int
+    x: PyExpr, y: PyExpr, window_size: int, min_periods: int
 ) -> PyExpr: ...
 def rolling_cov(
     x: PyExpr, y: PyExpr, window_size: int, min_periods: int, ddof: int
