@@ -1755,6 +1755,17 @@ def test_cspe_nested_cache_under_shared_subplan_no_union_28945() -> None:
     )
 
 
+def test_cspe_nested_user_caches_28945() -> None:
+    inner = pl.LazyFrame({"x": [1, 2, 3]}).cache()
+    outer = inner.filter(pl.col("x") > 1).cache()
+    q = pl.concat([outer, outer])
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+
+
 def test_cse_single_scalar_does_not_broadcast_28407() -> None:
     e = pl.lit(5).abs()
     q = pl.LazyFrame({"a": [1, 2, 3]}).select((e + e).alias("o"))
