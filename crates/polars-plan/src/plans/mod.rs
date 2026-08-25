@@ -19,7 +19,7 @@ pub mod hive;
 pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
-pub(crate) mod options;
+pub mod options;
 #[cfg(feature = "python")]
 pub mod python;
 #[cfg(feature = "python")]

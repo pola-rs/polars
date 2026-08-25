@@ -518,6 +518,16 @@ def test_non_equi_outer_joins_unsupported(join_type: str) -> None:
             """,
             {"a": [2, 3], "c": [3, 4]},
         ),
+        # bridging table listed *after* the relation it connects: df3 has no predicate
+        # against df1, only against df2, which comes later in the FROM clause.
+        (
+            """
+            SELECT df1.a, df3.c
+            FROM df1, df3, df2
+            WHERE df1.a = df2.a AND df2.b = df3.b
+            """,
+            {"a": [2, 3], "c": [3, 4]},
+        ),
         # no bridging predicate at all => cross join (cartesian product)
         (
             "SELECT df1.a, df3.c FROM df1, df3",
@@ -552,6 +562,32 @@ def test_implicit_joins(query: str, expected: dict[str, Any]) -> None:
         check_dtypes=False,
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize(
+    "from_clause",
+    [
+        "df1, df2, df3",  # already connected in source order
+        "df1, df3, df2",  # df3 only reaches df1 through df2, which is listed later
+        "df3, df1, df2",  # base table is the one needing an intermediary
+    ],
+)
+def test_implicit_joins_avoid_cartesian_product(from_clause: str) -> None:
+    # every permutation here is fully connected by the WHERE predicates
+    ctx = pl.SQLContext(
+        df1=pl.DataFrame({"a": [1, 2, 3], "b": [2, 3, 4]}),
+        df2=pl.DataFrame({"a": [2, 3, 9], "b": [3, 4, 9]}),
+        df3=pl.DataFrame({"a": [2, 3, 8], "b": [3, 4, 8], "c": [3, 4, 8]}),
+    )
+    query = f"""
+        SELECT df1.a, df3.c
+        FROM {from_clause}
+        WHERE df1.a = df2.a AND df2.b = df3.b
+    """
+    assert "CROSS JOIN" not in ctx.execute(query).explain()
+
+    result = ctx.execute(query).collect().sort("a")
+    assert result.to_dict(as_series=False) == {"a": [2, 3], "c": [3, 4]}
 
 
 def test_implicit_self_join() -> None:
@@ -1626,3 +1662,45 @@ def test_join_on_constant_predicate(
     res = pl.sql(query, eager=True)
     expected_df = pl.DataFrame(expected, schema={"a": pl.Int64, "b": pl.Int64})
     assert_frame_equal(res, expected_df, check_row_order=False)
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN"])
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        "(df1.a = df2.a)",
+        "(df1.a = df2.a AND df1.b = df2.b)",
+        "((df1.a = df2.a) AND (df1.b = df2.b))",
+        "(((df1.a = df2.a)))",
+        "(df1.a = df2.a) AND (df1.b = df2.b)",
+        "(df1.a = df2.a AND df1.b < df2.b)",
+    ],
+)
+def test_join_on_parenthesized_constraint(constraint: str, join_type: str) -> None:
+    frames = {
+        "df1": pl.DataFrame({"a": [1, 2, 3], "b": [2, 3, 4]}),
+        "df2": pl.DataFrame({"a": [2, 3, 9], "b": [3, 9, 9]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=f"""
+            SELECT df1.a AS a1, df1.b AS b1, df2.a AS a2, df2.b AS b2
+            FROM df1 {join_type} df2 ON {constraint}
+        """,
+        compare_with=("sqlite", "duckdb"),
+        check_dtypes=False,
+        check_row_order=False,
+    )
+
+
+def test_join_on_invalid_expr() -> None:
+    frames = {
+        "df1": pl.DataFrame({"a": [1, 2, 3]}),
+        "df2": pl.DataFrame({"a": [2, 3, 9]}),
+    }
+    with pytest.raises(
+        SQLInterfaceError, match="unsupported join constraint expression"
+    ):
+        pl.SQLContext(frames, eager=True).execute(
+            "SELECT * FROM df1 JOIN df2 ON (df1.a)"
+        )

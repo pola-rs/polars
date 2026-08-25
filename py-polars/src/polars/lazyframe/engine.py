@@ -19,7 +19,7 @@ from polars.lazyframe.in_process import InProcessQuery
 from polars.lazyframe.query_result import SingleNodeQueryResult
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping
+    from collections.abc import Callable, Iterable, Mapping
 
     from rmm.mr import DeviceMemoryResource  # type: ignore[import-not-found]
 
@@ -184,7 +184,7 @@ class Engine(ABC):
         maintain_order: bool = True,
         chunk_size: int | None = None,
         lazy: bool = False,
-    ) -> Iterator[DataFrame]:
+    ) -> _CollectBatches:
         """Execute `lf`, yielding its result in batches."""
         msg = f"`collect_batches` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
@@ -460,7 +460,7 @@ class _LocalEngine(Engine):
         maintain_order: bool = True,
         chunk_size: int | None = None,
         lazy: bool = False,
-    ) -> Iterator[DataFrame]:
+    ) -> _CollectBatches:
         optimizations = self._with_monitoring(optimizations)
         ldf = lf._ldf.with_optimizations(optimizations._pyoptflags)
         return _CollectBatches(
