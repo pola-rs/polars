@@ -435,3 +435,22 @@ def test_rename_onto_a_dropped_column_is_left_alone(tmp_path: Path) -> None:
         lambda lf: lf.select("f_dim_a", pl.col("f_val").alias("f_dim_b")),
     )
     assert lf.explain(optimizations=ON) == lf.explain(optimizations=OFF)
+
+
+def test_unique_leaf_is_estimated(tmp_path: Path) -> None:
+    # `unique` emits one row per distinct subset, which is a group-by over it.
+    frames = star_frames(tmp_path)
+    frames["dim_a"] = frames["dim_a"].unique(subset=["a_key"])
+    lf = star_query(frames)
+
+    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
+    assert_reordered(lf, ["fact", "dim_a", "dim_b"])
+
+
+def test_unique_over_every_column_is_estimated(tmp_path: Path) -> None:
+    frames = star_frames(tmp_path)
+    frames["dim_a"] = frames["dim_a"].unique()
+    lf = star_query(frames)
+
+    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
+    assert_reordered(lf, ["fact", "dim_a", "dim_b"])

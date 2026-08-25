@@ -34,7 +34,7 @@ pub(super) struct LeafStats {
 
 /// Estimate the rows produced by a leaf subtree.
 ///
-/// `None` means the subtree is not modelled (a union, a distinct, a python scan),
+/// `None` means the subtree is not modelled (a union, a sort with a slice, a python scan),
 /// which leaves the whole cluster alone.
 #[recursive]
 pub(super) fn leaf_stats(
@@ -88,14 +88,18 @@ pub(super) fn leaf_stats(
                 return None;
             }
             let inner = leaf_stats(*input, ir_arena, expr_arena)?;
-            let cap = match options.slice {
-                Some((_, len)) => len as f64,
-                None => f64::INFINITY,
+            Some(one_row_per_group(inner, keys.len(), options.slice))
+        },
+
+        // `unique` keeps one row per distinct combination of its subset, which is a
+        // group-by over those columns. No subset means every column.
+        IR::Distinct { input, options } => {
+            let n_keys = match &options.subset {
+                Some(subset) => subset.len(),
+                None => ir_arena.get(*input).schema(ir_arena).len(),
             };
-            Some(LeafStats {
-                filtered: n_groups(inner.filtered, keys.len()).min(cap),
-                unfiltered: n_groups(inner.unfiltered, keys.len()).min(cap),
-            })
+            let inner = leaf_stats(*input, ir_arena, expr_arena)?;
+            Some(one_row_per_group(inner, n_keys, options.slice))
         },
 
         // A filter above the scan is equivalent to one pushed into it; predicate
@@ -142,7 +146,7 @@ pub(super) fn leaf_stats(
             leaf_stats(*input, ir_arena, expr_arena)
         },
 
-        // Anything else (union, distinct, sort with slice, python scan, ...) is not
+        // Anything else (union, sort with a slice, python scan, ...) is not
         // modelled. Do not guess.
         _ => None,
     }
@@ -155,6 +159,19 @@ pub(super) fn leaf_stats(
 /// other than the input, and is not modelled.
 fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
     expr.is_length_preserving(expr_arena) || expr.is_scalar(expr_arena)
+}
+
+/// Estimates for a node emitting one row per distinct combination of `n_keys`
+/// columns, optionally sliced.
+fn one_row_per_group(inner: LeafStats, n_keys: usize, slice: Option<(i64, usize)>) -> LeafStats {
+    let cap = match slice {
+        Some((_, len)) => len as f64,
+        None => f64::INFINITY,
+    };
+    LeafStats {
+        filtered: n_groups(inner.filtered, n_keys).min(cap),
+        unfiltered: n_groups(inner.unfiltered, n_keys).min(cap),
+    }
 }
 
 /// Estimated distinct combinations of `n_keys` grouping keys over `rows` rows.
