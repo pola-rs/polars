@@ -837,7 +837,7 @@ def test_when_then_nested_null_28941() -> None:
 @pytest.mark.parametrize("null_len", [0, 1, 8])
 @pytest.mark.parametrize("broadcast_then", [True, False])
 @pytest.mark.parametrize("broadcast_otherwise", [True, False])
-def test_when_otherwise_broadcast(
+def test_when_otherwise_broadcast_28969(
     true_len: int,
     false_len: int,
     null_len: int,
