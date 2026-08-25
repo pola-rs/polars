@@ -327,10 +327,7 @@ def identify_deprecations(*types: DeprecationType) -> dict[str, list[str]]:
     --------
     >>> from polars._utils.deprecation import identify_deprecations
     >>> identify_deprecations("nonkeyword_arguments")  # doctest: +IGNORE_RESULT
-    {'nonkeyword_arguments': [
-        'expr.string.ExprStringNameSpace.to_decimal',
-        'functions.business.business_day_count',
-    ]}
+    {'nonkeyword_arguments': ['functions.business.business_day_count']}
     """
     valid_types = set(get_args(DeprecationType))
     for tp in types:

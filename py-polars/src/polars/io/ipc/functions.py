@@ -7,10 +7,7 @@ from typing import IO, TYPE_CHECKING, Any, Literal
 import polars._reexport as pl
 import polars.functions as F
 from polars._dependencies import import_optional
-from polars._utils.deprecation import (
-    issue_deprecation_warning,
-)
-from polars._utils.expired import RenamedParameter, removed_parameters
+from polars._utils.expired import RemovedParameter, RenamedParameter, removed_parameters
 from polars._utils.various import (
     normalize_filepath,
 )
@@ -353,6 +350,26 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
         removed_in="2.0",
     ),
 )
+@removed_parameters(
+    RemovedParameter(
+        name="retries",
+        deprecated_in="1.37.1",
+        removed_in="2.0",
+        hint='Pass {"max_retries": n} via `storage_options` instead.',
+    ),
+    RemovedParameter(
+        name="file_cache_ttl",
+        deprecated_in="1.40.0",
+        removed_in="2.0",
+        hint="The file cache is no longer supported.",
+    ),
+    RemovedParameter(
+        name="cache",
+        deprecated_in="1.40.0",
+        removed_in="2.0",
+        hint="The file cache is no longer supported.",
+    ),
+)
 def scan_ipc(
     source: (
         str
@@ -366,14 +383,11 @@ def scan_ipc(
     ),
     *,
     n_rows: int | None = None,
-    cache: bool | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     glob: bool = True,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int | None = None,
-    file_cache_ttl: int | None = None,
     hive_partitioning: bool | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
@@ -398,11 +412,6 @@ def scan_ipc(
         `storage_options` parameter.
     n_rows
         Stop reading from IPC file after reading `n_rows`.
-    cache
-        Cache the result after reading.
-
-        .. deprecated:: 1.40.0
-            File cache is no longer supported.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -433,18 +442,6 @@ def scan_ipc(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-    retries
-        Number of retries if accessing a cloud instance fails.
-
-        .. deprecated:: 1.37.1
-            Pass {"max_retries": n} via `storage_options` instead.
-    file_cache_ttl
-        Amount of time to keep downloaded cloud files since their last access time,
-        in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
-        (which defaults to 1 hour) if not given.
-
-        .. deprecated:: 1.40.0
-            File cache is no longer supported.
     hive_partitioning
         Infer statistics and schema from Hive partitioned URL and use them
         to prune reads. This is unset by default (i.e. `None`), meaning it is
@@ -463,18 +460,6 @@ def scan_ipc(
         Include the path of the source file(s) as a column with this name.
     """
     sources = get_sources(source)
-
-    if retries is not None:
-        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-        issue_deprecation_warning(msg)
-        storage_options = storage_options or {}
-        storage_options["max_retries"] = retries
-
-    if file_cache_ttl is not None or cache is not None:
-        msg = "file cache is no longer supported as of 1.40.0."
-        issue_deprecation_warning(msg)
-
-    cache_deprecated = False
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, sources, storage_options, "scan_parquet"
@@ -497,7 +482,7 @@ def scan_ipc(
             hive_schema=hive_schema,
             try_parse_hive_dates=try_parse_hive_dates,
             rechunk=False,
-            cache=cache_deprecated,
+            cache=False,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,
         ),

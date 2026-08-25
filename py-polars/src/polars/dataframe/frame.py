@@ -5793,9 +5793,7 @@ class DataFrame:
         │ 3.0 ┆ null ┆ true  ┆ c    ┆ null ┆ 2022-01-01 │
         └─────┴──────┴───────┴──────┴──────┴────────────┘
         """  # noqa: W505
-        # handle boolean value from now-deprecated `return_as_string` parameter
-        if isinstance(return_type, bool) or return_type is None:  # type: ignore[redundant-expr]
-            return_type = "string" if return_type else None  # type: ignore[redundant-expr]
+        if return_type is None:
             return_frame = False
         else:
             return_frame = return_type == "frame"

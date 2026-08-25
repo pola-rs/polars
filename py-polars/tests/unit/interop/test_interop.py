@@ -1051,6 +1051,12 @@ def test_from_arrow_20271() -> None:
     )
 
 
+def test_series_to_arrow_future_removed() -> None:
+    msg = "It was renamed to 'compat_level'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.Series("a", [1, 2, 3]).to_arrow(future=True)  # type: ignore[call-arg]
+
+
 def test_to_arrow_empty_chunks_20627() -> None:
     df = pl.concat(2 * [pl.Series([1])]).filter(pl.Series([False, True])).to_frame()
     assert df.to_arrow().shape == (1, 1)

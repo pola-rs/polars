@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import re
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
@@ -13,7 +14,11 @@ from numpy import nan
 
 import polars as pl
 from polars._utils.convert import parse_as_duration_string
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ArgumentRemovedError,
+    ComputeError,
+    InvalidOperationError,
+)
 from polars.meta.index_type import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
@@ -2449,3 +2454,53 @@ def test_rolling_rank_min_samples_28102() -> None:
     assert_series_equal(
         out, pl.Series("a", [None, None, None, 3, 3], dtype=pl.get_index_type())
     )
+
+
+def test_min_periods_removed() -> None:
+    msg = "It was renamed to 'min_samples'."
+    s = pl.Series("a", [1.0, 2.0, 3.0])
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.cumulative_eval(pl.element().sum(), min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_min(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_max(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_mean(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_sum(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_std(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_var(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_map(lambda x: x.sum(), 2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_median(2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.rolling_quantile(0.5, window_size=2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.ewm_mean(com=1, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.ewm_std(com=1, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        s.ewm_var(com=1, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.rolling_cov("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.rolling_corr("a", "b", window_size=2, min_periods=1)  # type: ignore[call-arg]
