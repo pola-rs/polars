@@ -577,11 +577,6 @@ impl Display for ExprIRDisplay<'_> {
                         "{}.sum()",
                         self.with_root(expr).parenthesize_if_binexpr()
                     ),
-                    AggGroups(expr) => write!(
-                        f,
-                        "{}.groups()",
-                        self.with_root(expr).parenthesize_if_binexpr()
-                    ),
                     Count {
                         input,
                         include_nulls: false,
@@ -1090,11 +1085,6 @@ pub fn write_ir_non_recursive(
             schema: _,
             options: _,
         } => write!(f, "{:indent$}HCONCAT", ""),
-        IR::ExtContext {
-            input: _,
-            contexts: _,
-            schema: _,
-        } => write!(f, "{:indent$}EXTERNAL_CONTEXT", ""),
         IR::Sink { input: _, payload } => {
             let name = match payload {
                 SinkTypeIR::Memory => "SINK (memory)",

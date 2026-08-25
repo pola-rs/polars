@@ -6,7 +6,6 @@ import io
 import math
 import subprocess
 import sys
-import warnings
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
@@ -130,7 +129,6 @@ def test_to_from_buffer(
 
 @pytest.mark.parametrize("use_pyarrow", [True, False])
 @pytest.mark.parametrize("rechunk_and_expected_chunks", [(True, 1), (False, 3)])
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: chunking
 def test_read_parquet_respects_rechunk_16416(
     use_pyarrow: bool, rechunk_and_expected_chunks: tuple[bool, int]
@@ -1363,10 +1361,10 @@ def test_parquet_pyarrow_map() -> None:
         schema={"x": pl.Struct({"key": pl.Int32, "value": pl.Int32})},
     )
     f.seek(0)
-    assert_frame_equal(pl.read_parquet(f).explode(["x"], empty_as_null=False), expected)
+    assert_frame_equal(pl.read_parquet(f).explode(["x"]), expected)
 
     # Test for https://github.com/pola-rs/polars/issues/21317
-    # Specifying schema/allow_missing_columns
+    # Specifying schema/missing_columns
     for missing_columns in ["insert", "raise"]:
         f.seek(0)
         assert_frame_equal(
@@ -1374,7 +1372,7 @@ def test_parquet_pyarrow_map() -> None:
                 f,
                 schema={"x": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Int32}))},
                 missing_columns=missing_columns,  # type: ignore[arg-type]
-            ).explode(["x"], empty_as_null=False),
+            ).explode(["x"]),
             expected,
         )
 
@@ -2063,7 +2061,7 @@ def test_prefilter_with_hive_19766(
 @pytest.mark.parametrize("streaming", [True, False])
 @pytest.mark.parametrize("projection", [pl.all(), pl.col("b")])
 @pytest.mark.write_disk
-def test_allow_missing_columns(
+def test_scan_parquet_missing_columns(
     tmp_path: Path,
     parallel: str,
     streaming: bool,
@@ -2108,33 +2106,6 @@ def test_allow_missing_columns(
         .collect(engine="streaming" if streaming else "in-memory"),
         expected,
     )
-
-    # Test deprecated parameter
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-
-        with pytest.raises(
-            pl.exceptions.ColumnNotFoundError,
-            match="passing `missing_columns='insert'`",
-        ):
-            assert_frame_equal(
-                pl.scan_parquet(
-                    paths,
-                    parallel=parallel,  # type: ignore[arg-type]
-                    allow_missing_columns=False,
-                ).collect(engine="streaming" if streaming else "in-memory"),
-                expected_full,
-            )
-
-        assert_frame_equal(
-            pl.scan_parquet(
-                paths,
-                parallel=parallel,  # type: ignore[arg-type]
-                allow_missing_columns=True,
-            ).collect(engine="streaming" if streaming else "in-memory"),
-            expected_full,
-        )
 
 
 def test_nested_nonnullable_19158() -> None:
@@ -2765,16 +2736,6 @@ def test_parquet_cast_to_cat() -> None:
         pl.Series("col1", ["A", "A", None, "B"], pl.Categorical),
         pl.read_parquet(f).to_series(),
     )
-
-
-def test_parquet_roundtrip_lex_cat_20288() -> None:
-    f = io.BytesIO()
-    df = pl.Series("a", ["A", "B"], pl.Categorical()).to_frame()
-    df.write_parquet(f)
-    f.seek(0)
-    dt = pl.scan_parquet(f).collect_schema()["a"]
-    assert isinstance(dt, pl.Categorical)
-    assert dt.ordering == "lexical"
 
 
 def test_from_parquet_20271() -> None:
@@ -3476,6 +3437,7 @@ def test_scan_parquet_skip_row_groups_with_cast(
     df = pl.select(x=value)
 
     df.write_parquet(f)
+    f.seek(0)
 
     q = pl.scan_parquet(
         f,

@@ -11,7 +11,6 @@ Config options
 
     Config.enable_monitoring
     Config.set_ascii_tables
-    Config.set_auto_structify
     Config.set_decimal_separator
     Config.set_default_credential_provider
     Config.set_engine_affinity

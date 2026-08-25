@@ -1820,14 +1820,17 @@ impl SQLContext {
 
             // Apply the remaining modifiers and establish the final projection
             if have_order_by {
-                // We can safely use `with_columns()` and avoid a join if:
-                // * There is already a projection that projects to the table height.
-                // * All projection heights inherit from context (e.g. all scalar literals that
-                //   are to be broadcasted to table height).
-                if projection_heights.contains(ExprSqlProjectionHeightBehavior::MaintainsColumn)
+                if select_stmt.from.is_empty() || projections.is_empty() {
+                    lf = lf.select(projections);
+                } else if projection_heights
+                    .contains(ExprSqlProjectionHeightBehavior::MaintainsColumn)
                     || projection_heights == ExprSqlProjectionHeightBehavior::InheritsContext
                 {
-                    lf = lf.with_columns(projections);
+                    // We can safely use `with_columns()` and avoid a join if:
+                    // * There is already a projection that projects to the table height.
+                    // * All projection heights inherit from context (e.g. all scalar literals that
+                    //   are to be broadcasted to table height).
+                    lf = lf.with_columns(projections)
                 } else {
                     // We hit this branch if the output height is not guaranteed to match the table
                     // height. E.g.:
@@ -1873,6 +1876,8 @@ impl SQLContext {
             // Note: If `have_order_by`, with_columns is already done above.
             if projection_heights == ExprSqlProjectionHeightBehavior::InheritsContext
                 && !have_order_by
+                && !select_stmt.from.is_empty()
+                && !retained_cols.is_empty()
             {
                 // All projections need to be broadcasted to table height, so evaluate in `with_columns()`
                 lf = lf.with_columns(retained_cols).select(retained_names);

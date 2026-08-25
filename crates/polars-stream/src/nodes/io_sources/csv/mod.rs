@@ -25,7 +25,7 @@ use polars_io::prelude::streaming::read_until_start_and_infer_schema;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder};
 use polars_io::utils::compression::{ByteSourceReader, SupportedCompression};
 use polars_io::utils::stream_buf_reader::{ReaderSource, StreamBufReader};
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{ExtraColumnsPolicy, MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::slice_enum::Slice;
@@ -168,6 +168,8 @@ impl FileReader for CsvFileReader {
             pre_slice,
             predicate: None,
             cast_columns_policy: _,
+            extra_columns_policy,
+            missing_columns_policy,
             num_pipelines,
             disable_morsel_split: _,
             last_morsel_pipelines: _,
@@ -299,6 +301,8 @@ impl FileReader for CsvFileReader {
                 let result = read_until_start_and_infer_schema(
                     &options,
                     Some(projected_schema.clone()),
+                    extra_columns_policy == ExtraColumnsPolicy::Ignore,
+                    missing_columns_policy == MissingColumnsPolicy::Insert,
                     decompressed_file_size_hint,
                     None,
                     &mut reader,

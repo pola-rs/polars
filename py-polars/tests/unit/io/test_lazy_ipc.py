@@ -227,22 +227,22 @@ def test_scan_ipc_file_async_dict(
         {"cat": ["A", "B", "C", "A", "C", "B"]}, schema={"cat": pl.Categorical}
     ).with_row_index()
     lf.sink_ipc(buf)
+    buf.seek(0)
 
     out = pl.scan_ipc(buf).collect()
     expected = lf.collect()
     assert_frame_equal(out, expected)
 
 
-# TODO: create multiple record batches through API instead of env variable
 def test_scan_ipc_file_async_multiple_record_batches(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "10")
 
     buf = io.BytesIO()
     lf = pl.LazyFrame({"a": list(range(100))})
-    lf.sink_ipc(buf)
+    lf.sink_ipc(buf, record_batch_size=10)
+    buf.seek(0)
     df = lf.collect()
 
     buffers = typing.cast("list[IO[bytes]]", [buf, buf])
@@ -294,12 +294,14 @@ def test_scan_ipc_varying_block_metadata_len_c4812(
     buf = io.BytesIO()
     df = pl.DataFrame({"a": [n_a * "A", n_b * "B"]})
     df.lazy().sink_ipc(buf, compression=compression, record_batch_size=1)
+    buf.seek(0)
 
     with pyarrow.ipc.open_file(buf) as reader:
         assert [
             reader.get_batch(i).num_rows for i in range(reader.num_record_batches)
         ] == [1, 1]
 
+    buf.seek(0)
     assert_frame_equal(pl.scan_ipc(buf).collect(), df)
 
 
@@ -350,6 +352,7 @@ def test_scan_ipc_compression_with_slice_26063(
     df.lazy().sink_ipc(
         buf, compression=compression, record_batch_size=record_batch_size
     )
+    buf.seek(0)
     out = pl.scan_ipc(buf).slice(slice[0], slice[1]).collect()
     expected = df.slice(slice[0], slice[1])
     assert_frame_equal(out, expected)
@@ -366,6 +369,7 @@ def test_sink_scan_ipc_round_trip_statistics() -> None:
         .with_columns(pl.col.a.shuffle().sort().alias("d"))
     )
     df.lazy().sink_ipc(buf, _record_batch_statistics=True)
+    buf.seek(0)
 
     metadata = df._to_metadata()
 
@@ -589,6 +593,7 @@ def test_sink_scan_ipc_round_trip_statistics_projection(
     df.lazy().sink_ipc(
         buf, record_batch_size=record_batch_size, _record_batch_statistics=True
     )
+    buf.seek(0)
 
     # round-trip with projection
     df = df.select(selection)
@@ -609,6 +614,7 @@ def test_scan_ipc_slice_empty_file() -> None:
 
     for i in range(len(dfs)):
         dfs[i].write_ipc(bufs[i])
+        bufs[i].seek(0)
 
     expected = pl.concat(dfs).slice(50, 100)
     actual = pl.scan_ipc(bufs).slice(50, 100).collect()

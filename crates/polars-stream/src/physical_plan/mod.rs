@@ -22,8 +22,8 @@ use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    CastColumnsPolicy, ColumnsUdf, FileSinkOptions, MissingColumnsPolicy, PartitionedSinkOptionsIR,
-    PredicateFileSkip, ScanSources, TableStatistics,
+    CastColumnsPolicy, ColumnsUdf, ExtraColumnsPolicy, FileSinkOptions, MissingColumnsPolicy,
+    PartitionedSinkOptionsIR, PredicateFileSkip, ScanSources, TableStatistics,
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
@@ -401,6 +401,7 @@ pub enum PhysNodeKind {
         hive_parts: Option<HivePartitionsDf>,
         include_file_paths: Option<PlSmallStr>,
         cast_columns_policy: CastColumnsPolicy,
+        extra_columns_policy: ExtraColumnsPolicy,
         missing_columns_policy: MissingColumnsPolicy,
         forbid_extra_columns: Option<ForbidExtraColumns>,
 

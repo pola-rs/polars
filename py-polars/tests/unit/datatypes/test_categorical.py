@@ -724,22 +724,6 @@ def test_cat_append_lexical_sorted_flag() -> None:
     assert not (s1.is_sorted())
 
 
-def test_get_cat_categories_multiple_chunks() -> None:
-    df = pl.DataFrame(
-        [
-            pl.Series("e", ["a", "b"], pl.Categorical),
-        ]
-    )
-    df = pl.concat(
-        [df for _ in range(100)], how="vertical", rechunk=False, parallel=True
-    )
-    with pytest.deprecated_call():
-        cats = (
-            df.lazy().select(pl.col("e").cat.get_categories()).collect()["e"].to_list()
-        )
-    assert set(cats) >= {"a", "b"}
-
-
 @pytest.mark.parametrize(
     "f",
     [
@@ -886,9 +870,11 @@ def test_ipc_categorical_roundtrip() -> None:
     )
 
     lf.sink_ipc(f := io.BytesIO())
+    f.seek(0)
     assert_frame_equal(pl.scan_ipc(f), lf)
 
     lf.sink_parquet(f := io.BytesIO())
+    f.seek(0)
     assert_frame_equal(pl.scan_parquet(f), lf)
 
     assert_frame_equal(pickle.loads(pickle.dumps(lf)), lf)
@@ -1017,14 +1003,6 @@ def test_categorical_serialization_prunes_unused_categories_24034() -> None:
     assert ipc_stream_size_ratio <= 0.8
     assert parquet_size_ratio <= 0.5
     assert pickle_size_ratio <= 0.8
-
-
-def test_categorical_cast_from_invalid_int() -> None:
-    dt = pl.Categorical(pl.Categories.random())
-    _dummy = pl.Series(["test"]).cast(dt)
-    s = pl.Series("a", [0, 1000, 2000, 3000]).cast(dt, strict=False)
-    assert s.null_count() == 3
-    assert_series_equal(s, pl.Series("a", ["test", None, None, None], dtype=dt))
 
 
 @given(data=st.data())
