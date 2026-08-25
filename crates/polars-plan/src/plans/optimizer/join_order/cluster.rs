@@ -140,7 +140,14 @@ pub(super) fn extract(
 
     let mut leaf_nodes = Vec::new();
     let mut raw_keys = Vec::new();
-    collect(root, ir_arena, &options, &mut leaf_nodes, &mut raw_keys);
+    collect(
+        root,
+        ir_arena,
+        expr_arena,
+        &options,
+        &mut leaf_nodes,
+        &mut raw_keys,
+    );
 
     if leaf_nodes.len() < MIN_LEAVES {
         return None;
@@ -202,6 +209,7 @@ pub(super) fn extract(
 fn collect(
     node: Node,
     ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
     root_options: &JoinOptionsIR,
     leaves: &mut Vec<Node>,
     key_pairs: &mut Vec<RawKey>,
@@ -209,7 +217,7 @@ fn collect(
     // Column-narrowing projections commonly sit between joins. They preserve rows
     // and rename nothing, so look past them for the join underneath; otherwise
     // almost every join is its own cluster.
-    let peeled = peel_projections(node, ir_arena);
+    let peeled = peel_projections(node, ir_arena, expr_arena);
 
     match ir_arena.get(peeled) {
         IR::Join {
@@ -221,9 +229,23 @@ fn collect(
             // Each side's leaves land in one contiguous run, which is the range the
             // keys of that side resolve against.
             let start = leaves.len();
-            collect(*input_left, ir_arena, root_options, leaves, key_pairs);
+            collect(
+                *input_left,
+                ir_arena,
+                expr_arena,
+                root_options,
+                leaves,
+                key_pairs,
+            );
             let mid = leaves.len();
-            collect(*input_right, ir_arena, root_options, leaves, key_pairs);
+            collect(
+                *input_right,
+                ir_arena,
+                expr_arena,
+                root_options,
+                leaves,
+                key_pairs,
+            );
             let end = leaves.len();
 
             if let Some(on) = options.options.key_pairs() {
@@ -240,17 +262,30 @@ fn collect(
     }
 }
 
-/// Strip any chain of [`IR::SimpleProjection`] to reach the node beneath.
+/// Strip any chain of column-narrowing projections to reach the node beneath.
 ///
 /// Dropping an interior projection widens the rows flowing through the rebuilt joins.
 /// Projection pushdown runs after this pass and narrows them again against the new
 /// order, and the cluster is projected back to its original schema, so the extra
 /// columns are not observable.
-fn peel_projections(mut node: Node, ir_arena: &Arena<IR>) -> Node {
-    while let IR::SimpleProjection { input, .. } = ir_arena.get(node) {
-        node = *input;
+///
+/// That argument only holds for a projection which selects existing columns and
+/// nothing more: one that computes or renames a column cannot be dropped, because the
+/// restoring projection can only pick columns out of what the joins produce.
+fn peel_projections(mut node: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Node {
+    loop {
+        node = match ir_arena.get(node) {
+            IR::SimpleProjection { input, .. } => *input,
+            // A `select` of plain columns is the same thing before `fast_projection`
+            // (which runs after this pass) rewrites it into one.
+            IR::Select { input, expr, .. }
+                if expr.iter().all(|e| plain_column(e, expr_arena).is_some()) =>
+            {
+                *input
+            },
+            _ => return node,
+        };
     }
-    node
 }
 
 /// Whether two joins agree on everything that survives being rebuilt.

@@ -300,3 +300,72 @@ def test_implied_key_equality_keeps_coalescing_sound(tmp_path: Path) -> None:
     assert off.height > 0
     assert on.columns == off.columns
     assert_frame_equal(off.sort(pl.all()), on.sort(pl.all()))
+
+
+def test_select_on_a_leaf_is_estimated(tmp_path: Path) -> None:
+    # `fast_projection` rewrites a plain `select` into a `SimpleProjection`, but it
+    # runs after this pass, so the estimate has to see through the `select` itself.
+    frames = {k: v.select(pl.all()) for k, v in star_frames(tmp_path).items()}
+    lf = star_query(frames)
+
+    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
+    assert scan_order(lf.explain(optimizations=ON)) == ["fact", "dim_a", "dim_b"]
+    assert_frame_equal(
+        lf.collect(optimizations=OFF).sort(pl.all()),
+        lf.collect(optimizations=ON).sort(pl.all()),
+    )
+
+
+def test_with_columns_on_a_leaf_is_estimated(tmp_path: Path) -> None:
+    frames = star_frames(tmp_path)
+    frames["fact"] = frames["fact"].with_columns(f_double=pl.col("f_val") * 2)
+    lf = star_query(frames)
+
+    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
+    assert scan_order(lf.explain(optimizations=ON)) == ["fact", "dim_a", "dim_b"]
+    assert_frame_equal(
+        lf.collect(optimizations=OFF).sort(pl.all()),
+        lf.collect(optimizations=ON).sort(pl.all()),
+    )
+
+
+def joins_around(
+    frames: dict[str, pl.LazyFrame], middle: pl.Expr | str
+) -> pl.LazyFrame:
+    """The star query with a projection sitting between the two joins."""
+    return (
+        frames["fact"]
+        .join(frames["dim_b"], left_on="f_dim_b", right_on="b_key", coalesce=False)
+        .select("f_dim_a", "f_val", middle)
+        .join(
+            frames["dim_a"].filter(pl.col("a_flag")),
+            left_on="f_dim_a",
+            right_on="a_key",
+            coalesce=False,
+        )
+    )
+
+
+def test_projection_between_joins_keeps_one_cluster(tmp_path: Path) -> None:
+    # Without looking past it the outer join sees two leaves and no cluster forms.
+    lf = joins_around(star_frames(tmp_path), "b_name")
+
+    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
+    assert scan_order(lf.explain(optimizations=ON)) == ["fact", "dim_a", "dim_b"]
+    assert_frame_equal(
+        lf.collect(optimizations=OFF).sort(pl.all()),
+        lf.collect(optimizations=ON).sort(pl.all()),
+    )
+
+
+def test_computed_projection_between_joins_is_not_dropped(tmp_path: Path) -> None:
+    # The restoring projection can only pick columns out of what the joins produce,
+    # so a projection that computes one cannot be looked past.
+    lf = joins_around(star_frames(tmp_path), (pl.col("b_name") + "!").alias("shout"))
+
+    assert lf.explain(optimizations=ON) == lf.explain(optimizations=OFF)
+    result = lf.collect(optimizations=ON)
+    assert "shout" in result.columns
+    assert_frame_equal(
+        lf.collect(optimizations=OFF).sort(pl.all()), result.sort(pl.all())
+    )

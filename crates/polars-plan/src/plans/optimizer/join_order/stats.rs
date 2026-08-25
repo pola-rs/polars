@@ -8,7 +8,7 @@
 use polars_utils::arena::{Arena, Node};
 use recursive::recursive;
 
-use crate::plans::{AExpr, IR, MintermIter};
+use crate::plans::{AExpr, ExprIR, IR, MintermIter};
 
 /// Fallback selectivity for a filter conjunct with no better estimate.
 const DEFAULT_SELECTIVITY: f64 = 0.2;
@@ -116,10 +116,45 @@ pub(super) fn leaf_stats(
             leaf_stats(*input, ir_arena, expr_arena)
         },
 
+        // A `select` keeps its input's height when every expression does. Aggregates
+        // collapse the frame to one row, and a mix of the two broadcasts the scalars
+        // back up to the height of the rest.
+        IR::Select { input, expr, .. } => {
+            if expr.is_empty() || !expr.iter().all(|e| keeps_height(e, expr_arena)) {
+                return None;
+            }
+            let inner = leaf_stats(*input, ir_arena, expr_arena)?;
+            if expr.iter().all(|e| e.is_scalar(expr_arena)) {
+                return Some(LeafStats {
+                    filtered: MIN_CARDINALITY,
+                    unfiltered: MIN_CARDINALITY,
+                });
+            }
+            Some(inner)
+        },
+
+        // `with_columns` adds to the frame it is given rather than replacing it, so
+        // the height is the input's even when every expression is a scalar.
+        IR::HStack { input, exprs, .. } => {
+            if !exprs.iter().all(|e| keeps_height(e, expr_arena)) {
+                return None;
+            }
+            leaf_stats(*input, ir_arena, expr_arena)
+        },
+
         // Anything else (union, distinct, sort with slice, python scan, ...) is not
         // modelled. Do not guess.
         _ => None,
     }
+}
+
+/// Whether an expression leaves the frame's height alone, either by producing one
+/// value per row or by producing a scalar that broadcasts back to it.
+///
+/// Anything else — an explode, a range, a slice — sets the height from something
+/// other than the input, and is not modelled.
+fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
+    expr.is_length_preserving(expr_arena) || expr.is_scalar(expr_arena)
 }
 
 /// Estimated distinct combinations of `n_keys` grouping keys over `rows` rows.
