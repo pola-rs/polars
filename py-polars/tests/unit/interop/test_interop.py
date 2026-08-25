@@ -269,11 +269,23 @@ def test_from_arrow_with_bigquery_metadata() -> None:
         schema=arrow_schema,
     )
 
+    df = pl.from_arrow(arrow_tbl)
+    assert isinstance(df, pl.DataFrame)
+
+    # The BigQuery sql-type metadata is retained as an extension dtype,
+    # but must not affect the underlying storage dtypes
+    assert df.schema == {
+        "id": pl.Extension("google:sqlType:integer", pl.Int64),
+        "misc": pl.Extension(
+            "google:sqlType:struct", pl.Struct({"num": pl.Int32, "val": pl.String})
+        ),
+    }
+
     expected_data = {"id": [1, 2], "num": [None, None], "val": [None, None]}
     expected_schema = {"id": pl.Int64, "num": pl.Int32, "val": pl.String}
     assert_frame_equal(
+        df.select(pl.all().ext.storage()).unnest("misc"),
         pl.DataFrame(expected_data, schema=expected_schema),
-        pl.from_arrow(arrow_tbl).unnest("misc"),  # type: ignore[union-attr]
     )
 
 
