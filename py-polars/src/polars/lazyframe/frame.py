@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import warnings
-from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, reduce
@@ -108,7 +108,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from builtins import slice as slice_
-    from collections.abc import Awaitable, Callable, Iterator
+    from collections.abc import Awaitable, Callable
     from io import IOBase
     from typing import IO, Concatenate, Literal, ParamSpec
 
@@ -118,6 +118,7 @@ if TYPE_CHECKING:
 
     import polars.io.iceberg
     from polars.io.partition import PartitionBy, SinkedPathsCallback
+    from polars.lazyframe.engine import _CollectBatches
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -4337,7 +4338,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: bool = False,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-    ) -> Iterator[DataFrame]:
+    ) -> _CollectBatches:
         """
         Evaluate the query in streaming mode and get a generator that returns chunks.
 
@@ -4400,7 +4401,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if engine_.name == "auto":
             engine_ = _select_engine("streaming")
 
-        return engine_.collect_batches(  # type: ignore[no-any-return]
+        return engine_.collect_batches(
             self,
             optimizations=optimizations,
             maintain_order=maintain_order,
