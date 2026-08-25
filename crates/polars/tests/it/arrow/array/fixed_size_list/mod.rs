@@ -1,4 +1,5 @@
 mod mutable;
+mod reserve;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
