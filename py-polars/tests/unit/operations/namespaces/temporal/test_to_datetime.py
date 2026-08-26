@@ -370,8 +370,7 @@ STRPTIME_INFERENCE_CASES = [
 def test_strptime_infers_past_unparseable_values(
     engine: EngineType, position: str, method: str, dtype: pl.DataType, good: str
 ) -> None:
-    # the frame must span several morsels: inference used to run per morsel,
-    # off the first value only, nulling whole morsels it could not infer from
+    # must span several morsels; a smaller frame cannot catch this
     n = 200_000
     values = [good] * n
     idx = {"head": 0, "middle": n // 2, "tail": n - 1}[position]

@@ -466,10 +466,8 @@ pub(super) fn split_regex(s: &[Column], inclusive: bool, strict: bool) -> Polars
     Ok(out.into_column())
 }
 
-/// Settle a parse result against `options`: without an explicit format,
-/// non-strict parsing yields nulls rather than raising when no value in the
-/// column allows the format to be inferred; strict parsing reports the values
-/// that failed.
+/// Yield nulls when a non-strict parse could not infer a format, and report the
+/// values that failed when strict.
 #[cfg(feature = "temporal")]
 fn finish_strptime(
     out: PolarsResult<Column>,

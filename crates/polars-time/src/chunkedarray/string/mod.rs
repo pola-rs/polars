@@ -58,12 +58,12 @@ pub trait StringMethods: AsString {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => {
-                if string_ca.first_non_null().is_none() {
+                if string_ca.null_count() == string_ca.len() {
                     return Ok(
                         Int64Chunked::full_null(string_ca.name().clone(), string_ca.len())
                             .into_time(),
                     );
-                };
+                }
                 infer::infer_from_values(string_ca, |val| {
                     time_pattern(val, NaiveTime::parse_from_str)
                 })
@@ -92,12 +92,12 @@ pub trait StringMethods: AsString {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => {
-                if string_ca.first_non_null().is_none() {
+                if string_ca.null_count() == string_ca.len() {
                     return Ok(
                         Int32Chunked::full_null(string_ca.name().clone(), string_ca.len())
                             .into_date(),
                     );
-                };
+                }
                 infer::infer_from_values(string_ca, |val| {
                     date_pattern(val, NaiveDate::parse_from_str)
                 })
@@ -141,12 +141,12 @@ pub trait StringMethods: AsString {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => {
-                if string_ca.first_non_null().is_none() {
+                if string_ca.null_count() == string_ca.len() {
                     return Ok(
                         Int64Chunked::full_null(string_ca.name().clone(), string_ca.len())
                             .into_datetime(tu, tz.cloned()),
                     );
-                };
+                }
                 infer::infer_from_values(string_ca, |val| {
                     datetime_pattern(val, NaiveDateTime::parse_from_str)
                         .or_else(|| datetime_pattern(val, NaiveDate::parse_from_str))

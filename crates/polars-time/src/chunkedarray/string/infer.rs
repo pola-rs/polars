@@ -425,9 +425,6 @@ pub fn sniff_time_fmt(val: &str) -> Option<&'static str> {
 }
 
 /// Scan the non-null values for the first that `infer` accepts.
-///
-/// Inferring from only the first non-null value makes the result depend on
-/// where unparseable values happen to sit; every caller must scan.
 pub fn infer_from_values<T>(ca: &StringChunked, infer: impl FnMut(&str) -> Option<T>) -> Option<T> {
     ca.iter().flatten().find_map(infer)
 }
@@ -467,7 +464,7 @@ pub fn to_datetime(
     // Ensure that the inferred time_zone matches the given time_zone.
     ensure_matching_time_zone: bool,
 ) -> PolarsResult<DatetimeChunked> {
-    if ca.first_non_null().is_none() {
+    if ca.null_count() == ca.len() {
         return Ok(
             Int64Chunked::full_null(ca.name().clone(), ca.len()).into_datetime(tu, tz.cloned())
         );
@@ -533,7 +530,7 @@ pub fn coerce_string_to_datetime(
 
 #[cfg(feature = "dtype-date")]
 pub(crate) fn to_date(ca: &StringChunked) -> PolarsResult<DateChunked> {
-    if ca.first_non_null().is_none() {
+    if ca.null_count() == ca.len() {
         return Ok(Int32Chunked::full_null(ca.name().clone(), ca.len()).into_date());
     }
 

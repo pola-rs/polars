@@ -15,8 +15,7 @@ pub struct StrptimeInferNode {
     infer: Option<FormatInfer>,
     phase: Phase,
 
-    /// Name to report parse failures against; the input carries an internal
-    /// one assigned during lowering.
+    /// Name to report parse failures against; the input carries an internal one.
     input_name: PlSmallStr,
 
     /// Ambiguous can be `raise`, `earliest`, `latest` and `null`.
@@ -65,8 +64,6 @@ impl StrptimeInferNode {
 }
 
 impl FormatInfer {
-    /// Scans `ca` rather than only its first value; which values are
-    /// unparseable must not depend on where they sit in the column.
     fn try_new(
         ca: &StringChunked,
         dtype: &DataType,
@@ -199,7 +196,7 @@ impl ComputeNode for StrptimeInferNode {
                         if infer_slot.is_none() {
                             let df = morsel.df().await;
                             let ca = df.columns()[0].str()?;
-                            if ca.first_non_null().is_some() {
+                            if ca.null_count() != ca.len() {
                                 *infer_slot = FormatInfer::try_new(ca, dtype, options)?;
 
                                 let unit = if matches!(dtype, DataType::Time) {

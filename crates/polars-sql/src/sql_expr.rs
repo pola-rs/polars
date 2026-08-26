@@ -116,8 +116,7 @@ fn cast_literal_series(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
     s.strict_cast(dtype)
 }
 
-/// Parse a string expression into `Date`/`Time`/`Datetime`; `None` for any
-/// other target dtype.
+/// Parse a string expression into `Date`/`Time`/`Datetime`; `None` for other dtypes.
 fn parse_string_as_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Option<Expr> {
     let options = StrptimeOptions {
         strict,
@@ -1029,8 +1028,7 @@ impl SQLExprVisitor<'_> {
         })
     }
 
-    /// Resolve whether `expr` is known to be `String`-typed against the active
-    /// schema; false when the dtype cannot be determined.
+    /// Whether `expr` is known to be `String`; false if the dtype cannot be resolved.
     fn is_string_expr(&self, expr: &Expr) -> bool {
         let empty = Schema::default();
         let schema = self.active_schema.unwrap_or(&empty);
