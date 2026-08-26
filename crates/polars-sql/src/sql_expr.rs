@@ -116,8 +116,7 @@ fn cast_literal_series(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
     s.strict_cast(dtype)
 }
 
-/// Parse a string expression into `Date`/`Time`/`Datetime`; non-strict yields
-/// nulls on unparseable input (used by `TRY_CAST`).
+/// Parse a string expression into `Date`/`Time`/`Datetime`
 fn parse_string_as_temporal(expr: Expr, dtype: &DataType, strict: bool) -> PolarsResult<Expr> {
     let options = StrptimeOptions {
         strict,

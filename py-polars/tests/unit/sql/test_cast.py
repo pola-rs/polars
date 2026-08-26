@@ -274,11 +274,12 @@ def test_cast_string_to_temporal(
 def test_try_cast_string_to_temporal_nulls(sql_type: str, dtype: pl.DataType) -> None:
     df = pl.DataFrame({"s": ["not a temporal value"]})
 
-    res = df.sql(f"SELECT TRY_CAST(s AS {sql_type}) AS x FROM self")
-    assert_frame_equal(res, pl.DataFrame({"x": [None]}, schema={"x": dtype}))
+    for operand in ("s", "'not a temporal value'"):
+        res = df.sql(f"SELECT TRY_CAST({operand} AS {sql_type}) AS x FROM self")
+        assert_frame_equal(res, pl.DataFrame({"x": [None]}, schema={"x": dtype}))
 
-    with pytest.raises(ComputeError, match="could not find an appropriate format"):
-        df.sql(f"SELECT CAST(s AS {sql_type}) AS x FROM self")
+        with pytest.raises(ComputeError, match="could not find an appropriate format"):
+            df.sql(f"SELECT CAST({operand} AS {sql_type}) AS x FROM self")
 
 
 def test_cast_temporal_to_temporal_is_not_parsed() -> None:
