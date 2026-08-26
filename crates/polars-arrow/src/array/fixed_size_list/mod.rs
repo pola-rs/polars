@@ -269,8 +269,10 @@ impl FixedSizeListArray {
             .take()
             .map(|bitmap| bitmap.sliced_unchecked(offset, length))
             .filter(|bitmap| bitmap.unset_bits() > 0);
-        self.values
-            .slice_unchecked(child_offset(offset, self.size), child_length(length, self.size));
+        self.values.slice_unchecked(
+            child_offset(offset, self.size),
+            child_length(length, self.size),
+        );
         self.length = length;
     }
 
@@ -313,7 +315,8 @@ impl FixedSizeListArray {
     /// Caller must ensure that `i < self.len()`
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> Box<dyn Array> {
-        self.values.sliced_unchecked(child_offset(i, self.size), self.size)
+        self.values
+            .sliced_unchecked(child_offset(i, self.size), self.size)
     }
 
     /// Returns the element at index `i` or `None` if it is null
@@ -368,8 +371,10 @@ impl Splitable for FixedSizeListArray {
     }
 
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
-        let (lhs_values, rhs_values) =
-            unsafe { self.values.split_at_boxed_unchecked(child_offset(offset, self.size)) };
+        let (lhs_values, rhs_values) = unsafe {
+            self.values
+                .split_at_boxed_unchecked(child_offset(offset, self.size))
+        };
         let (lhs_validity, rhs_validity) = unsafe { self.validity.split_at_unchecked(offset) };
 
         let size = self.size;

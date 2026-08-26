@@ -32,7 +32,8 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
     }
 
     fn reserve(&mut self, additional: usize) {
-        self.inner_builder.reserve(child_length(additional, self.size));
+        self.inner_builder
+            .reserve(child_length(additional, self.size));
         self.validity.reserve(additional);
     }
 
@@ -55,7 +56,8 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
     }
 
     fn extend_nulls(&mut self, length: usize) {
-        self.inner_builder.extend_nulls(child_length(length, self.size));
+        self.inner_builder
+            .extend_nulls(child_length(length, self.size));
         self.validity.extend_constant(length, false);
         self.length += length;
     }
@@ -87,7 +89,8 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         share: ShareStrategy,
     ) {
         let other_values = &**other.values();
-        self.inner_builder.reserve(child_length(repeats * length, self.size));
+        self.inner_builder
+            .reserve(child_length(repeats * length, self.size));
         for outer_idx in start..start + length {
             self.inner_builder.subslice_extend_repeated(
                 other_values,
@@ -114,7 +117,8 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         share: ShareStrategy,
     ) {
         let other_values = &**other.values();
-        self.inner_builder.reserve(child_length(idxs.len(), self.size));
+        self.inner_builder
+            .reserve(child_length(idxs.len(), self.size));
 
         // Group consecutive indices into larger copies.
         let mut group_start = 0;
@@ -147,7 +151,8 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         share: ShareStrategy,
     ) {
         let other_values = &**other.values();
-        self.inner_builder.reserve(child_length(idxs.len(), self.size));
+        self.inner_builder
+            .reserve(child_length(idxs.len(), self.size));
 
         // Group consecutive indices into larger copies.
         let mut group_start = 0;
@@ -177,7 +182,8 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
                     group_len += 1;
                 }
 
-                self.inner_builder.extend_nulls(child_length(group_len, self.size));
+                self.inner_builder
+                    .extend_nulls(child_length(group_len, self.size));
             }
             group_start += group_len;
         }

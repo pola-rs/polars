@@ -145,7 +145,10 @@ fn builder() {
     builder.subslice_extend(&arr, 0, 2, ShareStrategy::Never);
 
     let result = builder.freeze_reset();
-    let result = result.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+    let result = result
+        .as_any()
+        .downcast_ref::<FixedSizeListArray>()
+        .unwrap();
     assert_eq!(result.len(), 4);
     assert_eq!(result.size(), 2);
     assert_eq!(
