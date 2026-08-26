@@ -1773,3 +1773,47 @@ def test_join_non_equi_nested_alias_in_equi_key(sales_frame: pl.LazyFrame) -> No
         """,
         compare_with="duckdb",
     )
+
+
+def test_join_predicate_operand_spanning_both_sides() -> None:
+    # `(ws2.w)/ws1.w` names two relations that a join puts on opposite sides.
+    # Suffixing attributes a whole operand to one relation, so such a condition
+    # must stay a filter rather than becoming a join predicate.
+    frames = {
+        "ss_src": pl.DataFrame(
+            {
+                "k": ["A", "A", "A", "B", "B", "B"],
+                "q": [1, 2, 3] * 2,
+                "v": [10.0, 8.0, 20.0, 10.0, 30.0, 40.0],
+            }
+        ),
+        "ws_src": pl.DataFrame(
+            {
+                "k": ["A", "A", "A", "B", "B", "B"],
+                "q": [1, 2, 3] * 2,
+                "v": [10.0, 5.0, 50.0, 10.0, 40.0, 80.0],
+            }
+        ),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            WITH ss AS (SELECT k, q, SUM(v) AS s FROM ss_src GROUP BY k, q),
+                 ws AS (SELECT k, q, SUM(v) AS w FROM ws_src GROUP BY k, q)
+            SELECT ss1.k,
+                   ws2.w / ws1.w AS web_q1_q2, ss2.s / ss1.s AS store_q1_q2,
+                   ws3.w / ws2.w AS web_q2_q3, ss3.s / ss2.s AS store_q2_q3
+            FROM ss ss1, ss ss2, ss ss3, ws ws1, ws ws2, ws ws3
+            WHERE ss1.q = 1 AND ss1.k = ss2.k AND ss2.q = 2
+              AND ss2.k = ss3.k AND ss3.q = 3
+              AND ss1.k = ws1.k AND ws1.q = 1
+              AND ws1.k = ws2.k AND ws2.q = 2
+              AND ws1.k = ws3.k AND ws3.q = 3
+              AND CASE WHEN ws1.w > 0 THEN ws2.w / ws1.w ELSE NULL END
+                > CASE WHEN ss1.s > 0 THEN ss2.s / ss1.s ELSE NULL END
+              AND CASE WHEN ws2.w > 0 THEN ws3.w / ws2.w ELSE NULL END
+                > CASE WHEN ss2.s > 0 THEN ss3.s / ss2.s ELSE NULL END
+            ORDER BY ss1.k
+        """,
+        compare_with="duckdb",
+    )

@@ -3879,8 +3879,12 @@ fn is_join_comparison(
         let (left_is_right, left_is_left) = operand_side(left);
         let (right_is_right, right_is_left) = operand_side(right);
 
-        // One side references a left table, the other references the right table
-        (left_is_right && right_is_left) || (right_is_right && left_is_left)
+        // One operand must name only a left table and the other only the right one.
+        // An operand spanning both cannot be attributed to a single side, and the
+        // suffixing below would rename its left columns as the right table's; it
+        // stays a filter, applied once the join has brought both sides together.
+        (left_is_right && !left_is_left && right_is_left && !right_is_right)
+            || (right_is_right && !right_is_left && left_is_left && !left_is_right)
     } else {
         false
     }
