@@ -1222,6 +1222,30 @@ def test_scan_delta_use_pyarrow_single_file(tmp_path: Path, use_pyarrow: bool) -
     )
 
 
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+@pytest.mark.write_disk
+def test_scan_delta_predicate_eq_missing(tmp_path: Path, use_pyarrow: bool) -> None:
+    df = pl.DataFrame({"a": [1, 2, None], "b": [1, 2, 3]})
+    df.write_delta(tmp_path)
+
+    for predicate in [
+        pl.col("a").eq_missing(2),
+        pl.col("a").eq_missing(None),
+        pl.col("a").ne_missing(2),
+        pl.col("a").ne_missing(None),
+        ~pl.col("a").eq_missing(2),
+        ~pl.col("a").ne_missing(2),
+        pl.col("a").ne_missing(2) & (pl.col("b") > 1),
+    ]:
+        assert_frame_equal(
+            pl.scan_delta(tmp_path, use_pyarrow=use_pyarrow)
+            .filter(predicate)
+            .collect(),
+            df.filter(predicate),
+            check_row_order=False,
+        )
+
+
 @pytest.mark.write_disk
 def test_delta_dataset_does_not_pickle_table_object(tmp_path: Path) -> None:
     df = pl.DataFrame({"row_index": [0, 1, 2, 3, 4]})

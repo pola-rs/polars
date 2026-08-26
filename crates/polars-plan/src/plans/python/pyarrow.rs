@@ -114,14 +114,18 @@ fn predicate_to_pa_inner(
     args: PyarrowArgs,
 ) -> Option<String> {
     match expr_arena.get(predicate) {
-        AExpr::BinaryExpr { left, right, op } => {
-            if op.is_comparison_or_bitwise() {
+        AExpr::BinaryExpr { left, right, op } => match op {
+            // `==v` / `!=v` are not Python operators, so they cannot be formatted
+            // like the other comparisons.
+            Operator::EqValidity | Operator::NotEqValidity => {
+                validity_comparison_to_pa(*left, *right, *op, expr_arena, args)
+            },
+            op if op.is_comparison_or_bitwise() => {
                 let left = predicate_to_pa_inner(*left, expr_arena, args)?;
                 let right = predicate_to_pa_inner(*right, expr_arena, args)?;
                 Some(format!("({left} {op} {right})"))
-            } else {
-                None
-            }
+            },
+            _ => None,
         },
         AExpr::Column(name) => {
             let name = sanitize(name)?;
@@ -263,6 +267,48 @@ fn predicate_to_pa_inner(
         },
         _ => None,
     }
+}
+
+/// Lower `eq_missing` / `ne_missing` against a literal, where the null handling
+/// can be spelled out with `is_null`. Returns `None` for any other operands.
+fn validity_comparison_to_pa(
+    left: Node,
+    right: Node,
+    op: Operator,
+    expr_arena: &Arena<AExpr>,
+    args: PyarrowArgs,
+) -> Option<String> {
+    // The column is repeated in the output, so restrict this to plain columns.
+    let (column, literal) = match (expr_arena.get(left), expr_arena.get(right)) {
+        (AExpr::Column(_), AExpr::Literal(_)) => (left, right),
+        (AExpr::Literal(_), AExpr::Column(_)) => (right, left),
+        _ => return None,
+    };
+
+    let AExpr::Literal(lv) = expr_arena.get(literal) else {
+        unreachable!()
+    };
+
+    let eq = matches!(op, Operator::EqValidity);
+    let column = predicate_to_pa_inner(column, expr_arena, args)?;
+
+    Some(if lv.is_null() {
+        if eq {
+            format!("({column}).is_null()")
+        } else {
+            format!("~({column}).is_null()")
+        }
+    } else {
+        let literal = predicate_to_pa_inner(literal, expr_arena, args)?;
+
+        // A null column value is not equal to a non-null literal, whereas the
+        // plain comparison would evaluate to null.
+        if eq {
+            format!("(({column} == {literal}) & ~({column}).is_null())")
+        } else {
+            format!("(({column} != {literal}) | ({column}).is_null())")
+        }
+    })
 }
 
 fn binary_op_method(op: &Operator) -> Option<&'static str> {
