@@ -43,8 +43,6 @@ class DeltaDataset:
     use_pyarrow: bool
     pyarrow_options: dict[str, Any] | None
 
-    rechunk: bool | None
-
     #
     # PythonDatasetProvider interface functions
     #

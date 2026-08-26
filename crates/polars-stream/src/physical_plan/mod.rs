@@ -22,11 +22,12 @@ use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    CastColumnsPolicy, ColumnsUdf, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
+    CastColumnsPolicy, ColumnsUdf, ExtraColumnsPolicy, FileSinkOptions, MissingColumnsPolicy,
     PartitionedSinkOptionsIR, PredicateFileSkip, ScanSources, TableStatistics,
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
+use polars_plan::plans::options::JoinTypeOptionsIR;
 use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
 mod fmt;
@@ -400,6 +401,7 @@ pub enum PhysNodeKind {
         hive_parts: Option<HivePartitionsDf>,
         include_file_paths: Option<PlSmallStr>,
         cast_columns_policy: CastColumnsPolicy,
+        extra_columns_policy: ExtraColumnsPolicy,
         missing_columns_policy: MissingColumnsPolicy,
         forbid_extra_columns: Option<ForbidExtraColumns>,
 
@@ -517,10 +519,9 @@ pub enum PhysNodeKind {
     InMemoryJoin {
         input_left: PhysStream,
         input_right: PhysStream,
-        left_on: Vec<ExprIR>,
-        right_on: Vec<ExprIR>,
         args: JoinArgs,
-        options: Option<JoinTypeOptionsIR>,
+        /// Holds the match condition, including the join keys.
+        options: JoinTypeOptionsIR,
     },
 
     #[cfg(feature = "merge_sorted")]

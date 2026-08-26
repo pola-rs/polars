@@ -59,7 +59,6 @@ fn post_opt_callback(
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    duration_since_start: Option<std::time::Duration>,
 ) -> PolarsResult<()> {
     Python::attach(|py| {
         let nt = NodeTraverser::new(root, std::mem::take(lp_arena), std::mem::take(expr_arena));
@@ -70,7 +69,7 @@ fn post_opt_callback(
         // Pass the node visitor which allows the python callback to replace parts of the query plan.
         // Remove "cuda" or specify better once we have multiple post-opt callbacks.
         lambda
-            .call1(py, (nt, duration_since_start.map(|t| t.as_nanos() as u64)))
+            .call1(py, (nt,))
             .map_err(|e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e))?;
 
         // Unpack the arenas.
@@ -152,11 +151,11 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[cfg(feature = "csv")]
-    #[pyo3(signature = (source, sources, separator, has_header, ignore_errors, skip_rows, skip_lines, n_rows, cache, overwrite_dtype, overwrite_dtype_slice,
+    #[pyo3(signature = (source, sources, separator, has_header, ignore_errors, skip_rows, skip_lines, n_rows, overwrite_dtype, overwrite_dtype_slice,
         low_memory, comment_prefix, quote_char, null_values, empty_string_is_null,
         infer_schema_length, infer_schema_files, new_columns, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
-        cloud_options, credential_provider, include_file_paths, missing_columns
+        cloud_options, credential_provider, include_file_paths, extra_columns, missing_columns
     )
     )]
     fn new_from_csv(
@@ -168,7 +167,6 @@ impl PyLazyFrame {
         skip_rows: usize,
         skip_lines: usize,
         n_rows: Option<usize>,
-        cache: bool,
         overwrite_dtype: Option<Vec<(PyBackedStr, Wrap<DataType>)>>,
         overwrite_dtype_slice: Option<Vec<Wrap<DataType>>>,
         low_memory: bool,
@@ -194,6 +192,7 @@ impl PyLazyFrame {
         cloud_options: OptPyCloudOptions,
         credential_provider: Option<Py<PyAny>>,
         include_file_paths: Option<String>,
+        extra_columns: Wrap<ExtraColumnsPolicy>,
         missing_columns: Option<Wrap<MissingColumnsPolicy>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
@@ -254,7 +253,6 @@ impl PyLazyFrame {
             .with_skip_rows(skip_rows)
             .with_skip_lines(skip_lines)
             .with_n_rows(n_rows)
-            .with_cache(cache)
             .with_dtype_overwrite(overwrite_dtype.map(Arc::new))
             .with_dtype_overwrite_by_position(overwrite_dtype_slice.map(Arc::new))
             .with_schema(schema.map(|schema| Arc::new(schema.0)))
@@ -274,6 +272,7 @@ impl PyLazyFrame {
             .with_glob(glob)
             .with_raise_if_empty(raise_if_empty)
             .with_include_file_paths(include_file_paths.map(|x| x.into()))
+            .with_extra_columns_policy(extra_columns.0)
             .with_missing_columns_policy(missing_columns.map(|x| x.0));
 
         if let Some(new_columns) = new_columns {
@@ -587,25 +586,6 @@ impl PyLazyFrame {
         ldf.with_optimizations(optflags.inner.into_inner()).into()
     }
 
-    #[pyo3(signature = (lambda_post_opt))]
-    fn profile(
-        &self,
-        py: Python<'_>,
-        lambda_post_opt: Option<Py<PyAny>>,
-    ) -> PyResult<(PyDataFrame, PyDataFrame)> {
-        let (df, time_df) = py.enter_polars(|| {
-            let ldf = self.ldf.read().clone();
-            if let Some(lambda) = lambda_post_opt {
-                ldf._profile_post_opt(|root, lp_arena, expr_arena, duration_since_start| {
-                    post_opt_callback(&lambda, root, lp_arena, expr_arena, duration_since_start)
-                })
-            } else {
-                ldf.profile()
-            }
-        })?;
-        Ok((df.into(), time_df.into()))
-    }
-
     #[pyo3(signature = (engine, lambda_post_opt))]
     fn collect(
         &self,
@@ -616,8 +596,8 @@ impl PyLazyFrame {
         py.enter_polars_df(|| {
             let ldf = self.ldf.read().clone();
             if let Some(lambda) = lambda_post_opt {
-                ldf._collect_post_opt(|root, lp_arena, expr_arena, _| {
-                    post_opt_callback(&lambda, root, lp_arena, expr_arena, None)
+                ldf._collect_post_opt(|root, lp_arena, expr_arena| {
+                    post_opt_callback(&lambda, root, lp_arena, expr_arena)
                 })
             } else {
                 ldf.collect_with_engine(engine.0).map(|r| match r {
@@ -1009,14 +989,6 @@ impl PyLazyFrame {
         Ok(PyLazyGroupBy { lgb: Some(lazy_gb) })
     }
 
-    fn with_context(&self, contexts: Vec<Self>) -> Self {
-        let contexts = contexts
-            .into_iter()
-            .map(|ldf| ldf.ldf.into_inner())
-            .collect::<Vec<_>>();
-        self.ldf.read().clone().with_context(contexts).into()
-    }
-
     #[cfg(feature = "asof_join")]
     #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str, coalesce, allow_eq, check_sortedness))]
     fn join_asof(
@@ -1068,6 +1040,7 @@ impl PyLazyFrame {
             })))
             .suffix(suffix)
             .finish()
+            .map_err(PyPolarsErr::from)?
             .into())
     }
 
@@ -1118,10 +1091,18 @@ impl PyLazyFrame {
             .maintain_order(maintain_order.0)
             .build_side(build_side.0)
             .finish()
+            .map_err(PyPolarsErr::from)?
             .into())
     }
 
-    fn join_where(&self, other: Self, predicates: Vec<PyExpr>, suffix: String) -> PyResult<Self> {
+    #[pyo3(signature = (other, predicates, how, suffix))]
+    fn join_where(
+        &self,
+        other: Self,
+        predicates: Vec<PyExpr>,
+        how: Wrap<JoinType>,
+        suffix: String,
+    ) -> PyResult<Self> {
         let ldf = self.ldf.read().clone();
         let other = other.ldf.into_inner();
 
@@ -1130,6 +1111,7 @@ impl PyLazyFrame {
         Ok(ldf
             .join_builder()
             .with(other)
+            .how(how.0)
             .suffix(suffix)
             .join_where(predicates)
             .into())

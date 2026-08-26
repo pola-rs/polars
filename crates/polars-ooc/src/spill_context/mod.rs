@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock, Weak};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, Weak};
 
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::tick_counter::tick_counter;
 use rand::RngExt;
 use rand::rngs::ThreadRng;
 use thread_local::ThreadLocal;
@@ -21,45 +22,81 @@ fn new_context_id() -> u64 {
     CONTEXT_ID_CTR.fetch_add(1, Ordering::Relaxed)
 }
 
-#[derive(Default)]
-struct LocalSpillQueue {
-    tokens: VecDeque<(Weak<dyn DynSpillToken>, u32)>,
-    retain_amort: usize,
+pub struct RegisteredSpillToken {
+    token: Weak<dyn DynSpillToken>,
+    registration_id: u32,
+    timestamp: u64,
 }
 
-impl LocalSpillQueue {
-    pub fn push_back(&mut self, token: &Arc<dyn DynSpillToken>, id: u32) {
-        self.gc();
-        if token.current_registration_id() == id {
-            self.tokens.push_back((Arc::downgrade(token), id));
+impl RegisteredSpillToken {
+    fn new(token: &Arc<dyn DynSpillToken>, registration_id: u32) -> Self {
+        RegisteredSpillToken {
+            token: Arc::downgrade(token),
+            registration_id,
+            timestamp: tick_counter(),
         }
     }
 
-    pub fn push_front(&mut self, token: &Arc<dyn DynSpillToken>, id: u32) {
+    fn upgrade(&self) -> Option<(Arc<dyn DynSpillToken>, u32)> {
+        self.token
+            .upgrade()
+            .filter(|t| t.current_registration_id() == self.registration_id)
+            .map(|t| (t, self.registration_id))
+    }
+}
+
+#[derive(Default)]
+struct LocalStagingArea {
+    tokens: Vec<RegisteredSpillToken>,
+    retain_amort: usize,
+}
+
+impl LocalStagingArea {
+    pub fn push(&mut self, token: &Arc<dyn DynSpillToken>, id: u32) {
         self.gc();
-        if token.current_registration_id() == id {
-            self.tokens.push_front((Arc::downgrade(token), id));
+        self.tokens.push(RegisteredSpillToken::new(token, id));
+    }
+
+    pub fn drain_into(&mut self, target: &mut Vec<RegisteredSpillToken>) {
+        target.append(&mut self.tokens);
+        self.retain_amort = 0;
+    }
+
+    fn gc(&mut self) {
+        self.retain_amort += 2; // Grows twice as fast as push.
+        if self.retain_amort >= self.tokens.len() {
+            self.retain_amort = 0;
+            self.tokens.retain(|t| t.upgrade().is_some());
         }
+    }
+}
+
+#[derive(Default)]
+struct SpillQueue {
+    tokens: VecDeque<RegisteredSpillToken>,
+    retain_amort: usize,
+}
+
+impl SpillQueue {
+    pub fn push_back(&mut self, token: &Arc<dyn DynSpillToken>, id: u32) {
+        self.gc();
+        self.tokens.push_back(RegisteredSpillToken::new(token, id));
     }
 
     pub fn pop_front(&mut self) -> Option<(Arc<dyn DynSpillToken>, u32)> {
         loop {
-            let (weak, id) = self.tokens.pop_front()?;
-            if let Some(token) = weak.upgrade()
-                && token.current_registration_id() == id
-            {
-                return Some((token, id));
+            let front = self.tokens.pop_front()?;
+            if let Some(r) = front.upgrade() {
+                return Some(r);
             }
         }
     }
 
     pub fn pop_back(&mut self) -> Option<(Arc<dyn DynSpillToken>, u32)> {
         loop {
-            let (weak, id) = self.tokens.pop_back()?;
-            if let Some(token) = weak.upgrade()
-                && token.current_registration_id() == id
-            {
-                return Some((token, id));
+            let back = self.tokens.pop_back()?;
+            if let Some(r) = back.upgrade() {
+                return Some(r);
             }
         }
     }
@@ -67,11 +104,9 @@ impl LocalSpillQueue {
     pub fn pop_random(&mut self, rng: &mut ThreadRng) -> Option<(Arc<dyn DynSpillToken>, u32)> {
         while !self.tokens.is_empty() {
             let idx = rng.random_range(0..self.tokens.len());
-            let (weak, id) = self.tokens.swap_remove_back(idx).unwrap();
-            if let Some(token) = weak.upgrade()
-                && token.current_registration_id() == id
-            {
-                return Some((token, id));
+            let back = self.tokens.swap_remove_back(idx)?;
+            if let Some(r) = back.upgrade() {
+                return Some(r);
             }
         }
         None
@@ -81,11 +116,7 @@ impl LocalSpillQueue {
         self.retain_amort += 2; // Grows twice as fast as push.
         if self.retain_amort >= self.tokens.len() {
             self.retain_amort = 0;
-            self.tokens.retain(|(token, id)| {
-                token
-                    .upgrade()
-                    .is_some_and(|t| t.current_registration_id() == *id)
-            });
+            self.tokens.retain(|t| t.upgrade().is_some());
         }
     }
 }
@@ -108,8 +139,16 @@ impl SpillContextPolicy {
     }
 }
 
+pub(crate) enum ReinsertReason {
+    Unspill,
+    Unpin,
+    SpillCancelled,
+}
+
 pub(crate) struct SpillContextInner {
-    local: ThreadLocal<RwLock<LocalSpillQueue>>,
+    staging: ThreadLocal<Mutex<LocalStagingArea>>,
+    staging_empty: AtomicBool,
+    spill_queue: Mutex<SpillQueue>,
     stats: Arc<SpillContextStatistics>,
     policy: AtomicU8,
     refcount: AtomicU64,
@@ -120,7 +159,9 @@ impl SpillContextInner {
     fn new(name: PlSmallStr, policy: SpillContextPolicy) -> Self {
         let ctx_id = new_context_id();
         Self {
-            local: ThreadLocal::default(),
+            staging: ThreadLocal::default(),
+            staging_empty: AtomicBool::new(true),
+            spill_queue: Mutex::default(),
             stats: Arc::new(SpillContextStatistics::new(name)),
             policy: AtomicU8::new(policy as u8),
             refcount: AtomicU64::new(0),
@@ -128,57 +169,93 @@ impl SpillContextInner {
         }
     }
 
+    // We need forced locking to make reset not leave orphan spillframes.
+    fn drain_staging(&self, queue: &mut SpillQueue, force_lock: bool) {
+        if !force_lock
+            && (self.staging_empty.load(Ordering::Relaxed)
+                || self.staging_empty.swap(true, Ordering::AcqRel))
+        {
+            return;
+        }
+
+        let mut staged_tokens = Vec::new();
+        for local in self.staging.iter() {
+            local.lock().unwrap().drain_into(&mut staged_tokens);
+        }
+
+        match self.policy() {
+            SpillContextPolicy::MostRecent | SpillContextPolicy::LeastRecent => {
+                staged_tokens.sort_by_key(|t| t.timestamp)
+            },
+            SpillContextPolicy::Random => {},
+        }
+
+        for token in staged_tokens {
+            if let Some(t) = token.token.upgrade() {
+                queue.push_back(&t, token.registration_id);
+            }
+        }
+    }
+
     fn reset(&self, name: PlSmallStr, policy: SpillContextPolicy) {
         let ctx_id = new_context_id();
         self.context_id.store(ctx_id, Ordering::Relaxed);
         self.policy.store(policy as u8, Ordering::Relaxed);
-        for local_lock in self.local.iter() {
-            let mut local = local_lock.write().unwrap();
-            while let Some(token) = local.pop_back() {
-                token.0.unregister();
-            }
-        }
         self.stats.reset(name);
+
+        let mut queue = self.spill_queue.lock().unwrap();
+        self.drain_staging(&mut queue, true);
+        while let Some(t) = queue.pop_back() {
+            t.0.unregister();
+        }
     }
 
-    pub fn context_id(&self) -> u64 {
+    fn context_id(&self) -> u64 {
         self.context_id.load(Ordering::Relaxed)
     }
 
-    pub fn policy(&self) -> SpillContextPolicy {
+    fn policy(&self) -> SpillContextPolicy {
         SpillContextPolicy::from_u8(self.policy.load(Ordering::Relaxed))
     }
 
-    pub fn stats(&self) -> &Arc<SpillContextStatistics> {
+    pub(crate) fn stats(&self) -> &Arc<SpillContextStatistics> {
         &self.stats
     }
 
-    pub fn pop(&self) -> Vec<(Arc<dyn DynSpillToken>, u32)> {
-        let mut out = Vec::new();
+    pub(crate) fn drain_while<F: FnMut(Arc<dyn DynSpillToken>, u32) -> bool>(&self, mut f: F) {
         let mut rng = rand::rng();
         let policy = self.policy();
-        for local_lock in self.local.iter() {
-            if let Ok(mut local) = local_lock.try_write() {
-                out.extend(match policy {
-                    SpillContextPolicy::MostRecent => local.pop_back(),
-                    SpillContextPolicy::LeastRecent => local.pop_front(),
-                    SpillContextPolicy::Random => local.pop_random(&mut rng),
-                });
+
+        let mut queue = self.spill_queue.lock().unwrap();
+        self.drain_staging(&mut queue, false);
+
+        while let Some((cand, reg_id)) = match policy {
+            SpillContextPolicy::MostRecent => queue.pop_back(),
+            SpillContextPolicy::LeastRecent => queue.pop_front(),
+            SpillContextPolicy::Random => queue.pop_random(&mut rng),
+        } {
+            if !f(cand, reg_id) {
+                break;
             }
         }
-        out
     }
 
-    pub fn reinsert(&self, token: &Arc<dyn DynSpillToken>, reg_id: u32, ctx_id: u64) {
-        let mut local = self.local.get_or_default().write().unwrap();
+    pub(crate) fn reinsert(
+        &self,
+        token: &Arc<dyn DynSpillToken>,
+        reg_id: u32,
+        ctx_id: u64,
+        _reason: ReinsertReason,
+    ) {
+        // TODO: use reason to place token in appropriate spot.
+        let mut local = self.staging.get_or_default().lock().unwrap();
         if ctx_id != self.context_id.load(Ordering::Relaxed) {
             return;
         }
+        local.push(token, reg_id);
 
-        match self.policy() {
-            SpillContextPolicy::MostRecent => local.push_front(token, reg_id),
-            SpillContextPolicy::LeastRecent => local.push_back(token, reg_id),
-            SpillContextPolicy::Random => local.push_back(token, reg_id),
+        if self.staging_empty.load(Ordering::Relaxed) {
+            self.staging_empty.swap(false, Ordering::AcqRel);
         }
     }
 }
@@ -210,6 +287,24 @@ impl StrongSpillContext {
 
     pub fn downgrade(&self) -> WeakSpillContext {
         WeakSpillContext(self.0, self.0.context_id())
+    }
+
+    fn register_no_spill_check<T, S>(&self, token: &T)
+    where
+        T: AsRef<SpillToken<S>>,
+        S: Spillable,
+    {
+        let dyn_arc = token.as_ref().upcast();
+        let reg_id = dyn_arc.register(self.downgrade(), SpillContextParam(()));
+
+        {
+            let mut local = self.0.staging.get_or_default().lock().unwrap();
+            local.push(&dyn_arc, reg_id);
+        }
+
+        if self.0.staging_empty.load(Ordering::Relaxed) {
+            self.0.staging_empty.swap(false, Ordering::AcqRel);
+        }
     }
 }
 
@@ -271,9 +366,12 @@ impl WeakSpillContext {
         S: Spillable,
     {
         let dyn_arc = token.as_ref().upcast();
-        let mut local = self.0.local.get_or_default().write().unwrap();
+        let mut local = self.0.staging.get_or_default().lock().unwrap();
         if self.0.context_id() == self.1 {
-            local.push_back(&dyn_arc, dyn_arc.register(self.clone(), param));
+            local.push(&dyn_arc, dyn_arc.register(self.clone(), param));
+            if self.0.staging_empty.load(Ordering::Relaxed) {
+                self.0.staging_empty.swap(false, Ordering::AcqRel);
+            }
         }
     }
 }
@@ -316,12 +414,7 @@ impl ParameterFreeSpillContext for MostRecentSpillContext {
         T: AsRef<SpillToken<S>>,
         S: Spillable,
     {
-        let dyn_arc = token.as_ref().upcast();
-        let mut local = self.0.0.local.get_or_default().write().unwrap();
-        local.push_back(
-            &dyn_arc,
-            dyn_arc.register(self.0.downgrade(), SpillContextParam(())),
-        );
+        self.0.register_no_spill_check(token);
     }
 }
 
@@ -353,12 +446,7 @@ impl ParameterFreeSpillContext for LeastRecentSpillContext {
         T: AsRef<SpillToken<S>>,
         S: Spillable,
     {
-        let dyn_arc = token.as_ref().upcast();
-        let mut local = self.0.0.local.get_or_default().write().unwrap();
-        local.push_back(
-            &dyn_arc,
-            dyn_arc.register(self.0.downgrade(), SpillContextParam(())),
-        );
+        self.0.register_no_spill_check(token);
     }
 }
 
@@ -386,12 +474,7 @@ impl ParameterFreeSpillContext for RandomSpillContext {
         T: AsRef<SpillToken<S>>,
         S: Spillable,
     {
-        let dyn_arc = token.as_ref().upcast();
-        let mut local = self.0.0.local.get_or_default().write().unwrap();
-        local.push_back(
-            &dyn_arc,
-            dyn_arc.register(self.0.downgrade(), SpillContextParam(())),
-        );
+        self.0.register_no_spill_check(token);
     }
 }
 

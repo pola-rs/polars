@@ -254,24 +254,18 @@ impl IR {
                 input_left: _,
                 input_right: _,
                 schema: _,
-                left_on: l_left_on,
-                right_on: l_right_on,
                 options: l_options,
             } => {
                 let IR::Join {
                     input_left: _,
                     input_right: _,
                     schema: _,
-                    left_on: r_left_on,
-                    right_on: r_right_on,
                     options: r_options,
                 } = other
                 else {
                     return false;
                 };
-                expr_iter_eq!(l_left_on, r_left_on)
-                    && expr_iter_eq!(l_right_on, r_right_on)
-                    && l_options.shallow_eq(r_options, expression_cmp)
+                l_options.shallow_eq(r_options, expression_cmp)
             },
             IR::Gather {
                 input: _,
@@ -358,15 +352,6 @@ impl IR {
                     return false;
                 };
                 l_options == r_options
-            },
-            IR::ExtContext {
-                input: _,
-                contexts: _,
-                schema: _,
-            } => {
-                // `input` and `contexts` are both traversal inputs (see `IR::inputs`), so they
-                // are compared via child ids. `schema` is derivative. Nothing left to compare.
-                true
             },
             IR::Sink {
                 input: _,

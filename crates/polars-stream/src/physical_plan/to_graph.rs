@@ -13,9 +13,10 @@ use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_mem_engine::scan_predicate::create_scan_predicate;
 use polars_plan::dsl::{
-    FileSinkOptions, JoinOptionsIR, PartitionStrategyIR, PartitionedSinkOptionsIR, ScanSources,
+    FileSinkOptions, PartitionStrategyIR, PartitionedSinkOptionsIR, ScanSources,
 };
 use polars_plan::plans::expr_ir::ExprIR;
+use polars_plan::plans::options::JoinOptionsIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, IR, IRAggExpr};
 use polars_plan::prelude::FunctionFlags;
 use polars_utils::arena::{Arena, Node};
@@ -848,6 +849,7 @@ fn to_graph_rec<'a>(
             predicate,
             predicate_file_skip_applied,
             hive_parts,
+            extra_columns_policy,
             missing_columns_policy,
             cast_columns_policy,
             include_file_paths,
@@ -889,6 +891,7 @@ fn to_graph_rec<'a>(
             let pre_slice = pre_slice.clone();
             let hive_parts = hive_parts.map(Arc::new);
             let include_file_paths = include_file_paths.clone();
+            let extra_columns_policy = *extra_columns_policy;
             let missing_columns_policy = *missing_columns_policy;
             let forbid_extra_columns = forbid_extra_columns.clone();
             let cast_columns_policy = cast_columns_policy.clone();
@@ -911,6 +914,7 @@ fn to_graph_rec<'a>(
                     predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
+                    extra_columns_policy,
                     missing_columns_policy,
                     forbid_extra_columns,
                     cast_columns_policy,
@@ -1088,8 +1092,6 @@ fn to_graph_rec<'a>(
         InMemoryJoin {
             input_left,
             input_right,
-            left_on,
-            right_on,
             args,
             options,
         } => {
@@ -1109,8 +1111,6 @@ fn to_graph_rec<'a>(
                 input_left: left_node,
                 input_right: right_node,
                 schema: node.output_schema(0).clone(),
-                left_on: left_on.clone(),
-                right_on: right_on.clone(),
                 options: Arc::new(JoinOptionsIR {
                     allow_parallel: true,
                     force_parallel: false,
@@ -1564,7 +1564,7 @@ fn to_graph_rec<'a>(
                 },
             };
 
-            use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy};
+            use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
 
             use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
             use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
@@ -1598,6 +1598,7 @@ fn to_graph_rec<'a>(
             let predicate_file_skip_applied = None;
             let hive_parts = None;
             let include_file_paths = None;
+            let extra_columns_policy = ExtraColumnsPolicy::Raise;
             let missing_columns_policy = MissingColumnsPolicy::Raise;
             let forbid_extra_columns = None;
             let cast_columns_policy = CastColumnsPolicy::ERROR_ON_MISMATCH;
@@ -1619,6 +1620,7 @@ fn to_graph_rec<'a>(
                     predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
+                    extra_columns_policy,
                     missing_columns_policy,
                     forbid_extra_columns,
                     cast_columns_policy,

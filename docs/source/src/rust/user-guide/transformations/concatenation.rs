@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let df_vertical_concat =
         concat([df_v1.lazy(), df_v2.lazy()], UnionArgs::default())?.collect()?;
-    println!("{}", &df_vertical_concat);
+    println!("{}", df_vertical_concat);
     // --8<-- [end:vertical]
 
     // --8<-- [start:horizontal]
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let df_horizontal_concat =
         polars::functions::concat_df_horizontal(&[df_h1, df_h2], true, false, false)?;
-    println!("{}", &df_horizontal_concat);
+    println!("{}", df_horizontal_concat);
     // --8<-- [end:horizontal]
     //
     // --8<-- [start:horizontal_different_lengths]
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let df_horizontal_concat =
         polars::functions::concat_df_horizontal(&[df_h1, df_h2], true, false, false)?;
-    println!("{}", &df_horizontal_concat);
+    println!("{}", df_horizontal_concat);
     // --8<-- [end:horizontal_different_lengths]
 
     // --8<-- [start:cross]
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "a"=> &[2],
             "d"=> &[4],)?;
     let df_diagonal_concat = polars::functions::concat_df_diagonal(&[df_d1, df_d2])?;
-    println!("{}", &df_diagonal_concat);
+    println!("{}", df_diagonal_concat);
     // --8<-- [end:cross]
     Ok(())
 }

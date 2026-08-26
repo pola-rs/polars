@@ -15,6 +15,7 @@ import polars as pl
 import polars.selectors as cs
 from polars import lit, when
 from polars.exceptions import (
+    AttributeRemovedError,
     InvalidOperationError,
     PerformanceWarning,
     PolarsInefficientMapWarning,
@@ -375,15 +376,6 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
     assert len(res.out) > 0
 
 
-def test_fetch(fruits_cars: pl.DataFrame) -> None:
-    with pytest.warns(
-        DeprecationWarning,
-        match=r"use `LazyFrame\.collect` instead",
-    ):
-        res = fruits_cars.lazy().select("*").fetch(2)
-    assert_frame_equal(res, res[:2])
-
-
 def test_fold_filter() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3], "b": [0, 1, 2]})
 
@@ -454,7 +446,7 @@ def test_head_group_by() -> None:
         ldf.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(cs.all().exclude(keys), empty_as_null=False)
+        .explode(cs.all().exclude(keys))
     )
 
     assert out.collect().rows() == [
@@ -1242,8 +1234,12 @@ def test_lazy_cache_hit(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
     expected = pl.LazyFrame({"a": [0, 0, 0], "c": ["x", "y", "z"]})
     assert_frame_equal(result, expected, check_row_order=False)
 
-    (_, err) = capfd.readouterr()
-    assert "CACHE HIT" in err
+    capture = capfd.readouterr().err
+
+    assert {
+        "CACHE HIT" in capture,
+        re.search(r"multiplexer.*[\w+] [\w+, \w+]", capture) is not None,
+    } == {True, False}
 
 
 @pytest.mark.may_fail_cloud  # reason: impure udf
@@ -1845,3 +1841,31 @@ def test_execute() -> None:
     assert pl.LazyFrame({"a": [1, 2, 3, 4]}).select(pl.col.a).execute().lazy().select(
         sum=pl.col.a.sum(), count=pl.len()
     ).collect().to_dict(as_series=False) == {"sum": [10], "count": [4]}
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        ("approx_n_unique", "use `select(pl.all().approx_n_unique())` instead."),
+        ("fetch", "use `collect` instead, in conjunction with a call to `head`."),
+        (
+            "melt",
+            "use `LazyFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+        ),
+        (
+            "profile",
+            "It was designed for the in-memory engine and would give misleading ",
+        ),
+        (
+            "with_context",
+            "use `pl.concat(..., how='horizontal')` instead.",
+        ),
+        (
+            "with_row_count",
+            "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
+        ),
+    ],
+)
+def test_removed_methods(name: str, match: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(pl.LazyFrame(), name)

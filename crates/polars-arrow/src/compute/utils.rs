@@ -99,7 +99,7 @@ pub fn combine_validities_and_many<B: Borrow<Bitmap>>(bitmaps: &[Option<B>]) -> 
                 push_bitchunk(&mut buffer, out[1]);
             }
             let bitmap = Bitmap::from_u8_vec(buffer, bitmaps[0].len());
-            if bitmap.unset_bits() == bitmap.len() {
+            if bitmap.unset_bits() == 0 {
                 None
             } else {
                 Some(bitmap)
