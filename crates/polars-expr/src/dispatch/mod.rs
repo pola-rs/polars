@@ -177,8 +177,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             IRPowFunction::Cbrt => map!(pow::cbrt),
         },
         #[cfg(feature = "row_hash")]
-        F::Hash(k0, k1, k2, k3) => {
-            map!(misc::row_hash, k0, k1, k2, k3)
+        F::Hash(seed) => {
+            map!(misc::row_hash, seed)
         },
         #[cfg(feature = "arg_where")]
         F::ArgWhere => {
@@ -273,7 +273,6 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         } => {
             map_as_slice!(misc::hist, bin_count, include_category, include_breakpoint)
         },
-        F::Rechunk => map!(misc::rechunk),
         F::ShiftAndFill => {
             map_as_slice!(shift_and_fill::shift_and_fill)
         },

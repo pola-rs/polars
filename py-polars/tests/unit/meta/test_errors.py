@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import date, datetime, time, tzinfo
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -12,6 +13,8 @@ import pytest
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
 from polars.exceptions import (
+    ArgumentRemovedError,
+    AttributeRemovedError,
     ColumnNotFoundError,
     ComputeError,
     InvalidOperationError,
@@ -674,7 +677,7 @@ def test_no_panic_pandas_nat() -> None:
 
 def test_list_to_struct_invalid_type() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.DataFrame({"a": 1}).to_series().list.to_struct(fields=["a", "b"])
+        pl.DataFrame({"a": 1}).to_series().list.to_struct(["a", "b"])
 
 
 def test_raise_invalid_agg() -> None:
@@ -718,21 +721,14 @@ def test_raise_on_different_results_20104() -> None:
 
 
 @pytest.mark.parametrize("fill_value", [None, -1])
-def test_shift_with_null_deprecated_24105(fill_value: Any) -> None:
+def test_shift_with_null_raises(fill_value: Any) -> None:
     df = pl.DataFrame({"x": [1, 2, 3]})
-    df_shift = None
-    with pytest.deprecated_call(  # @2.0
-        match=r"shift value 'n' is null, which currently returns a column of null values. This will become an error in the future.",
+    with pytest.raises(
+        ComputeError, match=re.escape("shift value 'n' must not be null.")
     ):
-        df_shift = df.select(
+        df.select(
             pl.col.x.shift(pl.col.x.filter(pl.col.x > 3).first(), fill_value=fill_value)
         )
-    # Check that the result is a column of nulls, even if the fill_value is different
-    assert_frame_equal(
-        df_shift,
-        pl.DataFrame({"x": [None, None, None]}),
-        check_dtypes=False,
-    )
 
 
 def test_raies_on_mismatch_column_length_24500() -> None:
@@ -798,6 +794,20 @@ def test_dt_namespace_typo_suggests() -> None:
         pl.col("a").dt.houur()  # type: ignore[attr-defined]
 
 
+def test_series_dt_namespace_typo_suggests() -> None:
+    s = pl.Series([date(2022, 1, 1)])
+    with pytest.raises(AttributeError, match="Did you mean: 'hour'"):
+        s.dt.houur()  # type: ignore[attr-defined]
+
+
+def test_series_dt_namespace_removed_item() -> None:
+    s = pl.Series([date(2022, 1, 1)])
+    with pytest.raises(
+        AttributeRemovedError, match=r"use `dt\.replace_time_zone\(None\)` instead"
+    ):
+        s.dt.datetime()  # type: ignore[attr-defined]
+
+
 def test_list_namespace_typo_suggests() -> None:
     with pytest.raises(AttributeError, match="Did you mean: 'shift'"):
         pl.col("a").list.shiift()  # type: ignore[attr-defined]
@@ -815,3 +825,21 @@ def test_dtype_mismatch_names_column_and_dtypes() -> None:
         match=r"arithmetic on dtypes i64 and str is not allowed \(lhs: column 'a', rhs: column 'b'\)",
     ):
         df.select(pl.col("a") + pl.col("b"))
+
+
+def test_join_nulls_argument_removed() -> None:
+    df = pl.DataFrame({"a": [1, None]})
+    with pytest.raises(
+        ArgumentRemovedError,
+        match=re.escape(
+            "the argument 'join_nulls' for 'DataFrame.join' was deprecated in version 1.24 "
+            "and has been removed in version 2.0. It was renamed to 'nulls_equal'."
+        ),
+    ):
+        df.join(df, on="a", join_nulls=True)  # type: ignore[call-arg]
+
+
+def test_invalid_classmethod_error() -> None:
+    match = "'Series' object has no attribute 'nonexistent'"
+    with pytest.raises(AttributeError, match=re.escape(match)):
+        pl.Series.nonexistent()  # type: ignore[attr-defined]

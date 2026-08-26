@@ -380,9 +380,6 @@ impl<'a> TreeFmtNode<'a> {
                     wh(h, &format!("{function}")),
                     vec![self.lp_node(None, *input)],
                 ),
-                ExtContext { input, .. } => {
-                    ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
-                },
                 Sink { input, payload } => ND(
                     wh(
                         h,

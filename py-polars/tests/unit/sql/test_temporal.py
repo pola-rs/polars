@@ -215,7 +215,7 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
         ("dt::datetime = '1960-01-07 00:00'", [2]),
         ("dt::datetime = '1960-01-07 00:00:00'", [2]),
         ("dtm BETWEEN '2020-12-30 10:30:44' AND '2023-01-01 00:00'", [2]),
-        ("dt IN ('1960-01-07','2077-01-01','2222-02-22')", [1, 2]),
+        ("dt IN (DATE '1960-01-07', DATE '2077-01-01' , DATE '2222-02-22')", [1, 2]),
         (
             "dtm = '2024-01-07 01:02:03.123456000' OR dtm = '2020-12-30 10:30:45.987654'",
             [0, 2],
@@ -403,9 +403,9 @@ def test_temporal_typed_literals() -> None:
         """
         SELECT
           -- typed literals
-          DATE '2020-12-30' AS dt,
-          TIME '00:01:02' AS tm1,
-          TIME '23:59:59.123456' AS tm2,
+          DATE('2020-12-30') AS dt,
+          TIME('00:01:02') AS tm1,
+          TIME('23:59:59.123456') AS tm2,
           TIMESTAMP '1930-01-01 12:30:00' AS dtm1,
           TIMESTAMP '2077-04-27T23:45:30.123456' AS dtm2,
           -- arrays of typed literals

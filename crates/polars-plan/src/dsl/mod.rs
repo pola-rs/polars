@@ -211,11 +211,6 @@ impl Expr {
         self.map_binary(FunctionExpr::Quantile { method }, quantile)
     }
 
-    /// Get the group indexes of the group by operation.
-    pub fn agg_groups(self) -> Self {
-        AggExpr::AggGroups(Arc::new(self)).into()
-    }
-
     /// Explode the String/List column.
     pub fn explode(self, options: ExplodeOptions) -> Self {
         Expr::Explode {
@@ -237,11 +232,6 @@ impl Expr {
     /// Append expressions. This is done by adding the chunks of `other` to this [`Series`].
     pub fn append<E: Into<Expr>>(self, other: E, upcast: bool) -> Self {
         self.map_binary(FunctionExpr::Append { upcast }, other.into())
-    }
-
-    /// Collect all chunks into a single chunk before continuing.
-    pub fn rechunk(self) -> Self {
-        self.map_unary(FunctionExpr::Rechunk)
     }
 
     /// Get the first `n` elements of the Expr result.
@@ -1624,8 +1614,8 @@ impl Expr {
 
     #[cfg(feature = "row_hash")]
     /// Compute the hash of every element.
-    pub fn hash(self, k0: u64, k1: u64, k2: u64, k3: u64) -> Expr {
-        self.map_unary(FunctionExpr::Hash(k0, k1, k2, k3))
+    pub fn hash(self, seed: u64) -> Expr {
+        self.map_unary(FunctionExpr::Hash(seed))
     }
 
     pub fn to_physical(self) -> Expr {

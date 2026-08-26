@@ -387,8 +387,15 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .context(failed_here!(select))?;
 
             if exprs.is_empty() {
-                ctxt.lp_arena.replace(input, utils::empty_df());
-                return Ok(input);
+                return Ok(if options.maintain_dataframe_height {
+                    ctxt.lp_arena.add(IR::SimpleProjection {
+                        input,
+                        columns: Default::default(),
+                    })
+                } else {
+                    ctxt.lp_arena.replace(input, utils::empty_df());
+                    input
+                });
             }
 
             let eirs = to_expr_irs(
@@ -689,20 +696,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             exprs,
             options,
         } => {
-            // The (0, 0) DataFrame is an exception - with_columns on it acts like select.
-            if let DslPlan::DataFrameScan { df, schema: _ } = input.as_ref() {
-                if df.shape() == (0, 0) {
-                    return to_alp_impl(
-                        DslPlan::Select {
-                            expr: exprs,
-                            input,
-                            options,
-                        },
-                        ctxt,
-                    );
-                }
-            }
-
             let input = to_alp_impl(owned(input), ctxt).context(failed_here!(with_columns))?;
             let (exprs, schema) =
                 resolve_with_columns(exprs, input, ctxt.lp_arena, ctxt.expr_arena, ctxt.opt_flags)
@@ -845,6 +838,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     run_parallel: true,
                     duplicate_check: false,
                     should_broadcast: true,
+                    maintain_dataframe_height: false,
                 },
             };
             return run_conversion(lp, ctxt, "match_to_schema");
@@ -1070,6 +1064,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             run_parallel: false,
                             duplicate_check: false,
                             should_broadcast: true,
+                            maintain_dataframe_height: false,
                         },
                     });
                     (
@@ -1311,6 +1306,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             run_parallel: false,
                             duplicate_check: false,
                             should_broadcast: false,
+                            maintain_dataframe_height: false,
                         },
                     }
                 },
@@ -1318,30 +1314,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let function = function.into_function_ir(&input_schema)?;
                     IR::MapFunction { input, function }
                 },
-            }
-        },
-        DslPlan::ExtContext { input, contexts } => {
-            let input = to_alp_impl(owned(input), ctxt).context(failed_here!(with_context))?;
-            let contexts = contexts
-                .into_iter()
-                .map(|lp| to_alp_impl(lp, ctxt))
-                .collect::<PolarsResult<Vec<_>>>()
-                .context(failed_here!(with_context))?;
-
-            let mut schema = (**ctxt.lp_arena.get(input).schema(ctxt.lp_arena)).clone();
-            for input in &contexts {
-                let other_schema = ctxt.lp_arena.get(*input).schema(ctxt.lp_arena);
-                for fld in other_schema.iter_fields() {
-                    if schema.get(fld.name()).is_none() {
-                        schema.with_column(fld.name, fld.dtype);
-                    }
-                }
-            }
-
-            IR::ExtContext {
-                input,
-                contexts,
-                schema: Arc::new(schema),
             }
         },
         DslPlan::Sink { input, payload } => {
