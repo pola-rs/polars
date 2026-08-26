@@ -141,6 +141,10 @@ mod kll {
     struct Level {
         offset: usize,
         size: usize,
+        /// Number of compactions performed on this compactor.
+        compactions: u64,
+        /// Parity promoted by the previous compaction, see `compact_level`.
+        coin: bool,
     }
 
     #[derive(Debug, Clone)]
@@ -179,7 +183,12 @@ mod kll {
             let k = compute_k(error);
             let state = IngestingState {
                 items: Vec::new(),
-                levels: vec![Level { offset: 0, size: 0 }],
+                levels: vec![Level {
+                    offset: 0,
+                    size: 0,
+                    compactions: 0,
+                    coin: false,
+                }],
                 k,
                 consumed_items: 0,
                 max_size: k,
@@ -264,18 +273,31 @@ mod kll {
         }
 
         fn add_new_compactor(&mut self) {
-            self.levels.push(Level { offset: 0, size: 0 });
+            self.levels.push(Level {
+                offset: 0,
+                size: 0,
+                compactions: 0,
+                coin: false,
+            });
             self.max_size = (0..self.levels.len())
                 .map(|level| compactor_threshold(self.k, self.levels.len() - 1 - level))
                 .sum();
         }
 
         fn compact_level(&mut self, level: usize) {
-            let rand: u8 = self.rng.random();
-            let coin1 = rand & 0x1 != 0;
-            let coin2 = rand & 0x2 != 0;
-
             let mut compact_level = self.levels[level];
+
+            let coin1: bool = self.rng.random();
+            // Only draw a fresh promotion parity every other compaction, and
+            // take the opposite one in between. Consecutive compactions then
+            // promote opposite parities, so their errors cancel pairwise.
+            compact_level.coin = match compact_level.compactions % 2 == 1 {
+                true => !compact_level.coin,
+                false => self.rng.random(),
+            };
+            compact_level.compactions += 1;
+            let coin2 = compact_level.coin;
+
             let mut next_level = self.levels[level + 1];
             let mut compact_start = compact_level.offset;
             let mut compact_end = compact_start + compact_level.size;
@@ -457,6 +479,8 @@ mod req {
         offset: usize,
         size: usize,
         compaction_schedule: u64,
+        /// Parity promoted by the previous compaction, see `compact_level_once`.
+        coin: bool,
     }
 
     #[derive(Debug, Clone)]
@@ -507,6 +531,7 @@ mod req {
                     offset: 0,
                     size: 0,
                     compaction_schedule: 0,
+                    coin: false,
                 }],
                 hra,
                 n,
@@ -594,6 +619,7 @@ mod req {
                 offset: 0,
                 size: 0,
                 compaction_schedule: 0,
+                coin: false,
             });
         }
 
@@ -618,8 +644,14 @@ mod req {
             debug_assert!(l_c <= self.b / 2);
             debug_assert!(l_c % 2 == 0);
 
-            let rand: u8 = self.rng.random();
-            let coin = rand & 0x1 != 0;
+            // Only draw a fresh promotion parity every other compaction, and
+            // take the opposite one in between. Consecutive compactions then
+            // promote opposite parities, so their errors cancel pairwise.
+            let coin = match self.levels[level].compaction_schedule % 2 == 1 {
+                true => !self.levels[level].coin,
+                false => self.rng.random(),
+            };
+            self.levels[level].coin = coin;
 
             let compactor =
                 &mut self.items[self.levels[level].offset..self.levels[level].offset + self.b];
