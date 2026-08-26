@@ -278,11 +278,7 @@ class QueryOptFlags:
 
     @property
     def join_order(self) -> bool:
-        """Reorder runs of inner equi-joins by estimated cardinality.
-
-        Coalescing joins are only reordered when both sides of every key name the
-        same column, since coalescing keeps the left name.
-        """
+        """Reorder runs of inner equi-joins by estimated cardinality."""
         return self._pyoptflags.join_order
 
     @join_order.setter

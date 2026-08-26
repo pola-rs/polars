@@ -55,15 +55,7 @@ bitflags! {
         const PARTITION_HIVE = 1 << 17;
         /// Observe this query with the registered observer.
         const QUERY_MONITORING = 1 << 18;
-        /// Reorder runs of inner equi-joins by estimated cardinality, so a selective
-        /// relation is joined early instead of being carried through unrelated joins
-        /// at full width.
-        ///
-        /// This estimates rather than rewrites, so it can pick a worse plan when the
-        /// estimates are poor.
-        ///
-        /// Coalescing joins are only reordered when both sides of every key name the
-        /// same column, since coalescing keeps the left name.
+        /// Try to reorder joins.
         const JOIN_ORDER = 1 << 19;
     }
 }
