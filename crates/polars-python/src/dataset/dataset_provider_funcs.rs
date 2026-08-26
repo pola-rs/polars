@@ -10,7 +10,7 @@ use pyo3::call::PyCallArgs;
 use pyo3::conversion::FromPyObject;
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods};
+use pyo3::types::{PyAnyMethods, PyBytes, PyDict, PyList, PyListMethods};
 use pyo3::{Py, PyAny, PyResult, Python, intern};
 
 use crate::interned;
@@ -86,6 +86,7 @@ pub fn schema(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn to_dataset_scan(
     dataset_object: &PythonObject,
     existing_resolved_version_key: Option<&str>,
@@ -93,6 +94,7 @@ pub fn to_dataset_scan(
     projection: Option<&[PlSmallStr]>,
     filter_columns: Option<&[PlSmallStr]>,
     pyarrow_predicate: Option<&str>,
+    serialized_predicate: Option<&[u8]>,
     py_scan_resolve_threadpool: &PyScanResolveThreadPool,
 ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
     Python::attach(|py| {
@@ -131,14 +133,24 @@ pub fn to_dataset_scan(
             kwargs.set_item(intern!(py, "pyarrow_predicate"), pyarrow_predicate)?;
         }
 
-        let Some((scan, version)): Option<(Py<PyAny>, Wrap<PlSmallStr>)> = py_spawn_call(
-            py,
-            &dataset_object.getattr(py, intern!(py, "to_dataset_scan"))?,
-            (),
-            Some(&kwargs),
-            py_scan_resolve_threadpool,
-        )?
-        .extract(py)?
+        let function = dataset_object.getattr(py, intern!(py, "to_dataset_scan"))?;
+
+        // For a dataset that lowers filters into its own language rather than
+        // the PyArrow subset. Only passed to a provider that asks for it: an
+        // unexpected keyword would break providers written against an older
+        // Polars.
+        if let Some(serialized_predicate) = serialized_predicate
+            && accepts_keyword(py, &function, "serialized_predicate")
+        {
+            kwargs.set_item(
+                intern!(py, "serialized_predicate"),
+                PyBytes::new(py, serialized_predicate),
+            )?;
+        }
+
+        let Some((scan, version)): Option<(Py<PyAny>, Wrap<PlSmallStr>)> =
+            py_spawn_call(py, &function, (), Some(&kwargs), py_scan_resolve_threadpool)?
+                .extract(py)?
         else {
             return Ok(None);
         };
@@ -151,6 +163,35 @@ pub fn to_dataset_scan(
 
         Ok(Some((lf.logical_plan, version.0)))
     })
+}
+
+/// Whether `function` would accept `keyword`, either by name or via `**kwargs`.
+///
+/// A callable `inspect` cannot describe is treated as not accepting it.
+fn accepts_keyword(py: Python<'_>, function: &Py<PyAny>, keyword: &str) -> bool {
+    (|| {
+        let inspect = py.import(intern!(py, "inspect"))?;
+        let parameters = inspect
+            .call_method1(intern!(py, "signature"), (function,))?
+            .getattr(intern!(py, "parameters"))?;
+
+        if parameters.contains(keyword)? {
+            return PyResult::Ok(true);
+        }
+
+        let var_keyword = inspect
+            .getattr(intern!(py, "Parameter"))?
+            .getattr(intern!(py, "VAR_KEYWORD"))?;
+
+        for parameter in parameters.call_method0(intern!(py, "values"))?.try_iter()? {
+            if parameter?.getattr(intern!(py, "kind"))?.eq(&var_keyword)? {
+                return PyResult::Ok(true);
+            }
+        }
+
+        PyResult::Ok(false)
+    })()
+    .unwrap_or(false)
 }
 
 fn py_spawn_call<'a>(

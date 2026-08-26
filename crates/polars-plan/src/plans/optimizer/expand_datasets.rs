@@ -141,6 +141,20 @@ pub(super) fn expand_datasets(
                                 None
                             };
 
+                            // For a dataset that lowers filters into its own
+                            // language rather than the PyArrow subset. Gated like
+                            // `pyarrow_predicate`: with a row index or a slice, a
+                            // source acting on the predicate would number or
+                            // truncate the wrong rows.
+                            let serialized_predicate: Option<Vec<u8>> = if !unified_scan_args
+                                .has_row_index_or_slice()
+                                && let Some(predicate) = &predicate
+                            {
+                                serialize_scan_predicate(predicate, expr_arena)
+                            } else {
+                                None
+                            };
+
                             let ir = storage.take(key);
 
                             assert!(matches!(ir, IR::Scan { .. }));
@@ -160,6 +174,7 @@ pub(super) fn expand_datasets(
                                         live_filter_columns,
                                         row_index_in_live_filter,
                                         pyarrow_predicate,
+                                        serialized_predicate,
                                         py_scan_resolve_threadpool.as_ref(),
                                     ),
                                 )
@@ -202,7 +217,29 @@ pub(super) fn expand_datasets(
     Ok(())
 }
 
+/// Best effort: a predicate that cannot be serialized is one the provider could
+/// not have used, and the engine applies it either way.
 #[cfg(feature = "python")]
+fn serialize_scan_predicate(
+    predicate: &crate::plans::ExprIR,
+    expr_arena: &Arena<AExpr>,
+) -> Option<Vec<u8>> {
+    #[cfg(feature = "serde")]
+    {
+        crate::plans::python::predicate::serialize(&predicate.to_expr(expr_arena))
+            .ok()
+            .flatten()
+    }
+
+    #[cfg(not(feature = "serde"))]
+    {
+        let _ = (predicate, expr_arena);
+        None
+    }
+}
+
+#[cfg(feature = "python")]
+#[allow(clippy::too_many_arguments)]
 fn expand_python_dataset(
     mut scan_ir: IR,
     projection: Option<Arc<[PlSmallStr]>>,
@@ -210,6 +247,7 @@ fn expand_python_dataset(
     live_filter_columns: Option<Arc<[PlSmallStr]>>,
     row_index_in_live_filter: bool,
     pyarrow_predicate: Option<String>,
+    serialized_predicate: Option<Vec<u8>>,
     py_scan_resolve_threadpool: &PyScanResolveThreadPool,
 ) -> PolarsResult<IR> {
     let IR::Scan {
@@ -260,14 +298,19 @@ fn expand_python_dataset(
                 projection: cached_projection,
                 live_filter_columns: cached_live_filter_columns,
                 pyarrow_predicate: cached_pyarrow_predicate,
+                serialized_predicate: cached_serialized_predicate,
                 expanded_dsl: _,
                 python_scan: _,
             } = resolved;
 
+            // Two predicates over the same columns can both lower to no PyArrow
+            // expression, so the serialized form has to be part of the key for a
+            // provider that reads it.
             (&limit == cached_limit
                 && &projection == cached_projection
                 && &live_filter_columns == cached_live_filter_columns
-                && &pyarrow_predicate == cached_pyarrow_predicate)
+                && &pyarrow_predicate == cached_pyarrow_predicate
+                && &serialized_predicate == cached_serialized_predicate)
                 .then_some(version.as_str())
         },
 
@@ -280,6 +323,7 @@ fn expand_python_dataset(
         projection.as_deref(),
         live_filter_columns.as_deref(),
         pyarrow_predicate.as_deref(),
+        serialized_predicate.as_deref(),
         py_scan_resolve_threadpool,
     )? {
         *guard = Some(ExpandedDataset {
@@ -288,6 +332,7 @@ fn expand_python_dataset(
             projection,
             live_filter_columns,
             pyarrow_predicate,
+            serialized_predicate,
             expanded_dsl,
             python_scan: None,
         })
@@ -299,6 +344,7 @@ fn expand_python_dataset(
         projection: _,
         live_filter_columns: _,
         pyarrow_predicate: _,
+        serialized_predicate: _,
         expanded_dsl,
         python_scan,
     } = guard.as_mut().unwrap();
@@ -564,6 +610,7 @@ pub struct ExpandedDataset {
     projection: Option<Arc<[PlSmallStr]>>,
     live_filter_columns: Option<Arc<[PlSmallStr]>>,
     pyarrow_predicate: Option<String>,
+    serialized_predicate: Option<Vec<u8>>,
     expanded_dsl: DslPlan,
 
     /// Fallback python scan
@@ -596,6 +643,7 @@ impl Debug for ExpandedDataset {
             projection,
             live_filter_columns,
             pyarrow_predicate,
+            serialized_predicate,
             expanded_dsl,
 
             #[cfg(feature = "python")]
@@ -612,6 +660,11 @@ impl Debug for ExpandedDataset {
                 Err(e) => e.to_string(),
             },
             pyarrow_predicate: if pyarrow_predicate.is_some() {
+                "Some(<redacted>)"
+            } else {
+                "None"
+            },
+            serialized_predicate: if serialized_predicate.is_some() {
                 "Some(<redacted>)"
             } else {
                 "None"
@@ -643,6 +696,7 @@ impl Debug for ExpandedDataset {
                 pub projection: &'a Option<Arc<[PlSmallStr]>>,
                 pub live_filter_columns: &'a Option<Arc<[PlSmallStr]>>,
                 pub pyarrow_predicate: &'static str,
+                pub serialized_predicate: &'static str,
                 pub expanded_dsl: &'a str,
 
                 #[cfg(feature = "python")]
