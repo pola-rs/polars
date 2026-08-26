@@ -233,7 +233,7 @@ def test_arr_dot_query_vector_expansion() -> None:
         pytest.param(pl.Float32, pl.Float64, pl.Float64, id="f32-f64"),
         pytest.param(pl.Int32, pl.Float32, pl.Float64, id="i32-f32"),
         pytest.param(pl.Int8, pl.Int16, pl.Int64, id="i8-i16"),
-        pytest.param(pl.UInt64, pl.Int64, pl.Float64, id="u64-i64"),
+        pytest.param(pl.UInt64, pl.Int64, pl.Int128, id="u64-i64"),
     ],
 )
 def test_arr_dot_dtype_coercion(
@@ -956,13 +956,12 @@ def test_array_to_struct() -> None:
     df = pl.DataFrame(
         {"a": [[1, 2, None], [1, 2, 3]]}, schema={"a": pl.Array(pl.Int8, 3)}
     )
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        assert df.select(
-            pl.col("a").arr.to_struct(fields=lambda idx: f"col_name_{idx}")
-        ).to_series().to_list() == [
-            {"col_name_0": 1, "col_name_1": 2, "col_name_2": None},
-            {"col_name_0": 1, "col_name_1": 2, "col_name_2": 3},
-        ]
+    assert df.select(
+        pl.col("a").arr.to_struct(["col_name_0", "col_name_1", "col_name_2"])
+    ).to_series().to_list() == [
+        {"col_name_0": 1, "col_name_1": 2, "col_name_2": None},
+        {"col_name_0": 1, "col_name_1": 2, "col_name_2": 3},
+    ]
 
     assert df.lazy().select(pl.col("a").arr.to_struct()).unnest(
         "a"

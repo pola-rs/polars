@@ -74,7 +74,6 @@ pub enum IRAggExpr {
     },
     Std(Node, u8),
     Var(Node, u8),
-    AggGroups(Node),
 }
 
 impl Hash for IRAggExpr {
@@ -139,7 +138,6 @@ impl From<IRAggExpr> for GroupByMethod {
             } => GroupByMethod::Count { include_nulls },
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
-            AggGroups(_) => GroupByMethod::Groups,
         }
     }
 }

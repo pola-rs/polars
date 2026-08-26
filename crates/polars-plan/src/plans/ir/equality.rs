@@ -353,15 +353,6 @@ impl IR {
                 };
                 l_options == r_options
             },
-            IR::ExtContext {
-                input: _,
-                contexts: _,
-                schema: _,
-            } => {
-                // `input` and `contexts` are both traversal inputs (see `IR::inputs`), so they
-                // are compared via child ids. `schema` is derivative. Nothing left to compare.
-                true
-            },
             IR::Sink {
                 input: _,
                 payload: l_payload,

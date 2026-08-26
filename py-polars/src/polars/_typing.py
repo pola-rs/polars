@@ -8,7 +8,6 @@ from typing import (
     Any,
     Literal,
     Protocol,
-    TypedDict,
     TypeVar,
     Union,
 )
@@ -285,7 +284,7 @@ AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofS
 ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
-    "inner", "left", "right", "full", "semi", "anti", "cross", "outer"
+    "inner", "left", "right", "full", "semi", "anti", "cross"
 ]  # JoinType
 JoinWhereStrategy: TypeAlias = Literal["inner", "left", "right"]  # JoinType
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
@@ -373,18 +372,9 @@ ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
 # typevars for core polars types
 PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
-BufferInfo: TypeAlias = tuple[int, int, int]
 
 # type alias for supported spreadsheet engines
 ExcelSpreadsheetEngine: TypeAlias = Literal["calamine", "openpyxl", "xlsx2csv"]
-
-
-class SeriesBuffers(TypedDict):
-    """Underlying buffers of a Series."""
-
-    values: Series
-    validity: Series | None
-    offsets: Series | None
 
 
 # minimal protocol definitions that can reasonably represent
@@ -476,7 +466,6 @@ JSONEncoder = Callable[[Any], bytes] | Callable[[Any], str]
 DeprecationType: TypeAlias = Literal[
     "function",
     "renamed_parameter",
-    "streaming_parameter",
     "nonkeyword_arguments",
     "parameter_as_multi_positional",
 ]
@@ -490,7 +479,6 @@ __all__ = [
     "AsofJoinStrategy",
     "AvroCompression",
     "BooleanMask",
-    "BufferInfo",
     "CategoricalOrdering",
     "ClosedInterval",
     "ColumnFormatDict",
@@ -531,7 +519,6 @@ __all__ = [
     "JoinValidation",
     "JoinWhereStrategy",
     "Label",
-    "ListToStructWidthStrategy",
     "MaintainOrderJoin",
     "MapElementsStrategy",
     "MultiColSelector",
@@ -565,7 +552,6 @@ __all__ = [
     "SearchSortedSide",
     "SelectorType",
     "SerializationFormat",
-    "SeriesBuffers",
     "SingleColSelector",
     "SingleIndexSelector",
     "SingleNameSelector",

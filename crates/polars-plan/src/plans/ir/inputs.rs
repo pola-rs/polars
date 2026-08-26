@@ -43,7 +43,6 @@ impl IR {
             | MapFunction { .. }
             | DataFrameScan { .. }
             | HConcat { .. }
-            | ExtContext { .. }
             | SimpleProjection { .. }
             | SinkMultiple { .. }
             | Gather { .. } => Exprs::Empty,
@@ -105,7 +104,6 @@ impl IR {
             | MapFunction { .. }
             | DataFrameScan { .. }
             | HConcat { .. }
-            | ExtContext { .. }
             | SimpleProjection { .. }
             | SinkMultiple { .. }
             | Gather { .. } => ExprsMut::Empty,
@@ -187,14 +185,6 @@ impl IR {
             Distinct { input, .. } => Inputs::single(*input),
             MapFunction { input, .. } => Inputs::single(*input),
             Sink { input, .. } => Inputs::single(*input),
-            ExtContext {
-                input, contexts, ..
-            } => Inputs::DoubleSlice(
-                std::slice::from_ref(input)
-                    .iter()
-                    .chain(contexts.iter())
-                    .copied(),
-            ),
             Scan { .. } => Inputs::Empty,
             DataFrameScan { .. } => Inputs::Empty,
             #[cfg(feature = "python")]
@@ -233,12 +223,6 @@ impl IR {
             Distinct { input, .. } => InputsMut::single(input),
             MapFunction { input, .. } => InputsMut::single(input),
             Sink { input, .. } => InputsMut::single(input),
-            ExtContext {
-                input, contexts, ..
-            } => InputsMut::DoubleSlice(std::iter::chain(
-                std::slice::from_mut(input).iter_mut(),
-                contexts.iter_mut(),
-            )),
             Scan { .. } => InputsMut::Empty,
             DataFrameScan { .. } => InputsMut::Empty,
             #[cfg(feature = "python")]
@@ -278,7 +262,6 @@ pub enum Inputs<'a> {
     Single(iter::Once<Node>),
     Double(std::array::IntoIter<Node, 2>),
     Slice(iter::Copied<std::slice::Iter<'a, Node>>),
-    DoubleSlice(iter::Copied<iter::Chain<std::slice::Iter<'a, Node>, std::slice::Iter<'a, Node>>>),
 }
 
 impl<'a> Inputs<'a> {
@@ -304,7 +287,6 @@ impl<'a> Iterator for Inputs<'a> {
             Self::Single(it) => it.next(),
             Self::Double(it) => it.next(),
             Self::Slice(it) => it.next(),
-            Self::DoubleSlice(it) => it.next(),
         }
     }
 
@@ -314,7 +296,6 @@ impl<'a> Iterator for Inputs<'a> {
             Self::Single(it) => it.nth(n),
             Self::Double(it) => it.nth(n),
             Self::Slice(it) => it.nth(n),
-            Self::DoubleSlice(it) => it.nth(n),
         }
     }
 }
@@ -324,7 +305,6 @@ pub enum InputsMut<'a> {
     Single(iter::Once<&'a mut Node>),
     Double(std::array::IntoIter<&'a mut Node, 2>),
     Slice(std::slice::IterMut<'a, Node>),
-    DoubleSlice(iter::Chain<std::slice::IterMut<'a, Node>, std::slice::IterMut<'a, Node>>),
 }
 
 impl<'a> InputsMut<'a> {
@@ -350,7 +330,6 @@ impl<'a> Iterator for InputsMut<'a> {
             Self::Single(it) => it.next(),
             Self::Double(it) => it.next(),
             Self::Slice(it) => it.next(),
-            Self::DoubleSlice(it) => it.next(),
         }
     }
 
@@ -360,7 +339,6 @@ impl<'a> Iterator for InputsMut<'a> {
             Self::Single(it) => it.nth(n),
             Self::Double(it) => it.nth(n),
             Self::Slice(it) => it.nth(n),
-            Self::DoubleSlice(it) => it.nth(n),
         }
     }
 }

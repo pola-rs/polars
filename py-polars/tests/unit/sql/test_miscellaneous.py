@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -7,7 +8,12 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ColumnNotFoundError, SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    ArgumentRemovedError,
+    ColumnNotFoundError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
@@ -643,3 +649,9 @@ def test_unsupported_select_clauses(query: str) -> None:
         ),
     ):
         ctx.execute(query)
+
+
+def test_sql_context_eager_execution_removed() -> None:
+    msg = "It was renamed to 'eager'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.SQLContext(eager_execution=True)  # type: ignore[call-arg]
