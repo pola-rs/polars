@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from functools import reduce
 
 import numpy as np
@@ -147,6 +148,40 @@ def test_map_batches_collect_schema_17327() -> None:
     )
     expected = pl.Schema({"a": pl.Int64(), "b": pl.List(pl.Int64)})
     assert q.collect_schema() == expected
+
+
+def test_map_batches_preserves_python_exception_28535() -> None:
+    class RequiresContext(Exception):
+        def __init__(self, message: str, *, response: object, body: object) -> None:
+            super().__init__(message)
+            self.response = response
+            self.body = body
+
+    def raises_provider_error(_series: pl.Series) -> pl.Series:
+        message = "the provider rejected the request"
+        raise RequiresContext(
+            message,
+            response={"status": 400},
+            body={"error": "invalid_request"},
+        )
+
+    with pytest.raises(
+        RequiresContext, match="the provider rejected the request"
+    ) as exc_info:
+        pl.DataFrame({"x": [1]}).select(
+            pl.col("x").map_batches(raises_provider_error, return_dtype=pl.Int64)
+        )
+
+    err = exc_info.value
+    assert err.response == {"status": 400}
+    assert err.body == {"error": "invalid_request"}
+
+    if sys.version_info >= (3, 11):
+        notes = getattr(err, "__notes__", None)
+        assert notes is not None
+        assert any(
+            "This error occurred in the following expression:" in note for note in notes
+        )
 
 
 @pytest.mark.may_fail_cloud  # reason: eager - return_dtype must be set
