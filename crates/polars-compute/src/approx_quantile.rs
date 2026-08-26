@@ -433,25 +433,26 @@ mod req {
 
     #[derive(Debug, Clone, Copy)]
     struct Level {
+        offset: usize,
+        size: usize,
         compaction_schedule: u64,
     }
 
     #[derive(Debug, Clone)]
     struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
-        /// Contents of the compactors. The offsets of the compactors are stored
-        /// in the levels vector. The top-level compactor is stored at the start
-        /// of this Vec, and the bottom-most compactor is stored at the end of this
-        /// Vec.
+        /// Contents of the relative compactors. The offsets of the compactors
+        /// are stored in the levels vector. The top-level compactor is stored at
+        /// the start of this Vec, and the bottom-most compactor is stored at the
+        /// end of this Vec.
         ///
         /// This algorithm uses the convention that the top-level compactor has
         /// *level* h-1.  The bottom-level compactor has *level* h,
         /// and height *0*. So the order of `levels` is *reversed* wrt `items`.
+        items: Vec<T>,
         levels: Vec<Level>,
         n: usize,
         k: usize,
         b: usize,
-        /// List of relative compactors.
-        rel_compactors: Vec<Vec<T>>,
         consumed_items: usize,
         rng: SmallRng,
     }
@@ -471,13 +472,15 @@ mod req {
             let k = compute_k(error, FAILURE_PROBABILITY, n);
             assert!(n > k, "n must be greater than k");
             let state = IngestingState {
+                items: Vec::new(),
                 levels: vec![Level {
+                    offset: 0,
+                    size: 0,
                     compaction_schedule: 0,
                 }],
                 n,
                 k,
                 b: dbg!(compactor_threshold_b(k, n)),
-                rel_compactors: vec![Vec::new()],
                 consumed_items: 0,
                 rng: rand::make_rng(),
             };
@@ -522,7 +525,8 @@ mod req {
             for item in array {
                 assert!(self.space_left() > 0);
                 self.compact_if_needed(0);
-                self.rel_compactors[0].push(item.clone());
+                self.items.push(item.clone());
+                self.levels[0].size += 1;
                 self.consumed_items += 1;
             }
         }
@@ -532,86 +536,112 @@ mod req {
         }
 
         fn is_compactor_full(&self, level: usize) -> bool {
-            self.rel_compactors[level].len() >= self.b
+            self.levels[level].size >= self.b
         }
 
         /// Compact all of the compactors from base to top.
         fn compact_if_needed(&mut self, level: usize) {
             while self.is_compactor_full(level) {
-                let old_size = self.rel_compactors[level].len();
+                let old_size = self.levels[level].size;
                 self.compact_level_once(level);
-                debug_assert!(self.rel_compactors[level].len() < old_size);
+                debug_assert!(self.levels[level].size < old_size);
             }
-            debug_assert!(self.rel_compactors[level].len() < self.b);
+            debug_assert!(self.levels[level].size < self.b);
         }
 
         fn add_new_compactor(&mut self) {
             self.levels.push(Level {
+                offset: 0,
+                size: 0,
                 compaction_schedule: 0,
             });
-            self.rel_compactors.push(Vec::new());
         }
 
         fn compact_level_once(&mut self, level: usize) {
             if level == self.levels.len() - 1 {
                 self.add_new_compactor();
             }
-            let [cur_level, next_level] = self
-                .rel_compactors
-                .get_disjoint_mut([level, level + 1])
-                .unwrap();
-            debug_assert!(cur_level.len() >= self.b, "compactor is not full");
+            debug_assert!(self.levels[level].size >= self.b, "compactor is not full");
+            debug_assert_eq!(
+                self.levels[level + 1].offset + self.levels[level + 1].size,
+                self.levels[level].offset
+            );
 
             // Compute L_C
             let z_c = self.levels[level].compaction_schedule.trailing_ones();
             let l_c = (z_c as usize + 1) * self.k;
-            let s_c = self.b - l_c;
-            self.levels[level].compaction_schedule += 1;
+            debug_assert!(l_c <= self.b / 2);
+            debug_assert!(l_c % 2 == 0);
 
             let rand: u8 = self.rng.random();
             let coin = rand & 0x1 != 0;
 
-            // select_nth_unstable etc.
-            cur_level[..self.b].select_nth_unstable_by(s_c, TotalOrd::tot_cmp);
-            cur_level[s_c..self.b].sort_unstable_by(TotalOrd::tot_cmp);
-            let mut drain = cur_level.drain(s_c..self.b);
-            debug_assert!(drain.len() <= self.b / 2);
-            debug_assert!(drain.len() % 2 == 0);
+            let compactor =
+                &mut self.items[self.levels[level].offset..self.levels[level].offset + self.b];
+            // Stash the protected items at the end of the compactor.
+            compactor.select_nth_unstable_by(l_c, |a, b| TotalOrd::tot_cmp(b, a));
+            // Sort the items that we will be promoting.
+            compactor[..l_c].sort_unstable_by(TotalOrd::tot_cmp);
 
-            // Throw away half of the values during the compaction
-            if coin {
-                drain.next();
+            // Throw away half of the values during the compaction, gathering the
+            // survivors at the front of the compacted range.
+            for i in 0..l_c / 2 {
+                compactor.swap(i, 2 * i + coin as usize);
             }
-            let iter = drain.step_by(2);
 
-            // Merge the items into the next compactor
-            next_level.extend(iter);
+            // Drop the non-promoted items from the item pool.
+            let gap_start = self.levels[level].offset + l_c / 2;
+            let gap_end = self.levels[level].offset + l_c;
+            self.items.drain(gap_start..gap_end);
+
+            // Transfer ownership of the promoted items to the next compactor.
+            self.levels[level + 1].size += l_c / 2;
+            self.levels[level].offset += l_c / 2;
+            self.levels[level].size -= l_c;
+
+            // Update the other compactor offsets after removing the non-promoted items.
+            for level_below_compact in self.levels[..level].iter_mut() {
+                level_below_compact.offset -= l_c / 2;
+            }
+
+            // Double-check that all the offsets are correct
+            let mut offset = 0;
+            for level in self.levels.iter().rev() {
+                debug_assert_eq!(level.offset, offset);
+                offset += level.size;
+            }
+            debug_assert_eq!(offset, self.items.len());
+
+            self.levels[level].compaction_schedule += 1;
             self.compact_if_needed(level + 1);
         }
 
         fn finalize(self) -> FinalizedState<T> {
             let IngestingState {
-                mut rel_compactors,
+                mut items,
+                levels,
                 consumed_items,
                 ..
             } = self;
 
-            let pool_size: usize = rel_compactors.iter().map(|c| c.len()).sum();
+            let pool_size: usize = items.len();
             dbg!(&pool_size);
 
             // Compaction only partially orders a compactor, so sort them all.
-            for compactor in rel_compactors.iter_mut() {
-                compactor.sort_unstable_by(TotalOrd::tot_cmp);
+            for level in levels.iter() {
+                items[level.offset..level.offset + level.size].sort_unstable_by(TotalOrd::tot_cmp);
             }
 
             // With a single compactor every item has weight 1.
-            if rel_compactors.len() <= 1 {
-                let items = rel_compactors.pop().unwrap_or_default();
+            if levels.len() == 1 {
                 return FinalizedState::new(items.into_boxed_slice(), None);
             }
 
             // Merge all sorted levels
-            let level_items: Vec<&[T]> = rel_compactors.iter().map(Vec::as_slice).collect();
+            let level_items: Vec<&[T]> = levels
+                .iter()
+                .map(|level| &items[level.offset..level.offset + level.size])
+                .collect();
             let mut finalized_items = Vec::new();
             let cum_weights = finalize_merge_levels(&level_items, &mut finalized_items);
 
