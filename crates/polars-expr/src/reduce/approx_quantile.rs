@@ -67,7 +67,7 @@ where
     type Value = ReqSketchBounded<T::Native>;
 
     fn init(&self) -> Self::Value {
-        ReqSketchBounded::new(self.error, 1000_000)
+        ReqSketchBounded::new(self.error, 1000_000, true)
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {

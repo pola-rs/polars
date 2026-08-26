@@ -335,7 +335,7 @@ mod kll {
             self.levels[level] = compact_level;
             self.levels[level + 1] = next_level;
 
-            // Check that all the offsets are correct
+            // Double-check that all the offsets are correct
             let mut offset = 0;
             for level in self.levels.iter().rev() {
                 debug_assert_eq!(level.offset, offset);
@@ -450,8 +450,15 @@ mod req {
         /// and height *0*. So the order of `levels` is *reversed* wrt `items`.
         items: Vec<T>,
         levels: Vec<Level>,
+        /// Bit that specifies if this sketch is high-rank-accurate or low-rank-accurate.
+        hra: bool,
+        /// The total number of items this sketch can ingest befor it becomes
+        /// inaccurate wrt the error parameter.
         n: usize,
+        /// k parameter of the paper. Impacts how many items are protected during
+        /// a compaction.
         k: usize,
+        /// The relative compactor capacity.
         b: usize,
         consumed_items: usize,
         rng: SmallRng,
@@ -468,7 +475,7 @@ mod req {
     pub struct ReqSketchBounded<T: fmt::Debug + Clone + TotalOrd>(State<T>);
 
     impl<T: fmt::Debug + Clone + TotalOrd> ReqSketchBounded<T> {
-        pub fn new(error: f64, n: usize) -> Self {
+        pub fn new(error: f64, n: usize, hra: bool) -> Self {
             let k = compute_k(error, FAILURE_PROBABILITY, n);
             assert!(n > k, "n must be greater than k");
             let state = IngestingState {
@@ -478,6 +485,7 @@ mod req {
                     size: 0,
                     compaction_schedule: 0,
                 }],
+                hra,
                 n,
                 k,
                 b: dbg!(compactor_threshold_b(k, n)),
@@ -567,6 +575,11 @@ mod req {
                 self.levels[level].offset
             );
 
+            let compare = |a: &T, b: &T| match self.hra {
+                false => TotalOrd::tot_cmp(a, b),
+                true => TotalOrd::tot_cmp(a, b).reverse(),
+            };
+
             // Compute L_C
             let z_c = self.levels[level].compaction_schedule.trailing_ones();
             let l_c = (z_c as usize + 1) * self.k;
@@ -579,9 +592,9 @@ mod req {
             let compactor =
                 &mut self.items[self.levels[level].offset..self.levels[level].offset + self.b];
             // Stash the protected items at the end of the compactor.
-            compactor.select_nth_unstable_by(l_c, |a, b| TotalOrd::tot_cmp(b, a));
+            compactor.select_nth_unstable_by(l_c, |a, b| compare(a, b).reverse());
             // Sort the items that we will be promoting.
-            compactor[..l_c].sort_unstable_by(TotalOrd::tot_cmp);
+            compactor[..l_c].sort_unstable_by(compare);
 
             // Throw away half of the values during the compaction, gathering the
             // survivors at the front of the compacted range.
@@ -642,7 +655,7 @@ mod req {
                 .iter()
                 .map(|level| &items[level.offset..level.offset + level.size])
                 .collect();
-            let mut finalized_items = Vec::new();
+            let mut finalized_items = Vec::with_capacity(items.len());
             let cum_weights = finalize_merge_levels(&level_items, &mut finalized_items);
 
             debug_assert_eq!(cum_weights.last().unwrap_or(&0), &consumed_items);
