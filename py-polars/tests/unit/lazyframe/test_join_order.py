@@ -376,12 +376,20 @@ def test_computed_projection_between_joins_is_not_dropped(tmp_path: Path) -> Non
     )
 
 
-def assert_reordered(lf: pl.LazyFrame, scans: list[str]) -> pl.DataFrame:
-    """Check the pass reorders `lf` to `scans` without changing what it returns."""
-    assert scan_order(lf.explain(optimizations=ON)) == scans
+def assert_reordered(
+    lf: pl.LazyFrame,
+    before: list[str],
+    after: list[str],
+    *,
+    on_flags: pl.QueryOptFlags = ON,
+    off_flags: pl.QueryOptFlags = OFF,
+) -> pl.DataFrame:
+    """Check `lf` reorders from `before` to `after` and returns the same rows."""
+    assert scan_order(lf.explain(optimizations=off_flags)) == before
+    assert scan_order(lf.explain(optimizations=on_flags)) == after
 
-    off = lf.collect(optimizations=OFF)
-    on = lf.collect(optimizations=ON)
+    off = lf.collect(optimizations=off_flags)
+    on = lf.collect(optimizations=on_flags)
     assert off.height > 0
     assert on.columns == off.columns
     assert_frame_equal(off.sort(pl.all()), on.sort(pl.all()))
@@ -394,8 +402,10 @@ def test_rename_between_joins_keeps_one_cluster(tmp_path: Path) -> None:
     # the leaf holding the column.
     lf = between_joins(star_frames(tmp_path), lambda lf: lf.rename({"f_val": "val"}))
 
-    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
-    assert "val" in assert_reordered(lf, ["fact", "dim_a", "dim_b"]).columns
+    reordered = assert_reordered(
+        lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"]
+    )
+    assert "val" in reordered.columns
 
 
 def test_rename_of_a_join_key_between_joins(tmp_path: Path) -> None:
@@ -414,8 +424,10 @@ def test_rename_of_a_join_key_between_joins(tmp_path: Path) -> None:
         )
     )
 
-    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
-    assert "a_ref" in assert_reordered(lf, ["fact", "dim_a", "dim_b"]).columns
+    reordered = assert_reordered(
+        lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"]
+    )
+    assert "a_ref" in reordered.columns
 
 
 def test_projection_reading_one_column_twice_is_left_alone(tmp_path: Path) -> None:
@@ -443,8 +455,7 @@ def test_unique_leaf_is_estimated(tmp_path: Path) -> None:
     frames["dim_a"] = frames["dim_a"].unique(subset=["a_key"])
     lf = star_query(frames)
 
-    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
-    assert_reordered(lf, ["fact", "dim_a", "dim_b"])
+    assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])
 
 
 def test_unique_over_every_column_is_estimated(tmp_path: Path) -> None:
@@ -452,5 +463,65 @@ def test_unique_over_every_column_is_estimated(tmp_path: Path) -> None:
     frames["dim_a"] = frames["dim_a"].unique()
     lf = star_query(frames)
 
-    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
-    assert_reordered(lf, ["fact", "dim_a", "dim_b"])
+    assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])
+
+
+def test_scan_slice_is_estimated(tmp_path: Path) -> None:
+    # Slice pushdown folds a `head` into the scan, so it never reaches the `Slice`
+    # node; the scan's own `pre_slice` is what narrows the estimate.
+    frames = star_frames(tmp_path)
+    frames["dim_a"] = frames["dim_a"].head(10)
+    lf = star_query(frames)
+
+    assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])
+
+
+def test_slice_node_is_estimated(tmp_path: Path) -> None:
+    # Without slice pushdown the slice stays a node of its own.
+    frames = star_frames(tmp_path)
+    frames["dim_a"] = frames["dim_a"].head(10)
+    lf = star_query(frames)
+
+    assert_reordered(
+        lf,
+        ["fact", "dim_b", "dim_a"],
+        ["fact", "dim_a", "dim_b"],
+        on_flags=pl.QueryOptFlags(join_order=True, slice_pushdown=False),
+        off_flags=pl.QueryOptFlags(join_order=False, slice_pushdown=False),
+    )
+
+
+def test_sort_leaf_is_estimated(tmp_path: Path) -> None:
+    # A sort keeps every row, and a `head` on it becomes the sort's own top-k slice.
+    frames = star_frames(tmp_path)
+    frames["dim_a"] = frames["dim_a"].sort("a_key").head(10)
+    lf = star_query(frames)
+
+    assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])
+
+
+def test_union_leaf_is_estimated(tmp_path: Path) -> None:
+    # A union holds every row of every input, so it is the sum of them. The two
+    # inputs must be different files, or common-subplan elimination caches them
+    # into one scan.
+    frames = star_frames(tmp_path)
+    more = write_scans(
+        tmp_path,
+        dim_a_more=pl.DataFrame({"a_key": list(range(50, 60)), "a_flag": [False] * 10}),
+    )["dim_a_more"]
+    lf = star_query({**frames, "dim_a": pl.concat([frames["dim_a"], more])})
+
+    assert_reordered(
+        lf,
+        ["fact", "dim_b", "dim_a", "dim_a_more"],
+        ["fact", "dim_a", "dim_a_more", "dim_b"],
+    )
+
+
+def test_gather_leaf_is_estimated(tmp_path: Path) -> None:
+    # The indices are a frame of their own, so the gather's height is that frame's.
+    frames = star_frames(tmp_path)
+    frames["dim_a"] = frames["dim_a"].gather(pl.LazyFrame({"i": [0, 7, 9]}))
+    lf = star_query(frames)
+
+    assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])

@@ -6,6 +6,7 @@
 //! producing a guess.
 
 use polars_utils::arena::{Arena, Node};
+use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 
 use crate::plans::{AExpr, ExprIR, IR, MintermIter};
@@ -34,8 +35,8 @@ pub(super) struct LeafStats {
 
 /// Estimate the rows produced by a leaf subtree.
 ///
-/// `None` means the subtree is not modelled (a union, a sort with a slice, a python scan),
-/// which leaves the whole cluster alone.
+/// `None` means the subtree is not modelled (a python scan, an opaque function, a
+/// gather by a computed index), which leaves the whole cluster alone.
 #[recursive]
 pub(super) fn leaf_stats(
     node: Node,
@@ -46,6 +47,7 @@ pub(super) fn leaf_stats(
         IR::Scan {
             file_info,
             predicate,
+            unified_scan_args,
             ..
         } => {
             // `row_estimation.1` is `usize::MAX` when the source could not be counted.
@@ -54,10 +56,14 @@ pub(super) fn leaf_stats(
                 return None;
             }
             let unfiltered = rows as f64;
-            let filtered = match predicate {
+            // The slice is applied before the predicate, so it narrows first.
+            let mut filtered = match &unified_scan_args.pre_slice {
                 None => unfiltered,
-                Some(p) => apply_selectivity(unfiltered, n_conjuncts(p.node(), expr_arena)),
+                Some(slice) => sliced(unfiltered, slice.clone()),
             };
+            if let Some(p) = predicate {
+                filtered = apply_selectivity(filtered, n_conjuncts(p.node(), expr_arena));
+            }
             Some(LeafStats {
                 filtered,
                 unfiltered,
@@ -106,18 +112,63 @@ pub(super) fn leaf_stats(
         // pushdown normally leaves none here, but a leaf need not be a bare scan.
         IR::Filter { input, predicate } => {
             let inner = leaf_stats(*input, ir_arena, expr_arena)?;
-            Some(LeafStats {
-                filtered: apply_selectivity(
-                    inner.filtered,
-                    n_conjuncts(predicate.node(), expr_arena),
-                ),
-                unfiltered: inner.unfiltered,
-            })
+            let n = n_conjuncts(predicate.node(), expr_arena);
+            Some(inner.selecting(apply_selectivity(inner.filtered, n)))
         },
 
         // Row-preserving, so they pass both estimates through untouched.
         IR::SimpleProjection { input, .. } | IR::Cache { input, .. } => {
             leaf_stats(*input, ir_arena, expr_arena)
+        },
+
+        // A sort keeps every row it is given, and carries its own slice for a top-k.
+        IR::Sort { input, slice, .. } => {
+            let inner = leaf_stats(*input, ir_arena, expr_arena)?;
+            Some(match slice {
+                None => inner,
+                // The dynamic predicate reaches the same rows sooner, it does not
+                // change which ones they are.
+                Some((offset, len, _)) => inner.selecting(sliced(inner.filtered, (*offset, *len))),
+            })
+        },
+
+        // A slice narrows the relation the way a filter does.
+        IR::Slice { input, offset, len } => {
+            let inner = leaf_stats(*input, ir_arena, expr_arena)?;
+            Some(inner.selecting(sliced(inner.filtered, (*offset, *len as usize))))
+        },
+
+        // A union stacks its inputs, so it holds every row and every key of all of
+        // them. Every input has to be measurable for the sum to mean anything.
+        IR::Union { inputs, options } => {
+            let mut acc = LeafStats {
+                filtered: 0.0,
+                unfiltered: 0.0,
+            };
+            for input in inputs {
+                let inner = leaf_stats(*input, ir_arena, expr_arena)?;
+                acc.filtered += inner.filtered;
+                acc.unfiltered += inner.unfiltered;
+            }
+            acc.filtered = acc.filtered.max(MIN_CARDINALITY);
+            acc.unfiltered = acc.unfiltered.max(MIN_CARDINALITY);
+            Some(match options.slice {
+                None => acc,
+                Some(slice) => acc.selecting(sliced(acc.filtered, slice)),
+            })
+        },
+
+        // A gather emits one row per index, and its indices are a frame of their own,
+        // so its height is that frame's.
+        IR::Gather { input, idxs, .. } => {
+            let idxs = leaf_stats(*idxs, ir_arena, expr_arena)?;
+            let inner = leaf_stats(*input, ir_arena, expr_arena)?;
+            Some(LeafStats {
+                // A gather may repeat a row, so it can be taller than its input, but
+                // it reaches no key the input did not already hold.
+                filtered: idxs.filtered,
+                unfiltered: inner.unfiltered,
+            })
         },
 
         // A `select` keeps its input's height when every expression does. Aggregates
@@ -141,9 +192,17 @@ pub(super) fn leaf_stats(
         // the height is the input's even when every expression is a scalar.
         IR::HStack { input, exprs, .. } => leaf_stats(*input, ir_arena, expr_arena),
 
-        // Anything else (union, sort with a slice, python scan, ...) is not
+        // Anything else (python scan, opaque function, unpivot, ...) is not
         // modelled. Do not guess.
         _ => None,
+    }
+}
+
+impl LeafStats {
+    /// The same leaf with fewer of its rows selected. The key domain is untouched:
+    /// the other side of a join still references all of it.
+    fn selecting(self, filtered: f64) -> Self {
+        Self { filtered, ..self }
     }
 }
 
@@ -159,14 +218,24 @@ fn keeps_height(expr: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
 /// Estimates for a node emitting one row per distinct combination of `n_keys`
 /// columns, optionally sliced.
 fn one_row_per_group(inner: LeafStats, n_keys: usize, slice: Option<(i64, usize)>) -> LeafStats {
-    let cap = match slice {
-        Some((_, len)) => len as f64,
-        None => f64::INFINITY,
+    let groups = LeafStats {
+        filtered: n_groups(inner.filtered, n_keys),
+        unfiltered: n_groups(inner.unfiltered, n_keys),
     };
-    LeafStats {
-        filtered: n_groups(inner.filtered, n_keys).min(cap),
-        unfiltered: n_groups(inner.unfiltered, n_keys).min(cap),
+    match slice {
+        None => groups,
+        // Grouping is what set the key domain here, so the slice narrows that too.
+        Some(slice) => LeafStats {
+            filtered: sliced(groups.filtered, slice),
+            unfiltered: sliced(groups.unfiltered, slice),
+        },
     }
+}
+
+/// Rows left after applying `slice` to a relation of `rows` rows.
+fn sliced(rows: f64, slice: impl Into<Slice>) -> f64 {
+    let bounded = slice.into().restrict_to_bounds(rows as usize);
+    (bounded.len() as f64).max(MIN_CARDINALITY)
 }
 
 /// Estimated distinct combinations of `n_keys` grouping keys over `rows` rows.
@@ -286,6 +355,42 @@ mod tests {
         let by_keys: Vec<f64> = (1..6).map(|k| n_groups(1_000_000.0, k)).collect();
         assert!(by_keys.windows(2).all(|w| w[0] < w[1]), "{by_keys:?}");
         assert!(by_keys.iter().all(|&g| g < 1_000_000.0), "{by_keys:?}");
+    }
+
+    #[test]
+    fn slicing_counts_from_either_end_and_never_reaches_zero() {
+        // Plain head.
+        assert_eq!(sliced(100.0, (0i64, 10)), 10.0);
+        // A slice longer than what is left of the relation.
+        assert_eq!(sliced(100.0, (95i64, 10)), 5.0);
+        // A negative offset counts back from the end.
+        assert_eq!(sliced(100.0, (-5i64, 10)), 5.0);
+        // One reaching past the start keeps only the part that overlaps.
+        assert_eq!(sliced(100.0, (-105i64, 10)), 5.0);
+        // Nothing left over floors, rather than producing an estimate that would
+        // dominate every ordering decision.
+        assert_eq!(sliced(100.0, (-200i64, 10)), MIN_CARDINALITY);
+        assert_eq!(sliced(100.0, (200i64, 10)), MIN_CARDINALITY);
+        assert_eq!(sliced(100.0, (0i64, 0)), MIN_CARDINALITY);
+    }
+
+    /// A slice narrows the relation but not the key domain the other side joins
+    /// against, so it carries its selectivity over the way a filter does.
+    #[test]
+    fn a_sliced_dimension_shrinks_the_fact_table() {
+        let inventory = leaf(11_745_000.0, 11_745_000.0);
+        let date_dim = leaf(73_049.0, 73_049.0);
+        let head = date_dim.selecting(sliced(date_dim.filtered, (0i64, 10)));
+
+        let out = join_cardinality(
+            inventory.filtered,
+            head.filtered,
+            key_domain(&inventory, &head),
+        );
+        // 11.7M * 10 / 73049. Dividing by the ten rows left would reproduce the
+        // fact table whole.
+        assert!((out - 1608.0).abs() < 5.0, "got {out}");
+        assert!(out < inventory.filtered);
     }
 
     #[test]
