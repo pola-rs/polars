@@ -918,6 +918,24 @@ impl DataType {
         ])
     }
 
+    /// Returns the dtype of the [`Series`] used internally to store this `Map`:
+    /// `List(Struct {key, value})`. Returns `None` for any other dtype.
+    ///
+    /// This is intentionally separate from [`DataType::to_storage`]. Adding `Map`
+    /// there would imply also unwrapping it in [`Series::to_storage`]. Python
+    /// `map_elements` calls the latter, so each map row would reach the UDF as a
+    /// `List(Struct)` value instead of a `dict`.
+    #[cfg(feature = "dtype-map")]
+    pub fn map_entries_list_dtype(&self) -> Option<DataType> {
+        match self {
+            DataType::Map(key, value) => Some(DataType::List(Box::new(DataType::map_entries(
+                key.as_ref().clone(),
+                value.as_ref().clone(),
+            )))),
+            _ => None,
+        }
+    }
+
     /// Whether this dtype may be used as the key dtype of a `Map`.
     #[cfg(feature = "dtype-map")]
     pub fn is_valid_map_key(&self) -> bool {

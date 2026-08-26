@@ -124,6 +124,15 @@ impl Series {
                 Series::from_chunks_and_dtype_unchecked(name, chunks, storage),
             )
             .into_series(),
+            #[cfg(feature = "dtype-map")]
+            Map(_, _) => {
+                let storage = Series::from_chunks_and_dtype_unchecked(
+                    name,
+                    chunks,
+                    &dtype.map_entries_list_dtype().unwrap(),
+                );
+                MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series()
+            },
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let mut ca =

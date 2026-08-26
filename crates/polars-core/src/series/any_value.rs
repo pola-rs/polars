@@ -156,6 +156,8 @@ impl Series {
             DataType::Decimal(precision, scale) => {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
             },
+            #[cfg(feature = "dtype-map")]
+            DataType::Map(_, _) => todo!("AnyValue::Map"),
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(typ, storage) => {
                 Series::from_any_values_and_dtype_unnamed(values, storage, strict)?
