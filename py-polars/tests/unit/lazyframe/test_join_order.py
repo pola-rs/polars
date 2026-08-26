@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -94,9 +94,9 @@ def shared_key_query(frames: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
     )
 
 
-def star_query(frames: dict[str, pl.LazyFrame], **join_kwargs: object) -> pl.LazyFrame:
+def star_query(frames: dict[str, pl.LazyFrame], **join_kwargs: Any) -> pl.LazyFrame:
     """Fact joined to both dimensions; `join_kwargs` is forwarded to both joins."""
-    kwargs: dict[str, object] = {"coalesce": False, **join_kwargs}
+    kwargs: dict[str, Any] = {"coalesce": False, **join_kwargs}
     return (
         frames["fact"]
         .join(frames["dim_b"], left_on="f_dim_b", right_on="b_key", **kwargs)
@@ -219,7 +219,7 @@ def test_group_by_with_a_user_function_is_left_alone(tmp_path: Path) -> None:
 
 def test_sql_star_join_is_reordered(tmp_path: Path) -> None:
     frames = star_frames(tmp_path)
-    ctx = pl.SQLContext(**frames)
+    ctx = pl.SQLContext(frames)
     q = """
         SELECT f_val
         FROM fact, dim_b, dim_a

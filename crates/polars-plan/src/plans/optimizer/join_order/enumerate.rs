@@ -102,7 +102,7 @@ mod tests {
     use super::super::cluster::{Edge, Leaf};
     use super::super::stats::LeafStats;
     use super::*;
-    use crate::plans::{AExpr, ExprIR, JoinOptionsIR, JoinTypeOptionsIR};
+    use crate::plans::{ExprIR, JoinOptionsIR, JoinTypeOptionsIR};
     use crate::prelude::JoinArgs;
 
     fn dummy_options() -> std::sync::Arc<JoinOptionsIR> {
