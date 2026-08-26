@@ -2263,12 +2263,18 @@ impl SQLContext {
         // disconnected relations fall through to a cross join, in source order.
         while !pending.is_empty() {
             let left_schema = self.get_frame_schema(lf)?;
+            // Relations each pending entry brings into scope, so that a condition
+            // naming one of them can be held back until it has been joined.
+            let pending_relations: Vec<PlHashSet<String>> = pending
+                .iter()
+                .map(|(tbl_expr, ..)| declared_relations(std::slice::from_ref(*tbl_expr)))
+                .collect();
             let deferred_tables = |skip: usize| -> Vec<String> {
-                pending
+                pending_relations
                     .iter()
                     .enumerate()
                     .filter(|(i, _)| *i != skip)
-                    .flat_map(|(_, (tbl_expr, ..))| from_entry_table_names(tbl_expr))
+                    .flat_map(|(_, names)| names.iter().cloned())
                     .collect()
             };
             let next = (0..pending.len())
@@ -3620,29 +3626,6 @@ fn hoist_group_aggregates(
     counter: &mut usize,
 ) -> Expr {
     expr.map_expr(|e| match e {
-        // The expression rewriter leaves a window's ORDER BY untouched, so recurse into it.
-        Expr::Over {
-            function,
-            partition_by,
-            order_by,
-            mapping,
-        } => {
-            let order_by = order_by.map(|(by, options)| {
-                let by = hoist_group_aggregates(
-                    Arc::unwrap_or_clone(by),
-                    schema_before,
-                    agg_out,
-                    counter,
-                );
-                (Arc::new(by), options)
-            });
-            Expr::Over {
-                function,
-                partition_by,
-                order_by,
-                mapping,
-            }
-        },
         e if matches!(e, Expr::Agg(_))
             && has_expr(
                 &e,
@@ -3828,12 +3811,16 @@ fn flatten_and_conditions(expr: &SQLExpr) -> Vec<&SQLExpr> {
 }
 
 /// Reconstruct a SQL AND-expression tree from a list of conditions.
-fn combine_and_conditions(conditions: Vec<SQLExpr>) -> Option<SQLExpr> {
+/// Fold `conditions` into a single expression joined by `op`; `None` if empty.
+pub(crate) fn combine_conditions(
+    conditions: Vec<SQLExpr>,
+    op: SQLBinaryOperator,
+) -> Option<SQLExpr> {
     conditions
         .into_iter()
         .reduce(|left, right| SQLExpr::BinaryOp {
             left: Box::new(left),
-            op: SQLBinaryOperator::And,
+            op: op.clone(),
             right: Box::new(right),
         })
 }
@@ -3899,19 +3886,6 @@ fn is_join_comparison(
     }
 }
 
-/// All relation names a `FROM` entry brings into scope: its own, plus any it joins to.
-fn from_entry_table_names(entry: &TableWithJoins) -> Vec<String> {
-    std::iter::once(get_table_name(&entry.relation).unwrap_or_default())
-        .chain(
-            entry
-                .joins
-                .iter()
-                .filter_map(|join| get_table_name(&join.relation)),
-        )
-        .filter(|name| !name.is_empty())
-        .collect()
-}
-
 /// Partition a WHERE clause into join predicates (bridging left tables and the
 /// right table) and residual filter conditions.
 fn extract_join_predicates(
@@ -3943,8 +3917,8 @@ fn extract_join_predicates(
         }
     }
     (
-        combine_and_conditions(join_conds),
-        combine_and_conditions(filter_conds),
+        combine_conditions(join_conds, SQLBinaryOperator::And),
+        combine_conditions(filter_conds, SQLBinaryOperator::And),
     )
 }
 

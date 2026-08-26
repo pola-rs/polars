@@ -19,7 +19,7 @@ use sqlparser::ast::{
 };
 
 use crate::SQLContext;
-use crate::context::{CORRELATED_COL_PREFIX, FilterMode, get_table_name};
+use crate::context::{CORRELATED_COL_PREFIX, FilterMode, combine_conditions, get_table_name};
 use crate::sql_expr::{parse_sql_expr, sql_in_membership};
 use crate::sql_visitors::{expr_contains_subquery, is_subquery_expr};
 
@@ -121,6 +121,8 @@ impl SQLContext {
         let Some(selection) = &select.selection else {
             return Ok(None);
         };
+        // Both rewrites below split this into conjuncts, so factor it once here.
+        let selection = factored_selection(selection);
         // Resolve and parse the inner relation in an isolated context so its
         // table/alias registrations don't leak into the outer query's scope.
         let mut ctx = self.isolated();
@@ -134,7 +136,7 @@ impl SQLContext {
             right_on,
             local_filters,
         }) =
-            ctx.split_subquery_conjuncts(selection, &inner_names, &inner_schema, outer_schema)?
+            ctx.split_subquery_conjuncts(&selection, &inner_names, &inner_schema, outer_schema)?
         {
             // An uncorrelated EXISTS (no correlation key found) has no join key
             // to build from, so leave it to the existing path.
@@ -154,7 +156,7 @@ impl SQLContext {
         ctx.try_rewrite_exists_as_count_filter(
             lf,
             inner_lf,
-            selection,
+            &selection,
             &inner_names,
             &inner_schema,
             outer_schema,
@@ -179,8 +181,7 @@ impl SQLContext {
     ) -> PolarsResult<Option<LazyFrame>> {
         let mut corr_preds = Vec::new();
         let mut local_filters = Vec::new();
-        let selection = factored_selection(selection);
-        for conj in MintermIter::new(&selection) {
+        for conj in MintermIter::new(selection) {
             if let Some(pred) =
                 scalar_correlation_predicate(conj, inner_names, inner_schema, outer_schema)
             {
@@ -406,8 +407,7 @@ impl SQLContext {
         let mut left_on = Vec::new();
         let mut right_on = Vec::new();
         let mut local_filters = Vec::new();
-        let selection = factored_selection(selection);
-        for conj in MintermIter::new(&selection) {
+        for conj in MintermIter::new(selection) {
             if let Some((outer_key, inner_key)) =
                 correlation_key_pair(conj, inner_names, inner_schema, outer_schema)
             {
@@ -1055,18 +1055,12 @@ impl<'a> DisjunctIter<'a> {
     }
 }
 
-fn combine_sql_terms(terms: Vec<SQLExpr>, op: SQLBinaryOperator) -> Option<SQLExpr> {
-    terms.into_iter().reduce(|left, right| SQLExpr::BinaryOp {
-        left: Box::new(left),
-        op: op.clone(),
-        right: Box::new(right),
-    })
-}
-
 /// Rewrite `(A AND X) OR (A AND Y)` as `A AND (X OR Y)`.
 ///
 /// A correlation predicate repeated in every branch of an `OR` is implied by the
 /// whole disjunction, but only a top-level conjunct is visible to the rewrites.
+/// The SQL-AST analogue of `polars_plan::plans::aexpr::or_factoring`, which runs
+/// too late to inform the decorrelation decision made here.
 fn factor_common_conjuncts(expr: &SQLExpr) -> Option<SQLExpr> {
     let branches: Vec<Vec<&SQLExpr>> = DisjunctIter::new(expr)
         .map(|branch| MintermIter::new(branch).collect())
@@ -1083,7 +1077,7 @@ fn factor_common_conjuncts(expr: &SQLExpr) -> Option<SQLExpr> {
                 .all(|branch| branch.iter().any(|other| *other == *term))
         })
         .collect();
-    let factored = combine_sql_terms(
+    let factored = combine_conditions(
         common.iter().copied().cloned().collect(),
         SQLBinaryOperator::And,
     )?;
@@ -1093,7 +1087,7 @@ fn factor_common_conjuncts(expr: &SQLExpr) -> Option<SQLExpr> {
     let remainders: Option<Vec<SQLExpr>> = branches
         .iter()
         .map(|terms| {
-            combine_sql_terms(
+            combine_conditions(
                 terms
                     .iter()
                     .copied()
@@ -1107,7 +1101,7 @@ fn factor_common_conjuncts(expr: &SQLExpr) -> Option<SQLExpr> {
     let Some(remainders) = remainders else {
         return Some(factored);
     };
-    let disjunction = combine_sql_terms(remainders, SQLBinaryOperator::Or)?;
+    let disjunction = combine_conditions(remainders, SQLBinaryOperator::Or)?;
     Some(SQLExpr::BinaryOp {
         left: Box::new(factored),
         op: SQLBinaryOperator::And,
@@ -1118,23 +1112,18 @@ fn factor_common_conjuncts(expr: &SQLExpr) -> Option<SQLExpr> {
 /// Hoist predicates shared by every branch of an `OR` to the top level, so that
 /// the conjunct split can classify them.
 fn factored_selection(selection: &SQLExpr) -> Cow<'_, SQLExpr> {
-    let mut factored_any = false;
-    let conjuncts: Vec<SQLExpr> = MintermIter::new(selection)
-        .map(|conj| match factor_common_conjuncts(conj) {
-            Some(factored) => {
-                factored_any = true;
-                factored
-            },
-            None => conj.clone(),
-        })
+    let factored: Vec<Option<SQLExpr>> = MintermIter::new(selection)
+        .map(factor_common_conjuncts)
         .collect();
-    match factored_any
-        .then(|| combine_sql_terms(conjuncts, SQLBinaryOperator::And))
-        .flatten()
-    {
-        Some(factored) => Cow::Owned(factored),
-        None => Cow::Borrowed(selection),
+    if factored.iter().all(Option::is_none) {
+        return Cow::Borrowed(selection);
     }
+    let conjuncts = MintermIter::new(selection)
+        .zip(factored)
+        .map(|(conj, factored)| factored.unwrap_or_else(|| conj.clone()))
+        .collect();
+    combine_conditions(conjuncts, SQLBinaryOperator::And)
+        .map_or(Cow::Borrowed(selection), Cow::Owned)
 }
 
 enum CorrelationSide {
