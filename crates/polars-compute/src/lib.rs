@@ -2,6 +2,8 @@
 
 use arrow::types::NativeType;
 
+#[cfg(feature = "approx_quantile")]
+pub mod approx_quantile;
 pub mod arithmetic;
 pub mod arity;
 pub mod binview_index_map;
@@ -25,15 +27,11 @@ pub mod horizontal_flatten;
 #[cfg(feature = "approx_unique")]
 pub mod hyperloglogplus;
 pub mod if_then_else;
-#[cfg(feature = "approx_quantile")]
-pub mod kll;
 pub mod min_max;
 pub mod moment;
 pub mod nan;
 pub mod propagate_dictionary;
 pub mod propagate_nulls;
-#[cfg(feature = "approx_quantile")]
-pub mod req;
 pub mod rolling;
 pub mod size;
 pub mod sum;
