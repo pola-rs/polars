@@ -242,25 +242,15 @@ def test_cast_string_to_temporal(
 ) -> None:
     df = pl.DataFrame({"s": [value, None]})
 
-    for cast_op in (
-        f"CAST(s AS {sql_type})",
-        f"TRY_CAST(s AS {sql_type})",
-        f"s::{sql_type}",
-    ):
-        res = df.sql(f"SELECT {cast_op} AS x FROM self")
-        assert_frame_equal(
-            res, pl.DataFrame({"x": [expected, None]}, schema={"x": dtype})
-        )
-
-    for cast_op in (
-        f"CAST('{value}' AS {sql_type})",
-        f"TRY_CAST('{value}' AS {sql_type})",
-        f"'{value}'::{sql_type}",
-    ):
-        res = df.sql(f"SELECT {cast_op} AS x FROM self")
-        assert_frame_equal(
-            res, pl.DataFrame({"x": [expected, expected]}, schema={"x": dtype})
-        )
+    # a column operand keeps the frame's null; a literal broadcasts to both rows
+    for operand, rows in (("s", [expected, None]), (f"'{value}'", [expected] * 2)):
+        for cast_op in (
+            f"CAST({operand} AS {sql_type})",
+            f"TRY_CAST({operand} AS {sql_type})",
+            f"{operand}::{sql_type}",
+        ):
+            res = df.sql(f"SELECT {cast_op} AS x FROM self")
+            assert_frame_equal(res, pl.DataFrame({"x": rows}, schema={"x": dtype}))
 
 
 @pytest.mark.parametrize(

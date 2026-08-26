@@ -467,24 +467,23 @@ pub fn to_datetime(
     // Ensure that the inferred time_zone matches the given time_zone.
     ensure_matching_time_zone: bool,
 ) -> PolarsResult<DatetimeChunked> {
-    match ca.first_non_null() {
-        None => {
-            Ok(Int64Chunked::full_null(ca.name().clone(), ca.len()).into_datetime(tu, tz.cloned()))
-        },
-        Some(_) => {
-            let pattern = infer_from_values(ca, infer_pattern_datetime_single)
-                .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
-            let mut infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(tu))?;
-            #[cfg(feature = "timezones")]
-            if matches!(pattern, Pattern::DatetimeYMDZ) {
-                polars_ensure!(
-                    !ensure_matching_time_zone || tz.is_some(),
-                    to_datetime_tz_mismatch
-                );
-            }
-            coerce_string_to_datetime(&mut infer, ca, tz, ambiguous)
-        },
+    if ca.first_non_null().is_none() {
+        return Ok(
+            Int64Chunked::full_null(ca.name().clone(), ca.len()).into_datetime(tu, tz.cloned())
+        );
     }
+
+    let pattern = infer_from_values(ca, infer_pattern_datetime_single)
+        .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
+    let mut infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(tu))?;
+    #[cfg(feature = "timezones")]
+    if matches!(pattern, Pattern::DatetimeYMDZ) {
+        polars_ensure!(
+            !ensure_matching_time_zone || tz.is_some(),
+            to_datetime_tz_mismatch
+        );
+    }
+    coerce_string_to_datetime(&mut infer, ca, tz, ambiguous)
 }
 /// Apply a pre-built `DatetimeInfer<Int32Type>` to a `StringChunked`, returning a `DateChunked`.
 #[cfg(feature = "dtype-date")]
@@ -534,13 +533,12 @@ pub fn coerce_string_to_datetime(
 
 #[cfg(feature = "dtype-date")]
 pub(crate) fn to_date(ca: &StringChunked) -> PolarsResult<DateChunked> {
-    match ca.first_non_null() {
-        None => Ok(Int32Chunked::full_null(ca.name().clone(), ca.len()).into_date()),
-        Some(_) => {
-            let pattern = infer_from_values(ca, infer_pattern_date_single)
-                .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
-            let mut infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None).unwrap();
-            coerce_string_to_date(&mut infer, ca)
-        },
+    if ca.first_non_null().is_none() {
+        return Ok(Int32Chunked::full_null(ca.name().clone(), ca.len()).into_date());
     }
+
+    let pattern = infer_from_values(ca, infer_pattern_date_single)
+        .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
+    let mut infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None).unwrap();
+    coerce_string_to_date(&mut infer, ca)
 }

@@ -116,20 +116,21 @@ fn cast_literal_series(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
     s.strict_cast(dtype)
 }
 
-/// Parse a string expression into `Date`/`Time`/`Datetime`
-fn parse_string_as_temporal(expr: Expr, dtype: &DataType, strict: bool) -> PolarsResult<Expr> {
+/// Parse a string expression into `Date`/`Time`/`Datetime`; `None` for any
+/// other target dtype.
+fn parse_string_as_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Option<Expr> {
     let options = StrptimeOptions {
         strict,
         ..Default::default()
     };
-    Ok(match dtype {
+    Some(match dtype {
         DataType::Date => expr.str().to_date(options),
         DataType::Time => expr.str().to_time(options),
         DataType::Datetime(tu, tz) => {
             expr.str()
                 .to_datetime(Some(*tu), tz.clone(), options, lit("latest"))
         },
-        _ => polars_bail!(SQLInterface: "cannot parse string as {:?}", dtype),
+        _ => return None,
     })
 }
 
@@ -567,39 +568,27 @@ impl SQLExprVisitor<'_> {
                     },
                     |dt| dt.as_literal(),
                 );
-                match left_dtype {
-                    Some(DataType::Time) if is_iso_time(s) => {
-                        right.clone().str().to_time(StrptimeOptions {
-                            strict: true,
-                            ..Default::default()
-                        })
+                let parsed = match left_dtype {
+                    Some(dtype @ DataType::Time) if is_iso_time(s) => {
+                        parse_string_as_temporal(right.clone(), dtype, true)
                     },
-                    Some(DataType::Date) if is_iso_date(s) => {
-                        right.clone().str().to_date(StrptimeOptions {
-                            strict: true,
-                            ..Default::default()
-                        })
+                    Some(dtype @ DataType::Date) if is_iso_date(s) => {
+                        parse_string_as_temporal(right.clone(), dtype, true)
                     },
-                    Some(DataType::Datetime(tu, tz)) if is_iso_datetime(s) || is_iso_date(s) => {
-                        if s.len() == 10 {
+                    Some(dtype @ DataType::Datetime(_, _))
+                        if is_iso_datetime(s) || is_iso_date(s) =>
+                    {
+                        let s = if s.len() == 10 {
                             // handle upcast from ISO date string (10 chars) to datetime
-                            lit(format!("{s}T00:00:00"))
+                            format!("{s}T00:00:00")
                         } else {
-                            lit(s.replacen(' ', "T", 1))
-                        }
-                        .str()
-                        .to_datetime(
-                            Some(*tu),
-                            tz.clone(),
-                            StrptimeOptions {
-                                strict: true,
-                                ..Default::default()
-                            },
-                            lit("latest"),
-                        )
+                            s.replacen(' ', "T", 1)
+                        };
+                        parse_string_as_temporal(lit(s), dtype, true)
                     },
-                    _ => right.clone(),
-                }
+                    _ => None,
+                };
+                parsed.unwrap_or_else(|| right.clone())
             }
         } else {
             right.clone()
@@ -1029,8 +1018,9 @@ impl SQLExprVisitor<'_> {
             polars_type,
             DataType::Date | DataType::Time | DataType::Datetime(_, _)
         ) && self.is_string_expr(&expr)
+            && let Some(parsed) = parse_string_as_temporal(expr.clone(), &polars_type, strict)
         {
-            return parse_string_as_temporal(expr, &polars_type, strict);
+            return Ok(parsed);
         }
         Ok(if strict {
             expr.strict_cast(polars_type)
