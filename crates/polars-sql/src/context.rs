@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::ops::Deref;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
@@ -2789,6 +2789,8 @@ impl SQLContext {
         // Note: remove the `group_by` keys as Polars adds those implicitly.
         let mut aliased_aggregations: PlHashMap<PlSmallStr, PlSmallStr> = PlHashMap::new();
         let mut aggregation_projection = Vec::with_capacity(projections.len());
+        let mut window_projection: Vec<Expr> = Vec::new();
+        let mut window_agg_count: usize = 0;
         let mut projection_overrides = PlHashMap::with_capacity(projections.len());
         let mut projection_aliases = PlHashSet::new();
         let mut group_key_aliases = PlHashSet::new();
@@ -2843,6 +2845,18 @@ impl SQLContext {
             }
             let field = e_inner.to_field(&schema_before)?;
             if is_non_group_key_expr {
+                // SQL evaluates window functions after `GROUP BY`, so they belong on the
+                // aggregated frame; only the aggregates inside them run in the group context.
+                if has_expr(e, |e| matches!(e, Expr::Over { .. })) {
+                    let window_expr = hoist_group_aggregates(
+                        strip_outer_alias(e),
+                        &schema_before,
+                        &mut aggregation_projection,
+                        &mut window_agg_count,
+                    );
+                    window_projection.push(window_expr.alias(field.name.clone()));
+                    continue;
+                }
                 let mut e = e.clone();
                 if let Expr::Agg(AggExpr::Implode {
                     input: expr,
@@ -2909,6 +2923,12 @@ impl SQLContext {
             None => group_by,
         }
         .agg(&aggregation_projection);
+
+        let aggregated = if window_projection.is_empty() {
+            aggregated
+        } else {
+            aggregated.with_columns(&window_projection)
+        };
 
         let projection_schema =
             expressions_to_schema(&projections, &schema_before, |duplicate_name: &str| {
@@ -3560,6 +3580,64 @@ fn process_join_on(
             SQLInterface: "unsupported join constraint expression: {:?}", sql_expr
         ),
     }
+}
+
+/// Replace aggregates over pre-aggregation columns with references to hoisted
+/// aggregation outputs, collecting the hoisted aggregates into `agg_out`.
+///
+/// Used for window functions in a `GROUP BY` query: `avg(sum(x)) OVER (...)` runs
+/// `sum(x)` in the group context and `avg(...) OVER (...)` on the aggregated frame.
+fn hoist_group_aggregates(
+    expr: Expr,
+    schema_before: &Schema,
+    agg_out: &mut Vec<Expr>,
+    counter: &mut usize,
+) -> Expr {
+    expr.map_expr(|e| match e {
+        // The expression rewriter leaves a window's ORDER BY untouched, so recurse into it.
+        Expr::Over {
+            function,
+            partition_by,
+            order_by,
+            mapping,
+        } => {
+            let order_by = order_by.map(|(by, options)| {
+                let by = hoist_group_aggregates(
+                    Arc::unwrap_or_clone(by),
+                    schema_before,
+                    agg_out,
+                    counter,
+                );
+                (Arc::new(by), options)
+            });
+            Expr::Over {
+                function,
+                partition_by,
+                order_by,
+                mapping,
+            }
+        },
+        e if matches!(e, Expr::Agg(_))
+            && has_expr(
+                &e,
+                |inner| matches!(inner, Expr::Column(name) if schema_before.contains(name)),
+            ) =>
+        {
+            // An identical aggregate may appear in both the window body and its ORDER BY.
+            let existing = agg_out.iter().find_map(|agg| match agg {
+                Expr::Alias(inner, name) if **inner == e => Some(name.clone()),
+                _ => None,
+            });
+            let name = existing.unwrap_or_else(|| {
+                let name = format_pl_smallstr!("__POLARS_WINAGG_{}", *counter);
+                *counter += 1;
+                agg_out.push(e.clone().alias(name.clone()));
+                name
+            });
+            col(name)
+        },
+        e => e,
+    })
 }
 
 /// Whether `expr` reduces a group to a scalar; shared by SELECT-projection
