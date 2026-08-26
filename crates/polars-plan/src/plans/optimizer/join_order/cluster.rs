@@ -312,7 +312,7 @@ fn peel_projections(
 ) -> (Node, Arc<Renames>) {
     let mut renames = renames.clone();
     // Only simple projections and select renames are peeled.
-    // If we re-order, we wil not keep extra columns around as
+    // If we re-order, we will not keep extra columns around as
     // projection pushdown runs after this.
     loop {
         node = match ir_arena.get(node) {
@@ -344,11 +344,19 @@ fn compose_renames(
     renames: &Renames,
     expr_arena: &Arena<AExpr>,
 ) -> Option<Renames> {
+    let read_name = |e: &ExprIR| match expr_arena.get(e.node()) {
+        AExpr::Column(read) => Some(read),
+        _ => None,
+    };
+
+    // A projection that only narrows renames nothing, which is the common shape.
+    if renames.is_empty() && expr.iter().all(|e| read_name(e) == Some(e.output_name())) {
+        return Some(Renames::default());
+    }
+
     let mut out = Renames::with_capacity_and_hasher(expr.len(), Default::default());
     for e in expr {
-        let AExpr::Column(read) = expr_arena.get(e.node()) else {
-            return None;
-        };
+        let read = read_name(e)?;
         let output_name = e.output_name();
         let target = renames.get(output_name).unwrap_or(output_name);
         // Reading one column out under two names is not a rename, and pushing it down
@@ -407,7 +415,12 @@ fn rename_leaf(
 
 /// A join key rewritten into the names the cluster root uses.
 fn normalize_key(key: &ExprIR, renames: &Renames, expr_arena: &mut Arena<AExpr>) -> ExprIR {
-    if renames.is_empty() {
+    // `rename_columns` re-interns the whole expression, so only pay for it when this
+    // key is one of the things being renamed.
+    let touches = |name: &PlSmallStr| renames.contains_key(name.as_str());
+    if !aexpr_to_leaf_names_iter(key.node(), expr_arena).any(&touches)
+        && !key.output_name_inner().get().is_some_and(touches)
+    {
         return key.clone();
     }
     let node = rename_columns(key.node(), expr_arena, renames);

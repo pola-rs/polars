@@ -307,12 +307,7 @@ def test_select_on_a_leaf_is_estimated(tmp_path: Path) -> None:
     frames = {k: v.select(pl.all()) for k, v in star_frames(tmp_path).items()}
     lf = star_query(frames)
 
-    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
-    assert scan_order(lf.explain(optimizations=ON)) == ["fact", "dim_a", "dim_b"]
-    assert_frame_equal(
-        lf.collect(optimizations=OFF).sort(pl.all()),
-        lf.collect(optimizations=ON).sort(pl.all()),
-    )
+    assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])
 
 
 def test_with_columns_on_a_leaf_is_estimated(tmp_path: Path) -> None:
@@ -320,12 +315,7 @@ def test_with_columns_on_a_leaf_is_estimated(tmp_path: Path) -> None:
     frames["fact"] = frames["fact"].with_columns(f_double=pl.col("f_val") * 2)
     lf = star_query(frames)
 
-    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
-    assert scan_order(lf.explain(optimizations=ON)) == ["fact", "dim_a", "dim_b"]
-    assert_frame_equal(
-        lf.collect(optimizations=OFF).sort(pl.all()),
-        lf.collect(optimizations=ON).sort(pl.all()),
-    )
+    assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])
 
 
 def between_joins(
@@ -355,12 +345,7 @@ def test_projection_between_joins_keeps_one_cluster(tmp_path: Path) -> None:
     # Without looking past it the outer join sees two leaves and no cluster forms.
     lf = joins_around(star_frames(tmp_path), "b_name")
 
-    assert scan_order(lf.explain(optimizations=OFF)) == ["fact", "dim_b", "dim_a"]
-    assert scan_order(lf.explain(optimizations=ON)) == ["fact", "dim_a", "dim_b"]
-    assert_frame_equal(
-        lf.collect(optimizations=OFF).sort(pl.all()),
-        lf.collect(optimizations=ON).sort(pl.all()),
-    )
+    assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])
 
 
 def test_computed_projection_between_joins_is_not_dropped(tmp_path: Path) -> None:
