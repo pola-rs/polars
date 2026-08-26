@@ -1,5 +1,6 @@
 use arrow::bitmap::Bitmap;
 use arrow::offset::OffsetsBuffer;
+use polars_compute::gather::take_unchecked;
 
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::ops::row_encode::encode_rows_unordered;
@@ -122,12 +123,15 @@ pub(crate) fn canonicalize_map_storage(storage: &Series) -> PolarsResult<Option<
     let DataType::Struct(entry_fields) = entries_dtype.as_ref() else {
         unreachable!("map storage must be List(Struct {{key, value}})")
     };
+    let [key_field, _] = entry_fields.as_slice() else {
+        unreachable!("map entries must have two fields")
+    };
     let list_ca = storage.list().unwrap();
     // Only allocated once a chunk actually needs repair.
     let mut new_chunks: Option<Vec<ArrayRef>> = None;
 
     for (i, chunk) in list_ca.downcast_iter().enumerate() {
-        match canonicalize_list_chunk(chunk, entry_fields)? {
+        match canonicalize_list_chunk(chunk, key_field.dtype())? {
             Some(canonicalized) => new_chunks
                 .get_or_insert_with(|| list_ca.chunks()[..i].to_vec())
                 .push(canonicalized),
@@ -195,66 +199,62 @@ fn canonical_map_indices(keys: &BinaryArray<i64>, offsets: &[i64]) -> Option<Can
 fn gather_entries(
     arr: &LargeListArray,
     entries: &StructArray,
-    keys: &Series,
-    value_field: &Field,
     indices: CanonicalMapIndices,
-) -> PolarsResult<ArrayRef> {
-    let values = unsafe {
-        Series::from_chunks_and_dtype_unchecked(
-            value_field.name.clone(),
-            vec![entries.values()[1].clone()],
-            value_field.dtype(),
-        )
+) -> ArrayRef {
+    let [key_arr, value_arr] = entries.values() else {
+        unreachable!("map entries must have two arrays")
     };
-    let key_out = unsafe { keys.take_slice_unchecked(&indices.first_keys) };
-    let value_out = unsafe { values.take_slice_unchecked(&indices.last_values) };
+    // `from_vec` moves the index buffers rather than copying them.
+    let key_idx = IdxArr::from_vec(indices.first_keys);
+    let value_idx = IdxArr::from_vec(indices.last_values);
 
     // Preserve entry validity from each key's first occurrence.
     let validity = entries.validity().map(|validity| {
-        indices
-            .first_keys
+        key_idx
+            .values()
             .iter()
             .map(|&i| validity.get_bit(i as usize))
             .collect::<Bitmap>()
     });
 
-    let new_entries = StructChunked::from_series(
-        PlSmallStr::EMPTY,
-        indices.first_keys.len(),
-        [key_out, value_out].iter(),
-    )?
-    .with_outer_validity(validity);
+    // Gather at the arrow level: `take_unchecked` carries the input's arrow dtype
+    // through, so the rebuilt chunk stays dtype-identical to any clean sibling chunk
+    // that was passed along untouched. Deriving fresh dtypes here would make the
+    // chunks heterogeneous and break a later rechunk.
+    let new_entries = StructArray::new(
+        entries.dtype().clone(),
+        key_idx.len(),
+        vec![
+            unsafe { take_unchecked(key_arr.as_ref(), &key_idx) },
+            unsafe { take_unchecked(value_arr.as_ref(), &value_idx) },
+        ],
+        validity,
+    );
 
-    Ok(LargeListArray::new(
+    LargeListArray::new(
         arr.dtype().clone(),
         indices.offsets,
-        new_entries.into_series().rechunk().chunks()[0].clone(),
+        new_entries.boxed(),
         arr.validity().cloned(),
     )
-    .boxed())
+    .boxed()
 }
 
 /// Returns `None` when `arr` has no duplicate keys in any row.
 fn canonicalize_list_chunk(
     arr: &LargeListArray,
-    entry_fields: &[Field],
+    key_dtype: &DataType,
 ) -> PolarsResult<Option<ArrayRef>> {
     let entries = arr.values();
     let entries = entries.as_any().downcast_ref::<StructArray>().unwrap();
-    let [key_field, value_field] = entry_fields else {
-        unreachable!("map entries must have two fields")
-    };
     let [key_arr, _] = entries.values() else {
         unreachable!("map entries must have two arrays")
     };
 
-    // Preserve the canonical field names when rebuilding the entries struct.
+    // A Series only to row-encode the keys: that needs the *logical* dtype, so a
+    // categorical key carries its mapping. The name never reaches the output.
     let keys = unsafe {
-        Series::from_chunks_and_dtype_unchecked(
-            key_field.name.clone(),
-            vec![key_arr.clone()],
-            key_field.dtype(),
-        )
+        Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![key_arr.clone()], key_dtype)
     };
 
     // Match Polars grouping/join equality without relying on hashes alone.
@@ -264,5 +264,5 @@ fn canonicalize_list_chunk(
         return Ok(None);
     };
 
-    gather_entries(arr, entries, &keys, value_field, indices).map(Some)
+    Ok(Some(gather_entries(arr, entries, indices)))
 }
