@@ -10,16 +10,29 @@ use crate::prelude::*;
 use crate::random::get_global_random_u64;
 use crate::utils::NoNull;
 
-fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
+fn create_rand_index_with_replacement(
+    n: usize,
+    len: usize,
+    seed: Option<u64>,
+    shuffle: Option<bool>,
+) -> IdxCa {
     if len == 0 {
         return IdxCa::new_vec(PlSmallStr::EMPTY, vec![]);
     }
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
     let dist = Uniform::new(0, len as IdxSize).unwrap();
-    (0..n as IdxSize)
-        .map(move |_| dist.sample(&mut rng))
-        .collect_trusted::<NoNull<IdxCa>>()
-        .into_inner()
+    if let Some(false) = shuffle {
+        (0..n as IdxSize)
+            .map(move |_| dist.sample(&mut rng))
+            .collect_trusted::<NoNull<IdxCa>>()
+            .into_inner()
+            .sort(false)
+    } else {
+        (0..n as IdxSize)
+            .map(move |_| dist.sample(&mut rng))
+            .collect_trusted::<NoNull<IdxCa>>()
+            .into_inner()
+    }
 }
 
 fn create_rand_index_no_replacement(
@@ -100,7 +113,7 @@ impl Series {
 
         match with_replacement {
             true => {
-                let idx = create_rand_index_with_replacement(n, len, seed);
+                let idx = create_rand_index_with_replacement(n, len, seed, shuffle);
                 debug_assert_eq!(len, self.len());
                 // SAFETY: we know that we never go out of bounds.
                 unsafe { Ok(self.take_unchecked(&idx)) }
@@ -154,7 +167,7 @@ where
 
         match with_replacement {
             true => {
-                let idx = create_rand_index_with_replacement(n, len, seed);
+                let idx = create_rand_index_with_replacement(n, len, seed, shuffle);
                 debug_assert_eq!(len, self.len());
                 // SAFETY: we know that we never go out of bounds.
                 unsafe { Ok(self.take_unchecked(&idx)) }
@@ -214,7 +227,7 @@ impl DataFrame {
         ensure_shape(n, self.height(), with_replacement)?;
         // All columns should used the same indices. So we first create the indices.
         let idx = match with_replacement {
-            true => create_rand_index_with_replacement(n, self.height(), seed),
+            true => create_rand_index_with_replacement(n, self.height(), seed, shuffle),
             false => create_rand_index_no_replacement(n, self.height(), seed, shuffle),
         };
         // SAFETY: the indices are within bounds.
