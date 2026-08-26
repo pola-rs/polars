@@ -418,6 +418,27 @@ mod req {
     // const FAILURE_PROBABILITY: f64 = 1e-6;
     const FAILURE_PROBABILITY: f64 = 0.5;
 
+    /// Stream length to parameterise a fresh sketch for.
+    fn initial_n(error: f64) -> usize {
+        let k = |n| compute_k(error, FAILURE_PROBABILITY, n);
+        let b = |n| compactor_threshold_b(k(n), n);
+
+        // Choose initial guess of n such that `error * n > 1`.
+        let mut n = (f64::ceil(1.0 / error) as usize).next_power_of_two();
+        // Ensure that:
+        //   1. The number of protected items is not larger than the total number
+        //      of items, because that would mean that no items could get promoted
+        //      at all during compaction.
+        //   2. The capacity of a relative compactor is larger than the maximum
+        //      number of consumable items in the sketch, in that case we would
+        //      not even fill up that first compactor.
+        // TODO: [amber] Consider an addition factor of 8 or smth.
+        while k(n) > n || b(n) >= n {
+            n *= 2;
+        }
+        n
+    }
+
     fn compute_k(error: f64, failure_prob: f64, n: usize) -> usize {
         assert!(error > 0.0 && error < 1.0, "invalid error: {error}");
         assert!(
@@ -455,6 +476,8 @@ mod req {
         /// The total number of items this sketch can ingest befor it becomes
         /// inaccurate wrt the error parameter.
         n: usize,
+        /// The allowed error as fraction of n.
+        error: f64,
         /// k parameter of the paper. Impacts how many items are protected during
         /// a compaction.
         k: usize,
@@ -472,10 +495,10 @@ mod req {
 
     #[derive(Debug, Clone)]
     #[repr(transparent)]
-    pub struct ReqSketchBounded<T: fmt::Debug + Clone + TotalOrd>(State<T>);
+    struct ReqSketch<T: fmt::Debug + Clone + TotalOrd>(State<T>);
 
-    impl<T: fmt::Debug + Clone + TotalOrd> ReqSketchBounded<T> {
-        pub fn new(error: f64, n: usize, hra: bool) -> Self {
+    impl<T: fmt::Debug + Clone + TotalOrd> ReqSketch<T> {
+        fn new(error: f64, n: usize, hra: bool) -> Self {
             let k = compute_k(error, FAILURE_PROBABILITY, n);
             assert!(n > k, "n must be greater than k");
             let state = IngestingState {
@@ -487,12 +510,13 @@ mod req {
                 }],
                 hra,
                 n,
+                error,
                 k,
                 b: dbg!(compactor_threshold_b(k, n)),
                 consumed_items: 0,
                 rng: rand::make_rng(),
             };
-            ReqSketchBounded(State::Ingesting(state))
+            ReqSketch(State::Ingesting(state))
         }
 
         #[inline]
@@ -531,7 +555,9 @@ mod req {
         #[inline]
         pub fn update(&mut self, array: &[T]) {
             for item in array {
-                assert!(self.space_left() > 0);
+                if self.space_left() == 0 {
+                    self.close_out();
+                }
                 self.compact_if_needed(0);
                 self.items.push(item.clone());
                 self.levels[0].size += 1;
@@ -541,6 +567,12 @@ mod req {
 
         fn space_left(&self) -> usize {
             self.n.saturating_sub(self.consumed_items)
+        }
+
+        fn close_out(&mut self) {
+            self.n = 2 * self.n;
+            self.k = compute_k(self.error, FAILURE_PROBABILITY, self.n).max(self.k);
+            self.b = compactor_threshold_b(self.k, self.b).max(self.b);
         }
 
         fn is_compactor_full(&self, level: usize) -> bool {
