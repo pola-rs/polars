@@ -85,10 +85,19 @@ struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
     scratch: Vec<T>,
 }
 
-#[derive(Debug, Clone, Default)]
-struct FinalizedState<T: fmt::Debug + Clone + TotalOrd> {
+#[derive(Debug, Clone)]
+pub(super) struct FinalizedState<T: fmt::Debug + Clone + TotalOrd> {
     items: Box<[T]>,
     cum_weight: Option<Box<[usize]>>,
+}
+
+impl<T: fmt::Debug + Clone + TotalOrd> Default for FinalizedState<T> {
+    fn default() -> Self {
+        Self {
+            items: Box::new([]),
+            cum_weight: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -334,27 +343,38 @@ impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
 }
 
 impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
-    fn num_items(&self) -> usize {
+    pub(super) fn new(items: Box<[T]>, cum_weight: Option<Box<[usize]>>) -> Self {
+        Self { items, cum_weight }
+    }
+
+    pub(super) fn num_items(&self) -> usize {
         match &self.cum_weight {
             Some(cum_weight) => cum_weight.last().map(|x| *x).unwrap_or(0),
             None => self.items.len(),
         }
     }
 
-    fn estimate_rank(&self, value: &T) -> usize {
+    pub(super) fn estimate_rank(&self, value: &T) -> usize {
         todo!()
     }
 
-    fn estimate_quantile(&self, quantile: f64) -> &T {
-        let estimated_rank = (self.num_items() as f64 * quantile).round_ties_even() as usize;
-        let idx = match &self.cum_weight {
-            Some(cum_weight) => match cum_weight.binary_search(&estimated_rank) {
-                Ok(x) => x,
-                Err(x) => x,
-            },
-            None => estimated_rank.clamp(0, self.items.len() - 1),
-        };
+    pub(super) fn estimate_quantile(&self, quantile: f64) -> &T {
+        assert!(
+            (0.0..=1.0).contains(&quantile),
+            "quantile should be between 0.0 and 1.0"
+        );
+        let estimated_rank =
+            (quantile * self.num_items().saturating_sub(1) as f64).round() as usize + 1;
+        let idx = estimate_quantile_index(self.cum_weight.as_ref(), estimated_rank);
         &self.items[idx]
+    }
+}
+
+#[inline(never)]
+fn estimate_quantile_index(cum_weight: Option<&Box<[usize]>>, estimated_rank: usize) -> usize {
+    match cum_weight {
+        Some(cum_weight) => cum_weight.partition_point(|w| *w < estimated_rank),
+        None => estimated_rank - 1,
     }
 }
 

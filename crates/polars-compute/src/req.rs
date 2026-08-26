@@ -4,6 +4,8 @@ use polars_utils::total_ord::TotalOrd;
 use rand::RngExt;
 use rand::rngs::SmallRng;
 
+use crate::kll::FinalizedState;
+
 // TODO: [amber] Reseed on clone()
 
 /// KLL calls this `δ`. Equivalent to a 99.9999% success rate per queried value.
@@ -47,12 +49,6 @@ struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
     rng: SmallRng,
 }
 
-#[derive(Debug, Clone, Default)]
-struct FinalizedState<T: fmt::Debug + Clone + TotalOrd> {
-    items: Box<[T]>,
-    cum_weight: Option<Box<[usize]>>,
-}
-
 #[derive(Debug, Clone)]
 enum State<T: fmt::Debug + Clone + TotalOrd> {
     Ingesting(IngestingState<T>),
@@ -90,10 +86,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> ReqSketchBounded<T> {
     }
 
     pub fn finalize(&mut self) {
-        let placeholder = State::Finalized(FinalizedState {
-            items: Box::new([]),
-            cum_weight: None,
-        });
+        let placeholder = State::Finalized(FinalizedState::default());
         let state = mem::replace(&mut self.0, placeholder);
         let State::Ingesting(state) = state else {
             unreachable!()
@@ -207,10 +200,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
         // With a single compactor every item has weight 1.
         if rel_compactors.len() <= 1 {
             let items = rel_compactors.pop().unwrap_or_default();
-            return FinalizedState {
-                items: items.into_boxed_slice(),
-                cum_weight: None,
-            };
+            return FinalizedState::new(items.into_boxed_slice(), None);
         }
 
         // Merge all sorted levels
@@ -244,42 +234,10 @@ impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
         debug_assert_eq!(cum_weights.len(), num_items);
         debug_assert_eq!(cum_weights.last().unwrap_or(&0), &consumed_items);
 
-        FinalizedState {
-            items: finalized_items.into_boxed_slice(),
-            cum_weight: Some(cum_weights.into_boxed_slice()),
-        }
-    }
-}
-
-impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
-    fn num_items(&self) -> usize {
-        match &self.cum_weight {
-            Some(cum_weight) => cum_weight.last().map(|x| *x).unwrap_or(0),
-            None => self.items.len(),
-        }
-    }
-
-    fn estimate_rank(&self, value: &T) -> usize {
-        todo!()
-    }
-
-    fn estimate_quantile(&self, quantile: f64) -> &T {
-        assert!(
-            (0.0..=1.0).contains(&quantile),
-            "invalid quantile: {quantile}"
-        );
-        let estimated_rank =
-            (quantile * self.num_items().saturating_sub(1) as f64).round() as usize + 1;
-        let idx = estimate_quantile_index(self.cum_weight.as_ref(), estimated_rank);
-        &self.items[idx]
-    }
-}
-
-#[inline(never)]
-fn estimate_quantile_index(cum_weight: Option<&Box<[usize]>>, estimated_rank: usize) -> usize {
-    match cum_weight {
-        Some(cum_weight) => cum_weight.partition_point(|w| *w < estimated_rank),
-        None => estimated_rank - 1,
+        FinalizedState::new(
+            finalized_items.into_boxed_slice(),
+            Some(cum_weights.into_boxed_slice()),
+        )
     }
 }
 
