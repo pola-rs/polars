@@ -743,6 +743,22 @@ impl DataType {
         }
     }
 
+    pub fn contains_map(&self) -> bool {
+        use DataType as D;
+        match self {
+            #[cfg(feature = "dtype-map")]
+            D::Map(_, _) => true,
+            D::List(inner) => inner.contains_map(),
+            #[cfg(feature = "dtype-array")]
+            D::Array(inner, _) => inner.contains_map(),
+            #[cfg(feature = "dtype-struct")]
+            D::Struct(fields) => fields.iter().any(|field| field.dtype.contains_map()),
+            #[cfg(feature = "dtype-extension")]
+            D::Extension(_, storage) => storage.contains_map(),
+            _ => false,
+        }
+    }
+
     pub fn contains_list_recursive(&self) -> bool {
         use DataType as D;
         match self {
