@@ -529,7 +529,7 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
                 } else {
                     unreachable!()
                 }
-            }
+            },
         }
     }
 
