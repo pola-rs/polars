@@ -32,8 +32,8 @@ TEST_CASES = [
     # ---------------------------------------------
     ("a", "lambda x: x + 1 - (2 / 3)", '(pl.col("a") + 1) - 0.6666666666666666', None),
     ("a", "lambda x: x // 1 % 2", '(pl.col("a") // 1) % 2', None),
-    ("a", "lambda x: x & True", 'pl.col("a") & True', None),
-    ("a", "lambda x: x | False", 'pl.col("a") | False', None),
+    ("g", "lambda x: x & True", 'pl.col("g") & True', None),
+    ("g", "lambda x: x | False", 'pl.col("g") | False', None),
     ("a", "lambda x: abs(x) != 3", 'pl.col("a").abs() != 3', None),
     ("a", "lambda x: int(x) > 1", 'pl.col("a").cast(pl.Int64) > 1', None),
     (
@@ -370,6 +370,7 @@ def test_parse_apply_functions(
                 datetime(2024, 5, 6),
                 datetime(2077, 10, 20),
             ],
+            "g": [True, False, None],
         }
     )
 
@@ -411,7 +412,7 @@ def test_parse_apply_raw_functions() -> None:
         # ...but we ARE still able to warn
         with pytest.warns(
             PolarsInefficientMapWarning,
-            match=rf"(?s)Expr\.map_elements.*Replace this expression.*np\.{func_name}",
+            match=rf"(?s)\.map_elements.*Replace this expression.*np\.{func_name}",
         ):
             df1 = lf.select(
                 pl.col("a").map_elements(func, return_dtype=pl.self_dtype())
@@ -424,7 +425,7 @@ def test_parse_apply_raw_functions() -> None:
     expr_native = pl.col("value").str.json_decode(json_dtype)
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r"(?s)Expr\.map_elements.*with this one instead:.*\.str\.json_decode",
+        match=r"(?s)\.map_elements.*with this one instead:.*\.str\.json_decode",
     ):
         expr_pyfunc = pl.col("value").map_elements(json.loads, return_dtype=json_dtype)
 

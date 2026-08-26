@@ -111,7 +111,7 @@ pub enum FunctionExpr {
     NullCount,
     Pow(PowFunction),
     #[cfg(feature = "row_hash")]
-    Hash(u64, u64, u64, u64),
+    Hash(u64),
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "index_of")]
@@ -141,7 +141,6 @@ pub enum FunctionExpr {
         function_by: RollingFunctionBy,
         options: RollingOptionsDynamicWindow,
     },
-    Rechunk,
     Append {
         upcast: bool,
     },
@@ -492,7 +491,7 @@ impl Hash for FunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill | Rechunk | MinBy | MaxBy => {},
+            | ArgMax | Product | Shift | ShiftAndFill | MinBy | MaxBy => {},
             Append { upcast } => upcast.hash(state),
             ArgSort {
                 descending,
@@ -518,7 +517,7 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "sign")]
             Sign => {},
             #[cfg(feature = "row_hash")]
-            Hash(a, b, c, d) => (a, b, c, d).hash(state),
+            Hash(seed) => seed.hash(state),
             FillNull => {},
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
@@ -731,7 +730,7 @@ impl Display for FunctionExpr {
             NullCount => "null_count",
             Pow(func) => return write!(f, "{func}"),
             #[cfg(feature = "row_hash")]
-            Hash(_, _, _, _) => "hash",
+            Hash(_) => "hash",
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
             #[cfg(feature = "index_of")]
@@ -751,7 +750,6 @@ impl Display for FunctionExpr {
             RollingExpr { function, .. } => return write!(f, "{function}"),
             #[cfg(feature = "rolling_window_by")]
             RollingExprBy { function_by, .. } => return write!(f, "{function_by}"),
-            Rechunk => "rechunk",
             Append { .. } => "upcast",
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
@@ -919,6 +917,3 @@ impl Display for FunctionExpr {
         write!(f, "{s}")
     }
 }
-
-#[cfg(any(feature = "array_to_struct", feature = "list_to_struct"))]
-pub type DslNameGenerator = PlanCallback<usize, String>;

@@ -780,6 +780,9 @@ def test_cast_options_ignore_extra_columns() -> None:
     pl.DataFrame({"a": 1}).write_parquet(files[0])
     pl.DataFrame({"a": 2, "b": 1}).write_parquet(files[1])
 
+    for f in files:
+        f.seek(0)
+
     with pytest.raises(
         pl.exceptions.SchemaError,
         match=r"extra column in file outside of expected schema: b, hint: specify.* or pass",
@@ -800,8 +803,7 @@ def test_cast_options_ignore_extra_columns() -> None:
     ("scan_func", "write_func"),
     [
         (pl.scan_parquet, pl.DataFrame.write_parquet),
-        # TODO: Fix for all other formats
-        # (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
         # (pl.scan_csv, pl.DataFrame.write_csv),
         # (pl.scan_ndjson, pl.DataFrame.write_ndjson),
     ],
@@ -815,6 +817,9 @@ def test_scan_cast_options_extra_columns(
 
     write_func(dfs[0], files[0])
     write_func(dfs[1], files[1])
+
+    for f in files:
+        f.seek(0)
 
     with pytest.raises(
         pl.exceptions.SchemaError,

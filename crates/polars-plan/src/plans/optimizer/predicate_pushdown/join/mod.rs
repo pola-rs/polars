@@ -429,6 +429,7 @@ pub(super) fn process_join(
                 run_parallel: false,
                 duplicate_check: false,
                 should_broadcast: false,
+                maintain_dataframe_height: false,
             },
         }
     } else {
@@ -454,6 +455,7 @@ fn apply_join_key_reduction_select(
                 run_parallel: false,
                 duplicate_check: false,
                 should_broadcast: false,
+                maintain_dataframe_height: false,
             },
         }
     } else {

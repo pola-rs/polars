@@ -1,27 +1,19 @@
 from __future__ import annotations
 
 import contextlib
-import os
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Literal
 
 import polars._reexport as pl
 import polars.functions as F
 from polars._dependencies import import_optional
-from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
-)
+from polars._utils.expired import RemovedParameter, RenamedParameter, removed_parameters
 from polars._utils.various import (
-    is_non_empty_sequence_of,
-    is_str_sequence,
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.io._utils import (
     get_sources,
-    is_glob_pattern,
-    is_local_file,
     parse_columns_arg,
     parse_row_index_args,
     prepare_file_arg,
@@ -43,19 +35,34 @@ if TYPE_CHECKING:
     from polars.io.cloud import CredentialProviderFunction
 
 
-@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
-@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@removed_parameters(
+    RenamedParameter(
+        name="row_count_name",
+        new_name="row_index_name",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RenamedParameter(
+        name="row_count_offset",
+        new_name="row_index_offset",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
+    ),
+)
 def read_ipc(
     source: str | Path | IO[bytes] | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
-    memory_map: bool = False,
     storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-    rechunk: bool | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC (Feather v2) file.
@@ -83,10 +90,6 @@ def read_ipc(
         Only valid when `use_pyarrow=False`.
     use_pyarrow
         Use pyarrow or the native Rust reader.
-    memory_map
-        Try to memory map the file. This can greatly improve performance on repeated
-        queries as the OS may cache pages.
-        Only uncompressed IPC files can be memory mapped.
     storage_options
         Extra options that make sense for `fsspec.open()` or a particular storage
         connection, e.g. host, port, username, password, etc.
@@ -96,11 +99,6 @@ def read_ipc(
     row_index_offset
         Start the row index at this offset. Cannot be negative.
         Only used if `row_index_name` is set.
-    rechunk
-        Make sure that all data is contiguous.
-
-        .. deprecated:: 1.43.2
-            Call rechunk on the returned DataFrame.
 
     Returns
     -------
@@ -125,68 +123,33 @@ def read_ipc(
           E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")`
           will fail.
     """
-    if (
-        # Check that it is not a BytesIO object
-        isinstance(v := source, (str, Path))
-    ) and (
-        # HuggingFace only for now ⊂( ◜◒◝ )⊃
-        (is_hf := str(v).startswith("hf://"))
-        # Also dispatch on FORCE_ASYNC, so that this codepath gets run
-        # through by our test suite during CI.
-        or os.getenv("POLARS_FORCE_ASYNC") == "1"
-        # TODO: Dispatch all paths to `scan_ipc` - this will need a breaking
-        # change to the `storage_options` parameter.
-    ):
-        if is_hf and use_pyarrow:
+    projection, column_names = parse_columns_arg(columns)
+    del columns
+    row_index = parse_row_index_args(row_index_name, row_index_offset)
+    del row_index_name
+    del row_index_offset
+
+    if use_pyarrow:
+        if n_rows:
+            msg = (
+                "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
+            )
+            raise ValueError(msg)
+
+        if (isinstance(v := source, (str, Path))) and str(v).startswith("hf://"):
             msg = "`use_pyarrow=True` is not supported for Hugging Face"
             raise ValueError(msg)
 
-        lf = scan_ipc(
-            source,
-            n_rows=n_rows,
-            storage_options=storage_options,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-        )
-
-        if columns:
-            if isinstance(columns[0], int):
-                lf = lf.select(F.nth(columns))  # type: ignore[arg-type]
-            else:
-                lf = lf.select(columns)
-
-        df = lf._collect_eager()
-
-        if rechunk:
-            df = df.rechunk()
-
-        return df
-
-    if rechunk is not None:
-        issue_deprecation_warning(
-            "`rechunk` parameter on read_ipc() will be removed. "
-            "Consider calling "
-            "df.rechunk() on the result.",
-            version="1.43.2",
-        )
-    else:
-        rechunk = False
-
-    if use_pyarrow and n_rows and not memory_map:
-        msg = "`n_rows` cannot be used with `use_pyarrow=True` and `memory_map=False`"
-        raise ValueError(msg)
-
-    with prepare_file_arg(
-        source, use_pyarrow=use_pyarrow, storage_options=storage_options
-    ) as data:
-        if use_pyarrow:
+        with prepare_file_arg(
+            source, use_pyarrow=use_pyarrow, storage_options=storage_options
+        ) as data:
             pyarrow_ipc = import_optional(
                 "pyarrow.ipc",
                 err_prefix="",
                 err_suffix="is required when using 'read_ipc(..., use_pyarrow=True)'",
             )
 
-            if columns is not None and is_non_empty_sequence_of(columns, str):
+            if column_names is not None:
                 initial_pos: Any = None
 
                 if hasattr(data, "tell") and callable(data.tell):
@@ -196,7 +159,7 @@ def read_ipc(
                     schema = ipc_f.schema
 
                 idx_lookup = {name: i for i, name in enumerate(schema.names)}
-                columns = [idx_lookup[name] for name in columns]
+                projection = [idx_lookup[name] for name in column_names]
 
                 if (
                     initial_pos is not None
@@ -207,80 +170,58 @@ def read_ipc(
 
             with pyarrow_ipc.open_file(
                 data,
-                options=pyarrow_ipc.IpcReadOptions(included_fields=columns),
+                options=pyarrow_ipc.IpcReadOptions(included_fields=projection),
             ) as ipc_f:
                 tbl = ipc_f.read_all()
 
-            df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
-            if row_index_name is not None:
-                df = df.with_row_index(row_index_name, row_index_offset)
+            df = pl.DataFrame._from_arrow(tbl)
+
             if n_rows is not None:
-                df = df.slice(0, n_rows)
+                df = df.head(n_rows)
+
+            if row_index is not None:
+                name, offset = row_index
+                df = df.with_row_index(name, offset)
+
             return df
 
-        return _read_ipc_impl(
-            data,
-            columns=columns,
-            n_rows=n_rows,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-            rechunk=rechunk,
-            memory_map=memory_map,
-        )
-
-
-def _read_ipc_impl(
-    source: str | Path | IO[bytes] | bytes,
-    *,
-    columns: Sequence[int] | Sequence[str] | None = None,
-    n_rows: int | None = None,
-    row_index_name: str | None = None,
-    row_index_offset: int = 0,
-    rechunk: bool = True,
-    memory_map: bool = True,
-) -> DataFrame:
-    if isinstance(source, (str, Path)):
-        source = normalize_filepath(source, check_not_directory=False)
-    if isinstance(columns, str):
-        columns = [columns]
-
-    if isinstance(source, str) and is_glob_pattern(source) and is_local_file(source):
-        scan = scan_ipc(
-            source,
-            n_rows=n_rows,
-            row_index_name=row_index_name,
-            row_index_offset=row_index_offset,
-        )
-        if columns is None:
-            df = scan._collect_eager()
-        elif is_str_sequence(columns, allow_str=False):
-            df = scan.select(columns)._collect_eager()
-        else:
-            msg = (
-                "cannot use glob patterns and integer based projection as `columns` argument"
-                "\n\nUse columns: List[str]"
-            )
-            raise TypeError(msg)
-
-        if rechunk:
-            df = df.rechunk()
-
-        return df
-
-    projection, columns = parse_columns_arg(columns)
-    pydf = PyDataFrame.read_ipc(
+    lf = scan_ipc(
         source,
-        columns,
-        projection,
-        n_rows,
-        parse_row_index_args(row_index_name, row_index_offset),
-        memory_map=memory_map,
+        n_rows=n_rows,
+        storage_options=storage_options,
     )
-    return wrap_df(pydf)
+
+    if column_names is not None:
+        lf = lf.select(column_names)
+    elif projection is not None:
+        lf = lf.select(F.nth(projection))
+
+    if row_index is not None:
+        name, offset = row_index
+        lf = lf.with_row_index(name, offset)
+
+    return lf._collect_eager()
 
 
-@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
-@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@removed_parameters(
+    RenamedParameter(
+        name="row_count_name",
+        new_name="row_index_name",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RenamedParameter(
+        name="row_count_offset",
+        new_name="row_index_offset",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
+    ),
+)
 def read_ipc_stream(
     source: str | Path | IO[bytes] | bytes,
     *,
@@ -290,7 +231,6 @@ def read_ipc_stream(
     storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-    rechunk: bool | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from Arrow IPC record batch stream.
@@ -326,26 +266,11 @@ def read_ipc_stream(
     row_index_offset
         Start the row index at this offset. Cannot be negative.
         Only used if `row_index_name` is set.
-    rechunk
-        Make sure that all data is contiguous.
-
-        .. deprecated:: 1.43.2
-            Call rechunk on the returned DataFrame(s).
 
     Returns
     -------
     DataFrame
     """
-    if rechunk is not None:
-        issue_deprecation_warning(
-            "`rechunk` parameter on read_ipc_stream() will be removed. "
-            "Consider calling "
-            "df.rechunk() on the result.",
-            version="1.43.2",
-        )
-    else:
-        rechunk = False
-
     with prepare_file_arg(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
@@ -357,7 +282,7 @@ def read_ipc_stream(
             )
             with pyarrow_ipc.RecordBatchStreamReader(data) as reader:
                 tbl = reader.read_all()
-                df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
+                df = pl.DataFrame._from_arrow(tbl)
                 if row_index_name is not None:
                     df = df.with_row_index(row_index_name, row_index_offset)
                 if n_rows is not None:
@@ -370,7 +295,6 @@ def read_ipc_stream(
             n_rows=n_rows,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
-            rechunk=rechunk,
         )
 
 
@@ -381,7 +305,6 @@ def _read_ipc_stream_impl(
     n_rows: int | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
-    rechunk: bool = True,
 ) -> DataFrame:
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)
@@ -395,7 +318,7 @@ def _read_ipc_stream_impl(
         projection,
         n_rows,
         parse_row_index_args(row_index_name, row_index_offset),
-        rechunk,
+        rechunk=False,
     )
     return wrap_df(pydf)
 
@@ -423,8 +346,45 @@ def read_ipc_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, DataTyp
     return _read_ipc_schema(source)
 
 
-@deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
-@deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@removed_parameters(
+    RenamedParameter(
+        name="row_count_name",
+        new_name="row_index_name",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RenamedParameter(
+        name="row_count_offset",
+        new_name="row_index_offset",
+        deprecated_in="0.20.4",
+        removed_in="2.0",
+    ),
+    RemovedParameter(
+        name="rechunk",
+        removed_in="2.0",
+        hint="call `rechunk()` on the resulting Dataframe if you need contiguous memory.",
+    ),
+)
+@removed_parameters(
+    RemovedParameter(
+        name="retries",
+        deprecated_in="1.37.1",
+        removed_in="2.0",
+        hint='Pass {"max_retries": n} via `storage_options` instead.',
+    ),
+    RemovedParameter(
+        name="file_cache_ttl",
+        deprecated_in="1.40.0",
+        removed_in="2.0",
+        hint="The file cache is no longer supported.",
+    ),
+    RemovedParameter(
+        name="cache",
+        deprecated_in="1.40.0",
+        removed_in="2.0",
+        hint="The file cache is no longer supported.",
+    ),
+)
 def scan_ipc(
     source: (
         str
@@ -438,20 +398,16 @@ def scan_ipc(
     ),
     *,
     n_rows: int | None = None,
-    cache: bool | None = None,
-    rechunk: bool | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     glob: bool = True,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    memory_map: bool = True,
-    retries: int | None = None,
-    file_cache_ttl: int | None = None,
     hive_partitioning: bool | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
     include_file_paths: str | None = None,
+    extra_columns: Literal["ignore", "raise"] = "raise",
     _record_batch_statistics: bool = False,
 ) -> LazyFrame:
     """
@@ -472,16 +428,6 @@ def scan_ipc(
         `storage_options` parameter.
     n_rows
         Stop reading from IPC file after reading `n_rows`.
-    cache
-        Cache the result after reading.
-
-        .. deprecated:: 1.40.0
-            File cache is no longer supported.
-    rechunk
-        Reallocate to contiguous memory when all chunks/ files are parsed.
-
-        .. deprecated:: 1.43.2
-            Collect into a DataFrame first, then call rechunk on the returned DataFrame.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -512,25 +458,6 @@ def scan_ipc(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
 
-    memory_map
-        Try to memory map the file. This can greatly improve performance on repeated
-        queries as the OS may cache pages.
-        Only uncompressed IPC files can be memory mapped.
-
-        .. deprecated:: 1.40.0
-            Controlling memory map behavior is no longer supported.
-    retries
-        Number of retries if accessing a cloud instance fails.
-
-        .. deprecated:: 1.37.1
-            Pass {"max_retries": n} via `storage_options` instead.
-    file_cache_ttl
-        Amount of time to keep downloaded cloud files since their last access time,
-        in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
-        (which defaults to 1 hour) if not given.
-
-        .. deprecated:: 1.40.0
-            File cache is no longer supported.
     hive_partitioning
         Infer statistics and schema from Hive partitioned URL and use them
         to prune reads. This is unset by default (i.e. `None`), meaning it is
@@ -547,33 +474,14 @@ def scan_ipc(
         Whether to try parsing hive values as date/datetime types.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
+    extra_columns
+        Configuration for behavior when extra columns outside of the
+        defined schema are encountered in the data:
+
+        * `ignore`: Silently ignores.
+        * `raise`: Raises an error.
     """
-    # Memory Mapping is now a no-op
-    _ = memory_map
-
-    if rechunk is not None:
-        issue_deprecation_warning(
-            "`rechunk` parameter on scan_ipc() will be removed. "
-            "Consider first collecting the scan to a DataFrame, then calling "
-            "df.rechunk() on the result.",
-            version="1.43.2",
-        )
-    else:
-        rechunk = False
-
     sources = get_sources(source)
-
-    if retries is not None:
-        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-        issue_deprecation_warning(msg)
-        storage_options = storage_options or {}
-        storage_options["max_retries"] = retries
-
-    if file_cache_ttl is not None or cache is not None:
-        msg = "file cache is no longer supported as of 1.40.0."
-        issue_deprecation_warning(msg)
-
-    cache_deprecated = False
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, sources, storage_options, "scan_parquet"
@@ -595,10 +503,11 @@ def scan_ipc(
             hive_partitioning=hive_partitioning,
             hive_schema=hive_schema,
             try_parse_hive_dates=try_parse_hive_dates,
-            rechunk=rechunk,
-            cache=cache_deprecated,
+            rechunk=False,
+            cache=False,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,
+            extra_columns=extra_columns,
         ),
     )
 

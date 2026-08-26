@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import pickle
+import re
 import subprocess
 import sys
 
@@ -70,10 +71,31 @@ def test_local_categories_gc() -> None:
 def test_categories_lookup(cats: pl.Categories) -> None:
     vals = ["foo", "bar", None, "moo", "bar", "moo", "foo", None]
     df = pl.DataFrame({"x": vals}, schema={"x": pl.Categorical(cats)})
-    cat_vals = pl.Series("x", [cats[v] for v in vals], dtype=cats.physical())
-    assert_series_equal(cat_vals, df["x"].cast(cats.physical()))
-    cat_strs = pl.Series("x", [cats[v] for v in cat_vals])
+    # `cats[...]` rejects None, so nulls have to be guarded when mapping a
+    # nullable column through the lookup.
+    cat_vals = pl.Series(
+        "x", [None if v is None else cats[v] for v in vals], dtype=cats.physical()
+    )
+    assert_series_equal(cat_vals, df["x"].cat.physical())
+    cat_strs = pl.Series("x", [None if v is None else cats[v] for v in cat_vals])
     assert_series_equal(cat_strs, df["x"].cast(pl.String))
+
+
+@pytest.mark.parametrize("cats", CATS)
+def test_categories_lookup_raises(cats: pl.Categories) -> None:
+    pl.DataFrame({"x": ["foo"]}, schema={"x": pl.Categorical(cats)})
+
+    msg = "'not-a-category'"
+    with pytest.raises(KeyError, match=re.escape(msg)):
+        cats["not-a-category"]
+
+    msg = "category index out of range: 9999"
+    with pytest.raises(IndexError, match=re.escape(msg)):
+        cats[9999]
+
+    msg = "invalid key type <class 'NoneType'>; expected str or int"
+    with pytest.raises(TypeError, match=re.escape(msg)):
+        cats[None]  # type: ignore[index]
 
 
 def test_concat_cat_mismatch() -> None:
@@ -124,25 +146,28 @@ def test_global_categories_gc() -> None:
             """\
 import polars as pl
 
+cats = pl.Categories()
+assert cats.is_global()
+
 df = pl.DataFrame({"x": ["a", "b", "c"]}, schema={"x": pl.Categorical})
-assert set(df["x"].cat.get_categories().to_list()) == {"a", "b", "c"}
+assert set(cats) == {"a", "b", "c"}
 df2 = pl.DataFrame({"x": ["d", "e", "f"]}, schema={"x": pl.Categorical})
-assert set(df["x"].cat.get_categories().to_list()) == {"a", "b", "c", "d", "e", "f"}
+assert set(cats) == {"a", "b", "c", "d", "e", "f"}
 del df
 del df2
 df3 = pl.DataFrame({"x": ["x"]}, schema={"x": pl.Categorical})
-assert set(df3["x"].cat.get_categories().to_list()) == {"x"}
+assert set(cats) == {"x"}
 del df3
 
 keep_alive = pl.DataFrame({"x": []}, schema={"x": pl.Categorical})
 df = pl.DataFrame({"x": ["a", "b", "c"]}, schema={"x": pl.Categorical})
-assert set(df["x"].cat.get_categories().to_list()) == {"a", "b", "c"}
+assert set(cats) == {"a", "b", "c"}
 df2 = pl.DataFrame({"x": ["d", "e", "f"]}, schema={"x": pl.Categorical})
-assert set(df["x"].cat.get_categories().to_list()) == {"a", "b", "c", "d", "e", "f"}
+assert set(cats) == {"a", "b", "c", "d", "e", "f"}
 del df
 del df2
 df3 = pl.DataFrame({"x": ["x"]}, schema={"x": pl.Categorical})
-assert set(df3["x"].cat.get_categories().to_list()) == {"a", "b", "c", "d", "e", "f", "x"}
+assert set(cats) == {"a", "b", "c", "d", "e", "f", "x"}
 
 print("OK", end="")
 """,
