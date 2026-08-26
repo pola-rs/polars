@@ -352,6 +352,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Null"))?;
                 class.call0()
             },
+            DataType::Map(_, _) => todo!("pl.Map"),
             DataType::Extension(typ, storage) => {
                 let py_storage = Wrap((**storage).clone()).into_pyobject(py)?;
                 let py_typ = pl
