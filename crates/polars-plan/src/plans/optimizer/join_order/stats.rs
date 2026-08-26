@@ -139,12 +139,7 @@ pub(super) fn leaf_stats(
 
         // `with_columns` adds to the frame it is given rather than replacing it, so
         // the height is the input's even when every expression is a scalar.
-        IR::HStack { input, exprs, .. } => {
-            if !exprs.iter().all(|e| keeps_height(e, expr_arena)) {
-                return None;
-            }
-            leaf_stats(*input, ir_arena, expr_arena)
-        },
+        IR::HStack { input, exprs, .. } => leaf_stats(*input, ir_arena, expr_arena),
 
         // Anything else (union, sort with a slice, python scan, ...) is not
         // modelled. Do not guess.

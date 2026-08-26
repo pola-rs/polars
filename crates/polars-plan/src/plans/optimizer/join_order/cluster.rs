@@ -107,6 +107,7 @@ impl Cluster {
 /// Coalescing joins pass here but are constrained further in [`coalesce_keys`]:
 /// coalescing folds a key pair into one column under the left name, so only pairs of
 /// identically named columns survive the inputs being swapped.
+/// If this evaluates false we don't rewrite a cluster and leave it as is.
 fn reorderable(options: &JoinOptionsIR) -> bool {
     let args = &options.args;
 
@@ -310,6 +311,9 @@ fn peel_projections(
     renames: &Arc<Renames>,
 ) -> (Node, Arc<Renames>) {
     let mut renames = renames.clone();
+    // Only simple projections and select renames are peeled.
+    // If we re-order, we wil not keep extra columns around as
+    // projection pushdown runs after this.
     loop {
         node = match ir_arena.get(node) {
             IR::SimpleProjection { input, .. } => *input,
@@ -318,6 +322,7 @@ fn peel_projections(
             // the IR as such a `select` too, with the new name as the output name.
             IR::Select { input, expr, .. } => {
                 let Some(composed) = compose_renames(expr, &renames, expr_arena) else {
+                    // We bail if we compute new values here.
                     return (node, renames);
                 };
                 renames = Arc::new(composed);
@@ -333,6 +338,7 @@ fn peel_projections(
 ///
 /// `None` if the projection does something no rename of the leaves can reproduce:
 /// computing a column, or reading one column out under two names.
+/// In that case we would bail.
 fn compose_renames(
     expr: &[ExprIR],
     renames: &Renames,
