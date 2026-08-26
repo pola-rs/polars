@@ -125,7 +125,7 @@ impl SQLContext {
         // table/alias registrations don't leak into the outer query's scope.
         let mut ctx = self.isolated();
         let Some((inner_names, inner_lf, inner_schema)) =
-            ctx.resolve_subquery_from(&select.from[0])?
+            ctx.resolve_subquery_from(&select.from)?
         else {
             return Ok(None);
         };
@@ -179,7 +179,8 @@ impl SQLContext {
     ) -> PolarsResult<Option<LazyFrame>> {
         let mut corr_preds = Vec::new();
         let mut local_filters = Vec::new();
-        for conj in MintermIter::new(selection) {
+        let selection = factored_selection(selection);
+        for conj in MintermIter::new(&selection) {
             if let Some(pred) =
                 scalar_correlation_predicate(conj, inner_names, inner_schema, outer_schema)
             {
@@ -280,7 +281,7 @@ impl SQLContext {
 
         let mut ctx = self.isolated();
         let Some((inner_names, inner_lf, inner_schema)) =
-            ctx.resolve_subquery_from(&select.from[0])?
+            ctx.resolve_subquery_from(&select.from)?
         else {
             return Ok(None);
         };
@@ -364,16 +365,29 @@ impl SQLContext {
     // used to classify qualified correlation columns.
     fn resolve_subquery_from(
         &mut self,
-        tbl_expr: &TableWithJoins,
+        from: &[TableWithJoins],
     ) -> PolarsResult<Option<(PlHashSet<String>, LazyFrame, SchemaRef)>> {
-        let Some(inner_names) = std::iter::once(&tbl_expr.relation)
-            .chain(tbl_expr.joins.iter().map(|j| &j.relation))
+        let Some(inner_names) = from
+            .iter()
+            .flat_map(|tbl_expr| {
+                std::iter::once(&tbl_expr.relation)
+                    .chain(tbl_expr.joins.iter().map(|j| &j.relation))
+            })
             .map(get_table_name)
             .collect::<Option<PlHashSet<_>>>()
         else {
             return Ok(None);
         };
-        let mut inner_lf = self.execute_from_statement(tbl_expr)?;
+        let Some((first, rest)) = from.split_first() else {
+            return Ok(None);
+        };
+        let mut inner_lf = self.execute_from_statement(first)?;
+        // Comma-separated relations cross join; the equalities that link them are
+        // inner-only filters, which the optimizer folds back into a join.
+        for tbl_expr in rest {
+            let rf = self.execute_from_statement(tbl_expr)?;
+            inner_lf = inner_lf.cross_join(rf, None);
+        }
         let inner_schema = self.get_frame_schema(&mut inner_lf)?;
         Ok(Some((inner_names, inner_lf, inner_schema)))
     }
@@ -392,7 +406,8 @@ impl SQLContext {
         let mut left_on = Vec::new();
         let mut right_on = Vec::new();
         let mut local_filters = Vec::new();
-        for conj in MintermIter::new(selection) {
+        let selection = factored_selection(selection);
+        for conj in MintermIter::new(&selection) {
             if let Some((outer_key, inner_key)) =
                 correlation_key_pair(conj, inner_names, inner_schema, outer_schema)
             {
@@ -517,7 +532,7 @@ impl SQLContext {
 
         let mut ctx = self.isolated();
         let Some((inner_names, inner_lf, inner_schema)) =
-            ctx.resolve_subquery_from(&select.from[0])?
+            ctx.resolve_subquery_from(&select.from)?
         else {
             return Ok(None);
         };
@@ -538,7 +553,8 @@ impl SQLContext {
         // Split the WHERE into correlation predicates and inner-only filters.
         let mut corr_preds = Vec::new();
         let mut local_filters = Vec::new();
-        for conj in MintermIter::new(selection) {
+        let selection = factored_selection(selection);
+        for conj in MintermIter::new(&selection) {
             if let Some(pred) =
                 scalar_correlation_predicate(conj, &inner_names, &inner_schema, outer_schema)
             {
@@ -653,7 +669,7 @@ impl SQLContext {
 
         let mut ctx = self.isolated();
         let Some((inner_names, inner_lf, inner_schema)) =
-            ctx.resolve_subquery_from(&select.from[0])?
+            ctx.resolve_subquery_from(&select.from)?
         else {
             return Ok(None);
         };
@@ -664,7 +680,8 @@ impl SQLContext {
 
         let mut corr_preds = Vec::new();
         let mut local_filters = Vec::new();
-        for conj in MintermIter::new(selection) {
+        let selection = factored_selection(selection);
+        for conj in MintermIter::new(&selection) {
             if let Some(pred) =
                 scalar_correlation_predicate(conj, &inner_names, &inner_schema, outer_schema)
             {
@@ -769,7 +786,7 @@ impl SQLContext {
 
         let mut ctx = self.isolated();
         let Some((inner_names, inner_lf, inner_schema)) =
-            ctx.resolve_subquery_from(&select.from[0])?
+            ctx.resolve_subquery_from(&select.from)?
         else {
             return Ok(None);
         };
@@ -777,7 +794,8 @@ impl SQLContext {
         let mut corr_preds = Vec::new();
         let mut local_filters = Vec::new();
         if let Some(selection) = &select.selection {
-            for conj in MintermIter::new(selection) {
+            let selection = factored_selection(selection);
+            for conj in MintermIter::new(&selection) {
                 if let Some(pred) =
                     scalar_correlation_predicate(conj, &inner_names, &inner_schema, outer_schema)
                 {
@@ -1003,6 +1021,122 @@ impl<'a> MintermIter<'a> {
     }
 }
 
+/// An iterator over the terms that `OR` together to form an SQL boolean
+/// expression, descending through parenthesized `Nested` expressions.
+struct DisjunctIter<'a> {
+    stack: Vec<&'a SQLExpr>,
+}
+
+impl<'a> Iterator for DisjunctIter<'a> {
+    type Item = &'a SQLExpr;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut top = self.stack.pop()?;
+        loop {
+            match top {
+                SQLExpr::Nested(inner) => top = inner,
+                SQLExpr::BinaryOp {
+                    left,
+                    op: SQLBinaryOperator::Or,
+                    right,
+                } => {
+                    self.stack.push(right);
+                    top = left;
+                },
+                _ => return Some(top),
+            }
+        }
+    }
+}
+
+impl<'a> DisjunctIter<'a> {
+    fn new(root: &'a SQLExpr) -> Self {
+        Self { stack: vec![root] }
+    }
+}
+
+fn combine_sql_terms(terms: Vec<SQLExpr>, op: SQLBinaryOperator) -> Option<SQLExpr> {
+    terms.into_iter().reduce(|left, right| SQLExpr::BinaryOp {
+        left: Box::new(left),
+        op: op.clone(),
+        right: Box::new(right),
+    })
+}
+
+/// Rewrite `(A AND X) OR (A AND Y)` as `A AND (X OR Y)`.
+///
+/// A correlation predicate repeated in every branch of an `OR` is implied by the
+/// whole disjunction, but only a top-level conjunct is visible to the rewrites.
+fn factor_common_conjuncts(expr: &SQLExpr) -> Option<SQLExpr> {
+    let branches: Vec<Vec<&SQLExpr>> = DisjunctIter::new(expr)
+        .map(|branch| MintermIter::new(branch).collect())
+        .collect();
+    let (first, rest) = branches.split_first()?;
+    if rest.is_empty() {
+        return None;
+    }
+    let common: Vec<&SQLExpr> = first
+        .iter()
+        .copied()
+        .filter(|term| {
+            rest.iter()
+                .all(|branch| branch.iter().any(|other| *other == *term))
+        })
+        .collect();
+    let factored = combine_sql_terms(
+        common.iter().copied().cloned().collect(),
+        SQLBinaryOperator::And,
+    )?;
+
+    // A branch holding nothing but the common terms absorbs the others:
+    // `A OR (A AND Y)` is just `A`.
+    let remainders: Option<Vec<SQLExpr>> = branches
+        .iter()
+        .map(|terms| {
+            combine_sql_terms(
+                terms
+                    .iter()
+                    .copied()
+                    .filter(|term| !common.iter().any(|c| *c == *term))
+                    .cloned()
+                    .collect(),
+                SQLBinaryOperator::And,
+            )
+        })
+        .collect();
+    let Some(remainders) = remainders else {
+        return Some(factored);
+    };
+    let disjunction = combine_sql_terms(remainders, SQLBinaryOperator::Or)?;
+    Some(SQLExpr::BinaryOp {
+        left: Box::new(factored),
+        op: SQLBinaryOperator::And,
+        right: Box::new(SQLExpr::Nested(Box::new(disjunction))),
+    })
+}
+
+/// Hoist predicates shared by every branch of an `OR` to the top level, so that
+/// the conjunct split can classify them.
+fn factored_selection(selection: &SQLExpr) -> Cow<'_, SQLExpr> {
+    let mut factored_any = false;
+    let conjuncts: Vec<SQLExpr> = MintermIter::new(selection)
+        .map(|conj| match factor_common_conjuncts(conj) {
+            Some(factored) => {
+                factored_any = true;
+                factored
+            },
+            None => conj.clone(),
+        })
+        .collect();
+    match factored_any
+        .then(|| combine_sql_terms(conjuncts, SQLBinaryOperator::And))
+        .flatten()
+    {
+        Some(factored) => Cow::Owned(factored),
+        None => Cow::Borrowed(selection),
+    }
+}
+
 enum CorrelationSide {
     Inner,
     Outer,
@@ -1115,13 +1249,15 @@ fn classify_correlation_column(
         Some(_) => outer_schema
             .contains(name.as_str())
             .then_some((CorrelationSide::Outer, name)),
+        // An unqualified name binds to the innermost scope that holds it, so a name
+        // the inner relation has is inner even when the outer query has one too.
         None => match (
             inner_schema.contains(name.as_str()),
             outer_schema.contains(name.as_str()),
         ) {
-            (true, false) => Some((CorrelationSide::Inner, name)),
+            (true, _) => Some((CorrelationSide::Inner, name)),
             (false, true) => Some((CorrelationSide::Outer, name)),
-            _ => None,
+            (false, false) => None,
         },
     }
 }
@@ -1168,7 +1304,7 @@ fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
         projection: _,
         exclude: _,
         into,          // SELECT INTO is not a pure subquery: bail
-        from,          // must be one (possibly joined) relation
+        from,          // at least one relation, comma-separated ones cross join
         lateral_views, // row-multiplying: bail
         prewhere,      // an extra filter we don't fold in: bail
         selection: _,  // split into join keys/filters by callers
@@ -1190,7 +1326,7 @@ fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
         group_by,
         GroupByExpr::Expressions(e, m) if e.is_empty() && m.is_empty()
     );
-    if from.len() != 1
+    if from.is_empty()
         || !no_group_by
         || top.is_some()
         || into.is_some()

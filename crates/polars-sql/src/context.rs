@@ -3858,6 +3858,11 @@ fn is_join_comparison(
     {
         return false;
     }
+    // A subquery is not a join key; its correlated columns name outer relations,
+    // which would otherwise look like a reference to the relation being joined.
+    if expr_contains_subquery(expr) {
+        return false;
+    }
     if let SQLExpr::BinaryOp {
         left,
         op:

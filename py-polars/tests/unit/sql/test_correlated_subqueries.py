@@ -245,3 +245,90 @@ def test_repeated_correlated_subquery_is_decorrelated_once() -> None:
         compare_with="duckdb",
         expected={"k": [1, 2, 3], "a": [12, 9, None], "b": [13, 10, None]},
     )
+
+
+def _sales_frames() -> dict[str, pl.DataFrame]:
+    return {
+        "cs": pl.DataFrame(
+            {
+                "cs_item_sk": [1, 1, 2, 2, 3, 3],
+                "amt": [10.0, 20.0, 5.0, 100.0, 7.0, 8.0],
+                "dsk": [1, 2, 1, 2, 1, 2],
+            }
+        ),
+        "item": pl.DataFrame(
+            {"i_item_sk": [1, 2, 3], "i_manufact_id": [977, 977, 42]}
+        ),
+        "dd": pl.DataFrame({"d_date_sk": [1, 2], "d_year": [2000, 2001]}),
+    }
+
+
+@pytest.mark.parametrize(
+    "correlation",
+    [
+        # the outer relation named by the correlation may be qualified or not,
+        # and need not be the first relation of the outer FROM
+        "c2.cs_item_sk = item.i_item_sk",
+        "c2.cs_item_sk = i_item_sk",
+    ],
+)
+def test_correlated_scalar_subquery_multi_table_outer(correlation: str) -> None:
+    # the subquery names `i_item_sk`, which made the enclosing comparison look
+    # like a join predicate between the two outer relations
+    assert_sql_matches(
+        frames=_sales_frames(),
+        query=f"""
+            SELECT sum(amt) AS s FROM cs, item
+            WHERE i_item_sk = cs_item_sk
+              AND amt > (SELECT avg(c2.amt) FROM cs c2 WHERE {correlation})
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_correlated_subquery_name_in_both_scopes() -> None:
+    # `cs_item_sk` exists in the inner and the outer relation; an unqualified
+    # name binds to the innermost scope that holds it
+    assert_sql_matches(
+        frames=_sales_frames(),
+        query="""
+            SELECT sum(amt) AS s FROM cs, item
+            WHERE i_item_sk = cs_item_sk
+              AND amt > (SELECT 1.3 * avg(amt) FROM cs WHERE cs_item_sk = i_item_sk)
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_correlated_subquery_multi_relation_inner_from() -> None:
+    # the subquery's own FROM comma-joins two relations
+    assert_sql_matches(
+        frames=_sales_frames(),
+        query="""
+            SELECT sum(amt) AS s FROM cs, item, dd
+            WHERE i_item_sk = cs_item_sk AND d_date_sk = dsk
+              AND amt > (
+                SELECT avg(amt) FROM cs, dd
+                WHERE cs_item_sk = i_item_sk AND d_date_sk = dsk AND d_year = 2001
+              )
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_correlated_subquery_predicate_shared_across_or_branches() -> None:
+    # the correlation sits inside both branches of an OR rather than at the top
+    # level of the subquery's WHERE, so it must be factored out to be seen
+    assert_sql_matches(
+        frames=_sales_frames(),
+        query="""
+            SELECT DISTINCT i_item_sk FROM item i1
+            WHERE (
+                SELECT count(*) FROM item
+                WHERE (i_manufact_id = i1.i_manufact_id AND i_item_sk < 3)
+                   OR (i_manufact_id = i1.i_manufact_id AND i_item_sk > 2)
+            ) > 0
+            ORDER BY i_item_sk
+        """,
+        compare_with="duckdb",
+    )
