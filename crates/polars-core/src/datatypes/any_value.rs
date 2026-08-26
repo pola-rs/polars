@@ -217,6 +217,9 @@ impl AnyValue<'static> {
                     .collect(),
                 fields.clone(),
             ))),
+            // TODO: build an empty map once `AnyValue::Map` exists.
+            #[cfg(feature = "dtype-map")]
+            DT::Map(_, _) => AV::Null,
             #[cfg(feature = "dtype-extension")]
             DT::Extension(_typ, storage) => {
                 AnyValue::default_value(storage, numeric_to_one, num_list_values)

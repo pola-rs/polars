@@ -392,6 +392,7 @@ dtype-full = [
   "dtype-f16",
   "dtype-categorical",
   "dtype-struct",
+  "dtype-map",
 ]
 
 # sensible minimal set of opt-in datatypes
@@ -506,6 +507,14 @@ dtype-extension = [
   "polars-lazy?/dtype-extension",
   "polars-ops/dtype-extension",
   "polars-plan/dtype-extension",
+]
+dtype-map = [
+  "polars-core/dtype-map",
+  "polars-expr/dtype-map",
+  "polars-io/dtype-map",
+  "polars-lazy?/dtype-map",
+  "polars-ops/dtype-map",
+  "polars-plan/dtype-map",
 ]
 hist = ["polars-ops/hist", "polars-lazy/hist"]
 
