@@ -115,7 +115,15 @@ fn predicate_to_pa_inner(
 ) -> Option<String> {
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => {
-            if op.is_comparison_or_bitwise() {
+            if matches!(op, Operator::Xor) {
+                // pyarrow expressions have no `^` operator.
+                if !(returns_boolean(*left, expr_arena) && returns_boolean(*right, expr_arena)) {
+                    return None;
+                }
+                let left = predicate_to_pa_inner(*left, expr_arena, args)?;
+                let right = predicate_to_pa_inner(*right, expr_arena, args)?;
+                Some(format!("(({left} | {right}) & ~({left} & {right}))"))
+            } else if op.is_comparison_or_bitwise() {
                 let left = predicate_to_pa_inner(*left, expr_arena, args)?;
                 let right = predicate_to_pa_inner(*right, expr_arena, args)?;
                 Some(format!("({left} {op} {right})"))
@@ -265,6 +273,36 @@ fn predicate_to_pa_inner(
     }
 }
 
+/// Whether the expression is known to be boolean without consulting the schema.
+/// `^`, `&` and `|` are bitwise operations on integers, which have no pyarrow
+/// expression equivalent.
+fn returns_boolean(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    match expr_arena.get(node) {
+        AExpr::BinaryExpr { left, right, op } => {
+            op.is_comparison()
+                || (op.is_bitwise()
+                    && returns_boolean(*left, expr_arena)
+                    && returns_boolean(*right, expr_arena))
+        },
+        AExpr::Literal(lv) => matches!(lv.get_datatype(), DataType::Boolean),
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::Not),
+            input,
+            ..
+        } => {
+            // `Not` is also the bitwise negation.
+            input
+                .first()
+                .is_some_and(|e| returns_boolean(e.node(), expr_arena))
+        },
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(_),
+            ..
+        } => true,
+        _ => false,
+    }
+}
+
 fn binary_op_method(op: &Operator) -> Option<&'static str> {
     Some(match op {
         Operator::Eq => "__eq__",
@@ -275,7 +313,6 @@ fn binary_op_method(op: &Operator) -> Option<&'static str> {
         Operator::GtEq => "__ge__",
         Operator::And | Operator::LogicalAnd => "__and__",
         Operator::Or | Operator::LogicalOr => "__or__",
-        Operator::Xor => "__xor__",
         _ => return None,
     })
 }
@@ -366,6 +403,19 @@ pub fn aexpr_to_pyarrow<'py>(
 ) -> Option<Bound<'py, PyAny>> {
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => {
+            if matches!(op, Operator::Xor) {
+                // pyarrow expressions have no `^` operator.
+                if !(returns_boolean(*left, expr_arena) && returns_boolean(*right, expr_arena)) {
+                    return None;
+                }
+                let l = aexpr_to_pyarrow(py, pc, *left, expr_arena)?;
+                let r = aexpr_to_pyarrow(py, pc, *right, expr_arena)?;
+                let any = l.call_method1("__or__", (&r,)).ok()?;
+                let both = l.call_method1("__and__", (&r,)).ok()?;
+                return any
+                    .call_method1("__and__", (both.call_method0("__invert__").ok()?,))
+                    .ok();
+            }
             let method = binary_op_method(op)?;
             let l = aexpr_to_pyarrow(py, pc, *left, expr_arena)?;
             let r = aexpr_to_pyarrow(py, pc, *right, expr_arena)?;

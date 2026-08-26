@@ -64,6 +64,22 @@ def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
     )
     helper_dataset_test(
         file_path,
+        lambda lf: lf.filter((pl.col("int") > 1) ^ (pl.col("floats") > 2.0)).select(
+            "bools", "floats", "date"
+        ),
+        n_expected=1,
+        check_predicate_pushdown=True,
+    )
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(
+            (pl.col("int_nulls") < 3) ^ (pl.col("floats") > 2.5)
+        ).select("bools", "floats", "date"),
+        n_expected=2,
+        check_predicate_pushdown=True,
+    )
+    helper_dataset_test(
+        file_path,
         lambda lf: lf.filter(pl.col("int_nulls").is_not_null()).select(
             "bools", "floats", "date"
         ),
