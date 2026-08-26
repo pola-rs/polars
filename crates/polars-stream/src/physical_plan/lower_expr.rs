@@ -1565,6 +1565,7 @@ fn lower_exprs_with_ctx(
             } if options.format.is_none()
                 && matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Literal(s) if matches!(s.extract_str(), Some("raise" | "null"))) =>
             {
+                let input_name = inner_exprs[0].output_name().clone();
                 let col_name = unique_column_name();
                 let select_stream = build_select_stream_with_ctx(
                     input,
@@ -1582,6 +1583,7 @@ fn lower_exprs_with_ctx(
                     input: select_stream,
                     dtype: dtype.as_ref().clone(),
                     options: options.clone(),
+                    input_name,
                     ambiguous_is_raise,
                 };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));

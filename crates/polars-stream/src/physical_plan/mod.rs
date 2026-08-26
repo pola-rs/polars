@@ -285,6 +285,9 @@ pub enum PhysNodeKind {
         dtype: DataType,
         options: StrptimeOptions,
 
+        /// Name the input had before lowering aliased it; used in error messages.
+        input_name: PlSmallStr,
+
         /// Ambiguous can be `raise`, `earliest`, `latest` and `null`.
         ///
         /// If it is broadcast and it is `raise` or `null`, we can actually execute it in this
