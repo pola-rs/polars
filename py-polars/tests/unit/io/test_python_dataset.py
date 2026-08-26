@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
@@ -132,6 +133,68 @@ def test_dataset_provider_predicate_is_in_nulls_equal(df: pl.DataFrame) -> None:
     assert (
         lowered_predicate(df, pl.col("cat").is_in(["alpha", None], nulls_equal=True))
         == "(pa.compute.field('cat')).isin([\"alpha\",None])"
+    )
+
+
+def test_dataset_provider_predicate_is_in_boolean() -> None:
+    df = pl.DataFrame({"flag": [True, False, True]})
+    assert (
+        lowered_predicate(df, pl.col("flag").is_in([True]))
+        == "(pa.compute.field('flag')).isin([True])"
+    )
+
+
+def test_dataset_provider_predicate_is_in_date() -> None:
+    df = pl.DataFrame({"d": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)]})
+    assert (
+        lowered_predicate(df, pl.col("d").is_in([date(2020, 1, 1), date(2020, 1, 3)]))
+        == "(pa.compute.field('d')).isin([to_py_date(18262),to_py_date(18264)])"
+    )
+
+
+def test_dataset_provider_predicate_is_in_not_lowered() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "bin": [b"a", b"b", b"c"],
+            "st": [{"a": 1}, {"a": 2}, {"a": 3}],
+            "ids": [[1, 2], [3], [1]],
+        }
+    )
+    # Values we cannot safely write out as Python source text.
+    assert lowered_predicate(df, pl.col("bin").is_in([b"a", b"c"])) is None
+    assert lowered_predicate(df, pl.col("st").is_in([{"a": 1}])) is None
+    # A haystack that is not a literal at all.
+    assert lowered_predicate(df, pl.col("id").is_in(pl.col("ids"))) is None
+
+
+def test_dataset_provider_predicate_series_literal_not_lowered(
+    df: pl.DataFrame,
+) -> None:
+    # A `Series` literal is only meaningful as an `is_in` haystack.
+    assert lowered_predicate(df, pl.col("id") == pl.lit(pl.Series("s", [3]))) is None
+
+
+def test_dataset_provider_predicate_is_between(df: pl.DataFrame) -> None:
+    assert (
+        lowered_predicate(df, pl.col("id").is_between(2, 4))
+        == "((pa.compute.field('id') >= 2) & (pa.compute.field('id') <= 4))"
+    )
+    assert (
+        lowered_predicate(df, pl.col("id").is_between(2, 4, closed="none"))
+        == "((pa.compute.field('id') > 2) & (pa.compute.field('id') < 4))"
+    )
+
+
+def test_dataset_provider_predicate_nested_conjunction(df: pl.DataFrame) -> None:
+    # Top-level conjuncts are lowered one by one, but an `&` nested under an `|`
+    # has to be written out as an operator of its own.
+    assert (
+        lowered_predicate(
+            df, ((pl.col("id") > 3) & (pl.col("cat") == "alpha")) | (pl.col("id") < 2)
+        )
+        == "(((pa.compute.field('id') > 3) & (pa.compute.field('cat') == 'alpha'))"
+        " | (pa.compute.field('id') < 2))"
     )
 
 

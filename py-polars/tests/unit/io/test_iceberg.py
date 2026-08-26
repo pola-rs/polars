@@ -410,6 +410,11 @@ class TestIcebergExpressions:
         expr = try_convert_pyarrow_predicate("((pa.compute.field('id') * 2) > 4)")
         assert expr is None
 
+    def test_unparseable_predicate(self) -> None:
+        # Not valid Python at all - nothing to convert.
+        expr = try_convert_pyarrow_predicate("pa.compute.field('id') >")
+        assert expr is None
+
     def test_unconvertible_disjunct_is_not_dropped(self) -> None:
         # Unlike a conjunct, dropping one side of an `|` would narrow the filter.
         expr = try_convert_pyarrow_predicate(
