@@ -18,6 +18,25 @@ POLARS_STORAGE_CONFIG_KEYS: Final[frozenset[str]] = frozenset(
     ]
 )
 
+_POLARS_STORAGE_CONFIG_FLOAT_KEYS: Final[frozenset[str]] = frozenset(
+    ["retry_base_multiplier"]
+)
+
+
+def coerce_polars_storage_config_values(
+    storage_options: dict[str, Any],
+) -> dict[str, Any]:
+    out = dict(storage_options)
+    for key in POLARS_STORAGE_CONFIG_KEYS:
+        value = out.get(key)
+        if isinstance(value, str):
+            if key in _POLARS_STORAGE_CONFIG_FLOAT_KEYS:
+                out[key] = float(value)
+            else:
+                out[key] = int(value)
+    return out
+
+
 T = TypeVar("T")
 
 

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.wrap import wrap_ldf
-from polars.io.cloud._utils import NoPickleOption
+from polars.io.cloud._utils import NoPickleOption, coerce_polars_storage_config_values
 from polars.io.delta._dataset import DeltaDataset
 
 if TYPE_CHECKING:
@@ -322,10 +322,12 @@ def scan_delta(
     if table is not None and (
         table._storage_options is not None or storage_options is not None
     ):
-        storage_options = {
-            **(table._storage_options or {}),
-            **(storage_options or {}),
-        }
+        storage_options = coerce_polars_storage_config_values(
+            {
+                **(table._storage_options or {}),
+                **(storage_options or {}),
+            }
+        )
 
     dataset = DeltaDataset(
         table_=NoPickleOption(table),
