@@ -1,5 +1,5 @@
-use arrow::bitmap::Bitmap;
 use arrow::offset::OffsetsBuffer;
+use polars_compute::gather::bitmap::take_bitmap_unchecked;
 use polars_compute::gather::take_unchecked;
 
 use crate::chunked_array::cast::CastOptions;
@@ -149,8 +149,8 @@ pub(crate) fn canonicalize_map_storage(storage: &Series) -> PolarsResult<Option<
 }
 
 struct CanonicalMapIndices {
-    first_keys: Vec<IdxSize>,
-    last_values: Vec<IdxSize>,
+    first_keys: IdxArr,
+    last_values: IdxArr,
     offsets: OffsetsBuffer<i64>,
 }
 
@@ -189,8 +189,8 @@ fn canonical_map_indices(keys: &BinaryArray<i64>, offsets: &[i64]) -> Option<Can
     }
 
     Some(CanonicalMapIndices {
-        first_keys: key_idx,
-        last_values: value_idx,
+        first_keys: IdxArr::from_vec(key_idx),
+        last_values: IdxArr::from_vec(value_idx),
         offsets: unsafe { OffsetsBuffer::new_unchecked(new_offsets.into()) },
     })
 }
@@ -204,36 +204,30 @@ fn gather_entries(
     let [key_arr, value_arr] = entries.values() else {
         unreachable!("map entries must have two arrays")
     };
-    // `from_vec` moves the index buffers rather than copying them.
-    let key_idx = IdxArr::from_vec(indices.first_keys);
-    let value_idx = IdxArr::from_vec(indices.last_values);
+    let CanonicalMapIndices {
+        first_keys,
+        last_values,
+        offsets,
+    } = indices;
 
-    // Preserve entry validity from each key's first occurrence.
-    let validity = entries.validity().map(|validity| {
-        key_idx
-            .values()
-            .iter()
-            .map(|&i| validity.get_bit(i as usize))
-            .collect::<Bitmap>()
-    });
+    // Entry validity follows the keys, i.e. each key's first occurrence.
+    let validity = entries
+        .validity()
+        .map(|validity| unsafe { take_bitmap_unchecked(validity, first_keys.values()) });
 
-    // Gather at the arrow level: `take_unchecked` carries the input's arrow dtype
-    // through, so the rebuilt chunk stays dtype-identical to any clean sibling chunk
-    // that was passed along untouched. Deriving fresh dtypes here would make the
-    // chunks heterogeneous and break a later rechunk.
     let new_entries = StructArray::new(
         entries.dtype().clone(),
-        key_idx.len(),
+        first_keys.len(),
         vec![
-            unsafe { take_unchecked(key_arr.as_ref(), &key_idx) },
-            unsafe { take_unchecked(value_arr.as_ref(), &value_idx) },
+            unsafe { take_unchecked(key_arr.as_ref(), &first_keys) },
+            unsafe { take_unchecked(value_arr.as_ref(), &last_values) },
         ],
         validity,
     );
 
     LargeListArray::new(
         arr.dtype().clone(),
-        indices.offsets,
+        offsets,
         new_entries.boxed(),
         arr.validity().cloned(),
     )
@@ -258,7 +252,7 @@ fn canonicalize_list_chunk(
     };
 
     // Match Polars grouping/join equality without relying on hashes alone.
-    let encoded = encode_rows_unordered(&[keys.clone().into_column()])?;
+    let encoded = encode_rows_unordered(&[keys.into_column()])?;
     let encoded = encoded.downcast_iter().next().unwrap();
     let Some(indices) = canonical_map_indices(encoded, arr.offsets().as_slice()) else {
         return Ok(None);
