@@ -2205,6 +2205,8 @@ impl SQLContext {
                 let r_suffixed = suffix_conflicting_columns(r, tbl_left, tbl_right, &suffix);
                 all_predicates.push(l.eq(r_suffixed));
             }
+            let all_predicates: Vec<Expr> =
+                all_predicates.into_iter().map(strip_join_aliases).collect();
             tbl_left
                 .frame
                 .clone()
@@ -2261,13 +2263,22 @@ impl SQLContext {
         // disconnected relations fall through to a cross join, in source order.
         while !pending.is_empty() {
             let left_schema = self.get_frame_schema(lf)?;
-            let next = pending
-                .iter()
-                .position(|(_, _, r_name, right_schema)| {
+            let deferred_tables = |skip: usize| -> Vec<String> {
+                pending
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != skip)
+                    .flat_map(|(_, (tbl_expr, ..))| from_entry_table_names(tbl_expr))
+                    .collect()
+            };
+            let next = (0..pending.len())
+                .find(|&i| {
+                    let (_, _, r_name, right_schema) = &pending[i];
                     extract_join_predicates(
                         &remaining_where,
                         &joined_table_names,
                         r_name,
+                        &deferred_tables(i),
                         &left_schema,
                         right_schema,
                     )
@@ -2275,11 +2286,13 @@ impl SQLContext {
                     .is_some()
                 })
                 .unwrap_or(0);
+            let deferred = deferred_tables(next);
             let (tbl_expr, rf, r_name, right_schema) = pending.remove(next);
             let (join_expr, residual) = extract_join_predicates(
                 &remaining_where,
                 &joined_table_names,
                 &r_name,
+                &deferred,
                 &left_schema,
                 &right_schema,
             );
@@ -3333,6 +3346,17 @@ fn reject_unresolved_subquery(expr: &Expr, clause: &str) -> PolarsResult<()> {
 }
 
 /// Strip the outer alias from an expression (if present) for expression equality comparison.
+/// Remove every alias `resolve_column` added for join-suffixed columns.
+///
+/// A join key or predicate must name the underlying column, and an alias anywhere
+/// inside one is rejected, including nested in a `CASE`.
+fn strip_join_aliases(expr: Expr) -> Expr {
+    expr.map_expr(|e| match e {
+        Expr::Alias(inner, _) => Arc::unwrap_or_clone(inner),
+        e => e,
+    })
+}
+
 fn strip_outer_alias(expr: &Expr) -> Expr {
     if let Expr::Alias(inner, _) = expr {
         inner.as_ref().clone()
@@ -3436,14 +3460,8 @@ fn determine_left_right_join_on(
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     // parse, removing any aliases that may have been added by `resolve_column`
     // (called inside `parse_sql_expr`) as we need the actual/underlying col
-    let left_on = match parse_sql_expr(expr_left, ctx, Some(join_schema))? {
-        Expr::Alias(inner, _) => Arc::unwrap_or_clone(inner),
-        e => e,
-    };
-    let right_on = match parse_sql_expr(expr_right, ctx, Some(join_schema))? {
-        Expr::Alias(inner, _) => Arc::unwrap_or_clone(inner),
-        e => e,
-    };
+    let left_on = strip_join_aliases(parse_sql_expr(expr_left, ctx, Some(join_schema))?);
+    let right_on = strip_join_aliases(parse_sql_expr(expr_right, ctx, Some(join_schema))?);
 
     // ------------------------------------------------------------------
     // simple/typical case: can fully resolve SQL-level table references
@@ -3828,9 +3846,18 @@ fn is_join_comparison(
     expr: &SQLExpr,
     left_tables: &[String],
     right_table: &str,
+    deferred_tables: &[String],
     left_schema: &Schema,
     right_schema: &Schema,
 ) -> bool {
+    // A condition that also names a relation joined in a later round cannot be
+    // resolved yet; it stays in the residual WHERE until that relation is present.
+    if deferred_tables
+        .iter()
+        .any(|table| expr_refers_to_table(expr, table.as_str()))
+    {
+        return false;
+    }
     if let SQLExpr::BinaryOp {
         left,
         op:
@@ -3867,12 +3894,26 @@ fn is_join_comparison(
     }
 }
 
+/// All relation names a `FROM` entry brings into scope: its own, plus any it joins to.
+fn from_entry_table_names(entry: &TableWithJoins) -> Vec<String> {
+    std::iter::once(get_table_name(&entry.relation).unwrap_or_default())
+        .chain(
+            entry
+                .joins
+                .iter()
+                .filter_map(|join| get_table_name(&join.relation)),
+        )
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
 /// Partition a WHERE clause into join predicates (bridging left tables and the
 /// right table) and residual filter conditions.
 fn extract_join_predicates(
     where_expr: &Option<SQLExpr>,
     left_tables: &[String],
     right_table: &str,
+    deferred_tables: &[String],
     left_schema: &Schema,
     right_schema: &Schema,
 ) -> (Option<SQLExpr>, Option<SQLExpr>) {
@@ -3883,7 +3924,14 @@ fn extract_join_predicates(
     let mut join_conds = Vec::new();
     let mut filter_conds = Vec::new();
     for cond in conditions {
-        if is_join_comparison(cond, left_tables, right_table, left_schema, right_schema) {
+        if is_join_comparison(
+            cond,
+            left_tables,
+            right_table,
+            deferred_tables,
+            left_schema,
+            right_schema,
+        ) {
             join_conds.push(cond.clone());
         } else {
             filter_conds.push(cond.clone());

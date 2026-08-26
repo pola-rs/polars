@@ -1704,3 +1704,72 @@ def test_join_on_invalid_expr() -> None:
         pl.SQLContext(frames, eager=True).execute(
             "SELECT * FROM df1 JOIN df2 ON (df1.a)"
         )
+
+
+@pytest.fixture
+def sales_frame() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "cid": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+            "yr": [2001, 2002, 2001, 2002] * 3,
+            "kind": ["s", "s", "w", "w"] * 3,
+            "amt": [10.0, 30.0, 5.0, 25.0, 20.0, 10.0, 8.0, 9.0, 4.0, 40.0, 7.0, 14.0],
+        }
+    )
+
+
+_YEAR_TOTAL_CTE = """
+    WITH yt AS (
+        SELECT cid, yr, kind, SUM(amt) AS total FROM self GROUP BY cid, yr, kind
+    )
+"""
+
+
+def test_join_non_equi_case_predicate(sales_frame: pl.LazyFrame) -> None:
+    # a self-joined CTE suffixes the repeated column names, and the alias that
+    # resolution adds for them must not reach the join predicate
+    assert_sql_matches(
+        sales_frame,
+        query=f"""{_YEAR_TOTAL_CTE}
+            SELECT a.cid, b.total AS b_total, d.total AS d_total
+            FROM yt a, yt b, yt c, yt d
+            WHERE b.cid = a.cid AND c.cid = a.cid AND d.cid = a.cid
+              AND a.kind = 's' AND b.kind = 's' AND c.kind = 'w' AND d.kind = 'w'
+              AND a.yr = 2001 AND b.yr = 2002 AND c.yr = 2001 AND d.yr = 2002
+              AND a.total > 0 AND c.total > 0
+              AND CASE WHEN c.total > 0 THEN d.total / c.total ELSE NULL END
+                > CASE WHEN a.total > 0 THEN b.total / a.total ELSE NULL END
+            ORDER BY a.cid
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_join_predicate_spanning_later_relation(sales_frame: pl.LazyFrame) -> None:
+    # the predicate names `d`, which is joined after `c`; evaluating it at the
+    # `c` join resolved `d.total` to `c.total` and silently dropped rows
+    assert_sql_matches(
+        sales_frame,
+        query=f"""{_YEAR_TOTAL_CTE}
+            SELECT a.cid, c.total AS c_total, d.total AS d_total
+            FROM yt a, yt c, yt d
+            WHERE c.cid = a.cid AND d.cid = a.cid
+              AND a.kind = 's' AND c.kind = 'w' AND d.kind = 'w'
+              AND a.yr = 2001 AND c.yr = 2001 AND d.yr = 2002
+              AND d.total > c.total
+            ORDER BY a.cid, c_total, d_total
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_join_non_equi_nested_alias_in_equi_key(sales_frame: pl.LazyFrame) -> None:
+    assert_sql_matches(
+        sales_frame,
+        query=f"""{_YEAR_TOTAL_CTE}
+            SELECT a.cid FROM yt a, yt b
+            WHERE a.cid + 0 = b.cid + 0 AND a.kind = 's' AND b.kind = 'w'
+            ORDER BY a.cid
+        """,
+        compare_with="duckdb",
+    )
