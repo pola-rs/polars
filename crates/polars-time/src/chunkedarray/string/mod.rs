@@ -50,23 +50,6 @@ where
         .copied()
 }
 
-#[cfg(feature = "dtype-datetime")]
-fn sniff_fmt_datetime(val: &str) -> PolarsResult<&'static str> {
-    datetime_pattern(val, NaiveDateTime::parse_from_str)
-        .or_else(|| datetime_pattern(val, NaiveDate::parse_from_str))
-        .ok_or_else(|| polars_err!(parse_fmt_idk = "datetime"))
-}
-
-#[cfg(feature = "dtype-date")]
-fn sniff_fmt_date(val: &str) -> PolarsResult<&'static str> {
-    date_pattern(val, NaiveDate::parse_from_str).ok_or_else(|| polars_err!(parse_fmt_idk = "date"))
-}
-
-#[cfg(feature = "dtype-time")]
-fn sniff_fmt_time(val: &str) -> PolarsResult<&'static str> {
-    time_pattern(val, NaiveTime::parse_from_str).ok_or_else(|| polars_err!(parse_fmt_idk = "time"))
-}
-
 pub trait StringMethods: AsString {
     #[cfg(feature = "dtype-time")]
     /// Parsing string values and return a [`TimeChunked`]
@@ -75,14 +58,16 @@ pub trait StringMethods: AsString {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => {
-                let Some(idx) = string_ca.first_non_null() else {
+                if string_ca.first_non_null().is_none() {
                     return Ok(
                         Int64Chunked::full_null(string_ca.name().clone(), string_ca.len())
                             .into_time(),
                     );
                 };
-                let val = string_ca.get(idx).expect("should not be null");
-                sniff_fmt_time(val)?
+                infer::infer_from_values(string_ca, |val| {
+                    time_pattern(val, NaiveTime::parse_from_str)
+                })
+                .ok_or_else(|| polars_err!(parse_fmt_idk = "time"))?
             },
         };
         let use_cache = use_cache && string_ca.len() > 50;
@@ -107,14 +92,16 @@ pub trait StringMethods: AsString {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => {
-                let Some(idx) = string_ca.first_non_null() else {
+                if string_ca.first_non_null().is_none() {
                     return Ok(
                         Int32Chunked::full_null(string_ca.name().clone(), string_ca.len())
                             .into_date(),
                     );
                 };
-                let val = string_ca.get(idx).expect("should not be null");
-                sniff_fmt_date(val)?
+                infer::infer_from_values(string_ca, |val| {
+                    date_pattern(val, NaiveDate::parse_from_str)
+                })
+                .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?
             },
         };
         let ca = unary_elementwise(string_ca, |opt_s| {
@@ -154,14 +141,17 @@ pub trait StringMethods: AsString {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => {
-                let Some(idx) = string_ca.first_non_null() else {
+                if string_ca.first_non_null().is_none() {
                     return Ok(
                         Int64Chunked::full_null(string_ca.name().clone(), string_ca.len())
                             .into_datetime(tu, tz.cloned()),
                     );
                 };
-                let val = string_ca.get(idx).expect("should not be null");
-                sniff_fmt_datetime(val)?
+                infer::infer_from_values(string_ca, |val| {
+                    datetime_pattern(val, NaiveDateTime::parse_from_str)
+                        .or_else(|| datetime_pattern(val, NaiveDate::parse_from_str))
+                })
+                .ok_or_else(|| polars_err!(parse_fmt_idk = "datetime"))?
             },
         };
 

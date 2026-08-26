@@ -424,6 +424,14 @@ pub fn sniff_time_fmt(val: &str) -> Option<&'static str> {
         .find(|fmt| NaiveTime::parse_from_str(val, fmt).is_ok())
 }
 
+/// Scan the non-null values for the first that `infer` accepts.
+///
+/// Inferring from only the first non-null value makes the result depend on
+/// where unparseable values happen to sit; every caller must scan.
+pub fn infer_from_values<T>(ca: &StringChunked, infer: impl FnMut(&str) -> Option<T>) -> Option<T> {
+    ca.iter().flatten().find_map(infer)
+}
+
 #[cfg(feature = "dtype-datetime")]
 pub fn to_datetime_with_inferred_tz(
     ca: &StringChunked,
@@ -463,11 +471,8 @@ pub fn to_datetime(
         None => {
             Ok(Int64Chunked::full_null(ca.name().clone(), ca.len()).into_datetime(tu, tz.cloned()))
         },
-        Some(idx) => {
-            let subset = ca.slice(idx as i64, ca.len());
-            let pattern = subset
-                .iter()
-                .find_map(|opt_val| opt_val.and_then(infer_pattern_datetime_single))
+        Some(_) => {
+            let pattern = infer_from_values(ca, infer_pattern_datetime_single)
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
             let mut infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(tu))?;
             #[cfg(feature = "timezones")]
@@ -531,11 +536,8 @@ pub fn coerce_string_to_datetime(
 pub(crate) fn to_date(ca: &StringChunked) -> PolarsResult<DateChunked> {
     match ca.first_non_null() {
         None => Ok(Int32Chunked::full_null(ca.name().clone(), ca.len()).into_date()),
-        Some(idx) => {
-            let subset = ca.slice(idx as i64, ca.len());
-            let pattern = subset
-                .iter()
-                .find_map(|opt_val| opt_val.and_then(infer_pattern_date_single))
+        Some(_) => {
+            let pattern = infer_from_values(ca, infer_pattern_date_single)
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
             let mut infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None).unwrap();
             coerce_string_to_date(&mut infer, ca)

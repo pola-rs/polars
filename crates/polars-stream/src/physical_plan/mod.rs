@@ -285,6 +285,10 @@ pub enum PhysNodeKind {
         dtype: DataType,
         options: StrptimeOptions,
 
+        /// Name the input had before it was aliased to an internal one; used
+        /// only to report parse failures against the name the user wrote.
+        input_name: PlSmallStr,
+
         /// Ambiguous can be `raise`, `earliest`, `latest` and `null`.
         ///
         /// If it is broadcast and it is `raise` or `null`, we can actually execute it in this

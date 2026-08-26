@@ -354,3 +354,48 @@ def test_strptime_uninferrable_format(
     strict = getattr(pl.col("s").str, method)(strict=True)
     with pytest.raises(ComputeError, match="could not find an appropriate format"):
         lf.select(strict).collect(engine=engine)
+
+
+STRPTIME_INFERENCE_CASES = [
+    ("to_date", pl.Date, "2020-01-01"),
+    ("to_datetime", pl.Datetime("us"), "2020-01-01 10:00:00"),
+    ("to_time", pl.Time, "10:00:00"),
+]
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize("position", ["head", "middle", "tail"])
+@pytest.mark.parametrize(("method", "dtype", "good"), STRPTIME_INFERENCE_CASES)
+def test_strptime_infers_past_unparseable_values(
+    engine: EngineType, position: str, method: str, dtype: pl.DataType, good: str
+) -> None:
+    # the frame must span several morsels: inference used to run per morsel,
+    # off the first value only, nulling whole morsels it could not infer from
+    n = 200_000
+    values = [good] * n
+    idx = {"head": 0, "middle": n // 2, "tail": n - 1}[position]
+    values[idx] = "not a temporal value"
+
+    out = (
+        pl.LazyFrame({"s": values})
+        .select(getattr(pl.col("s").str, method)(strict=False))
+        .collect(engine=engine)
+    )
+    assert out.schema["s"] == dtype
+    assert out.to_series().null_count() == 1
+    assert out.to_series()[idx] is None
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+@pytest.mark.parametrize(("method", "dtype", "good"), STRPTIME_INFERENCE_CASES)
+def test_strptime_strict_reports_original_column_name(
+    engine: EngineType, method: str, dtype: pl.DataType, good: str
+) -> None:
+    n = 200_000
+    values = ["not a temporal value"] + [good] * n
+
+    strict = getattr(pl.col("s").str, method)(strict=True)
+    with pytest.raises(InvalidOperationError, match="in column 's'"):
+        pl.LazyFrame({"s": values}).select(strict).collect(engine=engine)
