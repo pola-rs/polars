@@ -1,6 +1,6 @@
 use polars_utils::IdxSize;
 
-use super::FixedSizeListArray;
+use super::{FixedSizeListArray, child_length, child_offset};
 use crate::array::builder::{ArrayBuilder, ShareStrategy, StaticArrayBuilder};
 use crate::bitmap::OptBitmapBuilder;
 use crate::datatypes::ArrowDataType;
@@ -32,7 +32,7 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
     }
 
     fn reserve(&mut self, additional: usize) {
-        self.inner_builder.reserve(additional);
+        self.inner_builder.reserve(child_length(additional, self.size));
         self.validity.reserve(additional);
     }
 
@@ -55,7 +55,7 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
     }
 
     fn extend_nulls(&mut self, length: usize) {
-        self.inner_builder.extend_nulls(length * self.size);
+        self.inner_builder.extend_nulls(child_length(length, self.size));
         self.validity.extend_constant(length, false);
         self.length += length;
     }
@@ -69,8 +69,8 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
     ) {
         self.inner_builder.subslice_extend(
             &**other.values(),
-            start * self.size,
-            length * self.size,
+            child_offset(start, self.size),
+            child_length(length, self.size),
             share,
         );
         self.validity
@@ -87,11 +87,11 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         share: ShareStrategy,
     ) {
         let other_values = &**other.values();
-        self.inner_builder.reserve(repeats * length * self.size);
+        self.inner_builder.reserve(child_length(repeats * length, self.size));
         for outer_idx in start..start + length {
             self.inner_builder.subslice_extend_repeated(
                 other_values,
-                outer_idx * self.size,
+                child_offset(outer_idx, self.size),
                 self.size,
                 repeats,
                 share,
@@ -114,7 +114,7 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         share: ShareStrategy,
     ) {
         let other_values = &**other.values();
-        self.inner_builder.reserve(idxs.len() * self.size);
+        self.inner_builder.reserve(child_length(idxs.len(), self.size));
 
         // Group consecutive indices into larger copies.
         let mut group_start = 0;
@@ -128,8 +128,8 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
             }
             self.inner_builder.subslice_extend(
                 other_values,
-                start_idx * self.size,
-                group_len * self.size,
+                child_offset(start_idx, self.size),
+                child_length(group_len, self.size),
                 share,
             );
             group_start += group_len;
@@ -147,7 +147,7 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         share: ShareStrategy,
     ) {
         let other_values = &**other.values();
-        self.inner_builder.reserve(idxs.len() * self.size);
+        self.inner_builder.reserve(child_length(idxs.len(), self.size));
 
         // Group consecutive indices into larger copies.
         let mut group_start = 0;
@@ -166,8 +166,8 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
 
                 self.inner_builder.subslice_extend(
                     other_values,
-                    start_idx * self.size,
-                    group_len * self.size,
+                    child_offset(start_idx, self.size),
+                    child_length(group_len, self.size),
                     share,
                 );
             } else {
@@ -177,7 +177,7 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
                     group_len += 1;
                 }
 
-                self.inner_builder.extend_nulls(group_len * self.size);
+                self.inner_builder.extend_nulls(child_length(group_len, self.size));
             }
             group_start += group_len;
         }

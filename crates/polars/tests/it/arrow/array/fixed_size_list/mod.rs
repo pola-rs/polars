@@ -127,3 +127,31 @@ fn wrong_dtype() {
         .is_err()
     );
 }
+
+#[test]
+fn builder() {
+    use arrow::array::builder::{ShareStrategy, make_builder};
+
+    let dtype = ArrowDataType::FixedSizeList(
+        Box::new(Field::new("a".into(), ArrowDataType::Int32, true)),
+        2,
+    );
+    let mut builder = make_builder(&dtype);
+
+    builder.reserve(10);
+    builder.extend_nulls(2);
+
+    let arr = data();
+    builder.subslice_extend(&arr, 0, 2, ShareStrategy::Never);
+
+    let result = builder.freeze_reset();
+    let result = result.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+    assert_eq!(result.len(), 4);
+    assert_eq!(result.size(), 2);
+    assert_eq!(
+        result.validity().cloned(),
+        Some([false, false, true, false].into())
+    );
+    assert_eq!(result.value(2).as_ref(), Int32Array::from_slice([10, 20]));
+    assert_eq!(result.value(3).as_ref(), Int32Array::from_slice([0, 0]));
+}
