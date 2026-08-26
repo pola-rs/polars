@@ -409,29 +409,27 @@ impl SQLContext {
     /// Whether `name` may be used as a table qualifier. Nothing is known before
     /// a `FROM` is processed, so anything is allowed until then.
     pub(super) fn relation_in_scope(&self, name: &str) -> bool {
-        self.active_relations.is_empty() || self.active_relations.contains(name)
+        self.active_relations.is_empty()
+            || self.active_relations.contains(name)
+            || self
+                .active_relations
+                .iter()
+                .any(|relation| relation.eq_ignore_ascii_case(name))
     }
 
+    /// Resolve a relation innermost-scope-first: a `FROM` alias, then a CTE, then a
+    /// registered table. A CTE shadows a registered table of the same name, and a
+    /// `FROM` alias shadows both.
     pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
-        // Resolve the table name in the current scope; multi-stage fallback
-        // * table name → cte name
-        // * table alias → cte alias
-        self.table_map
-            .read()
-            .unwrap()
-            .get(name)
+        get_ignoring_case(&self.table_aliases, name)
+            .and_then(|aliased| self.get_table_unaliased(aliased))
+            .or_else(|| self.get_table_unaliased(name))
+    }
+
+    fn get_table_unaliased(&self, name: &str) -> Option<LazyFrame> {
+        get_ignoring_case(&self.cte_map, name)
             .cloned()
-            .or_else(|| self.cte_map.get(name).cloned())
-            .or_else(|| {
-                self.table_aliases.get(name).and_then(|alias| {
-                    self.table_map
-                        .read()
-                        .unwrap()
-                        .get(alias.as_str())
-                        .or_else(|| self.cte_map.get(alias.as_str()))
-                        .cloned()
-                })
-            })
+            .or_else(|| get_ignoring_case(&self.table_map.read().unwrap(), name).cloned())
     }
 
     /// Execute a query in an isolated context. This prevents subqueries from mutating
@@ -548,7 +546,7 @@ impl SQLContext {
     }
 
     pub(super) fn resolve_name(&self, tbl_name: &str, column_name: &str) -> String {
-        if let Some(aliases) = self.joined_aliases.get(tbl_name) {
+        if let Some(aliases) = get_ignoring_case(&self.joined_aliases, tbl_name) {
             if let Some(name) = aliases.get(column_name) {
                 return name.to_string();
             }
@@ -3255,6 +3253,16 @@ fn get_using_cols(op: &JoinOperator) -> Option<impl Iterator<Item = String> + '_
         })),
         _ => None,
     }
+}
+
+/// Look up a relation name, falling back to a case-insensitive match because
+/// unquoted SQL identifiers are case-insensitive.
+fn get_ignoring_case<'a, V>(map: &'a PlHashMap<String, V>, name: &str) -> Option<&'a V> {
+    map.get(name).or_else(|| {
+        map.iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value)
+    })
 }
 
 /// Prefix for the internal outer columns produced by correlated-subquery decorrelation.
