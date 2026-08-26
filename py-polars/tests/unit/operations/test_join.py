@@ -1004,6 +1004,23 @@ def test_join_4_columns_with_validity() -> None:
     )
 
 
+def test_join_4_columns_with_all_null_validity() -> None:
+    # join on 4 columns so we trigger combine validities
+    # use only None values so every chunk has an all-unset validity bitmap
+    keys = ["a", "b", "c", "d"]
+    df = pl.DataFrame(
+        {key: [None] * 8 for key in keys},
+        schema=dict.fromkeys(keys, pl.Int64),
+    )
+    result = df.join(
+        df,
+        on=keys,
+        how="inner",
+        nulls_equal=False,
+    )
+    assert result.is_empty()
+
+
 @pytest.mark.release
 def test_cross_join() -> None:
     # triggers > 100 rows implementation
