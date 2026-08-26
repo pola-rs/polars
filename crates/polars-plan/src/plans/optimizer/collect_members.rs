@@ -28,7 +28,6 @@ impl UniqueScans {
 pub(super) struct MemberCollector {
     pub(crate) has_joins_or_unions: bool,
     pub(crate) has_sink_multiple: bool,
-    pub(crate) has_ext_context: bool,
     pub(crate) has_filter_with_join_input: bool,
     pub(crate) has_distinct: bool,
     pub(crate) has_sort: bool,
@@ -44,7 +43,6 @@ impl MemberCollector {
         Self {
             has_joins_or_unions: false,
             has_sink_multiple: false,
-            has_ext_context: false,
             has_filter_with_join_input: false,
             has_distinct: false,
             has_sort: false,
@@ -76,7 +74,6 @@ impl MemberCollector {
                 Sort { .. } => {
                     self.has_sort = true;
                 },
-                ExtContext { .. } => self.has_ext_context = true,
                 #[cfg(feature = "cse")]
                 Scan { .. } => {
                     self.scans

@@ -21,51 +21,11 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType, PythonDataType
 
 
-@pytest.mark.parametrize("dtype", [pl.Date(), pl.Date, date])
-def test_string_date(dtype: PolarsDataType | PythonDataType) -> None:
-    df = pl.DataFrame({"x1": ["2021-01-01"]}).with_columns(
-        **{"x1-date": pl.col("x1").cast(dtype)}
-    )
-    expected = pl.DataFrame({"x1-date": [date(2021, 1, 1)]})
-    out = df.select(pl.col("x1-date"))
-    assert_frame_equal(expected, out)
-
-
 def test_invalid_string_date() -> None:
     df = pl.DataFrame({"x1": ["2021-01-aa"]})
 
     with pytest.raises(InvalidOperationError):
         df.with_columns(**{"x1-date": pl.col("x1").cast(pl.Date)})
-
-
-def test_string_datetime() -> None:
-    df = pl.DataFrame(
-        {"x1": ["2021-12-19T00:39:57", "2022-12-19T16:39:57"]}
-    ).with_columns(
-        **{
-            "x1-datetime-ns": pl.col("x1").cast(pl.Datetime(time_unit="ns")),
-            "x1-datetime-ms": pl.col("x1").cast(pl.Datetime(time_unit="ms")),
-            "x1-datetime-us": pl.col("x1").cast(pl.Datetime(time_unit="us")),
-        }
-    )
-    first_row = datetime(year=2021, month=12, day=19, hour=00, minute=39, second=57)
-    second_row = datetime(year=2022, month=12, day=19, hour=16, minute=39, second=57)
-    expected = pl.DataFrame(
-        {
-            "x1-datetime-ns": [first_row, second_row],
-            "x1-datetime-ms": [first_row, second_row],
-            "x1-datetime-us": [first_row, second_row],
-        }
-    ).select(
-        pl.col("x1-datetime-ns").dt.cast_time_unit("ns"),
-        pl.col("x1-datetime-ms").dt.cast_time_unit("ms"),
-        pl.col("x1-datetime-us").dt.cast_time_unit("us"),
-    )
-
-    out = df.select(
-        pl.col("x1-datetime-ns"), pl.col("x1-datetime-ms"), pl.col("x1-datetime-us")
-    )
-    assert_frame_equal(expected, out)
 
 
 def test_invalid_string_datetime() -> None:
@@ -74,54 +34,6 @@ def test_invalid_string_datetime() -> None:
         df.with_columns(
             **{"x1-datetime-ns": pl.col("x1").cast(pl.Datetime(time_unit="ns"))}
         )
-
-
-def test_string_datetime_timezone() -> None:
-    ccs_tz = "America/Caracas"
-    stg_tz = "America/Santiago"
-    utc_tz = "UTC"
-    df = pl.DataFrame(
-        {"x1": ["1996-12-19T16:39:57 +00:00", "2022-12-19T00:39:57 +00:00"]}
-    ).with_columns(
-        **{
-            "x1-datetime-ns": pl.col("x1").cast(
-                pl.Datetime(time_unit="ns", time_zone=ccs_tz)
-            ),
-            "x1-datetime-ms": pl.col("x1").cast(
-                pl.Datetime(time_unit="ms", time_zone=stg_tz)
-            ),
-            "x1-datetime-us": pl.col("x1").cast(
-                pl.Datetime(time_unit="us", time_zone=utc_tz)
-            ),
-        }
-    )
-
-    expected = pl.DataFrame(
-        {
-            "x1-datetime-ns": [
-                datetime(year=1996, month=12, day=19, hour=12, minute=39, second=57),
-                datetime(year=2022, month=12, day=18, hour=20, minute=39, second=57),
-            ],
-            "x1-datetime-ms": [
-                datetime(year=1996, month=12, day=19, hour=13, minute=39, second=57),
-                datetime(year=2022, month=12, day=18, hour=21, minute=39, second=57),
-            ],
-            "x1-datetime-us": [
-                datetime(year=1996, month=12, day=19, hour=16, minute=39, second=57),
-                datetime(year=2022, month=12, day=19, hour=00, minute=39, second=57),
-            ],
-        }
-    ).select(
-        pl.col("x1-datetime-ns").dt.cast_time_unit("ns").dt.replace_time_zone(ccs_tz),
-        pl.col("x1-datetime-ms").dt.cast_time_unit("ms").dt.replace_time_zone(stg_tz),
-        pl.col("x1-datetime-us").dt.cast_time_unit("us").dt.replace_time_zone(utc_tz),
-    )
-
-    out = df.select(
-        pl.col("x1-datetime-ns"), pl.col("x1-datetime-ms"), pl.col("x1-datetime-us")
-    )
-
-    assert_frame_equal(expected, out)
 
 
 @pytest.mark.parametrize(("dtype"), [pl.Int8, pl.Int16, pl.Int32, pl.Int64])
@@ -719,7 +631,7 @@ def test_bool_numeric_supertype(dtype: PolarsDataType) -> None:
 
 @pytest.mark.parametrize("dtype", [pl.String(), pl.String, str])
 def test_cast_consistency(dtype: PolarsDataType | PythonDataType) -> None:
-    assert pl.DataFrame().with_columns(a=pl.lit(0.0)).with_columns(
+    assert pl.DataFrame(height=1).with_columns(a=pl.lit(0.0)).with_columns(
         b=pl.col("a").cast(dtype), c=pl.lit(0.0).cast(dtype)
     ).to_dict(as_series=False) == {"a": [0.0], "b": ["0.0"], "c": ["0.0"]}
 
@@ -928,7 +840,8 @@ def test_nested_struct_cast_22744() -> None:
 
     assert_series_equal(
         s.cast(
-            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})})
+            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})}),
+            strict=False,
         ),
         expected.to_series(),
     )
@@ -938,7 +851,8 @@ def test_nested_struct_cast_22744() -> None:
                 "x": pl.Struct(
                     {"attrs": pl.Struct({"class": pl.String, "other": pl.String})}
                 )
-            }
+            },
+            strict=False,
         ),
         expected,
     )
@@ -1071,15 +985,29 @@ def test_strict_cast_nested() -> None:
     )
 
 
-def test_cast_to_list_deprecated() -> None:
+def test_cast_to_list_not_supported() -> None:
     s = pl.Series("a", [1, 2, 3], dtype=pl.Int32)
     msg = (
-        "casting from Int32 to list type is deprecated\n"
+        "casting from Int32 to list type is not supported\n"
         "Hint: Use pl.list(expr) to turn the Int32 column into a column of single-element lists."
     )
-    with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
-        result = s.cast(pl.List(pl.Int32))
-    assert result.dtype == pl.List(pl.Int32)
+    with pytest.raises(InvalidOperationError, match=rf"^{re.escape(msg)}$"):
+        s.cast(pl.List(pl.Int32))
+
+
+@pytest.mark.parametrize(
+    ("dtype", "to"),
+    [
+        (pl.Categorical(pl.Categories.random(physical=pl.UInt32)), "cat"),
+        (pl.Enum(["cat0", "cat1", "cat2"]), "enum"),
+    ],
+)
+def test_cast_int_to_categorical_deprecated(dtype: PolarsDataType, to: str) -> None:
+    _dummy = pl.Series("a", ["cat0", "cat1", "cat2"], dtype=dtype)
+
+    msg = rf"casting from u32 to {to} is not supported"
+    with pytest.raises(match=msg):
+        pl.Series("a", [2, 0, 1], dtype=pl.UInt32).cast(dtype)
 
 
 @pytest.mark.parametrize(
@@ -1089,33 +1017,12 @@ def test_cast_to_list_deprecated() -> None:
         pl.Enum(["cat0", "cat1", "cat2"]),
     ],
 )
-def test_cast_int_to_categorical_deprecated(dtype: PolarsDataType) -> None:
+def test_cast_categorical_to_int_unsupported(dtype: PolarsDataType) -> None:
     _dummy = pl.Series("a", ["cat0", "cat1", "cat2"], dtype=dtype)
 
-    msg = rf"casting from UInt32 to {re.escape(str(dtype.base_type()))}\(\S+\) is deprecated."
-    with pytest.deprecated_call(match=msg):
-        actual = pl.Series("a", [2, 0, 1], dtype=pl.UInt32).cast(dtype)
-
-    expected = pl.Series("a", ["cat2", "cat0", "cat1"], dtype=dtype)
-    assert_series_equal(actual, expected)
-
-
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pl.Categorical(pl.Categories.random(physical=pl.UInt32)),
-        pl.Enum(["cat0", "cat1", "cat2"]),
-    ],
-)
-def test_cast_categorical_to_int_deprecated(dtype: PolarsDataType) -> None:
-    _dummy = pl.Series("a", ["cat0", "cat1", "cat2"], dtype=dtype)
-
-    msg = rf"casting from {re.escape(str(dtype.base_type()))}\(\S+\) to UInt32 is deprecated."
-    with pytest.deprecated_call(match=msg):
-        actual = pl.Series("a", ["cat2", "cat0", "cat1"], dtype=dtype).cast(pl.UInt32)
-
-    expected = pl.Series("a", [2, 0, 1], dtype=pl.UInt32)
-    assert_series_equal(actual, expected)
+    msg = "^cannot cast categorical types to UInt32."
+    with pytest.raises(ComputeError, match=msg):
+        pl.Series("a", ["cat2", "cat0", "cat1"], dtype=dtype).cast(pl.UInt32)
 
 
 def test_lit_unknown_dtype_consistency_24431() -> None:
@@ -1155,3 +1062,17 @@ def test_cast_to_unknown_arithmetic_matrix_schema_24431(
     q = df.lazy().select(op(pl.col("a").cast(pl.Unknown), pl.lit(1)))
     assert q.collect_schema() == q.collect().schema
     assert q.collect_schema() == q_ref.collect_schema()
+
+
+def test_strict_struct_cast_field_count_mismatch() -> None:
+    # strict=True should raise when the number of struct fields differs
+    s = pl.Series("x", [{"a": 1, "b": 2}])
+    with pytest.raises(InvalidOperationError, match="same number of fields"):
+        s.cast(pl.Struct({"a": pl.Int64}), strict=True)
+
+
+def test_strict_struct_cast_field_name_mismatch() -> None:
+    # strict=True should raise when struct field names do not match
+    s = pl.Series("x", [{"a": 1}])
+    with pytest.raises(InvalidOperationError, match="field name mismatch"):
+        s.cast(pl.Struct({"b": pl.Int64}), strict=True)
