@@ -844,6 +844,7 @@ pub(super) fn convert_functions(
             polars_ensure!(&e[1].is_scalar(ctx.arena), ShapeMismatch: "'n' must be a scalar value");
             I::Repeat
         },
+        F::NTile { n } => I::NTile { n },
         #[cfg(feature = "round_series")]
         F::Clip { has_min, has_max } => I::Clip { has_min, has_max },
         F::AsList => I::AsList,

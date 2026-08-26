@@ -301,6 +301,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::MaxBy => map_as_slice!(misc::max_by),
         F::Product => map!(misc::product),
         F::Repeat => map_as_slice!(misc::repeat),
+        F::NTile { n } => map_as_slice!(misc::ntile, n),
         #[cfg(feature = "rank")]
         F::Rank { options, seed } => map!(misc::rank, options, seed),
         F::AsList => map_as_slice!(misc::as_list),

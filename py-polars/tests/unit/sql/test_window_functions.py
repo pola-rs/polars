@@ -7,6 +7,9 @@ from polars.exceptions import SQLInterfaceError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
 
+# `df_test` values in ascending order; NTILE assigns buckets by position
+ASC = [10, 15, 20, 25, 30, 35, 40]
+
 
 @pytest.fixture
 def df_test() -> pl.DataFrame:
@@ -397,6 +400,84 @@ def test_window_function_first_last() -> None:
         )
         assert_frame_equal(df.sql(query), expected)
         assert_sql_matches(df, query=query, compare_with="duckdb", expected=expected)
+
+
+@pytest.mark.parametrize(
+    ("n", "window", "order_by", "values", "expected"),
+    [
+        (2, "ORDER BY value", "value", ASC, [1, 1, 1, 1, 2, 2, 2]),
+        (3, "ORDER BY value", "value", ASC, [1, 1, 1, 2, 2, 3, 3]),
+        (2, "ORDER BY value DESC", "value DESC", ASC[::-1], [1, 1, 1, 1, 2, 2, 2]),
+        (20, "ORDER BY value", "value", ASC, [1, 2, 3, 4, 5, 6, 7]),
+        (4294967295, "ORDER BY value", "value", ASC, [1, 2, 3, 4, 5, 6, 7]),
+        (
+            2,
+            "PARTITION BY category ORDER BY value",
+            "category, value",
+            [10, 20, 30, 15, 25, 40, 35],
+            [1, 1, 2, 1, 1, 2, 1],
+        ),
+    ],
+)
+def test_window_ntile(
+    df_test: pl.DataFrame,
+    n: int,
+    window: str,
+    order_by: str,
+    values: list[int],
+    expected: list[int],
+) -> None:
+    query = f"""
+        SELECT value, NTILE({n}) OVER ({window}) AS nt
+        FROM self
+        ORDER BY {order_by}
+    """
+    assert_sql_matches(
+        df_test,
+        query=query,
+        compare_with=("sqlite", "duckdb"),
+        expected={"value": values, "nt": expected},
+    )
+
+
+def test_window_ntile_no_order_by(df_test: pl.DataFrame) -> None:
+    # legal, though the return order is arbitrary
+    res = df_test.sql("SELECT NTILE(2) OVER () AS nt FROM self")
+    assert sorted(res["nt"]) == [1, 1, 1, 1, 2, 2, 2]
+
+
+def test_window_ntile_streaming(df_test: pl.DataFrame) -> None:
+    query = """
+        SELECT category, value, NTILE(2) OVER w AS nt
+        FROM self
+        WINDOW w AS (
+          PARTITION BY category ORDER BY value
+        )
+        ORDER BY category, value
+    """
+    with pl.SQLContext(frames={"self": df_test.lazy()}) as ctx:
+        plan = ctx.execute(query)
+        streaming = plan.collect(engine="streaming")
+        assert_frame_equal(plan.collect(engine="in-memory"), streaming)
+
+    assert streaming["nt"].to_list() == [1, 1, 2, 1, 1, 2, 1]
+
+
+@pytest.mark.parametrize(
+    ("args", "error"),
+    [
+        ("0", "NTILE expects a positive integer"),
+        ("-1", "NTILE expects a positive integer"),
+        ("2.5", "NTILE expects a positive integer"),
+        ("id", "NTILE expects a positive integer"),
+        ("4294967296", "NTILE bucket count 4294967296 is too large"),
+        ("", "NTILE expects exactly 1 argument"),
+        ("2, 3", "NTILE expects exactly 1 argument"),
+    ],
+)
+def test_window_ntile_invalid(df_test: pl.DataFrame, args: str, error: str) -> None:
+    with pytest.raises(pl.exceptions.SQLSyntaxError, match=error):
+        df_test.sql(f"SELECT NTILE({args}) OVER (ORDER BY value) FROM self")
 
 
 def test_window_function_over_clause_misc() -> None:

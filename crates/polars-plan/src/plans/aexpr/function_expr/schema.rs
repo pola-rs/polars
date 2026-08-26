@@ -166,6 +166,7 @@ impl IRFunctionExpr {
                 }
             }),
             Repeat => mapper.with_same_dtype(),
+            NTile { .. } => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "rank")]
             Rank { options, .. } => mapper.with_dtype(match options.method {
                 RankMethod::Average => DataType::Float64,
@@ -476,6 +477,9 @@ impl IRFunctionExpr {
             #[cfg(feature = "dtype-struct")]
             IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)) => {
                 Some(OutputName::Field(name.clone()))
+            },
+            IRFunctionExpr::NTile { .. } => {
+                Some(OutputName::LiteralLhs(PlSmallStr::from_static("ntile")))
             },
             _ => None,
         }

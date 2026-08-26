@@ -45,6 +45,7 @@ mod log;
 #[cfg(feature = "moment")]
 mod moment;
 mod negate;
+mod ntile;
 #[cfg(feature = "pct_change")]
 mod pct_change;
 #[cfg(feature = "rank")]
@@ -117,6 +118,7 @@ pub use log::*;
 #[cfg(feature = "moment")]
 pub use moment::*;
 pub use negate::*;
+pub use ntile::*;
 #[cfg(feature = "pct_change")]
 pub use pct_change::*;
 pub use polars_core::chunked_array::ops::search_sorted::SearchSortedSide;

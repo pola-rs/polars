@@ -17,6 +17,8 @@ Window
      - Returns the last value in an ordered set of values with respect to the window declared in `OVER`.
    * - :ref:`LEAD <lead>`
      - Returns the value of a column at a given offset after the current row within a window partition.
+   * - :ref:`NTILE <ntile>`
+     - Splits an ordered window partition into `n` buckets, numbered 1 to `n`.
    * - :ref:`OVER <over>`
      - Define a window (a set of rows) within which a function is applied.
    * - :ref:`RANK <rank>`
@@ -192,6 +194,59 @@ If the offset goes beyond the partition boundary, NULL is returned.
     # │ 5   ┆ B        ┆ 50    ┆ 60         ┆ null        │
     # │ 6   ┆ B        ┆ 60    ┆ null       ┆ null        │
     # └─────┴──────────┴───────┴────────────┴─────────────┘
+
+
+.. _ntile:
+
+NTILE
+-----
+Splits an ordered window partition into ``n`` buckets, numbered 1 to ``n``. Bucket sizes differ
+by at most one row, with the larger buckets first; if ``n`` exceeds the number of rows in the
+partition, each row gets its own bucket and the trailing buckets are empty.
+
+.. note::
+
+    Buckets are assigned by row position and values are never compared, so rows with tied ordering
+    values may land in different buckets.
+
+**Syntax:**
+
+* ``NTILE(n) OVER (...)`` - ``n`` must be a positive integer literal.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "id": [1, 2, 3, 4, 5, 6, 7, 8],
+        "category": ["A", "A", "A", "A", "B", "B", "B", "B"],
+        "score": [85, 90, 70, 95, 75, 80, 60, 88]
+    })
+    df.sql("""
+      SELECT
+        id,
+        category,
+        score,
+        NTILE(2) OVER (ORDER BY score DESC) AS half,
+        NTILE(2) OVER (PARTITION BY category ORDER BY score DESC) AS half_by_category
+      FROM self
+      ORDER BY category, score DESC
+    """)
+    # shape: (8, 5)
+    # ┌─────┬──────────┬───────┬──────┬──────────────────┐
+    # │ id  ┆ category ┆ score ┆ half ┆ half_by_category │
+    # │ --- ┆ ---      ┆ ---   ┆ ---  ┆ ---              │
+    # │ i64 ┆ str      ┆ i64   ┆ u32  ┆ u32              │
+    # ╞═════╪══════════╪═══════╪══════╪══════════════════╡
+    # │ 4   ┆ A        ┆ 95    ┆ 1    ┆ 1                │
+    # │ 2   ┆ A        ┆ 90    ┆ 1    ┆ 1                │
+    # │ 1   ┆ A        ┆ 85    ┆ 1    ┆ 2                │
+    # │ 3   ┆ A        ┆ 70    ┆ 2    ┆ 2                │
+    # │ 8   ┆ B        ┆ 88    ┆ 1    ┆ 1                │
+    # │ 6   ┆ B        ┆ 80    ┆ 2    ┆ 1                │
+    # │ 5   ┆ B        ┆ 75    ┆ 2    ┆ 2                │
+    # │ 7   ┆ B        ┆ 60    ┆ 2    ┆ 2                │
+    # └─────┴──────────┴───────┴──────┴──────────────────┘
 
 
 .. _rank:

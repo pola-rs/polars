@@ -941,6 +941,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         #[cfg(feature = "rank")]
         IF::Rank { options, seed } => F::Rank { options, seed },
         IF::Repeat => F::Repeat,
+        IF::NTile { n } => F::NTile { n },
         #[cfg(feature = "round_series")]
         IF::Clip { has_min, has_max } => F::Clip { has_min, has_max },
         IF::AsList => F::AsList,
