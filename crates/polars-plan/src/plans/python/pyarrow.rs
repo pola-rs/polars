@@ -154,8 +154,24 @@ pub fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<Str
             },
             op => {
                 let symbol = binary_op_symbol(op)?;
-                let lhs = predicate_to_pa(*left, expr_arena)?;
+                let mut lhs = predicate_to_pa(*left, expr_arena)?;
                 let rhs = predicate_to_pa(*right, expr_arena)?;
+
+                if op.is_arithmetic() {
+                    // PyArrow expressions define no reflected arithmetic operators, so a
+                    // bare Python literal on the left raises `TypeError` instead of
+                    // building an expression. (Comparisons are fine: Python falls back
+                    // to the reflected comparison on the right-hand expression.)
+                    if matches!(expr_arena.get(*left), AExpr::Literal(_))
+                        && !lhs.starts_with("pa.compute.")
+                    {
+                        lhs = format!("pa.compute.scalar({lhs})");
+                    }
+
+                    if matches!(op, Operator::TrueDivide) {
+                        lhs = format!("({lhs}).cast('{FLOAT_DIVIDEND_TYPE}')");
+                    }
+                }
 
                 Some(format!("({lhs} {symbol} {rhs})"))
             },
@@ -355,8 +371,16 @@ fn returns_boolean(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     }
 }
 
+/// Polars' `/` is always float division, while PyArrow's `divide` follows the
+/// operand types and would truncate an all-integer division. Casting the
+/// dividend keeps the two in agreement.
+const FLOAT_DIVIDEND_TYPE: &str = "double";
+
 /// The Python operator reproducing `op` on a PyArrow expression, or `None` when
 /// PyArrow has no equivalent. Mirrors [`binary_op_method`].
+///
+/// Note that the arithmetic operators map onto PyArrow's *checked* kernels,
+/// which raise on integer overflow where Polars wraps.
 fn binary_op_symbol(op: &Operator) -> Option<&'static str> {
     Some(match op {
         Operator::Eq => "==",
@@ -367,6 +391,10 @@ fn binary_op_symbol(op: &Operator) -> Option<&'static str> {
         Operator::GtEq => ">=",
         Operator::And | Operator::LogicalAnd => "&",
         Operator::Or | Operator::LogicalOr => "|",
+        Operator::Plus => "+",
+        Operator::Minus => "-",
+        Operator::Multiply => "*",
+        Operator::TrueDivide => "/",
         _ => return None,
     })
 }
@@ -381,6 +409,10 @@ fn binary_op_method(op: &Operator) -> Option<&'static str> {
         Operator::GtEq => "__ge__",
         Operator::And | Operator::LogicalAnd => "__and__",
         Operator::Or | Operator::LogicalOr => "__or__",
+        Operator::Plus => "__add__",
+        Operator::Minus => "__sub__",
+        Operator::Multiply => "__mul__",
+        Operator::TrueDivide => "__truediv__",
         _ => return None,
     })
 }
@@ -491,6 +523,11 @@ pub fn aexpr_to_pyarrow<'py>(
             let method = binary_op_method(op)?;
             let l = aexpr_to_pyarrow(py, pc, *left, expr_arena)?;
             let r = aexpr_to_pyarrow(py, pc, *right, expr_arena)?;
+            let l = if matches!(op, Operator::TrueDivide) {
+                l.call_method1("cast", (FLOAT_DIVIDEND_TYPE,)).ok()?
+            } else {
+                l
+            };
             l.call_method1(method, (r,)).ok()
         },
         AExpr::Column(name) => pc.call_method1("field", (name,)).ok(),

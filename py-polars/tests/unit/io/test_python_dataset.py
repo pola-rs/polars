@@ -260,9 +260,39 @@ def test_dataset_provider_predicate_xor_operands(df: pl.DataFrame) -> None:
     )
 
 
+def test_dataset_provider_predicate_arithmetic(df: pl.DataFrame) -> None:
+    assert (
+        lowered_predicate(df, pl.col("val") * 2 > 1.0)
+        == "((pa.compute.field('val') * 2) > 1)"
+    )
+    assert (
+        lowered_predicate(df, pl.col("val") + 1.0 <= 1.5)
+        == "((pa.compute.field('val') + 1) <= 1.5)"
+    )
+    assert (
+        lowered_predicate(df, pl.col("id") * pl.col("id") > 4)
+        == "((pa.compute.field('id') * pa.compute.field('id')) > 4)"
+    )
+    # PyArrow expressions have no reflected arithmetic, so a literal on the left
+    # has to become an expression of its own.
+    assert (
+        lowered_predicate(df, 2.0 - pl.col("val") > 1.0)
+        == "((pa.compute.scalar(2) - pa.compute.field('val')) > 1)"
+    )
+
+
+def test_dataset_provider_predicate_true_divide(df: pl.DataFrame) -> None:
+    # Polars' `/` is float division, PyArrow's follows the operand types, so the
+    # dividend has to be cast for an integer column not to truncate.
+    assert (
+        lowered_predicate(df, pl.col("id") / 4 > 1.0)
+        == "(((pa.compute.field('id')).cast('double') / 4) > 1)"
+    )
+
+
 def test_dataset_provider_predicate_not_lowered(df: pl.DataFrame) -> None:
-    # Arithmetic has no lowering.
-    assert lowered_predicate(df, pl.col("val") * 2 > 1.0) is None
+    # `%` has no PyArrow expression form.
+    assert lowered_predicate(df, pl.col("id") % 2 == 0) is None
     # Neither does a cast.
     assert lowered_predicate(df, pl.col("id").cast(pl.String) == "1") is None
 

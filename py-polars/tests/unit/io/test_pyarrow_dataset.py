@@ -246,8 +246,8 @@ def test_pyarrow_dataset_partial_predicate_pushdown(
     df.write_parquet(file_path)
     dset = ds.dataset(file_path, format="parquet")
 
-    # col("a") > 1 is convertible; col("a") * col("b") > 25 is not (arithmetic
-    # on two columns cannot be expressed as a pyarrow compute expression).
+    # col("a") > 1 is convertible; col("a") * col("b") > 25 is not (the mixed
+    # dtypes put a cast in the way, and casts have no lowering).
     # The optimizer pushes both terms into the scan's SELECTION, so our
     # MintermIter-based partial conversion should push the convertible part.
     q = pl.scan_pyarrow_dataset(dset).filter(
@@ -269,6 +269,58 @@ def test_pyarrow_dataset_partial_predicate_pushdown(
         df.lazy().filter((pl.col("a") > 1) & (pl.col("a") * pl.col("b") > 25)).collect()
     )
     assert_frame_equal(result, expected)
+
+
+def test_pyarrow_dataset_arithmetic_predicate_pushdown(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "b": [10.0, 20.0, 30.0]})
+    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+
+    for pred, expected_expr in [
+        (pl.col("a") * 2 > 4.0, "(multiply_checked(a, 2) > 4)"),
+        (pl.col("a") + pl.col("b") > 25.0, "(add_checked(a, b) > 25)"),
+        (pl.col("b") - pl.col("a") > 18.0, "(subtract_checked(b, a) > 18)"),
+    ]:
+        q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+        capfd.readouterr()
+        result = q.collect()
+        capture = capfd.readouterr().err
+
+        assert (
+            f"converted pyarrow predicate: <pyarrow.compute.Expression {expected_expr}>"
+            in capture
+        )
+        assert "residual predicate: None" in capture
+        assert_frame_equal(result, df.filter(pred))
+
+
+def test_pyarrow_dataset_true_divide_predicate_pushdown(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    # Polars' `/` is float division; PyArrow's follows the operand types, so an
+    # integer dividend has to be cast or `3 / 2` would come out as `1`.
+    df = pl.DataFrame({"a": [1, 2, 3, 7]})
+    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+
+    pred = pl.col("a") / 2 > 1.4
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "divide_checked(cast(a, " in capture
+    assert "residual predicate: None" in capture
+    assert result["a"].to_list() == [3, 7]
+    assert_frame_equal(result, df.filter(pred))
 
 
 def test_pyarrow_dataset_is_in_predicate_pushdown(
