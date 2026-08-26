@@ -183,6 +183,16 @@ impl ComputeNode for StrptimeInferNode {
                             if let Some(idx) = ca.first_non_null() {
                                 *infer_slot =
                                     FormatInfer::try_new(ca.get(idx).unwrap(), dtype, options)?;
+
+                                let unit = if matches!(dtype, DataType::Time) {
+                                    "time"
+                                } else {
+                                    "date"
+                                };
+                                polars_ensure!(
+                                    infer_slot.is_some() || !options.strict,
+                                    parse_fmt_idk = unit
+                                );
                             }
                         }
 

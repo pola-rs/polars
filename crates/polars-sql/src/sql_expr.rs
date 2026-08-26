@@ -116,6 +116,24 @@ fn cast_literal_series(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
     s.strict_cast(dtype)
 }
 
+/// Parse a string expression into `Date`/`Time`/`Datetime`; non-strict yields
+/// nulls on unparseable input (used by `TRY_CAST`).
+fn parse_string_as_temporal(expr: Expr, dtype: &DataType, strict: bool) -> PolarsResult<Expr> {
+    let options = StrptimeOptions {
+        strict,
+        ..Default::default()
+    };
+    Ok(match dtype {
+        DataType::Date => expr.str().to_date(options),
+        DataType::Time => expr.str().to_time(options),
+        DataType::Datetime(tu, tz) => {
+            expr.str()
+                .to_datetime(Some(*tu), tz.clone(), options, lit("latest"))
+        },
+        _ => polars_bail!(SQLInterface: "cannot parse string as {:?}", dtype),
+    })
+}
+
 /// Extract the literal value; returns `(sql_value, optional_op)`.
 fn extract_literal_with_op<'a>(
     expr: &'a SQLExpr,
@@ -954,7 +972,7 @@ impl SQLExprVisitor<'_> {
                         dtype,
                         DataType::Date | DataType::Time | DataType::Datetime(_, _)
                     ) {
-                        return elems.strict_cast(dtype);
+                        return cast_literal_series(&elems, dtype);
                     }
                 }
             }
@@ -1005,10 +1023,29 @@ impl SQLExprVisitor<'_> {
             return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
         }
         let polars_type = map_sql_dtype_to_polars(dtype)?;
-        Ok(match cast_kind {
-            CastKind::Cast | CastKind::DoubleColon => expr.strict_cast(polars_type),
-            CastKind::TryCast | CastKind::SafeCast => expr.cast(polars_type),
+        let strict = matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon);
+
+        // `CAST(<string> AS DATE/TIME/TIMESTAMP)` parses rather than casts
+        if matches!(
+            polars_type,
+            DataType::Date | DataType::Time | DataType::Datetime(_, _)
+        ) && self.is_string_expr(&expr)
+        {
+            return parse_string_as_temporal(expr, &polars_type, strict);
+        }
+        Ok(if strict {
+            expr.strict_cast(polars_type)
+        } else {
+            expr.cast(polars_type)
         })
+    }
+
+    /// Resolve whether `expr` is known to be `String`-typed against the active
+    /// schema; false when the dtype cannot be determined.
+    fn is_string_expr(&self, expr: &Expr) -> bool {
+        let empty = Schema::default();
+        let schema = self.active_schema.unwrap_or(&empty);
+        matches!(expr.to_field(schema), Ok(fld) if fld.dtype == DataType::String)
     }
 
     /// Visit a SQL literal.
