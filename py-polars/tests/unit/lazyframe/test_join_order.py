@@ -117,11 +117,6 @@ def scan_order(plan: str) -> list[str]:
     ]
 
 
-def test_join_order_is_off_by_default(tmp_path: Path) -> None:
-    lf = star_query(star_frames(tmp_path))
-    assert lf.explain() == lf.explain(optimizations=OFF)
-
-
 def test_selective_dimension_is_joined_first(tmp_path: Path) -> None:
     lf = star_query(star_frames(tmp_path))
 
@@ -231,6 +226,8 @@ def test_sql_star_join_is_reordered(tmp_path: Path) -> None:
         WHERE f_dim_b = b_key AND f_dim_a = a_key AND a_flag
     """
     lf = ctx.execute(q, eager=False)
+
+    assert scan_order(lf.explain()) == ["fact", "dim_a", "dim_b"]
 
     off = lf.collect(optimizations=OFF)
     on = lf.collect(optimizations=ON)

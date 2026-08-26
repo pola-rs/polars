@@ -408,6 +408,7 @@ fn rename_leaf(
             run_parallel: false,
             duplicate_check: false,
             should_broadcast: false,
+            maintain_dataframe_height: false,
         },
     });
     Some((node, schema))

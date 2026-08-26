@@ -5,7 +5,6 @@ const DEFAULT_OPT_FLAGS: OptFlags = OptFlags::from_bits_truncate(
         & !(OptFlags::STREAMING.bits()
             | OptFlags::EAGER.bits()
             | OptFlags::GPU.bits()
-            | OptFlags::JOIN_ORDER.bits()
             | OptFlags::QUERY_MONITORING.bits()),
 );
 
@@ -61,7 +60,7 @@ bitflags! {
         /// at full width.
         ///
         /// This estimates rather than rewrites, so it can pick a worse plan when the
-        /// estimates are poor. Off by default.
+        /// estimates are poor.
         ///
         /// Coalescing joins are only reordered when both sides of every key name the
         /// same column, since coalescing keeps the left name.
