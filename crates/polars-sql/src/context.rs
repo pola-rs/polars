@@ -417,9 +417,8 @@ impl SQLContext {
                 .any(|relation| relation.eq_ignore_ascii_case(name))
     }
 
-    /// Resolve a relation innermost-scope-first: a `FROM` alias, then a CTE, then a
-    /// registered table. A CTE shadows a registered table of the same name, and a
-    /// `FROM` alias shadows both.
+    /// Resolve a relation innermost-scope-first: a `FROM` alias, then a CTE, then
+    /// a registered table.
     pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
         get_ignoring_case(&self.table_aliases, name)
             .and_then(|aliased| self.get_table_unaliased(aliased))
@@ -2263,8 +2262,7 @@ impl SQLContext {
         // disconnected relations fall through to a cross join, in source order.
         while !pending.is_empty() {
             let left_schema = self.get_frame_schema(lf)?;
-            // Relations each pending entry brings into scope, so that a condition
-            // naming one of them can be held back until it has been joined.
+            // Relations each pending entry brings into scope.
             let pending_relations: Vec<PlHashSet<String>> = pending
                 .iter()
                 .map(|(tbl_expr, ..)| declared_relations(std::slice::from_ref(*tbl_expr)))
@@ -2862,8 +2860,8 @@ impl SQLContext {
             }
             let field = e_inner.to_field(&schema_before)?;
             if is_non_group_key_expr {
-                // SQL evaluates window functions after `GROUP BY`, so they belong on the
-                // aggregated frame; only the aggregates inside them run in the group context.
+                // Window functions run on the aggregated frame; only the aggregates
+                // inside them run in the group context.
                 if has_expr(e, |e| matches!(e, Expr::Over { .. })) {
                     let window_expr = hoist_group_aggregates(
                         strip_outer_alias(e),
@@ -3274,8 +3272,7 @@ fn get_using_cols(op: &JoinOperator) -> Option<impl Iterator<Item = String> + '_
     }
 }
 
-/// Look up a relation name, falling back to a case-insensitive match because
-/// unquoted SQL identifiers are case-insensitive.
+/// Look up a relation name, falling back to a case-insensitive match.
 fn get_ignoring_case<'a, V>(map: &'a PlHashMap<String, V>, name: &str) -> Option<&'a V> {
     map.get(name).or_else(|| {
         map.iter()
@@ -3352,10 +3349,7 @@ fn reject_unresolved_subquery(expr: &Expr, clause: &str) -> PolarsResult<()> {
 }
 
 /// Strip the outer alias from an expression (if present) for expression equality comparison.
-/// Remove every alias `resolve_column` added for join-suffixed columns.
-///
-/// A join key or predicate must name the underlying column, and an alias anywhere
-/// inside one is rejected, including nested in a `CASE`.
+/// Remove every alias, so a join key or predicate names the underlying column.
 fn strip_join_aliases(expr: Expr) -> Expr {
     expr.map_expr(|e| match e {
         Expr::Alias(inner, _) => Arc::unwrap_or_clone(inner),
@@ -3617,8 +3611,8 @@ fn process_join_on(
 /// Replace aggregates over pre-aggregation columns with references to hoisted
 /// aggregation outputs, collecting the hoisted aggregates into `agg_out`.
 ///
-/// Used for window functions in a `GROUP BY` query: `avg(sum(x)) OVER (...)` runs
-/// `sum(x)` in the group context and `avg(...) OVER (...)` on the aggregated frame.
+/// In `avg(sum(x)) OVER (...)`, `sum(x)` is hoisted and `avg(...) OVER (...)` is
+/// left to run on the aggregated frame.
 fn hoist_group_aggregates(
     expr: Expr,
     schema_before: &Schema,
@@ -3837,16 +3831,15 @@ fn is_join_comparison(
     left_schema: &Schema,
     right_schema: &Schema,
 ) -> bool {
-    // A condition that also names a relation joined in a later round cannot be
-    // resolved yet; it stays in the residual WHERE until that relation is present.
+    // A condition naming a relation joined in a later round stays in the
+    // residual WHERE until that relation is present.
     if deferred_tables
         .iter()
         .any(|table| expr_refers_to_table(expr, table.as_str()))
     {
         return false;
     }
-    // A subquery is not a join key; its correlated columns name outer relations,
-    // which would otherwise look like a reference to the relation being joined.
+    // A subquery is not a join key; its correlated columns name outer relations.
     if expr_contains_subquery(expr) {
         return false;
     }
@@ -3879,10 +3872,8 @@ fn is_join_comparison(
         let (left_is_right, left_is_left) = operand_side(left);
         let (right_is_right, right_is_left) = operand_side(right);
 
-        // One operand must name only a left table and the other only the right one.
-        // An operand spanning both cannot be attributed to a single side, and the
-        // suffixing below would rename its left columns as the right table's; it
-        // stays a filter, applied once the join has brought both sides together.
+        // One operand must name only a left table and the other only the right one;
+        // an operand spanning both stays a filter, as it belongs to neither side.
         (left_is_right && !left_is_left && right_is_left && !right_is_right)
             || (right_is_right && !right_is_left && left_is_left && !left_is_right)
     } else {

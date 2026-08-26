@@ -164,8 +164,8 @@ def test_truncate_table(truncate_sql: str, test_frame: pl.LazyFrame) -> None:
 @pytest.mark.parametrize(
     "query",
     [
-        # unquoted identifiers are case-insensitive, so the case a relation is
-        # declared with need not match the case it is referenced with
+        # unquoted identifiers are case-insensitive, so a relation need not be
+        # referenced with the case it was declared with
         "SELECT s.x FROM (SELECT x FROM tbl) S",
         "SELECT S.x FROM (SELECT x FROM tbl) s",
         "SELECT SUB.x FROM (SELECT x FROM tbl) sub",

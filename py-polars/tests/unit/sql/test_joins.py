@@ -1726,7 +1726,7 @@ _YEAR_TOTAL_CTE = """
 
 
 def test_join_non_equi_case_predicate(sales_frame: pl.LazyFrame) -> None:
-    # a self-joined CTE suffixes the repeated column names, and the alias that
+    # a self-joined CTE suffixes its repeated column names; the alias that
     # resolution adds for them must not reach the join predicate
     assert_sql_matches(
         sales_frame,
@@ -1746,8 +1746,7 @@ def test_join_non_equi_case_predicate(sales_frame: pl.LazyFrame) -> None:
 
 
 def test_join_predicate_spanning_later_relation(sales_frame: pl.LazyFrame) -> None:
-    # the predicate names `d`, which is joined after `c`; evaluating it at the
-    # `c` join resolved `d.total` to `c.total` and silently dropped rows
+    # the predicate names `d`, which is joined after `c`
     assert_sql_matches(
         sales_frame,
         query=f"""{_YEAR_TOTAL_CTE}
@@ -1776,9 +1775,8 @@ def test_join_non_equi_nested_alias_in_equi_key(sales_frame: pl.LazyFrame) -> No
 
 
 def test_join_predicate_operand_spanning_both_sides() -> None:
-    # `(ws2.w)/ws1.w` names two relations that a join puts on opposite sides.
-    # Suffixing attributes a whole operand to one relation, so such a condition
-    # must stay a filter rather than becoming a join predicate.
+    # `(ws2.w)/ws1.w` names two relations that a join puts on opposite sides,
+    # so the condition stays a filter rather than becoming a join predicate
     frames = {
         "ss_src": pl.DataFrame(
             {

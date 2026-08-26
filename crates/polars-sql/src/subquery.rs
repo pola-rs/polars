@@ -121,7 +121,7 @@ impl SQLContext {
         let Some(selection) = &select.selection else {
             return Ok(None);
         };
-        // Both rewrites below split this into conjuncts, so factor it once here.
+        // Both rewrites below split this into conjuncts.
         let selection = factored_selection(selection);
         // Resolve and parse the inner relation in an isolated context so its
         // table/alias registrations don't leak into the outer query's scope.
@@ -383,8 +383,8 @@ impl SQLContext {
             return Ok(None);
         };
         let mut inner_lf = self.execute_from_statement(first)?;
-        // Comma-separated relations cross join; the equalities that link them are
-        // inner-only filters, which the optimizer folds back into a join.
+        // Comma-separated relations cross join; the equalities linking them are
+        // inner-only filters.
         for tbl_expr in rest {
             let rf = self.execute_from_statement(tbl_expr)?;
             inner_lf = inner_lf.cross_join(rf, None);
@@ -1057,10 +1057,8 @@ impl<'a> DisjunctIter<'a> {
 
 /// Rewrite `(A AND X) OR (A AND Y)` as `A AND (X OR Y)`.
 ///
-/// A correlation predicate repeated in every branch of an `OR` is implied by the
-/// whole disjunction, but only a top-level conjunct is visible to the rewrites.
 /// The SQL-AST analogue of `polars_plan::plans::aexpr::or_factoring`, which runs
-/// too late to inform the decorrelation decision made here.
+/// after the decorrelation decision made here.
 fn factor_common_conjuncts(expr: &SQLExpr) -> Option<SQLExpr> {
     let branches: Vec<Vec<&SQLExpr>> = DisjunctIter::new(expr)
         .map(|branch| MintermIter::new(branch).collect())
@@ -1109,8 +1107,7 @@ fn factor_common_conjuncts(expr: &SQLExpr) -> Option<SQLExpr> {
     })
 }
 
-/// Hoist predicates shared by every branch of an `OR` to the top level, so that
-/// the conjunct split can classify them.
+/// Hoist predicates shared by every branch of an `OR` to the top level.
 fn factored_selection(selection: &SQLExpr) -> Cow<'_, SQLExpr> {
     let factored: Vec<Option<SQLExpr>> = MintermIter::new(selection)
         .map(factor_common_conjuncts)
@@ -1238,8 +1235,7 @@ fn classify_correlation_column(
         Some(_) => outer_schema
             .contains(name.as_str())
             .then_some((CorrelationSide::Outer, name)),
-        // An unqualified name binds to the innermost scope that holds it, so a name
-        // the inner relation has is inner even when the outer query has one too.
+        // An unqualified name binds to the innermost scope that holds it.
         None => match (
             inner_schema.contains(name.as_str()),
             outer_schema.contains(name.as_str()),

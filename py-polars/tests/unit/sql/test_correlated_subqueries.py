@@ -273,8 +273,7 @@ def _sales_frames() -> dict[str, pl.DataFrame]:
     ],
 )
 def test_correlated_scalar_subquery_multi_table_outer(correlation: str) -> None:
-    # the subquery names `i_item_sk`, which made the enclosing comparison look
-    # like a join predicate between the two outer relations
+    # a correlated subquery inside a comparison, over a multi-relation outer FROM
     assert_sql_matches(
         frames=_sales_frames(),
         query=f"""
@@ -318,7 +317,7 @@ def test_correlated_subquery_multi_relation_inner_from() -> None:
 
 def test_correlated_subquery_predicate_shared_across_or_branches() -> None:
     # the correlation sits inside both branches of an OR rather than at the top
-    # level of the subquery's WHERE, so it must be factored out to be seen
+    # level of the subquery's WHERE
     assert_sql_matches(
         frames=_sales_frames(),
         query="""
