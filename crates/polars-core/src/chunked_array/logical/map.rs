@@ -1,5 +1,4 @@
 use arrow::offset::OffsetsBuffer;
-use polars_compute::gather::bitmap::take_bitmap_unchecked;
 use polars_compute::gather::take_unchecked;
 
 use crate::chunked_array::cast::CastOptions;
@@ -8,7 +7,8 @@ use crate::prelude::*;
 
 /// A `Map` backed by a `List(Struct {key, value})` [`Series`].
 ///
-/// Keys are unique and non-null within each row. Equality is entry-order-sensitive.
+/// Map entries and keys are non-null, and keys are unique within each row. Equality
+/// is entry-order-sensitive.
 #[derive(Clone)]
 pub struct MapChunked {
     dtype: DataType,
@@ -17,8 +17,8 @@ pub struct MapChunked {
 
 impl MapChunked {
     /// # Safety
-    /// `dtype` must be a [`DataType::Map`] matching `storage`, with unique,
-    /// non-null keys in every row.
+    /// `dtype` must be a [`DataType::Map`] matching `storage`, with non-null entries
+    /// and unique, non-null keys in every row.
     pub unsafe fn from_storage_unchecked(dtype: DataType, storage: Series) -> Self {
         debug_assert_eq!(
             dtype.map_entries_list_dtype().as_ref(),
@@ -27,7 +27,7 @@ impl MapChunked {
         Self { dtype, storage }
     }
 
-    /// Validate and canonicalize a map's storage.
+    /// Validate map storage and canonicalize duplicate keys.
     pub fn try_from_storage(dtype: DataType, storage: Series) -> PolarsResult<Self> {
         let DataType::Map(key, _) = &dtype else {
             polars_bail!(InvalidOperation: "`{dtype}` is not a Map dtype");
@@ -83,7 +83,7 @@ impl MapChunked {
         &self.storage
     }
 
-    /// Mutable access is crate-private to protect the key invariants.
+    /// Mutable access is crate-private to protect the map invariants.
     pub(crate) fn storage_mut(&mut self) -> &mut Series {
         &mut self.storage
     }
@@ -113,9 +113,11 @@ impl MapChunked {
     }
 }
 
-/// Canonicalize this map's entries using first-position/last-value semantics.
-/// Returns `None` if unchanged; use [`Series::canonicalize_maps`] to also reach
-/// maps nested inside the keys or values.
+/// Reject null entries and keys, then canonicalize duplicates by keeping each key's
+/// first position and last value.
+///
+/// Returns `None` if unchanged; use [`Series::canonicalize_maps`] to also reach maps
+/// nested inside the keys or values.
 pub(crate) fn canonicalize_map_storage(storage: &Series) -> PolarsResult<Option<Series>> {
     let DataType::List(entries_dtype) = storage.dtype() else {
         unreachable!("map storage must be List(Struct {{key, value}})")
@@ -127,7 +129,7 @@ pub(crate) fn canonicalize_map_storage(storage: &Series) -> PolarsResult<Option<
         unreachable!("map entries must have two fields")
     };
     let list_ca = storage.list().unwrap();
-    // Only allocated once a chunk actually needs repair.
+    // Allocate only after the first changed chunk.
     let mut new_chunks: Option<Vec<ArrayRef>> = None;
 
     for (i, chunk) in list_ca.downcast_iter().enumerate() {
@@ -210,11 +212,6 @@ fn gather_entries(
         offsets,
     } = indices;
 
-    // Entry validity follows the keys, i.e. each key's first occurrence.
-    let validity = entries
-        .validity()
-        .map(|validity| unsafe { take_bitmap_unchecked(validity, first_keys.values()) });
-
     let new_entries = StructArray::new(
         entries.dtype().clone(),
         first_keys.len(),
@@ -222,7 +219,8 @@ fn gather_entries(
             unsafe { take_unchecked(key_arr.as_ref(), &first_keys) },
             unsafe { take_unchecked(value_arr.as_ref(), &last_values) },
         ],
-        validity,
+        // Entry validity is all true.
+        None,
     );
 
     LargeListArray::new(
@@ -245,15 +243,23 @@ fn canonicalize_list_chunk(
         unreachable!("map entries must have two arrays")
     };
 
-    // A Series only to row-encode the keys: that needs the *logical* dtype, so a
-    // categorical key carries its mapping. The name never reaches the output.
+    // Entry and key validity are independent; null values are allowed.
+    polars_ensure!(
+        entries.null_count() == 0,
+        InvalidOperation: "Map entries cannot be null"
+    );
+    polars_ensure!(
+        key_arr.null_count() == 0,
+        InvalidOperation: "Map keys cannot be null"
+    );
+
+    // Row encoding uses the logical dtype and matches Polars key equality.
     let keys = unsafe {
         Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![key_arr.clone()], key_dtype)
     };
-
-    // Match Polars grouping/join equality without relying on hashes alone.
     let encoded = encode_rows_unordered(&[keys.into_column()])?;
     let encoded = encoded.downcast_iter().next().unwrap();
+
     let Some(indices) = canonical_map_indices(encoded, arr.offsets().as_slice()) else {
         return Ok(None);
     };
