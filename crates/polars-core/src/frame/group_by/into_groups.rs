@@ -328,9 +328,9 @@ impl IntoGroupsType for ListChunked {
         multithreaded &= RAYON.current_num_threads() > 1;
         let by = &[self.clone().into_column()];
         let ca = if multithreaded {
-            encode_rows_vertical_par_unordered(by).unwrap()
+            encode_rows_vertical_par_unordered(by)?
         } else {
-            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, by).unwrap()
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, by)?
         };
 
         ca.group_tuples(multithreaded, sorted)
@@ -349,9 +349,9 @@ impl IntoGroupsType for ArrayChunked {
         multithreaded &= RAYON.current_num_threads() > 1;
         let by = &[self.clone().into_column()];
         let ca = if multithreaded {
-            encode_rows_vertical_par_unordered(by).unwrap()
+            encode_rows_vertical_par_unordered(by)?
         } else {
-            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, by).unwrap()
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, by)?
         };
         ca.group_tuples(multithreaded, sorted)
     }
