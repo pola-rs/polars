@@ -135,8 +135,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             AnyValue::Decimal(v, *precision, *scale)
         },
         #[cfg(feature = "dtype-map")]
-        DataType::Map(key, value) => {
-            let entries_dtype = DataType::map_entries(key.as_ref().clone(), value.as_ref().clone());
+        DataType::Map(_, _) => {
+            let entries_dtype = dtype.map_entries_dtype().unwrap();
             let v: ArrayRef = downcast!(LargeListArray);
             let s = Series::from_chunks_and_dtype_unchecked(
                 PlSmallStr::EMPTY,

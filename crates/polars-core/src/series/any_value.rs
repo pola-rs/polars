@@ -157,9 +157,8 @@ impl Series {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
             },
             #[cfg(feature = "dtype-map")]
-            DataType::Map(key, value) => {
-                let entries_dtype =
-                    DataType::map_entries(key.as_ref().clone(), value.as_ref().clone());
+            DataType::Map(_, _) => {
+                let entries_dtype = dtype.map_entries_dtype().unwrap();
                 let entries: Vec<AnyValue> = values
                     .iter()
                     .map(|av| match av {

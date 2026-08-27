@@ -221,9 +221,9 @@ impl AnyValue<'static> {
                 fields.clone(),
             ))),
             #[cfg(feature = "dtype-map")]
-            DT::Map(key, value) => AV::Map(Series::new_empty(
+            DT::Map(_, _) => AV::Map(Series::new_empty(
                 PlSmallStr::EMPTY,
-                &DataType::map_entries(key.as_ref().clone(), value.as_ref().clone()),
+                &dtype.map_entries_dtype().unwrap(),
             )),
             #[cfg(feature = "dtype-extension")]
             DT::Extension(_typ, storage) => {

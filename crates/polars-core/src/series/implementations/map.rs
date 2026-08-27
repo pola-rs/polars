@@ -74,6 +74,7 @@ impl private::PrivateSeries for SeriesWrap<MapChunked> {
         self.0.storage().vec_hash_combine(build_hasher, hashes)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         self.0.storage().group_tuples(multithreaded, sorted)
     }

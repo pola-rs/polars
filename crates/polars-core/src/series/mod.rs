@@ -609,8 +609,7 @@ impl Series {
 
             #[cfg(feature = "dtype-map")]
             (D::List(_), D::Map(_, _)) => {
-                let storage =
-                    self.from_physical_unchecked(&dtype.map_entries_list_dtype().unwrap())?;
+                let storage = self.from_physical_unchecked(&dtype.map_storage_dtype().unwrap())?;
                 Ok(MapChunked::from_storage_unchecked(dtype.clone(), storage).into_series())
             },
             #[cfg(feature = "dtype-extension")]

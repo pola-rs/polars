@@ -95,8 +95,7 @@ impl Series {
             },
             #[cfg(feature = "dtype-map")]
             DataType::Map(_, _) => {
-                let storage =
-                    Series::full_null(name, size, &dtype.map_entries_list_dtype().unwrap());
+                let storage = Series::full_null(name, size, &dtype.map_storage_dtype().unwrap());
                 unsafe { MapChunked::from_storage_unchecked(dtype.clone(), storage) }.into_series()
             },
             #[cfg(feature = "dtype-extension")]

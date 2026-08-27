@@ -488,14 +488,13 @@ impl DataType {
                 from_key.matches_schema_type(to_key).is_ok() && from_value.can_cast_to(to_value)?
             },
             #[cfg(feature = "dtype-map")]
-            (D::Map(key, value), D::List(to)) => {
-                D::map_entries(key.as_ref().clone(), value.as_ref().clone()).can_cast_to(to)?
+            (from @ D::Map(_, _), D::List(to)) => {
+                from.map_entries_dtype().unwrap().can_cast_to(to)?
             },
             #[cfg(feature = "dtype-map")]
-            (D::List(from), D::Map(key, value)) => from.can_cast_to(&D::map_entries(
-                key.as_ref().clone(),
-                value.as_ref().clone(),
-            ))?,
+            (D::List(from), to @ D::Map(_, _)) => {
+                from.can_cast_to(&to.map_entries_dtype().unwrap())?
+            },
             #[cfg(feature = "dtype-array")]
             (D::Array(from, l_width), D::Array(to, r_width)) => {
                 l_width == r_width && from.can_cast_to(to)?
@@ -555,10 +554,7 @@ impl DataType {
                 Struct(new_fields)
             },
             #[cfg(feature = "dtype-map")]
-            Map(key, value) => List(Box::new(DataType::map_entries(
-                key.to_physical(),
-                value.to_physical(),
-            ))),
+            Map(_, _) => self.map_storage_dtype().unwrap().to_physical(),
             #[cfg(feature = "dtype-extension")]
             Extension(_, storage) => storage.to_physical(),
             _ => self.clone(),
@@ -939,6 +935,15 @@ impl DataType {
         }
     }
 
+    /// Return the key and value dtypes of a `Map`, or `None` for any other dtype.
+    #[cfg(feature = "dtype-map")]
+    pub fn as_map(&self) -> Option<(&DataType, &DataType)> {
+        match self {
+            DataType::Map(key, value) => Some((key, value)),
+            _ => None,
+        }
+    }
+
     /// The canonical struct dtype of a `Map` entry.
     #[cfg(feature = "dtype-map")]
     pub fn map_entries(key: DataType, value: DataType) -> DataType {
@@ -946,6 +951,14 @@ impl DataType {
             Field::new(MAP_KEY_NAME, key),
             Field::new(MAP_VALUE_NAME, value),
         ])
+    }
+
+    /// The `Struct {key, value}` entries dtype of this `Map`. Returns `None` for any
+    /// other dtype.
+    #[cfg(feature = "dtype-map")]
+    pub fn map_entries_dtype(&self) -> Option<DataType> {
+        self.as_map()
+            .map(|(key, value)| DataType::map_entries(key.clone(), value.clone()))
     }
 
     /// Returns the dtype of the [`Series`] used internally to store this `Map`:
@@ -956,14 +969,9 @@ impl DataType {
     /// `map_elements` calls the latter, so each map row would reach the UDF as a
     /// `List(Struct)` value instead of a `dict`.
     #[cfg(feature = "dtype-map")]
-    pub fn map_entries_list_dtype(&self) -> Option<DataType> {
-        match self {
-            DataType::Map(key, value) => Some(DataType::List(Box::new(DataType::map_entries(
-                key.as_ref().clone(),
-                value.as_ref().clone(),
-            )))),
-            _ => None,
-        }
+    pub fn map_storage_dtype(&self) -> Option<DataType> {
+        self.map_entries_dtype()
+            .map(|entries| DataType::List(Box::new(entries)))
     }
 
     /// Whether this dtype may be used as the key dtype of a `Map`.
@@ -1202,8 +1210,8 @@ impl DataType {
             },
             BinaryOffset => Ok(ArrowDataType::LargeBinary),
             #[cfg(feature = "dtype-map")]
-            Map(key, value) => {
-                let entries = DataType::map_entries(key.as_ref().clone(), value.as_ref().clone());
+            Map(_, _) => {
+                let entries = self.map_entries_dtype().unwrap();
                 let mut field = entries.to_arrow_field(MAP_ENTRIES_NAME, compat_level);
                 // Neither the entries field nor the key field may be nullable.
                 field.is_nullable = false;
@@ -1256,13 +1264,18 @@ impl DataType {
     /// Allows (nested) Null types in this type to match any type in the schema,
     /// but not vice versa. In such a case Ok(true) is returned, because a cast
     /// is necessary. If no cast is necessary Ok(false) is returned, and an
-    /// error is returned if the types are incompatible.
+    /// error is returned if the types, container shapes, or Struct field names
+    /// are incompatible.
     pub fn matches_schema_type(&self, schema_type: &DataType) -> PolarsResult<bool> {
         match (self, schema_type) {
             (DataType::List(l), DataType::List(r)) => l.matches_schema_type(r),
             #[cfg(feature = "dtype-array")]
             (DataType::Array(l, sl), DataType::Array(r, sr)) => {
-                Ok(l.matches_schema_type(r)? && sl == sr)
+                polars_ensure!(
+                    sl == sr,
+                    SchemaMismatch: "array widths differ: {sl} vs {sr}"
+                );
+                l.matches_schema_type(r)
             },
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(l), DataType::Struct(r)) => {
@@ -1271,13 +1284,17 @@ impl DataType {
                 }
                 let mut must_cast = false;
                 for (l, r) in l.iter().zip(r.iter()) {
+                    polars_ensure!(
+                        l.name() == r.name(),
+                        SchemaMismatch: "struct field names differ: `{}` vs `{}`",
+                        l.name(), r.name(),
+                    );
                     must_cast |= l.dtype.matches_schema_type(&r.dtype)?;
                 }
                 Ok(must_cast)
             },
             #[cfg(feature = "dtype-map")]
             (DataType::Map(lk, lv), DataType::Map(rk, rv)) => {
-                // In principle, we don't allow casting map key types, except for nested nulls.
                 let key_cast = lk.matches_schema_type(rk)?;
                 let value_cast = lv.matches_schema_type(rv)?;
                 Ok(key_cast || value_cast)

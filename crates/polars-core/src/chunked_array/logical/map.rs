@@ -21,10 +21,7 @@ impl MapChunked {
     /// `dtype` must be a [`DataType::Map`] matching `storage`, with non-null entries
     /// and unique, non-null keys in every row.
     pub unsafe fn from_storage_unchecked(dtype: DataType, storage: Series) -> Self {
-        debug_assert_eq!(
-            dtype.map_entries_list_dtype().as_ref(),
-            Some(storage.dtype())
-        );
+        debug_assert_eq!(dtype.map_storage_dtype().as_ref(), Some(storage.dtype()));
         Self { dtype, storage }
     }
 
@@ -35,7 +32,7 @@ impl MapChunked {
         };
         key.ensure_valid_map_key()?;
 
-        let storage_dtype = dtype.map_entries_list_dtype().unwrap();
+        let storage_dtype = dtype.map_storage_dtype().unwrap();
         polars_ensure!(
             storage.dtype() == &storage_dtype,
             InvalidOperation: "expected `{storage_dtype}` storage for `{dtype}`, got `{}`",
@@ -63,21 +60,11 @@ impl MapChunked {
     }
 
     pub fn key_dtype(&self) -> &DataType {
-        match &self.dtype {
-            DataType::Map(key, _) => key,
-            _ => unreachable!("MapChunked must have DataType::Map"),
-        }
+        self.dtype.as_map().unwrap().0
     }
 
     pub fn value_dtype(&self) -> &DataType {
-        match &self.dtype {
-            DataType::Map(_, value) => value,
-            _ => unreachable!("MapChunked must have DataType::Map"),
-        }
-    }
-
-    pub fn entries_dtype(&self) -> DataType {
-        DataType::map_entries(self.key_dtype().clone(), self.value_dtype().clone())
+        self.dtype.as_map().unwrap().1
     }
 
     pub fn storage(&self) -> &Series {
@@ -146,35 +133,30 @@ impl MapChunked {
         to_value: &DataType,
         options: CastOptions,
     ) -> PolarsResult<Series> {
-        let cast_key = self.key_dtype().matches_schema_type(to_key).map_err(
-            |_| polars_err!(InvalidOperation: "cannot cast Map key `{}` to `{to_key}`", self.key_dtype()),
-        )?;
+        let cast_key = self
+            .key_dtype()
+            .matches_schema_type(to_key)
+            .map_err(|_| {
+                polars_err!(InvalidOperation: "cannot cast Map key `{}` to `{to_key}`", self.key_dtype())
+            })?;
 
-        let storage = self.storage.rechunk();
-        let arr = storage.list().unwrap().downcast_as_array();
-        let entries = unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                MAP_ENTRIES_NAME.clone(),
-                vec![arr.values().clone()],
-                &self.entries_dtype(),
-            )
-        };
-        let entries = entries.struct_().unwrap().fields_as_series();
-        let [key, value] = entries.as_slice() else {
-            unreachable!("map entries must have two fields")
-        };
+        let dtype = DataType::Map(Box::new(to_key.clone()), Box::new(to_value.clone()));
+        let storage = try_apply_map_entries(self.storage.list().unwrap(), |key, value| {
+            let key = if cast_key {
+                key.cast_with_options(to_key, options)?
+            } else {
+                key.clone()
+            };
+            Ok((key, value.cast_with_options(to_value, options)?))
+        })?
+        .into_series();
 
-        let key = if cast_key {
-            key.cast_with_options(to_key, options)?
-        } else {
-            key.clone()
-        };
-        let value = value.cast_with_options(to_value, options)?;
-        let dtype = DataType::Map(
-            Box::new(key.dtype().clone()),
-            Box::new(value.dtype().clone()),
+        let storage_dtype = dtype.map_storage_dtype().unwrap();
+        polars_ensure!(
+            storage.dtype() == &storage_dtype,
+            ComputeError: "Map entry transform produced `{}` storage instead of `{storage_dtype}`",
+            storage.dtype(),
         );
-        let storage = map_storage_from_entries(self.name().clone(), arr, key, value)?;
 
         if cast_key {
             // Even with matching key schemas, we are allowed to rescale Decimals, which might collapse distinct keys into duplicates.
@@ -185,39 +167,41 @@ impl MapChunked {
     }
 }
 
-/// Rebuild map storage around new entry children, reusing `arr`'s offsets and validity.
-pub(crate) fn map_storage_from_entries(
-    name: PlSmallStr,
-    arr: &LargeListArray,
-    key: Series,
-    value: Series,
-) -> PolarsResult<Series> {
-    let key = key.with_name(MAP_KEY_NAME.clone());
-    let value = value.with_name(MAP_VALUE_NAME.clone());
-    let dtype = DataType::map_entries(key.dtype().clone(), value.dtype().clone());
+/// Apply `f` to the key and value children of `List(Struct {key, value})` Map storage.
+///
+/// The output dtype is derived from the returned children. Entry validity, list offsets,
+/// outer validity and the outer chunk layout are preserved.
+pub(crate) fn try_apply_map_entries(
+    storage: &ListChunked,
+    f: impl FnOnce(&Series, &Series) -> PolarsResult<(Series, Series)>,
+) -> PolarsResult<ListChunked> {
+    let entries = storage.get_inner();
+    let entries_ca = entries.struct_().map_err(|_| {
+        polars_err!(InvalidOperation: "Map entries must be a Struct, got `{}`", entries.dtype())
+    })?;
+    let fields = entries_ca.fields_as_series();
+    let [key, value] = fields.as_slice() else {
+        polars_bail!(InvalidOperation: "Map entries need exactly two fields")
+    };
 
-    let entries = StructChunked::from_series(
-        MAP_ENTRIES_NAME.clone(),
-        arr.values().len(),
-        [&key, &value].into_iter(),
-    )?
-    .into_series()
-    .rechunk();
-    let entries = entries.array_ref(0).clone();
-
-    let new_arr = LargeListArray::new(
-        LargeListArray::default_datatype(entries.dtype().clone()),
-        arr.offsets().clone(),
-        entries,
-        arr.validity().cloned(),
+    let entries_len = entries.len();
+    let (mut key, mut value) = f(key, value)?;
+    polars_ensure!(
+        key.len() == entries_len && value.len() == entries_len,
+        ShapeMismatch: "Map entry transform changed the entry count from {entries_len} to ({}, {})",
+        key.len(), value.len(),
     );
-    Ok(unsafe {
-        Series::from_chunks_and_dtype_unchecked(
-            name,
-            vec![new_arr.boxed()],
-            &DataType::List(Box::new(dtype)),
-        )
-    })
+
+    key.rename(MAP_KEY_NAME.clone());
+    value.rename(MAP_VALUE_NAME.clone());
+    let mut new_entries = StructChunked::from_series(
+        MAP_ENTRIES_NAME.clone(),
+        entries_len,
+        [&key, &value].into_iter(),
+    )?;
+    new_entries.zip_outer_validity(entries_ca);
+
+    Ok(storage.with_inner_values(&new_entries.into_series()))
 }
 
 fn map_av(av: AnyValue<'_>) -> AnyValue<'_> {
