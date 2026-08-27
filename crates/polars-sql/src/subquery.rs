@@ -1070,10 +1070,7 @@ fn factor_common_conjuncts(expr: &SQLExpr) -> Option<SQLExpr> {
     let common: Vec<&SQLExpr> = first
         .iter()
         .copied()
-        .filter(|term| {
-            rest.iter()
-                .all(|branch| branch.iter().any(|other| *other == *term))
-        })
+        .filter(|term| rest.iter().all(|branch| branch.contains(term)))
         .collect();
     let factored = combine_conditions(
         common.iter().copied().cloned().collect(),
@@ -1089,7 +1086,7 @@ fn factor_common_conjuncts(expr: &SQLExpr) -> Option<SQLExpr> {
                 terms
                     .iter()
                     .copied()
-                    .filter(|term| !common.iter().any(|c| *c == *term))
+                    .filter(|term| !common.contains(term))
                     .cloned()
                     .collect(),
                 SQLBinaryOperator::And,
