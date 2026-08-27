@@ -245,6 +245,8 @@ pub enum IRFunctionExpr {
     ApproxNUnique,
     #[cfg(feature = "approx_quantile")]
     ApproxQuantile {
+        // TODO: [amber] What kind of sketch?
+        // TODO: [amber] What kind of interpolation method?
         error: f64,
     },
     Coalesce,
@@ -853,7 +855,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantile { .. } => "approx_quantile",
+            ApproxQuantile { .. } => "approx_quantilesketch",
             Coalesce => "coalesce",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",

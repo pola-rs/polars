@@ -1,5 +1,7 @@
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
+#[cfg(feature = "approx_quantile")]
+use polars_core::datatypes::DataType::Binary;
 use polars_core::utils::materialize_dyn_int;
 
 use super::*;
@@ -230,7 +232,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantile { .. } => mapper.with_same_dtype(),
+            ApproxQuantile { .. } => mapper.with_same_dtype(), // TODO: [amber] Should change this if we update the quantile method.
             #[cfg(feature = "hist")]
             Hist {
                 include_category,

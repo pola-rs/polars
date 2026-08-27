@@ -1,18 +1,3 @@
-//! Streaming sketches for approximate quantiles.
-//!
-//! Both sketches keep a stack of *compactors*, one per level, where an item at
-//! level `i` stands for `2^i` ingested items. They only differ in which items a
-//! compaction throws away:
-//!
-//! * [`KLLSketch`] compacts a uniformly sampled half of every compactor, giving
-//!   a uniform (additive) rank error over the whole distribution.
-//! * [`ReqSketchBounded`] protects a prefix of the smallest items in every
-//!   compactor, giving a *relative* rank error for the low quantiles at the
-//!   cost of a weaker guarantee for the high ones.
-//!
-//! Both share [`FinalizedState`], which holds the merged items plus their
-//! cumulative weights and answers the actual queries.
-
 use std::{fmt, mem};
 
 pub use kll::KLLSketch;
@@ -162,7 +147,7 @@ pub mod kll {
         /// Total number of items that were consumed by this sketch.
         consumed_items: usize,
         /// Maximum number of items before we compact.
-        max_size: usize,
+        compactor_capacity: usize,
         rng: SmallRng,
         scratch: Vec<T>,
     }
@@ -190,7 +175,7 @@ pub mod kll {
                 }],
                 k,
                 consumed_items: 0,
-                max_size: k,
+                compactor_capacity: k,
                 rng: SmallRng::from_rng(&mut rand::rng()),
                 scratch: Vec::default(),
             };
@@ -235,10 +220,10 @@ pub mod kll {
             let mut offset = 0;
             while offset < array.len() {
                 // Fast compare
-                if self.items.len() >= self.max_size {
+                if self.items.len() >= self.compactor_capacity {
                     self.compact(true);
                 }
-                let space_left = self.max_size - self.items.len();
+                let space_left = self.compactor_capacity - self.items.len();
                 debug_assert!(space_left > 0);
                 let ingest_chunk_len = space_left.min(array[offset..].len());
                 let ingest_items = &array[offset..offset + ingest_chunk_len];
@@ -278,21 +263,21 @@ pub mod kll {
                 compactions: 0,
                 coin: false,
             });
-            self.max_size = (0..self.levels.len())
+            self.compactor_capacity = (0..self.levels.len())
                 .map(|level| compactor_threshold(self.k, self.levels.len() - 1 - level))
                 .sum();
         }
 
         fn compact_level(&mut self, level: usize) {
             let mut compact_level = self.levels[level];
+            let rand: u8 = self.rng.random();
+            let coin1 = rand & 0x1 != 0;
 
-            let coin1: bool = self.rng.random();
-            // Only draw a fresh promotion parity every other compaction, and
-            // take the opposite one in between. Consecutive compactions then
-            // promote opposite parities, so their errors cancel pairwise.
+            // Only draw a fresh promotion parity every other compaction, and take
+            // the opposite one in between. See DOI 10.3390/s22249612, Sec 3.2.
             compact_level.coin = match compact_level.compactions % 2 == 1 {
                 true => !compact_level.coin,
-                false => self.rng.random(),
+                false => rand & 0x2 != 0,
             };
             compact_level.compactions += 1;
             let coin2 = compact_level.coin;
