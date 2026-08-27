@@ -3286,6 +3286,20 @@ def test_reencode_categoricals_22385() -> None:
     pl.scan_parquet(f).collect()
 
 
+def test_categorical_dictionary_columns_with_plain_page_28959() -> None:
+    values = [f"category_value_{i}" for i in range(100)]
+    df = pl.DataFrame({"cat": values}).with_columns(pl.col("cat").cast(pl.Categorical))
+
+    f = io.BytesIO()
+    pq.write_table(df.to_arrow(), f, use_dictionary=False)
+
+    f.seek(0)
+    result = pl.read_parquet(f)
+
+    assert result["cat"].dtype == pl.Categorical
+    assert_frame_equal(result, df, categorical_as_str=True)
+
+
 def test_parquet_read_timezone_22506() -> None:
     f = io.BytesIO()
 
