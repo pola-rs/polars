@@ -35,6 +35,8 @@ either = { workspace = true }
 ethnum = "1"
 futures = { workspace = true }
 object_store = { workspace = true }
+# needed for some tests
+polars-plan = { workspace = true, optional = false }
 # used to run formal property testing
 proptest = { workspace = true }
 rand = { workspace = true }

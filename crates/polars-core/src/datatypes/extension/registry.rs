@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, LazyLock, RwLock};
 
 use hashbrown::hash_map::Entry;
-use polars_error::{PolarsResult, polars_bail, polars_err, polars_warn};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -13,7 +13,6 @@ use crate::prelude::{ARROW_UUID_EXTENSION_NAME, DataType, POLARS_OBJECT_EXTENSIO
 pub enum UnknownExtensionTypeBehavior {
     LoadAsGeneric = 0,
     LoadAsStorage,
-    WarnAndLoadAsStorage,
 }
 
 static UNKNOWN_EXTENSION_TYPE_BEHAVIOR: AtomicU8 =
@@ -27,7 +26,6 @@ pub fn get_unknown_extension_type_behavior() -> UnknownExtensionTypeBehavior {
     match UNKNOWN_EXTENSION_TYPE_BEHAVIOR.load(Ordering::Relaxed) {
         0 => UnknownExtensionTypeBehavior::LoadAsGeneric,
         1 => UnknownExtensionTypeBehavior::LoadAsStorage,
-        2 => UnknownExtensionTypeBehavior::WarnAndLoadAsStorage,
         _ => unreachable!(),
     }
 }
@@ -51,20 +49,6 @@ pub fn get_extension_type_or_storage(
                     metadata.map(|s| s.to_string()),
                 );
                 Some(ExtensionTypeInstance(Box::new(typ)))
-            },
-            UnknownExtensionTypeBehavior::WarnAndLoadAsStorage => {
-                if UNKNOWN_EXTENSION_TYPE_BEHAVIOR.swap(
-                    UnknownExtensionTypeBehavior::LoadAsStorage as u8,
-                    Ordering::Relaxed,
-                ) == UnknownExtensionTypeBehavior::WarnAndLoadAsStorage as u8
-                {
-                    polars_warn!("Extension type '{name}' is not registered; loading as its storage type.
-
-To avoid this warning, register the extension type or set environment variable 'POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR' to 'load_as_storage' or 'load_as_extension'.
-
-In Polars 2.0, the default behavior will change to 'load_as_extension'.");
-                }
-                None
             },
         },
     }

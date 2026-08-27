@@ -317,17 +317,18 @@ impl DataFrame {
     pub fn should_rechunk(&self) -> bool {
         // Fast check. It is also needed for correctness, as code below doesn't check if the number
         // of chunks is equal.
-        if !self
-            .columns()
-            .iter()
-            .filter_map(|c| c.as_series().map(|s| s.n_chunks()))
-            .all_equal()
-        {
+        if !self.columns().iter().map(Column::n_chunks).all_equal() {
             return true;
         }
 
-        // From here we check chunk lengths.
-        let mut chunk_lengths = self.materialized_column_iter().map(|s| s.chunk_lengths());
+        // From here we check chunk lengths. Skipping the columns without chunks is
+        // safe because the counts are equal: either every count is 1, or there is
+        // no such column left.
+        let mut chunk_lengths = self
+            .columns()
+            .iter()
+            .filter_map(Column::lazy_as_materialized_series)
+            .map(|s| s.chunk_lengths());
         match chunk_lengths.next() {
             None => false,
             Some(first_column_chunk_lengths) => {
@@ -891,10 +892,6 @@ impl DataFrame {
         index: usize,
         column: Column,
     ) -> PolarsResult<&mut Self> {
-        if self.shape() == (0, 0) {
-            unsafe { self.set_height(column.len()) };
-        }
-
         polars_ensure!(
             column.len() == self.height(),
             ShapeMismatch:
@@ -922,10 +919,6 @@ impl DataFrame {
     /// Add a new column to this [`DataFrame`] or replace an existing one. Broadcasts unit-length
     /// columns.
     pub fn with_column(&mut self, mut column: Column) -> PolarsResult<&mut Self> {
-        if self.shape() == (0, 0) {
-            unsafe { self.set_height(column.len()) };
-        }
-
         column.broadcast_in_place_to(self.height())?;
 
         if let Some(i) = self.get_column_index(column.name()) {
@@ -973,10 +966,6 @@ impl DataFrame {
         mut column: Column,
         output_schema: &Schema,
     ) -> PolarsResult<&mut Self> {
-        if self.shape() == (0, 0) {
-            unsafe { self.set_height(column.len()) };
-        }
-
         column.broadcast_in_place_to(self.height())?;
 
         let i = output_schema

@@ -259,3 +259,93 @@ def test_uncorrelated_exists_in_expression_position() -> None:
         compare_with="duckdb",
         expected={"a": [1]},
     )
+
+
+def test_decorrelated_exists_is_order_independent() -> None:
+    # Needs several morsels and a joined outer frame: a smaller or unjoined
+    # fixture has a stable row order and passes either way.
+    n = 200_000
+    fact = pl.DataFrame(
+        {
+            "ord": [i // 2 for i in range(n)],
+            "wh": [(i % 2) if (i // 2) % 5 else 0 for i in range(n)],
+            "dk": [i % 500 for i in range(n)],
+            "ak": [i % 300 for i in range(n)],
+            "v": [float(i % 97) for i in range(n)],
+        }
+    )
+    dim_d = pl.DataFrame(
+        {"dk": list(range(500)), "keep_d": [i % 2 == 0 for i in range(500)]}
+    )
+    dim_a = pl.DataFrame(
+        {
+            "ak": list(range(300)),
+            "st": ["GA" if i % 3 == 0 else "XX" for i in range(300)],
+        }
+    )
+    query = """
+        SELECT count(DISTINCT ord) AS n_ord, sum(v) AS sv
+        FROM fact, dim_d, dim_a
+        WHERE fact.dk = dim_d.dk AND dim_d.keep_d = TRUE
+          AND fact.ak = dim_a.ak AND dim_a.st = 'GA'
+          AND EXISTS (SELECT 1 FROM fact AS f2
+                      WHERE fact.ord = f2.ord AND fact.wh <> f2.wh)
+        ORDER BY count(DISTINCT ord)
+    """
+    ctx = pl.SQLContext(fact=fact, dim_d=dim_d, dim_a=dim_a)
+    expected = ctx.execute(query).collect(engine="in-memory").row(0)
+    results = {ctx.execute(query).collect(engine="streaming").row(0) for _ in range(8)}
+    assert results == {expected}
+
+
+def test_exists_subquery_multi_relation_inner_from() -> None:
+    frames = {
+        "customer": pl.DataFrame({"c_customer_sk": [1, 2, 3]}),
+        "store_sales": pl.DataFrame(
+            {"ss_customer_sk": [1, 1, 2], "ss_sold_date_sk": [1, 2, 2]}
+        ),
+        "date_dim": pl.DataFrame({"d_date_sk": [1, 2], "d_year": [2000, 2001]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT c_customer_sk FROM customer c
+            WHERE EXISTS (
+                SELECT * FROM store_sales, date_dim
+                WHERE c.c_customer_sk = ss_customer_sk
+                  AND ss_sold_date_sk = d_date_sk
+                  AND d_year = 2001
+            )
+            ORDER BY c_customer_sk
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_exists_and_not_exists_multi_relation_inner_from() -> None:
+    frames = {
+        "customer": pl.DataFrame({"c_customer_sk": [1, 2, 3, 4]}),
+        "store_sales": pl.DataFrame(
+            {"ss_customer_sk": [1, 2], "ss_sold_date_sk": [2, 2]}
+        ),
+        "web_sales": pl.DataFrame({"ws_customer_sk": [2], "ws_sold_date_sk": [2]}),
+        "date_dim": pl.DataFrame({"d_date_sk": [1, 2], "d_year": [2000, 2001]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT c_customer_sk FROM customer c
+            WHERE EXISTS (
+                SELECT * FROM store_sales, date_dim
+                WHERE c.c_customer_sk = ss_customer_sk
+                  AND ss_sold_date_sk = d_date_sk AND d_year = 2001
+            )
+            AND NOT EXISTS (
+                SELECT * FROM web_sales, date_dim
+                WHERE c.c_customer_sk = ws_customer_sk
+                  AND ws_sold_date_sk = d_date_sk AND d_year = 2001
+            )
+            ORDER BY c_customer_sk
+        """,
+        compare_with="duckdb",
+    )

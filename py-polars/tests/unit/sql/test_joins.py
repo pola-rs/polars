@@ -518,6 +518,16 @@ def test_non_equi_outer_joins_unsupported(join_type: str) -> None:
             """,
             {"a": [2, 3], "c": [3, 4]},
         ),
+        # bridging table listed *after* the relation it connects: df3 has no predicate
+        # against df1, only against df2, which comes later in the FROM clause.
+        (
+            """
+            SELECT df1.a, df3.c
+            FROM df1, df3, df2
+            WHERE df1.a = df2.a AND df2.b = df3.b
+            """,
+            {"a": [2, 3], "c": [3, 4]},
+        ),
         # no bridging predicate at all => cross join (cartesian product)
         (
             "SELECT df1.a, df3.c FROM df1, df3",
@@ -552,6 +562,32 @@ def test_implicit_joins(query: str, expected: dict[str, Any]) -> None:
         check_dtypes=False,
         check_row_order=False,
     )
+
+
+@pytest.mark.parametrize(
+    "from_clause",
+    [
+        "df1, df2, df3",  # already connected in source order
+        "df1, df3, df2",  # df3 only reaches df1 through df2, which is listed later
+        "df3, df1, df2",  # base table is the one needing an intermediary
+    ],
+)
+def test_implicit_joins_avoid_cartesian_product(from_clause: str) -> None:
+    # every permutation here is fully connected by the WHERE predicates
+    ctx = pl.SQLContext(
+        df1=pl.DataFrame({"a": [1, 2, 3], "b": [2, 3, 4]}),
+        df2=pl.DataFrame({"a": [2, 3, 9], "b": [3, 4, 9]}),
+        df3=pl.DataFrame({"a": [2, 3, 8], "b": [3, 4, 8], "c": [3, 4, 8]}),
+    )
+    query = f"""
+        SELECT df1.a, df3.c
+        FROM {from_clause}
+        WHERE df1.a = df2.a AND df2.b = df3.b
+    """
+    assert "CROSS JOIN" not in ctx.execute(query).explain()
+
+    result = ctx.execute(query).collect().sort("a")
+    assert result.to_dict(as_series=False) == {"a": [2, 3], "c": [3, 4]}
 
 
 def test_implicit_self_join() -> None:
@@ -1626,3 +1662,156 @@ def test_join_on_constant_predicate(
     res = pl.sql(query, eager=True)
     expected_df = pl.DataFrame(expected, schema={"a": pl.Int64, "b": pl.Int64})
     assert_frame_equal(res, expected_df, check_row_order=False)
+
+
+@pytest.mark.parametrize("join_type", ["JOIN", "LEFT JOIN"])
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        "(df1.a = df2.a)",
+        "(df1.a = df2.a AND df1.b = df2.b)",
+        "((df1.a = df2.a) AND (df1.b = df2.b))",
+        "(((df1.a = df2.a)))",
+        "(df1.a = df2.a) AND (df1.b = df2.b)",
+        "(df1.a = df2.a AND df1.b < df2.b)",
+    ],
+)
+def test_join_on_parenthesized_constraint(constraint: str, join_type: str) -> None:
+    frames = {
+        "df1": pl.DataFrame({"a": [1, 2, 3], "b": [2, 3, 4]}),
+        "df2": pl.DataFrame({"a": [2, 3, 9], "b": [3, 9, 9]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=f"""
+            SELECT df1.a AS a1, df1.b AS b1, df2.a AS a2, df2.b AS b2
+            FROM df1 {join_type} df2 ON {constraint}
+        """,
+        compare_with=("sqlite", "duckdb"),
+        check_dtypes=False,
+        check_row_order=False,
+    )
+
+
+def test_join_on_invalid_expr() -> None:
+    frames = {
+        "df1": pl.DataFrame({"a": [1, 2, 3]}),
+        "df2": pl.DataFrame({"a": [2, 3, 9]}),
+    }
+    with pytest.raises(
+        SQLInterfaceError, match="unsupported join constraint expression"
+    ):
+        pl.SQLContext(frames, eager=True).execute(
+            "SELECT * FROM df1 JOIN df2 ON (df1.a)"
+        )
+
+
+@pytest.fixture
+def sales_frame() -> pl.LazyFrame:
+    return pl.LazyFrame(
+        {
+            "cid": [1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
+            "yr": [2001, 2002, 2001, 2002] * 3,
+            "kind": ["s", "s", "w", "w"] * 3,
+            "amt": [10.0, 30.0, 5.0, 25.0, 20.0, 10.0, 8.0, 9.0, 4.0, 40.0, 7.0, 14.0],
+        }
+    )
+
+
+_YEAR_TOTAL_CTE = """
+    WITH yt AS (
+        SELECT cid, yr, kind, SUM(amt) AS total FROM self GROUP BY cid, yr, kind
+    )
+"""
+
+
+def test_join_non_equi_case_predicate(sales_frame: pl.LazyFrame) -> None:
+    # a self-joined CTE suffixes its repeated column names; the alias that
+    # resolution adds for them must not reach the join predicate
+    assert_sql_matches(
+        sales_frame,
+        query=f"""{_YEAR_TOTAL_CTE}
+            SELECT a.cid, b.total AS b_total, d.total AS d_total
+            FROM yt a, yt b, yt c, yt d
+            WHERE b.cid = a.cid AND c.cid = a.cid AND d.cid = a.cid
+              AND a.kind = 's' AND b.kind = 's' AND c.kind = 'w' AND d.kind = 'w'
+              AND a.yr = 2001 AND b.yr = 2002 AND c.yr = 2001 AND d.yr = 2002
+              AND a.total > 0 AND c.total > 0
+              AND CASE WHEN c.total > 0 THEN d.total / c.total ELSE NULL END
+                > CASE WHEN a.total > 0 THEN b.total / a.total ELSE NULL END
+            ORDER BY a.cid
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_join_predicate_spanning_later_relation(sales_frame: pl.LazyFrame) -> None:
+    # the predicate names `d`, which is joined after `c`
+    assert_sql_matches(
+        sales_frame,
+        query=f"""{_YEAR_TOTAL_CTE}
+            SELECT a.cid, c.total AS c_total, d.total AS d_total
+            FROM yt a, yt c, yt d
+            WHERE c.cid = a.cid AND d.cid = a.cid
+              AND a.kind = 's' AND c.kind = 'w' AND d.kind = 'w'
+              AND a.yr = 2001 AND c.yr = 2001 AND d.yr = 2002
+              AND d.total > c.total
+            ORDER BY a.cid, c_total, d_total
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_join_non_equi_nested_alias_in_equi_key(sales_frame: pl.LazyFrame) -> None:
+    assert_sql_matches(
+        sales_frame,
+        query=f"""{_YEAR_TOTAL_CTE}
+            SELECT a.cid FROM yt a, yt b
+            WHERE a.cid + 0 = b.cid + 0 AND a.kind = 's' AND b.kind = 'w'
+            ORDER BY a.cid
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_join_predicate_operand_spanning_both_sides() -> None:
+    # `(ws2.w)/ws1.w` names two relations that a join puts on opposite sides,
+    # so the condition stays a filter rather than becoming a join predicate
+    frames = {
+        "ss_src": pl.DataFrame(
+            {
+                "k": ["A", "A", "A", "B", "B", "B"],
+                "q": [1, 2, 3] * 2,
+                "v": [10.0, 8.0, 20.0, 10.0, 30.0, 40.0],
+            }
+        ),
+        "ws_src": pl.DataFrame(
+            {
+                "k": ["A", "A", "A", "B", "B", "B"],
+                "q": [1, 2, 3] * 2,
+                "v": [10.0, 5.0, 50.0, 10.0, 40.0, 80.0],
+            }
+        ),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            WITH ss AS (SELECT k, q, SUM(v) AS s FROM ss_src GROUP BY k, q),
+                 ws AS (SELECT k, q, SUM(v) AS w FROM ws_src GROUP BY k, q)
+            SELECT ss1.k,
+                   ws2.w / ws1.w AS web_q1_q2, ss2.s / ss1.s AS store_q1_q2,
+                   ws3.w / ws2.w AS web_q2_q3, ss3.s / ss2.s AS store_q2_q3
+            FROM ss ss1, ss ss2, ss ss3, ws ws1, ws ws2, ws ws3
+            WHERE ss1.q = 1 AND ss1.k = ss2.k AND ss2.q = 2
+              AND ss2.k = ss3.k AND ss3.q = 3
+              AND ss1.k = ws1.k AND ws1.q = 1
+              AND ws1.k = ws2.k AND ws2.q = 2
+              AND ws1.k = ws3.k AND ws3.q = 3
+              AND CASE WHEN ws1.w > 0 THEN ws2.w / ws1.w ELSE NULL END
+                > CASE WHEN ss1.s > 0 THEN ss2.s / ss1.s ELSE NULL END
+              AND CASE WHEN ws2.w > 0 THEN ws3.w / ws2.w ELSE NULL END
+                > CASE WHEN ss2.s > 0 THEN ss3.s / ss2.s ELSE NULL END
+            ORDER BY ss1.k
+        """,
+        compare_with="duckdb",
+    )

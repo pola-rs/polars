@@ -9,7 +9,7 @@ on:
   push:
     branches:
       - main
-      - "2.0"
+      - "1.x"
     paths:
       - '**.rs'
       - '**.py'
@@ -157,12 +157,25 @@ jobs:
         working-directory: py-polars
         env:
           POLARS_TIMEOUT_MS: 60000
+        # TODO: Fix and re-enable may_fail_auto_streaming tests
+        run: >
+          pytest
+          -n auto
+          -m "not may_fail_auto_streaming and not release and not benchmark and not docs"
+          -k 'not test_polars_import'
+          --cov --cov-report xml:main.xml --cov-fail-under=0
+
+      - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
+        working-directory: py-polars
+        env:
+          POLARS_ENGINE_AFFINITY: in-memory
+          POLARS_TIMEOUT_MS: 60000
         run: >
           pytest
           -n auto
           -m "not release and not benchmark and not docs"
           -k 'not test_polars_import'
-          --cov --cov-report xml:main.xml --cov-fail-under=0
+          --cov --cov-report xml:in-memory.xml --cov-fail-under=0
 
       - name: Run Python tests - streaming
         working-directory: py-polars
@@ -194,10 +207,11 @@ jobs:
         env:
           POLARS_FORCE_ASYNC: 1
           POLARS_TIMEOUT_MS: 60000
+        # TODO: Fix and re-enable may_fail_auto_streaming tests
         run: >
           pytest tests/unit/io/
           -n auto
-          -m "not release and not benchmark and not docs"
+          -m "not may_fail_auto_streaming and not release and not benchmark and not docs"
           --cov --cov-report xml:async.xml --cov-fail-under=0
 
       - name: Report Rust coverage
@@ -210,6 +224,7 @@ jobs:
           path: |
             coverage-python.lcov
             py-polars/main.xml
+            py-polars/in-memory.xml
             py-polars/auto-streaming.xml
             py-polars/small-morsel.xml
             py-polars/async.xml

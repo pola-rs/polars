@@ -68,6 +68,7 @@ pub mod small_bytes;
 pub mod sort;
 pub mod sparse_init_vec;
 pub mod sync;
+pub mod tick_counter;
 pub mod total_ord;
 pub mod unique_id;
 pub mod vec;

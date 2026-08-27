@@ -13,7 +13,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping, Sequence
 
-    from polars.type_aliases import PolarsDataType
+    from polars._typing import PolarsDataType
+
 
 _POLARS_TO_SQLITE_: dict[PolarsDataType, str] = {
     # SQLite has limited type support (primitive scalar types only)

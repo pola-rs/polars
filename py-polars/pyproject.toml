@@ -10,7 +10,7 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 # example: 1.35.0b1
-version = "1.43.2"
+version = "2.0.0rc1"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 
@@ -33,7 +33,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 # example: 1.35.0b1
-dependencies = ["polars-runtime-32 == 1.43.2"]
+dependencies = ["polars-runtime-32 == 2.0.0rc1"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -44,8 +44,8 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # Runtimes
 # example: 1.35.0b1
-rt64 = ["polars-runtime-64 == 1.43.2"]
-rtcompat = ["polars-runtime-compat == 1.43.2"]
+rt64 = ["polars-runtime-64 == 2.0.0rc1"]
+rtcompat = ["polars-runtime-compat == 2.0.0rc1"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 polars_cloud = ["polars_cloud >= 0.9.0"]
@@ -316,8 +316,6 @@ filterwarnings = [
   "ignore:Deprecated API features detected.*:DeprecationWarning",
   # numpy import can generate this warning in Python 3.13 on certain runners
   "ignore:.*numpy\\.longdouble.*:UserWarning",
-  # TODO: https://github.com/pola-rs/polars/issues/20065.
-  "ignore:.*DataFrame Interchange Protocol is deprecated",
 ]
 xfail_strict = true
 

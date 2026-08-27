@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
@@ -10,7 +10,6 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     import datetime as dt
-    import sys
     from collections.abc import Iterable
 
     from polars import Expr, Series
@@ -22,14 +21,8 @@ if TYPE_CHECKING:
         IntoExprColumn,
         NonExistent,
         Roll,
-        TemporalLiteral,
         TimeUnit,
     )
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 
 @expr_dispatch
@@ -45,11 +38,10 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         s = wrap_s(self._s)
         return s[item]
 
-    @unstable()
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], version="1.27.0")
     def add_business_days(
         self,
         n: int | IntoExpr,
+        *,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
         holidays: Iterable[dt.date] | Expr | Series = (),
         roll: Roll = "raise",
@@ -170,58 +162,6 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         datetime.date(2001, 1, 3)
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
-
-    @deprecated("`Series.dt.median` is deprecated; use `Series.median` instead.")
-    def median(self) -> TemporalLiteral | None:
-        """
-        Return median as python DateTime.
-
-        .. deprecated:: 1.0.0
-            Use the `Series.median` method instead.
-
-        Examples
-        --------
-        >>> from datetime import date, datetime
-        >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2)])
-        >>> s.dt.median()  # doctest: +SKIP
-        datetime.datetime(2001, 1, 1, 12, 0)
-        >>> date = pl.datetime_range(
-        ...     datetime(2001, 1, 1), datetime(2001, 1, 3), "1d", eager=True
-        ... ).alias("datetime")
-        >>> date
-        shape: (3,)
-        Series: 'datetime' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
-        ]
-        >>> date.dt.median()  # doctest: +SKIP
-        datetime.datetime(2001, 1, 2, 0, 0)
-        """
-        return self._s.median()
-
-    @deprecated("`Series.dt.mean` is deprecated; use `Series.mean` instead.")
-    def mean(self) -> TemporalLiteral | None:
-        """
-        Return mean as python DateTime.
-
-        .. deprecated:: 1.0.0
-            Use the `Series.mean` method instead.
-
-        Examples
-        --------
-        >>> from datetime import date, datetime
-        >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2)])
-        >>> s.dt.mean()  # doctest: +SKIP
-        datetime.datetime(2001, 1, 1, 12, 0)
-        >>> s = pl.Series(
-        ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)]
-        ... )
-        >>> s.dt.mean()  # doctest: +SKIP
-        datetime.datetime(2001, 1, 2, 0, 0)
-        """
-        return self._s.mean()
 
     def to_string(self, format: str | None = None) -> Series:
         """
@@ -903,44 +843,6 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         ]
         """
 
-    @deprecated(
-        "`Series.dt.datetime` is deprecated; "
-        "use `Series.dt.replace_time_zone(None)` instead."
-    )
-    def datetime(self) -> Series:
-        """
-        Extract (local) datetime.
-
-        .. deprecated:: 0.20.4
-            Use `dt.replace_time_zone(None)` instead.
-
-        Applies to Datetime columns.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`Datetime`.
-
-        Examples
-        --------
-        >>> from datetime import datetime
-        >>> ser = pl.Series([datetime(2021, 1, 2, 5)]).dt.replace_time_zone(
-        ...     "Asia/Kathmandu"
-        ... )
-        >>> ser
-        shape: (1,)
-        Series: '' [datetime[μs, Asia/Kathmandu]]
-        [
-                2021-01-02 05:00:00 +0545
-        ]
-        >>> ser.dt.datetime()  # doctest: +SKIP
-        shape: (1,)
-        Series: '' [datetime[μs]]
-        [
-                2021-01-02 05:00:00
-        ]
-        """
-
     def hour(self) -> Series:
         """
         Extract the hour from the underlying DateTime representation.
@@ -1286,39 +1188,6 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
                 978307200
                 978393600
                 978480000
-        ]
-        """
-
-    def with_time_unit(self, time_unit: TimeUnit) -> Series:
-        """
-        Set time unit a Series of dtype Datetime or Duration.
-
-        .. deprecated:: 0.20.5
-            First cast to `Int64` and then cast to the desired data type.
-
-        This does not modify underlying data, and should be used to fix an incorrect
-        time unit.
-
-        Parameters
-        ----------
-        time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the `Datetime` or `Duration` Series.
-
-        Examples
-        --------
-        >>> from datetime import datetime
-        >>> s = pl.Series(
-        ...     "datetime",
-        ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)],
-        ...     dtype=pl.Datetime(time_unit="ns"),
-        ... )
-        >>> s.dt.with_time_unit("us")  # doctest: +SKIP
-        shape: (3,)
-        Series: 'datetime' [datetime[μs]]
-        [
-                +32971-04-28 00:00:00
-                +32974-01-22 00:00:00
-                +32976-10-18 00:00:00
         ]
         """
 
@@ -2333,3 +2202,17 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
                 1800-01-02
         ]
         """
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "median": "use `Series.median` instead.",
+                    "mean": "use `Series.mean` instead.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
+from polars._utils.expired import (
+    getattr_fallback,
+    raise_for_removed_attributes,
+)
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin, qualified_type_name
@@ -15,7 +18,6 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32, Int64
 from polars.functions.business import _holidays_to_expr
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Iterable
 
     from polars import Expr
@@ -29,11 +31,6 @@ if TYPE_CHECKING:
         TimeUnit,
     )
 
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
-
 
 class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     """Namespace for datetime related expressions."""
@@ -43,11 +40,10 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
-    @unstable()
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], version="1.12.0")
     def add_business_days(
         self,
         n: int | IntoExpr,
+        *,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
         holidays: Iterable[dt.date] | Expr | pl.Series = (),
         roll: Roll = "raise",
@@ -1470,52 +1466,6 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.dt_date())
 
-    @deprecated(
-        "`dt.datetime` is deprecated; use `dt.replace_time_zone(None)` instead."
-    )
-    def datetime(self) -> Expr:
-        """
-        Return datetime.
-
-        .. deprecated:: 0.20.4
-            Use the `dt.replace_time_zone(None)` method instead.
-
-        Applies to Datetime columns.
-
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`Datetime`.
-
-        Examples
-        --------
-        >>> from datetime import datetime
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "datetime UTC": [
-        ...             datetime(1978, 1, 1, 1, 1, 1, 0),
-        ...             datetime(2024, 10, 13, 5, 30, 14, 500_000),
-        ...             datetime(2065, 1, 1, 10, 20, 30, 60_000),
-        ...         ]
-        ...     },
-        ...     schema={"datetime UTC": pl.Datetime(time_zone="UTC")},
-        ... )
-        >>> df.with_columns(  # doctest: +SKIP
-        ...     pl.col("datetime UTC").dt.datetime().alias("datetime (no timezone)"),
-        ... )
-        shape: (3, 2)
-        ┌─────────────────────────────┬─────────────────────────┐
-        │ datetime UTC                ┆ datetime (no timezone)  │
-        │ ---                         ┆ ---                     │
-        │ datetime[μs, UTC]           ┆ datetime[μs]            │
-        ╞═════════════════════════════╪═════════════════════════╡
-        │ 1978-01-01 01:01:01 UTC     ┆ 1978-01-01 01:01:01     │
-        │ 2024-10-13 05:30:14.500 UTC ┆ 2024-10-13 05:30:14.500 │
-        │ 2065-01-01 10:20:30.060 UTC ┆ 2065-01-01 10:20:30.060 │
-        └─────────────────────────────┴─────────────────────────┘
-        """
-        return wrap_expr(self._pyexpr.dt_datetime())
-
     def hour(self) -> Expr:
         """
         Extract hour from underlying DateTime representation.
@@ -1889,56 +1839,6 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         └────────────┴─────────────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.dt_timestamp(time_unit))
-
-    @deprecated(
-        "`dt.with_time_unit` is deprecated; instead, first cast "
-        "to `Int64` and then cast to the desired data type."
-    )
-    def with_time_unit(self, time_unit: TimeUnit) -> Expr:
-        """
-        Set time unit of an expression of dtype Datetime or Duration.
-
-        .. deprecated:: 0.20.5
-            First cast to `Int64` and then cast to the desired data type.
-
-        This does not modify underlying data, and should be used to fix an incorrect
-        time unit.
-
-        Parameters
-        ----------
-        time_unit : {'ns', 'us', 'ms'}
-            Unit of time for the `Datetime` or `Duration` expression.
-
-        Examples
-        --------
-        >>> from datetime import datetime
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "date": pl.datetime_range(
-        ...             datetime(2001, 1, 1),
-        ...             datetime(2001, 1, 3),
-        ...             "1d",
-        ...             time_unit="ns",
-        ...             eager=True,
-        ...         )
-        ...     }
-        ... )
-        >>> df.select(
-        ...     pl.col("date"),
-        ...     pl.col("date").dt.with_time_unit("us").alias("time_unit_us"),
-        ... )  # doctest: +SKIP
-        shape: (3, 2)
-        ┌─────────────────────┬───────────────────────┐
-        │ date                ┆ time_unit_us          │
-        │ ---                 ┆ ---                   │
-        │ datetime[ns]        ┆ datetime[μs]          │
-        ╞═════════════════════╪═══════════════════════╡
-        │ 2001-01-01 00:00:00 ┆ +32971-04-28 00:00:00 │
-        │ 2001-01-02 00:00:00 ┆ +32974-01-22 00:00:00 │
-        │ 2001-01-03 00:00:00 ┆ +32976-10-18 00:00:00 │
-        └─────────────────────┴───────────────────────┘
-        """
-        return wrap_expr(self._pyexpr.dt_with_time_unit(time_unit))
 
     def cast_time_unit(self, time_unit: TimeUnit) -> Expr:
         """
@@ -2753,3 +2653,15 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
         └─────────────────────────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.dt_dst_offset())
+
+    def __getattr__(self, name: str) -> Any:
+        raise_for_removed_attributes(
+            self,
+            name,
+            {
+                "datetime": "use `dt.replace_time_zone(None)` instead.",
+                "with_time_unit": "instead, first cast to `Int64` and then cast to the desired data type.",
+            },
+            version="2.0",
+        )
+        return getattr_fallback(self, super(), name)

@@ -1,6 +1,8 @@
 use std::ops::ControlFlow;
 
 use polars_error::PolarsResult;
+#[expect(clippy::disallowed_types)] // We don't iterate over it.
+use polars_utils::aliases::PlHashSet;
 use polars_utils::aliases::{InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -140,6 +142,8 @@ pub(crate) fn set_cache_states(
     let mut stack = Vec::with_capacity(4);
     let mut names_scratch = vec![];
     let mut predicates_scratch = vec![];
+    #[expect(clippy::disallowed_types)] // We don't iterate over it.
+    let mut walked_cache_ids = PlHashSet::new();
 
     scratch.clear();
     stack.clear();
@@ -278,6 +282,11 @@ pub(crate) fn set_cache_states(
                 }
             }
             frame.cache_id = Some(*id);
+
+            if !walked_cache_ids.insert(*id) {
+                scratch.clear();
+                continue;
+            }
         };
 
         // Shift parents.

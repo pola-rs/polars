@@ -45,4 +45,3 @@ This can for instance be useful to create a set of unique expressions.
     Expr.meta.show_graph
     Expr.meta.tree_format
     Expr.meta.undo_aliases
-    Expr.meta.write_json

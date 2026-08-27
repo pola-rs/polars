@@ -93,7 +93,7 @@ def datetime_(
     ...         pl.col("hour"),
     ...         pl.col("minute"),
     ...         time_zone="Australia/Sydney",
-    ...     )
+    ...     ).alias("datetime")
     ... )
     shape: (3, 5)
     ┌───────┬─────┬──────┬────────┬────────────────────────────────┐
