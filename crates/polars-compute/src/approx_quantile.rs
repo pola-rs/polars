@@ -548,12 +548,18 @@ pub mod req {
                 n,
                 error,
                 k,
-                // `compactor_threshold_b` returns `2 * k * <sections>`, so this
-                // division is exact.
                 consumed_items: 0,
                 rng: rand::make_rng(),
             };
             ReqSketch(State::Ingesting(state))
+        }
+
+        #[inline]
+        pub fn num_items(&self) -> usize {
+            match &self.0 {
+                State::Ingesting(state) => state.consumed_items,
+                State::Finalized(state) => state.num_items(),
+            }
         }
 
         #[inline]
@@ -564,6 +570,7 @@ pub mod req {
             state.update(array);
         }
 
+        #[inline]
         pub fn merge(&mut self, other: Self) {
             let State::Ingesting(other) = other.0 else {
                 invalid_state()
@@ -574,6 +581,7 @@ pub mod req {
             state.merge(other);
         }
 
+        #[inline]
         pub fn finalize(&mut self) {
             let placeholder = State::Finalized(FinalizedState::default());
             let state = mem::replace(&mut self.0, placeholder);
@@ -583,6 +591,7 @@ pub mod req {
             self.0 = State::Finalized(state.finalize());
         }
 
+        #[inline]
         pub fn estimate_rank(&self, value: &T) -> usize {
             let State::Finalized(state) = &self.0 else {
                 invalid_state()
@@ -590,11 +599,67 @@ pub mod req {
             state.estimate_rank(value)
         }
 
+        #[inline]
         pub fn estimate_quantile(&self, quantile: f64) -> &T {
             let State::Finalized(state) = &self.0 else {
                 invalid_state()
             };
             state.estimate_quantile(quantile)
+        }
+    }
+
+    /// A pair of [`ReqSketch`]es that is relative-error accurate over the
+    /// *whole* rank range.
+    ///
+    /// Costs 2x the size and speed of a single [`ReqSketch`]
+    #[derive(Debug, Clone)]
+    pub struct DoubleReqSketch<T: fmt::Debug + Clone + TotalOrd> {
+        lra: ReqSketch<T>,
+        hra: ReqSketch<T>,
+    }
+
+    impl<T: fmt::Debug + Clone + TotalOrd> DoubleReqSketch<T> {
+        pub fn new(error: f64) -> Self {
+            DoubleReqSketch {
+                lra: ReqSketch::new(error, false),
+                hra: ReqSketch::new(error, true),
+            }
+        }
+
+        #[inline]
+        pub fn update(&mut self, array: &[T]) {
+            self.lra.update(array);
+            self.hra.update(array);
+        }
+
+        pub fn merge(&mut self, other: Self) {
+            self.lra.merge(other.lra);
+            self.hra.merge(other.hra);
+        }
+
+        pub fn finalize(&mut self) {
+            self.lra.finalize();
+            self.hra.finalize();
+        }
+
+        pub fn num_items(&self) -> usize {
+            debug_assert_eq!(self.lra.num_items(), self.hra.num_items());
+            self.lra.num_items()
+        }
+
+        pub fn estimate_rank(&self, value: &T) -> usize {
+            let rank = self.lra.estimate_rank(value);
+            match 2 * rank <= self.num_items() {
+                true => rank,
+                false => self.hra.estimate_rank(value),
+            }
+        }
+
+        pub fn estimate_quantile(&self, quantile: f64) -> &T {
+            match quantile <= 0.5 {
+                true => self.lra.estimate_quantile(quantile),
+                false => self.hra.estimate_quantile(quantile),
+            }
         }
     }
 
