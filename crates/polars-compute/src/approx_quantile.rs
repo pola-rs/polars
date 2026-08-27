@@ -482,7 +482,7 @@ pub mod req {
         2 * k * (usize::div_ceil(n, k) * 2 - 1).ilog2() as usize
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, Default)]
     struct Level {
         offset: usize,
         size: usize,
@@ -679,47 +679,51 @@ pub mod req {
                 true => TotalOrd::tot_cmp(a, b).reverse(),
             };
 
-            // Compute L_C.
+            let compactor_start = self.levels[level].offset;
+            let compactor_size = self.levels[level].size;
+            let compactor_end = compactor_start + compactor_size;
+            let compactor = &self.items[compactor_start..compactor_end];
+
             let z_c = self.levels[level].compaction_schedule.trailing_ones();
             let l_c = usize::min(z_c as usize + 1, self.num_sections()) * self.k;
+            let promote_count = compactor[self.compactor_capacity() - l_c..].len() & !1;
             debug_assert!(l_c <= self.compactor_capacity() / 2);
             debug_assert!(l_c % 2 == 0);
+            debug_assert!(promote_count >= l_c);
 
-            // Only draw a fresh promotion parity every other compaction, and
-            // take the opposite one in between. Consecutive compactions then
-            // promote opposite parities, so their errors cancel pairwise.
-            let coin = match self.levels[level].compaction_schedule % 2 == 1 {
+            // Only draw a fresh promotion parity every other compaction, and take
+            // the opposite one in between. See DOI 10.3390/s22249612, Sec 3.2.
+            let coin = match self.levels[level].compaction_schedule % 2 != 0 {
                 true => !self.levels[level].coin,
                 false => self.rng.random(),
             };
             self.levels[level].coin = coin;
 
-            let compactor = &mut self.items
-                [self.levels[level].offset..self.levels[level].offset + self.levels[level].size];
+            let compactor = &mut self.items[compactor_start..compactor_end];
             // Stash the protected items at the end of the compactor.
-            compactor.select_nth_unstable_by(l_c, |a, b| compare(a, b).reverse());
-            // Sort the items that we will be promoting.
-            compactor[..l_c].sort_unstable_by(compare);
+            compactor.select_nth_unstable_by(promote_count, |a, b| compare(a, b).reverse());
+            // Sort the items that we will be compacting.
+            compactor[..promote_count].sort_unstable_by(compare);
 
             // Throw away half of the values during the compaction, gathering the
             // survivors at the front of the compacted range.
-            for i in 0..l_c / 2 {
+            for i in 0..promote_count / 2 {
                 compactor.swap(i, 2 * i + coin as usize);
             }
 
             // Drop the non-promoted items from the item pool.
-            let gap_start = self.levels[level].offset + l_c / 2;
-            let gap_end = self.levels[level].offset + l_c;
+            let gap_start = compactor_start + promote_count / 2;
+            let gap_end = compactor_start + promote_count;
             self.items.drain(gap_start..gap_end);
 
             // Transfer ownership of the promoted items to the next compactor.
-            self.levels[level + 1].size += l_c / 2;
-            self.levels[level].offset += l_c / 2;
-            self.levels[level].size -= l_c;
+            self.levels[level + 1].size += promote_count / 2;
+            self.levels[level].offset += promote_count / 2;
+            self.levels[level].size -= promote_count;
 
             // Update the other compactor offsets after removing the non-promoted items.
             for level_below_compact in self.levels[..level].iter_mut() {
-                level_below_compact.offset -= l_c / 2;
+                level_below_compact.offset -= promote_count / 2;
             }
 
             // Double-check that all the offsets are correct
@@ -735,18 +739,10 @@ pub mod req {
             self.compact_if_needed(level + 1);
         }
 
-        /// Merge `other` into `self`: level `h` of `other` is appended to level
-        /// `h` of `self`, after which the compactors are brought back below
-        /// their capacity.
-        ///
-        /// The item pool grows to hold both sketches, but no temporary buffers
-        /// are allocated -- `other`'s pool is appended and then rotated into
-        /// place, one compactor at a time.
+        /// Merge `other` into `self`.
         fn merge(&mut self, mut other: Self) {
-            assert_eq!(
-                self.is_hra, other.is_hra,
-                "cannot merge a high-rank-accurate sketch with a low-rank-accurate one"
-            );
+            assert_eq!(self.is_hra, other.is_hra);
+            assert_eq!(self.error, other.error);
 
             // We need a compactor for every one of `other`'s levels.
             while self.levels.len() < other.levels.len() {
@@ -764,22 +760,40 @@ pub mod req {
             self.items.reserve_exact(items1.len() + items2.len());
 
             let mut next_offset = 0;
-            for (l1, l2) in Iterator::zip(self.levels.iter_mut(), other.levels.iter()) {
+            for level in (0..self.levels.len()).rev() {
+                let l1 = self.levels[level];
+                let l2 = other.levels.get(level).copied().unwrap_or_default();
                 let compactor1 = &items1[l1.offset..l1.offset + l1.size];
                 let compactor2 = &items2[l2.offset..l2.offset + l2.size];
                 self.items.extend_from_slice(compactor1);
                 self.items.extend_from_slice(compactor2);
-                l1.offset = next_offset;
-                l1.size = l1.size + l2.size;
-                next_offset = l1.offset + l1.size;
-                // TODO: [amber] Merge the compactor schedule states.
-                // TODO: [amber] Merge the coins.
-            }
 
-            // TODO: [amber]
-            // Reparameterise for the combined stream, then restore the invariant
-            // that no compactor is over capacity.
-            todo!()
+                let at_odd_schedule = |l: &Level| l.compaction_schedule % 2 != 0;
+                let coin = match (at_odd_schedule(&l1), at_odd_schedule(&l2)) {
+                    (false, false) => l1.coin, // Next compaction will draw a fresh coin, so we don't care.
+                    (true, false) => l1.coin,
+                    (false, true) => l2.coin,
+                    (true, true) if l1.coin == l2.coin => l1.coin,
+                    (true, true) => self.rng.random(),
+                };
+
+                self.levels[level] = Level {
+                    offset: next_offset,
+                    size: l1.size + l2.size,
+                    compaction_schedule: l1.compaction_schedule | l2.compaction_schedule,
+                    coin,
+                };
+                next_offset += l1.size + l2.size;
+            }
+            debug_assert_eq!(next_offset, self.items.len());
+
+            self.n = usize::max(self.n, other.n);
+            self.k = compute_k(self.error, FAILURE_PROBABILITY, self.n);
+            self.consumed_items += other.consumed_items;
+
+            for level in 0..self.levels.len() {
+                self.compact_if_needed(level);
+            }
         }
 
         fn finalize(self) -> FinalizedState<T> {
