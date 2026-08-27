@@ -217,8 +217,8 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
         self.0.get_any_value(index)
     }
 
-    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue<'_> {
-        todo!("AnyValue::Map")
+    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
+        unsafe { self.0.get_any_value_unchecked(index) }
     }
 
     fn null_count(&self) -> usize {

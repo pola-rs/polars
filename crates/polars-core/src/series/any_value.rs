@@ -157,7 +157,19 @@ impl Series {
                 any_values_to_decimal(values, *precision, *scale, strict)?.into_series()
             },
             #[cfg(feature = "dtype-map")]
-            DataType::Map(_, _) => todo!("AnyValue::Map"),
+            DataType::Map(key, value) => {
+                let entries_dtype =
+                    DataType::map_entries(key.as_ref().clone(), value.as_ref().clone());
+                let entries: Vec<AnyValue> = values
+                    .iter()
+                    .map(|av| match av {
+                        AnyValue::Map(entries) => AnyValue::List(entries.clone()),
+                        av => av.clone(),
+                    })
+                    .collect();
+                let storage = any_values_to_list(&entries, &entries_dtype, strict)?.into_series();
+                MapChunked::try_from_storage(dtype.clone(), storage)?.into_series()
+            },
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(typ, storage) => {
                 Series::from_any_values_and_dtype_unnamed(values, storage, strict)?

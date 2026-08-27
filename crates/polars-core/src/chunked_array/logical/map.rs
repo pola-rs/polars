@@ -100,8 +100,14 @@ impl MapChunked {
         self.storage.is_empty()
     }
 
-    pub fn get_any_value(&self, _i: usize) -> PolarsResult<AnyValue<'_>> {
-        todo!("AnyValue::Map")
+    pub fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
+        Ok(map_av(self.storage.get(i)?))
+    }
+
+    /// # Safety
+    /// `i` must be in bounds.
+    pub unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
+        map_av(unsafe { self.storage.get_unchecked(i) })
     }
 
     pub fn cast_with_options(
@@ -110,6 +116,14 @@ impl MapChunked {
         _options: CastOptions,
     ) -> PolarsResult<Series> {
         todo!("MapChunked::cast_with_options")
+    }
+}
+
+fn map_av(av: AnyValue<'_>) -> AnyValue<'_> {
+    match av {
+        AnyValue::List(entries) => AnyValue::Map(entries),
+        AnyValue::Null => AnyValue::Null,
+        av => unreachable!("map storage must yield a list, got {av:?}"),
     }
 }
 

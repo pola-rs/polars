@@ -1217,6 +1217,8 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-array")]
             AnyValue::Array(s, _size) => write!(f, "{}", s.fmt_list()),
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
+            #[cfg(feature = "dtype-map")]
+            AnyValue::Map(s) => fmt_map(f, s),
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{v}"),
             #[cfg(feature = "object")]
@@ -1270,6 +1272,35 @@ impl Display for PlTzAware<'_> {
 }
 
 #[cfg(feature = "dtype-struct")]
+/// Renders a map row as `{"a": 1, "b": 2}`
+#[cfg(feature = "dtype-map")]
+fn fmt_map(f: &mut Formatter<'_>, entries: &Series) -> fmt::Result {
+    let fields = entries.struct_().unwrap().fields_as_series();
+    let [keys, values] = fields.as_slice() else {
+        unreachable!("map entries must have two fields")
+    };
+
+    // Same truncation as `Series::fmt_list`.
+    let max_items = get_list_len_limit();
+    let ellipsis = get_ellipsis();
+    let shown = max_items.min(entries.len());
+
+    write!(f, "{{")?;
+    for i in 0..shown {
+        if i > 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "{}: {}", keys.get(i).unwrap(), values.get(i).unwrap())?;
+    }
+    if shown < entries.len() {
+        if shown > 0 {
+            write!(f, ", ")?;
+        }
+        write!(f, "{ellipsis}")?;
+    }
+    write!(f, "}}")
+}
+
 fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
     write!(f, "{{")?;
     if !vals.is_empty() {

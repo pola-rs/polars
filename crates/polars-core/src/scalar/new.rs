@@ -42,6 +42,12 @@ impl Scalar {
         )
     }
 
+    #[cfg(feature = "dtype-map")]
+    pub fn new_map(entries: Series) -> Self {
+        let value = AnyValue::Map(entries);
+        Scalar::new(value.dtype(), value)
+    }
+
     #[cfg(feature = "dtype-array")]
     pub fn new_array(values: Series, width: usize) -> Self {
         Scalar::new(
