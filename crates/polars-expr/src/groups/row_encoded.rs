@@ -42,7 +42,7 @@ impl RowEncodedHashGrouper {
             .collect::<Vec<_>>();
         let ctxts = key_schema
             .iter()
-            .map(|(_, dt)| get_row_encoding_context(dt))
+            .map(|(_, dt)| get_row_encoding_context(dt).unwrap())
             .collect::<Vec<_>>();
         let fields = vec![RowEncodingOptions::new_unsorted(); key_dtypes.len()];
         let key_columns =
