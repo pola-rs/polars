@@ -825,7 +825,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
 impl AnyValue<'_> {
     pub fn hash_impl<H: Hasher>(&self, state: &mut H, cheap: bool) {
         use AnyValue::*;
-        
+
         // Hash discriminant, not distinguishing between owned/non-owned.
         let discriminant = match self {
             Struct(..) | StructOwned(..) => 0.hash(state),
@@ -907,7 +907,7 @@ impl AnyValue<'_> {
                 if !cheap {
                     v.0.hash(state);
                 }
-            }
+            },
             #[cfg(feature = "dtype-decimal")]
             Decimal(v, s, p) => {
                 v.hash(state);
