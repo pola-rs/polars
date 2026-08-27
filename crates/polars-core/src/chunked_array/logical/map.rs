@@ -104,6 +104,11 @@ impl MapChunked {
         Ok(map_av(self.storage.get(i)?))
     }
 
+    /// One `AnyValue::Map` per row.
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = AnyValue<'_>> {
+        self.storage.iter().map(map_av)
+    }
+
     /// # Safety
     /// `i` must be in bounds.
     pub unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {

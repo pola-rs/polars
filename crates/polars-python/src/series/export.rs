@@ -163,7 +163,10 @@ impl PySeries {
                 DataType::BinaryOffset => {
                     unreachable!()
                 },
-                DataType::Map(_, _) => todo!("AnyValue::Map"),
+                DataType::Map(_, _) => {
+                    let ca = series.map().map_err(PyPolarsErr::from)?;
+                    PyList::new(py, ca.iter().map(Wrap))?
+                },
                 DataType::Extension(_, _) => {
                     return to_list_recursive(py, series.ext().unwrap().storage());
                 },

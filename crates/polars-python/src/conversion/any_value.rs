@@ -21,8 +21,8 @@ use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    PyBool, PyBytes, PyDate, PyDateTime, PyDelta, PyDict, PyFloat, PyInt, PyList, PyMapping,
-    PyRange, PySequence, PyString, PyTime, PyTuple, PyType, PyTzInfo,
+    IntoPyDict, PyBool, PyBytes, PyDate, PyDateTime, PyDelta, PyDict, PyFloat, PyInt, PyList,
+    PyMapping, PyRange, PySequence, PyString, PyTime, PyTuple, PyType, PyTzInfo,
 };
 use pyo3::{IntoPyObjectExt, PyTypeCheck, intern};
 
@@ -108,6 +108,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         },
         AnyValue::Time(v) => nanos_since_midnight_to_naivetime(v).into_bound_py_any(py),
         AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(py),
+        AnyValue::Map(entries) => Ok(map_dict(py, &entries)?.into_any()),
         ref av @ AnyValue::Struct(_, _, flds) => {
             Ok(struct_dict(py, av._iter_struct_av(), flds)?.into_any())
         },
@@ -180,6 +181,25 @@ impl std::hash::Hash for TypeObjectKey {
 type InitFn = fn(&Bound<'_, PyAny>, bool) -> PyResult<AnyValue<'static>>;
 pub(crate) static LUT: Mutex<HashMap<TypeObjectKey, InitFn, PlFixedStateQuality>> =
     Mutex::new(HashMap::with_hasher(PlFixedStateQuality::with_seed(0)));
+
+/// Render a map's entries as a Python dict.
+///
+/// Keys that are not hashable in Python -- a `List` or `Struct` key, which Polars allows
+/// but `dict` does not -- surface as Python's own `unhashable type` error.
+fn map_dict<'py>(py: Python<'py>, entries: &Series) -> PyResult<Bound<'py, PyDict>> {
+    let fields = entries
+        .struct_()
+        .map_err(PyPolarsErr::from)?
+        .fields_as_series();
+    let [keys, values] = fields.as_slice() else {
+        unreachable!("map entries must have two fields")
+    };
+
+    keys.iter()
+        .zip(values.iter())
+        .map(|(key, value)| (Wrap(key), Wrap(value)))
+        .into_py_dict(py)
+}
 
 /// Convert a Python object to an [`AnyValue`].
 pub(crate) fn py_object_to_any_value(

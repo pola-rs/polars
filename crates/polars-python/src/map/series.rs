@@ -344,23 +344,32 @@ impl<'py> ApplyLambdaGeneric<'py> for NullChunked {
 impl<'py> ApplyLambdaGeneric<'py> for MapChunked {
     fn apply_generic(
         &self,
-        _py: Python<'py>,
-        _lambda: &Bound<'py, PyAny>,
-        _skip_nulls: bool,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        skip_nulls: bool,
     ) -> PyResult<Series> {
-        // Unlike Extension, `Series::to_storage` does not peel a Map, so this is
-        // reachable and needs the `AnyValue::Map` iteration `ListChunked` uses.
-        todo!("AnyValue::Map")
+        let it = self
+            .iter()
+            .map(|av| av.into_static().null_to_none().map(Wrap));
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
+        Ok(Series::from_any_values(self.name().clone(), &avs, true).map_err(PyPolarsErr::from)?)
     }
 
     fn apply_generic_with_dtype(
         &self,
-        _py: Python<'py>,
-        _lambda: &Bound<'py, PyAny>,
-        _datatype: &DataType,
-        _skip_nulls: bool,
+        py: Python<'py>,
+        lambda: &Bound<'py, PyAny>,
+        datatype: &DataType,
+        skip_nulls: bool,
     ) -> PyResult<Series> {
-        todo!("AnyValue::Map")
+        let it = self
+            .iter()
+            .map(|av| av.into_static().null_to_none().map(Wrap));
+        let avs = call_and_collect_anyvalues(py, lambda, self.len(), it, skip_nulls)?;
+        Ok(
+            Series::from_any_values_and_dtype(self.name().clone(), &avs, datatype, true)
+                .map_err(PyPolarsErr::from)?,
+        )
     }
 }
 
