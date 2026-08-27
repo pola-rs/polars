@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::chunked_array::ops::row_encode::supports_row_encoding;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions};
 use polars_core::scalar::Scalar;
@@ -1037,7 +1038,7 @@ pub fn try_build_sorted_group_by(
         || (!are_keys_sorted && maintain_order)
         || keys.iter().any(|k| {
             k.dtype(input_schema, expr_arena)
-                .is_ok_and(|dtype| dtype.contains_unknown())
+                .is_ok_and(|dtype| !supports_row_encoding(dtype))
         })
     {
         return Ok(None);

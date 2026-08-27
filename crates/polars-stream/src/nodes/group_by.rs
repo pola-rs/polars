@@ -170,7 +170,7 @@ impl GroupBySinkState {
                     let keys = unsafe {
                         DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)?
                     };
-                    let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false);
+                    let hash_keys = HashKeys::from_df(&keys, random_state.clone(), true, false)?;
 
                     let hot_grouper = &mut local.hot_grouper_per_input[input_idx];
                     hot_idxs.clear();

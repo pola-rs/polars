@@ -190,12 +190,12 @@ async fn select_keys(
         key_columns.push(selector.evaluate(df, state).await?.into_column());
     }
     let keys = unsafe { DataFrame::new_unchecked_with_broadcast(df.height(), key_columns)? };
-    Ok(HashKeys::from_df(
+    HashKeys::from_df(
         &keys,
         params.random_state.clone(),
         params.args.nulls_equal,
         false,
-    ))
+    )
 }
 
 fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
