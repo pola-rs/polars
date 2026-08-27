@@ -441,11 +441,12 @@ pub mod req {
 
     /// Stream length to parameterise a fresh sketch for.
     fn initial_n(error: f64) -> usize {
-        let k = |n| compute_k(error, FAILURE_PROBABILITY, n);
-        let b = |n| compactor_threshold_b(k(n), n);
+        let k = |n: usize| compute_k(error, FAILURE_PROBABILITY, n);
+        let b = |n| compute_b(k(n), n);
 
-        // Choose initial guess of n such that `error * n > 1`.
-        let mut n = (f64::ceil(1.0 / error) as usize).next_power_of_two();
+        // Choose initial guess of n such that `error * n > 1`: at `error * n ==
+        // 1` the `log2` in `compute_k` is zero and `k` overflows.
+        let mut n = (f64::ceil(2.0 / error) as usize).next_power_of_two();
         // Ensure that:
         //   1. The number of protected items is not larger than the total number
         //      of items, because that would mean that no items could get promoted
@@ -468,9 +469,17 @@ pub mod req {
         );
 
         // Eq. 6
-        2 * f64::ceil(
+        let k = 2 * f64::ceil(
             (4.0 / error) * f64::sqrt((-f64::ln(failure_prob)) / f64::log2(error * n as f64)),
-        ) as usize
+        ) as usize;
+        assert!(k >= 2);
+        k
+    }
+
+    fn compute_b(k: usize, n: usize) -> usize {
+        // Sec 2.1: k is an *even* integer parameter.
+        assert!(k > 0 && k % 2 == 0, "k must be a positive even integer");
+        2 * k * (usize::div_ceil(n, k) * 2 - 1).ilog2() as usize
     }
 
     #[derive(Debug, Clone, Copy)]
@@ -498,16 +507,15 @@ pub mod req {
         levels: Vec<Level>,
         /// Bit that specifies if this sketch is high-rank-accurate or low-rank-accurate.
         is_hra: bool,
-        /// The total number of items this sketch can ingest befor it becomes
-        /// inaccurate wrt the error parameter.
+        /// Upper bound on the number of items this sketch is parameterised
+        /// for. Squared on every growth.
         n: usize,
-        /// The allowed error as fraction of n.
+        /// The allowed error as a fraction of `n`.
         error: f64,
-        /// k parameter of the paper. Impacts how many items are protected during
-        /// a compaction.
+        /// k parameter of the paper: the size of a compactor section. Impacts
+        /// how many items are protected during a compaction. Shrinks over time,
+        /// see `ensure_enough_sections`.
         k: usize,
-        /// The relative compactor capacity.
-        b: usize,
         consumed_items: usize,
         rng: SmallRng,
     }
@@ -523,7 +531,8 @@ pub mod req {
     pub struct ReqSketch<T: fmt::Debug + Clone + TotalOrd>(State<T>);
 
     impl<T: fmt::Debug + Clone + TotalOrd> ReqSketch<T> {
-        pub fn new(error: f64, n: usize, hra: bool) -> Self {
+        pub fn new(error: f64, hra: bool) -> Self {
+            let n = initial_n(error);
             let k = compute_k(error, FAILURE_PROBABILITY, n);
             assert!(n > k, "n must be greater than k");
             let state = IngestingState {
@@ -539,7 +548,8 @@ pub mod req {
                 n,
                 error,
                 k,
-                b: dbg!(compactor_threshold_b(k, n)),
+                // `compactor_threshold_b` returns `2 * k * <sections>`, so this
+                // division is exact.
                 consumed_items: 0,
                 rng: rand::make_rng(),
             };
@@ -592,9 +602,6 @@ pub mod req {
         #[inline]
         pub fn update(&mut self, array: &[T]) {
             for item in array {
-                if self.space_left() == 0 {
-                    self.close_out();
-                }
                 self.compact_if_needed(0);
                 self.items.push(item.clone());
                 self.levels[0].size += 1;
@@ -602,18 +609,37 @@ pub mod req {
             }
         }
 
-        fn space_left(&self) -> usize {
-            self.n.saturating_sub(self.consumed_items)
+        /// Grow the compactors once a compaction schedule runs out of sections.
+        fn close_out_if_needed(&mut self, level: usize) {
+            let num_sections = self.num_sections();
+            if num_sections >= 64 {
+                // We assume that the compaction schedule will ever overflow over 64 bits.
+                return;
+            }
+
+            let schedule = self.levels[level].compaction_schedule;
+            let sections_needed = u64::BITS - schedule.leading_zeros();
+            if sections_needed < num_sections as u32 {
+                return;
+            }
+
+            // TODO: [amber] Decide whether we want to add in the error factor or not.
+            self.n = (self.error * self.n as f64 * self.n as f64) as usize;
+            self.k = compute_k(self.error, FAILURE_PROBABILITY, self.n);
         }
 
-        fn close_out(&mut self) {
-            self.n = 2 * self.n;
-            self.k = compute_k(self.error, FAILURE_PROBABILITY, self.n).max(self.k);
-            self.b = compactor_threshold_b(self.k, self.n).max(self.b);
+        /// `B` of the paper: the capacity of every relative compactor.
+        fn compactor_capacity(&self) -> usize {
+            compute_b(self.k, self.n)
+        }
+
+        /// The largest number of sections a single compaction may cover.
+        fn num_sections(&self) -> usize {
+            self.compactor_capacity() / (2 * self.k)
         }
 
         fn is_compactor_full(&self, level: usize) -> bool {
-            self.levels[level].size >= self.b
+            self.levels[level].size >= self.compactor_capacity()
         }
 
         /// Compact all of the compactors from base to top.
@@ -639,7 +665,10 @@ pub mod req {
             if level == self.levels.len() - 1 {
                 self.add_new_compactor();
             }
-            debug_assert!(self.levels[level].size >= self.b, "compactor is not full");
+            debug_assert!(
+                self.levels[level].size >= self.compactor_capacity(),
+                "compactor is not full"
+            );
             debug_assert_eq!(
                 self.levels[level + 1].offset + self.levels[level + 1].size,
                 self.levels[level].offset
@@ -650,10 +679,10 @@ pub mod req {
                 true => TotalOrd::tot_cmp(a, b).reverse(),
             };
 
-            // Compute L_C
+            // Compute L_C.
             let z_c = self.levels[level].compaction_schedule.trailing_ones();
-            let l_c = (z_c as usize + 1) * self.k;
-            debug_assert!(l_c <= self.b / 2);
+            let l_c = usize::min(z_c as usize + 1, self.num_sections()) * self.k;
+            debug_assert!(l_c <= self.compactor_capacity() / 2);
             debug_assert!(l_c % 2 == 0);
 
             // Only draw a fresh promotion parity every other compaction, and
@@ -702,6 +731,7 @@ pub mod req {
             debug_assert_eq!(offset, self.items.len());
 
             self.levels[level].compaction_schedule += 1;
+            self.close_out_if_needed(level);
             self.compact_if_needed(level + 1);
         }
 
@@ -788,12 +818,6 @@ pub mod req {
                 Some(cum_weights.into_boxed_slice()),
             )
         }
-    }
-
-    fn compactor_threshold_b(k: usize, n: usize) -> usize {
-        // Sec 2.1: k is an *even* integer parameter.
-        assert!(k > 0 && k % 2 == 0, "k must be a positive even integer");
-        2 * k * (usize::div_ceil(n, k) * 2 - 1).ilog2() as usize
     }
 }
 

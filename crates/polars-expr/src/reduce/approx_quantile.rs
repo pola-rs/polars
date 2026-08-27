@@ -67,7 +67,7 @@ where
     type Value = ReqSketch<T::Native>;
 
     fn init(&self) -> Self::Value {
-        ReqSketch::new(self.error, 1000_000, true)
+        ReqSketch::new(self.error, true)
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
