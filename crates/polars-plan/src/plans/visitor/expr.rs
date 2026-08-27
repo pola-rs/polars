@@ -84,6 +84,10 @@ impl TreeWalker for Expr {
             Rolling { function, index_column, period, offset, closed_window  } => Rolling { function: am(function, &mut f)?, index_column: am(index_column, &mut f)?, period, offset, closed_window  },
             Over { function, partition_by, order_by, mapping } => {
                 let partition_by = partition_by.into_iter().map(&mut f).collect::<Result<_, _>>()?;
+                let order_by = match order_by {
+                    Some((by, options)) => Some((am(by, &mut f)?, options)),
+                    None => None,
+                };
                 Over { function: am(function, f)?, partition_by, order_by, mapping }
             },
             Slice { input, offset, length } => Slice { input: am(input, &mut f)?, offset: am(offset, &mut f)?, length: am(length, f)? },
