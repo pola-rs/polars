@@ -403,23 +403,9 @@ impl SQLExprVisitor<'_> {
                 uses_odbc_syntax: _,
             }) => {
                 let dtype = self.resolve_typed_literal_dtype(data_type, v)?;
-                match dtype {
-                    DataType::Date => Ok(lit(v.as_str()).cast(DataType::Date)),
-                    DataType::Time => Ok(lit(v.as_str()).str().to_time(StrptimeOptions {
-                        strict: true,
-                        ..Default::default()
-                    })),
-                    DataType::Datetime(_, _) => Ok(lit(v.as_str()).str().to_datetime(
-                        None,
-                        None,
-                        StrptimeOptions {
-                            strict: true,
-                            ..Default::default()
-                        },
-                        lit("latest"),
-                    )),
-                    _ => unreachable!(),
-                }
+                parse_string_as_temporal(lit(v.as_str()), &dtype, true).ok_or_else(
+                    || polars_err!(SQLInterface: "invalid temporal literal type {}", dtype),
+                )
             },
             SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SQLExpr::Value(ValueWithSpan { value, .. }) => self.visit_literal(value),

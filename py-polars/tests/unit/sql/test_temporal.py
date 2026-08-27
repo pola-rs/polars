@@ -8,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import InvalidOperationError, SQLInterfaceError, SQLSyntaxError
 from polars.testing import assert_frame_equal
+from tests.unit.sql import assert_sql_matches
 
 
 def test_date_func() -> None:
@@ -482,3 +483,50 @@ def test_timestamp_time_unit_errors() -> None:
             match="sql parser error: Expected: literal int, found: - ",
         ):
             ctx.execute("SELECT ts::timestamp(-3) FROM frame_data")
+
+
+def test_typed_temporal_literal_comparison() -> None:
+    df = pl.DataFrame(
+        {
+            "d": [date(2019, 6, 1), date(2020, 1, 1), date(2021, 1, 1)],
+            "ts": [
+                datetime(2019, 6, 1, 12),
+                datetime(2020, 1, 1, 8),
+                datetime(2021, 1, 1, 0),
+            ],
+        }
+    )
+    for query in (
+        "SELECT d FROM self WHERE d > DATE '2019-12-31' ORDER BY d",
+        "SELECT d FROM self WHERE d BETWEEN DATE '2019-01-01' AND DATE '2020-06-01' ORDER BY d",
+        "SELECT ts FROM self WHERE ts > TIMESTAMP '2019-12-31 00:00:00' ORDER BY ts",
+    ):
+        assert_sql_matches(df, query=query, compare_with="duckdb")
+
+
+@pytest.mark.parametrize(
+    ("literal", "expected"),
+    [
+        ("DATE '2020-02-29'", date(2020, 2, 29)),
+        ("TIME '12:30:05'", time(12, 30, 5)),
+        ("TIMESTAMP '2020-01-01 08:00:00'", datetime(2020, 1, 1, 8)),
+    ],
+)
+def test_typed_temporal_literal(literal: str, expected: Any) -> None:
+    df = pl.DataFrame({"a": [1]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        assert ctx.execute(f"SELECT {literal} AS x FROM tbl").item() == expected
+
+
+@pytest.mark.parametrize(
+    ("precision", "time_unit"),
+    [(3, "ms"), (6, "us"), (9, "ns")],
+)
+def test_typed_timestamp_literal_precision(precision: int, time_unit: str) -> None:
+    # the declared precision selects the time unit
+    df = pl.DataFrame({"a": [1]})
+    with pl.SQLContext(frames={"tbl": df}, eager=True) as ctx:
+        res = ctx.execute(
+            f"SELECT TIMESTAMP({precision}) '2020-01-01 08:00:00.123' AS x FROM tbl"
+        )
+    assert res.schema["x"] == pl.Datetime(time_unit)  # type: ignore[arg-type]
