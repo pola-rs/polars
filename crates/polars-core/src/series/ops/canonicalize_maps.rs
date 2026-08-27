@@ -40,73 +40,16 @@ fn canonicalize_maps_rec(series: &Series) -> PolarsResult<Option<Series>> {
                 )),
             }
         },
-        DataType::List(inner_dtype) => {
+        DataType::List(_) => {
             let ca = series.list().unwrap();
-            let mut new_chunks: Option<Vec<ArrayRef>> = None;
-
-            // Canonicalize each values array separately to preserve chunk offsets.
-            for (i, chunk) in ca.downcast_iter().enumerate() {
-                match canonicalize_maps_rec(&chunk_values(chunk.values().clone(), inner_dtype))? {
-                    Some(values) => new_chunks
-                        .get_or_insert_with(|| ca.chunks()[..i].to_vec())
-                        .push(
-                            LargeListArray::new(
-                                chunk.dtype().clone(),
-                                chunk.offsets().clone(),
-                                single_chunk(values),
-                                chunk.validity().cloned(),
-                            )
-                            .boxed(),
-                        ),
-                    None => {
-                        if let Some(new_chunks) = new_chunks.as_mut() {
-                            new_chunks.push(chunk.clone().boxed());
-                        }
-                    },
-                }
-            }
-
-            Ok(new_chunks.map(|chunks| unsafe {
-                Series::from_chunks_and_dtype_unchecked(
-                    series.name().clone(),
-                    chunks,
-                    series.dtype(),
-                )
-            }))
+            Ok(canonicalize_maps_rec(&ca.get_inner())?
+                .map(|values| ca.with_inner_values(&values).into_series()))
         },
         #[cfg(feature = "dtype-array")]
-        DataType::Array(inner_dtype, _) => {
+        DataType::Array(_, _) => {
             let ca = series.array().unwrap();
-            let mut new_chunks: Option<Vec<ArrayRef>> = None;
-
-            for (i, chunk) in ca.downcast_iter().enumerate() {
-                match canonicalize_maps_rec(&chunk_values(chunk.values().clone(), inner_dtype))? {
-                    Some(values) => new_chunks
-                        .get_or_insert_with(|| ca.chunks()[..i].to_vec())
-                        .push(
-                            FixedSizeListArray::new(
-                                chunk.dtype().clone(),
-                                chunk.len(),
-                                single_chunk(values),
-                                chunk.validity().cloned(),
-                            )
-                            .boxed(),
-                        ),
-                    None => {
-                        if let Some(new_chunks) = new_chunks.as_mut() {
-                            new_chunks.push(chunk.clone().boxed());
-                        }
-                    },
-                }
-            }
-
-            Ok(new_chunks.map(|chunks| unsafe {
-                Series::from_chunks_and_dtype_unchecked(
-                    series.name().clone(),
-                    chunks,
-                    series.dtype(),
-                )
-            }))
+            Ok(canonicalize_maps_rec(&ca.get_inner())?
+                .map(|values| ca.with_inner_values(&values).into_series()))
         },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {
@@ -141,14 +84,4 @@ fn canonicalize_maps_rec(series: &Series) -> PolarsResult<Option<Series>> {
         },
         _ => Ok(None),
     }
-}
-
-#[cfg(feature = "dtype-map")]
-fn chunk_values(values: ArrayRef, dtype: &DataType) -> Series {
-    unsafe { Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![values], dtype) }
-}
-
-#[cfg(feature = "dtype-map")]
-fn single_chunk(series: Series) -> ArrayRef {
-    series.rechunk().chunks()[0].clone()
 }
