@@ -1184,7 +1184,9 @@ def test_list_filter_null() -> None:
 @pytest.mark.may_fail_cloud  # reason: time check
 @pytest.mark.slow
 def test_list_struct_field_perf() -> None:
-    base_df = pl.concat(100 * [pl.DataFrame({"a": [[{"fld": 1}]]})]).rechunk()
+    # The values have to differ: concatenating chunks that hold the same single value
+    # keeps them as one scalar column, which `list.eval` expands on every execution.
+    base_df = pl.DataFrame({"a": [[{"fld": i}] for i in range(100)]}).rechunk()
     df = base_df
 
     q = df.lazy().select(pl.col("a").list.eval(pl.element().struct.field("fld")))
