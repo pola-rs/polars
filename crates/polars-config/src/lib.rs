@@ -281,7 +281,7 @@ impl Config {
 
     fn recompute_derived(&self) {
         let bytes = self.ooc_memory_budget_bytes.load(Ordering::Relaxed);
-        let frac = f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed));
+        let frac = f64::from_bits(self.ooc_memory_prefetch_fraction.load(Ordering::Relaxed));
         self.ooc_memory_prefetch_bytes
             .store((bytes as f64 * frac) as u64, Ordering::Relaxed);
     }
