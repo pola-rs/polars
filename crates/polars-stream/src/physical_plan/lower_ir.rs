@@ -4,6 +4,7 @@ use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use arrow::datatypes::ArrowDataType;
 use parking_lot::Mutex;
 use polars_async::executor::ALLOW_RAYON_THREADS;
+use polars_core::chunked_array::ops::row_encode::supports_row_encoding;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
@@ -1466,7 +1467,6 @@ pub fn lower_ir(
                 .sortedness
                 .are_keys_sorted_any(input, &keys, expr_arena, input_schema.as_ref())
                 .is_some();
-            let supports_row_encoding = |dt| !dt.contains_objects() && !dt.contains_unknown();
             if are_keys_sorted
                 && matches!(
                     options.keep_strategy,

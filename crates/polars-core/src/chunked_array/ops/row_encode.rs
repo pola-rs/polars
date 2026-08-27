@@ -69,11 +69,16 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     ))
 }
 
+/// Whether the row encoding has a representation for `dtype`.
+pub fn supports_row_encoding(dtype: &DataType) -> bool {
+    get_row_encoding_context(dtype).is_ok()
+}
+
 /// Get the [`RowEncodingContext`] for a certain [`DataType`].
 ///
 /// This should be given the logical type in order to communicate Polars datatype information down
 /// into the row encoding / decoding.
-pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> {
+pub fn get_row_encoding_context(dtype: &DataType) -> PolarsResult<Option<RowEncodingContext>> {
     match dtype {
         DataType::Boolean
         | DataType::UInt8
@@ -96,27 +101,31 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
         | DataType::Time
         | DataType::Date
         | DataType::Datetime(_, _)
-        | DataType::Duration(_) => None,
+        | DataType::Duration(_) => Ok(None),
 
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_, mapping) | DataType::Enum(_, mapping) => {
             use polars_row::RowEncodingCategoricalContext;
 
-            Some(RowEncodingContext::Categorical(
+            Ok(Some(RowEncodingContext::Categorical(
                 RowEncodingCategoricalContext {
                     is_enum: matches!(dtype, DataType::Enum(_, _)),
                     mapping: mapping.clone(),
                 },
-            ))
+            )))
         },
 
-        DataType::Unknown(_) => panic!("Unsupported in row encoding"),
+        DataType::Unknown(_) => {
+            polars_bail!(InvalidOperation: "cannot row encode dtype '{dtype}'")
+        },
 
         #[cfg(feature = "object")]
-        DataType::Object(_) => panic!("Unsupported in row encoding"),
+        DataType::Object(_) => {
+            polars_bail!(InvalidOperation: "cannot row encode dtype '{dtype}'")
+        },
 
         #[cfg(feature = "dtype-decimal")]
-        DataType::Decimal(precision, _) => Some(RowEncodingContext::Decimal(*precision)),
+        DataType::Decimal(precision, _) => Ok(Some(RowEncodingContext::Decimal(*precision))),
 
         #[cfg(feature = "dtype-array")]
         DataType::Array(dtype, _) => get_row_encoding_context(dtype),
@@ -126,7 +135,7 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
             let mut ctxts = Vec::new();
 
             for (i, f) in fs.iter().enumerate() {
-                if let Some(ctxt) = get_row_encoding_context(f.dtype()) {
+                if let Some(ctxt) = get_row_encoding_context(f.dtype())? {
                     ctxts.reserve(fs.len());
                     ctxts.extend(std::iter::repeat_n(None, i));
                     ctxts.push(Some(ctxt));
@@ -135,16 +144,20 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
             }
 
             if ctxts.is_empty() {
-                return None;
+                // Every field so far was context-free, but the remaining ones still have to
+                // be checked for dtypes the row encoding cannot represent.
+                for f in &fs[ctxts.len()..] {
+                    get_row_encoding_context(f.dtype())?;
+                }
+                return Ok(None);
             }
 
-            ctxts.extend(
-                fs[ctxts.len()..]
-                    .iter()
-                    .map(|f| get_row_encoding_context(f.dtype())),
-            );
+            for f in &fs[ctxts.len()..] {
+                let ctxt = get_row_encoding_context(f.dtype())?;
+                ctxts.push(ctxt);
+            }
 
-            Some(RowEncodingContext::Struct(ctxts))
+            Ok(Some(RowEncodingContext::Struct(ctxts)))
         },
         #[cfg(feature = "dtype-extension")]
         DataType::Extension(_, storage) => get_row_encoding_context(storage),
@@ -178,7 +191,7 @@ pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<RowsEncoded> {
         let by = by.as_materialized_series();
         let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
         let opt = RowEncodingOptions::new_unsorted();
-        let ctxt = get_row_encoding_context(by.dtype());
+        let ctxt = get_row_encoding_context(by.dtype())?;
 
         cols.push(arr);
         opts.push(opt);
@@ -213,7 +226,7 @@ pub fn _get_rows_encoded(
         let by = by.as_materialized_series();
         let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
         let opt = RowEncodingOptions::new_sorted(*desc, *null_last);
-        let ctxt = get_row_encoding_context(by.dtype());
+        let ctxt = get_row_encoding_context(by.dtype())?;
 
         cols.push(arr);
         opts.push(opt);
@@ -276,12 +289,12 @@ pub fn row_encoding_decode(
     let (ctxts, dtypes) = fields
         .iter()
         .map(|f| {
-            (
-                get_row_encoding_context(f.dtype()),
+            Ok((
+                get_row_encoding_context(f.dtype())?,
                 f.dtype().to_physical().to_arrow(CompatLevel::newest()),
-            )
+            ))
         })
-        .collect::<(Vec<_>, Vec<_>)>();
+        .collect::<PolarsResult<(Vec<_>, Vec<_>)>>()?;
 
     let struct_arrow_dtype = ArrowDataType::Struct(
         fields

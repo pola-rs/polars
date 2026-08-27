@@ -1165,6 +1165,7 @@ impl AnyValue<'_> {
         ) -> impl ExactSizeIterator<Item = AnyValue<'a>> {
             v.0.iter().map(|v| v.as_borrowed())
         }
+        #[cfg(feature = "dtype-struct")]
         fn struct_value_iter<'a>(
             idx: usize,
             arr: &'a StructArray,
