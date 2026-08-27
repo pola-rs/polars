@@ -116,8 +116,8 @@ impl<T: Spillable> SpillTokenInner<T> {
         }
     }
 
-    // Try to pin the value, returning None if it is spilled, locked or dropped.
-    fn try_pin(slf: &Arc<Self>) -> Option<PinnedRef<'_, T>> {
+    // Try to pin the value, returning Err if it is spilled, locked or dropped.
+    fn try_pin(slf: &Arc<Self>) -> Result<PinnedRef<'_, T>, u64> {
         slf.state
             .try_update(Ordering::Acquire, Ordering::Relaxed, |state| {
                 if state & (SPILLED_BIT | LOCK_BIT | DROPPED_BIT) != 0 {
@@ -125,7 +125,6 @@ impl<T: Spillable> SpillTokenInner<T> {
                 }
                 Some(state + RO_PIN_COUNT_UNIT)
             })
-            .ok()
             .map(|_| PinnedRef { inner: slf })
     }
 
@@ -184,7 +183,7 @@ impl<T: Spillable> SpillTokenInner<T> {
     }
 
     async fn pin(slf: &Arc<Self>) -> PinnedRef<'_, T> {
-        if let Some(r) = Self::try_pin(slf) {
+        if let Ok(r) = Self::try_pin(slf) {
             return r;
         }
 
@@ -252,7 +251,7 @@ impl<T: Spillable> SpillTokenInner<T> {
     }
 
     fn pin_blocking(slf: &Arc<Self>) -> PinnedRef<'_, T> {
-        if let Some(r) = Self::try_pin(slf) {
+        if let Ok(r) = Self::try_pin(slf) {
             return r;
         }
 
@@ -445,6 +444,13 @@ pub enum TrySpillError {
     Pinned,
 }
 
+pub enum SpillStatus {
+    InMemory(u64),
+    Spilled,
+    Pinned,
+    Dropped,
+}
+
 pub(crate) trait DynSpillToken: Send + Sync + 'static {
     /// Register this spill token at a new context, returning the registration ID.
     fn register(&self, ctx: WeakSpillContext, param: SpillContextParam) -> u32;
@@ -456,17 +462,18 @@ pub(crate) trait DynSpillToken: Send + Sync + 'static {
     /// Returns the current context registration ID of this spill token without modifying it.
     fn current_registration_id(&self) -> u32;
 
-    /// Whether this token can be spilled. Returns false if pinned, dropped or
-    /// already spilled.
-    fn can_spill(&self) -> bool;
+    /// Whether this token can be spilled, and if so, its estimated in-memory
+    /// size in bytes.
+    fn spill_status(self: Arc<Self>) -> SpillStatus;
 
     /// Call this exactly once after removing a SpillToken from its context to
     /// re-insert it once it is spillable again.
-    fn cancel_spill_attempt_and_reinsert(self: Arc<Self>, reg_id: u32, context_id: u64);
-
-    /// Estimates how many bytes this object takes up in memory. Returns None
-    /// if the object cannot be pinned.
-    fn estimate_byte_size(self: Arc<Self>) -> Option<usize>;
+    fn cancel_spill_attempt_and_reinsert(
+        self: Arc<Self>,
+        reg_id: u32,
+        context_id: u64,
+        reason: ReinsertReason,
+    );
 
     /// Tries to spill this token. Returns true if successful.
     ///
@@ -509,12 +516,29 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
         self.registration_id.load(Ordering::Relaxed)
     }
 
-    fn can_spill(&self) -> bool {
-        self.state.load(Ordering::Acquire) & (SPILLED_BIT | DROPPED_BIT | LOCK_BIT | RO_PIN_MASK)
-            == 0
+    fn spill_status(self: Arc<Self>) -> SpillStatus {
+        match Self::try_pin(&self) {
+            Ok(p) => SpillStatus::InMemory(p.estimate_byte_size() as u64),
+            Err(s) => {
+                if s & DROPPED_BIT != 0 {
+                    SpillStatus::Dropped
+                } else if s & SPILLED_BIT != 0 {
+                    SpillStatus::Spilled
+                } else if s & (LOCK_BIT | RO_PIN_MASK) != 0 {
+                    SpillStatus::Pinned
+                } else {
+                    unreachable!()
+                }
+            },
+        }
     }
 
-    fn cancel_spill_attempt_and_reinsert(self: Arc<Self>, reg_id: u32, context_id: u64) {
+    fn cancel_spill_attempt_and_reinsert(
+        self: Arc<Self>,
+        reg_id: u32,
+        context_id: u64,
+        reason: ReinsertReason,
+    ) {
         // Hold lock to not race with other registrations.
         let lock = self.lock.lock().unwrap();
 
@@ -539,13 +563,8 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
         // done by the responsible party, if dropped it doesn't matter.
         if old_s & (LOCK_BIT | RO_PIN_MASK | SPILLED_BIT | DROPPED_BIT) == 0 {
             let dyn_slf: Arc<dyn DynSpillToken> = self.clone();
-            ctx.0
-                .reinsert(&dyn_slf, reg_id, context_id, ReinsertReason::SpillCancelled);
+            ctx.0.reinsert(&dyn_slf, reg_id, context_id, reason);
         }
-    }
-
-    fn estimate_byte_size(self: Arc<Self>) -> Option<usize> {
-        Self::try_pin(&self).map(|p| p.estimate_byte_size())
     }
 
     fn try_spill(
@@ -677,7 +696,7 @@ impl<T: Spillable> SpillToken<T> {
 
     /// Try to get a reference to the underlying value, returning None if it was spilled.
     pub fn try_get(&self) -> Option<PinnedRef<'_, T>> {
-        SpillTokenInner::try_pin(&self.inner)
+        SpillTokenInner::try_pin(&self.inner).ok()
     }
 
     /// Get a reference to the underlying value, unspilling it if it was spilled.
