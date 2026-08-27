@@ -409,8 +409,6 @@ impl ChunkCast for BooleanChunked {
     }
 }
 
-/// We cannot cast anything to or from List/LargeList
-/// So this implementation casts the inner type
 impl ChunkCast for ListChunked {
     fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         let ca = self
@@ -479,6 +477,32 @@ impl ChunkCast for ListChunked {
                         &DataType::Binary,
                     ))
                 }
+            },
+            #[cfg(feature = "dtype-map")]
+            Map(to_key, to_value) => {
+                let ca = ca.rechunk();
+                let arr = ca.downcast_as_array();
+                // SAFETY: inner dtype is passed correctly
+                let entries = unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        PlSmallStr::EMPTY,
+                        vec![arr.values().clone()],
+                        ca.inner_dtype(),
+                    )
+                };
+                let entries = entries.struct_()?.fields_as_series();
+                let [key, value] = entries.as_slice() else {
+                    polars_bail!(
+                        InvalidOperation: "cannot cast '{:?}' to '{:?}': map entries need exactly two fields",
+                        ca.dtype(), dtype,
+                    )
+                };
+
+                let key = key.cast_with_options(to_key, options)?;
+                let value = value.cast_with_options(to_value, options)?;
+                let storage = map_storage_from_entries(ca.name().clone(), arr, key, value)?;
+
+                Ok(MapChunked::try_from_storage(dtype.clone(), storage)?.into_series())
             },
             _ => {
                 polars_bail!(
