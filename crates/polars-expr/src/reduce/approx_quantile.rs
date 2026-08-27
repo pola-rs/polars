@@ -1,6 +1,6 @@
 use std::fmt;
 
-use polars_compute::approx_quantile::ReqSketchBounded;
+use polars_compute::approx_quantile::req::ReqSketch;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::total_ord::TotalOrd;
 use rand::SeedableRng;
@@ -64,10 +64,10 @@ where
     T::Native: Clone + TotalOrd + fmt::Debug,
 {
     type Dtype = T;
-    type Value = ReqSketchBounded<T::Native>;
+    type Value = ReqSketch<T::Native>;
 
     fn init(&self) -> Self::Value {
-        ReqSketchBounded::new(self.error, 1000_000, true)
+        ReqSketch::new(self.error, 1000_000, true)
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {

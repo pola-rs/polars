@@ -19,7 +19,6 @@ pub use kll::KLLSketch;
 use polars_utils::total_ord::TotalOrd;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
-pub use req::ReqSketchBounded;
 
 // TODO: [amber] Reseed on clone()
 
@@ -82,7 +81,7 @@ fn invalid_state() -> ! {
     panic!("invalid state")
 }
 
-mod kll {
+pub mod kll {
     use super::*;
 
     // [amber]
@@ -433,7 +432,7 @@ mod kll {
     }
 }
 
-mod req {
+pub mod req {
     use super::*;
 
     /// KLL calls this `δ`. Equivalent to a 99.9999% success rate per queried value.
@@ -494,9 +493,11 @@ mod req {
         /// *level* h-1.  The bottom-level compactor has *level* h,
         /// and height *0*. So the order of `levels` is *reversed* wrt `items`.
         items: Vec<T>,
+        /// Scratch Vec to reduce an allocation during merging.
+        scratch: Vec<T>,
         levels: Vec<Level>,
         /// Bit that specifies if this sketch is high-rank-accurate or low-rank-accurate.
-        hra: bool,
+        is_hra: bool,
         /// The total number of items this sketch can ingest befor it becomes
         /// inaccurate wrt the error parameter.
         n: usize,
@@ -519,21 +520,22 @@ mod req {
 
     #[derive(Debug, Clone)]
     #[repr(transparent)]
-    struct ReqSketch<T: fmt::Debug + Clone + TotalOrd>(State<T>);
+    pub struct ReqSketch<T: fmt::Debug + Clone + TotalOrd>(State<T>);
 
     impl<T: fmt::Debug + Clone + TotalOrd> ReqSketch<T> {
-        fn new(error: f64, n: usize, hra: bool) -> Self {
+        pub fn new(error: f64, n: usize, hra: bool) -> Self {
             let k = compute_k(error, FAILURE_PROBABILITY, n);
             assert!(n > k, "n must be greater than k");
             let state = IngestingState {
                 items: Vec::new(),
+                scratch: Vec::new(),
                 levels: vec![Level {
                     offset: 0,
                     size: 0,
                     compaction_schedule: 0,
                     coin: false,
                 }],
-                hra,
+                is_hra: hra,
                 n,
                 error,
                 k,
@@ -550,6 +552,16 @@ mod req {
                 invalid_state()
             };
             state.update(array);
+        }
+
+        pub fn merge(&mut self, other: Self) {
+            let State::Ingesting(other) = other.0 else {
+                invalid_state()
+            };
+            let State::Ingesting(state) = &mut self.0 else {
+                invalid_state()
+            };
+            state.merge(other);
         }
 
         pub fn finalize(&mut self) {
@@ -597,7 +609,7 @@ mod req {
         fn close_out(&mut self) {
             self.n = 2 * self.n;
             self.k = compute_k(self.error, FAILURE_PROBABILITY, self.n).max(self.k);
-            self.b = compactor_threshold_b(self.k, self.b).max(self.b);
+            self.b = compactor_threshold_b(self.k, self.n).max(self.b);
         }
 
         fn is_compactor_full(&self, level: usize) -> bool {
@@ -606,12 +618,12 @@ mod req {
 
         /// Compact all of the compactors from base to top.
         fn compact_if_needed(&mut self, level: usize) {
-            while self.is_compactor_full(level) {
+            if self.is_compactor_full(level) {
                 let old_size = self.levels[level].size;
                 self.compact_level_once(level);
                 debug_assert!(self.levels[level].size < old_size);
             }
-            debug_assert!(self.levels[level].size < self.b);
+            debug_assert!(!self.is_compactor_full(level))
         }
 
         fn add_new_compactor(&mut self) {
@@ -633,7 +645,7 @@ mod req {
                 self.levels[level].offset
             );
 
-            let compare = |a: &T, b: &T| match self.hra {
+            let compare = |a: &T, b: &T| match self.is_hra {
                 false => TotalOrd::tot_cmp(a, b),
                 true => TotalOrd::tot_cmp(a, b).reverse(),
             };
@@ -653,8 +665,8 @@ mod req {
             };
             self.levels[level].coin = coin;
 
-            let compactor =
-                &mut self.items[self.levels[level].offset..self.levels[level].offset + self.b];
+            let compactor = &mut self.items
+                [self.levels[level].offset..self.levels[level].offset + self.levels[level].size];
             // Stash the protected items at the end of the compactor.
             compactor.select_nth_unstable_by(l_c, |a, b| compare(a, b).reverse());
             // Sort the items that we will be promoting.
@@ -691,6 +703,53 @@ mod req {
 
             self.levels[level].compaction_schedule += 1;
             self.compact_if_needed(level + 1);
+        }
+
+        /// Merge `other` into `self`: level `h` of `other` is appended to level
+        /// `h` of `self`, after which the compactors are brought back below
+        /// their capacity.
+        ///
+        /// The item pool grows to hold both sketches, but no temporary buffers
+        /// are allocated -- `other`'s pool is appended and then rotated into
+        /// place, one compactor at a time.
+        fn merge(&mut self, mut other: Self) {
+            assert_eq!(
+                self.is_hra, other.is_hra,
+                "cannot merge a high-rank-accurate sketch with a low-rank-accurate one"
+            );
+
+            // We need a compactor for every one of `other`'s levels.
+            while self.levels.len() < other.levels.len() {
+                self.add_new_compactor();
+            }
+
+            let scratch = [&mut self.scratch, &mut other.scratch]
+                .into_iter()
+                .max_by_key(|v| v.capacity())
+                .unwrap();
+            mem::swap(&mut self.items, scratch);
+            let items1 = scratch;
+            let items2 = &mut other.items;
+            self.items.clear();
+            self.items.reserve_exact(items1.len() + items2.len());
+
+            let mut next_offset = 0;
+            for (l1, l2) in Iterator::zip(self.levels.iter_mut(), other.levels.iter()) {
+                let compactor1 = &items1[l1.offset..l1.offset + l1.size];
+                let compactor2 = &items2[l2.offset..l2.offset + l2.size];
+                self.items.extend_from_slice(compactor1);
+                self.items.extend_from_slice(compactor2);
+                l1.offset = next_offset;
+                l1.size = l1.size + l2.size;
+                next_offset = l1.offset + l1.size;
+                // TODO: [amber] Merge the compactor schedule states.
+                // TODO: [amber] Merge the coins.
+            }
+
+            // TODO: [amber]
+            // Reparameterise for the combined stream, then restore the invariant
+            // that no compactor is over capacity.
+            todo!()
         }
 
         fn finalize(self) -> FinalizedState<T> {
