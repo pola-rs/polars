@@ -14,6 +14,7 @@ const UNSPILL_EVENT_HALF_LIFE_SEC: f64 = 5.0;
 const NANOSECONDS_IN_SECOND: f64 = 1e9;
 
 pub struct SpillContextStatistics {
+    prefetch_without_spill_streak: RelaxedCell<u64>,
     score_cache: RelaxedCell<u64>,
     stats: Mutex<Statistics>,
 }
@@ -21,6 +22,7 @@ pub struct SpillContextStatistics {
 impl SpillContextStatistics {
     pub(crate) fn new(name: PlSmallStr) -> Self {
         Self {
+            prefetch_without_spill_streak: RelaxedCell::new_u64(0),
             // TODO: starting score based on context.
             score_cache: RelaxedCell::new_u64(UNEXPLORED_SCORE.to_bits()),
             stats: Mutex::new(Statistics {
@@ -152,6 +154,18 @@ impl SpillContextStatistics {
         let mut stats = self.stats.lock().unwrap();
         stats.successful_explorations += success as u64;
         stats.bandit_explore_success += success as u64 as f64;
+    }
+
+    pub fn add_spill_start(&self) {
+        self.prefetch_without_spill_streak.store(0);
+    }
+
+    pub fn suggested_prefetch_amount(&self) -> u64 {
+        self.prefetch_without_spill_streak.load()
+    }
+
+    pub fn add_prefetch_start(&self) {
+        self.prefetch_without_spill_streak.fetch_add(1);
     }
 
     pub fn add_failed_spill(&self, spill_start: Instant) {

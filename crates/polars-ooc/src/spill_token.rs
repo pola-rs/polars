@@ -256,12 +256,29 @@ impl<T: Spillable> SpillTokenInner<T> {
     async unsafe fn unspill_while_locked(slf: &Arc<Self>, prefetch: bool) {
         debug_assert!(slf.state.load(Ordering::Relaxed) & SPILLED_BIT == SPILLED_BIT);
 
+        // First, before anything else, we invalidate previous entries in our
+        // bookkeeping, and ensure we reinsert when this pin ends. We hold the
+        // lock to not race with calls to register().
+        let cur_ctx = {
+            let lock = slf.lock.lock().unwrap();
+            slf.registration_id.fetch_add(1, Ordering::Release);
+            slf.state
+                .fetch_or(REINSERT_WHEN_SPILLABLE_BIT, Ordering::Release);
+            lock.cur_ctx.clone()
+        };
+
+        // Now that we have invalidated ourselves from the bookkeeping we can
+        // fire off a prefetch request to our context if possible.
+        if let Some((ctx, _param)) = cur_ctx {
+            ctx.0.schedule_prefetch(ctx.1);
+        }
+
         // Do the unspill.
         let unspill_start = Instant::now();
         let spilled = unsafe { (*slf.spilled_value.get()).as_ref().unwrap() };
         let value = T::unspill(spilled).await;
         let old_slot = unsafe { slf.value_slot.get().replace(ValueSlot::InMemory(value)) };
-        slf.state.fetch_sub(SPILLED_BIT, Ordering::Relaxed);
+        slf.state.fetch_sub(SPILLED_BIT, Ordering::Release);
 
         let ValueSlot::Spilled {
             n_bytes,
@@ -283,13 +300,6 @@ impl<T: Spillable> SpillTokenInner<T> {
                 prefetch,
             );
         }
-
-        // Invalidate previous entries in our bookkeeping, and ensure we reinsert when this pin ends.
-        // We hold the lock to not race with calls to register().
-        let _lock = slf.lock.lock().unwrap();
-        slf.registration_id.fetch_add(1, Ordering::Release);
-        slf.state
-            .fetch_or(REINSERT_WHEN_SPILLABLE_BIT, Ordering::Release);
     }
 
     /// # Safety
@@ -468,6 +478,9 @@ pub(crate) trait DynSpillToken: Send + Sync + 'static {
         reason: InsertReason,
     );
 
+    /// Loads this SpillToken from disk, if it is.
+    fn prefetch(self: Arc<Self>) -> Pin<Box<dyn Future<Output = ()> + Send>>;
+
     /// Tries to spill this token. Returns true if successful.
     ///
     /// May return Err if the token is already spilled, or is currently pinned.
@@ -574,6 +587,12 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
         }
     }
 
+    fn prefetch(self: Arc<Self>) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        Box::pin(async move {
+            Self::pin_impl(&self, true).await;
+        })
+    }
+
     fn try_spill(
         self: Arc<Self>,
         stats_ctx: WeakSpillContext,
@@ -595,6 +614,10 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
         if state & SPILLED_BIT != 0 {
             self.wake_waiters(self.state.fetch_sub(LOCK_BIT, Ordering::AcqRel));
             return Err(TrySpillError::AlreadySpilled);
+        }
+
+        if let Some(strong) = stats_ctx.upgrade() {
+            strong.stats().add_spill_start()
         }
 
         Ok(Box::pin(async move {
