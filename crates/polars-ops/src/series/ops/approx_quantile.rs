@@ -1,10 +1,15 @@
-use polars_compute::approx_quantile::req::ReqSketch;
+use polars_compute::approx_quantile::{ApproxQuantileMethod, Sketch};
 use polars_core::prelude::*;
 
-pub fn approx_quantile(s: &Column, quantile: &Series, error: f64) -> PolarsResult<Scalar> {
+pub fn approx_quantile(
+    s: &Column,
+    quantile: &Series,
+    error: f64,
+    method: &ApproxQuantileMethod,
+) -> PolarsResult<Scalar> {
     let s = s.as_materialized_series();
     let ca: &Float64Chunked = s.as_ref().as_ref();
-    let mut sketch = ReqSketch::new(error, true);
+    let mut sketch = Sketch::new(method, error);
     for item in ca.iter() {
         if let Some(item) = item {
             sketch.update(&[item]);

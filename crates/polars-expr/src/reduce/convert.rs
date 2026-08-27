@@ -136,13 +136,13 @@ pub fn into_reduction(
         #[cfg(feature = "approx_quantile")]
         AExpr::Function {
             input: inner_exprs,
-            function: IRFunctionExpr::ApproxQuantile { error },
+            function: IRFunctionExpr::ApproxQuantile { method, error },
             options: _,
         } => {
             assert!(inner_exprs.len() == 2);
             let input = inner_exprs[0].node();
             let quantiles = inner_exprs[1].node();
-            let out = new_approx_quantile_reduction(get_dt(input)?, *error)?;
+            let out = new_approx_quantile_reduction(get_dt(input)?, method.clone(), *error)?;
             return Ok((out, vec![input, quantiles]));
         },
 

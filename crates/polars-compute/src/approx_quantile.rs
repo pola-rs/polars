@@ -1,9 +1,46 @@
+use std::ops::RangeInclusive;
 use std::{fmt, mem};
 
 pub use kll::KLLSketch;
 use polars_utils::total_ord::TotalOrd;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
+pub use req::{DoubleReqSketch, ReqSketch};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum ApproxQuantileMethod {
+    Auto,
+    KLL,
+    ReqSketch { hra: bool },
+    DoubleReqSketch,
+}
+
+/// Quantiles in this range are served well enough by KLL's uniform error.
+const KLL_RANGE: RangeInclusive<f64> = 0.05..=0.95;
+
+impl ApproxQuantileMethod {
+    /// Replace `Auto` by a concrete method. Set `quantiles` to `None` if the
+    /// quantiles are not known at plan time.
+    pub fn resolve(&self, quantiles: Option<&[f64]>) -> Self {
+        use ApproxQuantileMethod as M;
+        let M::Auto = self else {
+            return self.clone();
+        };
+        let Some(quantiles) = quantiles else {
+            return M::DoubleReqSketch;
+        };
+        let lo = quantiles.iter().any(|q| *q < *KLL_RANGE.start());
+        let hi = quantiles.iter().any(|q| *q > *KLL_RANGE.end());
+        match (lo, hi) {
+            (false, false) => M::KLL,
+            (true, false) => M::ReqSketch { hra: false },
+            (false, true) => M::ReqSketch { hra: true },
+            (true, true) => M::DoubleReqSketch,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 struct FinalizedState<T: fmt::Debug + Clone + TotalOrd> {
@@ -158,8 +195,6 @@ pub mod kll {
                 k: self.k,
                 consumed_items: self.consumed_items,
                 compactor_capacity: self.compactor_capacity,
-                // Reseed: a clone that kept the state would draw the same
-                // promotion parities, correlating its error with the original's.
                 rng: rand::make_rng(),
                 scratch: self.scratch.clone(),
             }
@@ -530,8 +565,6 @@ pub mod req {
                 error: self.error,
                 k: self.k,
                 consumed_items: self.consumed_items,
-                // Reseed: a clone that kept the state would draw the same
-                // promotion parities, correlating its error with the original's.
                 rng: rand::make_rng(),
             }
         }
@@ -980,13 +1013,98 @@ fn merge_sorted<T: TotalOrd>(
     }
 }
 
+/// A sketch picked by [`ApproxQuantileMethod`].
+#[derive(Debug, Clone)]
+pub enum Sketch<T: fmt::Debug + Clone + TotalOrd> {
+    Kll(KLLSketch<T>),
+    Req(ReqSketch<T>),
+    DoubleReq(DoubleReqSketch<T>),
+}
+
+impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
+    pub fn new(method: &ApproxQuantileMethod, error: f64) -> Self {
+        match method {
+            ApproxQuantileMethod::Auto => unreachable!(),
+            ApproxQuantileMethod::KLL => Sketch::Kll(KLLSketch::new(error)),
+            ApproxQuantileMethod::ReqSketch { hra } => Sketch::Req(ReqSketch::new(error, *hra)),
+            ApproxQuantileMethod::DoubleReqSketch => Sketch::DoubleReq(DoubleReqSketch::new(error)),
+        }
+    }
+
+    #[inline]
+    pub fn update(&mut self, array: &[T]) {
+        match self {
+            Sketch::Kll(s) => s.update(array),
+            Sketch::Req(s) => s.update(array),
+            Sketch::DoubleReq(s) => s.update(array),
+        }
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        match (self, other) {
+            // TODO: [amber] KLLSketch has no merge yet.
+            (Sketch::Kll(_), Sketch::Kll(_)) => todo!(),
+            (Sketch::Req(a), Sketch::Req(b)) => a.merge(b),
+            (Sketch::DoubleReq(a), Sketch::DoubleReq(b)) => a.merge(b),
+            _ => panic!("cannot merge sketches of a different method"),
+        }
+    }
+
+    pub fn finalize(&mut self) {
+        match self {
+            Sketch::Kll(s) => s.finalize(),
+            Sketch::Req(s) => s.finalize(),
+            Sketch::DoubleReq(s) => s.finalize(),
+        }
+    }
+
+    pub fn estimate_rank(&self, value: &T) -> usize {
+        match self {
+            Sketch::Kll(s) => s.estimate_rank(value),
+            Sketch::Req(s) => s.estimate_rank(value),
+            Sketch::DoubleReq(s) => s.estimate_rank(value),
+        }
+    }
+
+    pub fn estimate_quantile(&self, quantile: f64) -> &T {
+        match self {
+            Sketch::Kll(s) => s.estimate_quantile(quantile),
+            Sketch::Req(s) => s.estimate_quantile(quantile),
+            Sketch::DoubleReq(s) => s.estimate_quantile(quantile),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::ApproxQuantileMethod;
     use super::kll::KLLSketch;
     use super::req::ReqSketch;
 
-    /// Two clones fed identical data must not make identical random choices,
-    /// or their compaction errors are perfectly correlated.
+    #[test]
+    fn auto_resolves_by_queried_quantiles() {
+        use ApproxQuantileMethod as M;
+        let auto = |qs: Option<&[f64]>| M::Auto.resolve(qs);
+
+        assert_eq!(auto(None), M::DoubleReqSketch);
+        assert_eq!(auto(Some(&[])), M::KLL);
+        assert_eq!(auto(Some(&[0.5])), M::KLL);
+        // The bounds themselves are in range.
+        assert_eq!(auto(Some(&[0.05, 0.95])), M::KLL);
+        assert_eq!(auto(Some(&[0.01])), M::ReqSketch { hra: false });
+        assert_eq!(auto(Some(&[0.99])), M::ReqSketch { hra: true });
+        assert_eq!(auto(Some(&[0.0, 0.5])), M::ReqSketch { hra: false });
+        assert_eq!(auto(Some(&[0.5, 1.0])), M::ReqSketch { hra: true });
+        assert_eq!(auto(Some(&[0.01, 0.99])), M::DoubleReqSketch);
+
+        // An explicit method is never overridden.
+        for method in [M::KLL, M::ReqSketch { hra: false }, M::DoubleReqSketch] {
+            assert_eq!(method.resolve(None), method);
+            assert_eq!(method.resolve(Some(&[0.01, 0.99])), method);
+        }
+    }
+
+    /// Clones must not make identical random choices.
     #[test]
     fn clones_are_reseeded() {
         const QUANTILES: [f64; 5] = [0.1, 0.3, 0.5, 0.7, 0.9];

@@ -918,7 +918,7 @@ pub(super) fn convert_functions(
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => I::ApproxNUnique,
         #[cfg(feature = "approx_quantile")]
-        F::ApproxQuantile { error } => I::ApproxQuantile { error },
+        F::ApproxQuantile { method, error } => I::ApproxQuantile { method, error },
         F::Coalesce => I::Coalesce,
         #[cfg(feature = "diff")]
         F::Diff(n) => {

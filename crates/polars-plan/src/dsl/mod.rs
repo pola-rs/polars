@@ -72,6 +72,8 @@ pub use meta::*;
 pub use name::*;
 pub use options::*;
 pub use plan::*;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
@@ -983,8 +985,16 @@ impl Expr {
 
     /// Get the approximate quantile value.
     #[cfg(feature = "approx_quantile")]
-    pub fn approx_quantile<E: Into<Expr>>(self, quantile: E, error: f64) -> Self {
-        self.map_binary(FunctionExpr::ApproxQuantile { error }, quantile.into())
+    pub fn approx_quantile<E: Into<Expr>>(
+        self,
+        quantile: E,
+        error: f64,
+        method: ApproxQuantileMethod,
+    ) -> Self {
+        self.map_binary(
+            FunctionExpr::ApproxQuantile { method, error },
+            quantile.into(),
+        )
     }
 
     /// Bitwise "and" operation.

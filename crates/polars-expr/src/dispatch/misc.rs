@@ -1,3 +1,5 @@
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use polars_core::prelude::*;
@@ -37,7 +39,11 @@ pub(super) fn approx_n_unique(s: &Column) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "approx_quantile")]
-pub(super) fn approx_quantile(s: &[Column], error: f64) -> PolarsResult<Column> {
+pub(super) fn approx_quantile(
+    s: &[Column],
+    method: &ApproxQuantileMethod,
+    error: f64,
+) -> PolarsResult<Column> {
     assert!(s.len() == 2);
     let input = &s[0];
     let mut quantile = s[1].as_materialized_series();
@@ -56,7 +62,7 @@ pub(super) fn approx_quantile(s: &[Column], error: f64) -> PolarsResult<Column> 
         quantile = &inner_s;
     }
 
-    let sc = polars_ops::prelude::approx_quantile(input, &quantile, error)?;
+    let sc = polars_ops::prelude::approx_quantile(input, &quantile, error, method)?;
     Ok(sc.into_column(input.name().clone()))
 }
 

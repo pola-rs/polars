@@ -343,7 +343,9 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "approx_unique")]
         F::ApproxNUnique => map!(misc::approx_n_unique),
         #[cfg(feature = "approx_quantile")]
-        F::ApproxQuantile { error } => map_as_slice!(misc::approx_quantile, error),
+        F::ApproxQuantile { method, error } => {
+            map_as_slice!(misc::approx_quantile, &method, error)
+        },
         F::Coalesce => map_as_slice!(misc::coalesce),
         #[cfg(feature = "diff")]
         F::Diff(null_behavior) => map_as_slice!(misc::diff, null_behavior),

@@ -4,6 +4,8 @@ use std::ops::Neg;
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
 use polars_plan::plans::{
@@ -11,6 +13,7 @@ use polars_plan::plans::{
 };
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 
 use super::datatype::PyDataTypeExpr;
@@ -461,11 +464,32 @@ impl PyExpr {
     }
 
     #[cfg(feature = "approx_quantile")]
-    fn approx_quantile(&self, quantile: Self, error: f64) -> Self {
-        self.inner
+    fn approx_quantile(
+        &self,
+        quantile: Bound<'_, PyAny>,
+        error: f64,
+        method: Wrap<ApproxQuantileMethod>,
+    ) -> PyResult<Self> {
+        let (quantile, quantiles) = if let Ok(expr) = quantile.extract::<PyExpr>() {
+            (expr.inner, None)
+        } else if let Ok(q) = quantile.extract::<f64>() {
+            (lit(q), Some(vec![q]))
+        } else if let Ok(qs) = quantile.extract::<Vec<f64>>() {
+            let s = Series::new(PlSmallStr::from_static("literal"), qs.as_slice())
+                .implode()
+                .map_err(PyPolarsErr::from)?
+                .into_series();
+            (lit(s), Some(qs))
+        } else {
+            return Err(PyTypeError::new_err(
+                "`quantile` must be a float, a list of floats, or an expression",
+            ));
+        };
+        Ok(self
+            .inner
             .clone()
-            .approx_quantile(quantile.inner, error)
-            .into()
+            .approx_quantile(quantile, error, method.0.resolve(quantiles.as_deref()))
+            .into())
     }
 
     fn is_first_distinct(&self) -> Self {

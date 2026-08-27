@@ -51,6 +51,8 @@ pub use correlation::IRCorrelationMethod;
 #[cfg(feature = "fused")]
 pub use fused::FusedOperator;
 pub use list::IRListFunction;
+#[cfg(feature = "approx_quantile")]
+use polars_compute::approx_quantile::ApproxQuantileMethod;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
@@ -245,8 +247,8 @@ pub enum IRFunctionExpr {
     ApproxNUnique,
     #[cfg(feature = "approx_quantile")]
     ApproxQuantile {
-        // TODO: [amber] What kind of sketch?
         // TODO: [amber] What kind of interpolation method?
+        method: ApproxQuantileMethod,
         error: f64,
     },
     Coalesce,
@@ -614,7 +616,10 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => {},
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantile { error } => error.to_bits().hash(state),
+            ApproxQuantile { method, error } => {
+                method.hash(state);
+                error.to_bits().hash(state);
+            },
             Coalesce => {},
             #[cfg(feature = "pct_change")]
             PctChange => {},
@@ -855,7 +860,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => "approx_n_unique",
             #[cfg(feature = "approx_quantile")]
-            ApproxQuantile { .. } => "approx_quantilesketch",
+            ApproxQuantile { .. } => "approx_quantile",
             Coalesce => "coalesce",
             #[cfg(feature = "diff")]
             Diff(_) => "diff",
