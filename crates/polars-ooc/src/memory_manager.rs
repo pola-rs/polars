@@ -6,7 +6,9 @@ use polars_async::executor::TaskPriority;
 use polars_config::config;
 use polars_utils::total_ord::TotalOrd;
 use polars_utils::with_drop::WithDrop;
-use tokio::sync::{Mutex as AsyncMutex, Semaphore as AsyncSemaphore};
+use tokio::sync::{
+    Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore as AsyncSemaphore,
+};
 
 // How much worse than the best achieved (sample) score are we willing to look
 // for spillables.
@@ -16,6 +18,8 @@ const EXPLORE_BEYOND_BEST_SCORE_THRESHOLD: f64 = 20.0;
 const SPILL_FRAME_BATCH_SIZE: u64 = 256;
 
 const MAX_PARALLEL_SPILL_TASKS: usize = 64;
+
+const MAX_PARALLEL_PREFETCH_TASKS: usize = 64;
 
 use crate::WeakSpillContext;
 use crate::spill_context::{InsertReason, RegisteredSpillToken, UNEXPLORED_SCORE};
@@ -32,6 +36,7 @@ pub struct MemoryManager {
     contexts: RwLock<Vec<WeakSpillContext>>,
     finding_spill_lock: AsyncMutex<()>,
     spill_semaphore: Arc<AsyncSemaphore>,
+    prefetch_semaphore: Arc<AsyncSemaphore>,
     est_spill_in_progress: AtomicU64,
     spills_exist: AtomicBool,
 }
@@ -42,6 +47,7 @@ impl MemoryManager {
             contexts: RwLock::new(Vec::new()),
             finding_spill_lock: AsyncMutex::new(()),
             spill_semaphore: Arc::new(AsyncSemaphore::new(MAX_PARALLEL_SPILL_TASKS)),
+            prefetch_semaphore: Arc::new(AsyncSemaphore::new(MAX_PARALLEL_PREFETCH_TASKS)),
             est_spill_in_progress: AtomicU64::new(0),
             spills_exist: AtomicBool::new(false),
         }
@@ -60,6 +66,10 @@ impl MemoryManager {
 
         let usage = crate::estimate_memory_usage();
         usage < config().ooc_memory_prefetch_bytes()
+    }
+
+    pub(crate) fn try_get_prefetch_permit(&self) -> Option<OwnedSemaphorePermit> {
+        self.prefetch_semaphore.clone().try_acquire_owned().ok()
     }
 
     fn clean_contexts(&self) {
