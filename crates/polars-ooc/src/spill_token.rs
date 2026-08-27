@@ -453,6 +453,9 @@ pub(crate) trait DynSpillToken: Send + Sync + 'static {
     /// Register this spill token at a new context, returning the registration ID.
     fn register(self: Arc<Self>, ctx: WeakSpillContext, param: SpillContextParam) -> u32;
 
+    /// Gets the current context this spill token is registered, if any.
+    fn current_ctx(&self) -> Option<(WeakSpillContext, SpillContextParam)>;
+
     /// Unregisters this spill token from its current context, returning where
     /// it was registered, if anywhere.
     fn unregister(&self) -> Option<(WeakSpillContext, SpillContextParam)>;
@@ -515,6 +518,11 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
         let dyn_arc: Arc<dyn DynSpillToken> = self;
         ctx.0.insert(&dyn_arc, reg_id, ctx.1, reason);
         reg_id
+    }
+
+    fn current_ctx(&self) -> Option<(WeakSpillContext, SpillContextParam)> {
+        let lock = self.lock.lock().unwrap();
+        lock.cur_ctx.clone()
     }
 
     fn unregister(&self) -> Option<(WeakSpillContext, SpillContextParam)> {
@@ -722,12 +730,17 @@ impl<T: Spillable> SpillToken<T> {
         let inner: Arc<SpillTokenInner<T>> = self.inner.clone();
         inner
     }
+    
+    /// Gets the current context this spill token is registered, if any.
+    pub fn current_ctx(&self) -> Option<(WeakSpillContext, SpillContextParam)> {
+        self.inner.current_ctx()
+    }
 
     /// Unregisters this spill token from its current context, if any, returning it.
     pub fn unregister(&mut self) -> Option<(WeakSpillContext, SpillContextParam)> {
         self.inner.unregister()
     }
-
+    
     /// Try to get a reference to the underlying value, returning None if it was spilled.
     pub fn try_get(&self) -> Option<PinnedRef<'_, T>> {
         SpillTokenInner::try_pin(&self.inner).ok()

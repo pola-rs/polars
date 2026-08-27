@@ -161,7 +161,7 @@ impl SpillContextStatistics {
     }
 
     pub fn suggested_prefetch_amount(&self) -> u64 {
-        self.prefetch_without_spill_streak.load()
+        1 + self.prefetch_without_spill_streak.load()
     }
 
     pub fn add_prefetch_start(&self) {
