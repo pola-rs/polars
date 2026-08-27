@@ -657,15 +657,18 @@ def test_list_get_logical_types() -> None:
 
 
 def test_list_gather_logical_type() -> None:
-    df = pl.DataFrame(
-        {"foo": [["foo", "foo", "bar"]], "bar": [[5.0, 10.0, 12.0]]}
-    ).with_columns(pl.col("foo").cast(pl.List(pl.Categorical)))
+    def chunk(name: str, value: float) -> pl.DataFrame:
+        return pl.DataFrame(
+            {"foo": [[name, name, "bar"]], "bar": [[value, 10.0, 12.0]]}
+        ).with_columns(pl.col("foo").cast(pl.List(pl.Categorical)))
 
-    df = pl.concat([df, df], rechunk=False)
+    # The two rows have to differ: concatenating chunks that hold the same single value
+    # keeps them as one scalar column.
+    df = pl.concat([chunk("foo", 5.0), chunk("baz", 6.0)], rechunk=False)
     assert df.n_chunks() == 2
     assert df.select(pl.all().gather([0, 1])).to_dict(as_series=False) == {
-        "foo": [["foo", "foo", "bar"], ["foo", "foo", "bar"]],
-        "bar": [[5.0, 10.0, 12.0], [5.0, 10.0, 12.0]],
+        "foo": [["foo", "foo", "bar"], ["baz", "baz", "bar"]],
+        "bar": [[5.0, 10.0, 12.0], [6.0, 10.0, 12.0]],
     }
 
 

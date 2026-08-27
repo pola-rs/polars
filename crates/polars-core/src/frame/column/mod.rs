@@ -1089,13 +1089,30 @@ impl Column {
             .vec_hash_combine(build_hasher, hashes)
     }
 
+    /// Try to append `other` to `self` without materializing, when both are scalar columns.
+    ///
+    /// Returns whether that was possible.
+    fn try_append_scalar(&mut self, other: &Column) -> bool {
+        let (Column::Scalar(lhs), Column::Scalar(rhs)) = (&mut *self, other) else {
+            return false;
+        };
+        lhs.try_append(rhs)
+    }
+
     pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {
-        // @scalar-opt
+        if self.try_append_scalar(other) {
+            return Ok(self);
+        }
+
         self.into_materialized_series()
             .append(other.as_materialized_series())?;
         Ok(self)
     }
     pub fn append_owned(&mut self, other: Column) -> PolarsResult<&mut Self> {
+        if self.try_append_scalar(&other) {
+            return Ok(self);
+        }
+
         self.into_materialized_series()
             .append_owned(other.take_materialized_series())?;
         Ok(self)
@@ -1266,7 +1283,12 @@ impl Column {
     }
 
     pub fn extend(&mut self, other: &Column) -> PolarsResult<&mut Self> {
-        // @scalar-opt
+        // `extend` only differs from `append` in the chunk layout of the result, and a
+        // `ScalarColumn` has no chunks to lay out.
+        if self.try_append_scalar(other) {
+            return Ok(self);
+        }
+
         self.into_materialized_series()
             .extend(other.as_materialized_series())?;
         Ok(self)

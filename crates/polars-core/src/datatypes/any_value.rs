@@ -1165,18 +1165,23 @@ impl AnyValue<'_> {
         ) -> impl ExactSizeIterator<Item = AnyValue<'a>> {
             v.0.iter().map(|v| v.as_borrowed())
         }
-        fn struct_value_iter(
+        fn struct_value_iter<'a>(
             idx: usize,
-            arr: &StructArray,
-        ) -> impl ExactSizeIterator<Item = AnyValue<'_>> {
+            arr: &'a StructArray,
+            fields: &'a [Field],
+        ) -> impl ExactSizeIterator<Item = AnyValue<'a>> {
             assert!(idx < arr.len());
+            assert_eq!(arr.values().len(), fields.len());
 
-            arr.values().iter().map(move |field_arr| unsafe {
-                // SAFETY: We asserted before that idx is smaller than the array length. Since it
-                // is an invariant of StructArray that all fields have the same length this is fine
-                // to do.
-                field_arr.get_unchecked(idx)
-            })
+            arr.values()
+                .iter()
+                .zip(fields)
+                .map(move |(field_arr, field)| unsafe {
+                    // SAFETY: We asserted before that idx is smaller than the array length. Since
+                    // it is an invariant of StructArray that all fields have the same length this
+                    // is fine to do.
+                    arr_to_any_value(field_arr.as_ref(), idx, &field.dtype)
+                })
         }
 
         fn struct_eq_missing<'a>(
@@ -1284,21 +1289,21 @@ impl AnyValue<'_> {
                 null_equal,
             ),
             #[cfg(feature = "dtype-struct")]
-            (StructOwned(l), Struct(idx, arr, _)) => struct_eq_missing(
+            (StructOwned(l), Struct(idx, arr, fields)) => struct_eq_missing(
                 struct_owned_value_iter(l.as_ref()),
-                struct_value_iter(*idx, arr),
+                struct_value_iter(*idx, arr, fields),
                 null_equal,
             ),
             #[cfg(feature = "dtype-struct")]
-            (Struct(idx, arr, _), StructOwned(r)) => struct_eq_missing(
-                struct_value_iter(*idx, arr),
+            (Struct(idx, arr, fields), StructOwned(r)) => struct_eq_missing(
+                struct_value_iter(*idx, arr, fields),
                 struct_owned_value_iter(r.as_ref()),
                 null_equal,
             ),
             #[cfg(feature = "dtype-struct")]
-            (Struct(l_idx, l_arr, _), Struct(r_idx, r_arr, _)) => struct_eq_missing(
-                struct_value_iter(*l_idx, l_arr),
-                struct_value_iter(*r_idx, r_arr),
+            (Struct(l_idx, l_arr, l_fields), Struct(r_idx, r_arr, r_fields)) => struct_eq_missing(
+                struct_value_iter(*l_idx, l_arr, l_fields),
+                struct_value_iter(*r_idx, r_arr, r_fields),
                 null_equal,
             ),
             #[cfg(feature = "dtype-decimal")]
@@ -1483,172 +1488,6 @@ fn struct_to_avs_static(idx: usize, arr: &StructArray, fields: &[Field]) -> Vec<
             unsafe { arr_to_any_value(arr.as_ref(), idx, &field.dtype) }.into_static()
         })
         .collect()
-}
-
-pub trait GetAnyValue {
-    /// # Safety
-    ///
-    /// Get an value without doing bound checks.
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_>;
-}
-
-impl GetAnyValue for ArrayRef {
-    // Should only be called with physical types
-    unsafe fn get_unchecked(&self, index: usize) -> AnyValue<'_> {
-        match self.dtype() {
-            ArrowDataType::Int8 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<i8>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::Int8(v),
-                }
-            },
-            ArrowDataType::Int16 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<i16>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::Int16(v),
-                }
-            },
-            ArrowDataType::Int32 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<i32>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::Int32(v),
-                }
-            },
-            ArrowDataType::Int64 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<i64>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::Int64(v),
-                }
-            },
-            ArrowDataType::Int128 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<i128>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::Int128(v),
-                }
-            },
-            ArrowDataType::UInt8 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<u8>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::UInt8(v),
-                }
-            },
-            ArrowDataType::UInt16 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<u16>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::UInt16(v),
-                }
-            },
-            ArrowDataType::UInt32 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<u32>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::UInt32(v),
-                }
-            },
-            ArrowDataType::UInt64 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<u64>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::UInt64(v),
-                }
-            },
-            ArrowDataType::UInt128 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<u128>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::UInt128(v),
-                }
-            },
-            ArrowDataType::Float16 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<pf16>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::Float16(v),
-                }
-            },
-            ArrowDataType::Float32 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<f32>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::Float32(v),
-                }
-            },
-            ArrowDataType::Float64 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<PrimitiveArray<f64>>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::Float64(v),
-                }
-            },
-            ArrowDataType::Boolean => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<BooleanArray>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::Boolean(v),
-                }
-            },
-            ArrowDataType::LargeUtf8 => {
-                let arr = self
-                    .as_any()
-                    .downcast_ref::<LargeStringArray>()
-                    .unwrap_unchecked();
-                match arr.get_unchecked(index) {
-                    None => AnyValue::Null,
-                    Some(v) => AnyValue::String(v),
-                }
-            },
-            _ => unimplemented!(),
-        }
-    }
 }
 
 impl<K: NumericNative> From<K> for AnyValue<'static> {

@@ -1466,11 +1466,15 @@ pub fn lower_ir(
                 .sortedness
                 .are_keys_sorted_any(input, &keys, expr_arena, input_schema.as_ref())
                 .is_some();
+            let supports_row_encoding = |dt| !dt.contains_objects() && !dt.contains_unknown();
             if are_keys_sorted
                 && matches!(
                     options.keep_strategy,
                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any
                 )
+                && group_by_output_schema
+                    .iter_values()
+                    .all(supports_row_encoding)
             {
                 let sorted_uniq_node = phys_sm.insert(PhysNode::new(
                     input_schema.clone(),

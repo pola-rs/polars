@@ -13,7 +13,7 @@ use crate::chunked_array::cast::CastOptions;
 #[derive(Debug, Clone)]
 pub struct ScalarColumn {
     name: PlSmallStr,
-    // The value of this scalar may be incoherent when `length == 0`.
+    // The value of this scalar may be unspecified when `length == 0`.
     scalar: Scalar,
     length: usize,
 
@@ -193,6 +193,35 @@ impl ScalarColumn {
         }
 
         resized
+    }
+
+    /// Append `other` to `self`, keeping both unmaterialized.
+    ///
+    /// Returns whether that was possible. `self` is left untouched when it was not.
+    pub fn try_append(&mut self, other: &Self) -> bool {
+        // Unequal dtypes either need a cast or must raise.
+        if self.dtype() != other.dtype() {
+            return false;
+        }
+
+        // The value of a length-0 column is unspecified, so it takes on the other's.
+        if other.is_empty() {
+            return true;
+        }
+        if self.is_empty() {
+            let name = std::mem::take(&mut self.name);
+            *self = other.clone();
+            self.rename(name);
+            return true;
+        }
+
+        // The dtypes are already known to be equal, so only the values still differ.
+        if self.scalar.value() != other.scalar.value() {
+            return false;
+        }
+
+        *self = self.resize(self.length + other.length);
+        true
     }
 
     pub fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Self> {
