@@ -561,6 +561,7 @@ fn to_graph_rec<'a>(
             input,
             dtype,
             options,
+            input_name,
             ambiguous_is_raise,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -568,6 +569,7 @@ fn to_graph_rec<'a>(
                 nodes::strptime_infer::StrptimeInferNode::new(
                     dtype.clone(),
                     options.clone(),
+                    input_name.clone(),
                     *ambiguous_is_raise,
                 ),
                 [(input_key, input.port)],
