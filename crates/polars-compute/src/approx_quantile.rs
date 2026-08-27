@@ -76,15 +76,18 @@ impl<T: fmt::Debug + Clone + TotalOrd> FinalizedState<T> {
         todo!()
     }
 
-    fn estimate_quantile(&self, quantile: f64) -> &T {
+    fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
         assert!(
             (0.0..=1.0).contains(&quantile),
             "quantile should be between 0.0 and 1.0"
         );
+        if self.items.is_empty() {
+            return None;
+        }
         let estimated_rank =
             (quantile * self.num_items().saturating_sub(1) as f64).round() as usize + 1;
         let idx = estimate_quantile_index(self.cum_weight.as_ref(), estimated_rank);
-        &self.items[idx]
+        Some(&self.items[idx])
     }
 }
 
@@ -255,7 +258,7 @@ pub mod kll {
             state.estimate_rank(value)
         }
 
-        pub fn estimate_quantile(&self, quantile: f64) -> &T {
+        pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
             let State::Finalized(state) = &self.0 else {
                 invalid_state()
             };
@@ -650,7 +653,7 @@ pub mod req {
         }
 
         #[inline]
-        pub fn estimate_quantile(&self, quantile: f64) -> &T {
+        pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
             let State::Finalized(state) = &self.0 else {
                 invalid_state()
             };
@@ -705,7 +708,7 @@ pub mod req {
             }
         }
 
-        pub fn estimate_quantile(&self, quantile: f64) -> &T {
+        pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
             match quantile <= 0.5 {
                 true => self.lra.estimate_quantile(quantile),
                 false => self.hra.estimate_quantile(quantile),
@@ -1066,7 +1069,7 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
         }
     }
 
-    pub fn estimate_quantile(&self, quantile: f64) -> &T {
+    pub fn estimate_quantile(&self, quantile: f64) -> Option<&T> {
         match self {
             Sketch::Kll(s) => s.estimate_quantile(quantile),
             Sketch::Req(s) => s.estimate_quantile(quantile),

@@ -60,7 +60,6 @@ version_check = { workspace = true }
 nightly = ["polars-expr/nightly"]
 serde = ["dep:serde"]
 approx_unique = ["polars-plan/approx_unique", "polars-expr/approx_unique"]
-approx_quantile = ["polars-plan/approx_quantile", "polars-expr/approx_quantile"]
 cov = ["polars-plan/cov", "polars-expr/cov"]
 bigidx = ["polars-core/bigidx", "polars-plan/bigidx"]
 bitwise = ["polars-core/bitwise", "polars-plan/bitwise", "polars-expr/bitwise"]
