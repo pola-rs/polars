@@ -1900,10 +1900,16 @@ impl SQLContext {
                 .as_deref()
                 .map(|expr| parse_sql_expr(expr, self, Some(&schema)))
                 .transpose()?;
-            let disambiguated_projections;
-            (lf, disambiguated_projections) =
-                self.process_group_by(lf, &group_by_keys, projections, &explicit_aliases, having)?;
-            lf = self.process_order_by(lf, &query.order_by, None)?;
+            let (disambiguated_projections, order_by);
+            (lf, disambiguated_projections, order_by) = self.process_group_by(
+                lf,
+                &group_by_keys,
+                projections,
+                &explicit_aliases,
+                having,
+                &query.order_by,
+            )?;
+            lf = self.process_order_by(lf, &order_by, None)?;
 
             // Drop any extra columns (eg: added to maintain ORDER BY access to original cols)
             let output_cols: Vec<_> = disambiguated_projections
@@ -2779,6 +2785,50 @@ impl SQLContext {
         Ok(drop_subquery_placeholders(sorted, subquery_names))
     }
 
+    /// Point every aggregate restated in `ORDER BY` at the column that holds it.
+    ///
+    /// The sort runs on the aggregated frame, where the columns an aggregate
+    /// reads no longer exist. An aggregate the `SELECT` list already computes
+    /// is reached by its output name; any other is returned for the `GROUP BY`
+    /// to compute alongside them.
+    fn resolve_order_by_aggregates(
+        &mut self,
+        order_by: &Option<OrderBy>,
+        projections: &[Expr],
+        schema: &Schema,
+    ) -> PolarsResult<(Option<OrderBy>, Vec<Expr>)> {
+        let mut clause = order_by.clone();
+        let mut extra: Vec<Expr> = Vec::new();
+
+        if let Some(OrderBy {
+            kind: OrderByKind::Expressions(exprs),
+            ..
+        }) = &mut clause
+        {
+            for ob in exprs {
+                // Only an aggregate needs redirecting; a SELECT alias or an ordinal
+                // already resolves against the aggregated frame.
+                let Ok(parsed) = parse_sql_expr(&ob.expr, self, Some(schema)) else {
+                    continue;
+                };
+                if !has_expr(&parsed, |e| matches!(e, Expr::Agg(_) | Expr::Len)) {
+                    continue;
+                }
+                let parsed = strip_outer_alias(&parsed);
+                let name = match projections.iter().find(|p| strip_outer_alias(p) == parsed) {
+                    Some(projection) => projection.to_field(schema)?.name,
+                    None => {
+                        let name = format_pl_smallstr!("__POLARS_ORDERAGG_{}", extra.len());
+                        extra.push(parsed.alias(name.clone()));
+                        name
+                    },
+                };
+                ob.expr = SQLExpr::Identifier(Ident::new(name.as_str()));
+            }
+        }
+        Ok((clause, extra))
+    }
+
     fn process_group_by(
         &mut self,
         mut lf: LazyFrame,
@@ -2786,7 +2836,8 @@ impl SQLContext {
         projections: Vec<Expr>,
         explicit_aliases: &[bool],
         having: Option<Expr>,
-    ) -> PolarsResult<(LazyFrame, Vec<Expr>)> {
+        order_by: &Option<OrderBy>,
+    ) -> PolarsResult<(LazyFrame, Vec<Expr>, Option<OrderBy>)> {
         let schema_before = self.get_frame_schema(&mut lf)?;
         let group_by_keys_schema =
             expressions_to_schema(group_by_keys, &schema_before, |duplicate_name: &str| {
@@ -2801,6 +2852,8 @@ impl SQLContext {
                 .collect(),
             &schema_before,
         )?;
+        let (order_by, order_by_aggs) =
+            self.resolve_order_by_aggregates(order_by, &projections, &schema_before)?;
 
         let projections: Vec<Expr> = projections
             .into_iter()
@@ -2938,6 +2991,8 @@ impl SQLContext {
             None => (lf, None),
         };
 
+        aggregation_projection.extend(order_by_aggs.iter().cloned());
+
         let group_by = lf.group_by(group_by_keys);
         let aggregated = match having {
             Some(having) => group_by.having(having),
@@ -2993,6 +3048,9 @@ impl SQLContext {
 
         // Include original GROUP BY columns for ORDER BY access (if aliased).
         let mut output_projection = final_projection;
+        for e in &order_by_aggs {
+            output_projection.push(col(e.to_field(&schema_before)?.name));
+        }
         for key_name in group_by_keys_schema.iter_names() {
             if !projection_schema.contains(key_name) {
                 // Original col name not in output - add for ORDER BY access
@@ -3010,7 +3068,11 @@ impl SQLContext {
                 }
             }
         }
-        Ok((aggregated.select(&output_projection), projections.clone()))
+        Ok((
+            aggregated.select(&output_projection),
+            projections.clone(),
+            order_by,
+        ))
     }
 
     fn process_limit_offset(

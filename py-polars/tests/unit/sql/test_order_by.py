@@ -391,3 +391,50 @@ def test_order_by_subquery_over_set_operation() -> None:
     )
     assert res.columns == ["k"]
     assert res["k"].to_list() == [1, 1, 1, 2, 2, 3]
+
+
+def test_order_by_restated_aggregate() -> None:
+    frames = {"t": pl.DataFrame({"g": ["a", "a", "b", "c"], "x": [1, 2, 9, 5]})}
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT g, SUM(x) AS sx FROM t GROUP BY g ORDER BY SUM(x) DESC",
+        compare_with="duckdb",
+        expected={"g": ["b", "c", "a"], "sx": [9, 5, 3]},
+    )
+
+
+def test_order_by_aggregate_not_selected() -> None:
+    frames = {
+        "t": pl.DataFrame(
+            {"g": ["a", "a", "b", "c"], "x": [1, 2, 9, 5], "y": [4, 4, 1, 7]}
+        )
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT g, SUM(x) AS sx FROM t GROUP BY g ORDER BY SUM(y) DESC, g",
+        compare_with="duckdb",
+        expected={"g": ["a", "c", "b"], "sx": [3, 5, 9]},
+    )
+
+
+def test_order_by_count_star() -> None:
+    frames = {"t": pl.DataFrame({"g": ["a", "a", "b", "c", "c", "c"]})}
+    assert_sql_matches(
+        frames=frames,
+        query="SELECT g FROM t GROUP BY g ORDER BY COUNT(*) DESC, g",
+        compare_with="duckdb",
+        expected={"g": ["c", "a", "b"]},
+    )
+
+
+def test_order_by_aggregate_expression() -> None:
+    frames = {"t": pl.DataFrame({"g": ["a", "a", "b", "c"], "x": [1, 2, 9, 5]})}
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            "SELECT g, MAX(x) AS mx FROM t GROUP BY g "
+            "ORDER BY MIN(x) * -1, AVG(x) DESC"
+        ),
+        compare_with="duckdb",
+        expected={"g": ["b", "c", "a"], "mx": [9, 5, 2]},
+    )
