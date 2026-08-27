@@ -678,7 +678,7 @@ pub mod req {
         fn close_out_if_needed(&mut self, level: usize) {
             let num_sections = self.num_sections();
             if num_sections >= 64 {
-                // We assume that the compaction schedule will ever overflow over 64 bits.
+                // We assume that the compaction schedule will never overflow over 64 bits.
                 return;
             }
 
