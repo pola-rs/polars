@@ -18,7 +18,7 @@ const SPILL_FRAME_BATCH_SIZE: u64 = 256;
 const MAX_PARALLEL_SPILL_TASKS: usize = 64;
 
 use crate::WeakSpillContext;
-use crate::spill_context::{RegisteredSpillToken, ReinsertReason, UNEXPLORED_SCORE};
+use crate::spill_context::{InsertReason, RegisteredSpillToken, UNEXPLORED_SCORE};
 use crate::spill_token::{DynSpillToken, SpillStatus, TrySpillError};
 
 static MEMORY_MANAGER: LazyLock<MemoryManager> = LazyLock::new(MemoryManager::new);
@@ -123,7 +123,7 @@ impl MemoryManager {
 
                 polars_async::executor::spawn(TaskPriority::High, async move {
                     // Spill, or reinsert if a failure.
-                    match spillable.clone().try_spill(ctx.clone(), rt.registration_id) {
+                    match spillable.clone().try_spill(ctx.clone()) {
                         Ok(spill_success) => {
                             if spill_success.await {
                                 if !successful_spill.0.swap(true, Ordering::Relaxed) {
@@ -138,7 +138,7 @@ impl MemoryManager {
                                 spillable.cancel_spill_attempt_and_reinsert(
                                     rt.registration_id,
                                     ctx.1,
-                                    ReinsertReason::Unpin,
+                                    InsertReason::Unpin,
                                 );
                             }
                         },
@@ -146,7 +146,7 @@ impl MemoryManager {
                             spillable.cancel_spill_attempt_and_reinsert(
                                 rt.registration_id,
                                 ctx.1,
-                                ReinsertReason::Unpin,
+                                InsertReason::Unpin,
                             );
                         },
                         Err(TrySpillError::AlreadySpilled) => {},
@@ -227,7 +227,7 @@ impl MemoryManager {
 
             let mut num_considered = 0;
             let mut candidates = Vec::new();
-            ctx.0.drain_while(|rt| {
+            ctx.0.drain_live_while(|rt| {
                 let Some(cand) = rt.upgrade() else {
                     return true;
                 };
@@ -239,14 +239,14 @@ impl MemoryManager {
                         cand.cancel_spill_attempt_and_reinsert(
                             rt.registration_id,
                             ctx.1,
-                            ReinsertReason::TooSmall(rt.timestamp),
+                            InsertReason::TooSmall(rt.timestamp),
                         );
                     },
                     SpillStatus::Pinned => {
                         cand.cancel_spill_attempt_and_reinsert(
                             rt.registration_id,
                             ctx.1,
-                            ReinsertReason::Unpin,
+                            InsertReason::Unpin,
                         );
                     },
                     // A spilled token is re-inserted by whoever unspills it, a
