@@ -3286,11 +3286,7 @@ def test_reencode_categoricals_22385() -> None:
     pl.scan_parquet(f).collect()
 
 
-def test_categorical_plain_encoded_dictionary_schema_28959() -> None:
-    # A non-Polars writer (or Polars' own writer once a dictionary page size limit is
-    # hit) can write plain (non-dictionary) encoded pages for a column that is still
-    # tagged as an Arrow dictionary type in the embedded schema, e.g. because it
-    # originated from a Polars Categorical/Enum column.
+def test_categorical_dictionary_columns_with_plain_page_28959() -> None:
     values = [f"category_value_{i}" for i in range(100)]
     df = pl.DataFrame({"cat": values}).with_columns(pl.col("cat").cast(pl.Categorical))
 

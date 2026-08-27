@@ -18,13 +18,6 @@ use crate::read::ParquetError;
 use crate::read::deserialize::dictionary_encoded::IndexMapping;
 use crate::read::expr::SpecializedParquetColumnExpr;
 
-/// The translation for a Categorical/Enum column.
-///
-/// Polars-written files always have every data page in a row group dictionary-encoded, but
-/// third-party writers may re-export a Polars-tagged Arrow dictionary schema while writing plain
-/// (non-dictionary-encoded) pages, e.g. once a writer's dictionary-page size limit is hit. The
-/// `Plain` variant covers that case by decoding literal values and appending them to a
-/// locally-grown extension of the dictionary (see `CategoricalDecoder::extra_dict`).
 #[derive(Clone)]
 pub enum CategoricalTranslation<'a> {
     Dictionary(HybridRleDecoder<'a>),
@@ -71,12 +64,8 @@ impl<'a, T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>>
 pub struct CategoricalDecoder<T> {
     dict_size: usize,
     decoder: BinViewDecoder,
-    /// Values decoded from `Encoding::Plain` pages, appended past the end of the real
-    /// dictionary (if any). See [`CategoricalTranslation`] for why these can occur.
-    extra_dict: MutableBinaryViewArray<[u8]>,
-    /// Maps a value already pushed onto `extra_dict` back to its key, so that repeated values
-    /// across (or within) `Encoding::Plain` pages don't each grow the dictionary.
-    extra_dict_lookup: PlHashMap<Box<[u8]>, T>,
+    plain_page_dict: MutableBinaryViewArray<[u8]>,
+    plain_page_dict_lookup: PlHashMap<Box<[u8]>, T>,
 
     key_type: PhantomData<T>,
 }
@@ -86,8 +75,8 @@ impl<T> CategoricalDecoder<T> {
         Self {
             dict_size: usize::MAX,
             decoder: BinViewDecoder::new_string(),
-            extra_dict: MutableBinaryViewArray::new(),
-            extra_dict_lookup: PlHashMap::new(),
+            plain_page_dict: MutableBinaryViewArray::new(),
+            plain_page_dict_lookup: PlHashMap::new(),
             key_type: PhantomData,
         }
     }
@@ -115,8 +104,6 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
         pred_true_mask: &mut BitmapBuilder,
         dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool> {
-        // Plain-encoded pages have no dictionary indices to evaluate against a dict mask; fall
-        // back to the generic predicate path.
         let CategoricalTranslation::Dictionary(translation) = &state.translation else {
             return Ok(false);
         };
@@ -172,7 +159,7 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
         let keys = PrimitiveArray::new(T::PRIMITIVE.into(), values.into(), validity);
 
         let mut view_dict = MutableBinaryViewArray::with_capacity(
-            dict.as_ref().map_or(0, |dict| dict.len()) + self.extra_dict.len(),
+            dict.as_ref().map_or(0, |dict| dict.len()) + self.plain_page_dict.len(),
         );
 
         if let Some(dict) = dict {
@@ -185,9 +172,7 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
             unsafe { view_dict.set_total_bytes_len(views.iter().map(|v| v.length as usize).sum()) };
         }
 
-        // Values from `Encoding::Plain` pages that had no dictionary page to reference; see
-        // `CategoricalTranslation`.
-        for value in self.extra_dict.values_iter() {
+        for value in self.plain_page_dict.values_iter() {
             view_dict.push_value(value);
         }
 
@@ -222,13 +207,9 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
                 })
             },
             CategoricalTranslation::Plain(mut values, num_rows) => {
-                // No dictionary page (or no more room in it) for these values: grow the
-                // dictionary with whatever new literal values are found in this page. Values
-                // are deduplicated against `extra_dict_lookup` so that repeats don't each
-                // consume a new key (which matters for small physical key types like `u8`).
                 let dict_len = state.dict.map_or(0, |dict| dict.len());
-                let extra_dict = &mut self.extra_dict;
-                let lookup = &mut self.extra_dict_lookup;
+                let plain_page_dict = &mut self.plain_page_dict;
+                let lookup = &mut self.plain_page_dict_lookup;
 
                 unspecialized_decode(
                     num_rows,
@@ -238,8 +219,9 @@ impl<T: DictionaryKey + IndexMapping<Output = T::AlignedBytes>> utils::Decoder
                         let key = match lookup.get(value) {
                             Some(key) => *key,
                             None => {
-                                let key = T::try_from(dict_len + extra_dict.len()).ok().unwrap();
-                                extra_dict.push_value(value);
+                                let key =
+                                    T::try_from(dict_len + plain_page_dict.len()).ok().unwrap();
+                                plain_page_dict.push_value(value);
                                 lookup.insert(value.into(), key);
                                 key
                             },
