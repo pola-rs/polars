@@ -1725,6 +1725,12 @@ impl SQLContext {
                                 Ok,
                             )
                         },
+                        // A qualified reference names a key by identity; the alias that
+                        // restores the unqualified name would collide with the same
+                        // column taken from another relation.
+                        SQLExpr::CompoundIdentifier(_) => self
+                            .expr_or_ordinal(e, &projections, None, Some(&schema), "GROUP BY")
+                            .map(|e| strip_outer_alias(&e)),
                         _ => self.expr_or_ordinal(e, &projections, None, Some(&schema), "GROUP BY"),
                     })
                     .collect::<PolarsResult<_>>()?
