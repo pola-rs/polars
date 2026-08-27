@@ -482,6 +482,20 @@ impl DataType {
             },
 
             (D::List(from), D::List(to)) => from.can_cast_to(to)?,
+            #[cfg(feature = "dtype-map")]
+            (D::Map(from_key, from_value), D::Map(to_key, to_value)) => {
+                // Same key rule as `MapChunked::cast_with_options`.
+                from_key.matches_schema_type(to_key).is_ok() && from_value.can_cast_to(to_value)?
+            },
+            #[cfg(feature = "dtype-map")]
+            (D::Map(key, value), D::List(to)) => {
+                D::map_entries(key.as_ref().clone(), value.as_ref().clone()).can_cast_to(to)?
+            },
+            #[cfg(feature = "dtype-map")]
+            (D::List(from), D::Map(key, value)) => from.can_cast_to(&D::map_entries(
+                key.as_ref().clone(),
+                value.as_ref().clone(),
+            ))?,
             #[cfg(feature = "dtype-array")]
             (D::Array(from, l_width), D::Array(to, r_width)) => {
                 l_width == r_width && from.can_cast_to(to)?
