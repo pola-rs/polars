@@ -657,15 +657,18 @@ def test_list_get_logical_types() -> None:
 
 
 def test_list_gather_logical_type() -> None:
-    df = pl.DataFrame(
-        {"foo": [["foo", "foo", "bar"]], "bar": [[5.0, 10.0, 12.0]]}
-    ).with_columns(pl.col("foo").cast(pl.List(pl.Categorical)))
+    def chunk(name: str, value: float) -> pl.DataFrame:
+        return pl.DataFrame(
+            {"foo": [[name, name, "bar"]], "bar": [[value, 10.0, 12.0]]}
+        ).with_columns(pl.col("foo").cast(pl.List(pl.Categorical)))
 
-    df = pl.concat([df, df], rechunk=False)
+    # The two rows have to differ: concatenating chunks that hold the same single value
+    # keeps them as one scalar column.
+    df = pl.concat([chunk("foo", 5.0), chunk("baz", 6.0)], rechunk=False)
     assert df.n_chunks() == 2
     assert df.select(pl.all().gather([0, 1])).to_dict(as_series=False) == {
-        "foo": [["foo", "foo", "bar"], ["foo", "foo", "bar"]],
-        "bar": [[5.0, 10.0, 12.0], [5.0, 10.0, 12.0]],
+        "foo": [["foo", "foo", "bar"], ["baz", "baz", "bar"]],
+        "bar": [[5.0, 10.0, 12.0], [6.0, 10.0, 12.0]],
     }
 
 
@@ -1181,7 +1184,9 @@ def test_list_filter_null() -> None:
 @pytest.mark.may_fail_cloud  # reason: time check
 @pytest.mark.slow
 def test_list_struct_field_perf() -> None:
-    base_df = pl.concat(100 * [pl.DataFrame({"a": [[{"fld": 1}]]})]).rechunk()
+    # The values have to differ: concatenating chunks that hold the same single value
+    # keeps them as one scalar column, which `list.eval` expands on every execution.
+    base_df = pl.DataFrame({"a": [[{"fld": i}] for i in range(100)]}).rechunk()
     df = base_df
 
     q = df.lazy().select(pl.col("a").list.eval(pl.element().struct.field("fld")))

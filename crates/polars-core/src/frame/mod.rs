@@ -3029,6 +3029,27 @@ mod test {
     }
 
     #[test]
+    fn test_vstack_scalar_chunk_alignment() {
+        // Appending equal scalars keeps the column unmaterialized.
+        let mut df = df! {
+            "int" => [0],
+            "str" => ["a"],
+        }
+        .unwrap();
+        df.vstack_mut(&df! { "int" => [1], "str" => ["a"] }.unwrap())
+            .unwrap();
+
+        assert_eq!(df.column("int").unwrap().n_chunks(), 2);
+        assert!(df.column("str").unwrap().as_scalar_column().is_some());
+        assert!(!df.should_rechunk());
+
+        let batches = df
+            .iter_chunks(CompatLevel::newest(), false)
+            .collect::<Vec<_>>();
+        assert_eq!(batches.iter().map(|b| b.len()).collect::<Vec<_>>(), [1, 1]);
+    }
+
+    #[test]
     fn test_vstack_on_empty_dataframe() {
         let mut df = DataFrame::empty();
 
