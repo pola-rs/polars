@@ -3359,6 +3359,23 @@ def test_read_write_metadata(static: bool, lazy: bool) -> None:
     assert metadata == {k: v for k, v in actual.items() if k != "ARROW:schema"}
 
 
+def test_non_utf8_parquet_metadata_23211() -> None:
+    nested = io.BytesIO()
+    pq.write_table(pa.table({"nested": [1]}), nested)
+
+    expected = pl.DataFrame({"a": [1, 2, 3]})
+    table = pa.table(expected.to_dict(as_series=False)).replace_schema_metadata(
+        {b"k": nested.getvalue()}
+    )
+    parquet = io.BytesIO()
+    pq.write_table(table, parquet)
+    parquet_bytes = parquet.getvalue()
+
+    assert pl.read_parquet_schema(io.BytesIO(parquet_bytes)) == expected.schema
+    assert_frame_equal(pl.read_parquet(io.BytesIO(parquet_bytes)), expected)
+    assert_frame_equal(pl.scan_parquet(io.BytesIO(parquet_bytes)).collect(), expected)
+
+
 @pytest.mark.write_disk
 def test_metadata_callback_info(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})

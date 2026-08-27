@@ -186,11 +186,50 @@ fn compact_stats_to_parquet(s: &CompactStatistics, footer_buf: &[u8]) -> Parquet
 pub(super) fn column_metadata_byte_range_compact(
     column_metadata: &CompactColumnMetaData,
 ) -> core::ops::Range<u64> {
-    let offset = if let Some(dict_page_offset) = column_metadata.dictionary_page_offset {
-        dict_page_offset as u64
-    } else {
-        column_metadata.data_page_offset as u64
-    };
+    // Match parquet-java ColumnChunkMetaData#getStartingPos: non-positive or
+    // non-preceding dictionary offsets mean that the data page starts the chunk.
+    let offset = column_metadata
+        .dictionary_page_offset
+        .filter(|&dict_offset| dict_offset > 0 && dict_offset < column_metadata.data_page_offset)
+        .unwrap_or(column_metadata.data_page_offset) as u64;
     let len = column_metadata.total_compressed_size as u64;
-    offset..offset.checked_add(len).unwrap()
+    offset..offset.saturating_add(len)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn byte_range(
+        dictionary_page_offset: Option<i64>,
+        data_page_offset: i64,
+    ) -> core::ops::Range<u64> {
+        column_metadata_byte_range_compact(&CompactColumnMetaData {
+            codec: Compression::Uncompressed,
+            num_values: 0,
+            total_uncompressed_size: 0,
+            total_compressed_size: 10,
+            data_page_offset,
+            index_page_offset: None,
+            dictionary_page_offset,
+            statistics: None,
+            bloom_filter_offset: None,
+            bloom_filter_length: None,
+        })
+    }
+
+    #[test]
+    fn byte_range_ignores_zero_dictionary_offset() {
+        assert_eq!(byte_range(Some(0), 4), 4..14);
+    }
+
+    #[test]
+    fn byte_range_ignores_dictionary_offset_after_data() {
+        assert_eq!(byte_range(Some(100), 50), 50..60);
+    }
+
+    #[test]
+    fn byte_range_uses_dictionary_offset_before_data() {
+        assert_eq!(byte_range(Some(4), 50), 4..14);
+    }
 }

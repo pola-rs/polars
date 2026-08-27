@@ -66,6 +66,21 @@ macro_rules! read_struct_fields {
             last_field_id = $f.id;
         }
     };
+    ($prot:ident, |$f:ident| { $($id:literal => $arm:expr),* $(,)? }, $has_field:ident) => {
+        let mut last_field_id = 0i16;
+        loop {
+            let $f = $prot.read_field_begin(last_field_id)?;
+            if $f.field_type == FieldType::Stop {
+                break;
+            }
+            $has_field = true;
+            match $f.id {
+                $($id => { $arm; },)*
+                _ => $prot.skip($f.field_type)?,
+            }
+            last_field_id = $f.id;
+        }
+    };
 }
 
 /// Decode a Parquet `FileMetaData` footer into [`CompactFileMetaData`].
@@ -121,7 +136,7 @@ fn read_file_metadata(
         3 => num_rows = Some(prot.read_i64()?),
         4 => row_groups = Some(read_list(prot, |p| read_row_group(p, origin_ptr))?),
         5 => key_value_metadata = Some(read_list(prot, read_key_value)?),
-        6 => created_by = Some(prot.read_string()?.to_owned()),
+        6 => created_by = Some(String::from_utf8_lossy(prot.read_bytes()?).into_owned()),
         7 => column_orders = Some(read_list(prot, read_column_order)?),
     });
 
@@ -166,7 +181,7 @@ fn read_schema_element(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult
         7 => scale = Some(prot.read_i32()?),
         8 => precision = Some(prot.read_i32()?),
         9 => field_id = Some(prot.read_i32()?),
-        10 => logical_type = Some(read_logical_type(prot)?),
+        10 => logical_type = read_logical_type(prot)?,
     });
 
     Ok(SchemaElement {
@@ -367,8 +382,8 @@ fn read_key_value(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<KeyV
     let mut value: Option<String> = None;
 
     read_struct_fields!(prot, |f| {
-        1 => key = Some(prot.read_string()?.to_owned()),
-        2 => value = Some(prot.read_string()?.to_owned()),
+        1 => key = Some(String::from_utf8_lossy(prot.read_bytes()?).into_owned()),
+        2 => value = Some(String::from_utf8_lossy(prot.read_bytes()?).into_owned()),
     });
 
     Ok(KeyValue {
@@ -400,6 +415,7 @@ fn read_sorting_column(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult
 /// only the union id matters: 1 = `TypeDefinedOrder`, 2 = `IEEE754TotalOrder`.
 fn read_column_order(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<ColumnOrderTag> {
     let mut ret: Option<ColumnOrderTag> = None;
+    let mut has_field = false;
     read_struct_fields!(prot, |f| {
         1 => {
             read_empty_struct(prot)?;
@@ -409,8 +425,12 @@ fn read_column_order(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<C
             read_empty_struct(prot)?;
             ret.get_or_insert(ColumnOrderTag::IEEE754TotalOrder);
         },
-    });
-    ret.ok_or_else(|| ParquetError::oos("ColumnOrder union has no variant set"))
+    }, has_field);
+    match (ret, has_field) {
+        (Some(order), _) => Ok(order),
+        (None, true) => Ok(ColumnOrderTag::Unknown),
+        (None, false) => Err(ParquetError::oos("ColumnOrder union has no variant set")),
+    }
 }
 
 /// Decode a `LogicalType` union.
@@ -420,13 +440,14 @@ fn read_column_order(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<C
 /// always has.
 fn read_logical_type(
     prot: &mut ThriftSliceInputProtocol<'_>,
-) -> ParquetResult<polars_parquet_format::LogicalType> {
+) -> ParquetResult<Option<polars_parquet_format::LogicalType>> {
     use polars_parquet_format::{
         BsonType, DateType, EnumType, Float16Type, JsonType, ListType, LogicalType, MapType,
         NullType, StringType, UUIDType,
     };
 
     let mut ret: Option<LogicalType> = None;
+    let mut has_field = false;
     read_struct_fields!(prot, |f| {
         1 => {
             read_empty_struct(prot)?;
@@ -453,12 +474,14 @@ fn read_logical_type(
             ret.get_or_insert(LogicalType::DATE(DateType {}));
         },
         7 => {
-            let v = read_time_type(prot)?;
-            ret.get_or_insert(LogicalType::TIME(v));
+            if let Some(v) = read_time_type(prot)? {
+                ret.get_or_insert(LogicalType::TIME(v));
+            }
         },
         8 => {
-            let v = read_timestamp_type(prot)?;
-            ret.get_or_insert(LogicalType::TIMESTAMP(v));
+            if let Some(v) = read_timestamp_type(prot)? {
+                ret.get_or_insert(LogicalType::TIMESTAMP(v));
+            }
         },
         10 => {
             let v = read_int_type(prot)?;
@@ -484,8 +507,12 @@ fn read_logical_type(
             read_empty_struct(prot)?;
             ret.get_or_insert(LogicalType::FLOAT16(Float16Type {}));
         },
-    });
-    ret.ok_or_else(|| ParquetError::oos("LogicalType union has no variant set"))
+    }, has_field);
+    if has_field {
+        Ok(ret)
+    } else {
+        Err(ParquetError::oos("LogicalType union has no variant set"))
+    }
 }
 
 fn read_empty_struct(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<()> {
@@ -511,9 +538,10 @@ fn read_decimal_type(
 
 fn read_time_unit(
     prot: &mut ThriftSliceInputProtocol<'_>,
-) -> ParquetResult<polars_parquet_format::TimeUnit> {
+) -> ParquetResult<Option<polars_parquet_format::TimeUnit>> {
     use polars_parquet_format::{MicroSeconds, MilliSeconds, NanoSeconds, TimeUnit};
     let mut ret: Option<TimeUnit> = None;
+    let mut has_field = false;
     read_struct_fields!(prot, |f| {
         1 => {
             read_empty_struct(prot)?;
@@ -527,40 +555,52 @@ fn read_time_unit(
             read_empty_struct(prot)?;
             ret.get_or_insert(TimeUnit::NANOS(NanoSeconds {}));
         },
-    });
-    ret.ok_or_else(|| ParquetError::oos("TimeUnit union has no variant set"))
+    }, has_field);
+    if has_field {
+        Ok(ret)
+    } else {
+        Err(ParquetError::oos("TimeUnit union has no variant set"))
+    }
 }
 
 fn read_time_type(
     prot: &mut ThriftSliceInputProtocol<'_>,
-) -> ParquetResult<polars_parquet_format::TimeType> {
+) -> ParquetResult<Option<polars_parquet_format::TimeType>> {
     use polars_parquet_format::TimeType;
     let mut is_adjusted: Option<bool> = None;
-    let mut unit: Option<polars_parquet_format::TimeUnit> = None;
+    let mut unit: Option<Option<polars_parquet_format::TimeUnit>> = None;
     read_struct_fields!(prot, |f| {
         1 => is_adjusted = Some(f.bool_val.expect("thrift bool field")),
         2 => unit = Some(read_time_unit(prot)?),
     });
-    Ok(TimeType {
-        is_adjusted_to_u_t_c: is_adjusted.require("TimeType.is_adjusted_to_u_t_c")?,
-        unit: unit.require("TimeType.unit")?,
-    })
+    let is_adjusted_to_u_t_c = is_adjusted.require("TimeType.is_adjusted_to_u_t_c")?;
+    let Some(unit) = unit.require("TimeType.unit")? else {
+        return Ok(None);
+    };
+    Ok(Some(TimeType {
+        is_adjusted_to_u_t_c,
+        unit,
+    }))
 }
 
 fn read_timestamp_type(
     prot: &mut ThriftSliceInputProtocol<'_>,
-) -> ParquetResult<polars_parquet_format::TimestampType> {
+) -> ParquetResult<Option<polars_parquet_format::TimestampType>> {
     use polars_parquet_format::TimestampType;
     let mut is_adjusted: Option<bool> = None;
-    let mut unit: Option<polars_parquet_format::TimeUnit> = None;
+    let mut unit: Option<Option<polars_parquet_format::TimeUnit>> = None;
     read_struct_fields!(prot, |f| {
         1 => is_adjusted = Some(f.bool_val.expect("thrift bool field")),
         2 => unit = Some(read_time_unit(prot)?),
     });
-    Ok(TimestampType {
-        is_adjusted_to_u_t_c: is_adjusted.require("TimestampType.is_adjusted_to_u_t_c")?,
-        unit: unit.require("TimestampType.unit")?,
-    })
+    let is_adjusted_to_u_t_c = is_adjusted.require("TimestampType.is_adjusted_to_u_t_c")?;
+    let Some(unit) = unit.require("TimestampType.unit")? else {
+        return Ok(None);
+    };
+    Ok(Some(TimestampType {
+        is_adjusted_to_u_t_c,
+        unit,
+    }))
 }
 
 fn read_int_type(
@@ -588,6 +628,15 @@ mod tests {
         read_column_order(&mut prot)
     }
 
+    fn decode_logical_type(
+        bytes: &[u8],
+    ) -> ParquetResult<Option<polars_parquet_format::LogicalType>> {
+        let mut prot = ThriftSliceInputProtocol::new(bytes);
+        let logical_type = read_logical_type(&mut prot)?;
+        assert!(prot.as_slice().is_empty());
+        Ok(logical_type)
+    }
+
     #[test]
     fn column_order_type_defined() {
         assert_eq!(
@@ -605,7 +654,71 @@ mod tests {
     }
 
     #[test]
+    fn column_order_unknown() {
+        assert_eq!(
+            decode_column_order(&[0x3C, 0x00, 0x00]).unwrap(),
+            ColumnOrderTag::Unknown
+        );
+    }
+
+    #[test]
     fn column_order_no_variant_is_an_error() {
         assert!(decode_column_order(&[0x00]).is_err());
+    }
+
+    #[test]
+    fn unknown_logical_types_are_ignored() {
+        for field_id in [0x20, 0x22, 0x24] {
+            assert!(
+                decode_logical_type(&[0x0C, field_id, 0x00, 0x00])
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_logical_type_payload_is_fully_skipped() {
+        assert!(
+            decode_logical_type(&[0x0C, 0x22, 0x18, 0x03, b'c', b'r', b's', 0x00, 0x00,])
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn logical_type_no_variant_is_an_error() {
+        assert!(decode_logical_type(&[0x00]).is_err());
+    }
+
+    #[test]
+    fn unknown_time_unit_ignores_logical_type() {
+        assert!(
+            decode_logical_type(&[0x7C, 0x11, 0x1C, 0x4C, 0x00, 0x00, 0x00, 0x00])
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn key_value_metadata_is_lossy_utf8() {
+        let mut prot =
+            ThriftSliceInputProtocol::new(&[0x18, 0x01, b'k', 0x18, 0x02, 0xFF, 0xFE, 0x00]);
+        let key_value = read_key_value(&mut prot).unwrap();
+        assert_eq!(key_value.key, "k");
+        assert_eq!(key_value.value.as_deref(), Some("��"));
+        assert!(prot.as_slice().is_empty());
+    }
+
+    #[test]
+    fn unknown_codec_is_deferred() {
+        let bytes = [
+            0x15, 0x02, 0x19, 0x15, 0x00, 0x19, 0x18, 0x01, b'a', 0x15, 0x54, 0x16, 0x00, 0x16,
+            0x00, 0x16, 0x00, 0x26, 0x08, 0x00,
+        ];
+        let mut prot = ThriftSliceInputProtocol::new(&bytes);
+        let metadata = read_column_meta_data(&mut prot, bytes.as_ptr()).unwrap();
+        assert_eq!(metadata.codec, Compression::Unknown(42));
+        assert!(prot.as_slice().is_empty());
     }
 }

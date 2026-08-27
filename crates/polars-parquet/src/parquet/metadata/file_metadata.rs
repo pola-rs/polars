@@ -238,6 +238,7 @@ fn parse_column_orders(
                 ColumnOrder::TypeDefinedOrder(sort_order)
             },
             ColumnOrderTag::IEEE754TotalOrder => ColumnOrder::IEEE754TotalOrder,
+            ColumnOrderTag::Unknown => ColumnOrder::Unknown,
         })
         .collect()
 }

@@ -58,6 +58,7 @@ pub enum Compression {
     Lz4,
     Zstd,
     Lz4Raw,
+    Unknown(i32),
 }
 
 impl TryFrom<CompressionCodec> for Compression {
@@ -73,7 +74,7 @@ impl TryFrom<CompressionCodec> for Compression {
             CompressionCodec::LZ4 => Compression::Lz4,
             CompressionCodec::ZSTD => Compression::Zstd,
             CompressionCodec::LZ4_RAW => Compression::Lz4Raw,
-            _ => return Err(ParquetError::oos("Thrift out of range")),
+            CompressionCodec(value) => Compression::Unknown(value),
         })
     }
 }
@@ -89,6 +90,7 @@ impl From<Compression> for CompressionCodec {
             Compression::Lz4 => CompressionCodec::LZ4,
             Compression::Zstd => CompressionCodec::ZSTD,
             Compression::Lz4Raw => CompressionCodec::LZ4_RAW,
+            Compression::Unknown(value) => CompressionCodec(value),
         }
     }
 }

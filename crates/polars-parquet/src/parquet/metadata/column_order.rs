@@ -22,6 +22,8 @@ pub enum ColumnOrder {
     /// Undefined column order, means legacy behaviour before parquet-format 2.4.0.
     /// Sort order is always SIGNED.
     Undefined,
+    /// The file declared a column order unknown to this reader.
+    Unknown,
 }
 
 impl ColumnOrder {
@@ -32,6 +34,7 @@ impl ColumnOrder {
             // Not signed comparison: total order positions NaNs and -0.0 < +0.0.
             ColumnOrder::IEEE754TotalOrder => SortOrder::IEEE754TotalOrder,
             ColumnOrder::Undefined => SortOrder::Signed,
+            ColumnOrder::Unknown => SortOrder::Undefined,
         }
     }
 }
@@ -42,4 +45,5 @@ impl ColumnOrder {
 pub(crate) enum ColumnOrderTag {
     TypeDefined,
     IEEE754TotalOrder,
+    Unknown,
 }

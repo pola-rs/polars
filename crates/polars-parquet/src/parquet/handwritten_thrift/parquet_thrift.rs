@@ -202,8 +202,9 @@ impl TryFrom<ElementType> for FieldType {
             ElementType::Double => Ok(Self::Double),
             ElementType::Binary => Ok(Self::Binary),
             ElementType::List => Ok(Self::List),
+            ElementType::Set => Ok(Self::Set),
+            ElementType::Map => Ok(Self::Map),
             ElementType::Struct => Ok(Self::Struct),
-            _ => Err(ThriftProtocolError::InvalidFieldType(value as u8)),
         }
     }
 }
@@ -558,16 +559,45 @@ pub(crate) trait ThriftCompactInputProtocol<'a> {
                 }
                 Ok(())
             },
-            FieldType::List => {
+            FieldType::List | FieldType::Set => {
                 let list_ident = self.read_list_begin()?;
                 for _ in 0..list_ident.size {
-                    let element_type = FieldType::try_from(list_ident.element_type)?;
-                    self.skip_till_depth(element_type, depth - 1)?;
+                    self.skip_collection_element(list_ident.element_type, depth - 1)?;
                 }
                 Ok(())
             },
-            // no list or map types in parquet format
+            FieldType::Map => {
+                let size = self.read_vlq()?;
+                if size == 0 {
+                    return Ok(());
+                }
+                let types = self.read_byte()?;
+                let key_type = ElementType::try_from(types >> 4)?;
+                let value_type = ElementType::try_from(types & 0x0f)?;
+                for _ in 0..size {
+                    self.skip_collection_element(key_type, depth - 1)?;
+                    self.skip_collection_element(value_type, depth - 1)?;
+                }
+                Ok(())
+            },
             _ => Err(ThriftProtocolError::SkipUnsupportedType(field_type)),
+        }
+    }
+
+    fn skip_collection_element(
+        &mut self,
+        element_type: ElementType,
+        depth: i8,
+    ) -> ThriftProtocolResult<()> {
+        if depth == 0 {
+            return Err(ThriftProtocolError::SkipDepth(FieldType::try_from(
+                element_type,
+            )?));
+        }
+        if element_type == ElementType::Bool {
+            self.read_bool().map(|_| ())
+        } else {
+            self.skip_till_depth(FieldType::try_from(element_type)?, depth)
         }
     }
 }
@@ -1157,5 +1187,21 @@ pub(crate) mod tests {
         let header = prot.read_list_begin().expect("error reading list header");
         assert_eq!(header.size, 0);
         assert_eq!(header.element_type, ElementType::Byte);
+    }
+
+    #[test]
+    fn test_skip_map() {
+        let data = [0x02, 0x58, 0x02, 0x01, b'a', 0x04, 0x01, b'b', 0x7F];
+        let mut prot = ThriftSliceInputProtocol::new(&data);
+        prot.skip(FieldType::Map).unwrap();
+        assert_eq!(prot.as_slice(), &[0x7F]);
+    }
+
+    #[test]
+    fn test_skip_set() {
+        let data = [0x25, 0x02, 0x04, 0x7F];
+        let mut prot = ThriftSliceInputProtocol::new(&data);
+        prot.skip(FieldType::Set).unwrap();
+        assert_eq!(prot.as_slice(), &[0x7F]);
     }
 }
