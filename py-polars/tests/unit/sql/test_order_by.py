@@ -432,8 +432,7 @@ def test_order_by_aggregate_expression() -> None:
     assert_sql_matches(
         frames=frames,
         query=(
-            "SELECT g, MAX(x) AS mx FROM t GROUP BY g "
-            "ORDER BY MIN(x) * -1, AVG(x) DESC"
+            "SELECT g, MAX(x) AS mx FROM t GROUP BY g ORDER BY MIN(x) * -1, AVG(x) DESC"
         ),
         compare_with="duckdb",
         expected={"g": ["b", "c", "a"], "mx": [9, 5, 2]},
