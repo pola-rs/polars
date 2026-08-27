@@ -290,7 +290,9 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<P
         Map(_, _) => {
             // No numpy dtype for a map, so fall back to an object array of dicts.
             let ca = s.map().unwrap();
-            let values = ca.iter().map(|av| Wrap(av).into_py_any(py).unwrap());
+            let values = ca
+                .any_value_iter()
+                .map(|av| Wrap(av).into_py_any(py).unwrap());
             PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         Extension(_, _) => series_to_numpy_with_copy(py, s.ext().unwrap().storage(), writable),

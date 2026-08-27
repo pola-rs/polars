@@ -2,6 +2,7 @@ use arrow::offset::OffsetsBuffer;
 use polars_compute::gather::take_unchecked;
 
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::iterator::PolarsIterator;
 use crate::chunked_array::ops::row_encode::encode_rows_unordered;
 use crate::prelude::*;
 
@@ -100,13 +101,20 @@ impl MapChunked {
         self.storage.is_empty()
     }
 
-    pub fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        Ok(map_av(self.storage.get(i)?))
+    /// One freshly-allocated `AnyValue::Map` per row.
+    pub fn any_value_iter(&self) -> impl PolarsIterator<Item = AnyValue<'_>> {
+        self.storage
+            .list()
+            .unwrap()
+            .series_iter()
+            .map(|entries| match entries {
+                Some(entries) => AnyValue::Map(entries),
+                None => AnyValue::Null,
+            })
     }
 
-    /// One `AnyValue::Map` per row.
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = AnyValue<'_>> {
-        self.storage.iter().map(map_av)
+    pub fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
+        Ok(map_av(self.storage.get(i)?))
     }
 
     /// # Safety
