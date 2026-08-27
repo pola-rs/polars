@@ -5,8 +5,6 @@ use polars_utils::total_ord::TotalOrd;
 use rand::rngs::SmallRng;
 use rand::{RngExt, SeedableRng};
 
-// TODO: [amber] Reseed on clone()
-
 #[derive(Debug, Clone)]
 struct FinalizedState<T: fmt::Debug + Clone + TotalOrd> {
     /// All retained items, sorted.
@@ -131,7 +129,7 @@ pub mod kll {
         coin: bool,
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
         /// Contents of the compactors. The offsets of the compactors are stored
         /// in the levels vector. The top-level compactor is stored at the start
@@ -150,6 +148,22 @@ pub mod kll {
         compactor_capacity: usize,
         rng: SmallRng,
         scratch: Vec<T>,
+    }
+
+    impl<T: fmt::Debug + Clone + TotalOrd> Clone for IngestingState<T> {
+        fn clone(&self) -> Self {
+            IngestingState {
+                items: self.items.clone(),
+                levels: self.levels.clone(),
+                k: self.k,
+                consumed_items: self.consumed_items,
+                compactor_capacity: self.compactor_capacity,
+                // Reseed: a clone that kept the state would draw the same
+                // promotion parities, correlating its error with the original's.
+                rng: rand::make_rng(),
+                scratch: self.scratch.clone(),
+            }
+        }
     }
 
     #[derive(Debug, Clone)]
@@ -476,7 +490,7 @@ pub mod req {
         coin: bool,
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     struct IngestingState<T: fmt::Debug + Clone + TotalOrd> {
         /// Contents of the relative compactors. The offsets of the compactors
         /// are stored in the levels vector. The top-level compactor is stored at
@@ -503,6 +517,24 @@ pub mod req {
         k: usize,
         consumed_items: usize,
         rng: SmallRng,
+    }
+
+    impl<T: fmt::Debug + Clone + TotalOrd> Clone for IngestingState<T> {
+        fn clone(&self) -> Self {
+            IngestingState {
+                items: self.items.clone(),
+                scratch: self.scratch.clone(),
+                levels: self.levels.clone(),
+                is_hra: self.is_hra,
+                n: self.n,
+                error: self.error,
+                k: self.k,
+                consumed_items: self.consumed_items,
+                // Reseed: a clone that kept the state would draw the same
+                // promotion parities, correlating its error with the original's.
+                rng: rand::make_rng(),
+            }
+        }
     }
 
     #[derive(Debug, Clone)]
@@ -945,5 +977,42 @@ fn merge_sorted<T: TotalOrd>(
                 }
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::kll::KLLSketch;
+    use super::req::ReqSketch;
+
+    /// Two clones fed identical data must not make identical random choices,
+    /// or their compaction errors are perfectly correlated.
+    #[test]
+    fn clones_are_reseeded() {
+        const QUANTILES: [f64; 5] = [0.1, 0.3, 0.5, 0.7, 0.9];
+        let data: Vec<f64> = (0..20_000).map(|i| ((i * 7919) % 20_000) as f64).collect();
+
+        macro_rules! assert_diverges {
+            ($name:literal, $new:expr) => {{
+                let agreed = (0..10)
+                    .filter(|_| {
+                        let mut base = $new;
+                        base.update(&data[..5_000]);
+                        let (mut a, mut b) = (base.clone(), base.clone());
+                        a.update(&data[5_000..]);
+                        b.update(&data[5_000..]);
+                        a.finalize();
+                        b.finalize();
+                        QUANTILES
+                            .iter()
+                            .all(|q| a.estimate_quantile(*q) == b.estimate_quantile(*q))
+                    })
+                    .count();
+                assert!(agreed <= 2, "{} clones agreed {agreed}/10 times", $name);
+            }};
+        }
+
+        assert_diverges!("ReqSketch", ReqSketch::new(0.01, true));
+        assert_diverges!("KLLSketch", KLLSketch::new(0.01));
     }
 }
