@@ -45,6 +45,10 @@ pub struct TableInfo {
     pub(crate) schema: Arc<Schema>,
 }
 
+/// An `ORDER BY` clause pointed at the aggregated frame, with the named
+/// aggregates the `GROUP BY` has to add for it.
+type ResolvedOrderBy = (Option<OrderBy>, Vec<(PlSmallStr, Expr)>);
+
 struct SelectModifiers {
     exclude: PlHashSet<String>,                // SELECT * EXCLUDE
     ilike: Option<regex::Regex>,               // SELECT * ILIKE
@@ -1725,9 +1729,8 @@ impl SQLContext {
                                 Ok,
                             )
                         },
-                        // A qualified reference names a key by identity; the alias that
-                        // restores the unqualified name would collide with the same
-                        // column taken from another relation.
+                        // Drop the alias that restores the unqualified name, so two
+                        // relations sharing a column name give distinct keys.
                         SQLExpr::CompoundIdentifier(_) => self
                             .expr_or_ordinal(e, &projections, None, Some(&schema), "GROUP BY")
                             .map(|e| strip_outer_alias(&e)),
@@ -2787,18 +2790,16 @@ impl SQLContext {
 
     /// Point every aggregate restated in `ORDER BY` at the column that holds it.
     ///
-    /// The sort runs on the aggregated frame, where the columns an aggregate
-    /// reads no longer exist. An aggregate the `SELECT` list already computes
-    /// is reached by its output name; any other is returned for the `GROUP BY`
-    /// to compute alongside them.
+    /// One the `SELECT` list already computes is reached by its output name;
+    /// any other is returned for the `GROUP BY` to add.
     fn resolve_order_by_aggregates(
         &mut self,
         order_by: &Option<OrderBy>,
         projections: &[Expr],
         schema: &Schema,
-    ) -> PolarsResult<(Option<OrderBy>, Vec<Expr>)> {
+    ) -> PolarsResult<ResolvedOrderBy> {
         let mut clause = order_by.clone();
-        let mut extra: Vec<Expr> = Vec::new();
+        let mut extra: Vec<(PlSmallStr, Expr)> = Vec::new();
 
         if let Some(OrderBy {
             kind: OrderByKind::Expressions(exprs),
@@ -2806,8 +2807,8 @@ impl SQLContext {
         }) = &mut clause
         {
             for ob in exprs {
-                // Only an aggregate needs redirecting; a SELECT alias or an ordinal
-                // already resolves against the aggregated frame.
+                // Anything without an aggregate already resolves against the
+                // aggregated frame.
                 let Ok(parsed) = parse_sql_expr(&ob.expr, self, Some(schema)) else {
                     continue;
                 };
@@ -2819,7 +2820,7 @@ impl SQLContext {
                     Some(projection) => projection.to_field(schema)?.name,
                     None => {
                         let name = format_pl_smallstr!("__POLARS_ORDERAGG_{}", extra.len());
-                        extra.push(parsed.alias(name.clone()));
+                        extra.push((name.clone(), parsed.alias(name.clone())));
                         name
                     },
                 };
@@ -2991,7 +2992,7 @@ impl SQLContext {
             None => (lf, None),
         };
 
-        aggregation_projection.extend(order_by_aggs.iter().cloned());
+        aggregation_projection.extend(order_by_aggs.iter().map(|(_, e)| e.clone()));
 
         let group_by = lf.group_by(group_by_keys);
         let aggregated = match having {
@@ -3048,8 +3049,8 @@ impl SQLContext {
 
         // Include original GROUP BY columns for ORDER BY access (if aliased).
         let mut output_projection = final_projection;
-        for e in &order_by_aggs {
-            output_projection.push(col(e.to_field(&schema_before)?.name));
+        for (name, _) in &order_by_aggs {
+            output_projection.push(col(name.clone()));
         }
         for key_name in group_by_keys_schema.iter_names() {
             if !projection_schema.contains(key_name) {
