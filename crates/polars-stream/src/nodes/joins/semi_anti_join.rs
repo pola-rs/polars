@@ -31,7 +31,11 @@ use super::{
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
 
-fn hash_keys(keys: &DataFrame, params: &SemiAntiJoinParams, null_is_valid: bool) -> HashKeys {
+fn hash_keys(
+    keys: &DataFrame,
+    params: &SemiAntiJoinParams,
+    null_is_valid: bool,
+) -> PolarsResult<HashKeys> {
     HashKeys::from_df(keys, params.random_state.clone(), null_is_valid, false)
 }
 
@@ -43,7 +47,7 @@ async fn select_keys(
     state: &ExecutionState,
 ) -> PolarsResult<HashKeys> {
     let keys = select_key_columns(df, key_selectors, state).await?;
-    Ok(hash_keys(&keys, params, null_is_valid))
+    hash_keys(&keys, params, null_is_valid)
 }
 
 struct SemiAntiJoinParams {
@@ -485,7 +489,7 @@ impl BuildState {
                 &keys,
                 params,
                 params.null_is_valid_when_built(params.left_is_build()),
-            );
+            )?;
 
             hash_keys.gen_idxs_per_partition(
                 &partitioner,

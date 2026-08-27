@@ -206,7 +206,7 @@ fn two_i64_schema() -> Arc<Schema> {
 }
 
 fn hash_keys(df: DataFrame) -> HashKeys {
-    HashKeys::from_df(&df, PlRandomState::default(), true, false)
+    HashKeys::from_df(&df, PlRandomState::default(), true, false).unwrap()
 }
 
 fn i32_i64_keys() -> HashKeys {

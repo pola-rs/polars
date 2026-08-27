@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 use polars_arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use polars_arrow::datatypes::ArrowDataType;
 use polars_async::executor::ALLOW_RAYON_THREADS;
+use polars_core::chunked_array::ops::row_encode::supports_row_encoding;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
@@ -1562,6 +1563,9 @@ pub fn lower_ir(
                     options.keep_strategy,
                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any
                 )
+                && group_by_output_schema
+                    .iter_values()
+                    .all(supports_row_encoding)
             {
                 let sorted_uniq_node = phys_sm.insert(PhysNode::new(
                     input_schema.clone(),

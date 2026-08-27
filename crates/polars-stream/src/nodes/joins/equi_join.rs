@@ -365,7 +365,7 @@ async fn select_keys_with_columns(
         params.random_state.clone(),
         params.args.nulls_equal,
         false,
-    );
+    )?;
     Ok((hash_keys, keys))
 }
 
