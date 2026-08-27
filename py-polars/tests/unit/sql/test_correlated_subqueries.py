@@ -256,9 +256,7 @@ def _sales_frames() -> dict[str, pl.DataFrame]:
                 "dsk": [1, 2, 1, 2, 1, 2],
             }
         ),
-        "item": pl.DataFrame(
-            {"i_item_sk": [1, 2, 3], "i_manufact_id": [977, 977, 42]}
-        ),
+        "item": pl.DataFrame({"i_item_sk": [1, 2, 3], "i_manufact_id": [977, 977, 42]}),
         "dd": pl.DataFrame({"d_date_sk": [1, 2], "d_year": [2000, 2001]}),
     }
 
