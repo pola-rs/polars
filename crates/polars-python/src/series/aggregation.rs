@@ -71,7 +71,9 @@ impl PySeries {
                 py,
             ),
             // For non-numeric output types we require mean_reduce.
-            dt if dt.is_temporal() => scalar_to_py(py.enter_polars(|| s.mean_reduce()), py),
+            dt if dt.is_temporal() || dt == &DataType::Uuid => {
+                scalar_to_py(py.enter_polars(|| s.mean_reduce()), py)
+            },
             _ => Ok(s.mean().into_pyobject(py)?),
         }
     }
@@ -84,7 +86,9 @@ impl PySeries {
                 py,
             ),
             // For non-numeric output types we require median_reduce.
-            dt if dt.is_temporal() => scalar_to_py(py.enter_polars(|| s.median_reduce()), py),
+            dt if dt.is_temporal() || dt == &DataType::Uuid => {
+                scalar_to_py(py.enter_polars(|| s.median_reduce()), py)
+            },
             _ => Ok(s.median().into_pyobject(py)?),
         }
     }

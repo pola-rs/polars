@@ -2660,7 +2660,7 @@ impl DataFrame {
     pub fn append_record_batch(&mut self, rb: RecordBatchT<ArrayRef>) -> PolarsResult<()> {
         // @Optimize: this does a lot of unnecessary allocations. We should probably have a
         // append_chunk or something like this. It is just quite difficult to make that safe.
-        let df = DataFrame::from(rb);
+        let df = DataFrame::try_from_record_batch(rb)?;
         polars_ensure!(
             self.schema() == df.schema(),
             SchemaMismatch: "cannot append record batch with different schema\n\n

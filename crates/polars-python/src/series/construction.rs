@@ -9,7 +9,7 @@ use polars::prelude::*;
 use polars_buffer::{Buffer, SharedStorage};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyBool, PyBytes, PyInt};
 
 use crate::PySeries;
 use crate::conversion::Wrap;
@@ -236,33 +236,47 @@ impl PySeries {
                 continue;
             }
 
-            let parsed = value
-                .getattr("int")
-                .ok()
-                .and_then(|v| v.extract::<u128>().ok())
-                .or_else(|| value.extract::<u128>().ok())
-                .or_else(|| {
-                    value
-                        .extract::<&str>()
-                        .ok()
-                        .and_then(polars::prelude::parse_uuid_str)
-                })
-                .or_else(|| {
-                    value.cast::<PyBytes>().ok().and_then(|v| {
-                        <[u8; 16]>::try_from(v.as_bytes())
-                            .ok()
-                            .map(u128::from_be_bytes)
-                    })
-                });
+            let parsed = if let Ok(value) = value.extract::<::uuid::Uuid>() {
+                Some(value.as_u128())
+            } else if let Ok(text) = value.extract::<&str>() {
+                match polars::prelude::parse_uuid_str(text) {
+                    parsed @ Some(_) => parsed,
+                    None if !strict => None,
+                    None => {
+                        return Err(PyValueError::new_err(format!(
+                            "cannot parse UUID from {text:?}"
+                        )));
+                    },
+                }
+            } else if let Ok(bytes) = value.cast::<PyBytes>() {
+                match <[u8; 16]>::try_from(bytes.as_bytes()) {
+                    Ok(bytes) => Some(u128::from_be_bytes(bytes)),
+                    Err(_) if !strict => None,
+                    Err(_) => {
+                        return Err(PyValueError::new_err(format!(
+                            "UUID bytes must contain exactly 16 bytes, got {}",
+                            bytes.as_bytes().len()
+                        )));
+                    },
+                }
+            } else if !strict
+                && value.is_instance_of::<PyInt>()
+                && !value.is_instance_of::<PyBool>()
+            {
+                value.extract::<u128>().ok()
+            } else {
+                if strict {
+                    return Err(PyTypeError::new_err(format!(
+                        "cannot convert value of type '{}' to UUID",
+                        value.get_type().name()?
+                    )));
+                }
+                None
+            };
 
             match parsed {
                 Some(value) => builder.append_value(value),
-                None if !strict => builder.append_null(),
-                None => {
-                    return Err(PyTypeError::new_err(format!(
-                        "cannot convert value {value:?} to Uuid"
-                    )));
-                },
+                None => builder.append_null(),
             }
         }
 

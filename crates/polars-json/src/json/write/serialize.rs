@@ -115,6 +115,7 @@ fn primitive_serializer<'a, T: NativeType + itoa::Integer>(
     materialize_serializer(f, array.iter(), offset, take)
 }
 
+#[cfg(feature = "dtype-uuid")]
 fn uuid_serializer<'a>(
     array: &'a FixedSizeBinaryArray,
     offset: usize,
@@ -504,8 +505,9 @@ pub fn new_serializer<'a>(
     offset: usize,
     take: usize,
 ) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
+    #[cfg(feature = "dtype-uuid")]
     if let ArrowDataType::Extension(ext) = array.dtype()
-        && ext.name.as_str() == "arrow.uuid"
+        && ext.name.as_str() == arrow::datatypes::ARROW_UUID_EXTENSION_NAME
     {
         return uuid_serializer(array.as_any().downcast_ref().unwrap(), offset, take);
     }

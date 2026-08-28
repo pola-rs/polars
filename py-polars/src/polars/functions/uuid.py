@@ -38,6 +38,13 @@ def uuid4(n: int | Expr, *, eager: bool = False) -> Expr | Series:
     Expr or Series
         UUID values with dtype :class:`UUID`.
 
+    Notes
+    -----
+    UUID generation is non-deterministic. Reusing the same lazy query in multiple
+    branches evaluates the generator independently in each branch; collect the query
+    first or add an explicit :meth:`LazyFrame.cache` when the generated values must be
+    shared.
+
     Examples
     --------
     >>> ids = pl.uuid4(2, eager=True)
@@ -79,6 +86,13 @@ def uuid7(n: int | Expr, *, eager: bool = False) -> Expr | Series:
     -------
     Expr or Series
         UUID values with dtype :class:`UUID`.
+
+    Notes
+    -----
+    UUID generation is non-deterministic. Reusing the same lazy query in multiple
+    branches evaluates the generator independently in each branch; collect the query
+    first or add an explicit :meth:`LazyFrame.cache` when the generated values must be
+    shared.
 
     Examples
     --------

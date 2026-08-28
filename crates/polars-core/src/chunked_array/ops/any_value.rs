@@ -40,6 +40,8 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::UInt32 => downcast_and_pack!(UInt32Array, UInt32),
         DataType::UInt64 => downcast_and_pack!(UInt64Array, UInt64),
         DataType::UInt128 => downcast_and_pack!(UInt128Array, UInt128),
+        #[cfg(feature = "dtype-uuid")]
+        DataType::Uuid => downcast_and_pack!(UInt128Array, Uuid),
         DataType::Int8 => downcast_and_pack!(Int8Array, Int8),
         DataType::Int16 => downcast_and_pack!(Int16Array, Int16),
         DataType::Int32 => downcast_and_pack!(Int32Array, Int32),

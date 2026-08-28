@@ -43,6 +43,10 @@ Use `uuid4` to generate random UUIDs. Use `uuid7` when identifiers should retain
 order. Both functions take an explicit row count and can return either an expression or an eager
 series.
 
+Generation expressions are non-deterministic. If one lazy query containing a generator is reused
+in multiple branches, each branch evaluates the generator independently. Collect the generated
+column first or add an explicit `LazyFrame.cache` when all branches must share the same identifiers.
+
 {{code_block('user-guide/concepts/uuids','generation',[],['uuid4','uuid7'],[])}}
 
 ```python exec="on" result="text" session="user-guide/uuids"
@@ -68,5 +72,6 @@ Polars preserves the logical type when exchanging UUID columns with systems that
 - Parquet uses the standard UUID logical annotation.
 - CSV, JSON, and NDJSON use lowercase, hyphenated UUID text.
 
-Canonical text, compact text without hyphens, braced text, and `urn:uuid:` text can all be parsed.
+Canonical text, compact text without hyphens, braced text, and all-lowercase or all-uppercase
+`urn:uuid:` text can be parsed. Mixed-case URN prefixes are not accepted.
 The resulting UUID values compare consistently with Python, PostgreSQL, and DuckDB UUID values.

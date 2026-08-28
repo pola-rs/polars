@@ -60,7 +60,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     while let Some(batch) = reader.next_record_batch()? {
         let current_num_rows = num_rows as IdxSize;
         num_rows += batch.len();
-        let mut df = DataFrame::from(batch);
+        let mut df = DataFrame::try_from_record_batch(batch)?;
 
         if let Some(rc) = &row_index {
             unsafe { df.with_row_index_mut(rc.name.clone(), Some(current_num_rows + rc.offset)) };

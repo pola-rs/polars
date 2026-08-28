@@ -108,8 +108,9 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         .and_then(|m| m.get(PARQUET_FIELD_ID_KEY))
         .and_then(|v| v.parse().ok());
 
+    #[cfg(feature = "dtype-uuid")]
     if let ArrowDataType::Extension(ext) = field.dtype()
-        && ext.name.as_str() == "arrow.uuid"
+        && ext.name.as_str() == arrow::datatypes::ARROW_UUID_EXTENSION_NAME
     {
         if ext.inner != ArrowDataType::FixedSizeBinary(16) {
             polars_bail!(SchemaMismatch:

@@ -188,10 +188,10 @@ fn from_fixed_len_byte_array(
         (None, Some(PrimitiveConvertedType::Interval)) => {
             ArrowDataType::Interval(IntervalUnit::MonthDayMillis)
         },
-        (Some(PrimitiveLogicalType::Uuid), _) => {
-            assert_eq!(length, 16, "Parquet UUID must use FIXED_LEN_BYTE_ARRAY(16)");
+        #[cfg(feature = "dtype-uuid")]
+        (Some(PrimitiveLogicalType::Uuid), _) if length == 16 => {
             ArrowDataType::Extension(Box::new(arrow::datatypes::ExtensionType {
-                name: PlSmallStr::from_static("arrow.uuid"),
+                name: PlSmallStr::from_static(arrow::datatypes::ARROW_UUID_EXTENSION_NAME),
                 inner: ArrowDataType::FixedSizeBinary(16),
                 metadata: None,
             }))
@@ -463,6 +463,30 @@ mod tests {
 
     use super::*;
     use crate::parquet::metadata::SchemaDescriptor;
+
+    #[test]
+    fn malformed_uuid_length_falls_back_to_fixed_size_binary() {
+        assert_eq!(
+            from_fixed_len_byte_array(8, Some(PrimitiveLogicalType::Uuid), None),
+            ArrowDataType::FixedSizeBinary(8)
+        );
+
+        #[cfg(feature = "dtype-uuid")]
+        assert_eq!(
+            from_fixed_len_byte_array(16, Some(PrimitiveLogicalType::Uuid), None),
+            ArrowDataType::Extension(Box::new(arrow::datatypes::ExtensionType {
+                name: PlSmallStr::from_static(arrow::datatypes::ARROW_UUID_EXTENSION_NAME),
+                inner: ArrowDataType::FixedSizeBinary(16),
+                metadata: None,
+            }))
+        );
+
+        #[cfg(not(feature = "dtype-uuid"))]
+        assert_eq!(
+            from_fixed_len_byte_array(16, Some(PrimitiveLogicalType::Uuid), None),
+            ArrowDataType::FixedSizeBinary(16)
+        );
+    }
 
     #[test]
     fn test_flat_primitives() -> PolarsResult<()> {

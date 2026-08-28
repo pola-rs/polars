@@ -20,6 +20,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::array::LIST_VALUES_NAME;
 
+/// The canonical Arrow extension name for RFC 9562 UUID values.
+pub const ARROW_UUID_EXTENSION_NAME: &str = "arrow.uuid";
+
 /// typedef for [BTreeMap<PlSmallStr, PlSmallStr>] denoting [`Field`]'s and [`ArrowSchema`]'s metadata.
 pub type Metadata = BTreeMap<PlSmallStr, PlSmallStr>;
 /// typedef for [Option<(PlSmallStr, Option<PlSmallStr>)>] descr

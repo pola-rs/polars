@@ -962,13 +962,7 @@ impl Series {
         #[cfg(feature = "dtype-uuid")]
         match self.dtype() {
             DataType::UInt128 => self.u128().unwrap().clone().into_uuid().into_series(),
-            DataType::Uuid => self
-                .uuid()
-                .unwrap()
-                .physical()
-                .clone()
-                .into_uuid()
-                .into_series(),
+            DataType::Uuid => self,
             dt => panic!("uuid not implemented for {dt:?}"),
         }
     }

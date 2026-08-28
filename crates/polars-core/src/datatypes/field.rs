@@ -6,7 +6,7 @@ use polars_utils::pl_str::PlSmallStr;
 use super::*;
 use crate::config::check_allow_importing_interval_as_struct;
 pub static POLARS_OBJECT_EXTENSION_NAME: &str = "_POLARS_PYTHON_OBJECT";
-pub static ARROW_UUID_EXTENSION_NAME: &str = "arrow.uuid";
+pub use arrow::datatypes::ARROW_UUID_EXTENSION_NAME;
 
 /// Characterizes the name and the [`DataType`] of a column.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -270,12 +270,13 @@ impl DataType {
             },
             #[cfg(feature = "dtype-uuid")]
             ArrowDataType::Extension(ext) if ext.name.as_str() == ARROW_UUID_EXTENSION_NAME => {
-                assert_eq!(
-                    ext.inner,
-                    ArrowDataType::FixedSizeBinary(16),
-                    "arrow.uuid must use FixedSizeBinary(16) storage"
-                );
-                DataType::Uuid
+                if ext.inner == ArrowDataType::FixedSizeBinary(16) {
+                    DataType::Uuid
+                } else {
+                    // Schema conversion is infallible. Preserve that API without panicking on
+                    // malformed external metadata; array import performs the fallible validation.
+                    DataType::from_arrow(&ext.inner, md)
+                }
             },
             #[cfg(feature = "dtype-extension")]
             ArrowDataType::Extension(ext) => {

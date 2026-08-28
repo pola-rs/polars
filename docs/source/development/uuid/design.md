@@ -100,9 +100,9 @@ statistics evaluation and is covered by a lazy scan predicate test.
 ## Python, expressions, I/O, and SQL
 
 The Python boundary includes native dtype conversion and inference from `uuid.UUID`, construction
-from UUID objects, integers, strings, and 16-byte values, scalar/list export as `uuid.UUID`, UUID
-scalar comparison broadcasting, UUID expression/series namespaces, UUIDv4/v7 generation, and typed
-lazy-plan visitor nodes.
+from UUID objects, strings, and 16-byte values, optional non-strict integer coercion, scalar/list
+export as `uuid.UUID`, UUID scalar comparison broadcasting, UUID expression/series namespaces,
+UUIDv4/v7 generation, and typed lazy-plan visitor nodes.
 
 The implementation provides:
 
@@ -117,13 +117,18 @@ The public generator count is explicit (`pl.uuid4(n)` and `pl.uuid7(n)`). Intern
 namespace can generate one UUID per input row. Explicit cardinality avoids a standalone Python
 expression whose length silently changes with projection context.
 
+Generator expressions are non-deterministic. Reusing a lazy query containing a generator in
+multiple branches evaluates it independently in each branch. Call `collect` first or add an
+explicit `LazyFrame.cache` when generated identifiers must be shared across branches.
+
 I/O and SQL behavior is as follows:
 
 - IPC preserves `arrow.uuid` metadata.
 - Parquet preserves the standard UUID logical type and interoperates with DuckDB.
 - CSV and JSON write canonical UUID strings.
 - CSV schema overrides parse through strict UUID casts.
-- NDJSON supports direct UUID parsing, error/null behavior, and nested UUID lists.
+- JSON and NDJSON support direct UUID parsing; NDJSON also supports configurable error/null
+  behavior and nested UUID lists.
 - SQL `CAST(... AS UUID)` produces native UUID values when `dtype-uuid` is enabled; builds without
   that feature retain the existing string fallback.
 

@@ -107,6 +107,7 @@ fn integer_serializer<I: NativeType + itoa::Integer>(
     make_serializer::<_, _, false>(f, array.iter())
 }
 
+#[cfg(feature = "dtype-uuid")]
 fn uuid_serializer<'a>(
     array: &'a PrimitiveArray<u128>,
     options: &SerializeOptions,

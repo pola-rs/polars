@@ -115,6 +115,39 @@ fn deserialize_binary<'a, A: Borrow<BorrowedValue<'a>>>(
     Ok(out)
 }
 
+#[cfg(feature = "dtype-uuid")]
+fn deserialize_uuid<'a, A: Borrow<BorrowedValue<'a>>>(
+    rows: &[A],
+    dtype: ArrowDataType,
+) -> PolarsResult<FixedSizeBinaryArray> {
+    let mut err_idx = rows.len();
+    let values = rows
+        .iter()
+        .enumerate()
+        .map(|(i, row)| match row.borrow() {
+            BorrowedValue::String(value) => match uuid::Uuid::parse_str(value) {
+                Ok(value) => Some(*value.as_bytes()),
+                Err(_) => {
+                    if err_idx == rows.len() {
+                        err_idx = i;
+                    }
+                    None
+                },
+            },
+            BorrowedValue::Static(StaticNode::Null) => None,
+            _ => {
+                if err_idx == rows.len() {
+                    err_idx = i;
+                }
+                None
+            },
+        })
+        .collect::<Vec<_>>();
+
+    check_err_idx(rows, err_idx, "UUID")?;
+    Ok(FixedSizeBinaryArray::from(values.as_slice()).to(dtype))
+}
+
 fn deserialize_utf8_into<'a, O: Offset, A: Borrow<BorrowedValue<'a>>>(
     target: &mut MutableUtf8Array<O>,
     rows: &[A],
@@ -527,12 +560,21 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
             allow_extra_fields_in_struct,
         )?)),
         ArrowDataType::LargeBinary => Ok(Box::new(deserialize_binary(rows)?)),
+        #[cfg(feature = "dtype-uuid")]
+        ArrowDataType::Extension(ext)
+            if ext.name.as_str() == arrow::datatypes::ARROW_UUID_EXTENSION_NAME
+                && ext.inner == ArrowDataType::FixedSizeBinary(16) =>
+        {
+            Ok(Box::new(deserialize_uuid(rows, dtype)?))
+        },
         ArrowDataType::Struct(_) => Ok(Box::new(deserialize_struct(
             rows,
             dtype,
             allow_extra_fields_in_struct,
         )?)),
-        adt => unimplemented!("Deserialization from JSON not implemented for {adt:?}"),
+        adt => {
+            polars_bail!(ComputeError: "deserialization from JSON is not implemented for {adt:?}")
+        },
     }
 }
 

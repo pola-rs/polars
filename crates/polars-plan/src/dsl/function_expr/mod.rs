@@ -98,8 +98,6 @@ pub enum FunctionExpr {
     TemporalExpr(TemporalFunction),
     #[cfg(feature = "bitwise")]
     Bitwise(BitwiseFunction),
-    #[cfg(feature = "dtype-uuid")]
-    UuidExpr(UuidFunction),
 
     // Other expressions
     Boolean(BooleanFunction),
@@ -394,6 +392,8 @@ pub enum FunctionExpr {
     RowEncode(RowEncodingVariant),
     #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<(PlSmallStr, DataTypeExpr)>, RowEncodingVariant),
+    #[cfg(feature = "dtype-uuid")]
+    UuidExpr(UuidFunction),
 }
 
 impl Hash for FunctionExpr {

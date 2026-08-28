@@ -111,8 +111,6 @@ pub enum IRFunctionExpr {
     TemporalExpr(IRTemporalFunction),
     #[cfg(feature = "bitwise")]
     Bitwise(IRBitwiseFunction),
-    #[cfg(feature = "dtype-uuid")]
-    UuidExpr(IRUuidFunction),
 
     // Other expressions
     Boolean(IRBooleanFunction),
@@ -409,6 +407,8 @@ pub enum IRFunctionExpr {
     DynamicPred {
         pred: DynamicPredWeakRef,
     },
+    #[cfg(feature = "dtype-uuid")]
+    UuidExpr(IRUuidFunction),
 }
 
 impl Hash for IRFunctionExpr {

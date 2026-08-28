@@ -7,6 +7,14 @@ use crate::utils::{_split_offsets, accumulate_dataframes_vertical_unchecked, spl
 
 impl From<RecordBatch> for DataFrame {
     fn from(rb: RecordBatch) -> DataFrame {
+        DataFrame::try_from_record_batch(rb)
+            .expect("record batch should contain arrays compatible with its schema")
+    }
+}
+
+impl DataFrame {
+    /// Convert a record batch to a DataFrame, validating logical Arrow types.
+    pub fn try_from_record_batch(rb: RecordBatch) -> PolarsResult<Self> {
         let height = rb.height();
         let (schema, arrays) = rb.into_schema_and_arrays();
 
@@ -24,13 +32,12 @@ impl From<RecordBatch> for DataFrame {
                         field.metadata.as_deref(),
                     )
                 }
-                .unwrap()
-                .into_column()
+                .map(Column::from)
             })
-            .collect();
+            .collect::<PolarsResult<_>>()?;
 
         // SAFETY: RecordBatch has the same invariants for names and heights as DataFrame.
-        unsafe { DataFrame::new_unchecked(height, columns) }
+        Ok(unsafe { DataFrame::new_unchecked(height, columns) })
     }
 }
 

@@ -48,9 +48,6 @@ pub enum AnyValue<'a> {
     UInt64(u64),
     /// An unsigned 128-bit integer number.
     UInt128(u128),
-    /// A universally unique identifier, represented in RFC 9562 byte order.
-    #[cfg(feature = "dtype-uuid")]
-    Uuid(u128),
     /// An 8-bit integer number.
     Int8(i8),
     /// A 16-bit integer number.
@@ -117,6 +114,9 @@ pub enum AnyValue<'a> {
     /// A 128-bit fixed point decimal number with a precision and scale.
     #[cfg(feature = "dtype-decimal")]
     Decimal(i128, usize, usize),
+    /// A universally unique identifier, represented in RFC 9562 byte order.
+    #[cfg(feature = "dtype-uuid")]
+    Uuid(u128),
 }
 
 impl AnyValue<'static> {
@@ -450,8 +450,20 @@ impl<'a> AnyValue<'a> {
                 AnyValue::Uuid(crate::chunked_array::logical::parse_uuid_str(v.as_str())?)
             },
             #[cfg(feature = "dtype-uuid")]
+            (AnyValue::Binary(v), DataType::Uuid) => {
+                AnyValue::Uuid(u128::from_be_bytes((*v).try_into().ok()?))
+            },
+            #[cfg(feature = "dtype-uuid")]
+            (AnyValue::BinaryOwned(v), DataType::Uuid) => {
+                AnyValue::Uuid(u128::from_be_bytes(v.as_slice().try_into().ok()?))
+            },
+            #[cfg(feature = "dtype-uuid")]
             (AnyValue::Uuid(v), DataType::String) => {
                 AnyValue::StringOwned(PlSmallStr::from(uuid::Uuid::from_u128(*v).to_string()))
+            },
+            #[cfg(feature = "dtype-uuid")]
+            (AnyValue::Uuid(v), DataType::Binary) => {
+                AnyValue::BinaryOwned(u128::to_be_bytes(*v).to_vec())
             },
             (av, DataType::Int8) => AnyValue::Int8(av.extract::<i8>()?),
             (av, DataType::Int16) => AnyValue::Int16(av.extract::<i16>()?),

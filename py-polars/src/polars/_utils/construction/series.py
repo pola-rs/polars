@@ -33,6 +33,7 @@ from polars._utils.various import (
 )
 from polars._utils.wrap import wrap_s
 from polars.datatypes import (
+    UUID,
     Array,
     BaseExtension,
     Boolean,
@@ -354,6 +355,8 @@ def _construct_series_with_fallbacks(
     try:
         return constructor(name, values, strict)
     except (TypeError, OverflowError) as e:
+        if dtype == UUID:
+            raise
         # # This retry with i64 is related to https://github.com/pola-rs/polars/issues/17231
         # # Essentially, when given a [0, u64::MAX] then it would Overflow.
         if (

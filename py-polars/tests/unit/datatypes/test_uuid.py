@@ -35,6 +35,33 @@ def test_uuid_construction_and_python_roundtrip() -> None:
     assert rows.schema == {"column_0": pl.UUID}
     assert rows["column_0"].to_list() == [V4_A, V4_B]
 
+    nested_text = pl.Series([[str(V4_A), None]], dtype=pl.List(pl.UUID))
+    assert nested_text.to_list() == [[V4_A, None]]
+
+
+def test_uuid_python_export_and_struct() -> None:
+    np = pytest.importorskip("numpy")
+    values = pl.Series("id", [V4_A, None])
+
+    assert values.to_numpy().tolist() == [V4_A, None]
+    assert np.asarray(values).tolist() == [V4_A, None]
+    assert pl.DataFrame({"id": values}).to_numpy().tolist() == [[V4_A], [None]]
+    assert pl.Series([[V4_A]]).to_numpy().tolist() == [[V4_A]]
+
+    frame = pl.DataFrame({"s": [{"id": V4_A}, {"id": None}]})
+    assert frame.rows() == [({"id": V4_A},), ({"id": None},)]
+    assert frame.to_dicts() == [{"s": {"id": V4_A}}, {"s": {"id": None}}]
+    assert_frame_equal(frame.unnest("s"), pl.DataFrame({"id": [V4_A, None]}))
+
+
+def test_uuid_to_pandas_preserves_python_uuid() -> None:
+    pytest.importorskip("pandas")
+    pytest.importorskip("pyarrow")
+    values = pl.Series("id", [V4_A, None])
+
+    assert values.to_pandas().tolist() == [V4_A, None]
+    assert values.to_pandas(use_pyarrow_extension_array=True).tolist() == [V4_A, None]
+
 
 def test_uuid_postgresql_text_forms_and_strict_cast() -> None:
     values = pl.Series(
@@ -52,6 +79,25 @@ def test_uuid_postgresql_text_forms_and_strict_cast() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series(["not-a-uuid"]).cast(pl.UUID)
     assert pl.Series(["not-a-uuid"]).cast(pl.UUID, strict=False).to_list() == [None]
+
+
+def test_uuid_cast_policy_and_errors() -> None:
+    values = pl.Series("id", [V4_A, None])
+
+    for dtype in [pl.Float64, pl.Boolean, pl.Int64, pl.Time, pl.Datetime("ms")]:
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match="cannot cast UUID"
+        ):
+            values.cast(dtype)
+        with pytest.raises(
+            pl.exceptions.InvalidOperationError, match="cannot cast UUID"
+        ):
+            values.cast(dtype, strict=False)
+
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="mean"):
+        values.mean()
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="median"):
+        values.median()
 
 
 def test_uuid_binary_and_integer_roundtrip() -> None:
@@ -82,6 +128,26 @@ def test_uuid_sort_unique_group_and_join() -> None:
     assert values.is_in([V4_A]).to_list() == [False, True, False, None]
 
 
+def test_uuid_streaming_min_max() -> None:
+    frame = pl.LazyFrame(
+        {"group": [1, 1, 2], "id": [V4_B, V4_A, None]},
+    )
+    assert_frame_equal(
+        frame.select(
+            pl.col("id").min().alias("min"),
+            pl.col("id").max().alias("max"),
+        ).collect(engine="streaming"),
+        pl.DataFrame({"min": [V4_A], "max": [V4_B]}),
+    )
+    assert_frame_equal(
+        frame.group_by("group")
+        .agg(pl.col("id").min())
+        .sort("group")
+        .collect(engine="streaming"),
+        pl.DataFrame({"group": [1, 2], "id": [V4_A, None]}),
+    )
+
+
 def test_uuid_scalar_comparison() -> None:
     values = pl.Series("id", [V4_B, V4_A, None])
     assert (values == V4_A).to_list() == [False, True, None]
@@ -91,6 +157,31 @@ def test_uuid_scalar_comparison() -> None:
     assert pl.DataFrame({"id": values}).filter(pl.col("id") == V4_A).to_dicts() == [
         {"id": V4_A}
     ]
+
+    assert (values == str(V4_A)).to_list() == [False, True, None]
+    assert (values == V4_A.bytes).to_list() == [False, True, None]
+    assert values.is_in([str(V4_A)]).to_list() == [False, True, None]
+    assert values.index_of(str(V4_A)) == 1
+
+    with pytest.raises(TypeError, match=r"cannot convert.*int.*UUID"):
+        _ = values == 123
+    with pytest.raises(TypeError, match=r"cannot convert.*int.*UUID"):
+        values.is_in([123])
+    with pytest.raises(TypeError, match=r"cannot convert.*int.*UUID"):
+        values.index_of(123)
+
+
+def test_uuid_constructor_coercion_policy() -> None:
+    assert pl.Series([str(V4_A)], dtype=pl.UUID, strict=True).item() == V4_A
+    assert pl.Series([V4_A.bytes], dtype=pl.UUID, strict=True).item() == V4_A
+    assert pl.Series([123], dtype=pl.UUID, strict=False).item() == UUID(int=123)
+
+    with pytest.raises(TypeError, match=r"cannot convert.*int.*UUID"):
+        pl.Series([123], dtype=pl.UUID, strict=True)
+    with pytest.raises(ValueError, match="cannot parse UUID"):
+        pl.Series(["not-a-uuid"], dtype=pl.UUID, strict=True)
+    with pytest.raises(ValueError, match="exactly 16 bytes"):
+        pl.Series([b"too short"], dtype=pl.UUID, strict=True)
 
 
 def test_uuid_namespace() -> None:
@@ -139,6 +230,27 @@ def test_uuid_arrow_parquet_roundtrip() -> None:
     ipc = BytesIO()
     frame.write_ipc(ipc)
     assert_frame_equal(pl.read_ipc(BytesIO(ipc.getvalue())), frame)
+
+
+def test_malformed_arrow_uuid_is_a_schema_error() -> None:
+    pa = pytest.importorskip("pyarrow")
+    ipc = pytest.importorskip("pyarrow.ipc")
+
+    field = pa.field(
+        "id",
+        pa.binary(8),
+        metadata={"ARROW:extension:name": "arrow.uuid"},
+    )
+    table = pa.table(
+        [pa.array([b"12345678"], type=pa.binary(8))],
+        schema=pa.schema([field]),
+    )
+    buffer = BytesIO()
+    with ipc.new_file(buffer, table.schema) as writer:
+        writer.write_table(table)
+
+    with pytest.raises(pl.exceptions.SchemaError, match=r"arrow\.uuid"):
+        pl.read_ipc(BytesIO(buffer.getvalue()))
 
 
 def test_nested_uuid_roundtrip() -> None:
@@ -210,6 +322,33 @@ def test_uuid_csv_and_ndjson_read_schema_override() -> None:
         ).item()
         is None
     )
+
+
+def test_uuid_json_read_schema() -> None:
+    source = StringIO(f'[{{"id":"{V4_A}"}},{{"id":null}}]')
+    assert_frame_equal(
+        pl.read_json(source, schema={"id": pl.UUID}),
+        pl.DataFrame({"id": [V4_A, None]}),
+    )
+
+    with pytest.raises(pl.exceptions.ComputeError, match="UUID"):
+        pl.read_json(
+            StringIO('[{"id":"not-a-uuid"}]'),
+            schema={"id": pl.UUID},
+        )
+
+
+def test_uuid_empty_and_miscellaneous_operations() -> None:
+    empty = pl.Series("id", [], dtype=pl.UUID)
+    nulls = pl.Series("id", [None, None], dtype=pl.UUID)
+    values = pl.Series("id", [V4_B, V4_A, V4_B])
+
+    assert empty.to_list() == []
+    assert nulls.min() is None
+    assert nulls.max() is None
+    assert values.mode().to_list() == [V4_B]
+    assert values.sort().search_sorted(V4_A) == 0
+    assert values.value_counts().sort("id")["count"].to_list() == [1, 2]
 
 
 def test_uuid_sql_cast() -> None:

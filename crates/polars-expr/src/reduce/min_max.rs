@@ -47,6 +47,8 @@ pub fn new_min_reduction(
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VMGR::new(dtype, NumReducer::<Min<Int128Type>>::new())),
+        #[cfg(feature = "dtype-uuid")]
+        Uuid => Box::new(VMGR::new(dtype, NumReducer::<Min<UInt128Type>>::new())),
         #[cfg(feature = "dtype-categorical")]
         Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
             Box::new(VMGR::new(dtype.clone(), CatMinReducer::<$C>(map.clone(), PhantomData)))
@@ -89,6 +91,8 @@ pub fn new_max_reduction(
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VMGR::new(dtype, NumReducer::<Max<Int128Type>>::new())),
+        #[cfg(feature = "dtype-uuid")]
+        Uuid => Box::new(VMGR::new(dtype, NumReducer::<Max<UInt128Type>>::new())),
         #[cfg(feature = "dtype-categorical")]
         Categorical(cats, map) => with_match_categorical_physical_type!(cats.physical(), |$C| {
             Box::new(VMGR::new(dtype.clone(), CatMaxReducer::<$C>(map.clone(), PhantomData)))

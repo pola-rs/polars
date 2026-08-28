@@ -126,9 +126,9 @@ __all__ = [
     "repeat",
     "time_range",
     "time_ranges",
-    "zeros",
     "uuid4",
     "uuid7",
+    "zeros",
     # polars.functions.lazy
     "_row_encode",
     "arange",

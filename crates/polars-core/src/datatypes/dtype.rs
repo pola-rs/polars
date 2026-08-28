@@ -111,12 +111,6 @@ pub enum DataType {
     String,
     Binary,
     BinaryOffset,
-    /// A 128-bit universally unique identifier as defined by RFC 9562.
-    ///
-    /// UUID values are backed by an unsigned 128-bit integer in memory and use
-    /// the canonical `arrow.uuid` extension type at Arrow boundaries.
-    #[cfg(feature = "dtype-uuid")]
-    Uuid,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
     Date,
@@ -148,6 +142,12 @@ pub enum DataType {
     Extension(ExtensionTypeInstance, Box<DataType>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown(UnknownKind),
+    /// A 128-bit universally unique identifier as defined by RFC 9562.
+    ///
+    /// UUID values are backed by an unsigned 128-bit integer in memory and use
+    /// the canonical `arrow.uuid` extension type at Arrow boundaries.
+    #[cfg(feature = "dtype-uuid")]
+    Uuid,
 }
 
 pub trait AsRefDataType {

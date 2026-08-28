@@ -229,14 +229,48 @@ fn any_values_to_uuid(values: &[AnyValue], strict: bool) -> PolarsResult<UuidChu
         match av {
             AnyValue::Uuid(v) => builder.append_value(*v),
             AnyValue::Null => builder.append_null(),
+            AnyValue::String(v) => match parse_uuid_str(v) {
+                Some(v) => builder.append_value(v),
+                None if !strict => builder.append_null(),
+                None => return Err(invalid_value_error(&DataType::Uuid, av)),
+            },
+            AnyValue::StringOwned(v) => match parse_uuid_str(v.as_str()) {
+                Some(v) => builder.append_value(v),
+                None if !strict => builder.append_null(),
+                None => return Err(invalid_value_error(&DataType::Uuid, av)),
+            },
+            AnyValue::Binary(v) => match <[u8; 16]>::try_from(*v) {
+                Ok(v) => builder.append_value(u128::from_be_bytes(v)),
+                Err(_) if !strict => builder.append_null(),
+                Err(_) => return Err(invalid_value_error(&DataType::Uuid, av)),
+            },
+            AnyValue::BinaryOwned(v) => match <[u8; 16]>::try_from(v.as_slice()) {
+                Ok(v) => builder.append_value(u128::from_be_bytes(v)),
+                Err(_) if !strict => builder.append_null(),
+                Err(_) => return Err(invalid_value_error(&DataType::Uuid, av)),
+            },
+            AnyValue::UInt8(_)
+            | AnyValue::UInt16(_)
+            | AnyValue::UInt32(_)
+            | AnyValue::UInt64(_)
+            | AnyValue::UInt128(_)
+            | AnyValue::Int8(_)
+            | AnyValue::Int16(_)
+            | AnyValue::Int32(_)
+            | AnyValue::Int64(_)
+            | AnyValue::Int128(_)
+                if !strict =>
+            {
+                match av.strict_cast(&DataType::UInt128) {
+                    Some(AnyValue::UInt128(v)) => builder.append_value(v),
+                    _ => builder.append_null(),
+                }
+            },
             av => {
                 if strict {
                     return Err(invalid_value_error(&DataType::Uuid, av));
                 }
-                match av.cast(&DataType::Uuid) {
-                    AnyValue::Uuid(v) => builder.append_value(v),
-                    _ => builder.append_null(),
-                }
+                builder.append_null();
             },
         }
     }

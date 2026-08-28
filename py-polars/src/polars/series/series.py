@@ -4297,6 +4297,13 @@ class Series(metaclass=_Meta):
             false
         ]
         """
+        if self.dtype == UUID and not isinstance(other, Series):
+            other = Series("", list(other), dtype=UUID).implode()
+        return (
+            self.to_frame()
+            .select_seq(F.col(self.name).is_in(other, nulls_equal=nulls_equal))
+            .to_series()
+        )
 
     def arg_true(self) -> Series:
         """
@@ -5086,6 +5093,9 @@ class Series(metaclass=_Meta):
         2    <NA>
         Name: b, dtype: int64[pyarrow]
         """
+        if self.dtype == UUID:
+            # pandas has no native UUID representation, so preserve Python scalars.
+            return pd.Series(self.to_list(), dtype=object, name=self.name)
         if self.dtype == Object:
             # Can't convert via PyArrow, so do it via NumPy
             return pd.Series(self.to_numpy(), dtype=object, name=self.name)
@@ -5326,6 +5336,9 @@ class Series(metaclass=_Meta):
         >>> s.index_of(55) is None
         True
         """
+        if self.dtype == UUID and not isinstance(element, pl.Expr):
+            element = Series("", [element], dtype=UUID).item()
+            element = F.lit(element, dtype=UUID)
         return F.select(F.lit(self).index_of(element)).item()
 
     def clear(self, n: int = 0) -> Series:

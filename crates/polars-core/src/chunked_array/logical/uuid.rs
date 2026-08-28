@@ -1,4 +1,5 @@
 use super::*;
+use crate::prelude::arity::unary_elementwise;
 use crate::prelude::*;
 
 pub type UuidChunked = Logical<UuidType, UInt128Type>;
@@ -60,11 +61,9 @@ impl UInt128Chunked {
 impl UuidChunked {
     /// Extract the four-bit UUID version field.
     pub fn version(&self) -> UInt8Chunked {
-        self.phys
-            .iter()
-            .map(|value| value.map(|value| ((value >> 76) & 0x0f) as u8))
-            .collect::<UInt8Chunked>()
-            .with_name(self.name().clone())
+        unary_elementwise(&self.phys, |value| {
+            value.map(|value| ((value >> 76) & 0x0f) as u8)
+        })
     }
 
     /// Extract the Unix epoch millisecond timestamp embedded in UUIDv7 values.
@@ -89,6 +88,55 @@ impl UuidChunked {
             }
         }
         Ok(out.finish())
+    }
+}
+
+impl LogicalType for UuidChunked {
+    fn dtype(&self) -> &DataType {
+        &DataType::Uuid
+    }
+
+    fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
+        self.phys.get_any_value(i).map(|av| av.as_uuid())
+    }
+
+    unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
+        self.phys.get_any_value_unchecked(i).as_uuid()
+    }
+
+    fn cast_with_options(
+        &self,
+        dtype: &DataType,
+        _cast_options: CastOptions,
+    ) -> PolarsResult<Series> {
+        match dtype {
+            DataType::Uuid => Ok(self.clone().into_series()),
+            DataType::UInt128 => Ok(self.phys.clone().into_series()),
+            DataType::String => {
+                let mut out = StringChunkedBuilder::new(self.name().clone(), self.len());
+                let mut buffer = ::uuid::Uuid::encode_buffer();
+                for value in self.phys.iter() {
+                    match value {
+                        Some(value) => out.append_value(
+                            ::uuid::Uuid::from_u128(value)
+                                .as_hyphenated()
+                                .encode_lower(&mut buffer),
+                        ),
+                        None => out.append_null(),
+                    }
+                }
+                Ok(out.finish().into_series())
+            },
+            DataType::Binary => {
+                let out = self
+                    .phys
+                    .iter()
+                    .map(|value| value.map(u128::to_be_bytes))
+                    .collect::<BinaryChunked>();
+                Ok(out.with_name(self.name().clone()).into_series())
+            },
+            dtype => polars_bail!(InvalidOperation: "cannot cast UUID to {dtype}"),
+        }
     }
 }
 
@@ -154,53 +202,27 @@ mod tests {
             [Some(1737362773057), None, None]
         );
     }
-}
 
-impl LogicalType for UuidChunked {
-    fn dtype(&self) -> &DataType {
-        &DataType::Uuid
-    }
+    #[test]
+    fn uuid_series_iteration_and_cast_policy() {
+        use crate::prelude::*;
 
-    fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        self.phys.get_any_value(i).map(|av| av.as_uuid())
-    }
+        let series =
+            UInt128Chunked::from_iter_options("id".into(), [Some(VALUE), None].into_iter())
+                .into_uuid()
+                .into_series();
 
-    unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
-        self.phys.get_any_value_unchecked(i).as_uuid()
-    }
-
-    fn cast_with_options(
-        &self,
-        dtype: &DataType,
-        cast_options: CastOptions,
-    ) -> PolarsResult<Series> {
-        match dtype {
-            DataType::Uuid => Ok(self.clone().into_series()),
-            DataType::UInt128 => Ok(self.phys.clone().into_series()),
-            DataType::String => {
-                let mut out = StringChunkedBuilder::new(self.name().clone(), self.len());
-                let mut buffer = ::uuid::Uuid::encode_buffer();
-                for value in self.phys.iter() {
-                    match value {
-                        Some(value) => out.append_value(
-                            ::uuid::Uuid::from_u128(value)
-                                .as_hyphenated()
-                                .encode_lower(&mut buffer),
-                        ),
-                        None => out.append_null(),
-                    }
-                }
-                Ok(out.finish().into_series())
-            },
-            DataType::Binary => {
-                let out = self
-                    .phys
-                    .iter()
-                    .map(|value| value.map(u128::to_be_bytes))
-                    .collect::<BinaryChunked>();
-                Ok(out.with_name(self.name().clone()).into_series())
-            },
-            dtype => self.phys.cast_with_options(dtype, cast_options),
-        }
+        assert_eq!(series.iter().next(), Some(AnyValue::Uuid(VALUE)));
+        assert_eq!(
+            series
+                .cast(&DataType::Binary)
+                .unwrap()
+                .binary()
+                .unwrap()
+                .get(0),
+            Some(VALUE.to_be_bytes().as_slice())
+        );
+        assert!(series.cast(&DataType::Float64).is_err());
+        assert!(series.cast(&DataType::Boolean).is_err());
     }
 }

@@ -74,11 +74,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::UInt32(v) => v.into_bound_py_any(py),
         AnyValue::UInt64(v) => v.into_bound_py_any(py),
         AnyValue::UInt128(v) => v.into_bound_py_any(py),
-        AnyValue::Uuid(v) => {
-            let kwargs = PyDict::new(py);
-            kwargs.set_item("int", v)?;
-            py.import("uuid")?.getattr("UUID")?.call((), Some(&kwargs))
-        },
+        AnyValue::Uuid(v) => ::uuid::Uuid::from_u128(v).into_bound_py_any(py),
         AnyValue::Int8(v) => v.into_bound_py_any(py),
         AnyValue::Int16(v) => v.into_bound_py_any(py),
         AnyValue::Int32(v) => v.into_bound_py_any(py),
