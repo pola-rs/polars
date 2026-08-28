@@ -11,7 +11,7 @@ from polars.exceptions import InvalidOperationError, SchemaError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
 ENTRIES = pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))
 
@@ -373,6 +373,54 @@ def test_map_nested_key_dtype_cannot_convert_to_python() -> None:
     assert s.dtype == pl.Map(pl.List(pl.Int64), pl.String)
     with pytest.raises(TypeError, match="not hashable"):
         s.to_list()
+
+
+_MAP_KEY_DTYPE = pl.Map(pl.Map(pl.String, pl.Int64), pl.Int64)
+_MAP_KEY_ENTRIES = [{"key": {"a": 1}, "value": 7}]
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(
+            lambda: pl.Series("c", [_MAP_KEY_ENTRIES], dtype=_MAP_KEY_DTYPE),
+            id="series",
+        ),
+        pytest.param(
+            lambda: pl.DataFrame(
+                {"c": [_MAP_KEY_ENTRIES]}, schema={"c": _MAP_KEY_DTYPE}
+            )["c"],
+            id="df-column-oriented",
+        ),
+        pytest.param(
+            lambda: pl.DataFrame(
+                [{"c": _MAP_KEY_ENTRIES}], schema={"c": _MAP_KEY_DTYPE}
+            )["c"],
+            id="df-row-oriented",
+        ),
+        pytest.param(
+            lambda: pl.DataFrame(
+                [{"c": _MAP_KEY_ENTRIES}], schema_overrides={"c": _MAP_KEY_DTYPE}
+            )["c"],
+            id="df-schema-overrides",
+        ),
+    ],
+)
+def test_map_as_key_dtype_is_constructible(build: Callable[[], pl.Series]) -> None:
+    # A dict key is unhashable, so the entries form is the only way to spell a Map key.
+    # It therefore needs the dtype hint as much as the mapping form does.
+    s = build()
+    assert s.dtype == _MAP_KEY_DTYPE
+    entries = s.cast(
+        pl.List(pl.Struct({"key": pl.Map(pl.String, pl.Int64), "value": pl.Int64}))
+    )
+    assert entries.to_list() == [_MAP_KEY_ENTRIES]
+
+
+def test_map_as_key_dtype_nests() -> None:
+    dtype = pl.Map(_MAP_KEY_DTYPE, pl.Int64)
+    s = pl.Series("c", [[{"key": _MAP_KEY_ENTRIES, "value": 1}]], dtype=dtype)
+    assert s.dtype == dtype
 
 
 @pytest.mark.parametrize(("dtype", "value"), DEPTH_CASES)

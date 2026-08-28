@@ -248,6 +248,26 @@ fn get_container_of_map(
     Ok(s.get(0).map_err(PyPolarsErr::from)?.into_static())
 }
 
+/// Whether `ob` is the entries form of a `Map`: a sequence of `{key, value}` mappings.
+#[cfg(feature = "dtype-map")]
+fn is_map_entries(ob: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if !(ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>()) {
+        return Ok(false);
+    }
+    for entry in ob.try_iter()? {
+        let Ok(entry) = entry?.cast_into::<PyMapping>() else {
+            return Ok(false);
+        };
+        if entry.len()? != 2
+            || !entry.contains(MAP_KEY_NAME.as_str())?
+            || !entry.contains(MAP_VALUE_NAME.as_str())?
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Render a map's entries as a Python dict.
 fn map_dict<'py>(py: Python<'py>, entries: &Series) -> PyResult<Bound<'py, PyDict>> {
     let fields = entries
@@ -679,8 +699,12 @@ pub(crate) fn py_object_to_any_value(
             },
             #[cfg(feature = "dtype-array")]
             DataType::Array(_, _) => return get_container_of_map(ob, dtype, strict),
-            // A Map target that is not a mapping -- e.g. a list of `{key, value}` entries.
-            // Fall through to the untargeted conversion, which handles it.
+            // The only way to construct a Map whose key dtype contains a type that is not hashable in Python
+            DataType::Map(_, _) if is_map_entries(ob)? => {
+                return get_container_of_map(ob, &dtype.map_storage_dtype().unwrap(), strict);
+            },
+            // A Map target that is neither a mapping nor well-formed entries. Fall through
+            // to the untargeted conversion, which reports the mismatch.
             _ => {},
         }
     }
