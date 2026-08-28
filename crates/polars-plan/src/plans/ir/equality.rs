@@ -59,6 +59,8 @@ impl IR {
                     predicate: l_predicate,
                     validate_schema: l_validate_schema,
                     is_pure: l_is_pure,
+                    explain_name: _,
+                    explain_detail: _,
                 } = l_options;
                 let PythonOptions {
                     scan_fn: r_scan_fn,
@@ -70,6 +72,8 @@ impl IR {
                     predicate: r_predicate,
                     validate_schema: r_validate_schema,
                     is_pure: r_is_pure,
+                    explain_name: _,
+                    explain_detail: _,
                 } = r_options;
 
                 let scan_fn_eq = l_scan_fn.as_ref().map(|l| l.0.as_ptr())

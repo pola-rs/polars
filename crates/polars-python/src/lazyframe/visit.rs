@@ -169,6 +169,8 @@ impl NodeTraverser {
                 n_rows: None,
                 validate_schema: false,
                 is_pure,
+                explain_name: None,
+                explain_detail: None,
             },
         };
         lp_arena.replace(self.root, ir);
