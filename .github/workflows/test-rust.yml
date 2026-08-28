@@ -57,6 +57,7 @@ jobs:
           cargo test --lib --tests --bins --all-features --no-run
           -p polars-arrow
           -p polars-compute
+          -p polars-config
           -p polars-core
           -p polars-io
           -p polars-lazy
@@ -74,6 +75,7 @@ jobs:
           cargo test --lib --tests --bins --all-features
           -p polars-arrow
           -p polars-compute
+          -p polars-config
           -p polars-core
           -p polars-io
           -p polars-lazy

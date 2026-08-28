@@ -266,7 +266,17 @@ impl Config {
         // Reload the warning config first to ensure we respect it.
         self.reload_env_var("POLARS_WARN_UNKNOWN_CONFIG");
 
+        let ideal_morsel_size_var = if std::env::var_os(IDEAL_MORSEL_SIZE).is_some() {
+            IDEAL_MORSEL_SIZE
+        } else {
+            STREAMING_CHUNK_SIZE
+        };
         for var in KNOWN_OPTIONS {
+            if matches!(*var, IDEAL_MORSEL_SIZE | STREAMING_CHUNK_SIZE)
+                && *var != ideal_morsel_size_var
+            {
+                continue;
+            }
             self.reload_env_var(var);
         }
 
@@ -646,4 +656,52 @@ static OOC_DRIFT_THRESHOLD_ATOMIC: AtomicU64 = AtomicU64::new(DEFAULT_OOC_DRIFT_
 #[inline(always)]
 pub fn get_ooc_drift_threshold() -> u64 {
     OOC_DRIFT_THRESHOLD_ATOMIC.load(Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ideal_morsel_size_env_var_alias_precedence() {
+        const TEST_EXPECTED: &str = "POLARS_CONFIG_IDEAL_MORSEL_SIZE_TEST_EXPECTED";
+        const TEST_RELOAD_EXPECTED: &str = "POLARS_CONFIG_IDEAL_MORSEL_SIZE_TEST_RELOAD_EXPECTED";
+
+        if let Ok(expected) = std::env::var(TEST_EXPECTED) {
+            let config = Config::new();
+            assert_eq!(config.ideal_morsel_size(), expected.parse::<u64>().unwrap());
+            if let Ok(expected) = std::env::var(TEST_RELOAD_EXPECTED) {
+                // An explicit targeted reload still honors the requested legacy variable.
+                config.reload_env_var(STREAMING_CHUNK_SIZE);
+                assert_eq!(config.ideal_morsel_size(), expected.parse::<u64>().unwrap());
+            }
+            return;
+        }
+
+        for (ideal, legacy, expected, reload_expected) in [
+            (Some("1000"), None, 1000, None),
+            (None, Some("2000"), 2000, None),
+            (Some("3000"), Some("4000"), 3000, Some(4000)),
+            (None, None, DEFAULT_IDEAL_MORSEL_SIZE, None),
+        ] {
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command
+                .arg("--exact")
+                .arg("tests::ideal_morsel_size_env_var_alias_precedence")
+                .env(TEST_EXPECTED, expected.to_string())
+                .env_remove(IDEAL_MORSEL_SIZE)
+                .env_remove(STREAMING_CHUNK_SIZE)
+                .env_remove(TEST_RELOAD_EXPECTED);
+            if let Some(value) = ideal {
+                command.env(IDEAL_MORSEL_SIZE, value);
+            }
+            if let Some(value) = legacy {
+                command.env(STREAMING_CHUNK_SIZE, value);
+            }
+            if let Some(value) = reload_expected {
+                command.env(TEST_RELOAD_EXPECTED, value.to_string());
+            }
+            assert!(command.status().unwrap().success());
+        }
+    }
 }
