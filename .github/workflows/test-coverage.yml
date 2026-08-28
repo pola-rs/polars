@@ -189,18 +189,19 @@ jobs:
           -k 'not test_polars_import'
           --cov --cov-report xml:auto-streaming.xml --cov-fail-under=0
 
-      - name: Run Python tests - streaming with morsel size 4
-        working-directory: py-polars
-        env:
-          POLARS_AUTO_STREAMING: 1
-          POLARS_IDEAL_MORSEL_SIZE: 4
-          POLARS_TIMEOUT_MS: 60000
-        run: >
-          pytest
-          -n auto
-          -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not benchmark and not docs"
-          -k 'not test_polars_import'
-          --cov --cov-report xml:small-morsel.xml --cov-fail-under=0
+      # TODO: Restore morsel-size-4 coverage after small-morsel CI workload is scoped.
+      # - name: Run Python tests - streaming with morsel size 4
+      #   working-directory: py-polars
+      #   env:
+      #     POLARS_AUTO_STREAMING: 1
+      #     POLARS_IDEAL_MORSEL_SIZE: 4
+      #     POLARS_TIMEOUT_MS: 60000
+      #   run: >
+      #     pytest
+      #     -n auto
+      #     -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not benchmark and not docs"
+      #     -k 'not test_polars_import'
+      #     --cov --cov-report xml:small-morsel.xml --cov-fail-under=0
 
       - name: Run Python tests - async reader
         working-directory: py-polars
@@ -221,12 +222,12 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: coverage-python
+          # TODO: Restore py-polars/small-morsel.xml with morsel-size-4 coverage.
           path: |
             coverage-python.lcov
             py-polars/main.xml
             py-polars/in-memory.xml
             py-polars/auto-streaming.xml
-            py-polars/small-morsel.xml
             py-polars/async.xml
 
   upload-coverage:

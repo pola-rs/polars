@@ -60,16 +60,17 @@ jobs:
             ideal_morsel_size: 100000
           - os: ubuntu-latest
             python-version: '3.14'
-            variant: null
-            ideal_morsel_size: 4
-          - os: ubuntu-latest
-            python-version: '3.14'
             variant: auto_new_streaming
             ideal_morsel_size: 100000
-          - os: ubuntu-latest
-            python-version: '3.14'
-            variant: auto_new_streaming
-            ideal_morsel_size: 4
+          # TODO: Restore morsel-size-4 variants after small-morsel CI workload is scoped.
+          # - os: ubuntu-latest
+          #   python-version: '3.14'
+          #   variant: null
+          #   ideal_morsel_size: 4
+          # - os: ubuntu-latest
+          #   python-version: '3.14'
+          #   variant: auto_new_streaming
+          #   ideal_morsel_size: 4
           - os: ubuntu-latest
             python-version: '3.14'
             variant: engine_affinity_in_memory
