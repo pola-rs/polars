@@ -55,9 +55,9 @@ simdutf8 = { workspace = true, optional = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 tokio = { workspace = true }
+uuid = { workspace = true, optional = true }
 zmij = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
-uuid = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 fs4 = { version = "1.1", features = ["sync"], optional = true }

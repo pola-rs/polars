@@ -118,9 +118,9 @@ The public generator count is explicit (`pl.uuid4(n)` and `pl.uuid7(n)`). Intern
 namespace can generate one UUID per input row. Explicit cardinality avoids a standalone Python
 expression whose length silently changes with projection context.
 
-Generator expressions are non-deterministic. Reusing a lazy query containing a generator in
-multiple branches evaluates it independently in each branch. Call `collect` first or add an
-explicit `LazyFrame.cache` when generated identifiers must be shared across branches.
+Generator expressions are non-deterministic. Reusing a lazy query containing a generator in multiple
+branches evaluates it independently in each branch. Call `collect` first or add an explicit
+`LazyFrame.cache` when generated identifiers must be shared across branches.
 
 I/O and SQL behavior is as follows:
 
@@ -128,9 +128,10 @@ I/O and SQL behavior is as follows:
 - Parquet preserves the standard UUID logical type and interoperates with DuckDB.
 - CSV and JSON write canonical UUID strings.
 - CSV schema overrides parse through strict UUID casts.
-- JSON and NDJSON support direct UUID parsing; NDJSON also supports configurable error/null
-  behavior and nested UUID lists. Both use the shared parser, including the PostgreSQL
-  hyphen-grouping fallback.
+- JSON and NDJSON support direct UUID parsing; NDJSON also supports configurable error/null behavior
+  and nested UUID lists. Both use the shared parser, including the PostgreSQL hyphen-grouping
+  fallback.
+- Iceberg UUID fields map to `pl.UUID` for native scans, sinks, and field defaults.
 - SQL `CAST(... AS UUID)` produces native UUID values when `dtype-uuid` is enabled; builds without
   that feature retain the existing string fallback.
 
@@ -143,6 +144,7 @@ I/O and SQL behavior is as follows:
 | Arrow               | `arrow.uuid` + `FixedSizeBinary(16)` scalar and nested round trips pass                                     |
 | Parquet             | Logical type, nulls, statistics, eager/lazy reads, and predicate filtering pass                             |
 | DuckDB Python 1.5.5 | Reads Polars Parquet as `UUID`; Polars reads DuckDB UUID Parquet as `pl.UUID`                               |
+| Iceberg             | UUID schema fields, native scans/sinks, and field defaults round trip as `pl.UUID`                          |
 | IPC                 | Canonical extension round trip passes                                                                       |
 | CSV/JSON/NDJSON     | Canonical text writing and schema-directed reading pass                                                     |
 | Polars SQL          | Native UUID cast passes                                                                                     |
@@ -205,8 +207,6 @@ capabilities are intentionally left as later extensions:
 - **PostgreSQL database writes.** PostgreSQL-compatible text parsing and database-read inference are
   covered, but `DataFrame.write_database` does not yet provide a UUID-specific SQLAlchemy/ADBC bind
   adapter or an integration test for native PostgreSQL UUID columns.
-- **Iceberg schema mapping.** Canonical Arrow and Parquet UUID interchange is implemented, but the
-  PyIceberg-to-Polars schema conversion still needs an explicit UUID-to-`pl.UUID` mapping.
 - **Avro logical UUID.** Avro annotates a string rather than 16-byte storage. Supporting it requires
   format-specific string transcoding in the Avro serializer/deserializer.
 - **Generic extension and fixed-size-binary support.** Canonical `arrow.uuid` is recognized

@@ -13,6 +13,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars._typing import PolarsDataType
+
 V4_A = UUID("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")
 V4_B = UUID("f47ac10b-58cc-4372-a567-0e02b2c3d479")
 V7 = UUID("019482e4-1441-7aad-8127-eec99573b0a0")
@@ -100,7 +102,14 @@ def test_uuid_postgresql_text_forms_and_strict_cast() -> None:
 def test_uuid_cast_policy_and_errors() -> None:
     values = pl.Series("id", [V4_A, None])
 
-    for dtype in [pl.Float64, pl.Boolean, pl.Int64, pl.Time, pl.Datetime("ms")]:
+    dtypes: list[PolarsDataType] = [
+        pl.Float64,
+        pl.Boolean,
+        pl.Int64,
+        pl.Time,
+        pl.Datetime("ms"),
+    ]
+    for dtype in dtypes:
         with pytest.raises(
             pl.exceptions.InvalidOperationError, match="cannot cast UUID"
         ):
@@ -232,7 +241,9 @@ def test_uuid_arrow_parquet_roundtrip() -> None:
     arrow = values.to_arrow()
     assert arrow.type.extension_name == "arrow.uuid"
     assert arrow.type.storage_type == pa.binary(16)
-    assert_series_equal(pl.from_arrow(arrow).rename("id"), values)
+    round_trip = pl.from_arrow(arrow)
+    assert isinstance(round_trip, pl.Series)
+    assert_series_equal(round_trip.rename("id"), values)
 
     buffer = BytesIO()
     frame = values.to_frame()
@@ -281,7 +292,9 @@ def test_nested_uuid_roundtrip() -> None:
     arrow = frame.to_arrow()
     assert arrow.schema.field("ids").type.value_type.extension_name == "arrow.uuid"
     assert arrow.schema.field("ids").type.value_type.storage_type == pa.binary(16)
-    assert_frame_equal(pl.from_arrow(arrow), frame)
+    round_trip = pl.from_arrow(arrow)
+    assert isinstance(round_trip, pl.DataFrame)
+    assert_frame_equal(round_trip, frame)
 
     ndjson = StringIO(f'{{"ids":["{V4_A}",null]}}\n{{"ids":null}}\n')
     assert_frame_equal(
@@ -362,7 +375,9 @@ def test_uuid_json_read_schema() -> None:
 
 def test_uuid_from_repr_roundtrip() -> None:
     frame = pl.DataFrame({"id": [V4_A, None]})
-    assert_frame_equal(pl.from_repr(repr(frame)), frame)
+    round_trip = pl.from_repr(repr(frame))
+    assert isinstance(round_trip, pl.DataFrame)
+    assert_frame_equal(round_trip, frame)
 
 
 def test_uuid_empty_and_miscellaneous_operations() -> None:

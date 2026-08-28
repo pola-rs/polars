@@ -97,8 +97,6 @@ impl LogicalType for UuidChunked {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_uuid_str;
-
     const VALUE: u128 = 0xa0eebc999c0b4ef8bb6d6bb9bd380a11;
 
     #[test]

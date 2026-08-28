@@ -289,6 +289,7 @@ class Series(metaclass=_Meta):
         "plot",
         "str",
         "struct",
+        "uuid",
     }
 
     def __init__(

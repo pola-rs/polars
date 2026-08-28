@@ -25,7 +25,7 @@ pub fn parse_uuid_str(value: &str) -> Option<u128> {
     let mut digits_since_hyphen = 0usize;
     for byte in value.bytes() {
         if byte == b'-' {
-            if digits_since_hyphen == 0 || digits_since_hyphen % 4 != 0 {
+            if digits_since_hyphen == 0 || !digits_since_hyphen.is_multiple_of(4) {
                 return None;
             }
             digits_since_hyphen = 0;

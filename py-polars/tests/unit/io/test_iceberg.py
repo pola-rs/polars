@@ -480,7 +480,7 @@ class _TableDataAllTypes:
                     else []
                 ),
                 *(
-                    [pl.Series('UUIDType', [b"0000111100001111"], dtype=pl.Binary)]
+                    [pl.Series('UUIDType', [uuid.UUID(bytes=b"0000111100001111")], dtype=pl.UUID)]
                     if not exclude_uuid
                     else []
                 )

@@ -28,11 +28,11 @@ polars-plan = { workspace = true }
 polars-row = { workspace = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
-uuid = { workspace = true, optional = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
 
 [features]
 nightly = ["polars-core/nightly", "polars-plan/nightly"]

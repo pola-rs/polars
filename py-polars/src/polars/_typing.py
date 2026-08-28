@@ -181,7 +181,9 @@ SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
 NumericLiteral: TypeAlias = Union[int, float, "Decimal"]
 TemporalLiteral: TypeAlias = Union["date", "time", "datetime", "timedelta"]
-NonNestedLiteral: TypeAlias = NumericLiteral | TemporalLiteral | str | bool | bytes
+NonNestedLiteral: TypeAlias = Union[
+    NumericLiteral, TemporalLiteral, str, bool, bytes, "UUID"
+]
 # Python literal types (can convert into a `lit` expression)
 PythonLiteral: TypeAlias = Union[NonNestedLiteral, "np.ndarray[Any, Any]", list[Any]]
 # Inputs that can convert into a `col` expression

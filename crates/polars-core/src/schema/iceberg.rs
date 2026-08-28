@@ -189,9 +189,18 @@ fn arrow_field_to_iceberg_column_rec(
 
                 IcebergColumnType::Primitive { dtype }
             } else if let ADT::Extension(ext_type) = dtype
+                && ext_type.name.as_str() == arrow::datatypes::ARROW_UUID_EXTENSION_NAME
+                && ext_type.inner == ADT::FixedSizeBinary(16)
+            {
+                #[cfg(feature = "dtype-uuid")]
+                let dtype = DataType::Uuid;
+                #[cfg(not(feature = "dtype-uuid"))]
+                let dtype = DataType::Binary;
+
+                IcebergColumnType::Primitive { dtype }
+            } else if let ADT::Extension(ext_type) = dtype
                 && let DataType::Binary = DataType::from_arrow_dtype(&ext_type.inner)
             {
-                // Iceberg UUID type will hit this branch.
                 IcebergColumnType::Primitive {
                     dtype: DataType::Binary,
                 }

@@ -15,19 +15,19 @@
     "parquet_uncompressed/string": 40012151
   },
   "timings": {
-    "filter/native": {"max_ms": 0.421, "median_ms": 0.390, "min_ms": 0.388},
-    "filter/string": {"max_ms": 0.496, "median_ms": 0.453, "min_ms": 0.444},
-    "format/uuid_to_string": {"max_ms": 13.439, "median_ms": 13.346, "min_ms": 13.260},
-    "generate/v4": {"max_ms": 8.824, "median_ms": 8.630, "min_ms": 8.431},
-    "generate/v7": {"max_ms": 712.660, "median_ms": 671.942, "min_ms": 669.733},
-    "group_by/native": {"max_ms": 7.363, "median_ms": 6.902, "min_ms": 6.560},
-    "group_by/string": {"max_ms": 13.799, "median_ms": 12.880, "min_ms": 11.132},
-    "n_unique/native": {"max_ms": 6.876, "median_ms": 6.552, "min_ms": 6.259},
-    "n_unique/string": {"max_ms": 15.487, "median_ms": 14.924, "min_ms": 14.801},
-    "parquet_write/native": {"max_ms": 4.335, "median_ms": 4.086, "min_ms": 3.364},
-    "parquet_write/string": {"max_ms": 10.413, "median_ms": 9.220, "min_ms": 8.407},
-    "parse/string_to_uuid": {"max_ms": 11.501, "median_ms": 11.291, "min_ms": 10.812},
-    "sort/native": {"max_ms": 7.970, "median_ms": 6.094, "min_ms": 5.759},
-    "sort/string": {"max_ms": 34.088, "median_ms": 33.537, "min_ms": 32.643}
+    "filter/native": { "max_ms": 0.421, "median_ms": 0.390, "min_ms": 0.388 },
+    "filter/string": { "max_ms": 0.496, "median_ms": 0.453, "min_ms": 0.444 },
+    "format/uuid_to_string": { "max_ms": 13.439, "median_ms": 13.346, "min_ms": 13.260 },
+    "generate/v4": { "max_ms": 8.824, "median_ms": 8.630, "min_ms": 8.431 },
+    "generate/v7": { "max_ms": 712.660, "median_ms": 671.942, "min_ms": 669.733 },
+    "group_by/native": { "max_ms": 7.363, "median_ms": 6.902, "min_ms": 6.560 },
+    "group_by/string": { "max_ms": 13.799, "median_ms": 12.880, "min_ms": 11.132 },
+    "n_unique/native": { "max_ms": 6.876, "median_ms": 6.552, "min_ms": 6.259 },
+    "n_unique/string": { "max_ms": 15.487, "median_ms": 14.924, "min_ms": 14.801 },
+    "parquet_write/native": { "max_ms": 4.335, "median_ms": 4.086, "min_ms": 3.364 },
+    "parquet_write/string": { "max_ms": 10.413, "median_ms": 9.220, "min_ms": 8.407 },
+    "parse/string_to_uuid": { "max_ms": 11.501, "median_ms": 11.291, "min_ms": 10.812 },
+    "sort/native": { "max_ms": 7.970, "median_ms": 6.094, "min_ms": 5.759 },
+    "sort/string": { "max_ms": 34.088, "median_ms": 33.537, "min_ms": 32.643 }
   }
 }
