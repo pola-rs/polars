@@ -159,13 +159,21 @@ impl Series {
             #[cfg(feature = "dtype-map")]
             DataType::Map(_, _) => {
                 let entries_dtype = dtype.map_entries_dtype().unwrap();
-                let entries: Vec<AnyValue> = values
+                let entries = values
                     .iter()
                     .map(|av| match av {
-                        AnyValue::Map(entries) => AnyValue::List(entries.clone()),
-                        av => av.clone(),
+                        AnyValue::Map(entries) => Ok(AnyValue::List(entries.clone())),
+                        // An empty list of entries carries no field information.
+                        AnyValue::List(entries) if entries.dtype().is_nested_null() => {
+                            Ok(AnyValue::List(entries.clone()))
+                        },
+                        AnyValue::List(entries) => {
+                            ensure_map_entries_dtype(entries.dtype())?;
+                            Ok(AnyValue::List(entries.clone()))
+                        },
+                        av => Ok(av.clone()),
                     })
-                    .collect();
+                    .collect::<PolarsResult<Vec<AnyValue>>>()?;
                 let storage = any_values_to_list(&entries, &entries_dtype, strict)?.into_series();
                 MapChunked::try_from_storage(dtype.clone(), storage)?.into_series()
             },
