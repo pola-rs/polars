@@ -140,10 +140,6 @@ impl ScanStats {
     pub fn column(&self, name: &str) -> Option<&ScanColumnStats> {
         self.columns.as_ref()?.get(name)
     }
-
-    pub fn columns(&self) -> impl Iterator<Item = (&PlSmallStr, &ScanColumnStats)> {
-        self.columns.iter().flat_map(|c| c.iter())
-    }
 }
 
 /// Row count of a leaf node.

@@ -45,20 +45,51 @@ fn stats_df() -> DataFrame {
     .unwrap()
 }
 
+#[cfg(feature = "parquet")]
+fn write_parquet(dir: &TempDir, names: &[&str], statistics: StatisticsOptions) {
+    for name in names {
+        ParquetWriter::new(std::fs::File::create(dir.join(name)).unwrap())
+            .with_statistics(statistics)
+            .finish(&mut stats_df())
+            .unwrap();
+    }
+}
+
+#[cfg(feature = "ipc")]
+fn write_ipc(dir: &TempDir, names: &[&str]) {
+    for name in names {
+        IpcWriter::new(std::fs::File::create(dir.join(name)).unwrap())
+            .finish(&mut stats_df())
+            .unwrap();
+    }
+}
+
+#[cfg(feature = "parquet")]
+fn scan_parquet_stats(path: &str, glob: bool) -> ScanStats {
+    let args = ScanArgsParquet {
+        glob,
+        ..Default::default()
+    };
+    scan_stats(LazyFrame::scan_parquet(PlRefPath::new(path), args).unwrap())
+}
+
+#[cfg(feature = "ipc")]
+fn scan_ipc_stats(path: &str, glob: bool) -> ScanStats {
+    let args = UnifiedScanArgs {
+        glob,
+        ..Default::default()
+    };
+    scan_stats(LazyFrame::scan_ipc(PlRefPath::new(path), Default::default(), args).unwrap())
+}
+
 #[test]
 #[cfg(feature = "parquet")]
 fn test_parquet_scan_stats() {
+    let _guard = SINGLE_LOCK.lock().unwrap();
     let dir = TempDir::new("parquet-basic");
-    let path = dir.join("a.parquet");
-    let mut df = stats_df();
-    ParquetWriter::new(std::fs::File::create(&path).unwrap())
-        .with_statistics(StatisticsOptions::full())
-        .finish(&mut df)
-        .unwrap();
+    write_parquet(&dir, &["a.parquet"], StatisticsOptions::full());
 
-    let stats = scan_stats(
-        LazyFrame::scan_parquet(PlRefPath::new(path.as_str()), Default::default()).unwrap(),
-    );
+    let stats = scan_parquet_stats(&dir.join("a.parquet"), false);
 
     // A single fully resolved footer is a guarantee, not an estimate.
     assert_eq!(stats.rows, Card::Exact(5));
@@ -79,17 +110,11 @@ fn test_parquet_scan_stats() {
 #[test]
 #[cfg(feature = "parquet")]
 fn test_parquet_scan_stats_without_statistics() {
+    let _guard = SINGLE_LOCK.lock().unwrap();
     let dir = TempDir::new("parquet-nostats");
-    let path = dir.join("a.parquet");
-    let mut df = stats_df();
-    ParquetWriter::new(std::fs::File::create(&path).unwrap())
-        .with_statistics(StatisticsOptions::empty())
-        .finish(&mut df)
-        .unwrap();
+    write_parquet(&dir, &["a.parquet"], StatisticsOptions::empty());
 
-    let stats = scan_stats(
-        LazyFrame::scan_parquet(PlRefPath::new(path.as_str()), Default::default()).unwrap(),
-    );
+    let stats = scan_parquet_stats(&dir.join("a.parquet"), false);
 
     // Row counts live in the footer regardless, but a null count without
     // statistics is unknown rather than zero.
@@ -102,26 +127,11 @@ fn test_parquet_scan_stats_without_statistics() {
 #[test]
 #[cfg(feature = "parquet")]
 fn test_parquet_scan_stats_multi_source() {
+    let _guard = SINGLE_LOCK.lock().unwrap();
     let dir = TempDir::new("parquet-multi");
-    for name in ["a.parquet", "b.parquet"] {
-        let mut df = stats_df();
-        ParquetWriter::new(std::fs::File::create(dir.join(name)).unwrap())
-            .with_statistics(StatisticsOptions::full())
-            .finish(&mut df)
-            .unwrap();
-    }
+    write_parquet(&dir, &["a.parquet", "b.parquet"], StatisticsOptions::full());
 
-    let glob = dir.join("*.parquet");
-    let stats = scan_stats(
-        LazyFrame::scan_parquet(
-            PlRefPath::new(glob.as_str()),
-            ScanArgsParquet {
-                glob: true,
-                ..Default::default()
-            },
-        )
-        .unwrap(),
-    );
+    let stats = scan_parquet_stats(&dir.join("*.parquet"), true);
 
     assert_eq!(stats.rows, Card::Exact(10));
     let a = stats.column("a").expect("no stats for `a`");
@@ -131,49 +141,50 @@ fn test_parquet_scan_stats_multi_source() {
 #[test]
 #[cfg(feature = "ipc")]
 fn test_ipc_scan_stats_rows() {
+    let _guard = SINGLE_LOCK.lock().unwrap();
     let dir = TempDir::new("ipc-basic");
-    let path = dir.join("a.ipc");
-    let mut df = stats_df();
-    IpcWriter::new(std::fs::File::create(&path).unwrap())
-        .finish(&mut df)
-        .unwrap();
+    write_ipc(&dir, &["a.ipc"]);
 
     // Previously thrown away: the footer blocks carry the record batch lengths.
-    let stats = scan_stats(
-        LazyFrame::scan_ipc(
-            PlRefPath::new(path.as_str()),
-            Default::default(),
-            Default::default(),
-        )
-        .unwrap(),
-    );
+    let stats = scan_ipc_stats(&dir.join("a.ipc"), false);
     assert_eq!(stats.rows, Card::Exact(5));
 }
 
 #[test]
 #[cfg(feature = "ipc")]
 fn test_ipc_scan_stats_multi_source_is_approx() {
+    let _guard = SINGLE_LOCK.lock().unwrap();
     let dir = TempDir::new("ipc-multi");
-    for name in ["a.ipc", "b.ipc"] {
-        let mut df = stats_df();
-        IpcWriter::new(std::fs::File::create(dir.join(name)).unwrap())
-            .finish(&mut df)
-            .unwrap();
-    }
+    write_ipc(&dir, &["a.ipc", "b.ipc"]);
 
     // Only the first source is read, so the rest is extrapolated.
-    let glob = dir.join("*.ipc");
-    let stats = scan_stats(
-        LazyFrame::scan_ipc(
-            PlRefPath::new(glob.as_str()),
-            Default::default(),
-            UnifiedScanArgs {
-                glob: true,
-                ..Default::default()
-            },
-        )
-        .unwrap(),
-    );
+    let stats = scan_ipc_stats(&dir.join("*.ipc"), true);
     assert_eq!(stats.rows.value(), Some(10));
     assert!(matches!(stats.rows, Card::Approx { .. }));
+}
+
+#[test]
+#[cfg(feature = "parquet")]
+fn test_parquet_scan_stats_row_counts_mode() {
+    const VAR: &str = "POLARS_RESOLVE_METADATA_LEVEL";
+    let _guard = SINGLE_LOCK.lock().unwrap();
+
+    let dir = TempDir::new("parquet-rowcounts");
+    write_parquet(&dir, &["a.parquet", "b.parquet"], StatisticsOptions::full());
+
+    unsafe { std::env::set_var(VAR, "row_counts") };
+    polars_config::config().reload_env_var(VAR);
+
+    let stats = scan_parquet_stats(&dir.join("*.parquet"), true);
+
+    unsafe { std::env::remove_var(VAR) };
+    polars_config::config().reload_env_var(VAR);
+
+    // This mode reads every row count but retains only the first footer, so
+    // the count is exact while the per-column fold covers one file of two.
+    assert_eq!(stats.rows, Card::Exact(10));
+    assert_eq!(
+        stats.column("a").expect("no stats for `a`").null_count,
+        Card::Unknown
+    );
 }

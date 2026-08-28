@@ -179,6 +179,11 @@ impl MetadataPerSource {
         }
     }
 
+    /// Whether every source's footer is resolved.
+    pub fn is_full(&self) -> bool {
+        matches!(self, Self::Full(_))
+    }
+
     /// The resolved footers, ascending by source index.
     pub fn resolved_metadata(&self) -> &[FileMetadataRef] {
         match self {
