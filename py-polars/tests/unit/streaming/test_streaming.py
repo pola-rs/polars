@@ -59,6 +59,8 @@ def test_streaming_streamable_functions(
     plmonkeypatch: PlMonkeyPatch, capfd: Any
 ) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    # Two morsel rounds make size 1 distinguishable from the default.
+    n_rows = 2 * pl.thread_pool_size()
     calls = 0
 
     def func(df: pl.DataFrame) -> pl.DataFrame:
@@ -67,7 +69,7 @@ def test_streaming_streamable_functions(
         return df.with_columns(pl.col("a").alias("b"))
 
     assert (
-        pl.DataFrame({"a": list(range(100))})
+        pl.DataFrame({"a": list(range(n_rows))})
         .lazy()
         .map_batches(
             function=func,
@@ -75,11 +77,11 @@ def test_streaming_streamable_functions(
             streamable=True,
         )
     ).collect(engine="streaming").to_dict(as_series=False) == {
-        "a": list(range(100)),
-        "b": list(range(100)),
+        "a": list(range(n_rows)),
+        "b": list(range(n_rows)),
     }
 
-    assert calls > 1
+    assert calls == n_rows
 
 
 @pytest.mark.slow
