@@ -893,6 +893,19 @@ impl CastColumnsPolicy {
             return self.should_cast_column(column_name, target_inner, incoming_inner);
         }
 
+        #[cfg(feature = "dtype-map")]
+        if let DataType::Map(target_key, target_value) = target_dtype {
+            let DataType::Map(incoming_key, incoming_value) = incoming_dtype else {
+                return mismatch_err("");
+            };
+
+            let Ok(cast_key) = incoming_key.matches_schema_type(target_key) else {
+                return mismatch_err("Map key types are not castable");
+            };
+            let cast_value = self.should_cast_column(column_name, target_value, incoming_value)?;
+            return Ok(cast_key || cast_value);
+        }
+
         // Eq here should be cheap as we have intercepted all nested types above.
 
         debug_assert!(!target_dtype.is_nested());
