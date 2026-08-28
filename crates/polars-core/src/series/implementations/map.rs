@@ -204,10 +204,10 @@ impl SeriesTrait for SeriesWrap<MapChunked> {
     }
 
     fn find_validity_mismatch(&self, other: &Series, idxs: &mut Vec<IdxSize>) {
-        assert!(self.0.dtype() == other.dtype());
-        self.0
-            .storage()
-            .find_validity_mismatch(other.map().unwrap().storage(), idxs)
+        // `handle_casting_failures` compares a cast's input against its output, so `other`
+        // is same-length but not necessarily the same dtype, or even a Map.
+        let other = other.try_map().map_or(other, |map| map.storage());
+        self.0.storage().find_validity_mismatch(other, idxs)
     }
 
     fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
