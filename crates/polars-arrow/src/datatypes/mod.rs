@@ -367,6 +367,7 @@ impl ArrowDataType {
             ),
             Dictionary(keys, _, _) => (*keys).into(),
             Union(_) => unimplemented!(),
+            // TODO: `LargeList(entries)`. `any_values_to_array` works around this hole.
             Map(_, _) => unimplemented!(),
             Extension(ext) => ext.inner.underlying_physical_type(),
         }

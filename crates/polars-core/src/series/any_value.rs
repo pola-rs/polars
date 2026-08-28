@@ -787,6 +787,23 @@ fn any_values_to_array(
     }
 
     let target_dtype = DataType::Array(Box::new(inner_type.clone()), width);
+    // `collect_ca_with_dtype` resolves the inner through `underlying_physical_type`, which
+    // is `unimplemented!()` for `ArrowDataType::Map`, so collect against the storage dtype
+    // and let the relabel below restore the logical one. `any_values_to_list` is unaffected
+    // only because it builds by hand instead of going through the collector.
+    //
+    // TODO: drop this once the Arrow plumbing lands. The fix belongs in
+    // `ArrowDataType::underlying_physical_type`, whose `Map` arm should return
+    // `LargeList(entries)` -- deferred because stamping a physical child under an outer
+    // `Map` dtype is the same logical/physical disagreement the Arrow export has to solve.
+    #[cfg(feature = "dtype-map")]
+    let collect_dtype = if inner_type.contains_map() {
+        target_dtype.to_physical()
+    } else {
+        target_dtype.clone()
+    };
+    #[cfg(not(feature = "dtype-map"))]
+    let collect_dtype = target_dtype.clone();
 
     // This is handled downstream. The builder will choose the first non null type.
     let mut valid = true;
@@ -801,7 +818,7 @@ fn any_values_to_array(
                     None
                 },
             })
-            .collect_ca_with_dtype(PlSmallStr::EMPTY, target_dtype.clone())
+            .collect_ca_with_dtype(PlSmallStr::EMPTY, collect_dtype)
     }
     // Make sure that wrongly inferred AnyValues don't deviate from the datatype.
     else {
@@ -824,7 +841,7 @@ fn any_values_to_array(
                     None
                 },
             })
-            .collect_ca_with_dtype(PlSmallStr::EMPTY, target_dtype.clone())
+            .collect_ca_with_dtype(PlSmallStr::EMPTY, collect_dtype)
     };
 
     if strict && !valid {
