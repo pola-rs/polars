@@ -167,22 +167,41 @@ impl MapChunked {
     }
 }
 
+/// Require named entry fields outside Arrow and Parquet, whose specifications define
+/// entries positionally.
+pub(crate) fn ensure_map_entries_dtype(dtype: &DataType) -> PolarsResult<()> {
+    let DataType::Struct(fields) = dtype else {
+        polars_bail!(InvalidOperation: "Map entries must be `Struct {{key, value}}`, got `{dtype}`")
+    };
+    // Spell the names out because `Struct` display abbreviates them to `struct[n]`.
+    let mut names: Vec<&PlSmallStr> = fields.iter().map(|f| f.name()).collect();
+    names.sort();
+    polars_ensure!(
+        names == [&MAP_KEY_NAME, &MAP_VALUE_NAME],
+        InvalidOperation:
+        "Map entries must be exactly two fields named `{}` and `{}`, got [{}]",
+        MAP_KEY_NAME, MAP_VALUE_NAME,
+        fields.iter().map(|f| format!("`{}`", f.name())).collect::<Vec<_>>().join(", "),
+    );
+    Ok(())
+}
+
 /// Apply `f` to the key and value children of `List(Struct {key, value})` Map storage.
 ///
-/// The output dtype is derived from the returned children. Entry validity, list offsets,
-/// outer validity and the outer chunk layout are preserved.
+/// Derives the output dtype from the returned children while preserving the nested layout.
 pub(crate) fn try_apply_map_entries(
     storage: &ListChunked,
     f: impl FnOnce(&Series, &Series) -> PolarsResult<(Series, Series)>,
 ) -> PolarsResult<ListChunked> {
+    ensure_map_entries_dtype(storage.inner_dtype())?;
+
     let entries = storage.get_inner();
-    let entries_ca = entries.struct_().map_err(|_| {
-        polars_err!(InvalidOperation: "Map entries must be a Struct, got `{}`", entries.dtype())
-    })?;
+    let entries_ca = entries.struct_().unwrap();
+    // Names keep reversed input fields from swapping key and value semantics.
     let fields = entries_ca.fields_as_series();
-    let [key, value] = fields.as_slice() else {
-        polars_bail!(InvalidOperation: "Map entries need exactly two fields")
-    };
+    let field = |name: &PlSmallStr| fields.iter().find(|s| s.name() == name).unwrap();
+    let key = field(&MAP_KEY_NAME);
+    let value = field(&MAP_VALUE_NAME);
 
     let entries_len = entries.len();
     let (mut key, mut value) = f(key, value)?;
