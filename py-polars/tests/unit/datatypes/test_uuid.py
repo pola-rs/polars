@@ -37,6 +37,21 @@ def test_uuid_construction_and_python_roundtrip() -> None:
     assert rows.schema == {"column_0": pl.UUID}
     assert rows["column_0"].to_list() == [V4_A, V4_B]
 
+    coerced_rows = pl.DataFrame(
+        [[str(V4_A)], [V4_B.bytes]],
+        schema={"id": pl.UUID},
+        orient="row",
+    )
+    assert coerced_rows["id"].to_list() == [V4_A, V4_B]
+
+    non_strict_rows = pl.DataFrame(
+        [[1], ["not-a-uuid"], [b"too short"], [True]],
+        schema={"id": pl.UUID},
+        orient="row",
+        strict=False,
+    )
+    assert non_strict_rows["id"].to_list() == [UUID(int=1), None, None, None]
+
     nested_text = pl.Series([[str(V4_A), None]], dtype=pl.List(pl.UUID))
     assert nested_text.to_list() == [[V4_A, None]]
 
@@ -124,9 +139,19 @@ def test_uuid_cast_policy_and_errors() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError, match="median"):
         values.median()
 
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="add"):
+        _ = values + values
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="sub"):
+        _ = values - values
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="mul"):
+        _ = values * values
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="rem"):
+        _ = values % values
+
 
 def test_uuid_binary_and_integer_roundtrip() -> None:
     values = pl.Series("id", [V4_A, None, V4_B])
+    assert values.cast(pl.String).to_list() == [str(V4_A), None, str(V4_B)]
     assert values.cast(pl.Binary).to_list() == [V4_A.bytes, None, V4_B.bytes]
     assert_series_equal(values.cast(pl.Binary).cast(pl.UUID), values)
     assert values.cast(pl.UInt128).to_list() == [V4_A.int, None, V4_B.int]
@@ -145,12 +170,85 @@ def test_uuid_sort_unique_group_and_join() -> None:
 
     left = pl.DataFrame({"id": [V4_A, V4_B], "left": [1, 2]})
     right = pl.DataFrame({"id": [V4_B], "right": [3]})
-    assert left.join(right, on="id", how="left")["right"].to_list() == [None, 3]
+    joined = left.join(right, on="id", how="left", maintain_order="left")
+    assert joined["right"].to_list() == [None, 3]
     assert values.min() == V4_A
     assert values.max() == V4_B
     assert values.arg_min() == 1
     assert values.arg_max() == 0
     assert values.is_in([V4_A]).to_list() == [False, True, False, None]
+
+
+def test_uuid_series_operations_preserve_dtype() -> None:
+    values = pl.Series("id", [V4_B, V4_A, V4_B, None])
+    other = pl.Series("id", [V4_A, V4_B, V4_A, V4_B])
+
+    assert_series_equal(
+        values.zip_with(pl.Series([True, False, True, False]), other),
+        pl.Series("id", [V4_B, V4_B, V4_B, V4_B]),
+    )
+
+    appended = values.clone().append(pl.Series("id", [V4_A, None]))
+    extended = values.clone().extend(pl.Series("id", [V4_A, None]))
+    expected = pl.Series("id", [V4_B, V4_A, V4_B, None, V4_A, None])
+    assert_series_equal(appended, expected)
+    assert_series_equal(extended, expected)
+
+    unique = pl.Series("id", [V4_B, V4_A, None])
+    assert_series_equal(values.unique(maintain_order=True), unique)
+    assert values.arg_unique().to_list() == [0, 1, 3]
+    assert values.unique_counts().to_list() == [2, 1, 1]
+    assert values.approx_n_unique() == 3
+    assert values.equals(values.clone())
+    assert values.gather([3, 1]).to_list() == [None, V4_A]
+    assert values.is_null().to_list() == [False, False, False, True]
+    assert values.is_not_null().to_list() == [True, True, True, False]
+    assert values.reverse().to_list() == [None, V4_B, V4_A, V4_B]
+    assert values.shift(1).to_list() == [None, V4_B, V4_A, V4_B]
+    assert_series_equal(values.shrink_to_fit(in_place=False), values)
+
+    sorted_frame = pl.DataFrame({"id": values, "x": [2, 1, 1, 0]}).sort(
+        ["id", "x"], nulls_last=True
+    )
+    assert sorted_frame["x"].to_list() == [1, 1, 2, 0]
+
+    hashes = pl.DataFrame({"id": values, "other": other}).hash_rows()
+    assert hashes[0] == hashes[2]
+    assert hashes.n_unique() == 3
+
+
+def test_uuid_grouped_aggregations() -> None:
+    frame = pl.DataFrame({"group": [1, 1, 2, 2], "id": [V4_B, V4_A, V4_B, None]})
+    result = (
+        frame.group_by("group")
+        .agg(
+            pl.col("id").min().alias("min"),
+            pl.col("id").max().alias("max"),
+            pl.col("id").arg_min().alias("arg_min"),
+            pl.col("id").arg_max().alias("arg_max"),
+            pl.col("id").implode().alias("values"),
+        )
+        .sort("group")
+    )
+    expected = pl.DataFrame(
+        {
+            "group": [1, 2],
+            "min": [V4_A, V4_B],
+            "max": [V4_B, V4_B],
+            "arg_min": [1, 0],
+            "arg_max": [0, 0],
+            "values": [[V4_B, V4_A], [V4_B, None]],
+        },
+        schema={
+            "group": pl.Int64,
+            "min": pl.UUID,
+            "max": pl.UUID,
+            "arg_min": pl.UInt32,
+            "arg_max": pl.UInt32,
+            "values": pl.List(pl.UUID),
+        },
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_uuid_streaming_min_max() -> None:
@@ -200,6 +298,9 @@ def test_uuid_constructor_coercion_policy() -> None:
     assert pl.Series([str(V4_A)], dtype=pl.UUID, strict=True).item() == V4_A
     assert pl.Series([V4_A.bytes], dtype=pl.UUID, strict=True).item() == V4_A
     assert pl.Series([123], dtype=pl.UUID, strict=False).item() == UUID(int=123)
+    assert pl.Series(
+        ["not-a-uuid", b"too short", True], dtype=pl.UUID, strict=False
+    ).to_list() == [None, None, None]
 
     with pytest.raises(TypeError, match=r"cannot convert.*int.*UUID"):
         pl.Series([123], dtype=pl.UUID, strict=True)
@@ -219,6 +320,30 @@ def test_uuid_namespace() -> None:
     ]
     with pytest.raises(pl.exceptions.ComputeError, match="UUIDv7"):
         values.uuid.timestamp()
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.uuid4(2),
+        pl.uuid7(2),
+        pl.col("id").uuid.version(),
+        pl.col("id").uuid.timestamp(strict=False),
+    ],
+)
+def test_uuid_expr_serde_roundtrip(expr: pl.Expr) -> None:
+    serialized = expr.meta.serialize(format="binary")
+    round_tripped = pl.Expr.deserialize(BytesIO(serialized), format="binary")
+    assert round_tripped.meta == expr
+
+
+def test_uuid_frame_serde_roundtrip() -> None:
+    frame = pl.DataFrame({"id": [V4_A, None, V7]})
+    serialized = frame.serialize(format="binary")
+    assert_frame_equal(
+        pl.DataFrame.deserialize(BytesIO(serialized), format="binary"),
+        frame,
+    )
 
 
 @pytest.mark.parametrize(("function", "version"), [(pl.uuid4, 4), (pl.uuid7, 7)])
@@ -319,6 +444,8 @@ def test_uuid_csv_and_json_are_canonical_strings() -> None:
     csv = StringIO()
     frame.write_csv(csv)
     assert csv.getvalue() == f"id\n{V4_A}\n\n"
+    assert frame.write_csv(quote_style="always") == f'"id"\n"{V4_A}"\n""\n'
+    assert frame.write_csv(quote_style="non_numeric") == f'"id"\n"{V4_A}"\n\n'
 
     json = StringIO()
     frame.write_json(json)

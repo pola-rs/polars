@@ -1031,3 +1031,72 @@ fn invalid_value_error(dtype: &DataType, value: &AnyValue) -> PolarsError {
         value
     )
 }
+
+#[cfg(all(test, feature = "dtype-uuid"))]
+mod tests {
+    use super::*;
+
+    const TEXT: &str = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+    const VALUE: u128 = 0xa0eebc999c0b4ef8bb6d6bb9bd380a11;
+
+    #[test]
+    fn uuid_any_value_construction_policy() {
+        let bytes = VALUE.to_be_bytes();
+        let values = [
+            AnyValue::Uuid(VALUE),
+            AnyValue::Null,
+            AnyValue::String(TEXT),
+            AnyValue::StringOwned(TEXT.into()),
+            AnyValue::Binary(&bytes),
+            AnyValue::BinaryOwned(bytes.to_vec()),
+        ];
+        let series =
+            Series::from_any_values_and_dtype("id".into(), &values, &DataType::Uuid, true).unwrap();
+        assert_eq!(
+            series.uuid().unwrap().physical().iter().collect::<Vec<_>>(),
+            [
+                Some(VALUE),
+                None,
+                Some(VALUE),
+                Some(VALUE),
+                Some(VALUE),
+                Some(VALUE),
+            ]
+        );
+
+        for value in [
+            AnyValue::String("not-a-uuid"),
+            AnyValue::StringOwned("not-a-uuid".into()),
+            AnyValue::Binary(b"too short"),
+            AnyValue::BinaryOwned(b"too short".to_vec()),
+            AnyValue::Boolean(true),
+        ] {
+            assert!(
+                Series::from_any_values_and_dtype(
+                    "id".into(),
+                    std::slice::from_ref(&value),
+                    &DataType::Uuid,
+                    true,
+                )
+                .is_err()
+            );
+        }
+
+        let values = [
+            AnyValue::UInt8(1),
+            AnyValue::Int64(-1),
+            AnyValue::String("not-a-uuid"),
+            AnyValue::StringOwned("not-a-uuid".into()),
+            AnyValue::Binary(b"too short"),
+            AnyValue::BinaryOwned(b"too short".to_vec()),
+            AnyValue::Boolean(true),
+        ];
+        let series =
+            Series::from_any_values_and_dtype("id".into(), &values, &DataType::Uuid, false)
+                .unwrap();
+        assert_eq!(
+            series.uuid().unwrap().physical().iter().collect::<Vec<_>>(),
+            [Some(1), None, None, None, None, None, None]
+        );
+    }
+}

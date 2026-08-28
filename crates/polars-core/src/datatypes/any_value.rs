@@ -1758,8 +1758,74 @@ impl From<bool> for AnyValue<'static> {
 
 #[cfg(test)]
 mod test {
-    #[cfg(feature = "dtype-categorical")]
+    #[cfg(any(feature = "dtype-categorical", feature = "dtype-uuid"))]
     use super::*;
+
+    #[test]
+    #[cfg(feature = "dtype-uuid")]
+    fn test_uuid_any_value_casts() {
+        use std::hash::Hasher;
+
+        #[derive(Default)]
+        struct RecordingHasher(Vec<u8>);
+
+        impl Hasher for RecordingHasher {
+            fn finish(&self) -> u64 {
+                0
+            }
+
+            fn write(&mut self, bytes: &[u8]) {
+                self.0.extend_from_slice(bytes);
+            }
+        }
+
+        const TEXT: &str = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+        const VALUE: u128 = 0xa0eebc999c0b4ef8bb6d6bb9bd380a11;
+
+        let bytes = VALUE.to_be_bytes();
+        assert_eq!(
+            AnyValue::default_value(&DataType::Uuid, true, 0),
+            AnyValue::Uuid(0)
+        );
+        assert_eq!(
+            AnyValue::Uuid(VALUE).strict_cast(&DataType::UInt128),
+            Some(AnyValue::UInt128(VALUE))
+        );
+        assert_eq!(
+            AnyValue::UInt128(VALUE).strict_cast(&DataType::Uuid),
+            Some(AnyValue::Uuid(VALUE))
+        );
+        assert_eq!(
+            AnyValue::String(TEXT).strict_cast(&DataType::Uuid),
+            Some(AnyValue::Uuid(VALUE))
+        );
+        assert_eq!(
+            AnyValue::StringOwned(TEXT.into()).strict_cast(&DataType::Uuid),
+            Some(AnyValue::Uuid(VALUE))
+        );
+        assert_eq!(
+            AnyValue::Binary(&bytes).strict_cast(&DataType::Uuid),
+            Some(AnyValue::Uuid(VALUE))
+        );
+        assert_eq!(
+            AnyValue::BinaryOwned(bytes.to_vec()).strict_cast(&DataType::Uuid),
+            Some(AnyValue::Uuid(VALUE))
+        );
+        assert_eq!(
+            AnyValue::Uuid(VALUE).strict_cast(&DataType::String),
+            Some(AnyValue::StringOwned(TEXT.into()))
+        );
+        assert_eq!(
+            AnyValue::Uuid(VALUE).strict_cast(&DataType::Binary),
+            Some(AnyValue::BinaryOwned(bytes.to_vec()))
+        );
+
+        let mut left = RecordingHasher::default();
+        AnyValue::Uuid(VALUE).hash_impl(&mut left, false);
+        let mut right = RecordingHasher::default();
+        AnyValue::Uuid(VALUE + 1).hash_impl(&mut right, false);
+        assert_ne!(left.0, right.0);
+    }
 
     #[test]
     #[cfg(feature = "dtype-categorical")]
