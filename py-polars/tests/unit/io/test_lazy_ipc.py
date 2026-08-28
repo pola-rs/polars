@@ -684,3 +684,21 @@ print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
     # 1.42.1: ~1.17
     # Fixed branch (debug build): ~1.008
     assert ratio < 1.05
+
+
+def test_row_count_estimate_ipc(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a.ipc"
+    pl.DataFrame({"a": range(37)}).write_ipc(path)
+
+    # The footer blocks carry the record batch lengths.
+    assert "ESTIMATED ROWS: 37" in pl.scan_ipc(path).explain()
+
+
+def test_row_count_estimate_ipc_multifile(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    for name in ("a.ipc", "b.ipc"):
+        pl.DataFrame({"a": range(10)}).write_ipc(tmp_path / name)
+
+    # Only the first source is read, so the rest is extrapolated.
+    assert "ESTIMATED ROWS: 20" in pl.scan_ipc(tmp_path / "*.ipc").explain()

@@ -1,5 +1,10 @@
 //! Plan-time statistics for scan leaves.
 
+use std::sync::Arc;
+
+use polars_utils::aliases::PlIndexMap;
+use polars_utils::pl_str::PlSmallStr;
+
 use crate::plans::IR;
 
 /// Relative error for an estimate that carries no better information.
@@ -74,6 +79,21 @@ impl Card {
     }
 }
 
+/// Statistics for one column, keyed on the file column name, i.e. before column
+/// mapping and renames.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct ScanColumnStats {
+    /// Number of distinct values.
+    pub distinct: Card,
+    pub null_count: Card,
+    /// Average width of one value in the source, in bytes.
+    pub avg_byte_width: Option<f32>,
+}
+
+pub type ScanColumnStatsMap = PlIndexMap<PlSmallStr, ScanColumnStats>;
+
 /// Plan-time statistics for a scan.
 ///
 /// Derivative: takes no part in plan equality or hashing.
@@ -83,6 +103,13 @@ impl Card {
 pub struct ScanStats {
     #[cfg_attr(feature = "serde", serde(default))]
     pub rows: Card,
+    /// Sparse: an absent column is unknown, never a placeholder.
+    #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(
+        feature = "dsl-schema",
+        schemars(with = "Option<Vec<(PlSmallStr, ScanColumnStats)>>")
+    )]
+    columns: Option<Arc<ScanColumnStatsMap>>,
 }
 
 impl ScanStats {
@@ -91,7 +118,10 @@ impl ScanStats {
     }
 
     pub fn new(rows: Card) -> Self {
-        ScanStats { rows }
+        ScanStats {
+            rows,
+            columns: None,
+        }
     }
 
     pub fn exact_rows(rows: u64) -> Self {
@@ -100,6 +130,19 @@ impl ScanStats {
 
     pub fn approx_rows(rows: u64) -> Self {
         Self::new(Card::approx(rows))
+    }
+
+    pub fn with_columns(mut self, columns: ScanColumnStatsMap) -> Self {
+        self.columns = (!columns.is_empty()).then(|| Arc::new(columns));
+        self
+    }
+
+    pub fn column(&self, name: &str) -> Option<&ScanColumnStats> {
+        self.columns.as_ref()?.get(name)
+    }
+
+    pub fn columns(&self) -> impl Iterator<Item = (&PlSmallStr, &ScanColumnStats)> {
+        self.columns.iter().flat_map(|c| c.iter())
     }
 }
 

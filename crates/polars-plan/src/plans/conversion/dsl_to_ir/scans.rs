@@ -528,13 +528,110 @@ pub(super) async fn parquet_file_info(
         None => Card::approx(resolved.estimated_size as u64),
     };
 
+    let columns = parquet_column_stats(
+        resolved.metadata_per_source.resolved_metadata(),
+        resolved.reader_schema.as_ref(),
+        resolved.known_size.is_some(),
+    );
+
     let file_info = FileInfo::new(
         schema,
         Some(Either::Left(resolved.reader_schema)),
-        ScanStats::new(rows),
+        ScanStats::new(rows).with_columns(columns),
     );
 
     Ok((file_info, resolved.metadata_per_source))
+}
+
+/// Row-group distinct counts overlap by an unknown amount, so a fold over them
+/// is only a bound.
+#[cfg(feature = "parquet")]
+const NDV_REL_ERR: f32 = 1.0;
+
+/// Fold per-column statistics out of the resolved parquet footers.
+///
+/// Reads only fields already decoded into the footer metadata, so it costs no
+/// I/O and no statistics deserialization. `complete` says whether the footers
+/// cover every source, which is what separates a guarantee from an estimate.
+#[cfg(feature = "parquet")]
+fn parquet_column_stats(
+    metadata: &[polars_io::parquet::metadata::FileMetadataRef],
+    reader_schema: &ArrowSchema,
+    complete: bool,
+) -> ScanColumnStatsMap {
+    let mut out = ScanColumnStatsMap::default();
+
+    let resolved_rows: u64 = metadata.iter().map(|m| m.num_rows as u64).sum();
+    if resolved_rows == 0 {
+        return out;
+    }
+
+    for field in reader_schema.iter_values() {
+        let name = &field.name;
+
+        let mut uncompressed: u64 = 0;
+        // A root with several leaves is a nested column; its leaf null counts
+        // do not add up to a null count for the root.
+        let mut single_leaf = true;
+        let mut nulls: Option<u64> = Some(0);
+        let mut distinct: Option<u64> = None;
+        let mut seen = false;
+
+        for file in metadata {
+            for rg in &file.row_groups {
+                let Some(chunks) = rg.columns_under_root_iter(name) else {
+                    continue;
+                };
+                seen = true;
+                single_leaf &= chunks.len() == 1;
+
+                for chunk in chunks {
+                    uncompressed =
+                        uncompressed.saturating_add(chunk.uncompressed_size().max(0) as u64);
+
+                    let chunk_nulls = chunk.null_count().filter(|n| *n >= 0).map(|n| n as u64);
+                    nulls = nulls.zip(chunk_nulls).map(|(acc, n)| acc.saturating_add(n));
+
+                    // Trust gate: a distinct count may not exceed the values
+                    // that are actually present.
+                    let non_null =
+                        (chunk.num_values().max(0) as u64).saturating_sub(chunk_nulls.unwrap_or(0));
+                    if let Some(d) = chunk.distinct_count().filter(|d| *d >= 0)
+                        && d as u64 <= non_null
+                    {
+                        // `max` over row groups is a lower bound on the NDV.
+                        distinct = Some(distinct.unwrap_or(0).max(d as u64));
+                    }
+                }
+            }
+        }
+
+        if !seen {
+            continue;
+        }
+
+        let stats = ScanColumnStats {
+            distinct: match distinct {
+                Some(d) => Card::Approx {
+                    value: d,
+                    rel_err: NDV_REL_ERR,
+                },
+                None => Card::Unknown,
+            },
+            // A sum over a subset of the files is not a null count for the
+            // scan, and scaling it up would invent nulls the files may not have.
+            null_count: match nulls.filter(|_| single_leaf && complete) {
+                Some(n) => Card::Exact(n),
+                None => Card::Unknown,
+            },
+            // A ratio carries over from the resolved subset.
+            avg_byte_width: Some(uncompressed as f32 / resolved_rows as f32),
+        };
+
+        out.insert(name.clone(), stats);
+    }
+
+    out
 }
 
 /// Minimum sample so a scan still extrapolates from enough files; below this,
@@ -636,32 +733,63 @@ pub fn max_metadata_scan_cached() -> usize {
 #[cfg(feature = "ipc")]
 pub(super) async fn ipc_file_info(
     first_scan_source: ScanSourceRef<'_>,
+    n_sources: usize,
     row_index: Option<&RowIndex>,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
 
-    let metadata = match first_scan_source {
+    /// Sums the record batch lengths. Each block costs a seek and a small read
+    /// of its message header, so this is only done for sources already backed
+    /// by local bytes.
+    fn row_count<R: std::io::Read + std::io::Seek>(
+        reader: &mut R,
+        metadata: &arrow::io::ipc::read::FileMetadata,
+    ) -> Option<u64> {
+        arrow::io::ipc::read::get_row_count_from_blocks(reader, &metadata.blocks)
+            .ok()
+            .and_then(|rows| u64::try_from(rows).ok())
+    }
+
+    let (metadata, first_rows) = match first_scan_source {
         ScanSourceRef::Path(path) => {
             if path.has_scheme() {
                 feature_gated!("cloud", {
-                    polars_io::ipc::IpcReaderAsync::from_uri(path.clone(), cloud_options)
-                        .await?
-                        .metadata()
-                        .await?
+                    // Counting rows here would download the whole file.
+                    let metadata =
+                        polars_io::ipc::IpcReaderAsync::from_uri(path.clone(), cloud_options)
+                            .await?
+                            .metadata()
+                            .await?;
+                    (metadata, None)
                 })
             } else {
-                arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
-                    polars_utils::io::open_file(path.as_std_path())?,
-                ))?
+                let mut reader =
+                    std::io::BufReader::new(polars_utils::io::open_file(path.as_std_path())?);
+                let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader)?;
+                let rows = row_count(&mut reader, &metadata);
+                (metadata, rows)
             }
         },
         ScanSourceRef::File(file) => {
-            arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(file))?
+            let mut reader = std::io::BufReader::new(file);
+            let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader)?;
+            let rows = row_count(&mut reader, &metadata);
+            (metadata, rows)
         },
         ScanSourceRef::Buffer(buff) => {
-            arrow::io::ipc::read::read_file_metadata(&mut std::io::Cursor::new(buff))?
+            let mut reader = std::io::Cursor::new(buff);
+            let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader)?;
+            let rows = row_count(&mut reader, &metadata);
+            (metadata, rows)
         },
+    };
+
+    // Only the first source is read, so anything beyond it is extrapolated.
+    let rows = match first_rows {
+        None => Card::Unknown,
+        Some(rows) if n_sources == 1 => Card::Exact(rows),
+        Some(rows) => Card::approx(rows.saturating_mul(n_sources as u64)),
     };
 
     let file_info = FileInfo::new(
@@ -670,7 +798,7 @@ pub(super) async fn ipc_file_info(
             row_index,
         )?,
         Some(Either::Left(Arc::clone(&metadata.schema))),
-        ScanStats::unknown(),
+        ScanStats::new(rows),
     );
 
     Ok((file_info, metadata))
@@ -1264,6 +1392,7 @@ impl SourcesToFileInfo {
 
                 let (mut file_info, md) = scans::ipc_file_info(
                     first_scan_source,
+                    sources.len(),
                     unified_scan_args.row_index.as_ref(),
                     cloud_options,
                 )
