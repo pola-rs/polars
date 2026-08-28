@@ -1139,6 +1139,61 @@ class List(NestedType):
         return f"{class_name}({self.inner!r})"
 
 
+class Map(NestedType):
+    """
+    Key-value mapping type.
+
+    Keys are unique within a row and never null. Entry order is preserved and
+    participates in equality and hashing.
+
+    Parameters
+    ----------
+    key
+        The `DataType` of the keys. Must be row-encodable, so `Object` is not allowed.
+
+        A nested key dtype is accepted by Polars but has no Python representation.
+    value
+        The `DataType` of the values.
+
+    Examples
+    --------
+    >>> s = pl.Series("a", [{"x": 1, "y": 2}], dtype=pl.Map(pl.String, pl.Int64))
+    >>> s
+    shape: (1,)
+    Series: 'a' [map[str, i64]]
+    [
+            {"x": 1, "y": 2}
+    ]
+    """
+
+    key: PolarsDataType
+    value: PolarsDataType
+
+    def __init__(
+        self,
+        key: PolarsDataType | PythonDataType,
+        value: PolarsDataType | PythonDataType,
+    ) -> None:
+        self.key = polars.datatypes.parse_into_dtype(key)
+        self.value = polars.datatypes.parse_into_dtype(value)
+
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        # Bare dtype classes act as wildcards throughout the dtype API.
+        if type(other) is DataTypeClass and issubclass(other, Map):
+            return True
+        elif isinstance(other, Map):
+            return self.key == other.key and self.value == other.value
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.key, self.value))
+
+    def __repr__(self) -> str:
+        class_name = self.__class__.__name__
+        return f"{class_name}({self.key!r}, {self.value!r})"
+
+
 class Array(NestedType):
     """
     Fixed length list type.
