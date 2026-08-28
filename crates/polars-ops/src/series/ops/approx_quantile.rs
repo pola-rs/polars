@@ -13,7 +13,7 @@ fn sketch_quantile<T: fmt::Debug + Clone + TotalOrd>(
 ) -> Option<T> {
     let mut sketch = Sketch::new(method, error);
     for value in values.flatten() {
-        sketch.update(&[value]);
+        sketch.update(&value);
     }
     sketch.finalize();
     sketch.estimate_quantile(quantile).cloned()

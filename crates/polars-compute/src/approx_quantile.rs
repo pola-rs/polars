@@ -235,11 +235,11 @@ pub mod kll {
         }
 
         #[inline]
-        pub fn update(&mut self, array: &[T]) {
+        pub fn update(&mut self, item: &T) {
             let State::Ingesting(state) = &mut self.0 else {
                 invalid_state()
             };
-            state.update(array);
+            state.update(item);
         }
 
         pub fn finalize(&mut self) {
@@ -268,22 +268,14 @@ pub mod kll {
 
     impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
         #[inline]
-        pub fn update(&mut self, array: &[T]) {
-            let mut offset = 0;
-            while offset < array.len() {
-                // Fast compare
-                if self.items.len() >= self.compactor_capacity {
-                    self.compact(true);
-                }
-                let space_left = self.compactor_capacity - self.items.len();
-                debug_assert!(space_left > 0);
-                let ingest_chunk_len = space_left.min(array[offset..].len());
-                let ingest_items = &array[offset..offset + ingest_chunk_len];
-                self.items.extend_from_slice(ingest_items);
-                self.levels[0].size += ingest_items.len();
-                offset += ingest_items.len();
+        pub fn update(&mut self, item: &T) {
+            // Fast compare
+            if self.items.len() >= self.compactor_capacity {
+                self.compact(true);
             }
-            self.consumed_items += array.len();
+            self.items.push(item.clone());
+            self.levels[0].size += 1;
+            self.consumed_items += 1;
         }
 
         /// Compact all of the compactors from base to top.
@@ -370,7 +362,7 @@ pub mod kll {
             let compacted_items = compacted_items.step_by(2);
 
             // Merge the items into the next compactor
-            merge_sorted(buf, next_level_items, compacted_items);
+            merge_sorted(buf, next_level_items, compacted_items, TotalOrd::tot_cmp);
             self.items[next_start..next_start + buf.len()].clone_from_slice(&buf);
             next_level.size = buf.len();
 
@@ -519,6 +511,16 @@ pub mod req {
         2 * k * (usize::div_ceil(n, k) * 2 - 1).ilog2() as usize
     }
 
+    /// Put the items a compaction takes at the front of the
+    /// compactor, next to the level they are promoted into.
+    #[inline(always)]
+    fn cmp_desc<const HRA: bool, T: TotalOrd>(a: &T, b: &T) -> std::cmp::Ordering {
+        match HRA {
+            false => TotalOrd::tot_cmp(b, a),
+            true => TotalOrd::tot_cmp(a, b),
+        }
+    }
+
     #[derive(Debug, Clone, Copy, Default)]
     struct Level {
         offset: usize,
@@ -616,11 +618,11 @@ pub mod req {
         }
 
         #[inline]
-        pub fn update(&mut self, array: &[T]) {
+        pub fn update(&mut self, item: &T) {
             let State::Ingesting(state) = &mut self.0 else {
                 invalid_state()
             };
-            state.update(array);
+            state.update(item);
         }
 
         #[inline]
@@ -680,9 +682,9 @@ pub mod req {
         }
 
         #[inline]
-        pub fn update(&mut self, array: &[T]) {
-            self.lra.update(array);
-            self.hra.update(array);
+        pub fn update(&mut self, item: &T) {
+            self.lra.update(item);
+            self.hra.update(item);
         }
 
         pub fn merge(&mut self, other: Self) {
@@ -718,13 +720,11 @@ pub mod req {
 
     impl<T: fmt::Debug + Clone + TotalOrd> IngestingState<T> {
         #[inline]
-        pub fn update(&mut self, array: &[T]) {
-            for item in array {
-                self.compact_if_needed(0);
-                self.items.push(item.clone());
-                self.levels[0].size += 1;
-                self.consumed_items += 1;
-            }
+        pub fn update(&mut self, item: &T) {
+            self.compact_if_needed(0);
+            self.items.push(item.clone());
+            self.levels[0].size += 1;
+            self.consumed_items += 1;
         }
 
         /// Grow the compactors once a compaction schedule runs out of sections.
@@ -792,15 +792,20 @@ pub mod req {
                 self.levels[level].offset
             );
 
-            let compare = |a: &T, b: &T| match self.is_hra {
-                false => TotalOrd::tot_cmp(a, b),
-                true => TotalOrd::tot_cmp(a, b).reverse(),
-            };
-
             let compactor_start = self.levels[level].offset;
             let compactor_size = self.levels[level].size;
             let compactor_end = compactor_start + compactor_size;
             let compactor = &self.items[compactor_start..compactor_end];
+
+            if level > 0 {
+                debug_assert!(
+                    compactor.windows(2).all(|w| match self.is_hra {
+                        false => cmp_desc::<false, T>(&w[0], &w[1]).is_le(),
+                        true => cmp_desc::<true, T>(&w[0], &w[1]).is_le(),
+                    }),
+                    "compactor is not a single descending run"
+                );
+            }
 
             let z_c = self.levels[level].compaction_schedule.trailing_ones();
             let l_c = usize::min(z_c as usize + 1, self.num_sections()) * self.k;
@@ -817,11 +822,14 @@ pub mod req {
             };
             self.levels[level].coin = coin;
 
+            // Level 0 is not sorted yet.
             let compactor = &mut self.items[compactor_start..compactor_end];
-            // Stash the protected items at the end of the compactor.
-            compactor.select_nth_unstable_by(promote_count, |a, b| compare(a, b).reverse());
-            // Sort the items that we will be compacting.
-            compactor[..promote_count].sort_unstable_by(compare);
+            if level == 0 {
+                match self.is_hra {
+                    false => Self::partition_compactor::<false>(compactor, promote_count),
+                    true => Self::partition_compactor::<true>(compactor, promote_count),
+                }
+            }
 
             // Throw away half of the values during the compaction, gathering the
             // survivors at the front of the compacted range.
@@ -834,8 +842,22 @@ pub mod req {
             let gap_end = compactor_start + promote_count;
             self.items.drain(gap_start..gap_end);
 
-            // Transfer ownership of the promoted items to the next compactor.
-            self.levels[level + 1].size += promote_count / 2;
+            // Merge the promoted items into the next compactor.
+            let next_start = self.levels[level + 1].offset;
+            let next_split = self.levels[level + 1].size;
+            let next_end = next_split + promote_count / 2;
+            if next_split > 0 {
+                let next = next_start..next_start + next_end;
+                let (left, right) = self.items[next.clone()].split_at(next_split);
+                let (left, right) = (left.iter().cloned(), right.iter().cloned());
+                self.scratch.clear();
+                match self.is_hra {
+                    false => merge_sorted(&mut self.scratch, left, right, cmp_desc::<false, T>),
+                    true => merge_sorted(&mut self.scratch, left, right, cmp_desc::<true, T>),
+                }
+                self.items[next].clone_from_slice(&self.scratch);
+            }
+            self.levels[level + 1].size = next_end;
             self.levels[level].offset += promote_count / 2;
             self.levels[level].size -= promote_count;
 
@@ -855,6 +877,12 @@ pub mod req {
             self.levels[level].compaction_schedule += 1;
             self.close_out_if_needed(level);
             self.compact_if_needed(level + 1);
+        }
+
+        #[inline(never)]
+        fn partition_compactor<const HRA: bool>(compactor: &mut [T], promote_count: usize) {
+            compactor.select_nth_unstable_by(promote_count, cmp_desc::<HRA, T>);
+            compactor[..promote_count].sort_unstable_by(cmp_desc::<HRA, T>);
         }
 
         /// Merge `other` into `self`.
@@ -881,10 +909,18 @@ pub mod req {
             for level in (0..self.levels.len()).rev() {
                 let l1 = self.levels[level];
                 let l2 = other.levels.get(level).copied().unwrap_or_default();
-                let compactor1 = &items1[l1.offset..l1.offset + l1.size];
-                let compactor2 = &items2[l2.offset..l2.offset + l2.size];
-                self.items.extend_from_slice(compactor1);
-                self.items.extend_from_slice(compactor2);
+                let comp1 = &items1[l1.offset..l1.offset + l1.size];
+                let comp2 = &items2[l2.offset..l2.offset + l2.size];
+                if level == 0 {
+                    self.items.extend_from_slice(comp1);
+                    self.items.extend_from_slice(comp2);
+                } else {
+                    let (c1, c2) = (comp1.iter().cloned(), comp2.iter().cloned());
+                    match self.is_hra {
+                        false => merge_sorted(&mut self.items, c1, c2, cmp_desc::<false, T>),
+                        true => merge_sorted(&mut self.items, c1, c2, cmp_desc::<true, T>),
+                    }
+                }
 
                 let at_odd_schedule = |l: &Level| l.compaction_schedule % 2 != 0;
                 let coin = match (at_odd_schedule(&l1), at_odd_schedule(&l2)) {
@@ -992,10 +1028,13 @@ fn finalize_merge_levels<T: fmt::Debug + Clone + TotalOrd>(
     cum_weights
 }
 
-fn merge_sorted<T: TotalOrd>(
+/// Append the merge of two runs, both sorted by `compare`, to `vec`.
+#[inline(never)]
+fn merge_sorted<T>(
     vec: &mut Vec<T>,
     iter1: impl ExactSizeIterator<Item = T>,
     iter2: impl ExactSizeIterator<Item = T>,
+    mut compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
 ) {
     vec.reserve(iter1.len() + iter2.len());
     let mut iter1 = iter1.peekable();
@@ -1006,7 +1045,7 @@ fn merge_sorted<T: TotalOrd>(
             (Some(_), None) => vec.push(iter1.next().unwrap()),
             (None, Some(_)) => vec.push(iter2.next().unwrap()),
             (Some(x1), Some(x2)) => {
-                if TotalOrd::tot_le(x1, x2) {
+                if compare(x1, x2).is_le() {
                     vec.push(iter1.next().unwrap());
                 } else {
                     vec.push(iter2.next().unwrap())
@@ -1035,11 +1074,11 @@ impl<T: fmt::Debug + Clone + TotalOrd> Sketch<T> {
     }
 
     #[inline]
-    pub fn update(&mut self, array: &[T]) {
+    pub fn update(&mut self, item: &T) {
         match self {
-            Sketch::Kll(s) => s.update(array),
-            Sketch::Req(s) => s.update(array),
-            Sketch::DoubleReq(s) => s.update(array),
+            Sketch::Kll(s) => s.update(item),
+            Sketch::Req(s) => s.update(item),
+            Sketch::DoubleReq(s) => s.update(item),
         }
     }
 
@@ -1118,10 +1157,14 @@ mod tests {
                 let agreed = (0..10)
                     .filter(|_| {
                         let mut base = $new;
-                        base.update(&data[..5_000]);
+                        for v in &data[..5_000] {
+                            base.update(v);
+                        }
                         let (mut a, mut b) = (base.clone(), base.clone());
-                        a.update(&data[5_000..]);
-                        b.update(&data[5_000..]);
+                        for v in &data[5_000..] {
+                            a.update(v);
+                            b.update(v);
+                        }
                         a.finalize();
                         b.finalize();
                         QUANTILES
