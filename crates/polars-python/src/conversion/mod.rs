@@ -352,7 +352,12 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 let class = pl.getattr(intern!(py, "Null"))?;
                 class.call0()
             },
-            DataType::Map(_, _) => todo!("pl.Map"),
+            DataType::Map(key, value) => {
+                let class = pl.getattr(intern!(py, "Map"))?;
+                let key = Wrap(*key.clone());
+                let value = Wrap(*value.clone());
+                class.call1((&key, &value))
+            },
             DataType::Extension(typ, storage) => {
                 let py_storage = Wrap((**storage).clone()).into_pyobject(py)?;
                 let py_typ = pl
@@ -438,6 +443,8 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                     "List" => DataType::List(Box::new(DataType::Null)),
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "Struct" => DataType::Struct(vec![]),
+                    #[cfg(feature = "dtype-map")]
+                    "Map" => DataType::Map(Box::new(DataType::Null), Box::new(DataType::Null)),
                     "Null" => DataType::Null,
                     #[cfg(feature = "object")]
                     "Object" => DataType::Object(OBJECT_NAME),
@@ -520,6 +527,14 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                 let inner = inner.extract::<Wrap<DataType>>()?;
                 let size = size.extract::<usize>()?;
                 DataType::Array(Box::new(inner.0), size)
+            },
+            #[cfg(feature = "dtype-map")]
+            "Map" => {
+                let key = ob.getattr(intern!(py, "key"))?;
+                let value = ob.getattr(intern!(py, "value"))?;
+                let key = key.extract::<Wrap<DataType>>()?;
+                let value = value.extract::<Wrap<DataType>>()?;
+                DataType::Map(Box::new(key.0), Box::new(value.0))
             },
             "Struct" => {
                 let fields = ob.getattr(intern!(py, "fields"))?;
