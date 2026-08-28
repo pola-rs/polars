@@ -4333,44 +4333,18 @@ def test_read_parquet_legacy_nested_maps_27159(io_files_path: Path) -> None:
     expected = pl.DataFrame(
         {
             "a": [
-                [
-                    {
-                        "key": "a",
-                        "value": [
-                            {"key": 1, "value": True},
-                            {"key": 2, "value": False},
-                        ],
-                    }
-                ],
-                [{"key": "b", "value": [{"key": 1, "value": True}]}],
-                [{"key": "c", "value": None}],
-                [{"key": "d", "value": []}],
-                [{"key": "e", "value": [{"key": 1, "value": True}]}],
-                [
-                    {
-                        "key": "f",
-                        "value": [
-                            {"key": 3, "value": True},
-                            {"key": 4, "value": False},
-                            {"key": 5, "value": True},
-                        ],
-                    }
-                ],
+                {"a": {1: True, 2: False}},
+                {"b": {1: True}},
+                {"c": None},
+                {"d": {}},
+                {"e": {1: True}},
+                {"f": {3: True, 4: False, 5: True}},
             ],
             "b": [1, 1, 1, 1, 1, 1],
             "c": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         },
         schema={
-            "a": pl.List(
-                pl.Struct(
-                    {
-                        "key": pl.String,
-                        "value": pl.List(
-                            pl.Struct({"key": pl.Int32, "value": pl.Boolean})
-                        ),
-                    }
-                )
-            ),
+            "a": pl.Map(pl.String, pl.Map(pl.Int32, pl.Boolean)),
             "b": pl.Int32,
             "c": pl.Float64,
         },

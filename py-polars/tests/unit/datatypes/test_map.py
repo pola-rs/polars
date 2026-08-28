@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -481,3 +482,92 @@ def test_map_filter_against_literal() -> None:
     ):
         assert lf.filter(pl.col("m") == lit).collect()["i"].to_list() == [1]
         assert lf.filter(pl.col("m") != lit).collect()["i"].to_list() == [2]
+
+
+ARROW_SHAPES = [
+    pytest.param(pl.Map(pl.String, pl.Int64), [{"a": 1}, None, {}], id="map"),
+    pytest.param(pl.Map(pl.Int64, pl.String), [{1: "x"}], id="map-int-keys"),
+    pytest.param(
+        pl.Map(pl.String, pl.Map(pl.String, pl.Int64)),
+        [{"x": {"a": 1}}],
+        id="map-of-map",
+    ),
+    pytest.param(pl.List(pl.Map(pl.String, pl.Int64)), [[{"a": 1}]], id="list-of-map"),
+    pytest.param(
+        pl.Array(pl.Map(pl.String, pl.Int64), 1), [[{"a": 1}]], id="array-of-map"
+    ),
+    pytest.param(
+        pl.Struct({"m": pl.Map(pl.String, pl.Int64)}),
+        [{"m": {"a": 1}}],
+        id="struct-of-map",
+    ),
+    pytest.param(
+        pl.Map(pl.Datetime("ms"), pl.Duration("us")),
+        [{datetime(2020, 1, 1): timedelta(seconds=1)}],
+        id="map-temporal",
+    ),
+]
+
+
+@pytest.mark.parametrize(("dtype", "values"), ARROW_SHAPES)
+def test_map_arrow_roundtrip(dtype: pl.DataType, values: list[Any]) -> None:
+    s = pl.Series("c", values, dtype=dtype)
+    back = pl.from_arrow(s.to_frame().to_arrow())
+    assert isinstance(back, pl.DataFrame)
+    assert back.schema == pl.Schema({"c": dtype})
+    assert back["c"].to_list() == values
+
+
+@pytest.mark.parametrize(("dtype", "values"), ARROW_SHAPES)
+@pytest.mark.parametrize("stream", [False, True])
+def test_map_ipc_roundtrip(dtype: pl.DataType, values: list[Any], stream: bool) -> None:
+    df = pl.Series("c", values, dtype=dtype).to_frame()
+    buf = io.BytesIO()
+    if stream:
+        df.write_ipc_stream(buf)
+    else:
+        df.write_ipc(buf)
+    buf.seek(0)
+    back = pl.read_ipc_stream(buf) if stream else pl.read_ipc(buf)
+    assert back.schema == pl.Schema({"c": dtype})
+    assert back["c"].to_list() == values
+
+
+def test_map_arrow_export_is_a_map_type() -> None:
+    pa = pytest.importorskip("pyarrow")
+    dtype = pl.Map(pl.String, pl.Int64)
+    field = (
+        pl.Series("m", [{"a": 1}], dtype=dtype).to_frame().to_arrow().schema.field("m")
+    )
+    assert field.type == pa.map_(pa.large_string(), pa.int64())
+    # Arrow requires non-null keys.
+    assert not field.type.key_field.nullable
+
+
+def test_map_arrow_import_matches_entries_positionally() -> None:
+    pa = pytest.importorskip("pyarrow")
+    # Only Arrow and Parquet do this. The names carry no meaning there, so they are
+    # normalized to `key`/`value` on the way in -- Map equality compares them.
+    map_type = pa.map_(
+        pa.field("k", pa.string(), nullable=False), pa.field("v", pa.int64())
+    )
+    tbl = pa.table({"m": pa.array([[("a", 1)]], type=map_type)})
+    s = pl.from_arrow(tbl)["m"]  # type: ignore[index]
+    assert s.dtype == pl.Map(pl.String, pl.Int64)
+    assert s.to_list() == [{"a": 1}]
+    assert s.cast(ENTRIES).to_list() == [[{"key": "a", "value": 1}]]
+
+
+def test_map_arrow_import_keeps_duplicate_keys() -> None:
+    pa = pytest.importorskip("pyarrow")
+    # Key uniqueness is not validated on Arrow import, we just trust it blindly
+    tbl = pa.table(
+        {"m": pa.array([[("a", 1), ("a", 2)]], type=pa.map_(pa.string(), pa.int64()))}
+    )
+    s = pl.from_arrow(tbl)["m"]  # type: ignore[index]
+    assert s.dtype == pl.Map(pl.String, pl.Int64)
+    assert s.cast(ENTRIES).to_list() == [
+        [{"key": "a", "value": 1}, {"key": "a", "value": 2}]
+    ]
+    # Eventually, we build a Python dict, which keeps only the last value
+    assert s.to_list() == [{"a": 2}]
