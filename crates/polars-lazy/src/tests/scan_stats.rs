@@ -145,7 +145,7 @@ fn test_ipc_scan_stats_rows() {
     let dir = TempDir::new("ipc-basic");
     write_ipc(&dir, &["a.ipc"]);
 
-    // Previously thrown away: the footer blocks carry the record batch lengths.
+    // The footer blocks carry the record batch lengths.
     let stats = scan_ipc_stats(&dir.join("a.ipc"), false);
     assert_eq!(stats.rows, Card::Exact(5));
 }

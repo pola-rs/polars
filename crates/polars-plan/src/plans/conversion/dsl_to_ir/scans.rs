@@ -542,16 +542,13 @@ pub(super) async fn parquet_file_info(
     Ok((file_info, resolved.metadata_per_source))
 }
 
-/// Row-group distinct counts overlap by an unknown amount, so a fold over them
-/// is only a bound.
+/// Relative error for an NDV folded over row groups.
 #[cfg(feature = "parquet")]
 const NDV_REL_ERR: f32 = 1.0;
 
 /// Fold per-column statistics out of the resolved parquet footers.
 ///
-/// Reads only fields already decoded into the footer metadata, so it costs no
-/// I/O and no statistics deserialization. `complete` says whether the footers
-/// cover every source, which is what separates a guarantee from an estimate.
+/// `complete` says whether the footers cover every source.
 #[cfg(feature = "parquet")]
 fn parquet_column_stats(
     metadata: &[polars_io::parquet::metadata::FileMetadataRef],
@@ -566,8 +563,7 @@ fn parquet_column_stats(
         nulls_unknown: bool,
         /// `max` over row groups, a lower bound on the NDV.
         distinct: Option<u64>,
-        /// Several leaves means a nested column, whose leaf null counts do not
-        /// add up to a null count for the root.
+        /// Several leaves under one root means a nested column.
         leaves_per_row_group: usize,
         nested: bool,
     }
@@ -605,8 +601,7 @@ fn parquet_column_stats(
                 None => a.nulls_unknown = true,
             }
 
-            // Trust gate: a distinct count may not exceed the values that are
-            // actually present.
+            // A distinct count may not exceed the values actually present.
             let non_null =
                 (chunk.num_values().max(0) as u64).saturating_sub(chunk_nulls.unwrap_or(0));
             if let Some(d) = chunk.distinct_count().filter(|d| *d >= 0)
@@ -627,15 +622,11 @@ fn parquet_column_stats(
                     },
                     None => Card::Unknown,
                 },
-                // A sum over a subset of the files is not a null count for the
-                // scan, and scaling it up would invent nulls the unread files
-                // may not have.
                 null_count: if a.nulls_unknown || a.nested || !complete {
                     Card::Unknown
                 } else {
                     Card::Exact(a.nulls)
                 },
-                // A ratio carries over from the resolved subset.
                 avg_byte_width: Some(a.uncompressed as f32 / resolved_rows as f32),
             };
             (name, stats)
@@ -748,13 +739,10 @@ pub(super) async fn ipc_file_info(
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
 
-    /// Above this, summing the blocks costs more seeks than a plan-time
-    /// estimate is worth, and the count is left unknown.
+    /// Above this the row count is left unknown.
     const MAX_COUNTED_BLOCKS: usize = 4096;
 
     /// Reads the footer, and sums the record batch lengths when that is cheap.
-    /// Each block costs a seek and a small read of its message header, so this
-    /// is only done for sources already backed by local bytes.
     fn metadata_and_rows<R: std::io::Read + std::io::Seek>(
         mut reader: R,
     ) -> PolarsResult<(arrow::io::ipc::read::FileMetadata, Option<u64>)> {
