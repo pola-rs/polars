@@ -19,8 +19,8 @@ use polars_compute::cast::cast_unchecked;
 use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
 
 use crate::prelude::{
-    Array, ArrayRef, ArrowDataType, ArrowField, BinaryViewArray, CompatLevel, DataType, ListArray,
-    PlSmallStr, PrimitiveArray, Series,
+    Array, ArrayRef, ArrowDataType, ArrowField, BinaryViewArray, CompatLevel, DataType,
+    FixedSizeBinaryArray, ListArray, PlSmallStr, PrimitiveArray, Series,
 };
 
 fn unhandled_arrow_conversion_dtype_pair_err(
@@ -304,6 +304,23 @@ impl ToArrowConverter {
                 let array: &PrimitiveArray<i64> = array.as_any().downcast_ref().unwrap();
 
                 time64ns_to_time64us(array).boxed()
+            },
+            #[cfg(feature = "dtype-uuid")]
+            (DataType::Uuid, ArrowDataType::Extension(ext))
+                if ext.name.as_str() == crate::prelude::ARROW_UUID_EXTENSION_NAME
+                    && ext.inner == ArrowDataType::FixedSizeBinary(16) =>
+            {
+                let array: &PrimitiveArray<u128> = array.as_any().downcast_ref().unwrap();
+                let mut values = Vec::with_capacity(array.len() * 16);
+                for value in array.values().iter() {
+                    values.extend_from_slice(&value.to_be_bytes());
+                }
+                FixedSizeBinaryArray::new(
+                    to_owned_dtype(arrow_field),
+                    values.into(),
+                    array.validity().cloned(),
+                )
+                .boxed()
             },
             #[cfg(feature = "dtype-decimal")]
             (DataType::Decimal(prec, scale), ArrowDataType::Decimal(a_prec, a_scale)) => {

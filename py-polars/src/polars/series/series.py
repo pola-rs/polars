@@ -70,6 +70,7 @@ from polars._utils.various import (
 )
 from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import (
+    UUID,
     Array,
     Boolean,
     Categorical,
@@ -115,6 +116,7 @@ from polars.series.plotting import SeriesPlot
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
+from polars.series.uuid import UuidNameSpace
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PyDataFrame, PySeries
@@ -398,6 +400,11 @@ class Series(metaclass=_Meta):
     def bin(self) -> BinaryNameSpace:
         """Create an object namespace of all binary related methods."""
         return BinaryNameSpace(self)
+
+    @property
+    def uuid(self) -> UuidNameSpace:
+        """Create an object namespace of all UUID related methods."""
+        return UuidNameSpace(self)
 
     @property
     def cat(self) -> CatNameSpace:
@@ -772,6 +779,9 @@ class Series(metaclass=_Meta):
 
         elif self.dtype in [Categorical, Enum] and not isinstance(other, Series):
             other = Series([other])
+
+        elif self.dtype == UUID and not isinstance(other, Series):
+            other = Series("", [other], dtype=UUID)
 
         elif isinstance(other, date) and self.dtype == Date:
             d = date_to_int(other)

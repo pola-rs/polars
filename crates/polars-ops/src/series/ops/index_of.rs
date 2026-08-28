@@ -158,6 +158,8 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
         #[cfg(feature = "dtype-categorical")]
         DT::Categorical(..) | DT::Enum(..) => unreachable!(),
         DT::Date | DT::Datetime(..) | DT::Duration(..) | DT::Time => unreachable!(),
+        #[cfg(feature = "dtype-uuid")]
+        DT::Uuid => unreachable!("uuid has UInt128 physical representation"),
 
         #[cfg(feature = "object")]
         DT::Object(_) => polars_bail!(op = "index_of", series.dtype()),

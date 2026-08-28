@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from datetime import date, datetime, time, timedelta
     from decimal import Decimal
     from typing import TypeAlias
+    from uuid import UUID
 
     from sqlalchemy.engine import Connection
     from sqlalchemy.engine import Engine as AlchemyEngine
@@ -168,6 +169,7 @@ PythonDataType: TypeAlias = (
     | type[bytes]
     | type[object]
     | type["Decimal"]
+    | type["UUID"]
     | type[None]
 )
 

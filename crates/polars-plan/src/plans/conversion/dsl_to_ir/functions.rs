@@ -126,6 +126,18 @@ pub(super) fn convert_functions(
                 B::Get(null_on_oob) => IB::Get(null_on_oob),
             })
         },
+        #[cfg(feature = "dtype-uuid")]
+        F::UuidExpr(uuid_function) => {
+            use IRUuidFunction as IU;
+            use UuidFunction as U;
+            I::UuidExpr(match uuid_function {
+                U::GenerateV4 => IU::GenerateV4,
+                U::GenerateV7 => IU::GenerateV7,
+                U::Version => IU::Version,
+                #[cfg(feature = "dtype-datetime")]
+                U::Timestamp { strict } => IU::Timestamp { strict },
+            })
+        },
         #[cfg(feature = "dtype-categorical")]
         F::Categorical(categorical_function) => {
             use CategoricalFunction as C;

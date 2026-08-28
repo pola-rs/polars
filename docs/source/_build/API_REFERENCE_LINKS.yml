@@ -173,6 +173,9 @@ python:
   tail: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.tail.html
   unique: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.unique.html
   unique_counts: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.unique_counts.html
+  UUID: https://docs.pola.rs/api/python/stable/reference/api/polars.datatypes.UUID.html
+  uuid4: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.uuid4.html
+  uuid7: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.uuid7.html
   unnest: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.unnest.html
   unpivot: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.unpivot.html
   upsample: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.upsample.html

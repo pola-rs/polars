@@ -104,6 +104,8 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::TemporalExpr(_) => false,
         #[cfg(feature = "bitwise")]
         F::Bitwise(_) => false,
+        #[cfg(feature = "dtype-uuid")]
+        F::UuidExpr(f) => matches!(f, IRUuidFunction::GenerateV4 | IRUuidFunction::GenerateV7),
 
         F::Boolean(_) => false,
         #[cfg(feature = "business")]

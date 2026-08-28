@@ -98,6 +98,9 @@ pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> 
         | DataType::Datetime(_, _)
         | DataType::Duration(_) => None,
 
+        #[cfg(feature = "dtype-uuid")]
+        DataType::Uuid => None,
+
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_, mapping) | DataType::Enum(_, mapping) => {
             use polars_row::RowEncodingCategoricalContext;

@@ -268,6 +268,15 @@ impl DataType {
                     panic!("activate the 'object' feature to be able to load POLARS_EXTENSION_TYPE")
                 }
             },
+            #[cfg(feature = "dtype-uuid")]
+            ArrowDataType::Extension(ext) if ext.name.as_str() == ARROW_UUID_EXTENSION_NAME => {
+                assert_eq!(
+                    ext.inner,
+                    ArrowDataType::FixedSizeBinary(16),
+                    "arrow.uuid must use FixedSizeBinary(16) storage"
+                );
+                DataType::Uuid
+            },
             #[cfg(feature = "dtype-extension")]
             ArrowDataType::Extension(ext) => {
                 use crate::prelude::extension::get_extension_type_or_storage;

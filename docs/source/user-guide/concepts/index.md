@@ -4,6 +4,7 @@ This chapter describes the core concepts of the Polars API. Understanding these 
 optimise your queries on a daily basis. We will cover the following topics:
 
 - [Data types and structures](data-types-and-structures.md)
+- [Universally unique identifiers (UUIDs)](uuids.md)
 - [Expressions and contexts](expressions-and-contexts.md)
 - [Lazy API](lazy-api.md)
 - [Streaming](streaming.md)

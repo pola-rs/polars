@@ -130,6 +130,12 @@ impl Series {
         try_unpack_chunked!(self, DataType::BinaryOffset => BinaryOffsetChunked)
     }
 
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Uuid`].
+    #[cfg(feature = "dtype-uuid")]
+    pub fn try_uuid(&self) -> Option<&UuidChunked> {
+        try_unpack_chunked!(self, DataType::Uuid => UuidChunked)
+    }
+
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Time`]
     #[cfg(feature = "dtype-time")]
     pub fn try_time(&self) -> Option<&TimeChunked> {
@@ -332,6 +338,13 @@ impl Series {
     pub fn binary_offset(&self) -> PolarsResult<&BinaryOffsetChunked> {
         self.try_binary_offset()
             .ok_or_else(|| unpack_chunked_err!(self => "BinaryOffset"))
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype [`DataType::Uuid`].
+    #[cfg(feature = "dtype-uuid")]
+    pub fn uuid(&self) -> PolarsResult<&UuidChunked> {
+        self.try_uuid()
+            .ok_or_else(|| unpack_chunked_err!(self => "Uuid"))
     }
 
     /// Unpack to [`ChunkedArray`] of dtype [`DataType::Time`]

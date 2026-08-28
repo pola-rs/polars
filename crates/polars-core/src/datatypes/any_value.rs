@@ -48,6 +48,9 @@ pub enum AnyValue<'a> {
     UInt64(u64),
     /// An unsigned 128-bit integer number.
     UInt128(u128),
+    /// A universally unique identifier, represented in RFC 9562 byte order.
+    #[cfg(feature = "dtype-uuid")]
+    Uuid(u128),
     /// An 8-bit integer number.
     Int8(i8),
     /// A 16-bit integer number.
@@ -156,6 +159,8 @@ impl AnyValue<'static> {
             DT::UInt32 => AV::UInt32(numeric_to_one.into()),
             DT::UInt64 => AV::UInt64(numeric_to_one.into()),
             DT::UInt128 => AV::UInt128(numeric_to_one.into()),
+            #[cfg(feature = "dtype-uuid")]
+            DT::Uuid => AV::Uuid(0),
             DT::Int8 => AV::Int8(numeric_to_one.into()),
             DT::Int16 => AV::Int16(numeric_to_one.into()),
             DT::Int32 => AV::Int32(numeric_to_one.into()),
@@ -246,6 +251,8 @@ impl<'a> AnyValue<'a> {
             UInt32(_) => DataType::UInt32,
             UInt64(_) => DataType::UInt64,
             UInt128(_) => DataType::UInt128,
+            #[cfg(feature = "dtype-uuid")]
+            Uuid(_) => DataType::Uuid,
             Float16(_) => DataType::Float16,
             Float32(_) => DataType::Float32,
             Float64(_) => DataType::Float64,
@@ -429,7 +436,23 @@ impl<'a> AnyValue<'a> {
             (av, DataType::UInt16) => AnyValue::UInt16(av.extract::<u16>()?),
             (av, DataType::UInt32) => AnyValue::UInt32(av.extract::<u32>()?),
             (av, DataType::UInt64) => AnyValue::UInt64(av.extract::<u64>()?),
+            #[cfg(feature = "dtype-uuid")]
+            (AnyValue::Uuid(v), DataType::UInt128) => AnyValue::UInt128(*v),
             (av, DataType::UInt128) => AnyValue::UInt128(av.extract::<u128>()?),
+            #[cfg(feature = "dtype-uuid")]
+            (AnyValue::UInt128(v), DataType::Uuid) => AnyValue::Uuid(*v),
+            #[cfg(feature = "dtype-uuid")]
+            (AnyValue::String(v), DataType::Uuid) => {
+                AnyValue::Uuid(crate::chunked_array::logical::parse_uuid_str(v)?)
+            },
+            #[cfg(feature = "dtype-uuid")]
+            (AnyValue::StringOwned(v), DataType::Uuid) => {
+                AnyValue::Uuid(crate::chunked_array::logical::parse_uuid_str(v.as_str())?)
+            },
+            #[cfg(feature = "dtype-uuid")]
+            (AnyValue::Uuid(v), DataType::String) => {
+                AnyValue::StringOwned(PlSmallStr::from(uuid::Uuid::from_u128(*v).to_string()))
+            },
             (av, DataType::Int8) => AnyValue::Int8(av.extract::<i8>()?),
             (av, DataType::Int16) => AnyValue::Int16(av.extract::<i16>()?),
             (av, DataType::Int32) => AnyValue::Int32(av.extract::<i32>()?),
@@ -719,6 +742,9 @@ impl<'a> AnyValue<'a> {
             | Self::Float32(_)
             | Self::Float64(_) => self,
 
+            #[cfg(feature = "dtype-uuid")]
+            Self::Uuid(v) => Self::UInt128(v),
+
             #[cfg(feature = "object")]
             Self::Object(_) | Self::ObjectOwned(_) => self,
 
@@ -837,6 +863,8 @@ impl AnyValue<'_> {
             UInt32(v) => v.hash(state),
             UInt64(v) => v.hash(state),
             UInt128(v) => feature_gated!("dtype-u128", v.hash(state)),
+            #[cfg(feature = "dtype-uuid")]
+            Uuid(v) => v.hash(state),
             String(v) => v.hash(state),
             StringOwned(v) => v.hash(state),
             Float16(v) => v.to_ne_bytes().hash(state),
@@ -988,6 +1016,15 @@ impl<'a> AnyValue<'a> {
         }
     }
 
+    #[cfg(feature = "dtype-uuid")]
+    pub(crate) fn as_uuid(&self) -> AnyValue<'static> {
+        match self {
+            AnyValue::UInt128(v) => AnyValue::Uuid(*v),
+            AnyValue::Null => AnyValue::Null,
+            av => panic!("cannot create uuid from other type. dtype: {}", av.dtype()),
+        }
+    }
+
     pub(crate) fn to_i128(&self) -> Option<i128> {
         match self {
             AnyValue::UInt8(v) => Some((*v).into()),
@@ -1081,6 +1118,8 @@ impl<'a> AnyValue<'a> {
             UInt32(v) => UInt32(v),
             UInt64(v) => UInt64(v),
             UInt128(v) => UInt128(v),
+            #[cfg(feature = "dtype-uuid")]
+            Uuid(v) => Uuid(v),
             Boolean(v) => Boolean(v),
             Float16(v) => Float16(v),
             Float32(v) => Float32(v),
@@ -1231,6 +1270,8 @@ impl AnyValue<'_> {
             (UInt32(l), UInt32(r)) => *l == *r,
             (UInt64(l), UInt64(r)) => *l == *r,
             (UInt128(l), UInt128(r)) => *l == *r,
+            #[cfg(feature = "dtype-uuid")]
+            (Uuid(l), Uuid(r)) => *l == *r,
             (Int8(l), Int8(r)) => *l == *r,
             (Int16(l), Int16(r)) => *l == *r,
             (Int32(l), Int32(r)) => *l == *r,
@@ -1384,6 +1425,8 @@ impl PartialOrd for AnyValue<'_> {
             (UInt32(l), UInt32(r)) => l.partial_cmp(r),
             (UInt64(l), UInt64(r)) => l.partial_cmp(r),
             (UInt128(l), UInt128(r)) => l.partial_cmp(r),
+            #[cfg(feature = "dtype-uuid")]
+            (Uuid(l), Uuid(r)) => l.partial_cmp(r),
             (Int8(l), Int8(r)) => l.partial_cmp(r),
             (Int16(l), Int16(r)) => l.partial_cmp(r),
             (Int32(l), Int32(r)) => l.partial_cmp(r),

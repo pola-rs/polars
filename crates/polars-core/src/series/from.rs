@@ -76,6 +76,10 @@ impl Series {
             Int128 => Int128Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-u128")]
             UInt128 => UInt128Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-uuid")]
+            Uuid => UInt128Chunked::from_chunks(name, chunks)
+                .into_uuid()
+                .into_series(),
             #[cfg(feature = "dtype-date")]
             Date => Int32Chunked::from_chunks(name, chunks)
                 .into_date()
@@ -465,6 +469,36 @@ impl Series {
                 };
                 Ok(s)
             },
+            #[cfg(feature = "dtype-uuid")]
+            ArrowDataType::Extension(ext) if ext.name.as_str() == ARROW_UUID_EXTENSION_NAME => {
+                polars_ensure!(
+                    ext.inner == ArrowDataType::FixedSizeBinary(16),
+                    SchemaMismatch:
+                    "arrow.uuid must use FixedSizeBinary(16) storage, got {:?}",
+                    ext.inner
+                );
+
+                let chunks = chunks.into_iter().map(|chunk| {
+                    let array = chunk
+                        .as_any()
+                        .downcast_ref::<FixedSizeBinaryArray>()
+                        .unwrap();
+                    let values = array
+                        .values()
+                        .chunks_exact(16)
+                        .map(|bytes| u128::from_be_bytes(bytes.try_into().unwrap()))
+                        .collect::<Vec<_>>();
+                    PrimitiveArray::<u128>::new(
+                        ArrowDataType::UInt128,
+                        values.into(),
+                        array.validity().cloned(),
+                    )
+                });
+
+                Ok(UInt128Chunked::from_chunk_iter(name, chunks)
+                    .into_uuid()
+                    .into_series())
+            },
             #[cfg(feature = "dtype-extension")]
             ArrowDataType::Extension(ext) => {
                 use crate::datatypes::extension::get_extension_type_or_storage;
@@ -639,6 +673,22 @@ unsafe fn to_physical_and_dtype(
             })
         },
         dt @ ArrowDataType::Extension(_) => {
+            #[cfg(feature = "dtype-uuid")]
+            if let ArrowDataType::Extension(ext) = dt
+                && ext.name.as_str() == ARROW_UUID_EXTENSION_NAME
+            {
+                let s = unsafe {
+                    Series::_try_from_arrow_unchecked_with_md(
+                        PlSmallStr::EMPTY,
+                        arrays.clone(),
+                        dt,
+                        md,
+                    )
+                }
+                .unwrap();
+                return (s.chunks().clone(), s.dtype().clone());
+            }
+
             feature_gated!("dtype-extension", {
                 let s = unsafe {
                     let dt = dt.clone();
@@ -1024,6 +1074,13 @@ where
 #[cfg(feature = "dtype-date")]
 impl From<DateChunked> for Series {
     fn from(a: DateChunked) -> Self {
+        a.into_series()
+    }
+}
+
+#[cfg(feature = "dtype-uuid")]
+impl From<UuidChunked> for Series {
+    fn from(a: UuidChunked) -> Self {
         a.into_series()
     }
 }

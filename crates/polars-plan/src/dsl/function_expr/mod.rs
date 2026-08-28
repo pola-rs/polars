@@ -30,6 +30,8 @@ mod strings;
 mod struct_;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
+#[cfg(feature = "dtype-uuid")]
+mod uuid;
 
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -71,6 +73,8 @@ pub use self::strings::StringFunction;
 pub use self::struct_::StructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::TrigonometricFunction;
+#[cfg(feature = "dtype-uuid")]
+pub use self::uuid::UuidFunction;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -94,6 +98,8 @@ pub enum FunctionExpr {
     TemporalExpr(TemporalFunction),
     #[cfg(feature = "bitwise")]
     Bitwise(BitwiseFunction),
+    #[cfg(feature = "dtype-uuid")]
+    UuidExpr(UuidFunction),
 
     // Other expressions
     Boolean(BooleanFunction),
@@ -412,6 +418,8 @@ impl Hash for FunctionExpr {
             TemporalExpr(f) => f.hash(state),
             #[cfg(feature = "bitwise")]
             Bitwise(f) => f.hash(state),
+            #[cfg(feature = "dtype-uuid")]
+            UuidExpr(f) => f.hash(state),
 
             // Other expressions
             Boolean(f) => f.hash(state),
@@ -719,6 +727,8 @@ impl Display for FunctionExpr {
             TemporalExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "bitwise")]
             Bitwise(func) => return write!(f, "bitwise_{func}"),
+            #[cfg(feature = "dtype-uuid")]
+            UuidExpr(func) => return write!(f, "{func}"),
 
             // Other expressions
             Boolean(func) => return write!(f, "{func}"),

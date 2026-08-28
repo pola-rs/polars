@@ -47,6 +47,10 @@ fn check_namespace(function: &IRFunctionExpr, first_dtype: &DataType) -> PolarsR
         IRFunctionExpr::BinaryExpr(_) => {
             polars_ensure!(first_dtype == &DataType::Binary, InvalidOperation: "expected Binary type, got: {}", first_dtype)
         },
+        #[cfg(feature = "dtype-uuid")]
+        IRFunctionExpr::UuidExpr(_) => {
+            polars_ensure!(first_dtype == &DataType::Uuid, InvalidOperation: "expected UUID type, got: {}", first_dtype)
+        },
         #[cfg(feature = "temporal")]
         IRFunctionExpr::TemporalExpr(_) => {
             polars_ensure!(first_dtype.is_temporal(), InvalidOperation: "expected Date(time)/Duration type, got: {}", first_dtype)

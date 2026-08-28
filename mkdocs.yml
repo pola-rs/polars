@@ -18,6 +18,7 @@ nav:
       - Concepts:
         - user-guide/concepts/index.md
         - user-guide/concepts/data-types-and-structures.md
+        - user-guide/concepts/uuids.md
         - user-guide/concepts/expressions-and-contexts.md
         - user-guide/concepts/lazy-api.md
         - user-guide/concepts/streaming.md

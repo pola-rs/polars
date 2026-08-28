@@ -280,6 +280,20 @@ fn deserialize_all<'a>(
                 v => AnyValue::StringOwned(format_pl_smallstr!("{}", ValueDisplay(v))),
             });
         },
+        #[cfg(feature = "dtype-uuid")]
+        DataType::Uuid => {
+            return match json {
+                Value::String(s) => match parse_uuid_str(s.as_ref()) {
+                    Some(value) => Ok(AnyValue::Uuid(value)),
+                    None if ignore_errors => Ok(AnyValue::Null),
+                    None => polars_bail!(ComputeError: "cannot parse '{}' as UUID", s),
+                },
+                _ if ignore_errors => Ok(AnyValue::Null),
+                _ => {
+                    polars_bail!(ComputeError: "cannot parse '{}' ({}) as UUID", json, json.value_type())
+                },
+            };
+        },
         dt if dt.is_primitive_numeric() => {
             return match json.as_i128() {
                 Some(v) => Ok(AnyValue::Int128(v).into_static()),

@@ -97,6 +97,8 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyStringFunction>().unwrap();
     m.add_class::<PyBooleanFunction>().unwrap();
     m.add_class::<PyTemporalFunction>().unwrap();
+    #[cfg(feature = "dtype-uuid")]
+    m.add_class::<PyUuidFunction>().unwrap();
     m.add_class::<PyStructFunction>().unwrap();
     m.add_class::<PyListFunction>().unwrap();
     m.add_class::<PyArrayFunction>().unwrap();

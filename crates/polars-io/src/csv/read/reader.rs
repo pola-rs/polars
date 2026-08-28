@@ -194,6 +194,12 @@ pub fn prepare_csv_schema(
                     fld.coerce(String);
                     PolarsResult::Ok(fld)
                 },
+                #[cfg(feature = "dtype-uuid")]
+                Uuid => {
+                    fields_to_cast.push(fld.clone());
+                    fld.coerce(String);
+                    PolarsResult::Ok(fld)
+                },
                 _ => {
                     matched = false;
                     PolarsResult::Ok(fld)

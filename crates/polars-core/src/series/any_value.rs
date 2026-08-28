@@ -130,6 +130,8 @@ impl Series {
             DataType::UInt128 => {
                 any_values_to_integer::<UInt128Type>(values, strict)?.into_series()
             },
+            #[cfg(feature = "dtype-uuid")]
+            DataType::Uuid => any_values_to_uuid(values, strict)?.into_series(),
             #[cfg(feature = "dtype-f16")]
             DataType::Float16 => any_values_to_f16(values, strict)?.into_series(),
             DataType::Float32 => any_values_to_f32(values, strict)?.into_series(),
@@ -218,6 +220,27 @@ fn any_values_to_integer<T: PolarsIntegerType>(
     } else {
         Ok(any_values_to_primitive_nonstrict::<T>(values))
     }
+}
+
+#[cfg(feature = "dtype-uuid")]
+fn any_values_to_uuid(values: &[AnyValue], strict: bool) -> PolarsResult<UuidChunked> {
+    let mut builder = PrimitiveChunkedBuilder::<UInt128Type>::new(PlSmallStr::EMPTY, values.len());
+    for av in values {
+        match av {
+            AnyValue::Uuid(v) => builder.append_value(*v),
+            AnyValue::Null => builder.append_null(),
+            av => {
+                if strict {
+                    return Err(invalid_value_error(&DataType::Uuid, av));
+                }
+                match av.cast(&DataType::Uuid) {
+                    AnyValue::Uuid(v) => builder.append_value(v),
+                    _ => builder.append_null(),
+                }
+            },
+        }
+    }
+    Ok(builder.finish().into_uuid())
 }
 
 #[cfg(feature = "dtype-f16")]

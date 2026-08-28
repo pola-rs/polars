@@ -76,6 +76,9 @@ pub enum SerializableScalar {
     UInt64(u64),
     /// An unsigned 128-bit integer number.
     UInt128(u128),
+    /// A universally unique identifier.
+    #[cfg(feature = "dtype-uuid")]
+    Uuid(u128),
     /// A 16-bit floating point number.
     Float16(pf16),
     /// A 32-bit floating point number.
@@ -152,6 +155,8 @@ impl TryFrom<Scalar> for SerializableScalar {
             AnyValue::UInt32(v) => Self::UInt32(v),
             AnyValue::UInt64(v) => Self::UInt64(v),
             AnyValue::UInt128(v) => Self::UInt128(v),
+            #[cfg(feature = "dtype-uuid")]
+            AnyValue::Uuid(v) => Self::Uuid(v),
             AnyValue::Float16(v) => Self::Float16(v),
             AnyValue::Float32(v) => Self::Float32(v),
             AnyValue::Float64(v) => Self::Float64(v),
@@ -284,6 +289,8 @@ impl TryFrom<SerializableScalar> for Scalar {
             S::UInt32(v) => Self::from(v),
             S::UInt64(v) => Self::from(v),
             S::UInt128(v) => Self::from(v),
+            #[cfg(feature = "dtype-uuid")]
+            S::Uuid(v) => Self::new(DataType::Uuid, AnyValue::Uuid(v)),
             S::Float16(v) => Self::from(v),
             S::Float32(v) => Self::from(v),
             S::Float64(v) => Self::from(v),

@@ -108,6 +108,24 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         .and_then(|m| m.get(PARQUET_FIELD_ID_KEY))
         .and_then(|v| v.parse().ok());
 
+    if let ArrowDataType::Extension(ext) = field.dtype()
+        && ext.name.as_str() == "arrow.uuid"
+    {
+        if ext.inner != ArrowDataType::FixedSizeBinary(16) {
+            polars_bail!(SchemaMismatch:
+                "arrow.uuid must use FixedSizeBinary(16) storage, got {:?}", ext.inner
+            );
+        }
+        return Ok(ParquetType::try_from_primitive(
+            name,
+            PhysicalType::FixedLenByteArray(16),
+            repetition,
+            None,
+            Some(PrimitiveLogicalType::Uuid),
+            field_id,
+        )?);
+    }
+
     // create type from field
     let (physical_type, primitive_converted_type, primitive_logical_type) = match field
         .dtype()

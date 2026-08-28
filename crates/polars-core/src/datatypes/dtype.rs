@@ -111,6 +111,12 @@ pub enum DataType {
     String,
     Binary,
     BinaryOffset,
+    /// A 128-bit universally unique identifier as defined by RFC 9562.
+    ///
+    /// UUID values are backed by an unsigned 128-bit integer in memory and use
+    /// the canonical `arrow.uuid` extension type at Arrow boundaries.
+    #[cfg(feature = "dtype-uuid")]
+    Uuid,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
     Date,
@@ -507,6 +513,8 @@ impl DataType {
             Time => Int64,
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => Int128,
+            #[cfg(feature = "dtype-uuid")]
+            Uuid => UInt128,
             #[cfg(feature = "dtype-categorical")]
             Categorical(cats, _) => cats.physical().dtype(),
             #[cfg(feature = "dtype-categorical")]
@@ -1003,6 +1011,14 @@ impl DataType {
                 };
                 Ok(dt)
             },
+            #[cfg(feature = "dtype-uuid")]
+            Uuid => Ok(ArrowDataType::Extension(Box::new(
+                arrow::datatypes::ExtensionType {
+                    name: ARROW_UUID_EXTENSION_NAME.into(),
+                    inner: ArrowDataType::FixedSizeBinary(16),
+                    metadata: None,
+                },
+            ))),
             Date => Ok(ArrowDataType::Date32),
             Datetime(unit, tz) => Ok(ArrowDataType::Timestamp(
                 unit.to_arrow(),
@@ -1224,6 +1240,8 @@ impl Display for DataType {
             DataType::String => "str",
             DataType::Binary => "binary",
             DataType::BinaryOffset => "binary[offset]",
+            #[cfg(feature = "dtype-uuid")]
+            DataType::Uuid => "uuid",
             DataType::Date => "date",
             DataType::Datetime(tu, None) => return write!(f, "datetime[{tu}]"),
             DataType::Datetime(tu, Some(tz)) => return write!(f, "datetime[{tu}, {tz}]"),
@@ -1284,6 +1302,8 @@ impl std::fmt::Debug for DataType {
             String => write!(f, "String"),
             Binary => write!(f, "Binary"),
             BinaryOffset => write!(f, "BinaryOffset"),
+            #[cfg(feature = "dtype-uuid")]
+            Uuid => write!(f, "Uuid"),
             Date => write!(f, "Date"),
             Time => write!(f, "Time"),
             Duration(unit) => write!(f, "Duration('{unit}')"),

@@ -12,8 +12,8 @@ use super::utils::{
     create_borrowed_np_array, dtype_supports_view, polars_dtype_to_np_temporal_dtype,
     reshape_numpy_array, series_contains_null,
 };
-use crate::conversion::ObjectValue;
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
+use crate::conversion::{ObjectValue, Wrap};
 use crate::interned;
 use crate::series::PySeries;
 
@@ -203,6 +203,10 @@ fn series_to_numpy_with_copy(py: Python<'_>, s: &Series, writable: bool) -> Py<P
         UInt128 => {
             let s = s.cast(&DataType::Float64).unwrap();
             series_to_numpy(py, &s, writable, true).unwrap()
+        },
+        Uuid => {
+            let values = s.iter().map(|value| Wrap(value).into_py_any(py).unwrap());
+            PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         Float16 => numeric_series_to_numpy::<Float16Type, pf16>(py, s),
         Float32 => numeric_series_to_numpy::<Float32Type, f32>(py, s),

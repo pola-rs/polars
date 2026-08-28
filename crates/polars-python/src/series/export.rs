@@ -34,6 +34,18 @@ impl PySeries {
                 DataType::UInt128 => {
                     PyList::new(py, series.u128().map_err(PyPolarsErr::from)?.iter())?
                 },
+                DataType::Uuid => {
+                    let values = PyList::empty(py);
+                    for value in series.uuid().map_err(PyPolarsErr::from)?.physical().iter() {
+                        match value {
+                            Some(value) => {
+                                values.append(Wrap(AnyValue::Uuid(value)).into_pyobject(py)?)?
+                            },
+                            None => values.append(py.None())?,
+                        }
+                    }
+                    values
+                },
                 DataType::Int8 => PyList::new(py, series.i8().map_err(PyPolarsErr::from)?.iter())?,
                 DataType::Int16 => {
                     PyList::new(py, series.i16().map_err(PyPolarsErr::from)?.iter())?

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
-from uuid import uuid4
 
 import numpy as np
 import pytest
@@ -157,10 +156,13 @@ def test_object_concat_diagonal_14651() -> None:
 
 
 def test_object_row_construction() -> None:
+    class OpaqueObject:
+        pass
+
     data = [
-        [uuid4()],
-        [uuid4()],
-        [uuid4()],
+        [OpaqueObject()],
+        [OpaqueObject()],
+        [OpaqueObject()],
     ]
     df = pl.DataFrame(
         data,

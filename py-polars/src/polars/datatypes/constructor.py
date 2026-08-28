@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 from decimal import Decimal as PyDecimal
 from typing import TYPE_CHECKING, Any
+from uuid import UUID as PyUUID
 
 from polars import datatypes as dt
 from polars._dependencies import numpy as np
@@ -34,6 +35,7 @@ else:
         dt.UInt32: PySeries.new_opt_u32,
         dt.UInt64: PySeries.new_opt_u64,
         dt.UInt128: PySeries.new_opt_u128,
+        dt.UUID: PySeries.new_uuid,
         dt.Decimal: PySeries.new_decimal,
         dt.Date: PySeries.new_opt_i32,
         dt.Datetime: PySeries.new_opt_i64,
@@ -56,6 +58,7 @@ else:
         str: PySeries.new_str,
         bytes: PySeries.new_binary,
         PyDecimal: PySeries.new_decimal,
+        PyUUID: PySeries.new_uuid,
     }
 
 

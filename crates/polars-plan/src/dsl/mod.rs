@@ -44,6 +44,8 @@ pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
 pub mod udf;
+#[cfg(feature = "dtype-uuid")]
+mod uuid;
 
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -79,6 +81,8 @@ pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
+#[cfg(feature = "dtype-uuid")]
+pub use uuid::*;
 mod file_scan;
 pub use file_scan::*;
 use functions::lit;
@@ -1644,6 +1648,11 @@ impl Expr {
     /// Get the [`binary::BinaryNameSpace`]
     pub fn binary(self) -> binary::BinaryNameSpace {
         binary::BinaryNameSpace(self)
+    }
+
+    #[cfg(feature = "dtype-uuid")]
+    pub fn uuid(self) -> uuid::UuidNameSpace {
+        uuid::UuidNameSpace(self)
     }
 
     #[cfg(feature = "temporal")]

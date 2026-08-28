@@ -38,6 +38,8 @@ mod strings;
 mod struct_;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
+#[cfg(feature = "dtype-uuid")]
+mod uuid;
 
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -85,6 +87,8 @@ pub use self::strings::TZ_AWARE_RE;
 pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
+#[cfg(feature = "dtype-uuid")]
+pub use self::uuid::IRUuidFunction;
 use super::*;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
@@ -107,6 +111,8 @@ pub enum IRFunctionExpr {
     TemporalExpr(IRTemporalFunction),
     #[cfg(feature = "bitwise")]
     Bitwise(IRBitwiseFunction),
+    #[cfg(feature = "dtype-uuid")]
+    UuidExpr(IRUuidFunction),
 
     // Other expressions
     Boolean(IRBooleanFunction),
@@ -427,6 +433,8 @@ impl Hash for IRFunctionExpr {
             TemporalExpr(f) => f.hash(state),
             #[cfg(feature = "bitwise")]
             Bitwise(f) => f.hash(state),
+            #[cfg(feature = "dtype-uuid")]
+            UuidExpr(f) => f.hash(state),
 
             // Other expressions
             Boolean(f) => f.hash(state),
@@ -741,6 +749,8 @@ impl Display for IRFunctionExpr {
             TemporalExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "bitwise")]
             Bitwise(func) => return write!(f, "bitwise_{func}"),
+            #[cfg(feature = "dtype-uuid")]
+            UuidExpr(func) => return write!(f, "{func}"),
 
             // Other expressions
             Boolean(func) => return write!(f, "{func}"),
@@ -1044,6 +1054,8 @@ impl IRFunctionExpr {
             F::TemporalExpr(e) => e.function_options(),
             #[cfg(feature = "bitwise")]
             F::Bitwise(e) => e.function_options(),
+            #[cfg(feature = "dtype-uuid")]
+            F::UuidExpr(e) => e.function_options(),
             F::Boolean(e) => e.function_options(),
             #[cfg(feature = "business")]
             F::Business(e) => e.function_options(),

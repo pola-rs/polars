@@ -48,6 +48,10 @@ impl Series {
             DataType::Decimal(precision, scale) => Int128Chunked::full_null(name, size)
                 .into_decimal_unchecked(*precision, *scale)
                 .into_series(),
+            #[cfg(feature = "dtype-uuid")]
+            DataType::Uuid => UInt128Chunked::full_null(name, size)
+                .into_uuid()
+                .into_series(),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
                 let fields = fields

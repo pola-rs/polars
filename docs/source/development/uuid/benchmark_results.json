@@ -1,0 +1,33 @@
+{
+  "environment": {
+    "machine": "arm64",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "polars": "2.0.0-rc.1",
+    "python": "3.12.7",
+    "repeats": 7,
+    "rows": 1000000,
+    "rust_profile": "release, opt-level=3, LTO disabled"
+  },
+  "storage_bytes": {
+    "memory/native": 16000000,
+    "memory/string": 36000000,
+    "parquet_uncompressed/native": 16004855,
+    "parquet_uncompressed/string": 40012151
+  },
+  "timings": {
+    "filter/native": {"max_ms": 0.393, "median_ms": 0.390, "min_ms": 0.389},
+    "filter/string": {"max_ms": 0.444, "median_ms": 0.443, "min_ms": 0.442},
+    "format/uuid_to_string": {"max_ms": 13.382, "median_ms": 13.287, "min_ms": 13.224},
+    "generate/v4": {"max_ms": 591.383, "median_ms": 590.797, "min_ms": 588.136},
+    "generate/v7": {"max_ms": 663.461, "median_ms": 624.542, "min_ms": 623.059},
+    "group_by/native": {"max_ms": 6.767, "median_ms": 6.720, "min_ms": 6.117},
+    "group_by/string": {"max_ms": 9.707, "median_ms": 9.559, "min_ms": 8.784},
+    "n_unique/native": {"max_ms": 6.614, "median_ms": 6.467, "min_ms": 6.379},
+    "n_unique/string": {"max_ms": 13.288, "median_ms": 13.059, "min_ms": 12.721},
+    "parquet_write/native": {"max_ms": 4.151, "median_ms": 3.362, "min_ms": 3.114},
+    "parquet_write/string": {"max_ms": 9.939, "median_ms": 8.226, "min_ms": 7.963},
+    "parse/string_to_uuid": {"max_ms": 10.635, "median_ms": 10.230, "min_ms": 10.063},
+    "sort/native": {"max_ms": 5.927, "median_ms": 5.809, "min_ms": 5.744},
+    "sort/string": {"max_ms": 30.244, "median_ms": 29.396, "min_ms": 29.031}
+  }
+}

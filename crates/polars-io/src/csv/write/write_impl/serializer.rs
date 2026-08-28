@@ -107,6 +107,28 @@ fn integer_serializer<I: NativeType + itoa::Integer>(
     make_serializer::<_, _, false>(f, array.iter())
 }
 
+fn uuid_serializer<'a>(
+    array: &'a PrimitiveArray<u128>,
+    options: &SerializeOptions,
+) -> Box<dyn Serializer<'a> + Send + 'a> {
+    let f = |&value: &u128, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        let uuid = uuid::Uuid::from_u128(value);
+        let mut encoded = uuid::Uuid::encode_buffer();
+        buf.extend_from_slice(uuid.as_hyphenated().encode_lower(&mut encoded).as_bytes());
+    };
+
+    match options.quote_style {
+        QuoteStyle::Always => Box::new(quote_serializer(make_serializer::<_, _, false>(
+            f,
+            array.iter(),
+        ))),
+        QuoteStyle::NonNumeric => Box::new(make_serializer::<_, _, true>(f, array.iter())),
+        QuoteStyle::Necessary | QuoteStyle::Never => {
+            Box::new(make_serializer::<_, _, false>(f, array.iter()))
+        },
+    }
+}
+
 fn float_serializer_no_precision_autoformat_f16(array: &Float16Array) -> impl Serializer<'_> {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         let mut buffer = zmij::Buffer::new();
@@ -777,6 +799,8 @@ pub(super) fn serializer_for<'a>(
                 _ => Box::new(bool_serializer::<false>(array)),
             }
         },
+        #[cfg(feature = "dtype-uuid")]
+        DataType::Uuid => uuid_serializer(array.as_any().downcast_ref().unwrap(), options),
         #[cfg(feature = "dtype-date")]
         DataType::Date => date_and_time_serializer(
             options.date_format.as_deref(),

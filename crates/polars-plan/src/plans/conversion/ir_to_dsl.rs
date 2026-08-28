@@ -353,6 +353,18 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::Get(null_on_oob) => B::Get(null_on_oob),
             })
         },
+        #[cfg(feature = "dtype-uuid")]
+        IF::UuidExpr(f) => {
+            use IRUuidFunction as IU;
+            use UuidFunction as U;
+            F::UuidExpr(match f {
+                IU::GenerateV4 => U::GenerateV4,
+                IU::GenerateV7 => U::GenerateV7,
+                IU::Version => U::Version,
+                #[cfg(feature = "dtype-datetime")]
+                IU::Timestamp { strict } => U::Timestamp { strict },
+            })
+        },
         #[cfg(feature = "dtype-categorical")]
         IF::Categorical(f) => {
             use CategoricalFunction as C;

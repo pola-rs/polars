@@ -74,6 +74,11 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::UInt32(v) => v.into_bound_py_any(py),
         AnyValue::UInt64(v) => v.into_bound_py_any(py),
         AnyValue::UInt128(v) => v.into_bound_py_any(py),
+        AnyValue::Uuid(v) => {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("int", v)?;
+            py.import("uuid")?.getattr("UUID")?.call((), Some(&kwargs))
+        },
         AnyValue::Int8(v) => v.into_bound_py_any(py),
         AnyValue::Int16(v) => v.into_bound_py_any(py),
         AnyValue::Int32(v) => v.into_bound_py_any(py),
@@ -228,6 +233,10 @@ pub(crate) fn py_object_to_any_value(
     fn get_bytes(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
         let value = ob.extract::<Vec<u8>>()?;
         Ok(AnyValue::BinaryOwned(value))
+    }
+
+    fn get_uuid(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
+        Ok(AnyValue::Uuid(ob.getattr("int")?.extract::<u128>()?))
     }
 
     fn get_date(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
@@ -552,6 +561,10 @@ pub(crate) fn py_object_to_any_value(
             static DECIMAL_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
             if ob.is_instance(DECIMAL_TYPE.import(py, "decimal", "Decimal")?)? {
                 return Ok(get_decimal as InitFn);
+            }
+            static UUID_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+            if ob.is_instance(UUID_TYPE.import(py, "uuid", "UUID")?)? {
+                return Ok(get_uuid as InitFn);
             }
 
             // support NumPy scalars

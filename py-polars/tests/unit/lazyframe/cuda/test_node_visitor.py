@@ -491,6 +491,20 @@ def _collect_named_function_data(
     return results
 
 
+def test_uuid_expr_visitor() -> None:
+    """UUID functions are exposed as typed lazy-plan visitor nodes."""
+    query = pl.LazyFrame(schema={"id": pl.UUID}).select(
+        pl.col("id").uuid.version().alias("version"),
+        pl.col("id").uuid.timestamp(strict=False).alias("timestamp"),
+    )
+    data = _collect_named_function_data(query, _expr_nodes.UuidFunction)
+    assert data == [
+        (_expr_nodes.UuidFunction.Version,),
+        (_expr_nodes.UuidFunction.Timestamp, False),
+    ]
+    assert hash(data[0][0]) == hash(_expr_nodes.UuidFunction.Version)
+
+
 def test_array_expr_visitor() -> None:
     """An array function node is exposed as an ArrayFunction typed view."""
     q = pl.LazyFrame(schema={"x": pl.Array(pl.Int64, 3)}).with_columns(

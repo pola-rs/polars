@@ -76,6 +76,7 @@ from polars.convert import (
 from polars.dataframe import DataFrame
 from polars.datatype_expr import DataTypeExpr
 from polars.datatypes import (
+    UUID,
     Array,
     BaseExtension,
     Binary,
@@ -206,6 +207,8 @@ from polars.functions import (
     time_range,
     time_ranges,
     union,
+    uuid4,
+    uuid7,
     var,
     when,
     zeros,
@@ -334,6 +337,7 @@ __all__ = [
     "UInt32",
     "UInt64",
     "UInt128",
+    "UUID",
     "Unknown",
     "Utf8",
     # datatypes.extension
@@ -476,6 +480,8 @@ __all__ = [
     "struct",
     "tail",
     "time",
+    "uuid4",
+    "uuid7",
     "var",
     # polars.functions.len
     "len",

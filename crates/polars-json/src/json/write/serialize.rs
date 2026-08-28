@@ -115,6 +115,22 @@ fn primitive_serializer<'a, T: NativeType + itoa::Integer>(
     materialize_serializer(f, array.iter(), offset, take)
 }
 
+fn uuid_serializer<'a>(
+    array: &'a FixedSizeBinaryArray,
+    offset: usize,
+    take: usize,
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
+    let f = |value: Option<&[u8]>, buf: &mut Vec<u8>| match value {
+        Some(value) => {
+            let uuid = uuid::Uuid::from_bytes(value.try_into().unwrap());
+            let mut encoded = uuid::Uuid::encode_buffer();
+            utf8::write_str(buf, uuid.as_hyphenated().encode_lower(&mut encoded)).unwrap();
+        },
+        None => buf.extend_from_slice(b"null"),
+    };
+    materialize_serializer(f, array.iter(), offset, take)
+}
+
 fn float_serializer<'a, T>(
     array: &'a PrimitiveArray<T>,
     offset: usize,
@@ -488,6 +504,12 @@ pub fn new_serializer<'a>(
     offset: usize,
     take: usize,
 ) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
+    if let ArrowDataType::Extension(ext) = array.dtype()
+        && ext.name.as_str() == "arrow.uuid"
+    {
+        return uuid_serializer(array.as_any().downcast_ref().unwrap(), offset, take);
+    }
+
     match array.dtype().to_storage() {
         ArrowDataType::Boolean => {
             boolean_serializer(array.as_any().downcast_ref().unwrap(), offset, take)

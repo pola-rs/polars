@@ -64,6 +64,8 @@ enum SerializableDataType {
     String,
     Binary,
     BinaryOffset,
+    #[cfg(feature = "dtype-uuid")]
+    Uuid,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
     Date,
@@ -125,6 +127,8 @@ impl From<&DataType> for SerializableDataType {
             String => Self::String,
             Binary => Self::Binary,
             BinaryOffset => Self::BinaryOffset,
+            #[cfg(feature = "dtype-uuid")]
+            Uuid => Self::Uuid,
             Date => Self::Date,
             Datetime(tu, tz) => Self::Datetime(*tu, tz.clone()),
             Duration(tu) => Self::Duration(*tu),
@@ -184,6 +188,8 @@ impl From<SerializableDataType> for DataType {
             String => Self::String,
             Binary => Self::Binary,
             BinaryOffset => Self::BinaryOffset,
+            #[cfg(feature = "dtype-uuid")]
+            Uuid => Self::Uuid,
             Date => Self::Date,
             Datetime(tu, tz) => Self::Datetime(tu, tz),
             Duration(tu) => Self::Duration(tu),

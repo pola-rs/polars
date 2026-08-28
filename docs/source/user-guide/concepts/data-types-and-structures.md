@@ -7,7 +7,7 @@ Polars supports a variety of data types that fall broadly under the following ca
 - Numeric data types: signed integers, unsigned integers, floating point numbers, and decimals.
 - Nested data types: lists, structs, and arrays.
 - Temporal: dates, datetimes, times, and time deltas.
-- Miscellaneous: strings, binary data, Booleans, categoricals, enums, and objects.
+- Miscellaneous: strings, binary data, UUIDs, Booleans, categoricals, enums, and objects.
 
 All types support missing values represented by the special value `null`. This is not to be
 conflated with the special value `NaN` in floating number data types; see the
@@ -200,6 +200,7 @@ than 64-bit floats), and thus some error is always to be expected.
 | `Decimal`                                        | Decimal 128-bit type with optional precision and non-negative scale. Use this if you need fine-grained control over the precision of your floats and the operations you make on them. See [Python's `decimal.Decimal`](https://docs.python.org/3/library/decimal.html) for documentation on what a decimal data type is. |
 | `String`                                         | Variable length UTF-8 encoded string data, typically Human-readable.                                                                                                                                                                                                                                                     |
 | `Binary`                                         | Stores arbitrary, varying length raw binary data.                                                                                                                                                                                                                                                                        |
+| `UUID`                                           | Stores universally unique identifiers in a fixed-width 16-byte representation. [Learn how to create and work with UUID columns](uuids.md).                                                                                                                                                                               |
 | `Date`                                           | Represents a calendar date.                                                                                                                                                                                                                                                                                              |
 | `Time`                                           | Represents a time of day.                                                                                                                                                                                                                                                                                                |
 | `Datetime`                                       | Represents a calendar date and time of day.                                                                                                                                                                                                                                                                              |

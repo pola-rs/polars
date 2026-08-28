@@ -511,6 +511,14 @@ class Binary(DataType):
     """Binary type."""
 
 
+class UUID(DataType):
+    """Universally unique identifier type.
+
+    Values round-trip as :class:`uuid.UUID` objects. The physical representation is
+    an unsigned 128-bit integer; Arrow and Parquet use 16-byte big-endian storage.
+    """
+
+
 class Date(TemporalType):
     """
     Data type representing a calendar date.

@@ -389,6 +389,7 @@ dtype-full = [
   "dtype-u8",
   "dtype-u16",
   "dtype-u128",
+  "dtype-uuid",
   "dtype-f16",
   "dtype-categorical",
   "dtype-struct",
@@ -480,6 +481,15 @@ dtype-u128 = [
   "polars-lazy?/dtype-u128",
   "polars-ops/dtype-u128",
   "polars-time?/dtype-u128",
+]
+dtype-uuid = [
+  "polars-core/dtype-uuid",
+  "polars-io/dtype-uuid",
+  "polars-lazy?/dtype-uuid",
+  "polars-ops/dtype-uuid",
+  "polars-plan?/dtype-uuid",
+  "polars-sql?/dtype-uuid",
+  "dtype-u128",
 ]
 dtype-f16 = [
   "polars-core/dtype-f16",

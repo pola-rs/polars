@@ -146,6 +146,8 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
         | DataType::Datetime(..)
         | DataType::Duration(..)
         | DataType::Time => unreachable!("primitive numeric"),
+        #[cfg(feature = "dtype-uuid")]
+        DataType::Uuid => unreachable!("uuid has UInt128 physical representation"),
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(..) => unreachable!("primitive numeric"),
         #[cfg(feature = "dtype-categorical")]

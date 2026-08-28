@@ -105,6 +105,7 @@ dtype-full = [
   "dtype-time",
   "dtype-u16",
   "dtype-u128",
+  "dtype-uuid",
   "dtype-u8",
   "dtype-f16",
 ]
@@ -187,6 +188,13 @@ dtype-u128 = [
   "polars-ops/dtype-u128",
   "polars-expr/dtype-u128",
   "polars-stream?/dtype-u128",
+]
+dtype-uuid = [
+  "polars-plan/dtype-uuid",
+  "polars-ops/dtype-uuid",
+  "polars-expr/dtype-uuid",
+  "polars-stream?/dtype-uuid",
+  "dtype-u128",
 ]
 dtype-u16 = [
   "polars-plan/dtype-u16",

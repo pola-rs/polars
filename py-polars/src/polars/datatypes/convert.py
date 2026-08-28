@@ -7,10 +7,12 @@ from collections.abc import Collection
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from typing import TYPE_CHECKING, Any
+from uuid import UUID as PyUUID
 
 from polars._dependencies import numpy as np
 from polars._dependencies import pyarrow as pa
 from polars.datatypes.classes import (
+    UUID,
     Array,
     Binary,
     Boolean,
@@ -156,6 +158,7 @@ class _DataTypeMappings:
             UInt32: "u32",
             UInt64: "u64",
             UInt128: "u128",
+            UUID: "uuid",
         }
 
     @property
@@ -188,6 +191,7 @@ class _DataTypeMappings:
             UInt32: int,
             UInt64: int,
             UInt128: int,
+            UUID: PyUUID,
             # the below mappings are appropriate as we restrict cat/enum to strings
             Enum: str,
             Categorical: str,

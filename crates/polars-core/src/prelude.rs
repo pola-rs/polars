@@ -29,6 +29,8 @@ pub use crate::chunked_array::collect::{ChunkedCollectInferIterExt, ChunkedColle
 #[cfg(feature = "dtype-categorical")]
 #[allow(unused)] // See rust-lang/rust/issues/160691.
 pub use crate::chunked_array::logical::categorical::*;
+#[cfg(feature = "dtype-uuid")]
+pub use crate::chunked_array::logical::{UuidChunked, parse_uuid_str};
 #[cfg(feature = "ndarray")]
 pub use crate::chunked_array::ndarray::IndexOrder;
 #[cfg(feature = "object")]

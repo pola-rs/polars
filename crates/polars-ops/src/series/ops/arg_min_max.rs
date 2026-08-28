@@ -62,6 +62,8 @@ impl ArgAgg for Series {
             Enum(_, _) => phys_s.arg_min(),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => phys_s.arg_min(),
+            #[cfg(feature = "dtype-uuid")]
+            Uuid => phys_s.arg_min(),
             Date | Datetime(_, _) | Duration(_) | Time => phys_s.arg_min(),
             String => arg_min_str(self.str().unwrap()),
             Binary => arg_min_binary(self.binary().unwrap()),
@@ -96,6 +98,8 @@ impl ArgAgg for Series {
             Enum(_, _) => phys_s.arg_max(),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => phys_s.arg_max(),
+            #[cfg(feature = "dtype-uuid")]
+            Uuid => phys_s.arg_max(),
             Date | Datetime(_, _) | Duration(_) | Time => phys_s.arg_max(),
             String => arg_max_str(self.str().unwrap()),
             Binary => arg_max_binary(self.binary().unwrap()),

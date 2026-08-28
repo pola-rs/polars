@@ -16,9 +16,11 @@ from typing import (
     get_args,
     get_origin,
 )
+from uuid import UUID as PyUUID
 
 import polars._reexport as pl
 from polars.datatypes.classes import (
+    UUID,
     Binary,
     Boolean,
     Date,
@@ -99,6 +101,8 @@ def parse_py_type_into_dtype(input: PythonDataType | type[object]) -> PolarsData
         return Time()
     elif input is PyDecimal:
         return Decimal
+    elif input is PyUUID:
+        return UUID()
     elif input is bytes:
         return Binary()
     elif input is object:
@@ -151,6 +155,8 @@ PY_TYPE_STR_TO_DTYPE: Final[SchemaDict] = {
     "str": String(),
     "time": Time(),
     "timedelta": Duration,
+    "UUID": UUID(),
+    "uuid.UUID": UUID(),
     "tuple": List,
 }
 

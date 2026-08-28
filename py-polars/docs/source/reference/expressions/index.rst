@@ -26,6 +26,7 @@ This page gives an overview of all public Polars expressions.
    string
    struct
    temporal
+   uuid
    window
 
 .. currentmodule:: polars

@@ -24,10 +24,14 @@ mod extension;
 pub use extension::*;
 #[cfg(feature = "dtype-time")]
 mod time;
+#[cfg(feature = "dtype-uuid")]
+mod uuid;
 use std::marker::PhantomData;
 
 #[cfg(feature = "dtype-time")]
 pub use time::*;
+#[cfg(feature = "dtype-uuid")]
+pub use uuid::*;
 
 use crate::chunked_array::cast::CastOptions;
 use crate::prelude::*;

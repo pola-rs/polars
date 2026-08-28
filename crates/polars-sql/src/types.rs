@@ -190,8 +190,11 @@ pub(crate) fn map_sql_dtype_to_polars(dtype: &SQLDataType) -> PolarsResult<DataT
         | SQLDataType::Clob(_)
         | SQLDataType::String(_)
         | SQLDataType::Text
-        | SQLDataType::Uuid
         | SQLDataType::Varchar(_) => DataType::String,
+        #[cfg(feature = "dtype-uuid")]
+        SQLDataType::Uuid => DataType::Uuid,
+        #[cfg(not(feature = "dtype-uuid"))]
+        SQLDataType::Uuid => DataType::String,
 
         // ---------------------------------
         // custom

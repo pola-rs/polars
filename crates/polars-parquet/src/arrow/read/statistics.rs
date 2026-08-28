@@ -260,7 +260,7 @@ impl ColumnStatistics {
             (D::BinaryView, _) => rmap!(@binary),
             (D::Utf8View, _) => rmap!(@string),
 
-            (D::FixedSizeBinary(_), _) => {
+            (dtype, _) if matches!(dtype.to_storage(), D::FixedSizeBinary(_)) => {
                 rmap!(expect_fixedlen, |x: Option<Vec<u8>>| ParquetResult::Ok(
                     x.map(|x| FixedSizeBinaryArray::new(
                         self.field.dtype().clone(),
@@ -522,23 +522,40 @@ pub fn deserialize_all(
                 (D::BinaryView, _) => rmap!(@binary),
                 (D::Utf8View, _) => rmap!(@string),
 
-                (D::FixedSizeBinary(width), _) => {
-                    struct FixedSizeBinaryArray2;
+                (dtype, _) if matches!(dtype.to_storage(), D::FixedSizeBinary(_)) => {
+                    struct FixedSizeBinaryStatisticsBuilder {
+                        inner: MutableFixedSizeBinaryArray,
+                        dtype: ArrowDataType,
+                    }
 
-                    impl FixedSizeBinaryArray2 {
-                        fn with_capacity(
-                            row_groups_len: usize,
-                            row_width: usize,
-                        ) -> MutableFixedSizeBinaryArray {
-                            MutableFixedSizeBinaryArray::with_capacity(row_width, row_groups_len)
+                    impl FixedSizeBinaryStatisticsBuilder {
+                        fn with_capacity(row_groups_len: usize, dtype: ArrowDataType) -> Self {
+                            let D::FixedSizeBinary(row_width) = dtype.to_storage() else {
+                                unreachable!()
+                            };
+                            Self {
+                                inner: MutableFixedSizeBinaryArray::with_capacity(
+                                    *row_width,
+                                    row_groups_len,
+                                ),
+                                dtype,
+                            }
+                        }
+
+                        fn push(&mut self, value: Option<Vec<u8>>) {
+                            self.inner.push(value)
+                        }
+
+                        fn freeze(self) -> FixedSizeBinaryArray {
+                            self.inner.freeze().to(self.dtype)
                         }
                     }
 
                     rmap!(
                         expect_fixedlen,
                         |x: Option<Vec<u8>>| ParquetResult::Ok(x),
-                        FixedSizeBinaryArray2,
-                        *width
+                        FixedSizeBinaryStatisticsBuilder,
+                        dtype.clone()
                     )
                 },
 

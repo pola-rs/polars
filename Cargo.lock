@@ -3353,6 +3353,7 @@ dependencies = [
  "rayon",
  "recursive",
  "regex",
+ "uuid",
  "version_check",
 ]
 
@@ -3415,6 +3416,7 @@ dependencies = [
  "strum_macros 0.28.0",
  "tempfile",
  "tokio",
+ "uuid",
  "zmij",
  "zstd",
 ]
@@ -3436,6 +3438,7 @@ dependencies = [
  "polars-utils",
  "simd-json",
  "streaming-iterator",
+ "uuid",
  "zmij",
 ]
 

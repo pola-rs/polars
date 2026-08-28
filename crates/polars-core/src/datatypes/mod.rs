@@ -233,6 +233,8 @@ impl_polars_datatype!(BooleanType, DataType::Boolean, BooleanArray, 'a, bool, bo
 
 #[cfg(feature = "dtype-decimal")]
 impl_polars_datatype!(DecimalType, unimplemented!(), PrimitiveArray<i128>, 'a, i128, i128, i128, FalseT);
+#[cfg(feature = "dtype-uuid")]
+impl_polars_datatype!(UuidType, DataType::Uuid, PrimitiveArray<u128>, 'a, u128, u128, u128, FalseT);
 impl_polars_datatype!(DatetimeType, unimplemented!(), PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
 impl_polars_datatype!(DurationType, unimplemented!(), PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
 impl_polars_datatype!(CategoricalType, unimplemented!(), PrimitiveArray<u32>, 'a, u32, u32, u32, FalseT);

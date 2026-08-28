@@ -188,6 +188,14 @@ fn from_fixed_len_byte_array(
         (None, Some(PrimitiveConvertedType::Interval)) => {
             ArrowDataType::Interval(IntervalUnit::MonthDayMillis)
         },
+        (Some(PrimitiveLogicalType::Uuid), _) => {
+            assert_eq!(length, 16, "Parquet UUID must use FIXED_LEN_BYTE_ARRAY(16)");
+            ArrowDataType::Extension(Box::new(arrow::datatypes::ExtensionType {
+                name: PlSmallStr::from_static("arrow.uuid"),
+                inner: ArrowDataType::FixedSizeBinary(16),
+                metadata: None,
+            }))
+        },
         _ => ArrowDataType::FixedSizeBinary(length),
     }
 }

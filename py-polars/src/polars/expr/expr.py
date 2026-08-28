@@ -69,6 +69,7 @@ from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
+from polars.expr.uuid import ExprUuidNameSpace
 from polars.meta import thread_pool_size
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -174,6 +175,7 @@ class Expr(metaclass=_Meta):
         "name",
         "str",
         "struct",
+        "uuid",
     }
 
     @property
@@ -184,6 +186,11 @@ class Expr(metaclass=_Meta):
         See the individual method pages for full details
         """
         return ExprBinaryNameSpace(self)
+
+    @property
+    def uuid(self) -> ExprUuidNameSpace:
+        """Create an object namespace of all UUID related methods."""
+        return ExprUuidNameSpace(self)
 
     @property
     def cat(self) -> ExprCatNameSpace:

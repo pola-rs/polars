@@ -89,6 +89,7 @@ from polars.functions.range import (
     time_ranges,
 )
 from polars.functions.repeat import ones, repeat, zeros
+from polars.functions.uuid import uuid4, uuid7
 from polars.functions.whenthen import when
 
 __all__ = [
@@ -126,6 +127,8 @@ __all__ = [
     "time_range",
     "time_ranges",
     "zeros",
+    "uuid4",
+    "uuid7",
     # polars.functions.lazy
     "_row_encode",
     "arange",

@@ -37,6 +37,8 @@ impl IRFunctionExpr {
             TemporalExpr(fun) => fun.get_field(mapper),
             #[cfg(feature = "bitwise")]
             Bitwise(fun) => fun.get_field(mapper),
+            #[cfg(feature = "dtype-uuid")]
+            UuidExpr(fun) => fun.get_field(mapper),
 
             // Other expressions
             Boolean(func) => func.get_field(mapper),

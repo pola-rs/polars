@@ -10,6 +10,8 @@ use polars_ops::prelude::RankMethod;
 use polars_ops::series::SearchSortedSide;
 use polars_ops::series::{ClosedInterval, InterpolationMethod};
 use polars_plan::dsl::DateRangeArgs;
+#[cfg(feature = "dtype-uuid")]
+use polars_plan::plans::IRUuidFunction;
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
     IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
@@ -279,6 +281,24 @@ pub enum PyTemporalFunction {
 
 #[pymethods]
 impl PyTemporalFunction {
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[cfg(feature = "dtype-uuid")]
+#[pyclass(name = "UuidFunction", eq, frozen, skip_from_py_object)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum PyUuidFunction {
+    GenerateV4,
+    GenerateV7,
+    Version,
+    Timestamp,
+}
+
+#[cfg(feature = "dtype-uuid")]
+#[pymethods]
+impl PyUuidFunction {
     fn __hash__(&self) -> isize {
         *self as isize
     }
@@ -2106,6 +2126,15 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::ExtendConstant => ("extend_constant",).into_py_any(py),
                 IRFunctionExpr::Business(_) => {
                     return Err(PyNotImplementedError::new_err("business"));
+                },
+                #[cfg(feature = "dtype-uuid")]
+                IRFunctionExpr::UuidExpr(function) => match function {
+                    IRUuidFunction::GenerateV4 => (PyUuidFunction::GenerateV4,).into_py_any(py),
+                    IRUuidFunction::GenerateV7 => (PyUuidFunction::GenerateV7,).into_py_any(py),
+                    IRUuidFunction::Version => (PyUuidFunction::Version,).into_py_any(py),
+                    IRUuidFunction::Timestamp { strict } => {
+                        (PyUuidFunction::Timestamp, strict).into_py_any(py)
+                    },
                 },
                 #[cfg(feature = "top_k")]
                 IRFunctionExpr::TopKBy { descending } => ("top_k_by", descending).into_py_any(py),

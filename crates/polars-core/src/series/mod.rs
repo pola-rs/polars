@@ -577,6 +577,8 @@ impl Series {
             },
 
             (D::Int32, D::Date) => feature_gated!("dtype-time", Ok(self.clone().into_date())),
+            #[cfg(feature = "dtype-uuid")]
+            (D::UInt128, D::Uuid) => Ok(self.clone().into_uuid()),
             (D::Int64, D::Datetime(tu, tz)) => feature_gated!(
                 "dtype-datetime",
                 Ok(self.clone().into_datetime(*tu, tz.clone()))
@@ -765,6 +767,7 @@ impl Series {
     /// * Duration -> Int64
     /// * Decimal -> Int128
     /// * Time -> Int64
+    /// * Uuid -> UInt128
     /// * Categorical -> U8/U16/U32
     /// * List(inner) -> List(physical of inner)
     /// * Array(inner) -> Array(physical of inner)
@@ -783,6 +786,8 @@ impl Series {
             Duration(_) => Cow::Owned(self.duration().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-time")]
             Time => Cow::Owned(self.time().unwrap().phys.clone().into_series()),
+            #[cfg(feature = "dtype-uuid")]
+            Uuid => Cow::Owned(self.uuid().unwrap().phys.clone().into_series()),
             #[cfg(feature = "dtype-categorical")]
             dt @ (Categorical(_, _) | Enum(_, _)) => {
                 with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
@@ -946,6 +951,25 @@ impl Series {
                 .into_date()
                 .into_series(),
             dt => panic!("date not implemented for {dt:?}"),
+        }
+    }
+
+    pub fn into_uuid(self) -> Series {
+        #[cfg(not(feature = "dtype-uuid"))]
+        {
+            panic!("activate feature dtype-uuid")
+        }
+        #[cfg(feature = "dtype-uuid")]
+        match self.dtype() {
+            DataType::UInt128 => self.u128().unwrap().clone().into_uuid().into_series(),
+            DataType::Uuid => self
+                .uuid()
+                .unwrap()
+                .physical()
+                .clone()
+                .into_uuid()
+                .into_series(),
+            dt => panic!("uuid not implemented for {dt:?}"),
         }
     }
 

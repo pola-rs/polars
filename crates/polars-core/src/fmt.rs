@@ -450,6 +450,10 @@ impl Debug for Series {
                     "Series"
                 )
             },
+            #[cfg(feature = "dtype-uuid")]
+            DataType::Uuid => {
+                format_array!(f, self.uuid().unwrap(), "uuid", self.name(), "Series")
+            },
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(_, _) => {
                 let dt = format!("{}", self.dtype());
@@ -1173,6 +1177,8 @@ impl Display for AnyValue<'_> {
             AnyValue::UInt32(v) => fmt_integer(f, width, *v),
             AnyValue::UInt64(v) => fmt_integer(f, width, *v),
             AnyValue::UInt128(v) => feature_gated!("dtype-u128", fmt_integer(f, width, *v)),
+            #[cfg(feature = "dtype-uuid")]
+            AnyValue::Uuid(v) => write!(f, "{}", uuid::Uuid::from_u128(*v)),
             AnyValue::Int8(v) => fmt_integer(f, width, *v),
             AnyValue::Int16(v) => fmt_integer(f, width, *v),
             AnyValue::Int32(v) => fmt_integer(f, width, *v),

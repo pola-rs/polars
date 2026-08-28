@@ -87,6 +87,8 @@ These functions are available from the Polars module root and can be used as exp
    time
    time_range
    time_ranges
+   uuid4
+   uuid7
    var
    when
    zeros

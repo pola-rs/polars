@@ -28,6 +28,8 @@ mod serde;
 mod string;
 #[cfg(feature = "pymethods")]
 mod r#struct;
+#[cfg(all(feature = "pymethods", feature = "dtype-uuid"))]
+mod uuid;
 
 use std::mem::ManuallyDrop;
 

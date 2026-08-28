@@ -9,6 +9,7 @@ use polars::prelude::*;
 use polars_buffer::{Buffer, SharedStorage};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 
 use crate::PySeries;
 use crate::conversion::Wrap;
@@ -220,6 +221,54 @@ init_method_opt!(new_opt_i64, Int64Type, i64);
 init_method_opt!(new_opt_i128, Int128Type, i128);
 init_method_opt!(new_opt_f32, Float32Type, f32);
 init_method_opt!(new_opt_f64, Float64Type, f64);
+
+#[pymethods]
+impl PySeries {
+    #[staticmethod]
+    fn new_uuid(name: &str, values: &Bound<PyAny>, strict: bool) -> PyResult<Self> {
+        let len = values.len()?;
+        let mut builder = PrimitiveChunkedBuilder::<UInt128Type>::new(name.into(), len);
+
+        for item in values.try_iter()? {
+            let value = item?;
+            if value.is_none() {
+                builder.append_null();
+                continue;
+            }
+
+            let parsed = value
+                .getattr("int")
+                .ok()
+                .and_then(|v| v.extract::<u128>().ok())
+                .or_else(|| value.extract::<u128>().ok())
+                .or_else(|| {
+                    value
+                        .extract::<&str>()
+                        .ok()
+                        .and_then(polars::prelude::parse_uuid_str)
+                })
+                .or_else(|| {
+                    value.cast::<PyBytes>().ok().and_then(|v| {
+                        <[u8; 16]>::try_from(v.as_bytes())
+                            .ok()
+                            .map(u128::from_be_bytes)
+                    })
+                });
+
+            match parsed {
+                Some(value) => builder.append_value(value),
+                None if !strict => builder.append_null(),
+                None => {
+                    return Err(PyTypeError::new_err(format!(
+                        "cannot convert value {value:?} to Uuid"
+                    )));
+                },
+            }
+        }
+
+        Ok(builder.finish().into_uuid().into_series().into())
+    }
+}
 
 #[pymethods]
 impl PySeries {

@@ -102,6 +102,8 @@ fn cast_impl_inner(
     use DataType::*;
     let out = match dtype {
         Date => out.into_date(),
+        #[cfg(feature = "dtype-uuid")]
+        Uuid => out.into_uuid(),
         Datetime(tu, tz) => match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => {
@@ -254,6 +256,20 @@ where
 impl ChunkCast for StringChunked {
     fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match dtype {
+            #[cfg(feature = "dtype-uuid")]
+            DataType::Uuid => {
+                let out = self
+                    .iter()
+                    .map(|value| value.and_then(crate::chunked_array::logical::parse_uuid_str))
+                    .collect::<UInt128Chunked>()
+                    .with_name(self.name().clone())
+                    .into_uuid()
+                    .into_series();
+                if options.is_strict() && self.null_count() != out.null_count() {
+                    handle_casting_failures(&self.clone().into_series(), &out)?;
+                }
+                Ok(out)
+            },
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(cats, _mapping) => {
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
@@ -357,6 +373,24 @@ impl StringChunked {
 impl ChunkCast for BinaryChunked {
     fn cast_with_options(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         match dtype {
+            #[cfg(feature = "dtype-uuid")]
+            DataType::Uuid => {
+                let out = self
+                    .iter()
+                    .map(|value| {
+                        value.and_then(|value| {
+                            <[u8; 16]>::try_from(value).ok().map(u128::from_be_bytes)
+                        })
+                    })
+                    .collect::<UInt128Chunked>()
+                    .with_name(self.name().clone())
+                    .into_uuid()
+                    .into_series();
+                if options.is_strict() && self.null_count() != out.null_count() {
+                    handle_casting_failures(&self.clone().into_series(), &out)?;
+                }
+                Ok(out)
+            },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => {
                 cast_single_to_struct(self.name().clone(), &self.chunks, fields, options)

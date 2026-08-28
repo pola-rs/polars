@@ -133,6 +133,8 @@ pub(crate) mod struct_;
 mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
+#[cfg(feature = "dtype-uuid")]
+mod uuid;
 
 pub use groups_dispatch::drop_items;
 
@@ -156,6 +158,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::TemporalExpr(func) => temporal::temporal_func_to_udf(func),
         #[cfg(feature = "bitwise")]
         F::Bitwise(func) => bitwise::function_expr_to_udf(func),
+        #[cfg(feature = "dtype-uuid")]
+        F::UuidExpr(func) => uuid::function_expr_to_udf(func),
 
         // Other expressions
         F::Boolean(func) => boolean::function_expr_to_udf(func),

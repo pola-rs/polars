@@ -77,3 +77,4 @@ Other
     Null
     Object
     Unknown
+    UUID

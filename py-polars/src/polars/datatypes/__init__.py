@@ -4,6 +4,7 @@ from polars.datatypes._parse import (
     try_parse_into_dtype,
 )
 from polars.datatypes.classes import (
+    UUID,
     Array,
     BaseExtension,
     Binary,
@@ -101,6 +102,7 @@ __all__ = [
     "Time",
     "UInt16",
     "UInt128",
+    "UUID",
     "UInt32",
     "UInt64",
     "UInt8",
