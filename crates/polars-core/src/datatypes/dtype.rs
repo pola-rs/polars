@@ -974,6 +974,25 @@ impl DataType {
             .map(|entries| DataType::List(Box::new(entries)))
     }
 
+    /// The `Map` dtype whose entries are `self`, or `None` if `self` cannot be Map entries.
+    ///
+    /// Positional, should only be called by Arrow/Parquet readers.
+    #[cfg(feature = "dtype-map")]
+    pub(crate) fn map_from_entries_dtype(&self) -> Option<DataType> {
+        let DataType::Struct(fields) = self else {
+            return None;
+        };
+        let [key, value] = fields.as_slice() else {
+            return None;
+        };
+        key.dtype().is_valid_map_key().then(|| {
+            DataType::Map(
+                Box::new(key.dtype().clone()),
+                Box::new(value.dtype().clone()),
+            )
+        })
+    }
+
     /// Whether this dtype may be used as the key dtype of a `Map`.
     #[cfg(feature = "dtype-map")]
     pub fn is_valid_map_key(&self) -> bool {
