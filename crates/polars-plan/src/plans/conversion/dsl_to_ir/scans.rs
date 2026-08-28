@@ -523,10 +523,15 @@ pub(super) async fn parquet_file_info(
         row_index,
     )?;
 
+    let rows = match resolved.known_size {
+        Some(known) => Card::Exact(known as u64),
+        None => Card::approx(resolved.estimated_size as u64),
+    };
+
     let file_info = FileInfo::new(
         schema,
         Some(Either::Left(resolved.reader_schema)),
-        (resolved.known_size, resolved.estimated_size),
+        ScanStats::new(rows),
     );
 
     Ok((file_info, resolved.metadata_per_source))
@@ -665,7 +670,7 @@ pub(super) async fn ipc_file_info(
             row_index,
         )?,
         Some(Either::Left(Arc::clone(&metadata.schema))),
-        (None, usize::MAX),
+        ScanStats::unknown(),
     );
 
     Ok((file_info, metadata))
@@ -941,7 +946,7 @@ pub async fn csv_file_info(
     Ok(FileInfo::new(
         schema,
         Some(Either::Right(reader_schema)),
-        (None, estimated_n_rows),
+        ScanStats::approx_rows(estimated_n_rows as u64),
     ))
 }
 
@@ -1121,7 +1126,7 @@ pub async fn ndjson_file_info(
     Ok(FileInfo::new(
         schema,
         Some(Either::Right(reader_schema)),
-        (None, usize::MAX),
+        ScanStats::unknown(),
     ))
 }
 
@@ -1167,11 +1172,9 @@ impl SourcesToFileInfo {
             )
         };
 
-        let exact_row_estimation = unified_scan_args.row_count.map(|(total, deleted)| {
-            let n: usize = (total - deleted) as usize;
-            ((Some(n)), n)
-        });
-        const DEFAULT_ROW_ESTIMATION: (Option<usize>, usize) = (None, usize::MAX);
+        let exact_row_count = unified_scan_args
+            .row_count
+            .map(|(total, deleted)| total - deleted);
 
         let cloud_options = unified_scan_args.cloud_options.as_ref();
 
@@ -1180,7 +1183,7 @@ impl SourcesToFileInfo {
             FileScanDsl::Parquet { options } => {
                 if let Some(schema) = &options.schema {
                     // We were passed a schema, we don't have to call `parquet_file_info`,
-                    // but this does mean we don't have `row_estimation` or any
+                    // but this does mean we don't have scan statistics or any
                     // resolved footer metadata.
 
                     (
@@ -1189,7 +1192,8 @@ impl SourcesToFileInfo {
                             reader_schema: Some(either::Either::Left(Arc::new(
                                 schema.to_arrow(CompatLevel::newest()),
                             ))),
-                            row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
+                            stats: exact_row_count
+                                .map_or_else(ScanStats::unknown, ScanStats::exact_rows),
                         },
                         FileScanIR::Parquet {
                             options,
@@ -1223,8 +1227,8 @@ impl SourcesToFileInfo {
                         )
                         .await?;
 
-                        if let Some(exact_row_estimation) = exact_row_estimation {
-                            file_info.row_estimation = exact_row_estimation;
+                        if let Some(exact_row_count) = exact_row_count {
+                            file_info.stats.rows = Card::Exact(exact_row_count);
                         }
 
                         if self.inner.read().unwrap().len() > max_metadata_scan_cached() {
@@ -1265,8 +1269,8 @@ impl SourcesToFileInfo {
                 )
                 .await?;
 
-                if let Some(exact_row_estimation) = exact_row_estimation {
-                    file_info.row_estimation = exact_row_estimation;
+                if let Some(exact_row_count) = exact_row_count {
+                    file_info.stats.rows = Card::Exact(exact_row_count);
                 }
 
                 PolarsResult::Ok((
@@ -1284,7 +1288,8 @@ impl SourcesToFileInfo {
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema)),
-                        row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
+                        stats: exact_row_count
+                            .map_or_else(ScanStats::unknown, ScanStats::exact_rows),
                     }
                 } else {
                     let first_scan_source =
@@ -1309,8 +1314,8 @@ impl SourcesToFileInfo {
                     .await?
                 };
 
-                if let Some(exact_row_estimation) = exact_row_estimation {
-                    file_info.row_estimation = exact_row_estimation;
+                if let Some(exact_row_count) = exact_row_count {
+                    file_info.stats.rows = Card::Exact(exact_row_count);
                 }
 
                 PolarsResult::Ok((file_info, FileScanIR::Csv { options }))
@@ -1322,7 +1327,8 @@ impl SourcesToFileInfo {
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema)),
-                        row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
+                        stats: exact_row_count
+                            .map_or_else(ScanStats::unknown, ScanStats::exact_rows),
                     }
                 } else {
                     let first_scan_source =
@@ -1345,8 +1351,8 @@ impl SourcesToFileInfo {
                     .await?
                 };
 
-                if let Some(exact_row_estimation) = exact_row_estimation {
-                    file_info.row_estimation = exact_row_estimation;
+                if let Some(exact_row_count) = exact_row_count {
+                    file_info.stats.rows = Card::Exact(exact_row_count);
                 }
 
                 PolarsResult::Ok((file_info, FileScanIR::NDJson { options }))
@@ -1379,7 +1385,8 @@ impl SourcesToFileInfo {
                     FileInfo {
                         schema,
                         reader_schema: Some(either::Either::Right(reader_schema)),
-                        row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
+                        stats: exact_row_count
+                            .map_or_else(ScanStats::unknown, ScanStats::exact_rows),
                     },
                     FileScanIR::PythonDataset {
                         dataset_object,
@@ -1397,7 +1404,8 @@ impl SourcesToFileInfo {
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema.clone())),
-                        row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
+                        stats: exact_row_count
+                            .map_or_else(ScanStats::unknown, ScanStats::exact_rows),
                     },
                     FileScanIR::Lines { name },
                 )
@@ -1409,7 +1417,7 @@ impl SourcesToFileInfo {
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema.clone())),
-                        row_estimation: (Some(sources.len()), sources.len()),
+                        stats: ScanStats::exact_rows(sources.len() as u64),
                     },
                     FileScanIR::ExpandedPaths { name },
                 )
@@ -1419,8 +1427,8 @@ impl SourcesToFileInfo {
                 options,
                 function,
             } => {
-                if let Some(exact_row_estimation) = exact_row_estimation {
-                    file_info.row_estimation = exact_row_estimation;
+                if let Some(exact_row_count) = exact_row_count {
+                    file_info.stats.rows = Card::Exact(exact_row_count);
                 }
 
                 (file_info, FileScanIR::Anonymous { options, function })
