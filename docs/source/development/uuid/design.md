@@ -154,7 +154,7 @@ The DuckDB check covers both directions with v4, v7, and null values. It can be 
 
 The benchmark used one million UUIDv4 values, seven measured repetitions after two warmups, Python
 3.12.7, ARM64 macOS 26.6.2, and Polars 2.0.0-rc.1. The Rust extension was built in release mode with
-`opt-level=3` and LTO disabled. These are directional single-machine microbenchmarks, not universal
+`opt-level=3` and thin LTO. These are directional single-machine microbenchmarks, not universal
 performance claims.
 
 ### Storage
@@ -171,11 +171,11 @@ The memory figures exclude a null bitmap because the generated benchmark column 
 
 | Operation, 1M rows         | Native UUID | String UUID | Native speedup |
 | -------------------------- | ----------: | ----------: | -------------: |
-| Sort                       |    5.809 ms |   29.396 ms |      **5.06×** |
-| `n_unique`                 |    6.467 ms |   13.059 ms |      **2.02×** |
-| Equality filter            |    0.390 ms |    0.443 ms |      **1.14×** |
-| Group by                   |    6.720 ms |    9.559 ms |      **1.42×** |
-| Uncompressed Parquet write |    3.362 ms |    8.226 ms |      **2.45×** |
+| Sort                       |    6.094 ms |   33.537 ms |      **5.50×** |
+| `n_unique`                 |    6.552 ms |   14.924 ms |      **2.28×** |
+| Equality filter            |    0.390 ms |    0.453 ms |      **1.16×** |
+| Group by                   |    6.902 ms |   12.880 ms |      **1.87×** |
+| Uncompressed Parquet write |    4.086 ms |    9.220 ms |      **2.26×** |
 
 The group-by data contains 100,000 unique values repeated ten times and shuffled. Native and string
 columns always contain the same UUIDs.
@@ -184,15 +184,13 @@ columns always contain the same UUIDs.
 
 | Operation, 1M rows |     Median | Approximate throughput |
 | ------------------ | ---------: | ---------------------: |
-| String to UUID     |  10.230 ms |         97.8 million/s |
-| UUID to string     |  13.287 ms |         75.3 million/s |
-| Generate UUIDv4    | 590.797 ms |         1.69 million/s |
-| Generate UUIDv7    | 624.542 ms |         1.60 million/s |
+| String to UUID     |  11.291 ms |         88.6 million/s |
+| UUID to string     |  13.346 ms |         74.9 million/s |
+| Generate UUIDv4    |   8.630 ms |        115.9 million/s |
+| Generate UUIDv7    | 671.942 ms |         1.49 million/s |
 
-The UUIDv4 row predates the current batched implementation, which replaced one OS random call per
-value with a single batched fill; treat it as an upper bound until the benchmark is re-recorded on
-a release build. UUIDv7 generation is unchanged and remains bounded by its per-value monotonic
-context.
+The batched UUIDv4 implementation is approximately 68× faster than the earlier per-value generator
+measurement. UUIDv7 remains bounded by its per-value monotonic context.
 
 Run [`benchmark.py`](benchmark.py) to reproduce the benchmark. The recorded raw output and complete
 min/median/max timings are in [`benchmark_results.json`](benchmark_results.json).
