@@ -476,7 +476,26 @@ impl Debug for DataFrame {
     }
 }
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+fn is_canonical_uuid_text(v: &str) -> bool {
+    let bytes = v.as_bytes();
+    bytes.len() == 36
+        && bytes[8] == b'-'
+        && bytes[13] == b'-'
+        && bytes[18] == b'-'
+        && bytes[23] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(i, b)| matches!(i, 8 | 13 | 18 | 23) || b.is_ascii_hexdigit())
+}
+
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 fn make_str_val(v: &str, truncate: usize, ellipsis: &String) -> String {
+    // Canonical UUID text is 36 characters; the default 30-character cell
+    // truncation would make `from_repr` fail on every UUID column.
+    if is_canonical_uuid_text(v) {
+        return v.to_string();
+    }
     let v_trunc = &v[..v
         .char_indices()
         .take(truncate)
@@ -762,10 +781,15 @@ impl Display for DataFrame {
             };
             let min_col_width = std::cmp::max(5, 3 + padding);
             for (idx, elem_len) in max_elem_lengths.iter().enumerate() {
-                let mx = std::cmp::min(
-                    str_truncate + ellipsis_len + padding,
-                    std::cmp::max(name_lengths[idx], *elem_len),
-                );
+                let truncate_cap = str_truncate + ellipsis_len + padding;
+                let desired = std::cmp::max(name_lengths[idx], *elem_len);
+                // Content that was intentionally left untruncated (canonical UUID
+                // text is 36 chars) must be allowed to set the column width.
+                let mx = if *elem_len > truncate_cap {
+                    desired
+                } else {
+                    std::cmp::min(truncate_cap, desired)
+                };
                 if (mx <= min_col_width) && !(max_n_rows > 0 && height > max_n_rows) {
                     // col width is less than min width + table is not truncated
                     constraints.push(col_width_exact(mx));

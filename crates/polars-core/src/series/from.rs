@@ -478,22 +478,34 @@ impl Series {
                     ext.inner
                 );
 
-                let chunks = chunks.into_iter().map(|chunk| {
-                    let array = chunk
-                        .as_any()
-                        .downcast_ref::<FixedSizeBinaryArray>()
-                        .unwrap();
-                    let values = array
-                        .values()
-                        .chunks_exact(16)
-                        .map(|bytes| u128::from_be_bytes(bytes.try_into().unwrap()))
-                        .collect::<Vec<_>>();
-                    PrimitiveArray::<u128>::new(
-                        ArrowDataType::UInt128,
-                        values.into(),
-                        array.validity().cloned(),
-                    )
-                });
+                let chunks = chunks
+                    .into_iter()
+                    .map(|chunk| {
+                        let array = chunk
+                            .as_any()
+                            .downcast_ref::<FixedSizeBinaryArray>()
+                            .ok_or_else(|| {
+                                polars_err!(
+                                    SchemaMismatch:
+                                    "arrow.uuid array storage is not FixedSizeBinary"
+                                )
+                            })?;
+                        let values = array
+                            .values()
+                            .chunks_exact(16)
+                            .map(|bytes| {
+                                u128::from_be_bytes(
+                                    bytes.try_into().expect("chunks_exact(16) yields 16 bytes"),
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                        Ok(PrimitiveArray::<u128>::new(
+                            ArrowDataType::UInt128,
+                            values.into(),
+                            array.validity().cloned(),
+                        ))
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
                 Ok(UInt128Chunked::from_chunk_iter(name, chunks)
                     .into_uuid()

@@ -88,6 +88,7 @@ from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.dataframe.plotting import DataFramePlot
 from polars.datatypes import (
     N_INFER_DEFAULT,
+    UUID,
     Boolean,
     Float32,
     Float64,
@@ -101,6 +102,7 @@ from polars.datatypes import (
     UInt16,
     UInt32,
     UInt64,
+    unpack_dtypes,
 )
 from polars.datatypes.group import INTEGER_DTYPES
 from polars.exceptions import (
@@ -2553,8 +2555,12 @@ class DataFrame:
                 else:
                     raise ModuleNotFoundError(msg)
 
-        # handle Object columns separately (Arrow does not convert them correctly)
-        if Object in self.dtypes:
+        # Handle Object and UUID columns separately: Arrow does not convert Object
+        # columns correctly, pandas has no native UUID representation, and nested
+        # `arrow.uuid` lists/structs cannot convert through pyarrow-to-pandas.
+        if Object in self.dtypes or any(
+            UUID in unpack_dtypes(dtype) for dtype in self.dtypes
+        ):
             return self._to_pandas_with_object_columns(
                 use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
             )
@@ -2569,11 +2575,12 @@ class DataFrame:
         use_pyarrow_extension_array: bool,
         **kwargs: Any,
     ) -> pd.DataFrame:
-        # Find which columns are of type pl.Object, and which aren't:
+        # Find which columns need Series' custom to_pandas() logic (pl.Object and
+        # UUID-containing dtypes), and which can go through regular Arrow conversion:
         object_columns = []
         not_object_columns = []
         for i, dtype in enumerate(self.dtypes):
-            if dtype.is_object():
+            if dtype.is_object() or UUID in unpack_dtypes(dtype):
                 object_columns.append(i)
             else:
                 not_object_columns.append(i)
@@ -2589,9 +2596,9 @@ class DataFrame:
         else:
             pandas_df = pd.DataFrame()
 
-        # Add columns that are pl.Object, using Series' custom to_pandas()
-        # logic for this case. We do this in order, so the original index for
-        # the next column in this dataframe is correct for the partially
+        # Add columns that are pl.Object or contain UUID, using Series' custom
+        # to_pandas() logic for this case. We do this in order, so the original
+        # index for the next column in this dataframe is correct for the partially
         # constructed Pandas dataframe, since there are no additional or
         # missing columns to the inserted column's left.
         for i in object_columns:

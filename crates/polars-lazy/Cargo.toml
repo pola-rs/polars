@@ -193,6 +193,7 @@ dtype-uuid = [
   "polars-plan/dtype-uuid",
   "polars-ops/dtype-uuid",
   "polars-expr/dtype-uuid",
+  "polars-json?/dtype-uuid",
   "polars-stream?/dtype-uuid",
   "dtype-u128",
 ]

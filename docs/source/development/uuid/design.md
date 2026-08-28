@@ -108,7 +108,8 @@ The implementation provides:
 
 - `version()` extraction for every UUID version;
 - strict or non-strict UUIDv7 timestamp extraction;
-- UUIDv4 generation using the Rust `uuid` crate's cryptographically suitable random generator;
+- UUIDv4 generation that batch-fills each output column from `rand`'s cryptographically secure
+  thread-local generator and then patches the RFC 9562 version and variant bits in place;
 - process-monotonic UUIDv7 generation using `now_v7()` and an ascending sorted flag; and
 - non-deterministic expression classification so optimizer rewrites do not duplicate, cache, or
   factor generated values incorrectly.
@@ -128,7 +129,8 @@ I/O and SQL behavior is as follows:
 - CSV and JSON write canonical UUID strings.
 - CSV schema overrides parse through strict UUID casts.
 - JSON and NDJSON support direct UUID parsing; NDJSON also supports configurable error/null
-  behavior and nested UUID lists.
+  behavior and nested UUID lists. Both use the shared parser, including the PostgreSQL
+  hyphen-grouping fallback.
 - SQL `CAST(... AS UUID)` produces native UUID values when `dtype-uuid` is enabled; builds without
   that feature retain the existing string fallback.
 
@@ -186,6 +188,11 @@ columns always contain the same UUIDs.
 | UUID to string     |  13.287 ms |         75.3 million/s |
 | Generate UUIDv4    | 590.797 ms |         1.69 million/s |
 | Generate UUIDv7    | 624.542 ms |         1.60 million/s |
+
+The UUIDv4 row predates the current batched implementation, which replaced one OS random call per
+value with a single batched fill; treat it as an upper bound until the benchmark is re-recorded on
+a release build. UUIDv7 generation is unchanged and remains bounded by its per-value monotonic
+context.
 
 Run [`benchmark.py`](benchmark.py) to reproduce the benchmark. The recorded raw output and complete
 min/median/max timings are in [`benchmark_results.json`](benchmark_results.json).

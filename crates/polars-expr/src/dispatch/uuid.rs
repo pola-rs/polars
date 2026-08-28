@@ -21,7 +21,9 @@ fn generate_v4(column: &Column) -> PolarsResult<Column> {
     let mut values = vec![0_u128; column.len()];
     rand::fill(values.as_mut_slice());
     for value in &mut values {
-        // RFC 9562: version 4 in bits 48-51 and the RFC variant in bits 64-65.
+        // RFC 9562 numbers bits from the MSB: version 4 occupies bits 48-51 and the
+        // RFC variant occupies bits 64-65. In a big-endian u128 those are bits 76-79
+        // and 62-63 respectively.
         *value = (*value & !(0x0f_u128 << 76)) | (4_u128 << 76);
         *value = (*value & !(0x03_u128 << 62)) | (0x02_u128 << 62);
     }

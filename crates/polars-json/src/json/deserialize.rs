@@ -125,9 +125,9 @@ fn deserialize_uuid<'a, A: Borrow<BorrowedValue<'a>>>(
         .iter()
         .enumerate()
         .map(|(i, row)| match row.borrow() {
-            BorrowedValue::String(value) => match uuid::Uuid::parse_str(value) {
-                Ok(value) => Some(*value.as_bytes()),
-                Err(_) => {
+            BorrowedValue::String(value) => match polars_utils::uuid_parse::parse_uuid_str(value) {
+                Some(value) => Some(value.to_be_bytes()),
+                None => {
                     if err_idx == rows.len() {
                         err_idx = i;
                     }

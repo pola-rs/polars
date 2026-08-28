@@ -487,6 +487,7 @@ dtype-uuid = [
   "polars-io/dtype-uuid",
   "polars-lazy?/dtype-uuid",
   "polars-ops/dtype-uuid",
+  "polars-parquet?/dtype-uuid",
   "polars-plan?/dtype-uuid",
   "polars-sql?/dtype-uuid",
   "dtype-u128",

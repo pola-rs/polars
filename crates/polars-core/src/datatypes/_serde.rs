@@ -64,8 +64,6 @@ enum SerializableDataType {
     String,
     Binary,
     BinaryOffset,
-    #[cfg(feature = "dtype-uuid")]
-    Uuid,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
     Date,
@@ -104,6 +102,10 @@ enum SerializableDataType {
         metadata: Option<String>,
         storage: Box<SerializableDataType>,
     },
+    // Keep new variants at the end so that existing variants retain their
+    // serialized enum discriminants.
+    #[cfg(feature = "dtype-uuid")]
+    Uuid,
 }
 
 impl From<&DataType> for SerializableDataType {

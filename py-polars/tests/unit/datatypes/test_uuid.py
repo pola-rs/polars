@@ -62,6 +62,22 @@ def test_uuid_to_pandas_preserves_python_uuid() -> None:
     assert values.to_pandas().tolist() == [V4_A, None]
     assert values.to_pandas(use_pyarrow_extension_array=True).tolist() == [V4_A, None]
 
+    frame = pl.DataFrame({"id": values, "x": [1, 2]})
+    assert frame.to_pandas()["id"].tolist() == [V4_A, None]
+    assert frame.to_pandas()["x"].tolist() == [1, 2]
+    assert frame.to_pandas(use_pyarrow_extension_array=True)["id"].tolist() == [
+        V4_A,
+        None,
+    ]
+
+    nested = pl.DataFrame({"ids": [[V4_A, None]]}, schema={"ids": pl.List(pl.UUID)})
+    assert nested.to_pandas()["ids"].tolist() == [[V4_A, None]]
+    assert pl.Series([[V4_A, None]], dtype=pl.List(pl.UUID)).to_pandas().tolist() == [
+        [V4_A, None]
+    ]
+    struct = pl.DataFrame({"s": [{"id": V4_A}]})
+    assert struct.to_pandas()["s"].tolist() == [{"id": V4_A}]
+
 
 def test_uuid_postgresql_text_forms_and_strict_cast() -> None:
     values = pl.Series(
@@ -336,6 +352,17 @@ def test_uuid_json_read_schema() -> None:
             StringIO('[{"id":"not-a-uuid"}]'),
             schema={"id": pl.UUID},
         )
+
+    grouped = StringIO('[{"id":"a0ee-bc99-9c0b-4ef8-bb6d-6bb9-bd38-0a11"}]')
+    assert_frame_equal(
+        pl.read_json(grouped, schema={"id": pl.UUID}),
+        pl.DataFrame({"id": [V4_A]}),
+    )
+
+
+def test_uuid_from_repr_roundtrip() -> None:
+    frame = pl.DataFrame({"id": [V4_A, None]})
+    assert_frame_equal(pl.from_repr(repr(frame)), frame)
 
 
 def test_uuid_empty_and_miscellaneous_operations() -> None:

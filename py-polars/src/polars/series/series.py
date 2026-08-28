@@ -97,6 +97,7 @@ from polars.datatypes import (
     numpy_char_code_to_dtype,
     parse_into_dtype,
     supported_numpy_char_code,
+    unpack_dtypes,
 )
 from polars.datatypes._utils import dtype_to_init_repr
 from polars.exceptions import (
@@ -5093,8 +5094,9 @@ class Series(metaclass=_Meta):
         2    <NA>
         Name: b, dtype: int64[pyarrow]
         """
-        if self.dtype == UUID:
-            # pandas has no native UUID representation, so preserve Python scalars.
+        if UUID in unpack_dtypes(self.dtype):
+            # pandas has no native UUID representation, and nested arrow.uuid
+            # lists/structs cannot convert through pyarrow-to-pandas.
             return pd.Series(self.to_list(), dtype=object, name=self.name)
         if self.dtype == Object:
             # Can't convert via PyArrow, so do it via NumPy

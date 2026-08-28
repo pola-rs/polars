@@ -76,9 +76,6 @@ pub enum SerializableScalar {
     UInt64(u64),
     /// An unsigned 128-bit integer number.
     UInt128(u128),
-    /// A universally unique identifier.
-    #[cfg(feature = "dtype-uuid")]
-    Uuid(u128),
     /// A 16-bit floating point number.
     Float16(pf16),
     /// A 32-bit floating point number.
@@ -137,6 +134,12 @@ pub enum SerializableScalar {
 
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<(PlSmallStr, SerializableScalar)>),
+
+    // Keep new variants at the end so that existing variants retain their
+    // serialized enum discriminants.
+    /// A universally unique identifier.
+    #[cfg(feature = "dtype-uuid")]
+    Uuid(u128),
 }
 
 impl TryFrom<Scalar> for SerializableScalar {

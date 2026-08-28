@@ -71,6 +71,7 @@ pub mod sync;
 pub mod tick_counter;
 pub mod total_ord;
 pub mod unique_id;
+pub mod uuid_parse;
 pub mod vec;
 pub mod with_drop;
 

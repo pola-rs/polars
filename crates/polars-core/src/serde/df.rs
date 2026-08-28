@@ -85,7 +85,7 @@ impl DataFrame {
         let dfs = reader
             .into_iter()
             .map_while(|batch| match batch {
-                Ok(StreamState::Some(batch)) => Some(Ok(DataFrame::from(batch))),
+                Ok(StreamState::Some(batch)) => Some(DataFrame::try_from_record_batch(batch)),
                 Ok(StreamState::Waiting) => None,
                 Err(e) => Some(Err(e)),
             })
