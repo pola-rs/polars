@@ -73,7 +73,7 @@ fn write_scan(
     indent: usize,
     n_columns: usize,
     total_columns: usize,
-    row_estimation: Option<usize>,
+    row_estimation: Option<u64>,
     predicate: &Option<ExprIRDisplay<'_>>,
     pre_slice: Option<Slice>,
     row_index: Option<&RowIndex>,
@@ -865,11 +865,7 @@ pub fn write_ir_non_recursive(
                 .map(|columns| columns.len())
                 .unwrap_or(usize::MAX);
 
-            let row_estimation = if file_info.row_estimation.1 != usize::MAX {
-                Some(file_info.row_estimation.1)
-            } else {
-                None
-            };
+            let row_estimation = file_info.stats.rows.value();
 
             let predicate = predicate.as_ref().map(|p| p.display(expr_arena));
 
