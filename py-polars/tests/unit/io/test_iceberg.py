@@ -3106,6 +3106,44 @@ def test_scan_iceberg_partial_and_pushdown(
 
 
 @pytest.mark.write_disk
+def test_scan_iceberg_is_in_pushdown(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(
+            NestedField(1, "a", LongType()),
+            NestedField(2, "b", StringType()),
+        ),
+    )
+    tbl = catalog.load_table("namespace.table")
+    pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]}).write_iceberg(
+        tbl, mode="append"
+    )
+
+    q = pl.scan_iceberg(tbl).filter(pl.col("b").is_in(["x", "z"]))
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    # Verify: `is_in` is lowered into the pyarrow predicate
+    assert 'isin(["x","z"])' in capture
+    # Verify: correctness
+    assert result["a"].to_list() == [1, 3]
+
+
+@pytest.mark.write_disk
 def test_scan_iceberg_row_estimate(
     tmp_path: Path,
     write_position_deletes: WritePositionDeletes,  # noqa: F811
