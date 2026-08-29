@@ -1,7 +1,7 @@
 //! Cardinality estimates for a node of the IR.
 //!
-//! Anything that cannot be estimated yields `None` rather than a guess, so a
-//! caller can tell "no estimate" apart from "estimated to be small".
+//! Anything that cannot be estimated yields `None` rather than a guess, so a caller
+//! can tell "no estimate" apart from "estimated to be small".
 
 use std::sync::Arc;
 
@@ -21,9 +21,8 @@ const DEFAULT_SELECTIVITY: f64 = 0.2;
 
 /// Largest relative error an NDV may carry and still steer a decision.
 ///
-/// A weak distinct count is worse than none: it moves join order and group
-/// counts confidently in a direction nothing supports. Anything derived carries
-/// [`DEFAULT_REL_ERR`]; a source claiming less confidence than that is ignored.
+/// Anything derived carries [`DEFAULT_REL_ERR`], so a source claiming less
+/// confidence than that is ignored.
 const MAX_NDV_REL_ERR: f32 = DEFAULT_REL_ERR;
 
 /// Floor for any estimate.
@@ -278,9 +277,8 @@ impl NodeStats {
 
 /// Column statistics of a scan, keyed on its output names.
 ///
-/// A column mapping renames between the file and the IR schema. Resolving it needs
-/// the physical-id lookup that lives in the multi-scan reader, which this crate
-/// cannot reach, so a mapped scan reports nothing.
+/// A scan with a column mapping reports nothing: resolving file names to output
+/// names needs the physical-id lookup in the multi-scan reader.
 fn scan_columns(ir: &IR) -> Option<Arc<ScanColumnStatsMap>> {
     let IR::Scan {
         file_info,
@@ -295,9 +293,8 @@ fn scan_columns(ir: &IR) -> Option<Arc<ScanColumnStatsMap>> {
 }
 
 /// Statistics for the outputs of `exprs` that are a column of the input under its
-/// own name or an alias of it.
-///
-/// Anything computed describes values the input statistics say nothing about.
+/// own name or an alias of it. Anything computed holds values the input statistics
+/// do not describe.
 fn passed_through_columns(
     inner: &NodeStats,
     exprs: &[ExprIR],
@@ -370,8 +367,8 @@ fn one_row_per_group(
     groups
 }
 
-/// A group-by over one key emits that key's distinct values, so its output holds
-/// exactly one of each. Several keys say nothing about any one of them.
+/// A group-by over one key holds exactly one row per distinct value of it. Several
+/// keys say nothing about any one of them.
 fn single_key_column(keys: &[&PlSmallStr], rows: f64) -> Option<Arc<ScanColumnStatsMap>> {
     let [name] = keys else { return None };
     let mut map = ScanColumnStatsMap::default();
@@ -394,9 +391,9 @@ fn sliced(rows: f64, slice: impl Into<Slice>) -> f64 {
 
 /// Estimated distinct combinations of `n_keys` grouping keys over `rows` rows.
 ///
-/// No distinct counts are available, so this interpolates between the two ends that
-/// are known: no keys is a single group, and any number of keys is at most one group
-/// per row. Each key added moves the estimate closer to the input.
+/// Without `ndv` this interpolates between the two ends that are known: no keys is a
+/// single group, and any number of keys is at most one group per row. Each key added
+/// moves the estimate closer to the input.
 fn n_groups(rows: f64, n_keys: usize, ndv: Option<f64>) -> f64 {
     if n_keys == 0 {
         return MIN_CARDINALITY;
@@ -461,11 +458,7 @@ fn conjunct_selectivity(
 /// `key_domain_product` is the product, over every equi-key pair bridging the two
 /// sides, of that key's domain size (see [`key_domain`]).
 ///
-/// This is `|A| * |B| / DISTINCT(key)`, extended over multiple keys. With exact distinct
-/// counts the divisor would be the `max` of the two sides. Only row counts are
-/// available, which bound distinct counts from above and are tight only on the unique
-/// side, so [`key_domain`] takes the `min` instead: the smaller relation is assumed
-/// to hold the key uniquely.
+/// This is `|A| * |B| / DISTINCT(key)`, extended over multiple keys.
 pub fn join_cardinality(left: f64, right: f64, key_domain_product: f64) -> f64 {
     // Every factor comes from `key_domain`, which floors at `MIN_CARDINALITY`, so
     // the product is always >= 1.
