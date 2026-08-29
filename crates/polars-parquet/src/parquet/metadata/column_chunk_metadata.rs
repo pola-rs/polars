@@ -82,15 +82,12 @@ impl ColumnChunkMetadata {
         self.compact_metadata().num_values
     }
 
-    /// Null count from the chunk statistics, without materialising min/max.
+    /// Null count from the chunk statistics
     pub fn null_count(&self) -> Option<i64> {
         self.compact_metadata().statistics.as_ref()?.null_count
     }
 
-    /// Distinct count from the chunk statistics, without materialising min/max.
-    ///
-    /// Most writers omit this and some write it incorrectly, so callers must
-    /// validate it before use.
+    /// Distinct count from the chunk statistics
     pub fn distinct_count(&self) -> Option<i64> {
         self.compact_metadata().statistics.as_ref()?.distinct_count
     }

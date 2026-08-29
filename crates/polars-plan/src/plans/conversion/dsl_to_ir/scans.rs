@@ -743,18 +743,23 @@ pub(super) async fn ipc_file_info(
     const MAX_COUNTED_BLOCKS: usize = 4096;
 
     /// Reads the footer, and sums the record batch lengths when that is cheap.
+    /// We won't do that if the data is remote.
+    ///
+    /// This blocks, so it hands off the async thread for the duration.
     fn metadata_and_rows<R: std::io::Read + std::io::Seek>(
         mut reader: R,
     ) -> PolarsResult<(arrow::io::ipc::read::FileMetadata, Option<u64>)> {
-        let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader)?;
-        let rows = (metadata.blocks.len() <= MAX_COUNTED_BLOCKS)
-            .then(|| {
-                arrow::io::ipc::read::get_row_count_from_blocks(&mut reader, &metadata.blocks)
-                    .ok()
-                    .and_then(|rows| u64::try_from(rows).ok())
-            })
-            .flatten();
-        Ok((metadata, rows))
+        ASYNC.block_in_place(move || {
+            let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader)?;
+            let rows = (metadata.blocks.len() <= MAX_COUNTED_BLOCKS)
+                .then(|| {
+                    arrow::io::ipc::read::get_row_count_from_blocks(&mut reader, &metadata.blocks)
+                        .ok()
+                        .and_then(|rows| u64::try_from(rows).ok())
+                })
+                .flatten();
+            Ok((metadata, rows))
+        })
     }
 
     let (metadata, first_rows) = match first_scan_source {

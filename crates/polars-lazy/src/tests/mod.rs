@@ -13,7 +13,6 @@ mod pdsh;
 mod predicate_queries;
 mod projection_queries;
 mod queries;
-mod scan_stats;
 mod schema;
 
 fn get_arenas() -> (Arena<AExpr>, Arena<IR>) {

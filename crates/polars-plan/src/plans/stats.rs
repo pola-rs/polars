@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use polars_utils::aliases::PlIndexMap;
+use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::plans::IR;
@@ -92,7 +92,7 @@ pub struct ScanColumnStats {
     pub avg_byte_width: Option<f32>,
 }
 
-pub type ScanColumnStatsMap = PlIndexMap<PlSmallStr, ScanColumnStats>;
+pub type ScanColumnStatsMap = PlHashMap<PlSmallStr, ScanColumnStats>;
 
 /// Plan-time statistics for a scan.
 ///
@@ -103,7 +103,6 @@ pub type ScanColumnStatsMap = PlIndexMap<PlSmallStr, ScanColumnStats>;
 pub struct ScanStats {
     #[cfg_attr(feature = "serde", serde(default))]
     pub rows: Card,
-    /// Sparse: an absent column is unknown, never a placeholder.
     #[cfg_attr(feature = "serde", serde(default))]
     #[cfg_attr(
         feature = "dsl-schema",
