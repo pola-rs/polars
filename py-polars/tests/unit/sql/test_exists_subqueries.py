@@ -296,3 +296,56 @@ def test_decorrelated_exists_is_order_independent() -> None:
     expected = ctx.execute(query).collect(engine="in-memory").row(0)
     results = {ctx.execute(query).collect(engine="streaming").row(0) for _ in range(8)}
     assert results == {expected}
+
+
+def test_exists_subquery_multi_relation_inner_from() -> None:
+    frames = {
+        "customer": pl.DataFrame({"c_customer_sk": [1, 2, 3]}),
+        "store_sales": pl.DataFrame(
+            {"ss_customer_sk": [1, 1, 2], "ss_sold_date_sk": [1, 2, 2]}
+        ),
+        "date_dim": pl.DataFrame({"d_date_sk": [1, 2], "d_year": [2000, 2001]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT c_customer_sk FROM customer c
+            WHERE EXISTS (
+                SELECT * FROM store_sales, date_dim
+                WHERE c.c_customer_sk = ss_customer_sk
+                  AND ss_sold_date_sk = d_date_sk
+                  AND d_year = 2001
+            )
+            ORDER BY c_customer_sk
+        """,
+        compare_with="duckdb",
+    )
+
+
+def test_exists_and_not_exists_multi_relation_inner_from() -> None:
+    frames = {
+        "customer": pl.DataFrame({"c_customer_sk": [1, 2, 3, 4]}),
+        "store_sales": pl.DataFrame(
+            {"ss_customer_sk": [1, 2], "ss_sold_date_sk": [2, 2]}
+        ),
+        "web_sales": pl.DataFrame({"ws_customer_sk": [2], "ws_sold_date_sk": [2]}),
+        "date_dim": pl.DataFrame({"d_date_sk": [1, 2], "d_year": [2000, 2001]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT c_customer_sk FROM customer c
+            WHERE EXISTS (
+                SELECT * FROM store_sales, date_dim
+                WHERE c.c_customer_sk = ss_customer_sk
+                  AND ss_sold_date_sk = d_date_sk AND d_year = 2001
+            )
+            AND NOT EXISTS (
+                SELECT * FROM web_sales, date_dim
+                WHERE c.c_customer_sk = ws_customer_sk
+                  AND ws_sold_date_sk = d_date_sk AND d_year = 2001
+            )
+            ORDER BY c_customer_sk
+        """,
+        compare_with="duckdb",
+    )

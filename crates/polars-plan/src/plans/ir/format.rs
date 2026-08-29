@@ -73,7 +73,7 @@ fn write_scan(
     indent: usize,
     n_columns: usize,
     total_columns: usize,
-    row_estimation: Option<usize>,
+    row_estimation: Option<u64>,
     predicate: &Option<ExprIRDisplay<'_>>,
     pre_slice: Option<Slice>,
     row_index: Option<&RowIndex>,
@@ -816,10 +816,15 @@ pub fn write_ir_non_recursive(
                 PythonPredicate::PyArrow { .. } => None,
                 PythonPredicate::None => None,
             };
+            let header_name = if let Some(name) = &options.explain_name {
+                format!("PYTHON[{name}]")
+            } else {
+                "PYTHON".to_string()
+            };
 
             write_scan(
                 f,
-                "PYTHON",
+                &header_name,
                 &ScanSources::default(),
                 indent,
                 n_columns,
@@ -831,7 +836,13 @@ pub fn write_ir_non_recursive(
                     .map(|len| polars_utils::slice_enum::Slice::Positive { offset: 0, len }),
                 None,
                 None,
-            )
+            )?;
+
+            if let Some(detail) = &options.explain_detail {
+                write!(f, "\n{:indent$}INFO: {}", "", detail)?;
+            }
+
+            Ok(())
         },
         IR::Slice {
             input: _,
@@ -865,11 +876,7 @@ pub fn write_ir_non_recursive(
                 .map(|columns| columns.len())
                 .unwrap_or(usize::MAX);
 
-            let row_estimation = if file_info.row_estimation.1 != usize::MAX {
-                Some(file_info.row_estimation.1)
-            } else {
-                None
-            };
+            let row_estimation = file_info.stats.rows.value();
 
             let predicate = predicate.as_ref().map(|p| p.display(expr_arena));
 

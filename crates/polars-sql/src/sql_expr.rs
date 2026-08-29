@@ -116,6 +116,23 @@ fn cast_literal_series(s: &Series, dtype: &DataType) -> PolarsResult<Series> {
     s.strict_cast(dtype)
 }
 
+/// Parse a string expression into `Date`/`Time`/`Datetime`; `None` for other dtypes.
+fn parse_string_as_temporal(expr: Expr, dtype: &DataType, strict: bool) -> Option<Expr> {
+    let options = StrptimeOptions {
+        strict,
+        ..Default::default()
+    };
+    Some(match dtype {
+        DataType::Date => expr.str().to_date(options),
+        DataType::Time => expr.str().to_time(options),
+        DataType::Datetime(tu, tz) => {
+            expr.str()
+                .to_datetime(Some(*tu), tz.clone(), options, lit("latest"))
+        },
+        _ => return None,
+    })
+}
+
 /// Extract the literal value; returns `(sql_value, optional_op)`.
 fn extract_literal_with_op<'a>(
     expr: &'a SQLExpr,
@@ -386,23 +403,9 @@ impl SQLExprVisitor<'_> {
                 uses_odbc_syntax: _,
             }) => {
                 let dtype = self.resolve_typed_literal_dtype(data_type, v)?;
-                match dtype {
-                    DataType::Date => Ok(lit(v.as_str()).cast(DataType::Date)),
-                    DataType::Time => Ok(lit(v.as_str()).str().to_time(StrptimeOptions {
-                        strict: true,
-                        ..Default::default()
-                    })),
-                    DataType::Datetime(_, _) => Ok(lit(v.as_str()).str().to_datetime(
-                        None,
-                        None,
-                        StrptimeOptions {
-                            strict: true,
-                            ..Default::default()
-                        },
-                        lit("latest"),
-                    )),
-                    _ => unreachable!(),
-                }
+                parse_string_as_temporal(lit(v.as_str()), &dtype, true).ok_or_else(
+                    || polars_err!(SQLInterface: "invalid temporal literal type {}", dtype),
+                )
             },
             SQLExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SQLExpr::Value(ValueWithSpan { value, .. }) => self.visit_literal(value),
@@ -550,39 +553,27 @@ impl SQLExprVisitor<'_> {
                     },
                     |dt| dt.as_literal(),
                 );
-                match left_dtype {
-                    Some(DataType::Time) if is_iso_time(s) => {
-                        right.clone().str().to_time(StrptimeOptions {
-                            strict: true,
-                            ..Default::default()
-                        })
+                let parsed = match left_dtype {
+                    Some(dtype @ DataType::Time) if is_iso_time(s) => {
+                        parse_string_as_temporal(right.clone(), dtype, true)
                     },
-                    Some(DataType::Date) if is_iso_date(s) => {
-                        right.clone().str().to_date(StrptimeOptions {
-                            strict: true,
-                            ..Default::default()
-                        })
+                    Some(dtype @ DataType::Date) if is_iso_date(s) => {
+                        parse_string_as_temporal(right.clone(), dtype, true)
                     },
-                    Some(DataType::Datetime(tu, tz)) if is_iso_datetime(s) || is_iso_date(s) => {
-                        if s.len() == 10 {
+                    Some(dtype @ DataType::Datetime(_, _))
+                        if is_iso_datetime(s) || is_iso_date(s) =>
+                    {
+                        let s = if s.len() == 10 {
                             // handle upcast from ISO date string (10 chars) to datetime
-                            lit(format!("{s}T00:00:00"))
+                            format!("{s}T00:00:00")
                         } else {
-                            lit(s.replacen(' ', "T", 1))
-                        }
-                        .str()
-                        .to_datetime(
-                            Some(*tu),
-                            tz.clone(),
-                            StrptimeOptions {
-                                strict: true,
-                                ..Default::default()
-                            },
-                            lit("latest"),
-                        )
+                            s.replacen(' ', "T", 1)
+                        };
+                        parse_string_as_temporal(lit(s), dtype, true)
                     },
-                    _ => right.clone(),
-                }
+                    _ => None,
+                };
+                parsed.unwrap_or_else(|| right.clone())
             }
         } else {
             right.clone()
@@ -954,7 +945,7 @@ impl SQLExprVisitor<'_> {
                         dtype,
                         DataType::Date | DataType::Time | DataType::Datetime(_, _)
                     ) {
-                        return elems.strict_cast(dtype);
+                        return cast_literal_series(&elems, dtype);
                     }
                 }
             }
@@ -1005,10 +996,29 @@ impl SQLExprVisitor<'_> {
             return Ok(expr.str().json_decode(DataType::Struct(Vec::new())));
         }
         let polars_type = map_sql_dtype_to_polars(dtype)?;
-        Ok(match cast_kind {
-            CastKind::Cast | CastKind::DoubleColon => expr.strict_cast(polars_type),
-            CastKind::TryCast | CastKind::SafeCast => expr.cast(polars_type),
+        let strict = matches!(cast_kind, CastKind::Cast | CastKind::DoubleColon);
+
+        // `CAST(<string> AS DATE/TIME/TIMESTAMP)` parses rather than casts
+        if matches!(
+            polars_type,
+            DataType::Date | DataType::Time | DataType::Datetime(_, _)
+        ) && self.is_string_expr(&expr)
+            && let Some(parsed) = parse_string_as_temporal(expr.clone(), &polars_type, strict)
+        {
+            return Ok(parsed);
+        }
+        Ok(if strict {
+            expr.strict_cast(polars_type)
+        } else {
+            expr.cast(polars_type)
         })
+    }
+
+    /// Whether `expr` is known to be `String`; false if the dtype cannot be resolved.
+    fn is_string_expr(&self, expr: &Expr) -> bool {
+        let empty = Schema::default();
+        let schema = self.active_schema.unwrap_or(&empty);
+        matches!(expr.to_field(schema), Ok(fld) if fld.dtype == DataType::String)
     }
 
     /// Visit a SQL literal.

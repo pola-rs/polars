@@ -1,7 +1,7 @@
 //! Row-count estimates for join ordering.
 //!
-//! The only statistics read from the plan are row counts: a scan's estimate and an
-//! in-memory frame's height. Everything else is constants and assumptions. Anything
+//! The only statistics read from the plan are row counts, through
+//! [`leaf_row_count`]. Everything else is constants and assumptions. Anything
 //! that cannot be estimated makes the whole cluster non-reorderable rather than
 //! producing a guess.
 
@@ -9,7 +9,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 
-use crate::plans::{AExpr, ExprIR, IR, MintermIter};
+use crate::plans::{AExpr, ExprIR, IR, MintermIter, leaf_row_count};
 
 /// Fallback selectivity for a filter conjunct with no better estimate.
 const DEFAULT_SELECTIVITY: f64 = 0.2;
@@ -43,19 +43,14 @@ pub(super) fn leaf_stats(
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<LeafStats> {
-    match ir_arena.get(node) {
+    let ir = ir_arena.get(node);
+    match ir {
         IR::Scan {
-            file_info,
             predicate,
             unified_scan_args,
             ..
         } => {
-            // `row_estimation.1` is `usize::MAX` when the source could not be counted.
-            let rows = file_info.row_estimation.1;
-            if rows == usize::MAX {
-                return None;
-            }
-            let unfiltered = rows as f64;
+            let unfiltered = leaf_row_count(ir).value()? as f64;
             // The slice is applied before the predicate, so it narrows first.
             let mut filtered = match &unified_scan_args.pre_slice {
                 None => unfiltered,
@@ -71,8 +66,8 @@ pub(super) fn leaf_stats(
         },
 
         // An in-memory frame carries its rows with it, so the count is exact.
-        IR::DataFrameScan { df, .. } => {
-            let rows = (df.height() as f64).max(MIN_CARDINALITY);
+        IR::DataFrameScan { .. } => {
+            let rows = (leaf_row_count(ir).value()? as f64).max(MIN_CARDINALITY);
             Some(LeafStats {
                 filtered: rows,
                 unfiltered: rows,
@@ -265,7 +260,7 @@ fn apply_selectivity(rows: f64, n_conjuncts: u32) -> f64 {
 /// `key_domain_product` is the product, over every equi-key pair bridging the two
 /// sides, of that key's domain size (see [`key_domain`]).
 ///
-/// This is `|A| * |B| / NDV(key)`, extended over multiple keys. With exact distinct
+/// This is `|A| * |B| / DISTINCT(key)`, extended over multiple keys. With exact distinct
 /// counts the divisor would be the `max` of the two sides. Only row counts are
 /// available, which bound distinct counts from above and are tight only on the unique
 /// side, so [`key_domain`] takes the `min` instead: the smaller relation is assumed
