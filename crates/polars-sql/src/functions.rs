@@ -619,6 +619,31 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT QUANTILE_DISC(col1) FROM df;
     /// ```
     QuantileDisc,
+    /// SQL 'regr_count' function.
+    /// Returns the number of rows where both inputs are non-null.
+    /// ```sql
+    /// SELECT REGR_COUNT(y, x) FROM df;
+    /// ```
+    RegrCount,
+    /// SQL 'regr_intercept' function.
+    /// Returns the intercept of the least-squares linear regression of y on x.
+    /// ```sql
+    /// SELECT REGR_INTERCEPT(y, x) FROM df;
+    /// ```
+    RegrIntercept,
+    /// SQL 'regr_r2' function.
+    /// Returns the coefficient of determination of the least-squares linear
+    /// regression of y on x.
+    /// ```sql
+    /// SELECT REGR_R2(y, x) FROM df;
+    /// ```
+    RegrR2,
+    /// SQL 'regr_slope' function.
+    /// Returns the slope of the least-squares linear regression of y on x.
+    /// ```sql
+    /// SELECT REGR_SLOPE(y, x) FROM df;
+    /// ```
+    RegrSlope,
     /// SQL 'min' function.
     /// Returns the smallest (minimum) of all the elements in the grouping.
     /// ```sql
@@ -891,6 +916,10 @@ impl PolarsSQLFunctions {
             "radians",
             "rank",
             "regexp_like",
+            "regr_count",
+            "regr_intercept",
+            "regr_r2",
+            "regr_slope",
             "replace",
             "reverse",
             "right",
@@ -1046,6 +1075,10 @@ impl PolarsSQLFunctions {
             "min" => Self::Min,
             "quantile_cont" => Self::QuantileCont,
             "quantile_disc" => Self::QuantileDisc,
+            "regr_count" => Self::RegrCount,
+            "regr_intercept" => Self::RegrIntercept,
+            "regr_r2" => Self::RegrR2,
+            "regr_slope" => Self::RegrSlope,
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "string_agg" | "listagg" | "group_concat" => Self::StringAgg,
             "sum" => Self::Sum,
@@ -1612,6 +1645,10 @@ impl SQLFunctionVisitor<'_> {
             Count => self.visit_count(),
             CovarPop => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 0)),
             CovarSamp => self.visit_binary(|a, b| polars_lazy::dsl::cov(a, b, 1)),
+            RegrCount => self.visit_binary(polars_lazy::dsl::regr_count),
+            RegrIntercept => self.visit_binary(polars_lazy::dsl::regr_intercept),
+            RegrR2 => self.visit_binary(polars_lazy::dsl::regr_r2),
+            RegrSlope => self.visit_binary(polars_lazy::dsl::regr_slope),
             First => self.visit_unary(Expr::first),
             Last => self.visit_unary(Expr::last),
             Max => self.visit_min_max(Expr::max, Expr::cum_max),

@@ -210,6 +210,8 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::ConcatExpr { .. } => false,
         #[cfg(feature = "cov")]
         F::Correlation { .. } => false,
+        #[cfg(feature = "cov")]
+        F::Regression { .. } => false,
         #[cfg(feature = "peaks")]
         F::PeakMin | F::PeakMax => false,
         #[cfg(feature = "cutqcut")]

@@ -37,7 +37,7 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "dtype-array")]
 pub use array::ArrayFunction;
 #[cfg(feature = "cov")]
-pub use correlation::CorrelationMethod;
+pub use correlation::{CorrelationMethod, RegressionFunction};
 pub use list::ListFunction;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
@@ -272,6 +272,10 @@ pub enum FunctionExpr {
     Correlation {
         method: correlation::CorrelationMethod,
     },
+    #[cfg(feature = "cov")]
+    Regression {
+        function: correlation::RegressionFunction,
+    },
     #[cfg(feature = "peaks")]
     PeakMin,
     #[cfg(feature = "peaks")]
@@ -429,6 +433,8 @@ impl Hash for FunctionExpr {
             Random { method, .. } => method.hash(state),
             #[cfg(feature = "cov")]
             Correlation { method, .. } => method.hash(state),
+            #[cfg(feature = "cov")]
+            Regression { function, .. } => function.hash(state),
             #[cfg(feature = "range")]
             Range(f) => f.hash(state),
             #[cfg(feature = "trigonometry")]
@@ -854,6 +860,8 @@ impl Display for FunctionExpr {
             ConcatExpr(..) => "concat_expr",
             #[cfg(feature = "cov")]
             Correlation { method, .. } => return Display::fmt(method, f),
+            #[cfg(feature = "cov")]
+            Regression { function, .. } => return Display::fmt(function, f),
             #[cfg(feature = "peaks")]
             PeakMin => "peak_min",
             #[cfg(feature = "peaks")]

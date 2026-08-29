@@ -968,6 +968,19 @@ pub(super) fn convert_functions(
                 },
             }
         },
+        #[cfg(feature = "cov")]
+        F::Regression { function } => {
+            use IRRegressionFunction as IR;
+            use RegressionFunction as R;
+            I::Regression {
+                function: match function {
+                    R::Slope => IR::Slope,
+                    R::Intercept => IR::Intercept,
+                    R::R2 => IR::R2,
+                    R::Count => IR::Count,
+                },
+            }
+        },
         #[cfg(feature = "peaks")]
         F::PeakMin => I::PeakMin,
         #[cfg(feature = "peaks")]

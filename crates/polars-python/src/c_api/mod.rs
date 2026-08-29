@@ -249,6 +249,13 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::pearson_corr))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::regr_slope))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::regr_intercept))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::regr_r2)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::regr_count))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::rolling_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::rolling_cov))

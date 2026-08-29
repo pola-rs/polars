@@ -13,8 +13,8 @@ use polars_plan::dsl::DateRangeArgs;
 use polars_plan::plans::{
     DynListLiteralValue, DynLiteralValue, FusedOperator, IRArrayFunction, IRBitwiseFunction,
     IRBooleanFunction, IRCorrelationMethod, IRFunctionExpr, IRListFunction, IRPowFunction,
-    IRRandomMethod, IRRangeFunction, IRRollingFunction, IRRollingFunctionBy, IRStringFunction,
-    IRStructFunction, IRTemporalFunction,
+    IRRandomMethod, IRRangeFunction, IRRegressionFunction, IRRollingFunction, IRRollingFunctionBy,
+    IRStringFunction, IRStructFunction, IRTemporalFunction,
 };
 use polars_plan::prelude::{
     AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
@@ -1942,6 +1942,12 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRCorrelationMethod::Covariance(ddof) => {
                         ("corr", "covariance", ddof).into_py_any(py)
                     },
+                },
+                IRFunctionExpr::Regression { function } => match function {
+                    IRRegressionFunction::Slope => ("regr", "slope").into_py_any(py),
+                    IRRegressionFunction::Intercept => ("regr", "intercept").into_py_any(py),
+                    IRRegressionFunction::R2 => ("regr", "r2").into_py_any(py),
+                    IRRegressionFunction::Count => ("regr", "count").into_py_any(py),
                 },
                 #[cfg(feature = "peaks")]
                 IRFunctionExpr::PeakMin => ("peak_max",).into_py_any(py),

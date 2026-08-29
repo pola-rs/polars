@@ -14,9 +14,9 @@ use polars_ops::series::{ArgAgg, NullStrategy, SeriesMethods};
 use polars_plan::dsl::ReshapeDimension;
 #[cfg(feature = "fused")]
 use polars_plan::plans::FusedOperator;
-#[cfg(feature = "cov")]
-use polars_plan::plans::IRCorrelationMethod;
 use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, RowEncodingVariant};
+#[cfg(feature = "cov")]
+use polars_plan::plans::{IRCorrelationMethod, IRRegressionFunction};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -884,6 +884,51 @@ pub(super) fn corr(s: &[Column], method: IRCorrelationMethod) -> PolarsResult<Co
         IRCorrelationMethod::SpearmanRank(propagate_nans) => spearman_rank_corr(s, propagate_nans),
         IRCorrelationMethod::Covariance(ddof) => covariance(s, ddof),
     }
+}
+
+#[cfg(feature = "cov")]
+pub(super) fn regr(s: &[Column], function: IRRegressionFunction) -> PolarsResult<Column> {
+    polars_ensure!(
+        s[0].len() == s[1].len() || s[0].len() == 1 || s[1].len() == 1,
+        length_mismatch = "regr",
+        s[0].len(),
+        s[1].len()
+    );
+
+    // The input order follows the SQL convention: [y, x].
+    let mut y = s[0].clone();
+    let mut x = s[1].clone();
+    if x.len() != y.len() {
+        if x.len() == 1 {
+            x = x.new_from_index(0, y.len());
+        } else {
+            y = y.new_from_index(0, x.len());
+        }
+    }
+    let x = x.cast(&DataType::Float64)?;
+    let y = y.cast(&DataType::Float64)?;
+
+    use polars_ops::chunked_array::cov::regression_state;
+    let state = regression_state(x.f64().unwrap(), y.f64().unwrap());
+
+    let out = match function {
+        IRRegressionFunction::Slope => {
+            Column::new(PlSmallStr::from_static("regr_slope"), &[state.regr_slope()])
+        },
+        IRRegressionFunction::Intercept => Column::new(
+            PlSmallStr::from_static("regr_intercept"),
+            &[state.regr_intercept()],
+        ),
+        IRRegressionFunction::R2 => {
+            Column::new(PlSmallStr::from_static("regr_r2"), &[state.regr_r2()])
+        },
+        IRRegressionFunction::Count => Column::new_scalar(
+            PlSmallStr::from_static("regr_count"),
+            Scalar::new(IDX_DTYPE, (state.count() as IdxSize).into()),
+            1,
+        ),
+    };
+    Ok(out)
 }
 
 #[cfg(feature = "peaks")]

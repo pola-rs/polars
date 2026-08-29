@@ -45,7 +45,7 @@ use std::hash::{Hash, Hasher};
 #[cfg(feature = "dtype-array")]
 pub use array::IRArrayFunction;
 #[cfg(feature = "cov")]
-pub use correlation::IRCorrelationMethod;
+pub use correlation::{IRCorrelationMethod, IRRegressionFunction};
 #[cfg(feature = "fused")]
 pub use fused::FusedOperator;
 pub use list::IRListFunction;
@@ -284,6 +284,10 @@ pub enum IRFunctionExpr {
     Correlation {
         method: correlation::IRCorrelationMethod,
     },
+    #[cfg(feature = "cov")]
+    Regression {
+        function: correlation::IRRegressionFunction,
+    },
     #[cfg(feature = "peaks")]
     PeakMin,
     #[cfg(feature = "peaks")]
@@ -444,6 +448,8 @@ impl Hash for IRFunctionExpr {
             Random { method, .. } => method.hash(state),
             #[cfg(feature = "cov")]
             Correlation { method, .. } => method.hash(state),
+            #[cfg(feature = "cov")]
+            Regression { function, .. } => function.hash(state),
             #[cfg(feature = "range")]
             Range(f) => f.hash(state),
             #[cfg(feature = "trigonometry")]
@@ -875,6 +881,8 @@ impl Display for IRFunctionExpr {
             ConcatExpr { .. } => "concat_expr",
             #[cfg(feature = "cov")]
             Correlation { method, .. } => return Display::fmt(method, f),
+            #[cfg(feature = "cov")]
+            Regression { function, .. } => return Display::fmt(function, f),
             #[cfg(feature = "peaks")]
             PeakMin => "peak_min",
             #[cfg(feature = "peaks")]
@@ -1202,6 +1210,10 @@ impl IRFunctionExpr {
                 .with_supertyping(Default::default()),
             #[cfg(feature = "cov")]
             F::Correlation { .. } => {
+                FunctionOptions::aggregation().with_supertyping(Default::default())
+            },
+            #[cfg(feature = "cov")]
+            F::Regression { .. } => {
                 FunctionOptions::aggregation().with_supertyping(Default::default())
             },
             #[cfg(feature = "peaks")]
