@@ -547,9 +547,9 @@ pub(super) async fn parquet_file_info(
     Ok((file_info, resolved.metadata_per_source))
 }
 
-/// Relative error for an NDV folded over row groups.
+/// Relative error
 #[cfg(feature = "parquet")]
-const NDV_REL_ERR: f32 = 1.0;
+const DISTINCT_COUNT_REL_ERR: f32 = 1.0;
 
 /// Column chunks visited at most. A scan with more of them is sampled.
 #[cfg(feature = "parquet")]
@@ -573,7 +573,7 @@ fn parquet_column_stats(
         nulls: u64,
         /// Set once any chunk lacked a null count.
         nulls_unknown: bool,
-        /// `max` over row groups, a lower bound on the NDV.
+        /// `max` over row groups, a lower bound on the distinct count.
         distinct: Option<u64>,
         /// The column is nested, so leaf null counts are not the root's.
         nested: bool,
@@ -598,7 +598,8 @@ fn parquet_column_stats(
     let stride = n_row_groups.div_ceil((CHUNK_BUDGET / n_columns).max(1));
     let sampled = stride > 1;
 
-    let mut acc: PlIndexMap<PlSmallStr, Acc> = PlIndexMap::default();
+    #[allow(clippy::disallowed_types)]
+    let mut acc: PlHashMap<PlSmallStr, Acc> = PlHashMap::default();
     let mut sampled_rows: u64 = 0;
 
     for rg in metadata.iter().flat_map(|m| &m.row_groups).step_by(stride) {
@@ -646,7 +647,7 @@ fn parquet_column_stats(
                 distinct: match a.distinct {
                     Some(d) => Card::Approx {
                         value: d,
-                        rel_err: NDV_REL_ERR,
+                        rel_err: DISTINCT_COUNT_REL_ERR,
                     },
                     None => Card::Unknown,
                 },
