@@ -7,6 +7,7 @@ import sys
 import typing
 from typing import IO, TYPE_CHECKING, Any
 
+import pyarrow
 import pyarrow.ipc
 import pytest
 
@@ -691,8 +692,41 @@ def test_row_count_estimate_ipc(tmp_path: Path) -> None:
     path = tmp_path / "a.ipc"
     pl.DataFrame({"a": range(37)}).write_ipc(path)
 
-    # The footer blocks carry the record batch lengths.
+    # Polars writes the row count into the footer.
     assert "ESTIMATED ROWS: 37" in pl.scan_ipc(path).explain()
+
+
+def test_row_count_estimate_ipc_foreign_writer(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a.ipc"
+
+    # Without the Polars footer the record batch lengths are summed.
+    schema = pyarrow.schema([("a", pyarrow.int64())])
+    with pyarrow.ipc.new_file(path, schema) as writer:
+        for _ in range(4):
+            writer.write_batch(
+                pyarrow.record_batch([pyarrow.array(range(10))], schema=schema)
+            )
+
+    assert "ESTIMATED ROWS: 40" in pl.scan_ipc(path).explain()
+
+
+def test_row_count_estimate_ipc_many_blocks(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a.ipc"
+
+    # Too many record batches to walk, so the count is extrapolated from a sample.
+    schema = pyarrow.schema([("a", pyarrow.int64())])
+    with pyarrow.ipc.new_file(path, schema) as writer:
+        for _ in range(199):
+            writer.write_batch(
+                pyarrow.record_batch([pyarrow.array(range(10))], schema=schema)
+            )
+        writer.write_batch(
+            pyarrow.record_batch([pyarrow.array(range(7))], schema=schema)
+        )
+
+    assert "ESTIMATED ROWS: 1997" in pl.scan_ipc(path).explain()
 
 
 def test_row_count_estimate_ipc_multifile(tmp_path: Path) -> None:
