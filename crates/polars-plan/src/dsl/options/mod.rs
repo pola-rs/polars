@@ -41,7 +41,7 @@ use crate::dsl::Selector;
 pub struct RollingCovOptions {
     pub window_size: IdxSize,
     pub min_periods: IdxSize,
-    pub ddof: u8,
+    pub ddof: Option<u8>,
 }
 
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]

@@ -308,6 +308,8 @@ pub struct ProjectionOptions {
     // Should length-1 Series be broadcast to the length of the dataframe.
     // Only used by CSE optimizer
     pub should_broadcast: bool,
+    // Maintain the input height on empty select(). Used by drop().
+    pub maintain_dataframe_height: bool,
 }
 
 impl Default for ProjectionOptions {
@@ -316,6 +318,7 @@ impl Default for ProjectionOptions {
             run_parallel: true,
             duplicate_check: true,
             should_broadcast: true,
+            maintain_dataframe_height: false,
         }
     }
 }
@@ -327,6 +330,8 @@ impl ProjectionOptions {
             run_parallel: self.run_parallel & other.run_parallel,
             duplicate_check: self.duplicate_check & other.duplicate_check,
             should_broadcast: self.should_broadcast | other.should_broadcast,
+            maintain_dataframe_height: self.maintain_dataframe_height
+                & other.maintain_dataframe_height,
         }
     }
 }
@@ -516,11 +521,11 @@ impl JoinTypeOptionsIR {
         }
     }
 
-    /// The keys of the two variants that store them as pairs.
+    /// The keys as `(left, right)` pairs, or `None` if the condition does not equate them.
     ///
     /// The only place `Equi`/`AsOf` are matched apart; every accessor below goes through it.
     /// They cannot share an or-pattern arm because rustc rejects `#[cfg]` on one alternative.
-    fn key_pairs(&self) -> Option<&Vec<(ExprIR, ExprIR)>> {
+    pub fn key_pairs(&self) -> Option<&[(ExprIR, ExprIR)]> {
         match self {
             Self::Equi { on } => Some(on),
             #[cfg(feature = "asof_join")]
@@ -541,8 +546,8 @@ impl JoinTypeOptionsIR {
 
     /// The left-hand side keys, in positional order.
     ///
-    /// For [`Self::Range`] this can differ in length from [`Self::right_on`], so only zip the
-    /// two sides once the condition is known not to be a range.
+    /// For [`Self::Range`] this can differ in length from [`Self::right_on`]; to pair the
+    /// two sides, use [`Self::key_pairs`] instead of zipping them.
     pub fn left_on(&self) -> Exprs<'_> {
         if let Some(on) = self.key_pairs() {
             return Exprs::pair_lhs(on);

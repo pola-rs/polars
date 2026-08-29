@@ -184,6 +184,7 @@ def test_sink_boolean_panic_25806(sink: Any, scan: Any) -> None:
 
     f = io.BytesIO()
     sink(df.lazy(), f)
+    f.seek(0)
 
     assert_frame_equal(scan(f).collect(), df)
 
@@ -534,6 +535,7 @@ def test_sink_predicate_pushdown_streaming_flag_27922() -> None:
 
     f = io.BytesIO()
     q.sink_ipc(f)
+    f.seek(0)
 
     assert_frame_equal(
         pl.scan_ipc(f).collect(),
@@ -680,6 +682,7 @@ print("OK", end="")
 
 
 @pytest.mark.write_disk
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 def test_sink_upload_chunk_size_config(
     tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,
@@ -721,6 +724,7 @@ def test_sink_upload_chunk_size_config(
 
 
 @pytest.mark.write_disk
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 def test_sink_upload_chunk_size_config_partitioned(
     tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,

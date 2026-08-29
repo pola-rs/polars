@@ -561,6 +561,7 @@ fn to_graph_rec<'a>(
             input,
             dtype,
             options,
+            input_name,
             ambiguous_is_raise,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -568,6 +569,7 @@ fn to_graph_rec<'a>(
                 nodes::strptime_infer::StrptimeInferNode::new(
                     dtype.clone(),
                     options.clone(),
+                    input_name.clone(),
                     *ambiguous_is_raise,
                 ),
                 [(input_key, input.port)],
@@ -849,6 +851,7 @@ fn to_graph_rec<'a>(
             predicate,
             predicate_file_skip_applied,
             hive_parts,
+            extra_columns_policy,
             missing_columns_policy,
             cast_columns_policy,
             include_file_paths,
@@ -890,6 +893,7 @@ fn to_graph_rec<'a>(
             let pre_slice = pre_slice.clone();
             let hive_parts = hive_parts.map(Arc::new);
             let include_file_paths = include_file_paths.clone();
+            let extra_columns_policy = *extra_columns_policy;
             let missing_columns_policy = *missing_columns_policy;
             let forbid_extra_columns = forbid_extra_columns.clone();
             let cast_columns_policy = cast_columns_policy.clone();
@@ -912,6 +916,7 @@ fn to_graph_rec<'a>(
                     predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
+                    extra_columns_policy,
                     missing_columns_policy,
                     forbid_extra_columns,
                     cast_columns_policy,
@@ -1561,7 +1566,7 @@ fn to_graph_rec<'a>(
                 },
             };
 
-            use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy};
+            use polars_plan::dsl::{CastColumnsPolicy, ExtraColumnsPolicy, MissingColumnsPolicy};
 
             use crate::nodes::io_sources::batch::builder::BatchFnReaderBuilder;
             use crate::nodes::io_sources::batch::{BatchFnReader, GetBatchState};
@@ -1595,6 +1600,7 @@ fn to_graph_rec<'a>(
             let predicate_file_skip_applied = None;
             let hive_parts = None;
             let include_file_paths = None;
+            let extra_columns_policy = ExtraColumnsPolicy::Raise;
             let missing_columns_policy = MissingColumnsPolicy::Raise;
             let forbid_extra_columns = None;
             let cast_columns_policy = CastColumnsPolicy::ERROR_ON_MISMATCH;
@@ -1616,6 +1622,7 @@ fn to_graph_rec<'a>(
                     predicate_file_skip_applied,
                     hive_parts,
                     include_file_paths,
+                    extra_columns_policy,
                     missing_columns_policy,
                     forbid_extra_columns,
                     cast_columns_policy,

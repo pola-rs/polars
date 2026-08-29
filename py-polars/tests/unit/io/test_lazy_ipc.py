@@ -7,6 +7,7 @@ import sys
 import typing
 from typing import IO, TYPE_CHECKING, Any
 
+import pyarrow as pa
 import pyarrow.ipc
 import pytest
 
@@ -132,11 +133,11 @@ def test_sink_ipc_compat_level_22930() -> None:
     f1.seek(0)
     f2.seek(0)
 
-    t1 = pyarrow.ipc.open_file(f1)
+    t1 = pa.ipc.open_file(f1)
     assert "large_string" in str(t1.schema)
     assert_frame_equal(pl.DataFrame(t1.read_all()), df)
 
-    t2 = pyarrow.ipc.open_file(f2)
+    t2 = pa.ipc.open_file(f2)
     assert "large_string" in str(t2.schema)
     assert_frame_equal(pl.DataFrame(t2.read_all()), df)
 
@@ -227,22 +228,22 @@ def test_scan_ipc_file_async_dict(
         {"cat": ["A", "B", "C", "A", "C", "B"]}, schema={"cat": pl.Categorical}
     ).with_row_index()
     lf.sink_ipc(buf)
+    buf.seek(0)
 
     out = pl.scan_ipc(buf).collect()
     expected = lf.collect()
     assert_frame_equal(out, expected)
 
 
-# TODO: create multiple record batches through API instead of env variable
 def test_scan_ipc_file_async_multiple_record_batches(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
-    plmonkeypatch.setenv("POLARS_IDEAL_SINK_MORSEL_SIZE_ROWS", "10")
 
     buf = io.BytesIO()
     lf = pl.LazyFrame({"a": list(range(100))})
-    lf.sink_ipc(buf)
+    lf.sink_ipc(buf, record_batch_size=10)
+    buf.seek(0)
     df = lf.collect()
 
     buffers = typing.cast("list[IO[bytes]]", [buf, buf])
@@ -294,12 +295,14 @@ def test_scan_ipc_varying_block_metadata_len_c4812(
     buf = io.BytesIO()
     df = pl.DataFrame({"a": [n_a * "A", n_b * "B"]})
     df.lazy().sink_ipc(buf, compression=compression, record_batch_size=1)
+    buf.seek(0)
 
-    with pyarrow.ipc.open_file(buf) as reader:
+    with pa.ipc.open_file(buf) as reader:
         assert [
             reader.get_batch(i).num_rows for i in range(reader.num_record_batches)
         ] == [1, 1]
 
+    buf.seek(0)
     assert_frame_equal(pl.scan_ipc(buf).collect(), df)
 
 
@@ -324,7 +327,7 @@ def test_sink_ipc_record_batch_size(record_batch_size: int, n_chunks: int) -> No
     assert_frame_equal(out, df)
 
     buf.seek(0)
-    with pyarrow.ipc.open_file(buf) as reader:
+    with pa.ipc.open_file(buf) as reader:
         record_batch_lengths = [
             reader.get_batch(i).num_rows for i in range(reader.num_record_batches)
         ]
@@ -350,6 +353,7 @@ def test_scan_ipc_compression_with_slice_26063(
     df.lazy().sink_ipc(
         buf, compression=compression, record_batch_size=record_batch_size
     )
+    buf.seek(0)
     out = pl.scan_ipc(buf).slice(slice[0], slice[1]).collect()
     expected = df.slice(slice[0], slice[1])
     assert_frame_equal(out, expected)
@@ -366,6 +370,7 @@ def test_sink_scan_ipc_round_trip_statistics() -> None:
         .with_columns(pl.col.a.shuffle().sort().alias("d"))
     )
     df.lazy().sink_ipc(buf, _record_batch_statistics=True)
+    buf.seek(0)
 
     metadata = df._to_metadata()
 
@@ -395,7 +400,7 @@ def test_sink_ipc_custom_metadata() -> None:
         _record_batch_statistics=True,
     )
 
-    with pyarrow.ipc.open_file(f) as reader:
+    with pa.ipc.open_file(f) as reader:
         assert [
             reader.get_record_batch(i).num_rows
             for i in range(reader.num_record_batches)
@@ -411,7 +416,7 @@ def test_sink_ipc_custom_metadata() -> None:
         _record_batch_statistics=False,
     )
 
-    with pyarrow.ipc.open_file(f) as reader:
+    with pa.ipc.open_file(f) as reader:
         assert reader.metadata is None
 
 
@@ -589,6 +594,7 @@ def test_sink_scan_ipc_round_trip_statistics_projection(
     df.lazy().sink_ipc(
         buf, record_batch_size=record_batch_size, _record_batch_statistics=True
     )
+    buf.seek(0)
 
     # round-trip with projection
     df = df.select(selection)
@@ -609,6 +615,7 @@ def test_scan_ipc_slice_empty_file() -> None:
 
     for i in range(len(dfs)):
         dfs[i].write_ipc(bufs[i])
+        bufs[i].seek(0)
 
     expected = pl.concat(dfs).slice(50, 100)
     actual = pl.scan_ipc(bufs).slice(50, 100).collect()
@@ -678,3 +685,48 @@ print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
     # 1.42.1: ~1.17
     # Fixed branch (debug build): ~1.008
     assert ratio < 1.05
+
+
+def test_row_count_estimate_ipc(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a.ipc"
+    pl.DataFrame({"a": range(37)}).write_ipc(path)
+
+    # Polars writes the row count into the footer.
+    assert "ESTIMATED ROWS: 37" in pl.scan_ipc(path).explain()
+
+
+def test_row_count_estimate_ipc_foreign_writer(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a.ipc"
+
+    # Without the Polars footer the record batch lengths are summed.
+    schema = pa.schema([("a", pa.int64())])
+    with pa.ipc.new_file(path, schema) as writer:
+        for _ in range(4):
+            writer.write_batch(pa.record_batch([pa.array(range(10))], schema=schema))
+
+    assert "ESTIMATED ROWS: 40" in pl.scan_ipc(path).explain()
+
+
+def test_row_count_estimate_ipc_many_blocks(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "a.ipc"
+
+    # Too many record batches to walk, so the count is extrapolated from a sample.
+    schema = pa.schema([("a", pa.int64())])
+    with pa.ipc.new_file(path, schema) as writer:
+        for _ in range(199):
+            writer.write_batch(pa.record_batch([pa.array(range(10))], schema=schema))
+        writer.write_batch(pa.record_batch([pa.array(range(7))], schema=schema))
+
+    assert "ESTIMATED ROWS: 1997" in pl.scan_ipc(path).explain()
+
+
+def test_row_count_estimate_ipc_multifile(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    for name in ("a.ipc", "b.ipc"):
+        pl.DataFrame({"a": range(10)}).write_ipc(tmp_path / name)
+
+    # Only the first source is read, so the rest is extrapolated.
+    assert "ESTIMATED ROWS: 20" in pl.scan_ipc(tmp_path / "*.ipc").explain()
