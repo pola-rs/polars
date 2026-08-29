@@ -100,9 +100,7 @@ impl DatetimeChunked {
     ) -> Self {
         match tu {
             TimeUnit::Nanoseconds => {
-                let vals = v
-                    .into_iter()
-                    .map(|ndt| ndt.and_utc().timestamp_nanos_opt());
+                let vals = v.into_iter().map(|ndt| ndt.and_utc().timestamp_nanos_opt());
                 Int64Chunked::from_iter_options(name, vals).into_datetime(tu, None)
             },
             TimeUnit::Microseconds => {
