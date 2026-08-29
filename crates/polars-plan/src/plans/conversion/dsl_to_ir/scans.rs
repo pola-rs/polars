@@ -575,7 +575,7 @@ fn parquet_column_stats(
         nulls_unknown: bool,
         /// `max` over row groups, a lower bound on the NDV.
         distinct: Option<u64>,
-        /// Leaves below the root, whose null counts do not add up to the root's.
+        /// The column is nested, so leaf null counts are not the root's.
         nested: bool,
     }
 
@@ -584,12 +584,16 @@ fn parquet_column_stats(
         return ScanColumnStatsMap::default();
     }
 
-    let row_groups = || metadata.iter().flat_map(|m| &m.row_groups);
-    let n_row_groups = row_groups().count();
-    let n_columns = row_groups().map(|rg| rg.n_columns()).max().unwrap_or(0);
-    if n_columns == 0 {
+    let n_row_groups: usize = metadata.iter().map(|m| m.row_groups.len()).sum();
+    let Some(n_columns) = metadata
+        .iter()
+        .flat_map(|m| m.row_groups.first())
+        .map(|rg| rg.n_columns())
+        .max()
+        .filter(|n| *n > 0)
+    else {
         return ScanColumnStatsMap::default();
-    }
+    };
 
     let stride = n_row_groups.div_ceil((CHUNK_BUDGET / n_columns).max(1));
     let sampled = stride > 1;
@@ -597,7 +601,7 @@ fn parquet_column_stats(
     let mut acc: PlIndexMap<PlSmallStr, Acc> = PlIndexMap::default();
     let mut sampled_rows: u64 = 0;
 
-    for rg in row_groups().step_by(stride) {
+    for rg in metadata.iter().flat_map(|m| &m.row_groups).step_by(stride) {
         sampled_rows += rg.num_rows() as u64;
 
         for chunk in rg.parquet_columns() {
@@ -756,6 +760,82 @@ pub fn max_metadata_scan_cached() -> usize {
     *MAX_SCANS_METADATA_CACHED
 }
 
+/// A file with at most this many record batches is counted exactly, a larger one
+/// has its row count extrapolated from this many.
+#[cfg(feature = "ipc")]
+const MAX_SAMPLED_BLOCKS: usize = 64;
+
+/// Relative error for a row count extrapolated from sampled record batches.
+#[cfg(feature = "ipc")]
+const SAMPLED_ROWS_REL_ERR: f32 = 0.1;
+
+/// The row count Polars writes into the footer.
+///
+/// `None` for a file written by anything else.
+#[cfg(feature = "ipc")]
+fn ipc_rows_from_footer(metadata: &arrow::io::ipc::read::FileMetadata) -> Option<u64> {
+    polars_io::ipc::pl_ipc_metadata::PlIpcMetadata::from_ipc_footer(metadata)?
+        .num_rows()
+        .map(u64::from)
+}
+
+#[cfg(feature = "ipc")]
+fn sum_block_rows<R: std::io::Read + std::io::Seek>(
+    reader: &mut R,
+    blocks: &[arrow::io::ipc::format::ipc::Block],
+) -> Option<u64> {
+    arrow::io::ipc::read::get_row_count_from_blocks(reader, blocks)
+        .ok()
+        .and_then(|rows| u64::try_from(rows).ok())
+}
+
+/// Sums the record batch lengths, sampling if there are many of them.
+#[cfg(feature = "ipc")]
+fn ipc_rows_from_blocks<R: std::io::Read + std::io::Seek>(
+    reader: &mut R,
+    blocks: &[arrow::io::ipc::format::ipc::Block],
+) -> Card {
+    if blocks.len() <= MAX_SAMPLED_BLOCKS {
+        return match sum_block_rows(reader, blocks) {
+            Some(rows) => Card::Exact(rows),
+            None => Card::Unknown,
+        };
+    }
+
+    // Writers use a fixed chunk size, so only the last batch is a remainder.
+    let (head, tail) = blocks.split_at(MAX_SAMPLED_BLOCKS - 1);
+    let (Some(head_rows), Some(last_rows)) = (
+        sum_block_rows(reader, head),
+        sum_block_rows(reader, &tail[tail.len() - 1..]),
+    ) else {
+        return Card::Unknown;
+    };
+
+    let per_block = head_rows as f64 / head.len() as f64;
+    let value = (per_block * (blocks.len() - 1) as f64) as u64 + last_rows;
+    Card::Approx {
+        value,
+        rel_err: SAMPLED_ROWS_REL_ERR,
+    }
+}
+
+/// Reads the footer, and derives a row count from it when that is cheap.
+///
+/// Blocks, so it hands off the async thread for the duration.
+#[cfg(feature = "ipc")]
+fn ipc_metadata_and_rows<R: std::io::Read + std::io::Seek>(
+    mut reader: R,
+) -> PolarsResult<(arrow::io::ipc::read::FileMetadata, Card)> {
+    ASYNC.block_in_place(move || {
+        let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader)?;
+        let rows = match ipc_rows_from_footer(&metadata) {
+            Some(rows) => Card::Exact(rows),
+            None => ipc_rows_from_blocks(&mut reader, &metadata.blocks),
+        };
+        Ok((metadata, rows))
+    })
+}
+
 // TODO! return metadata arced
 #[cfg(feature = "ipc")]
 pub(super) async fn ipc_file_info(
@@ -765,87 +845,6 @@ pub(super) async fn ipc_file_info(
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
-
-    /// A file with at most this many record batches is counted exactly, a larger
-    /// one has its row count extrapolated from this many.
-    const MAX_SAMPLED_BLOCKS: usize = 64;
-
-    /// Relative error for a row count extrapolated from sampled record batches.
-    const SAMPLED_ROWS_REL_ERR: f32 = 0.1;
-
-    /// The row count Polars writes into the footer.
-    ///
-    /// `None` for a file written by anything else.
-    fn rows_from_footer(metadata: &arrow::io::ipc::read::FileMetadata) -> Option<u64> {
-        #[cfg(feature = "serde")]
-        {
-            use polars_io::ipc::pl_ipc_metadata::PlIpcMetadata;
-            PlIpcMetadata::from_ipc_footer(metadata)?
-                .num_rows()
-                .map(u64::from)
-        }
-        #[cfg(not(feature = "serde"))]
-        {
-            let _ = metadata;
-            None
-        }
-    }
-
-    fn sum_block_rows<R: std::io::Read + std::io::Seek>(
-        reader: &mut R,
-        blocks: &[arrow::io::ipc::format::ipc::Block],
-    ) -> Option<u64> {
-        arrow::io::ipc::read::get_row_count_from_blocks(reader, blocks)
-            .ok()
-            .and_then(|rows| u64::try_from(rows).ok())
-    }
-
-    /// Sums the record batch lengths, sampling if there are many of them.
-    ///
-    /// Each block costs a seek and a read of its message header.
-    fn rows_from_blocks<R: std::io::Read + std::io::Seek>(
-        reader: &mut R,
-        blocks: &[arrow::io::ipc::format::ipc::Block],
-    ) -> Card {
-        if blocks.len() <= MAX_SAMPLED_BLOCKS {
-            return match sum_block_rows(reader, blocks) {
-                Some(rows) => Card::Exact(rows),
-                None => Card::Unknown,
-            };
-        }
-
-        // Writers use a fixed chunk size, so only the last batch is a remainder.
-        let (head, tail) = blocks.split_at(MAX_SAMPLED_BLOCKS - 1);
-        let (Some(head_rows), Some(last_rows)) = (
-            sum_block_rows(reader, head),
-            sum_block_rows(reader, &tail[tail.len() - 1..]),
-        ) else {
-            return Card::Unknown;
-        };
-
-        let per_block = head_rows as f64 / head.len() as f64;
-        let value = (per_block * (blocks.len() - 1) as f64) as u64 + last_rows;
-        Card::Approx {
-            value,
-            rel_err: SAMPLED_ROWS_REL_ERR,
-        }
-    }
-
-    /// Reads the footer, and derives a row count from it when that is cheap.
-    ///
-    /// This blocks, so it hands off the async thread for the duration.
-    fn metadata_and_rows<R: std::io::Read + std::io::Seek>(
-        mut reader: R,
-    ) -> PolarsResult<(arrow::io::ipc::read::FileMetadata, Card)> {
-        ASYNC.block_in_place(move || {
-            let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader)?;
-            let rows = match rows_from_footer(&metadata) {
-                Some(rows) => Card::Exact(rows),
-                None => rows_from_blocks(&mut reader, &metadata.blocks),
-            };
-            Ok((metadata, rows))
-        })
-    }
 
     let (metadata, first_rows) = match first_scan_source {
         ScanSourceRef::Path(path) => {
@@ -857,17 +856,17 @@ pub(super) async fn ipc_file_info(
                             .metadata()
                             .await?;
                     // Walking the blocks here would download the whole file.
-                    let rows = rows_from_footer(&metadata).map_or(Card::Unknown, Card::Exact);
+                    let rows = ipc_rows_from_footer(&metadata).map_or(Card::Unknown, Card::Exact);
                     (metadata, rows)
                 })
             } else {
-                metadata_and_rows(std::io::BufReader::new(polars_utils::io::open_file(
+                ipc_metadata_and_rows(std::io::BufReader::new(polars_utils::io::open_file(
                     path.as_std_path(),
                 )?))?
             }
         },
-        ScanSourceRef::File(file) => metadata_and_rows(std::io::BufReader::new(file))?,
-        ScanSourceRef::Buffer(buff) => metadata_and_rows(std::io::Cursor::new(buff))?,
+        ScanSourceRef::File(file) => ipc_metadata_and_rows(std::io::BufReader::new(file))?,
+        ScanSourceRef::Buffer(buff) => ipc_metadata_and_rows(std::io::Cursor::new(buff))?,
     };
 
     // Only the first source is read, so anything beyond it is extrapolated.
