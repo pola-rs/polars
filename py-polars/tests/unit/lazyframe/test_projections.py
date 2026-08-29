@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
@@ -100,7 +101,7 @@ def test_unnest_projection_pushdown() -> None:
 def test_hconcat_projection_pushdown() -> None:
     lf1 = pl.LazyFrame({"a": [0, 1, 2], "b": [3, 4, 5]})
     lf2 = pl.LazyFrame({"c": [6, 7, 8], "d": [9, 10, 11]})
-    query = pl.concat([lf1, lf2], how="horizontal", strict=True).select(["a", "d"])
+    query = pl.concat([lf1, lf2], how="horizontal").select(["a", "d"])
 
     explanation = query.explain()
     assert explanation.count("1/2 COLUMNS") == 2
@@ -125,7 +126,6 @@ def test_hconcat_projection_pushdown_length_maintained() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud
 def test_unnest_columns_available() -> None:
     df = pl.DataFrame(
@@ -140,12 +140,11 @@ def test_unnest_columns_available() -> None:
         }
     ).lazy()
 
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        q = df.with_columns(
-            pl.col("genres")
-            .str.split("|")
-            .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
-        ).unnest("genres")
+    q = df.with_columns(
+        pl.col("genres")
+        .str.split("|")
+        .list.to_struct(["genre1", "genre2", "genre3", "genre4"])
+    ).unnest("genres")
 
     out = q.collect()
     assert out.to_dict(as_series=False) == {
@@ -886,6 +885,44 @@ def test_projection_pushdown_filter_len_to_sum() -> None:
         q.collect(),
         pl.DataFrame({"b": 1}, schema={"b": pl.get_index_type()}),
     )
+
+
+@pytest.mark.parametrize("union_fn", [pl.concat, pl.union])
+def test_projection_pushdown_union_len_pushdown_28657(
+    union_fn: Callable[..., pl.LazyFrame],
+) -> None:
+    lf = union_fn(
+        [
+            pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+            .with_columns(pl.col("a").cast(pl.Float64))
+            .lazy(),
+            pl.LazyFrame({"a": [1.0, 2.0, 3.0], "b": [4, 5, 6]}),
+        ],
+    ).filter(pl.col("b") > 1)
+
+    q = lf.select(pl.len())
+    plan = q.explain()
+    assert plan.count('(col("b") > 1).sum()') == 2
+    assert "len()" not in plan
+    assert "WITH_COLUMNS" not in plan
+
+    assert q.collect().item() == 5
+
+    lf = (
+        pl.Series([{}], dtype=pl.Struct({}))
+        .new_from_index(0, (1 << (64 if pl.get_index_type() == pl.UInt64 else 32)) - 2)
+        .to_frame()
+        .lazy()
+    )
+
+    q = union_fn([lf, lf]).select(pl.len())
+    plan = q.explain()
+
+    assert plan.index("len()") > plan.index("UNION")
+    assert plan.count("len()") == 2
+
+    with pytest.raises(InvalidOperationError, match=r"conversion.*failed"):
+        q.collect()
 
 
 @pytest.mark.parametrize(

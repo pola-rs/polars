@@ -499,16 +499,10 @@ impl SlicePushDown {
                     input_left,
                     input_right,
                     schema,
-                    left_on,
-                    right_on,
                     mut options,
                 },
                 Some(state),
-            ) if !matches!(
-                options.options,
-                Some(JoinTypeOptionsIR::CrossAndFilter { .. })
-            ) =>
-            {
+            ) if !matches!(options.options, JoinTypeOptionsIR::CrossAndFilter { .. }) => {
                 if let Some(existing_slice) = &mut Arc::make_mut(&mut options).args.slice {
                     return if let Some(combined) = combine_outer_inner_slice(
                         state,
@@ -522,8 +516,6 @@ impl SlicePushDown {
                             input_left,
                             input_right,
                             schema,
-                            left_on,
-                            right_on,
                             options,
                         };
                         self.pushdown_and_continue(lp, None, lp_arena, expr_arena)
@@ -532,8 +524,6 @@ impl SlicePushDown {
                             input_left,
                             input_right,
                             schema,
-                            left_on,
-                            right_on,
                             options,
                         };
                         self.no_pushdown_restart_opt(lp, Some(state), lp_arena, expr_arena)
@@ -556,10 +546,40 @@ impl SlicePushDown {
                         })
                 };
 
+                let order = options.args.maintain_order;
+                let non_negative_offset = state.offset >= 0;
+                let can_limit_left = match options.args.how {
+                    JoinType::Left => !matches!(
+                        order,
+                        MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
+                    ),
+                    JoinType::Full => {
+                        non_negative_offset
+                            && matches!(
+                                order,
+                                MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
+                            )
+                    },
+                    _ => false,
+                };
+                let can_limit_right = match options.args.how {
+                    JoinType::Right => !matches!(
+                        order,
+                        MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
+                    ),
+                    JoinType::Full => {
+                        non_negative_offset
+                            && matches!(
+                                order,
+                                MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
+                            )
+                    },
+                    _ => false,
+                };
+
                 let lp_left = self.pushdown(
                     input_left,
-                    input_limit_slice
-                        .filter(|_| matches!(&options.args.how, JoinType::Left | JoinType::Full)),
+                    input_limit_slice.filter(|_| can_limit_left),
                     lp_arena,
                     expr_arena,
                 )?;
@@ -567,8 +587,7 @@ impl SlicePushDown {
 
                 let lp_right = self.pushdown(
                     input_right,
-                    input_limit_slice
-                        .filter(|_| matches!(&options.args.how, JoinType::Right | JoinType::Full)),
+                    input_limit_slice.filter(|_| can_limit_right),
                     lp_arena,
                     expr_arena,
                 )?;
@@ -582,8 +601,6 @@ impl SlicePushDown {
                     input_left,
                     input_right,
                     schema,
-                    left_on,
-                    right_on,
                     options,
                 })
             },

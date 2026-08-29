@@ -78,7 +78,9 @@ where
 {
     fn sum_block_vectorized(&self) -> F {
         let vsum = self
-            .chunks_exact(STRIPE)
+            .as_chunks::<STRIPE>()
+            .0
+            .iter()
             .map(|a| Simd::<T, STRIPE>::from_slice(a).cast_generic::<F>())
             .sum::<Simd<F, STRIPE>>();
         vector_horizontal_sum(vsum)
@@ -87,7 +89,9 @@ where
     fn sum_block_vectorized_with_mask(&self, mask: BitMask<'_>) -> F {
         let zero = Simd::default();
         let vsum = self
-            .chunks_exact(STRIPE)
+            .as_chunks::<STRIPE>()
+            .0
+            .iter()
             .enumerate()
             .map(|(i, a)| {
                 let m: Mask<T::Mask, STRIPE> = mask.get_simd(i * STRIPE);
@@ -160,7 +164,7 @@ where
 {
     fn sum_block_vectorized(&self) -> F {
         let mut vsum = [F::default(); STRIPE];
-        for chunk in self.chunks_exact(STRIPE) {
+        for chunk in self.as_chunks::<STRIPE>().0 {
             for j in 0..STRIPE {
                 vsum[j] = vsum[j] + chunk[j].as_();
             }
@@ -170,7 +174,7 @@ where
 
     fn sum_block_vectorized_with_mask(&self, mask: BitMask<'_>) -> F {
         let mut vsum = [F::default(); STRIPE];
-        for (i, chunk) in self.chunks_exact(STRIPE).enumerate() {
+        for (i, chunk) in self.as_chunks::<STRIPE>().0.iter().enumerate() {
             for j in 0..STRIPE {
                 // Unconditional add with select for better branch-free opts.
                 let addend = if mask.get(i * STRIPE + j) {

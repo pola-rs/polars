@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import pickle
 from typing import TYPE_CHECKING
 
 import pytest
@@ -117,6 +118,21 @@ def test_lf_serde_scan(tmp_path: Path) -> None:
     result = pl.LazyFrame.deserialize(io.BytesIO(ser))
     assert_frame_equal(result, lf)
     assert_frame_equal(result.collect(), df)
+
+
+def test_lf_serde_scan_bytes() -> None:
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    buffer = io.BytesIO()
+    expected.write_parquet(buffer)
+
+    lf = pl.scan_parquet(buffer.getvalue())
+
+    serialized = lf.serialize()
+    result = pl.LazyFrame.deserialize(io.BytesIO(serialized))
+    assert_frame_equal(result.collect(), expected)
+
+    result = pickle.loads(pickle.dumps(lf))
+    assert_frame_equal(result.collect(), expected)
 
 
 @pytest.mark.filterwarnings("ignore::polars.exceptions.PolarsInefficientMapWarning")

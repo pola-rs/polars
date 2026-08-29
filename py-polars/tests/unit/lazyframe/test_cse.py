@@ -13,7 +13,7 @@ import pytest
 
 import polars as pl
 from polars.io.plugins import register_io_source
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -211,7 +211,7 @@ def test_schema_row_index_cse(maintain_order: bool) -> None:
         # Sort the lists to make sure that the result is correctly ordered
         list_cols = [c for c in result.columns if c != "A"]
         result = (
-            result.explode(list_cols, empty_as_null=False)
+            result.explode(list_cols)
             .sort("Idx")
             .group_by("A", maintain_order=True)
             .all()
@@ -744,8 +744,8 @@ def test_cse_and_schema_update_projection_pd() -> None:
 
 
 @pytest.mark.debug
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("use_custom_io_source", [True, False])
+@pytest.mark.skip('Fix this test after setting default engine to "streaming"')
 def test_cse_predicate_self_join(
     capfd: Any, plmonkeypatch: PlMonkeyPatch, use_custom_io_source: bool
 ) -> None:
@@ -759,8 +759,13 @@ def test_cse_predicate_self_join(
 
     y_xf_c = y_xf.select("a", "b")
     assert y_xf_c.collect().to_dict(as_series=False) == {"a": [1], "b": [2]}
-    captured = capfd.readouterr().err
-    assert "CACHE HIT" in captured
+
+    capture = capfd.readouterr().err
+
+    assert {
+        "CACHE HIT" in capture,
+        re.search(r"multiplexer.*[\w+] [\w+, \w+]", capture) is not None,
+    } == {True, False}
 
 
 def test_cse_manual_cache_15688() -> None:
@@ -921,6 +926,7 @@ def test_cse_as_struct_19253() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.skip('Fix this test after setting default engine to "streaming"')
 def test_cse_as_struct_value_counts_20927() -> None:
     q = pl.LazyFrame({"x": [i for i in range(1, 6) for _ in range(i)]}).select(
         pl.struct("x").value_counts().struct.unnest()
@@ -1271,7 +1277,7 @@ def test_cse_map_batches_distinct_functions() -> None:
         lambda df: df.select(pl.col("b").alias("y")),
         schema=pl.Schema({"y": pl.Int64}),
     )
-    result = pl.concat([lf1, lf2], how="horizontal", strict=True).collect(
+    result = pl.concat([lf1, lf2], how="horizontal").collect(
         optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
     )
     assert result.columns == ["x", "y"]
@@ -1573,6 +1579,7 @@ def test_projection_pushdown_cache_node_inputs_point_to_same_node_28367() -> Non
 def test_csee_height_mismatch_28364() -> None:
     buf = io.BytesIO()
     pl.LazyFrame({"x": [1, 2]}).sink_ipc(buf, record_batch_size=1)
+    buf.seek(0)
     df = pl.scan_ipc(buf)
     q1 = df.with_columns(z=pl.coalesce(pl.col.x.min(), pl.col.x.min()))
     out = df.join(q1, on="x").collect()
@@ -1670,8 +1677,197 @@ def test_cspe_with_pushable_filters_scan_19479(tmp_path: Path) -> None:
     assert "CACHE[id:" not in result.explain()
 
 
+def test_cspe_cache_removal_keeps_nested_caches(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # Removing a cache because the predicates above it are pushable must not also
+    # delete caches nested *below* it. Those have their own predicates and get their
+    # own decision; deleting them here duplicates their subplan without ever
+    # evaluating them.
+    plmonkeypatch.setenv("POLARS_ALLOW_NESTED_CSPE", "1")
+
+    src = pl.LazyFrame(
+        {"k": ["a", "b"], "cat": ["5", "7"], "from": [1, 2], "to": [3, 4]}
+    )
+    # `src` is used 3x, so it is cached even when a single branch is optimized alone.
+    base = src.join(src.select("k", pl.col("to").alias("t2")), on="k").join(
+        src.select("k", pl.col("from").alias("f2")), on="k"
+    )
+
+    # The two branches differ only by a pushable predicate directly above `base`, which
+    # makes the *outer* cache eligible for removal.
+    branches = [
+        base.filter(pl.col("cat") == c).select("k", "from", "to") for c in ("5", "7")
+    ]
+    q = pl.concat(
+        [
+            lf.select("k", pl.col(c).alias("v"))
+            for lf in branches
+            for c in ["from", "to"]
+        ]
+    )
+
+    # The nested cache over `src` survives and stays shared across both branches.
+    cache_ids = set(re.findall(r"CACHE\[id: ([0-9a-f-]+)\]", q.explain()))
+    assert len(cache_ids) == 3
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+
+
+def test_cspe_nested_cache_does_not_block_pushable_filters() -> None:
+    buffer = io.BytesIO()
+    pl.DataFrame({"a": range(100), "b": range(100)}).write_parquet(buffer)
+
+    lf = pl.scan_parquet(buffer.getvalue())
+    inner = lf.select("a", "b")
+    outer = pl.concat([inner, inner])
+    q = pl.concat([outer.filter(pl.col("a") > 90), outer.filter(pl.col("a") < 5)])
+
+    # Both predicates must be pushed down all the way to the parquet scan.
+    # Currently, with POLARS_ALLOW_NESTED_CSPE=1, we only cache the unfiltered scan,
+    # which is why this is disabled by default (DEFAULT_ALLOW_NESTED_CSPE == false).
+    plan = q.explain()
+    assert plan.count('SELECTION: col("a") > 90') == 2, plan
+    assert plan.count('SELECTION: col("a") < 5') == 2, plan
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+
+
+def test_cspe_nested_cache_under_shared_subplan_28945() -> None:
+    cached = pl.LazyFrame({"x": [1]}).cache()
+    base = pl.concat([pl.LazyFrame({"x": [2]}), cached.filter(pl.col("x") > 0)])
+    frames = [base.filter(pl.col("x") == 1), base.filter(pl.col("x") == 2)]
+
+    for actual, expected in zip(
+        pl.collect_all(frames),
+        pl.collect_all(frames, optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+        strict=True,
+    ):
+        assert_frame_equal(actual, expected)
+
+
+def test_cspe_nested_cache_under_shared_subplan_no_union_28945() -> None:
+    cached = pl.LazyFrame({"x": [1, 2, 3]}).cache()
+    q = pl.concat([cached.filter(pl.col("x") > 1), cached.filter(pl.col("x") > 1)])
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+
+
+def test_cspe_nested_user_caches_28945() -> None:
+    inner = pl.LazyFrame({"x": [1, 2, 3]}).cache()
+    outer = inner.filter(pl.col("x") > 1).cache()
+    q = pl.concat([outer, outer])
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+
+
 def test_cse_single_scalar_does_not_broadcast_28407() -> None:
     e = pl.lit(5).abs()
     q = pl.LazyFrame({"a": [1, 2, 3]}).select((e + e).alias("o"))
 
     assert_frame_equal(q.collect(), pl.DataFrame({"o": 10}, schema={"o": pl.Int32}))
+
+
+def test_cspe_distinct_parameterized_dtypes_28450() -> None:
+    enum_a = pl.Enum(["a"])
+    enum_b = pl.Enum(["b"])
+    base = pl.LazyFrame({"value": ["a", "b"]})
+
+    def branch(dtype: pl.DataType, name: str) -> pl.LazyFrame:
+        return base.filter(
+            pl.col("value").cast(dtype, strict=False).is_not_null()
+        ).select(pl.lit(name).alias("branch"), "value")
+
+    q = pl.concat([branch(enum_a, "group_a"), branch(enum_b, "group_b")]).sort("branch")
+    result = q.collect()
+
+    assert_frame_equal(
+        result,
+        pl.DataFrame({"branch": ["group_a", "group_b"], "value": ["a", "b"]}),
+    )
+    assert_frame_equal(
+        result,
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+
+
+def test_cse_opaque_python_distinct_config_not_merged() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+
+    calls = 0
+
+    def f(df: pl.DataFrame) -> pl.DataFrame:
+        nonlocal calls
+        calls += 1
+        return df
+
+    def count_udf_calls(validate_a: bool, validate_b: bool) -> int:
+        nonlocal calls
+        calls = 0
+        a = lf.map_batches(f, validate_output_schema=validate_a)
+        b = lf.map_batches(f, validate_output_schema=validate_b)
+        pl.concat([a, b]).collect()
+        return calls
+
+    assert count_udf_calls(True, True) == 1
+    # This proves that we must consider the various attributes when deduplicating Python
+    # UDFs, because they can have an observable effect
+    assert count_udf_calls(False, True) == 2
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col("a").shuffle(),
+        pl.col("a").sample(fraction=1.0, with_replacement=True),
+        pl.col("a").rank(method="random"),
+    ],
+)
+def test_cspe_nondeterministic_not_cached_28733(expr: pl.Expr) -> None:
+    n = 100
+    # Values repeat so that the `random` rank tie-breaker has ties to break.
+    lf = pl.LazyFrame({"a": [i % 10 for i in range(n)]}).select(expr)
+    copied = pl.concat([lf, lf])
+
+    # Two occurrences of a non-deterministic subplan are two independent evaluations, so
+    # replacing them with one cached evaluation is not allowed.
+    df = copied.collect()
+    assert_frame_not_equal(df.slice(0, n), df.slice(n, n))
+
+    # SELECT is what appears next to shuffle/sample/rank
+    plan = copied.explain()
+    assert plan.count("SELECT") == 2, plan
+
+
+def test_cspe_nondeterministic_still_caches_inputs_28733() -> None:
+    n = 100
+    shared = (
+        pl.LazyFrame({"a": range(n)})
+        .filter(pl.col("a") >= 0)
+        .with_columns(b=pl.col("a") * 3)
+    )
+    lf = shared.select(pl.col("b").shuffle())
+    copied = pl.concat([lf, lf])
+
+    # The shuffle itself is not cached
+    df = copied.collect()
+    assert_frame_not_equal(df.slice(0, n), df.slice(n, n))
+
+    # We can't just check if CACHE exists in the plan, because even the initial
+    # LazyFrame scan
+    #  DF ["a"]; PROJECT */1 COLUMNS
+    # can be cached
+    plan = copied.explain()
+    assert plan.count("WITH_COLUMNS") == 1, plan

@@ -15,10 +15,6 @@ impl Executor for SliceExec {
             }
         }
         let df = self.input.execute(state)?;
-
-        state.record(
-            || Ok(df.slice(self.offset, self.len as usize)),
-            "slice".into(),
-        )
+        Ok(df.slice(self.offset, self.len as usize))
     }
 }

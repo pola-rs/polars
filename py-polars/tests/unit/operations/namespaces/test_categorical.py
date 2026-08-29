@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, SchemaError
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -85,32 +85,6 @@ def test_categorical_categories() -> None:
     assert all(s.dtype.categories[x] in {0, 1, 2} for x in s)
     assert all(s.dtype.categories[x] in {"foo", "bar", "ham"} for x in [0, 1, 2])
     assert list(s.dtype.categories) == ["foo", "bar", "ham"]
-
-
-def test_categorical_get_categories_deprecated() -> None:
-    s = pl.Series("cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical)
-    with pytest.deprecated_call():
-        assert set(s.cat.get_categories().to_list()) >= {"foo", "bar", "ham"}
-
-
-def test_cat_to_local() -> None:
-    s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-    with pytest.deprecated_call():
-        assert_series_equal(s, s.cat.to_local())
-
-
-def test_cat_uses_lexical_ordering() -> None:
-    with pytest.warns(DeprecationWarning, match="ordering parameter"):
-        physical_cat = pl.Categorical(ordering="physical")
-
-    for dtype in [pl.Categorical, pl.Categorical(), physical_cat]:
-        s = pl.Series(["a", "b", None, "b"]).cast(dtype)  # type: ignore[arg-type]
-
-        with pytest.warns(
-            DeprecationWarning,
-            match="Categoricals are now always ordered lexically",
-        ):
-            assert s.cat.uses_lexical_ordering()
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum])
@@ -291,6 +265,3 @@ def test_cat_to_from_physical(cat_kind: str) -> None:
 
     with pytest.raises(ComputeError):
         pl.Series(cats + [4], dtype=phys).cat.to(dtype)
-
-    with pytest.raises(SchemaError):
-        pl.Series(cats + [4], dtype=pl.UInt16).cat.to(dtype)

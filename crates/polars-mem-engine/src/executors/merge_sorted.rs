@@ -61,25 +61,19 @@ impl Executor for MergeSorted {
             (left?, right?)
         };
 
-        let profile_name = Cow::Borrowed("Merge Sorted");
-        state.record(
-            || {
-                let lhs = merge_key_series(&left, &self.key, self.descending, self.nulls_last)?;
-                let rhs = merge_key_series(&right, &self.key, self.descending, self.nulls_last)?;
+        let lhs = merge_key_series(&left, &self.key, self.descending, self.nulls_last)?;
+        let rhs = merge_key_series(&right, &self.key, self.descending, self.nulls_last)?;
 
-                // For the row-encoded (multi-key) path the ordering is already
-                // baked into the encoding, so the merge itself compares the
-                // encoded column ascending with nulls first. For a single key we
-                // compare the raw column and apply the options here.
-                let (descending, nulls_last) = if self.key.len() == 1 {
-                    (self.descending, self.nulls_last)
-                } else {
-                    (false, false)
-                };
+        // For the row-encoded (multi-key) path the ordering is already baked into
+        // the encoding, so the merge itself compares the encoded column ascending
+        // with nulls first. For a single key we compare the raw column and apply
+        // the options here.
+        let (descending, nulls_last) = if self.key.len() == 1 {
+            (self.descending, self.nulls_last)
+        } else {
+            (false, false)
+        };
 
-                _merge_sorted_dfs(&left, &right, &lhs, &rhs, true, descending, nulls_last)
-            },
-            profile_name,
-        )
+        _merge_sorted_dfs(&left, &right, &lhs, &rhs, true, descending, nulls_last)
     }
 }

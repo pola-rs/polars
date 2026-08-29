@@ -1,3 +1,5 @@
+use polars_ops::frame::MaintainOrderJoin;
+
 use super::*;
 
 #[cfg(feature = "parquet")]
@@ -111,8 +113,8 @@ fn test_no_left_join_pass() -> PolarsResult<()> {
             df2.lazy(),
             [col("idx1")],
             [col("idx2")],
-            JoinType::Left.into(),
-        )
+            JoinArgs::new(JoinType::Left).with_maintain_order(MaintainOrderJoin::LeftRight),
+        )?
         .filter(col("bar").eq(lit(5i32)))
         .collect()?;
 
@@ -160,7 +162,7 @@ pub fn test_slice_pushdown_join() -> PolarsResult<()> {
             [col("category")],
             [col("category")],
             JoinType::Left.into(),
-        )
+        )?
         .slice(1, 3)
         // this inserts a cache and blocks slice pushdown
         .with_comm_subplan_elim(false);

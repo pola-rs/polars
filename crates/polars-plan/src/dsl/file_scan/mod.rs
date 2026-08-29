@@ -94,6 +94,181 @@ const _: () = {
     assert!(std::mem::size_of::<FileScanIR>() <= 80);
 };
 
+/// Footer metadata retained per scan source.
+///
+/// Source indices refer to the scan's source list; a source not covered by
+/// the variant is unknown.
+/// Canonical format: Partial is used iff the subset is neither empty nor full.
+#[cfg(feature = "parquet")]
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum MetadataPerSource {
+    /// No per-source metadata retained.
+    #[default]
+    Unresolved,
+    /// Footers of a strict subset of the sources.
+    Partial(Arc<PartialMetadata>),
+    /// Every source's footer: entry `i` is the footer of source `i`.
+    Full(Arc<[FileMetadataRef]>),
+}
+
+/// The resolved subset held by [`MetadataPerSource::Partial`].
+#[cfg(feature = "parquet")]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct PartialMetadata {
+    /// Source indices of the resolved footers, ascending.
+    /// Invariant: the first index points to source 0 in the ScanSources list.
+    /// TODO: Refactor `first_metadata` semantics and the invariant to enable
+    /// best-effort retention when filtering.
+    indices: Vec<usize>,
+    /// Dense footers: `metadata[j]` is the footer of source `indices[j]`.
+    metadata: Vec<FileMetadataRef>,
+}
+
+#[cfg(feature = "parquet")]
+impl PartialMetadata {
+    fn new(indices: Vec<usize>, metadata: Vec<FileMetadataRef>) -> Self {
+        assert!(!indices.is_empty());
+        assert_eq!(indices.len(), metadata.len());
+        assert_eq!(indices.first().unwrap(), &0, "Partial must retain source 0");
+
+        Self { indices, metadata }
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl MetadataPerSource {
+    /// Build from `(source index, footer)` entries; coverage picks the
+    /// variant. Enforces canonical format.
+    pub(crate) fn new(
+        entries: impl IntoIterator<Item = (usize, FileMetadataRef)>,
+        n_sources: usize,
+    ) -> Self {
+        let mut entries: Vec<_> = entries.into_iter().collect();
+
+        // Sorted storage; strictness also rules out duplicate indices.
+        entries.sort_unstable_by_key(|&(i, _)| i);
+
+        debug_assert!(entries.windows(2).all(|w| w[0].0 < w[1].0));
+        debug_assert!(entries.last().is_none_or(|(i, _)| *i < n_sources));
+
+        if entries.is_empty() {
+            Self::Unresolved
+        } else if entries.len() == n_sources {
+            Self::Full(entries.into_iter().map(|(_, m)| m).collect())
+        } else {
+            let (indices, metadata): (Vec<_>, Vec<_>) = entries.into_iter().unzip();
+            match indices[0] {
+                0 => Self::Partial(Arc::new(PartialMetadata::new(indices, metadata))),
+                // Silently degrade when the invariant is not met.
+                _ => Self::Unresolved,
+            }
+        }
+    }
+
+    /// Footer of the scan's current source 0, when resolved.
+    ///
+    /// Every resolve that reads source 0's footer retains it, so this is
+    /// `Some` for any non-`Unresolved` value produced by resolve.
+    pub fn first_metadata(&self) -> Option<&FileMetadataRef> {
+        match self {
+            Self::Unresolved => None,
+            Self::Partial(p) => (p.indices.first() == Some(&0)).then(|| &p.metadata[0]),
+            Self::Full(s) => s.first(),
+        }
+    }
+
+    /// Re-index to the sources surviving a filter.
+    ///
+    /// The `surviving` yields ascending pre-filter source indices.
+    fn gather_reindex(&self, surviving: impl Iterator<Item = usize>) -> Self {
+        match self {
+            Self::Unresolved => Self::Unresolved,
+            Self::Partial(partial) => {
+                // Intersect with the filter, then renumber to post-filter positions.
+                let mut resolved = partial
+                    .indices
+                    .iter()
+                    .copied()
+                    .zip(partial.metadata.iter())
+                    .peekable();
+                let mut kept = Vec::new();
+                let mut n_surviving = 0usize;
+                for old_idx in surviving {
+                    while resolved.peek().is_some_and(|&(i, _)| i < old_idx) {
+                        resolved.next();
+                    }
+                    if let Some(&(i, m)) = resolved.peek() {
+                        if i == old_idx {
+                            kept.push((n_surviving, m.clone()));
+                            resolved.next();
+                        }
+                    }
+                    n_surviving += 1;
+                }
+                // Note: may degrade to Unresolved if the invariant (first source index == 0)
+                // cannot be uphold.
+                Self::new(kept, n_surviving)
+            },
+            Self::Full(s) => {
+                let gathered: Vec<FileMetadataRef> = surviving.map(|i| s[i].clone()).collect();
+                if gathered.is_empty() {
+                    Self::Unresolved
+                } else {
+                    Self::Full(gathered.into())
+                }
+            },
+        }
+    }
+
+    /// Gather the first entry in the set.
+    pub fn gather_first(&self) -> Self {
+        match self {
+            Self::Unresolved => Self::Unresolved,
+            Self::Partial(p) => match (p.indices.first(), p.metadata.first()) {
+                (Some(&0), Some(md)) => {
+                    Self::Partial(Arc::new(PartialMetadata::new(vec![0], vec![md.clone()])))
+                },
+                (Some(_), Some(_)) => {
+                    debug_assert!(false, "Partial must retain source 0");
+                    Self::Unresolved // Unreachable.
+                },
+                _ => Self::Unresolved,
+            },
+            Self::Full(md) => match md.len() {
+                0 => Self::Unresolved, // Unreachable.
+                1 => self.clone(),
+                n => MetadataPerSource::new(std::iter::once((0, md[0].clone())), n),
+            },
+        }
+    }
+
+    /// Apply `f` to every retained footer, keeping the variant and indices.
+    pub(crate) fn map_footers(
+        &self,
+        mut f: impl FnMut(&FileMetadataRef) -> FileMetadataRef,
+    ) -> Self {
+        match self {
+            Self::Unresolved => Self::Unresolved,
+            Self::Partial(p) => Self::Partial(Arc::new(PartialMetadata::new(
+                p.indices.clone(),
+                p.metadata.iter().map(&mut f).collect(),
+            ))),
+            Self::Full(s) => Self::Full(s.iter().map(f).collect()),
+        }
+    }
+
+    /// Allocation identity, for pointer-based eq/hash.
+    pub(crate) fn as_arc_ptr(&self) -> Option<usize> {
+        match self {
+            Self::Unresolved => None,
+            Self::Partial(p) => Some(Arc::as_ptr(p) as *const () as usize),
+            Self::Full(f) => Some(Arc::as_ptr(f) as *const () as usize),
+        }
+    }
+}
+
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -112,16 +287,14 @@ pub enum FileScanIR {
     #[cfg(feature = "parquet")]
     Parquet {
         options: ParquetOptions,
-        /// Pre-decoded first-file metadata. Consumed by the streaming
-        /// `ParquetReaderBuilder` as its initial hint.
+        /// Per-source footer metadata.
         #[cfg_attr(feature = "dsl-schema", serde(skip))]
-        first_metadata: Option<FileMetadataRef>,
-        /// Per-source metadata for the distributed scheduler. `Some(s)`
-        /// only in `Full` resolve mode, with `s[i]` for `sources[i]`.
-        /// `s[0] == first_metadata` so callers iterate uniformly
-        /// without special-casing the first source.
+        metadata_per_source: MetadataPerSource,
+        /// Byte size per scan source, retained from path expansion. One slot
+        /// per source in `sources` order; `Some` only when every source has
+        /// a known size.
         #[cfg_attr(feature = "dsl-schema", serde(skip))]
-        metadata_per_source: Option<Arc<[FileMetadataRef]>>,
+        bytes_per_source: Option<Arc<[u64]>>,
     },
 
     #[cfg(feature = "ipc")]
@@ -187,28 +360,27 @@ impl FileScanIR {
     /// Re-index pre-decoded per-source state after a source-list filter.
     ///
     /// `surviving_indices` yields ascending indices into the pre-filter list.
-    pub fn gather_after_filter<I>(&mut self, first_file_dropped: bool, surviving_indices: I)
-    where
-        I: Iterator<Item = usize>,
+    pub fn gather_after_filter<I>(
+        &mut self,
+        #[allow(unused)] first_file_dropped: bool,
+        surviving_indices: I,
+    ) where
+        I: Iterator<Item = usize> + Clone,
     {
-        // Parquet: clear `first_metadata` if file 0 dropped; gather
-        // `metadata_per_source` by surviving indices so slice[i] still
-        // matches sources[i]. We re-index instead of clearing because
-        // the surviving footers are already decoded; tossing them would
-        // force the scheduler to refetch and re-decode the same bytes.
+        // Parquet: gather per-source state by surviving indices so entry `i`
+        // still matches sources[i].
         // Ipc / PythonDataset: file-0-keyed state cleared when file 0 dropped.
         match self {
             #[cfg(feature = "parquet")]
             Self::Parquet {
                 options: _,
-                first_metadata,
                 metadata_per_source,
+                bytes_per_source,
             } => {
-                if first_file_dropped {
-                    *first_metadata = None;
-                }
-                if let Some(slice) = metadata_per_source {
-                    *slice = surviving_indices.map(|i| slice[i].clone()).collect();
+                *metadata_per_source =
+                    metadata_per_source.gather_reindex(surviving_indices.clone());
+                if let Some(slice) = bytes_per_source {
+                    *slice = surviving_indices.map(|i| slice[i]).collect();
                 }
             },
             #[cfg(feature = "ipc")]
@@ -492,8 +664,8 @@ mod _file_scan_eq_hash {
         #[cfg(feature = "parquet")]
         Parquet {
             options: &'a polars_io::prelude::ParquetOptions,
-            first_metadata: Option<usize>,
             metadata_per_source: Option<usize>,
+            bytes_per_source: Option<usize>,
         },
 
         #[cfg(feature = "ipc")]
@@ -539,12 +711,12 @@ mod _file_scan_eq_hash {
                 #[cfg(feature = "parquet")]
                 FileScanIR::Parquet {
                     options,
-                    first_metadata,
                     metadata_per_source,
+                    bytes_per_source,
                 } => FileScanEqHashWrap::Parquet {
                     options,
-                    first_metadata: first_metadata.as_ref().map(arc_as_ptr),
-                    metadata_per_source: metadata_per_source.as_ref().map(arc_as_ptr),
+                    metadata_per_source: metadata_per_source.as_arc_ptr(),
+                    bytes_per_source: bytes_per_source.as_ref().map(arc_as_ptr),
                 },
 
                 #[cfg(feature = "ipc")]

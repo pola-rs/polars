@@ -22,6 +22,8 @@ class ExprNameNameSpace:
         """
         Keep the original root name of the expression.
 
+        .. engine-support:: in-memory, streaming, distributed, gpu
+
         See Also
         --------
         Expr.alias
@@ -67,6 +69,8 @@ class ExprNameNameSpace:
         """
         Rename the output of an expression by mapping a function over the root name.
 
+        .. engine-support:: in-memory, streaming, distributed, gpu
+
         Parameters
         ----------
         function
@@ -111,6 +115,8 @@ class ExprNameNameSpace:
         """
         Add a prefix to the root column name of the expression.
 
+        .. engine-support:: in-memory, streaming, distributed, gpu
+
         Parameters
         ----------
         prefix
@@ -146,6 +152,8 @@ class ExprNameNameSpace:
     def suffix(self, suffix: str) -> Expr:
         """
         Add a suffix to the root column name of the expression.
+
+        .. engine-support:: in-memory, streaming, distributed, gpu
 
         Parameters
         ----------
@@ -183,6 +191,8 @@ class ExprNameNameSpace:
         """
         Make the root column name lowercase.
 
+        .. engine-support:: in-memory, streaming, distributed, gpu
+
         See Also
         --------
         prefix
@@ -215,6 +225,8 @@ class ExprNameNameSpace:
     def to_uppercase(self) -> Expr:
         """
         Make the root column name uppercase.
+
+        .. engine-support:: in-memory, streaming, distributed, gpu
 
         See Also
         --------
@@ -249,6 +261,8 @@ class ExprNameNameSpace:
         """
         Rename fields of a struct by mapping a function over the field name(s).
 
+        .. engine-support:: in-memory, streaming, distributed, gpu
+
         Notes
         -----
         This only takes effect for struct columns.
@@ -275,6 +289,8 @@ class ExprNameNameSpace:
         """
         Add a prefix to all field names of a struct.
 
+        .. engine-support:: in-memory, streaming, distributed, gpu
+
         Notes
         -----
         This only takes effect for struct columns.
@@ -300,6 +316,8 @@ class ExprNameNameSpace:
     def replace(self, pattern: str, value: str, *, literal: bool = False) -> Expr:
         r"""
         Replace matching regex/literal substring in the name with a new value.
+
+        .. engine-support:: in-memory, streaming, distributed, gpu
 
         Parameters
         ----------
@@ -401,6 +419,8 @@ class ExprNameNameSpace:
     def suffix_fields(self, suffix: str) -> Expr:
         """
         Add a suffix to all field names of a struct.
+
+        .. engine-support:: in-memory, streaming, distributed, gpu
 
         Notes
         -----

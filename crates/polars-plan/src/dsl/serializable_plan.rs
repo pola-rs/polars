@@ -71,9 +71,7 @@ pub(crate) enum SerializableDslPlanNode {
     Join {
         input_left: DslPlanKey,
         input_right: DslPlanKey,
-        left_on: Vec<Expr>,
-        right_on: Vec<Expr>,
-        predicates: Vec<Expr>,
+        condition: JoinCondition,
         options: Arc<JoinOptions>,
     },
     Gather {
@@ -134,10 +132,6 @@ pub(crate) enum SerializableDslPlanNode {
     HConcat {
         inputs: Vec<SerializableDslPlanNode>,
         options: HConcatOptions,
-    },
-    ExtContext {
-        input: DslPlanKey,
-        contexts: Vec<SerializableDslPlanNode>,
     },
     Sink {
         input: DslPlanKey,
@@ -247,16 +241,12 @@ fn convert_dsl_plan_to_serializable_plan(
         DP::Join {
             input_left,
             input_right,
-            left_on,
-            right_on,
-            predicates,
+            condition,
             options,
         } => SP::Join {
             input_left: dsl_plan_key(input_left, arenas),
             input_right: dsl_plan_key(input_right, arenas),
-            left_on: left_on.clone(),
-            right_on: right_on.clone(),
-            predicates: predicates.clone(),
+            condition: condition.clone(),
             options: options.clone(),
         },
         DP::Gather {
@@ -354,13 +344,6 @@ fn convert_dsl_plan_to_serializable_plan(
                 .map(|p| convert_dsl_plan_to_serializable_plan(p, arenas))
                 .collect(),
             options: *options,
-        },
-        DP::ExtContext { input, contexts } => SP::ExtContext {
-            input: dsl_plan_key(input, arenas),
-            contexts: contexts
-                .iter()
-                .map(|p| convert_dsl_plan_to_serializable_plan(p, arenas))
-                .collect(),
         },
         DP::Sink { input, payload } => SP::Sink {
             input: dsl_plan_key(input, arenas),
@@ -509,16 +492,12 @@ fn try_convert_serializable_plan_to_dsl_plan(
         SP::Join {
             input_left,
             input_right,
-            left_on,
-            right_on,
-            predicates,
+            condition,
             options,
         } => Ok(DP::Join {
             input_left: get_dsl_plan(*input_left, ser_dsl_plan, arenas)?,
             input_right: get_dsl_plan(*input_right, ser_dsl_plan, arenas)?,
-            left_on: left_on.clone(),
-            right_on: right_on.clone(),
-            predicates: predicates.clone(),
+            condition: condition.clone(),
             options: options.clone(),
         }),
         SP::Gather {
@@ -618,13 +597,6 @@ fn try_convert_serializable_plan_to_dsl_plan(
                 .map(|node| try_convert_serializable_plan_to_dsl_plan(node, ser_dsl_plan, arenas))
                 .collect::<Result<Vec<_>, _>>()?,
             options: *options,
-        }),
-        SP::ExtContext { input, contexts } => Ok(DP::ExtContext {
-            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
-            contexts: contexts
-                .iter()
-                .map(|node| try_convert_serializable_plan_to_dsl_plan(node, ser_dsl_plan, arenas))
-                .collect::<Result<Vec<_>, _>>()?,
         }),
         SP::Sink { input, payload } => Ok(DP::Sink {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
@@ -779,9 +751,9 @@ mod tests {
         let lf = DslPlan::Join {
             input_left: dfscan.clone(),
             input_right: dfscan,
-            left_on: vec![Expr::Column(name())],
-            right_on: vec![Expr::Column(name())],
-            predicates: Default::default(),
+            condition: JoinCondition::Equi {
+                on: vec![(Expr::Column(name()), Expr::Column(name()))],
+            },
             options: Arc::new(join_options),
         };
         let mut buffer: Vec<u8> = Vec::new();

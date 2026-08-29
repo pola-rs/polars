@@ -97,11 +97,21 @@ impl Series {
         dtype: &DataType,
         strict: bool,
     ) -> PolarsResult<Self> {
+        Self::from_any_values_and_dtype_unnamed(values, dtype, strict)
+            .with_context(|| format!("while constructing Series '{name}'"))
+            .map(|s| s.with_name(name))
+    }
+
+    fn from_any_values_and_dtype_unnamed(
+        values: &[AnyValue],
+        dtype: &DataType,
+        strict: bool,
+    ) -> PolarsResult<Self> {
         if values.is_empty() {
-            return Ok(Self::new_empty(name, dtype));
+            return Ok(Self::new_empty(PlSmallStr::EMPTY, dtype));
         }
 
-        let mut s = match dtype {
+        Ok(match dtype {
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => any_values_to_integer::<Int8Type>(values, strict)?.into_series(),
             #[cfg(feature = "dtype-i16")]
@@ -148,7 +158,7 @@ impl Series {
             },
             #[cfg(feature = "dtype-extension")]
             DataType::Extension(typ, storage) => {
-                Series::from_any_values_and_dtype(name.clone(), values, storage, strict)?
+                Series::from_any_values_and_dtype_unnamed(values, storage, strict)?
                     .into_extension(typ.clone())
             },
             DataType::List(inner) => any_values_to_list(values, inner, strict)?.into_series(),
@@ -167,9 +177,7 @@ impl Series {
                     "constructing a Series with data type {dt:?} from AnyValues is not supported"
                 )
             },
-        };
-        s.rename(name);
-        Ok(s)
+        })
     }
 }
 

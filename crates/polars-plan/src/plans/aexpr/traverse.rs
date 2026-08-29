@@ -540,7 +540,6 @@ impl IRAggExpr {
             Count { input, .. } => Single(*input),
             Std(input, _) => Single(*input),
             Var(input, _) => Single(*input),
-            AggGroups(input) => Single(*input),
         }
     }
     pub fn set_input(&mut self, input: Node) {
@@ -561,7 +560,6 @@ impl IRAggExpr {
             Count { input, .. } => input,
             Std(input, _) => input,
             Var(input, _) => input,
-            AggGroups(input) => input,
         };
         *node = input;
     }

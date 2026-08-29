@@ -158,10 +158,6 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
     Ok(s.drop_nulls())
 }
 
-pub fn rechunk(s: &Column) -> PolarsResult<Column> {
-    Ok(s.rechunk())
-}
-
 pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
     assert!(s.len() == 2);
     let input = &s[0];
@@ -385,16 +381,7 @@ pub(super) fn extend_constant(s: &[Column]) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "row_hash")]
-pub(super) fn row_hash(c: &Column, k0: u64, k1: u64, k2: u64, k3: u64) -> PolarsResult<Column> {
-    use std::hash::BuildHasher;
-
-    use polars_utils::aliases::{
-        PlFixedStateQuality, PlSeedableRandomStateQuality, SeedableFromU64SeedExt,
-    };
-
-    // TODO: don't expose all these seeds.
-    let seed = PlFixedStateQuality::default().hash_one((k0, k1, k2, k3));
-
+pub(super) fn row_hash(c: &Column, seed: u64) -> PolarsResult<Column> {
     // @scalar-opt
     Ok(c.as_materialized_series()
         .hash(PlSeedableRandomStateQuality::seed_from_u64(seed))

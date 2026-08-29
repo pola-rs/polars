@@ -21,11 +21,14 @@ pub(super) fn infer_file_schema_impl(
     parse_options: &CsvParseOptions,
     column_names_overwrite: Option<&[PlSmallStr]>,
     schema_overwrite: Option<&Schema>,
+    ignore_extra_columns: bool,
+    insert_missing_columns: bool,
 ) -> PolarsResult<Schema> {
-    let mut headers = header_line
-        .as_ref()
-        .map(|line| infer_headers(line, parse_options))
-        .unwrap_or_else(|| Vec::with_capacity(8));
+    let mut headers = if let Some(header_line) = header_line {
+        infer_headers(header_line, parse_options)?
+    } else {
+        Vec::with_capacity(8)
+    };
 
     let extend_header_with_unknown_column = header_line.is_none();
 
@@ -45,12 +48,33 @@ pub(super) fn infer_file_schema_impl(
     }
 
     if let Some(column_names_overwrite) = column_names_overwrite {
-        // 2.0: Replace with checks against missing/extra columns policy.
-        polars_ensure!(
-            column_names_overwrite.len() <= headers.len(),
-            ShapeMismatch:
-            "The length of the new names list should be equal to or less than the original column length",
-        );
+        let mut err_hint: String = String::new();
+
+        if column_names_overwrite.len() < headers.len() && !ignore_extra_columns {
+            let n = headers.len() - column_names_overwrite.len();
+            err_hint = format!("pass extra_columns='ignore' to ignore ({n}) extra columns.")
+        }
+
+        if column_names_overwrite.len() > headers.len() && !insert_missing_columns {
+            let n = column_names_overwrite.len() - headers.len();
+            err_hint = format!(
+                "pass missing_columns='insert' to create ({n}) missing columns with all-NULL values."
+            );
+        }
+
+        if !err_hint.is_empty() {
+            polars_bail!(
+                SchemaMismatch:
+                "provided `new_columns` does not match number of columns in file ({} != {} in file). \
+                Ensure the number of names match, or {err_hint}",
+                column_names_overwrite.len(),
+                headers.len(),
+            )
+        }
+
+        headers.truncate(column_names_overwrite.len());
+        column_types.truncate(column_names_overwrite.len());
+
         for (i, name) in column_names_overwrite.iter().cloned().enumerate() {
             if i < headers.len() {
                 headers[i] = name
@@ -67,7 +91,10 @@ pub(super) fn infer_file_schema_impl(
     Ok(build_schema(&headers, &column_types, schema_overwrite))
 }
 
-fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec<PlSmallStr> {
+fn infer_headers(
+    mut header_line: &[u8],
+    parse_options: &CsvParseOptions,
+) -> PolarsResult<Vec<PlSmallStr>> {
     let len = header_line.len();
 
     if header_line.last().copied() == Some(b'\r') {
@@ -92,20 +119,40 @@ fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec
         })
         .collect::<Vec<_>>();
 
-    let mut deduplicated_headers = Vec::with_capacity(headers.len());
+    let mut deduplicated_headers = PlIndexSet::with_capacity(headers.len());
     let mut header_names = PlHashMap::with_capacity(headers.len());
 
     for name in &headers {
         let count = header_names.entry(name.as_ref()).or_insert(0usize);
-        if *count != 0 {
-            deduplicated_headers.push(format_pl_smallstr!("{}_duplicated_{}", name, *count - 1))
+        let duplicated = *count != 0;
+        let deduplicated_name = if duplicated {
+            format_pl_smallstr!("{}_duplicated_{}", name, *count - 1)
         } else {
-            deduplicated_headers.push(PlSmallStr::from_str(name))
+            PlSmallStr::from_str(name)
+        };
+
+        if !deduplicated_headers.insert(deduplicated_name.clone()) {
+            let (deduplicated_from, nth_duplicated) = if duplicated {
+                (name.as_ref(), 1 + *count)
+            } else {
+                let i = deduplicated_name.rfind("_duplicated_").unwrap();
+                (
+                    &deduplicated_name[..i],
+                    2 + deduplicated_name[i + 12..].parse::<usize>().unwrap(),
+                )
+            };
+
+            polars_bail!(
+                Duplicate:
+                "de-duplication of occurrence #{nth_duplicated} of column name '{deduplicated_from}' \
+                failed; the name '{deduplicated_name}' also exists in the file."
+            )
         }
+
         *count += 1;
     }
 
-    deduplicated_headers
+    Ok(Vec::from_iter(deduplicated_headers))
 }
 
 fn infer_types_from_line(
@@ -356,7 +403,7 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
 }
 
 fn column_name(i: usize) -> PlSmallStr {
-    format_pl_smallstr!("column_{}", i + 1)
+    format_pl_smallstr!("column_{}", i)
 }
 
 #[cfg(test)]

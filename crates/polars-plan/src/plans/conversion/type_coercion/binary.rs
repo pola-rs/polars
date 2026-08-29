@@ -324,6 +324,30 @@ pub(super) fn process_binary(
                 right: node_right,
             }));
         },
+        (Unknown(UnknownKind::Int(_)), Unknown(UnknownKind::Float)) => {
+            let left = expr_arena.add(AExpr::Cast {
+                expr: node_left,
+                dtype: Unknown(UnknownKind::Float),
+                options: CastOptions::NonStrict,
+            });
+            return Ok(Some(AExpr::BinaryExpr {
+                left,
+                op,
+                right: node_right,
+            }));
+        },
+        (Unknown(UnknownKind::Float), Unknown(UnknownKind::Int(_))) => {
+            let right = expr_arena.add(AExpr::Cast {
+                expr: node_right,
+                dtype: Unknown(UnknownKind::Float),
+                options: CastOptions::NonStrict,
+            });
+            return Ok(Some(AExpr::BinaryExpr {
+                left: node_left,
+                op,
+                right,
+            }));
+        },
         _ => {},
     }
 

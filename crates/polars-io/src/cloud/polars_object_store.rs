@@ -113,7 +113,7 @@ mod inner {
                 }),
                 initial_store,
                 io_metrics: OptIOMetrics(None),
-                concurrency: Arc::new(std::sync::OnceLock::new()), // Arc::new(ConcurrencyController::new(ControllerConfig::default())),
+                concurrency: Arc::new(std::sync::OnceLock::new()),
             }
         }
 
@@ -127,8 +127,14 @@ mod inner {
         }
 
         pub fn get_or_init_concurrency(&self) -> &Arc<ConcurrencyController> {
-            self.concurrency
-                .get_or_init(|| Arc::new(ConcurrencyController::new(ControllerConfig::default())))
+            self.concurrency.get_or_init(|| {
+                // Valid across rebuilds: the signal wraps the stable cell.
+                let signal = self.inner.builder.rate_limit_signal();
+                Arc::new(ConcurrencyController::new(
+                    ControllerConfig::default(),
+                    signal,
+                ))
+            })
         }
 
         /// Gets the underlying [`ObjectStore`] implementation.
