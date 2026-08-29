@@ -290,6 +290,14 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
 
         use crate::dataset::dataset_provider_funcs;
 
+        polars_plan::dsl::dsl_resolver::python::PY_DSL_RESOLVER_VTABLE.get_or_init(|| {
+            polars_plan::dsl::dsl_resolver::python::PyDslResolverVTable {
+                extract_schema: dataset_provider_funcs::extract_schema,
+                to_py_plexpr: crate::expr::expr_to_py_plexpr,
+                extract_py_resolved_dsl: crate::conversion::extract_py_resolved_dsl,
+            }
+        });
+
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
             name: dataset_provider_funcs::name,
             schema: dataset_provider_funcs::schema,

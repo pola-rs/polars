@@ -84,6 +84,10 @@ pub mod pl_serialize;
 pub mod python_convert_registry;
 #[cfg(feature = "python")]
 pub mod python_function;
+#[cfg(feature = "python")]
+pub mod python_interns;
+#[cfg(feature = "python")]
+pub mod python_thread_pool;
 #[cfg(feature = "sysinfo")]
 pub mod sys;
 

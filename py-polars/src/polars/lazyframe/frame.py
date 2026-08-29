@@ -61,7 +61,7 @@ from polars._utils.various import (
     qualified_type_name,
     require_same_type,
 )
-from polars._utils.wrap import wrap_expr
+from polars._utils.wrap import wrap_expr, wrap_ldf
 from polars._warnings import find_stacklevel, issue_warning
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
@@ -98,6 +98,7 @@ from polars.exceptions import InvalidOperationError, PerformanceWarning
 from polars.lazyframe.engine_config import _eager_engine, _select_engine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, REMOVED_OLD_OPT_FLAGS
+from polars.lazyframe.resolver._resolver import LazyFrameResolver
 from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
@@ -371,6 +372,24 @@ class LazyFrame:
             .lazy()
             ._ldf
         )
+
+    @classmethod
+    def from_lazyframe_resolver(cls, resolver: LazyFrameResolver) -> LazyFrame:
+        """
+        Create a LazyFrame from a LazyFrame resolver.
+
+        .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        """
+        if not isinstance(resolver, LazyFrameResolver):
+            msg = (
+                "from_lazyframe.resolver(): expected instance of LazyFrameResolver, "
+                f"got: {resolver = } {type(resolver) = }"
+            )
+            raise TypeError(msg)
+
+        return wrap_ldf(PyLazyFrame.from_lazyframe_resolver(resolver))
 
     @classmethod
     def _from_pyldf(cls, ldf: PyLazyFrame) -> LazyFrame:

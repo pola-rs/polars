@@ -6,10 +6,12 @@ mod keys;
 mod utils;
 
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
+use polars_buffer::Buffer;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
 use polars_utils::with_drop::WithDrop;
 use recursive::recursive;
+pub(crate) use utils::combine_predicates;
 use utils::*;
 
 use super::*;
@@ -705,6 +707,76 @@ impl PredicatePushDown {
             },
             UnoptimizedDispatch { .. } => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
+            Resolver {
+                resolver,
+                resolver_schema,
+                projection,
+                slice,
+                filters,
+                filter_drop_columns_idx,
+                resolved_dsl,
+                resolved_ir: Some(resolved_node),
+            } => {
+                let optimized = self.pushdown_and_continue(
+                    lp_arena.take(resolved_node),
+                    acc_predicates,
+                    lp_arena,
+                    expr_arena,
+                    false,
+                )?;
+                lp_arena.replace(resolved_node, optimized);
+
+                Ok(Resolver {
+                    resolver,
+                    resolver_schema,
+                    projection,
+                    slice,
+                    filters,
+                    filter_drop_columns_idx,
+                    resolved_dsl,
+                    resolved_ir: Some(resolved_node),
+                })
+            },
+            Resolver {
+                resolver,
+                resolver_schema,
+                projection,
+                slice,
+                mut filters,
+                filter_drop_columns_idx,
+                resolved_dsl,
+                resolved_ir,
+            } => {
+                for eir in filters.iter() {
+                    insert_predicate_dedup(
+                        &mut acc_predicates,
+                        eir,
+                        expr_arena,
+                        &mut self.dedup_state,
+                    );
+                }
+
+                filters = Buffer::from_iter(
+                    acc_predicates
+                        .iter()
+                        .flat_map(|(_, eir)| {
+                            MintermIter::new(eir.node(), expr_arena)
+                                .filter(|&node| !contains_dynamic_pred(node, expr_arena))
+                        })
+                        .map(|node| ExprIR::from_node(node, expr_arena)),
+                );
+
+                Ok(Resolver {
+                    resolver,
+                    resolver_schema,
+                    projection,
+                    slice,
+                    filters,
+                    filter_drop_columns_idx,
+                    resolved_dsl,
+                    resolved_ir,
+                })
             },
             Invalid => unreachable!(),
         }

@@ -22,7 +22,9 @@ pub(super) async fn dsl_to_ir(
     scan_type: Box<FileScanDsl>,
     cached_ir: Arc<Mutex<Option<IR>>>,
     cache_file_info: SourcesToFileInfo,
-    #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<LazyLock<PyScanResolveThreadPool>>,
+    #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
+        LazyLock<Arc<PyScanResolveThreadPool>>,
+    >,
     verbose: bool,
 ) -> PolarsResult<()> {
     // Note that resolved footer metadata can still be re-indexed or dropped
@@ -78,10 +80,11 @@ pub(super) async fn dsl_to_ir(
             FileScanDsl::PythonDataset { .. } => {
                 // There are a lot of places that short-circuit if the paths is empty,
                 // so we just give a dummy path here.
-                ScanSources::Paths(Buffer::from_iter([PlRefPath::new("PL_PY_DSET")]))
+                ScanSources::Paths(Buffer::from_owner([PlRefPath::new("PL_PY_DSET")]))
             },
             #[cfg(feature = "scan_lines")]
             FileScanDsl::Lines { .. } => sources.expand_paths(unified_scan_args).await?,
+
             FileScanDsl::ExpandedPaths { .. } => sources.expand_paths(unified_scan_args).await?,
             FileScanDsl::Anonymous { .. } => sources.clone(),
         };
@@ -1376,7 +1379,7 @@ impl SourcesToFileInfo {
         bytes_per_source: Option<Arc<[u64]>>,
         unified_scan_args: &mut UnifiedScanArgs,
         #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
-            LazyLock<PyScanResolveThreadPool>,
+            LazyLock<Arc<PyScanResolveThreadPool>>,
         >,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
         let require_first_source = |failed_operation_name: &'static str, hint: &'static str| {
@@ -1663,7 +1666,7 @@ impl SourcesToFileInfo {
         bytes_per_source: Option<Arc<[u64]>>,
         unified_scan_args: &mut UnifiedScanArgs,
         #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
-            LazyLock<PyScanResolveThreadPool>,
+            LazyLock<Arc<PyScanResolveThreadPool>>,
         >,
         verbose: bool,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {

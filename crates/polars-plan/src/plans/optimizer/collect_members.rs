@@ -1,6 +1,7 @@
 #[cfg(feature = "cse")]
 use super::cse::{CanonicalIRId, CanonicalIRMap};
 use super::*;
+use crate::dsl::dsl_resolver::DslResolver;
 
 // Tracks canonical source identities to check if we have duplicate sources.
 #[cfg(feature = "cse")]
@@ -34,6 +35,8 @@ pub(super) struct MemberCollector {
     pub(crate) has_group_by: bool,
     pub(crate) has_hint: bool,
     pub(crate) with_columns_count: u32,
+    #[expect(clippy::disallowed_types)]
+    pub(crate) seen_dsl_resolvers: Option<polars_utils::aliases::PlHashSet<Arc<DslResolver>>>,
     #[cfg(feature = "cse")]
     scans: UniqueScans,
 }
@@ -49,6 +52,7 @@ impl MemberCollector {
             has_group_by: false,
             has_hint: false,
             with_columns_count: 0,
+            seen_dsl_resolvers: Default::default(),
             #[cfg(feature = "cse")]
             scans: UniqueScans::default(),
         }
@@ -99,6 +103,10 @@ impl MemberCollector {
                     function: FunctionIR::Hint(_),
                     ..
                 } => self.has_hint = true,
+                Resolver { resolver, .. } => {
+                    self.seen_dsl_resolvers
+                        .take_if(|x| !x.insert(Arc::clone(resolver)));
+                },
                 _ => {},
             }
         }
@@ -107,5 +115,9 @@ impl MemberCollector {
     #[cfg(feature = "cse")]
     pub(super) fn has_duplicate_scans(&self) -> bool {
         self.scans.count != self.scans.ids.len()
+    }
+
+    pub(super) fn has_cse_equivalent_resolvers(&self) -> bool {
+        self.seen_dsl_resolvers.is_none()
     }
 }

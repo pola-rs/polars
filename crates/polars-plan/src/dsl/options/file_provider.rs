@@ -191,40 +191,40 @@ impl FileProviderFunction {
         match self {
             Self::Rust(func) => (func)(args),
             #[cfg(feature = "python")]
-            Self::Python(object) => pyo3::Python::attach(|py| {
-                use polars_error::PolarsError;
-                use pyo3::intern;
-                use pyo3::types::{PyAnyMethods, PyDict};
+            Self::Python(object) => {
+                pyo3::Python::attach(|py| {
+                    use polars_error::PolarsError;
+                    use pyo3::intern;
+                    use pyo3::types::{PyAnyMethods, PyDict};
 
-                let FileProviderArgs {
-                    index_in_partition,
-                    partition_keys,
-                } = args;
+                    let FileProviderArgs {
+                        index_in_partition,
+                        partition_keys,
+                    } = args;
 
-                let convert_registry =
-                    polars_utils::python_convert_registry::get_python_convert_registry();
+                    let convert_registry =
+                        polars_utils::python_convert_registry::get_python_convert_registry();
 
-                let partition_keys = convert_registry
-                    .to_py
-                    .df_to_wrapped_pydf(partition_keys.as_ref())
-                    .map_err(PolarsError::from)?;
+                    let partition_keys = convert_registry
+                        .to_py
+                        .df_to_wrapped_pydf(partition_keys.as_ref())
+                        .map_err(PolarsError::from)?;
 
-                let kwargs = PyDict::new(py);
-                kwargs.set_item(intern!(py, "index_in_partition"), index_in_partition)?;
-                kwargs.set_item(intern!(py, "partition_keys"), partition_keys)?;
+                    let kwargs = PyDict::new(py);
+                    kwargs.set_item(intern!(py, "index_in_partition"), index_in_partition)?;
+                    kwargs.set_item(intern!(py, "partition_keys"), partition_keys)?;
 
-                let args_dataclass = convert_registry.py_file_provider_args_dataclass().call(
-                    py,
-                    (),
-                    Some(&kwargs),
-                )?;
+                    let args_dataclass = convert_registry
+                        .py_file_provider_args_dataclass(py)
+                        .call(py, (), Some(&kwargs))?;
 
-                let out = object.call1(py, (args_dataclass,))?;
-                let out = (convert_registry.from_py.file_provider_result)(out)?;
-                let out: FileProviderReturn = *out.downcast().unwrap();
+                    let out = object.call1(py, (args_dataclass,))?;
+                    let out = (convert_registry.from_py.file_provider_result)(out)?;
+                    let out: FileProviderReturn = *out.downcast().unwrap();
 
-                PolarsResult::Ok(out)
-            }),
+                    PolarsResult::Ok(out)
+                })
+            },
         }
     }
 }

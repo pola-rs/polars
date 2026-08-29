@@ -606,7 +606,7 @@ impl SinkedPathsCallback {
 
                 let sinked_path_dataclass_cls =
                     polars_utils::python_convert_registry::get_python_convert_registry()
-                        .py_sinked_path_dataclass();
+                        .py_sinked_path_dataclass(py);
 
                 for SinkedPathInfo {
                     path,
@@ -634,7 +634,7 @@ impl SinkedPathsCallback {
 
                 let args_dataclass =
                     polars_utils::python_convert_registry::get_python_convert_registry()
-                        .py_sinked_paths_callback_args_dataclass()
+                        .py_sinked_paths_callback_args_dataclass(py)
                         .call(py, (), Some(&kwargs))?;
 
                 object.call1(py, (args_dataclass,))?;

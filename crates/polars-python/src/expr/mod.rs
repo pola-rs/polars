@@ -32,13 +32,32 @@ mod r#struct;
 use std::mem::ManuallyDrop;
 
 use polars::lazy::dsl::Expr;
-use pyo3::pyclass;
+use pyo3::sync::PyOnceLock;
+use pyo3::types::PyAnyMethods;
+use pyo3::{Py, PyAny, Python, intern, pyclass};
 
 #[pyclass(from_py_object)] // Not marked as frozen for pickling, but that's the only &mut self method.
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyExpr {
     pub inner: Expr,
+}
+
+pub(crate) fn expr_to_py_plexpr(py: Python<'_>, expr: Expr) -> Py<PyAny> {
+    return py_plexpr_cls(py)
+        .call_method1(py, intern!(py, "_from_pyexpr"), (PyExpr { inner: expr },))
+        .unwrap();
+
+    fn py_plexpr_cls(py: Python<'_>) -> &'static Py<PyAny> {
+        static CLS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+        CLS.get_or_init(py, || {
+            py.import("polars")
+                .unwrap()
+                .getattr("Expr")
+                .unwrap()
+                .unbind()
+        })
+    }
 }
 
 impl From<Expr> for PyExpr {

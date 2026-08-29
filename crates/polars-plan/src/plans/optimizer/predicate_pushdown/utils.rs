@@ -80,7 +80,7 @@ pub(super) fn temporary_unique_key(acc_predicates: &PlIndexMap<PlSmallStr, ExprI
     PlSmallStr::from_string(out_key)
 }
 
-pub(super) fn combine_predicates<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
+pub(crate) fn combine_predicates<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
 where
     I: IntoIterator<Item = ExprIR>,
 {
@@ -113,18 +113,6 @@ pub(super) fn remove_dynamic_pred_minterms(
     acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
 ) {
-    fn contains_dynamic_pred(node: Node, expr_arena: &Arena<AExpr>) -> bool {
-        has_aexpr(node, expr_arena, |e| {
-            matches!(
-                e,
-                AExpr::Function {
-                    function: IRFunctionExpr::DynamicPred { .. },
-                    ..
-                }
-            )
-        })
-    }
-
     acc_predicates.retain(|_, predicate| {
         if !contains_dynamic_pred(predicate.node(), expr_arena) {
             return true;
@@ -144,6 +132,18 @@ pub(super) fn remove_dynamic_pred_minterms(
         predicate.set_node(node);
         true
     });
+}
+
+pub(crate) fn contains_dynamic_pred(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    has_aexpr(node, expr_arena, |e| {
+        matches!(
+            e,
+            AExpr::Function {
+                function: IRFunctionExpr::DynamicPred { .. },
+                ..
+            }
+        )
+    })
 }
 
 /// Evaluates a condition on the column name inputs of every predicate, where if

@@ -14,6 +14,7 @@ use recursive::recursive;
 use serde::{Deserialize, Serialize};
 
 use super::*;
+use crate::dsl::dsl_resolver::{DslResolver, ResolveDslArgs, ResolvedDsl};
 
 // DSL format version in a form of (Major, Minor).
 //
@@ -178,6 +179,12 @@ pub enum DslPlan {
         #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
         opt_flags: Option<crate::frame::OptFlags>,
     },
+    Resolver {
+        resolver: Arc<DslResolver>,
+        resolver_schema: Arc<Mutex<Option<SchemaRef>>>,
+        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip, default))]
+        resolved_cache: Arc<Mutex<PlIndexMap<ResolveDslArgs, ResolvedDsl>>>,
+    },
 }
 
 impl Clone for DslPlan {
@@ -214,6 +221,7 @@ impl Clone for DslPlan {
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key, maintain_order } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone(), maintain_order: *maintain_order },
             Self::IR {node, dsl, version, opt_flags} => Self::IR {node: *node, dsl: dsl.clone(), version: *version, opt_flags: *opt_flags},
+            Self::Resolver { resolver, resolver_schema, resolved_cache } => Self::Resolver { resolver: resolver.clone(), resolver_schema: resolver_schema.clone(), resolved_cache: resolved_cache.clone() },
         }
     }
 }

@@ -359,8 +359,17 @@ pub fn get_input(lp_arena: &Arena<IR>, lp_node: Node) -> UnitVec<Node> {
 pub fn get_input_schema(lp_arena: &Arena<IR>, lp_node: Node) -> Cow<'_, SchemaRef> {
     let inputs = get_input(lp_arena, lp_node);
     if inputs.is_empty() {
-        // Files don't have an input, so we must take their schema.
-        Cow::Borrowed(lp_arena.get(lp_node).scan_schema())
+        Cow::Borrowed(
+            if let IR::Resolver {
+                resolver_schema, ..
+            } = lp_arena.get(lp_node)
+            {
+                resolver_schema
+            } else {
+                // Files don't have an input, so we must take their schema.
+                lp_arena.get(lp_node).scan_schema()
+            },
+        )
     } else {
         let input = inputs[0];
         lp_arena.get(input).schema(lp_arena)

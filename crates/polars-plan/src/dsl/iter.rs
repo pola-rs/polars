@@ -46,6 +46,7 @@ impl DslPlan {
                 scratch.push(input_left);
                 scratch.push(input_right);
             },
+            Resolver { .. } => {},
         }
     }
 }

@@ -47,6 +47,7 @@ impl IR {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => "merge_sorted",
             UnoptimizedDispatch { .. } => "unoptimized_dispatch",
+            Resolver { .. } => "resolver",
             Invalid => "invalid",
         }
     }
@@ -124,6 +125,17 @@ impl IR {
                     .collect_vec();
                 return Cow::Owned(operation.schema(&input_schemas, arg_map));
             },
+            Resolver {
+                resolver_schema,
+                resolved_ir,
+                ..
+            } => {
+                if let Some(node) = *resolved_ir {
+                    return arena.get(node).schema(arena);
+                }
+
+                resolver_schema
+            },
             Invalid => unreachable!(),
         };
         Cow::Borrowed(schema)
@@ -195,6 +207,17 @@ impl IR {
                     .map(|input| IR::schema_with_cache(*input, arena, cache))
                     .collect_vec();
                 operation.schema(&input_schemas, arg_map)
+            },
+            Resolver {
+                resolver_schema,
+                resolved_ir,
+                ..
+            } => {
+                return if let Some(node) = *resolved_ir {
+                    return IR::schema_with_cache(node, arena, cache);
+                } else {
+                    resolver_schema.clone()
+                };
             },
             Invalid => unreachable!(),
         };

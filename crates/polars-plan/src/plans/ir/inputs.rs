@@ -1,5 +1,6 @@
 use std::iter;
 
+use polars_buffer::Buffer;
 use polars_utils::itertools::Itertools;
 
 use super::*;
@@ -90,6 +91,7 @@ impl IR {
             },
 
             UnoptimizedDispatch { .. } => Exprs::Empty,
+            Resolver { filters, .. } => Exprs::slice(filters),
             Invalid => unreachable!(),
         }
     }
@@ -150,6 +152,13 @@ impl IR {
             },
 
             UnoptimizedDispatch { .. } => ExprsMut::Empty,
+            Resolver { filters, .. } => {
+                if filters.get_mut_slice().is_none() {
+                    *filters = Buffer::from_iter(filters.iter().cloned());
+                }
+
+                ExprsMut::slice(filters.get_mut_slice().unwrap())
+            },
             Invalid => unreachable!(),
         }
     }
@@ -196,6 +205,7 @@ impl IR {
                 ..
             } => Inputs::double(*input_left, *input_right),
             UnoptimizedDispatch { inputs, .. } => Inputs::slice(inputs),
+            Resolver { resolved_ir, .. } => Inputs::Slice(resolved_ir.as_slice().iter().copied()),
             Invalid => unreachable!(),
         }
     }
@@ -234,6 +244,7 @@ impl IR {
                 ..
             } => InputsMut::double(input_left, input_right),
             UnoptimizedDispatch { inputs, .. } => InputsMut::slice(inputs),
+            Resolver { resolved_ir, .. } => InputsMut::slice(resolved_ir.as_mut_slice()),
             Invalid => unreachable!(),
         }
     }

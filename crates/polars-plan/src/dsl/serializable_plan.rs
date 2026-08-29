@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 #[cfg(feature = "pivot")]
 use polars_core::frame::PivotColumnNaming;
 use polars_utils::unique_id::UniqueId;
@@ -6,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use super::*;
+use crate::dsl::dsl_resolver::DslResolver;
 
 new_key_type! {
     /// A key type for identifying DataFrame nodes in a serialized DSL plan.
@@ -150,6 +153,10 @@ pub(crate) enum SerializableDslPlanNode {
     IR {
         dsl: DslPlanKey,
         version: u32,
+    },
+    Resolver {
+        resolver: Arc<DslResolver>,
+        resolver_schema: Option<SchemaRef>,
     },
 }
 
@@ -371,6 +378,14 @@ fn convert_dsl_plan_to_serializable_plan(
             node: _,
             opt_flags: _,
         } => convert_dsl_plan_to_serializable_plan(dsl.as_ref(), arenas),
+        DP::Resolver {
+            resolver,
+            resolver_schema,
+            resolved_cache: _,
+        } => SP::Resolver {
+            resolver: Arc::clone(resolver),
+            resolver_schema: { resolver_schema.lock().unwrap().clone() },
+        },
     }
 }
 
@@ -618,6 +633,14 @@ fn try_convert_serializable_plan_to_dsl_plan(
             dsl: dsl_key,
             version: _,
         } => get_dsl_plan(*dsl_key, ser_dsl_plan, arenas).map(Arc::unwrap_or_clone),
+        SP::Resolver {
+            resolver,
+            resolver_schema,
+        } => Ok(DP::Resolver {
+            resolver: Arc::clone(resolver),
+            resolver_schema: Arc::new(Mutex::new(resolver_schema.clone())),
+            resolved_cache: Default::default(),
+        }),
     }
 }
 

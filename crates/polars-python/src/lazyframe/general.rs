@@ -16,6 +16,7 @@ use polars_core::query_result::QueryResult;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
+use polars_plan::dsl::dsl_resolver::DslResolver;
 use polars_plan::plans::{AExpr, HintIR, IR, Sorted};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::python_function::PythonObject;
@@ -419,6 +420,20 @@ impl PyLazyFrame {
         let lf =
             LazyFrame::from(DslBuilder::scan_python_dataset(PythonObject(dataset_object)).build())
                 .into();
+
+        Ok(lf)
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (resolver))]
+    fn from_lazyframe_resolver(resolver: Py<PyAny>) -> PyResult<Self> {
+        let lf = LazyFrame::from(
+            DslBuilder::from_dsl_resolver(Arc::new(DslResolver::new_python(PythonObject(
+                resolver,
+            ))))
+            .build(),
+        )
+        .into();
 
         Ok(lf)
     }
