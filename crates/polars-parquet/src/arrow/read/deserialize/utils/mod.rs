@@ -6,6 +6,7 @@ use std::ops::Range;
 use std::sync::OnceLock;
 
 use arrow::array::{Array, IntoBoxedArray, Splitable};
+use arrow::bitmap::utils::SlicesIterator;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
@@ -362,17 +363,57 @@ pub(super) trait Decoder: Sized {
         }
         .into_boxed();
 
-        let mask = if let Some(validity) = intermediate_array.validity() {
-            let ignore_validity_array = intermediate_array.with_validity(None);
-            let mask = predicate.predicate.evaluate(ignore_validity_array.as_ref());
+        let mask = match intermediate_array.validity() {
+            // No validity at all, every slot holds a value the writer actually wrote.
+            None => predicate.predicate.evaluate(intermediate_array.as_ref()),
 
-            if predicate.predicate.evaluate_null() {
-                arrow::bitmap::or_not(&mask, validity)
-            } else {
-                &mask & validity
-            }
-        } else {
-            predicate.predicate.evaluate(intermediate_array.as_ref())
+            // A validity bitmap that marks nothing as null. Dropping it is enough.
+            Some(validity) if validity.unset_bits() == 0 => {
+                let ignore_validity_array = intermediate_array.with_validity(None);
+                predicate.predicate.evaluate(ignore_validity_array.as_ref())
+            },
+
+            // Actual nulls, and a predicate that cannot fail on any input. Evaluating over
+            // the physical slots behind the nulls is wasted work but it is safe, so keep
+            // the cheap path and mask the answer afterwards.
+            Some(validity) if predicate.predicate.as_specialized().is_some() => {
+                let ignore_validity_array = intermediate_array.with_validity(None);
+                let mask = predicate.predicate.evaluate(ignore_validity_array.as_ref());
+
+                if predicate.predicate.evaluate_null() {
+                    arrow::bitmap::or_not(&mask, validity)
+                } else {
+                    &mask & validity
+                }
+            },
+
+            // Actual nulls and an arbitrary expression. The physical slots behind the nulls
+            // hold whatever the decoder left there, which for views is the empty string and
+            // for primitives is zero. Those are not values the user ever wrote, so they must
+            // not reach the predicate: a fallible expression such as a strict `strptime`
+            // raises on them and the error is unwrapped into a panic that takes the whole
+            // scan down. Evaluate over the valid values only and scatter the result back
+            // into place, filling the null slots with the answer `evaluate_null` gives.
+            Some(validity) => {
+                let null_matches = predicate.predicate.evaluate_null();
+
+                let valid_only = polars_compute::filter::filter_with_bitmap(
+                    intermediate_array.as_ref(),
+                    validity,
+                );
+                let valid_only = valid_only.with_validity(None);
+                let valid_mask = predicate.predicate.evaluate(valid_only.as_ref());
+
+                let mut mask = BitmapBuilder::with_capacity(intermediate_array.len());
+                let mut valid_offset = 0;
+                for (start, length) in SlicesIterator::new(validity) {
+                    mask.extend_constant(start - mask.len(), null_matches);
+                    mask.subslice_extend_from_bitmap(&valid_mask, valid_offset, length);
+                    valid_offset += length;
+                }
+                mask.extend_constant(intermediate_array.len() - mask.len(), null_matches);
+                mask.freeze()
+            },
         };
 
         let filtered =

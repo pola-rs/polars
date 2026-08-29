@@ -810,3 +810,119 @@ fn scan_small_dtypes() -> PolarsResult<()> {
     }
     Ok(())
 }
+
+/// A fallible predicate that is pushed into a parquet scan must not be evaluated over the
+/// physical slots that sit behind nulls. Those slots hold whatever the decoder left there,
+/// which for string views is the empty string, so a strict `strptime` failed on rows that do
+/// not exist in the file and took the whole scan down with a panic. See #28521.
+#[test]
+#[cfg(all(
+    feature = "parquet",
+    feature = "strings",
+    feature = "temporal",
+    feature = "dtype-datetime"
+))]
+fn test_fallible_predicate_pushdown_over_nulls_28521() -> PolarsResult<()> {
+    use std::sync::Arc;
+
+    use polars_buffer::Buffer;
+    use polars_config::Engine;
+    use polars_core::query_result::QueryResult;
+    use polars_plan::dsl::ScanSources;
+
+    fn collect(lf: LazyFrame, engine: Engine) -> PolarsResult<DataFrame> {
+        lf.collect_with_engine(engine).map(|r| match r {
+            QueryResult::Single(df) => df,
+            QueryResult::Multiple(_) => DataFrame::empty(),
+        })
+    }
+
+    fn write(values: &[Option<&str>]) -> PolarsResult<Arc<[Buffer<u8>]>> {
+        let mut df = df!["t" => values]?;
+        let mut buf = Cursor::new(Vec::new());
+        ParquetWriter::new(&mut buf).finish(&mut df)?;
+        Ok(Arc::from(vec![Buffer::from(buf.into_inner())]))
+    }
+
+    fn scan(sources: &Arc<[Buffer<u8>]>) -> PolarsResult<LazyFrame> {
+        LazyFrame::scan_parquet_sources(
+            ScanSources::Buffers(sources.clone()),
+            ScanArgsParquet {
+                hive_options: HiveOptions {
+                    enabled: Some(false),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+    }
+
+    let parsed = || {
+        col("t").str().strptime(
+            DataType::Datetime(TimeUnit::Microseconds, None),
+            StrptimeOptions {
+                format: Some("%Y-%m-%d".into()),
+                strict: true,
+                exact: true,
+                cache: true,
+            },
+            lit("raise"),
+        )
+    };
+
+    // The exact file from the report, and one where the nulls are interleaved with values so
+    // the null slots are not all at the end of the page.
+    let report = write(&[Some("2021-01-01"), None, None])?;
+    let interleaved = write(&[
+        Some("2021-01-01"),
+        None,
+        Some("2021-01-02"),
+        None,
+        None,
+        Some("2021-01-03"),
+    ])?;
+
+    for engine in [Engine::InMemory, Engine::Streaming] {
+        let out = collect(scan(&report)?.filter(parsed().is_not_null()), engine)?;
+        assert_eq!(
+            out.column("t")?.str()?.iter().collect::<Vec<_>>(),
+            vec![Some("2021-01-01")],
+            "{engine}"
+        );
+
+        for (name, predicate) in [
+            ("is_not_null", parsed().is_not_null()),
+            ("is_null", parsed().is_null()),
+        ] {
+            // The same query without predicate pushdown is the oracle. There the predicate
+            // runs on the materialized column, nulls and all.
+            let expected = collect(
+                scan(&interleaved)?
+                    .filter(predicate.clone())
+                    .with_predicate_pushdown(false),
+                engine,
+            )?;
+            let actual = collect(scan(&interleaved)?.filter(predicate), engine)?;
+            assert!(
+                actual.equals_missing(&expected),
+                "{engine} {name}: pushed-down result {actual:?} differs from {expected:?}"
+            );
+        }
+
+        let out = collect(scan(&interleaved)?.filter(parsed().is_not_null()), engine)?;
+        assert_eq!(
+            out.column("t")?.str()?.iter().collect::<Vec<_>>(),
+            vec![Some("2021-01-01"), Some("2021-01-02"), Some("2021-01-03")],
+            "{engine}"
+        );
+
+        let out = collect(scan(&interleaved)?.filter(parsed().is_null()), engine)?;
+        assert_eq!(
+            out.column("t")?.str()?.iter().collect::<Vec<_>>(),
+            vec![None, None, None],
+            "{engine}"
+        );
+    }
+
+    Ok(())
+}
