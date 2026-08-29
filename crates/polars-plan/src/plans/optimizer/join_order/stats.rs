@@ -260,7 +260,7 @@ fn apply_selectivity(rows: f64, n_conjuncts: u32) -> f64 {
 /// `key_domain_product` is the product, over every equi-key pair bridging the two
 /// sides, of that key's domain size (see [`key_domain`]).
 ///
-/// This is `|A| * |B| / NDV(key)`, extended over multiple keys. With exact distinct
+/// This is `|A| * |B| / DISTINCT(key)`, extended over multiple keys. With exact distinct
 /// counts the divisor would be the `max` of the two sides. Only row counts are
 /// available, which bound distinct counts from above and are tight only on the unique
 /// side, so [`key_domain`] takes the `min` instead: the smaller relation is assumed
