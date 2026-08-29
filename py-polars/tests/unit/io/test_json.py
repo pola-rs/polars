@@ -843,3 +843,19 @@ def test_read_json_with_zero_infer_schema_length_29025() -> None:
         ),
         pl.DataFrame({"a": [1, 2], "b": [None, 2]}),
     )
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "cannot infer schema when infer_schema_length is 0 and no schema is provided"
+        ),
+    ):
+        pl.read_json(
+            b"""\
+[
+    {"a": 1},
+    {"a": 2, "b": 2}
+]
+""",
+            infer_schema_length=0,
+        )
