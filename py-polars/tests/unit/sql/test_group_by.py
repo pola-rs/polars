@@ -888,3 +888,76 @@ def test_correlated_subquery_in_group_by_select_list() -> None:
         compare_with="duckdb",
         expected={"k": [1, 2, 3], "s": [12, 9, None]},
     )
+
+
+def test_group_by_same_column_from_two_relation_aliases() -> None:
+    frames = {
+        "sales": pl.DataFrame(
+            {
+                "bill_addr": [10, 10, 11],
+                "ship_addr": [20, 21, 20],
+                "amount": [5, 7, 9],
+            }
+        ),
+        "addr": pl.DataFrame(
+            {
+                "addr_sk": [10, 11, 20, 21],
+                "street": ["main", "oak", "elm", "ash"],
+                "city": ["ams", "ams", "rtm", "utr"],
+            }
+        ),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT a1.street AS b_street, a2.street AS c_street, SUM(amount) AS total
+            FROM sales, addr a1, addr a2
+            WHERE bill_addr = a1.addr_sk AND ship_addr = a2.addr_sk
+            GROUP BY a1.street, a2.street
+            ORDER BY b_street, c_street
+        """,
+        compare_with="duckdb",
+        expected={
+            "b_street": ["main", "main", "oak"],
+            "c_street": ["ash", "elm", "elm"],
+            "total": [7, 5, 9],
+        },
+    )
+
+
+def test_group_by_relation_alias_key_not_projected() -> None:
+    frames = {
+        "sales": pl.DataFrame({"bill_addr": [10, 10, 11], "amount": [5, 7, 9]}),
+        "addr": pl.DataFrame({"addr_sk": [10, 11], "city": ["ams", "rtm"]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT SUM(amount) AS total
+            FROM sales, addr a1
+            WHERE bill_addr = a1.addr_sk
+            GROUP BY a1.city
+            ORDER BY total
+        """,
+        compare_with="duckdb",
+        expected={"total": [9, 12]},
+    )
+
+
+def test_group_by_relation_alias_key_projected_unqualified() -> None:
+    frames = {
+        "sales": pl.DataFrame({"a1k": [10, 11, 10], "a2k": [20, 21, 21]}),
+        "addr": pl.DataFrame({"addr_sk": [10, 11, 20, 21], "city": [*"abcd"]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT a2.city, COUNT(*) AS n
+            FROM sales, addr a1, addr a2
+            WHERE a1k = a1.addr_sk AND a2k = a2.addr_sk
+            GROUP BY a2.city
+            ORDER BY city
+        """,
+        compare_with="duckdb",
+        expected={"city": ["c", "d"], "n": [1, 2]},
+    )

@@ -23,20 +23,14 @@ macro_rules! set_unwrapped_or_0 {
 }
 
 #[pyfunction]
-pub fn rolling_corr(
-    x: PyExpr,
-    y: PyExpr,
-    window_size: IdxSize,
-    min_periods: IdxSize,
-    ddof: u8,
-) -> PyExpr {
+pub fn rolling_corr(x: PyExpr, y: PyExpr, window_size: IdxSize, min_periods: IdxSize) -> PyExpr {
     dsl::rolling_corr(
         x.inner,
         y.inner,
         RollingCovOptions {
             min_periods,
             window_size,
-            ddof,
+            ddof: None,
         },
     )
     .into()
@@ -56,7 +50,7 @@ pub fn rolling_cov(
         RollingCovOptions {
             min_periods,
             window_size,
-            ddof,
+            ddof: Some(ddof),
         },
     )
     .into()

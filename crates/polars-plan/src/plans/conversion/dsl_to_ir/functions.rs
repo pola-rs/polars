@@ -55,7 +55,38 @@ pub(super) fn convert_functions(
                 A::Concat => IA::Concat,
                 A::Slice(offset, length) => IA::Slice(offset, length),
                 #[cfg(feature = "array_to_struct")]
-                A::ToStruct(ng) => IA::ToStruct(ng),
+                A::ToStruct { fields } => {
+                    let input_dtype = e
+                        .first()
+                        .ok_or_else(|| polars_err!(ComputeError: "no input to arr.to_struct()"))?
+                        .dtype(ctx.schema, ctx.arena)?;
+                    let DataType::Array(_, width) = input_dtype else {
+                        polars_bail!(
+                            InvalidOperation:
+                            "expected Array datatype for array operation, got: {input_dtype:?}",
+                        )
+                    };
+
+                    let width = *width;
+
+                    let fields = if let Some(fields) = fields {
+                        let fields_len = fields.len();
+                        polars_ensure!(
+                            fields_len == width,
+                            ComputeError:
+                            "arr.to_struct() number of field names provided ({fields_len})
+                            does not match width of input ({width})."
+                        );
+
+                        fields
+                    } else {
+                        (0..width)
+                            .map(|i| format_pl_smallstr!("field_{i}"))
+                            .collect()
+                    };
+
+                    IA::ToStruct { fields }
+                },
             })
         },
         F::BinaryExpr(binary_function) => {
@@ -100,7 +131,6 @@ pub(super) fn convert_functions(
             use CategoricalFunction as C;
             use IRCategoricalFunction as IC;
             I::Categorical(match categorical_function {
-                C::GetCategories => IC::GetCategories,
                 #[cfg(feature = "strings")]
                 C::LenBytes => IC::LenBytes,
                 #[cfg(feature = "strings")]
@@ -368,7 +398,6 @@ pub(super) fn convert_functions(
                 T::OrdinalDay => IT::OrdinalDay,
                 T::Time => IT::Time,
                 T::Date => IT::Date,
-                T::Datetime => IT::Datetime,
                 #[cfg(feature = "dtype-duration")]
                 T::Duration(time_unit) => IT::Duration(time_unit),
                 T::Hour => IT::Hour,
@@ -393,7 +422,6 @@ pub(super) fn convert_functions(
                 T::TotalNanoseconds { fractional } => IT::TotalNanoseconds { fractional },
                 T::ToString(v) => IT::ToString(v),
                 T::CastTimeUnit(time_unit) => IT::CastTimeUnit(time_unit),
-                T::WithTimeUnit(time_unit) => IT::WithTimeUnit(time_unit),
                 #[cfg(feature = "timezones")]
                 T::ConvertTimeZone(time_zone) => IT::ConvertTimeZone(time_zone),
                 T::TimeStamp(time_unit) => IT::TimeStamp(time_unit),
@@ -573,7 +601,7 @@ pub(super) fn convert_functions(
             PowFunction::Cbrt => IRPowFunction::Cbrt,
         }),
         #[cfg(feature = "row_hash")]
-        F::Hash(s0, s1, s2, s3) => I::Hash(s0, s1, s2, s3),
+        F::Hash(seed) => I::Hash(seed),
         #[cfg(feature = "arg_where")]
         F::ArgWhere => I::ArgWhere,
         #[cfg(feature = "index_of")]
@@ -775,7 +803,6 @@ pub(super) fn convert_functions(
                 options,
             }
         },
-        F::Rechunk => I::Rechunk,
         F::Append { upcast } => {
             if upcast {
                 let dtypes = [

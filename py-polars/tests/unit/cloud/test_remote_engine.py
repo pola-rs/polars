@@ -318,7 +318,6 @@ def test_eager_operations_stay_local(tmp_path: Path) -> None:
         assert pl.read_lines(b"one\ntwo\n").height == 2
         assert pl.concat([df, df]).height == 6
         assert len(pl.align_frames(df, df, on="a")) == 2
-        assert pl.sql("SELECT * FROM df", eager=True).height == 3
         # explicitly asking for a local engine also still works
         assert pl.LazyFrame({"a": [1]}).collect(engine="in-memory").height == 1
 

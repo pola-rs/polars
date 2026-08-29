@@ -80,7 +80,6 @@ pub fn into_reduction(
             IRAggExpr::Median(_) => todo!(),
             IRAggExpr::NUnique(_) => todo!(),
             IRAggExpr::Implode { .. } => todo!(),
-            IRAggExpr::AggGroups(_) => todo!(),
         },
         AExpr::Len => {
             if let Some(first_column) = schema.iter_names().next() {

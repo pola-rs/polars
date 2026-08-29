@@ -892,10 +892,6 @@ impl DataFrame {
         index: usize,
         column: Column,
     ) -> PolarsResult<&mut Self> {
-        if self.shape() == (0, 0) {
-            unsafe { self.set_height(column.len()) };
-        }
-
         polars_ensure!(
             column.len() == self.height(),
             ShapeMismatch:
@@ -923,10 +919,6 @@ impl DataFrame {
     /// Add a new column to this [`DataFrame`] or replace an existing one. Broadcasts unit-length
     /// columns.
     pub fn with_column(&mut self, mut column: Column) -> PolarsResult<&mut Self> {
-        if self.shape() == (0, 0) {
-            unsafe { self.set_height(column.len()) };
-        }
-
         column.broadcast_in_place_to(self.height())?;
 
         if let Some(i) = self.get_column_index(column.name()) {
@@ -974,10 +966,6 @@ impl DataFrame {
         mut column: Column,
         output_schema: &Schema,
     ) -> PolarsResult<&mut Self> {
-        if self.shape() == (0, 0) {
-            unsafe { self.set_height(column.len()) };
-        }
-
         column.broadcast_in_place_to(self.height())?;
 
         let i = output_schema
