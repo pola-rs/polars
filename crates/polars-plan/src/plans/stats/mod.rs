@@ -16,7 +16,7 @@ use polars_utils::pl_str::PlSmallStr;
 use crate::plans::IR;
 
 /// Relative error for an estimate that carries no better information.
-const DEFAULT_REL_ERR: f32 = 0.5;
+pub(crate) const DEFAULT_REL_ERR: f32 = 0.5;
 
 /// A cardinality: a count that may be unknown, guaranteed, or estimated.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -148,10 +148,6 @@ impl ScanStats {
 
     pub fn column(&self, name: &str) -> Option<&ScanColumnStats> {
         self.columns.as_ref()?.get(name)
-    }
-
-    pub fn columns(&self) -> Option<Arc<ScanColumnStatsMap>> {
-        self.columns.clone()
     }
 }
 
