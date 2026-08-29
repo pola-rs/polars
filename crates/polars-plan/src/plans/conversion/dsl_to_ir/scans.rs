@@ -253,6 +253,7 @@ pub(super) async fn parquet_file_info(
     row_index: Option<&RowIndex>,
     // Per-source byte sizes from path expansion, aligned with `sources`.
     bytes_per_source: Option<&[u64]>,
+    use_statistics: bool,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, MetadataPerSource)> {
     use futures::stream::{FuturesOrdered, FuturesUnordered, StreamExt};
@@ -528,10 +529,14 @@ pub(super) async fn parquet_file_info(
         None => Card::approx(resolved.estimated_size as u64),
     };
 
-    let columns = parquet_column_stats(
-        resolved.metadata_per_source.resolved_metadata(),
-        resolved.metadata_per_source.is_full(),
-    );
+    let columns = if use_statistics {
+        parquet_column_stats(
+            resolved.metadata_per_source.resolved_metadata(),
+            resolved.metadata_per_source.is_full(),
+        )
+    } else {
+        ScanColumnStatsMap::default()
+    };
 
     let file_info = FileInfo::new(
         schema,
@@ -546,7 +551,14 @@ pub(super) async fn parquet_file_info(
 #[cfg(feature = "parquet")]
 const NDV_REL_ERR: f32 = 1.0;
 
+/// Column chunks visited at most. A scan with more of them is sampled.
+#[cfg(feature = "parquet")]
+const CHUNK_BUDGET: usize = 8192;
+
 /// Fold per-column statistics out of the resolved parquet footers.
+///
+/// Row groups beyond [`CHUNK_BUDGET`] chunks are sampled, which turns the
+/// per-column counts into estimates.
 ///
 /// `complete` says whether the footers cover every source.
 #[cfg(feature = "parquet")]
@@ -563,8 +575,7 @@ fn parquet_column_stats(
         nulls_unknown: bool,
         /// `max` over row groups, a lower bound on the NDV.
         distinct: Option<u64>,
-        /// Several leaves under one root means a nested column.
-        leaves_per_row_group: usize,
+        /// Leaves below the root, whose null counts do not add up to the root's.
         nested: bool,
     }
 
@@ -573,15 +584,25 @@ fn parquet_column_stats(
         return ScanColumnStatsMap::default();
     }
 
-    let mut acc: PlIndexMap<PlSmallStr, Acc> = PlIndexMap::default();
+    let row_groups = || metadata.iter().flat_map(|m| &m.row_groups);
+    let n_row_groups = row_groups().count();
+    let n_columns = row_groups().map(|rg| rg.n_columns()).max().unwrap_or(0);
+    if n_columns == 0 {
+        return ScanColumnStatsMap::default();
+    }
 
-    for rg in metadata.iter().flat_map(|m| &m.row_groups) {
-        for a in acc.values_mut() {
-            a.leaves_per_row_group = 0;
-        }
+    let stride = n_row_groups.div_ceil((CHUNK_BUDGET / n_columns).max(1));
+    let sampled = stride > 1;
+
+    let mut acc: PlIndexMap<PlSmallStr, Acc> = PlIndexMap::default();
+    let mut sampled_rows: u64 = 0;
+
+    for rg in row_groups().step_by(stride) {
+        sampled_rows += rg.num_rows() as u64;
 
         for chunk in rg.parquet_columns() {
-            let Some(root) = chunk.descriptor().path_in_schema.first() else {
+            let path = &chunk.descriptor().path_in_schema;
+            let Some(root) = path.first() else {
                 continue;
             };
             let a = match acc.get_mut(root) {
@@ -589,8 +610,7 @@ fn parquet_column_stats(
                 None => acc.entry(root.clone()).or_default(),
             };
 
-            a.leaves_per_row_group += 1;
-            a.nested |= a.leaves_per_row_group > 1;
+            a.nested |= path.len() > 1;
             a.uncompressed = a
                 .uncompressed
                 .saturating_add(chunk.uncompressed_size().max(0) as u64);
@@ -612,6 +632,10 @@ fn parquet_column_stats(
         }
     }
 
+    if sampled_rows == 0 {
+        return ScanColumnStatsMap::default();
+    }
+
     acc.into_iter()
         .map(|(name, a)| {
             let stats = ScanColumnStats {
@@ -624,10 +648,13 @@ fn parquet_column_stats(
                 },
                 null_count: if a.nulls_unknown || a.nested || !complete {
                     Card::Unknown
+                } else if sampled {
+                    let per_row = a.nulls as f64 / sampled_rows as f64;
+                    Card::approx((per_row * resolved_rows as f64) as u64)
                 } else {
                     Card::Exact(a.nulls)
                 },
-                avg_byte_width: Some(a.uncompressed as f32 / resolved_rows as f32),
+                avg_byte_width: Some(a.uncompressed as f32 / sampled_rows as f32),
             };
             (name, stats)
         })
@@ -1411,6 +1438,7 @@ impl SourcesToFileInfo {
                             sources,
                             unified_scan_args.row_index.as_ref(),
                             bytes_per_source.as_deref(),
+                            options.use_statistics,
                             cloud_options,
                         )
                         .await?;
