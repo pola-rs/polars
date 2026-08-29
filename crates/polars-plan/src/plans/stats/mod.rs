@@ -1,6 +1,13 @@
-//! Plan-time statistics for scan leaves.
+//! Plan-time statistics.
+//!
+//! [`ScanStats`] is what a scan leaf resolves at plan time. [`node_stats`]
+//! estimates the same shape for any node of the IR.
+
+mod node;
 
 use std::sync::Arc;
+
+pub use node::{NodeStats, join_cardinality, key_domain, node_stats};
 
 #[allow(clippy::disallowed_types)]
 use polars_utils::aliases::PlHashMap;
@@ -141,6 +148,10 @@ impl ScanStats {
 
     pub fn column(&self, name: &str) -> Option<&ScanColumnStats> {
         self.columns.as_ref()?.get(name)
+    }
+
+    pub fn columns(&self) -> Option<Arc<ScanColumnStatsMap>> {
+        self.columns.clone()
     }
 }
 

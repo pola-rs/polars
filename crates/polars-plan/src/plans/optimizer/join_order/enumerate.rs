@@ -6,7 +6,7 @@
 use polars_utils::pl_str::PlSmallStr;
 
 use super::cluster::Cluster;
-use super::stats::{join_cardinality, key_domain};
+use crate::plans::{join_cardinality, key_domain};
 
 /// Greedy left-deep ordering of a cluster's leaves.
 ///
@@ -78,7 +78,9 @@ fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -
     for bridge in cluster.bridging(is_placed, candidate) {
         let domain = key_domain(
             &cluster.leaves[bridge.placed_leaf].stats,
+            bridge.placed_key,
             &cluster.leaves[candidate].stats,
+            bridge.candidate_key,
         );
         let name = bridge.candidate_key.output_name_inner().get();
 
@@ -100,7 +102,7 @@ mod tests {
     use polars_utils::arena::{Arena, Node};
 
     use super::super::cluster::{Edge, Leaf};
-    use super::super::stats::LeafStats;
+    use crate::plans::NodeStats;
     use super::*;
     use crate::plans::{ExprIR, JoinOptionsIR, JoinTypeOptionsIR};
     use crate::prelude::JoinArgs;
@@ -120,10 +122,7 @@ mod tests {
         Leaf {
             node: Node(node),
             schema: schema.into(),
-            stats: LeafStats {
-                filtered: rows,
-                unfiltered: rows,
-            },
+            stats: NodeStats::of_rows(rows),
         }
     }
 
