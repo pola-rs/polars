@@ -205,9 +205,11 @@ impl StreamingQuery {
         if let Some(lock) = metrics
             && std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
         {
+            let mut m = lock.lock().clone();
+            m.flush(&graph.pipes);
+
             let mut total_query_ns = 0;
             let mut lines = Vec::new();
-            let m = lock.lock();
             for phys_node_key in phys_sm.keys() {
                 let Some(graph_node_key) = phys_to_graph.get(phys_node_key) else {
                     continue;

@@ -433,7 +433,7 @@ where
             FileInfo {
                 schema: _,
                 reader_schema,
-                row_estimation,
+                stats,
             },
         hive_parts,
         predicate: _,
@@ -540,13 +540,13 @@ where
 
     let original_sources_len = sources.len();
     *sources = sources.gather(selected_path_indices.clone()).unwrap();
-    *row_estimation = (
-        None,
-        row_estimation
-            .1
-            .div_ceil(original_sources_len)
-            .saturating_mul(sources.len()),
-    );
+    stats.rows = stats
+        .rows
+        .map(|rows| {
+            rows.div_ceil(original_sources_len as u64)
+                .saturating_mul(sources.len() as u64)
+        })
+        .demote_default();
 
     *hive_parts = hive_parts.as_ref().map(|hp| {
         let df = hp.df();

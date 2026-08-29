@@ -26,11 +26,8 @@ pub struct SinkExecutor {
 impl Executor for SinkExecutor {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         state.should_stop()?;
-        #[cfg(debug_assertions)]
-        {
-            if state.verbose() {
-                eprintln!("run sink_{}", self.name)
-            }
+        if cfg!(debug_assertions) && state.verbose() {
+            eprintln!("run sink_{}", self.name)
         }
         let df = self.input.execute(state)?;
         (self.f)(df, state).map(|df| df.unwrap_or_else(DataFrame::empty))
