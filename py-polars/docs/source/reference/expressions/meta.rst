@@ -35,8 +35,12 @@ This can for instance be useful to create a set of unique expressions.
     Expr.meta.has_multiple_outputs
     Expr.meta.is_column
     Expr.meta.is_column_selection
+    Expr.meta.is_known_length
     Expr.meta.is_literal
+    Expr.meta.is_scalar
+    Expr.meta.is_length_preserving
     Expr.meta.is_regex_projection
+    Expr.meta.is_row_separable
     Expr.meta.ne
     Expr.meta.output_name
     Expr.meta.pop
