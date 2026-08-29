@@ -253,6 +253,7 @@ pub(super) async fn parquet_file_info(
     row_index: Option<&RowIndex>,
     // Per-source byte sizes from path expansion, aligned with `sources`.
     bytes_per_source: Option<&[u64]>,
+    use_statistics: bool,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, MetadataPerSource)> {
     use futures::stream::{FuturesOrdered, FuturesUnordered, StreamExt};
@@ -528,13 +529,141 @@ pub(super) async fn parquet_file_info(
         None => Card::approx(resolved.estimated_size as u64),
     };
 
+    let columns = if use_statistics {
+        parquet_column_stats(
+            resolved.metadata_per_source.resolved_metadata(),
+            resolved.metadata_per_source.is_full(),
+        )
+    } else {
+        ScanColumnStatsMap::default()
+    };
+
     let file_info = FileInfo::new(
         schema,
         Some(Either::Left(resolved.reader_schema)),
-        ScanStats::new(rows),
+        ScanStats::new(rows).with_columns(columns),
     );
 
     Ok((file_info, resolved.metadata_per_source))
+}
+
+/// Relative error
+#[cfg(feature = "parquet")]
+const DISTINCT_COUNT_REL_ERR: f32 = 1.0;
+
+/// Column chunks visited at most. A scan with more of them is sampled.
+#[cfg(feature = "parquet")]
+const CHUNK_BUDGET: usize = 8192;
+
+/// Fold per-column statistics out of the resolved parquet footers.
+///
+/// Row groups beyond [`CHUNK_BUDGET`] chunks are sampled, which turns the
+/// per-column counts into estimates.
+///
+/// `complete` says whether the footers cover every source.
+#[cfg(feature = "parquet")]
+fn parquet_column_stats(
+    metadata: &[polars_io::parquet::metadata::FileMetadataRef],
+    complete: bool,
+) -> ScanColumnStatsMap {
+    /// Accumulated over every leaf chunk under one root column.
+    #[derive(Default)]
+    struct Acc {
+        uncompressed: u64,
+        nulls: u64,
+        /// Set once any chunk lacked a null count.
+        nulls_unknown: bool,
+        /// `max` over row groups, a lower bound on the distinct count.
+        distinct: Option<u64>,
+        /// The column is nested, so leaf null counts are not the root's.
+        nested: bool,
+    }
+
+    let resolved_rows: u64 = metadata.iter().map(|m| m.num_rows as u64).sum();
+    if resolved_rows == 0 {
+        return ScanColumnStatsMap::default();
+    }
+
+    let n_row_groups: usize = metadata.iter().map(|m| m.row_groups.len()).sum();
+    let Some(n_columns) = metadata
+        .iter()
+        .flat_map(|m| m.row_groups.first())
+        .map(|rg| rg.n_columns())
+        .max()
+        .filter(|n| *n > 0)
+    else {
+        return ScanColumnStatsMap::default();
+    };
+
+    let stride = n_row_groups.div_ceil((CHUNK_BUDGET / n_columns).max(1));
+    let sampled = stride > 1;
+
+    #[allow(clippy::disallowed_types)]
+    let mut acc: PlHashMap<PlSmallStr, Acc> = PlHashMap::default();
+    let mut sampled_rows: u64 = 0;
+
+    for rg in metadata.iter().flat_map(|m| &m.row_groups).step_by(stride) {
+        sampled_rows += rg.num_rows() as u64;
+
+        for chunk in rg.parquet_columns() {
+            let path = &chunk.descriptor().path_in_schema;
+            let Some(root) = path.first() else {
+                continue;
+            };
+            let a = match acc.get_mut(root) {
+                Some(a) => a,
+                None => acc.entry(root.clone()).or_default(),
+            };
+
+            a.nested |= path.len() > 1;
+            a.uncompressed = a
+                .uncompressed
+                .saturating_add(chunk.uncompressed_size().max(0) as u64);
+
+            let chunk_nulls = chunk.null_count().filter(|n| *n >= 0).map(|n| n as u64);
+            match chunk_nulls {
+                Some(n) => a.nulls = a.nulls.saturating_add(n),
+                None => a.nulls_unknown = true,
+            }
+
+            // A distinct count may not exceed the values actually present.
+            let non_null =
+                (chunk.num_values().max(0) as u64).saturating_sub(chunk_nulls.unwrap_or(0));
+            if let Some(d) = chunk.distinct_count().filter(|d| *d >= 0)
+                && d as u64 <= non_null
+            {
+                a.distinct = Some(a.distinct.unwrap_or(0).max(d as u64));
+            }
+        }
+    }
+
+    if sampled_rows == 0 {
+        return ScanColumnStatsMap::default();
+    }
+
+    acc.into_iter()
+        .map(|(name, a)| {
+            let stats = ScanColumnStats {
+                distinct: match a.distinct {
+                    Some(d) => Card::Approx {
+                        value: d,
+                        rel_err: DISTINCT_COUNT_REL_ERR,
+                    },
+                    None => Card::Unknown,
+                },
+                null_count: if a.nulls_unknown || a.nested || !complete {
+                    Card::Unknown
+                } else if sampled {
+                    let per_row = a.nulls as f64 / sampled_rows as f64;
+                    Card::approx((per_row * resolved_rows as f64) as u64)
+                } else {
+                    Card::Exact(a.nulls)
+                },
+                avg_byte_width: Some(a.uncompressed as f32 / sampled_rows as f32),
+            };
+            (name, stats)
+        })
+        .collect()
 }
 
 /// Minimum sample so a scan still extrapolates from enough files; below this,
@@ -632,36 +761,123 @@ pub fn max_metadata_scan_cached() -> usize {
     *MAX_SCANS_METADATA_CACHED
 }
 
+/// A file with at most this many record batches is counted exactly, a larger one
+/// has its row count extrapolated from this many.
+#[cfg(feature = "ipc")]
+const MAX_SAMPLED_BLOCKS: usize = 64;
+
+/// Relative error for a row count extrapolated from sampled record batches.
+#[cfg(feature = "ipc")]
+const SAMPLED_ROWS_REL_ERR: f32 = 0.1;
+
+/// The row count Polars writes into the footer.
+///
+/// `None` for a file written by anything else.
+#[cfg(feature = "ipc")]
+#[allow(clippy::useless_conversion)]
+fn ipc_rows_from_footer(metadata: &arrow::io::ipc::read::FileMetadata) -> Option<u64> {
+    polars_io::ipc::pl_ipc_metadata::PlIpcMetadata::from_ipc_footer(metadata)?
+        .num_rows()
+        .map(u64::from)
+}
+
+#[cfg(feature = "ipc")]
+fn sum_block_rows<R: std::io::Read + std::io::Seek>(
+    reader: &mut R,
+    blocks: &[arrow::io::ipc::format::ipc::Block],
+) -> Option<u64> {
+    arrow::io::ipc::read::get_row_count_from_blocks(reader, blocks)
+        .ok()
+        .and_then(|rows| u64::try_from(rows).ok())
+}
+
+/// Sums the record batch lengths, sampling if there are many of them.
+#[cfg(feature = "ipc")]
+fn ipc_rows_from_blocks<R: std::io::Read + std::io::Seek>(
+    reader: &mut R,
+    blocks: &[arrow::io::ipc::format::ipc::Block],
+) -> Card {
+    if blocks.len() <= MAX_SAMPLED_BLOCKS {
+        return match sum_block_rows(reader, blocks) {
+            Some(rows) => Card::Exact(rows),
+            None => Card::Unknown,
+        };
+    }
+
+    // Writers use a fixed chunk size, so only the last batch is a remainder.
+    let (head, tail) = blocks.split_at(MAX_SAMPLED_BLOCKS - 1);
+    let (Some(head_rows), Some(last_rows)) = (
+        sum_block_rows(reader, head),
+        sum_block_rows(reader, &tail[tail.len() - 1..]),
+    ) else {
+        return Card::Unknown;
+    };
+
+    let per_block = head_rows as f64 / head.len() as f64;
+    let value = (per_block * (blocks.len() - 1) as f64) as u64 + last_rows;
+    Card::Approx {
+        value,
+        rel_err: SAMPLED_ROWS_REL_ERR,
+    }
+}
+
+/// Reads the footer, and derives a row count from it when that is cheap.
+///
+/// Blocks, so it hands off the async thread for the duration.
+#[cfg(feature = "ipc")]
+fn ipc_metadata_and_rows<R: std::io::Read + std::io::Seek>(
+    mut reader: R,
+) -> PolarsResult<(arrow::io::ipc::read::FileMetadata, Card)> {
+    ASYNC.block_in_place(move || {
+        let metadata = arrow::io::ipc::read::read_file_metadata(&mut reader)?;
+        let rows = match ipc_rows_from_footer(&metadata) {
+            Some(rows) => Card::Exact(rows),
+            None => ipc_rows_from_blocks(&mut reader, &metadata.blocks),
+        };
+        Ok((metadata, rows))
+    })
+}
+
 // TODO! return metadata arced
 #[cfg(feature = "ipc")]
 pub(super) async fn ipc_file_info(
     first_scan_source: ScanSourceRef<'_>,
+    n_sources: usize,
     row_index: Option<&RowIndex>,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
 
-    let metadata = match first_scan_source {
+    let (metadata, first_rows) = match first_scan_source {
         ScanSourceRef::Path(path) => {
             if path.has_scheme() {
                 feature_gated!("cloud", {
-                    polars_io::ipc::IpcReaderAsync::from_uri(path.clone(), cloud_options)
-                        .await?
-                        .metadata()
-                        .await?
+                    let metadata =
+                        polars_io::ipc::IpcReaderAsync::from_uri(path.clone(), cloud_options)
+                            .await?
+                            .metadata()
+                            .await?;
+                    // Walking the blocks here would download the whole file.
+                    let rows = ipc_rows_from_footer(&metadata).map_or(Card::Unknown, Card::Exact);
+                    (metadata, rows)
                 })
             } else {
-                arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(
-                    polars_utils::io::open_file(path.as_std_path())?,
-                ))?
+                ipc_metadata_and_rows(std::io::BufReader::new(polars_utils::io::open_file(
+                    path.as_std_path(),
+                )?))?
             }
         },
-        ScanSourceRef::File(file) => {
-            arrow::io::ipc::read::read_file_metadata(&mut std::io::BufReader::new(file))?
-        },
-        ScanSourceRef::Buffer(buff) => {
-            arrow::io::ipc::read::read_file_metadata(&mut std::io::Cursor::new(buff))?
-        },
+        ScanSourceRef::File(file) => ipc_metadata_and_rows(std::io::BufReader::new(file))?,
+        ScanSourceRef::Buffer(buff) => ipc_metadata_and_rows(std::io::Cursor::new(buff))?,
+    };
+
+    // Only the first source is read, so anything beyond it is extrapolated.
+    let rows = if n_sources == 1 {
+        first_rows
+    } else {
+        first_rows
+            .map(|rows| rows.saturating_mul(n_sources as u64))
+            .demote_default()
     };
 
     let file_info = FileInfo::new(
@@ -670,7 +886,7 @@ pub(super) async fn ipc_file_info(
             row_index,
         )?,
         Some(Either::Left(Arc::clone(&metadata.schema))),
-        ScanStats::unknown(),
+        ScanStats::new(rows),
     );
 
     Ok((file_info, metadata))
@@ -1223,6 +1439,7 @@ impl SourcesToFileInfo {
                             sources,
                             unified_scan_args.row_index.as_ref(),
                             bytes_per_source.as_deref(),
+                            options.use_statistics,
                             cloud_options,
                         )
                         .await?;
@@ -1264,6 +1481,7 @@ impl SourcesToFileInfo {
 
                 let (mut file_info, md) = scans::ipc_file_info(
                     first_scan_source,
+                    sources.len(),
                     unified_scan_args.row_index.as_ref(),
                     cloud_options,
                 )
