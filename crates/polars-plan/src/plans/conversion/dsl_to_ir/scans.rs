@@ -773,6 +773,7 @@ const SAMPLED_ROWS_REL_ERR: f32 = 0.1;
 ///
 /// `None` for a file written by anything else.
 #[cfg(feature = "ipc")]
+#[allow(clippy::useless_conversion)]
 fn ipc_rows_from_footer(metadata: &arrow::io::ipc::read::FileMetadata) -> Option<u64> {
     polars_io::ipc::pl_ipc_metadata::PlIpcMetadata::from_ipc_footer(metadata)?
         .num_rows()

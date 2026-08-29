@@ -16,7 +16,10 @@ impl PlIpcMetadata {
     pub fn from_ipc_footer(metadata: &arrow::io::ipc::read::FileMetadata) -> Option<Self> {
         #[cfg(feature = "serde")]
         {
-            let raw = metadata.custom_metadata.as_ref()?.get(POLARS_IPC_METADATA_KEY)?;
+            let raw = metadata
+                .custom_metadata
+                .as_ref()?
+                .get(POLARS_IPC_METADATA_KEY)?;
             serde_json::from_str(raw).ok()
         }
         #[cfg(not(feature = "serde"))]

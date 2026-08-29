@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+#[allow(clippy::disallowed_types)]
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -92,6 +93,8 @@ pub struct ScanColumnStats {
     pub avg_byte_width: Option<f32>,
 }
 
+// We don't index
+#[allow(clippy::disallowed_types)]
 pub type ScanColumnStatsMap = PlHashMap<PlSmallStr, ScanColumnStats>;
 
 /// Plan-time statistics for a scan.
