@@ -826,3 +826,20 @@ def test_ndjson_large_u64_infer_25894() -> None:
         df,
         pl.DataFrame({"id": pl.Series("id", [14933243513335727983], dtype=pl.Int128)}),
     )
+
+
+def test_read_json_with_zero_infer_schema_length_29025() -> None:
+    # If the schema was explicitly given, then infer_schema_length can be 0.
+    assert_frame_equal(
+        pl.read_json(
+            b"""\
+[
+    {"a": 1},
+    {"a": 2, "b": 2}
+]
+""",
+            schema={"a": pl.Int64, "b": pl.Int64},
+            infer_schema_length=0,
+        ),
+        pl.DataFrame({"a": [1, 2], "b": [None, 2]}),
+    )
