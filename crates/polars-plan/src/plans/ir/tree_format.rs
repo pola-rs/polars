@@ -325,19 +325,19 @@ impl<'a> TreeFmtNode<'a> {
                 Join {
                     input_left,
                     input_right,
-                    left_on,
-                    right_on,
                     options,
                     ..
                 } => ND(
                     wh(h, &format!("{} JOIN", options.args.how)),
-                    left_on
-                        .iter()
+                    options
+                        .options
+                        .left_on()
                         .map(|expr| self.expr_node(Some("left on:".to_string()), expr))
                         .chain([self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)])
                         .chain(
-                            right_on
-                                .iter()
+                            options
+                                .options
+                                .right_on()
                                 .map(|expr| self.expr_node(Some("right on:".to_string()), expr)),
                         )
                         .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
@@ -380,9 +380,6 @@ impl<'a> TreeFmtNode<'a> {
                     wh(h, &format!("{function}")),
                     vec![self.lp_node(None, *input)],
                 ),
-                ExtContext { input, .. } => {
-                    ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
-                },
                 Sink { input, payload } => ND(
                     wh(
                         h,

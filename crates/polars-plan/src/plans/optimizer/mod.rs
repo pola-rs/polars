@@ -17,6 +17,8 @@ mod flatten_merge_sorted;
 mod flatten_union;
 #[cfg(feature = "fused")]
 mod fused;
+mod join_build_side;
+mod join_order;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 mod expand_datasets;
@@ -206,6 +208,12 @@ pub fn optimize(
         )?;
     }
 
+    // Needs the filters that predicate pushdown places on the scans, and must come
+    // before projection pushdown so projections follow the final join order.
+    if opt_flags.join_order() && get_or_init_members!().has_joins_or_unions {
+        root = join_order::join_order(root, ir_arena, expr_arena)?;
+    }
+
     if opt_flags.projection_pushdown() {
         projection_pushdown(root, ir_arena, expr_arena);
     }
@@ -250,13 +258,18 @@ pub fn optimize(
         ir_arena.replace(root, ir);
     }
 
+    // Needs the final join order and the pushed-down projections.
+    if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins_or_unions {
+        join_build_side::set_join_build_sides(root, ir_arena, expr_arena);
+    }
+
     if opt_flags.cluster_with_columns() && get_or_init_members!().with_columns_count > 1 {
         cluster_with_columns::optimize(root, ir_arena, expr_arena)
     }
 
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
-    if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
+    if comm_subexpr_elim {
         let mut optimizer = CommonSubExprOptimizer::new(
             opt_flags.contains(OptFlags::STREAMING) | opt_flags.contains(OptFlags::GPU),
         );

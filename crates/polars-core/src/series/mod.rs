@@ -1169,7 +1169,6 @@ impl BroadcastLength for Series {
 
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
     use crate::series::*;
 
     #[test]

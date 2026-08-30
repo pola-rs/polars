@@ -1,5 +1,13 @@
 use bitflags::bitflags;
 
+const DEFAULT_OPT_FLAGS: OptFlags = OptFlags::from_bits_truncate(
+    OptFlags::all().bits()
+        & !(OptFlags::STREAMING.bits()
+            | OptFlags::EAGER.bits()
+            | OptFlags::GPU.bits()
+            | OptFlags::QUERY_MONITORING.bits()),
+);
+
 bitflags! {
 #[derive(Copy, Clone, Debug)]
     /// Allowed optimizations.
@@ -44,12 +52,18 @@ bitflags! {
         const PARTITION_HIVE = 1 << 17;
         /// Observe this query with the registered observer.
         const QUERY_MONITORING = 1 << 18;
+        /// Try to reorder joins.
+        const JOIN_ORDER = 1 << 19;
     }
 }
 
 impl OptFlags {
     pub fn cluster_with_columns(&self) -> bool {
         self.contains(OptFlags::CLUSTER_WITH_COLUMNS)
+    }
+
+    pub fn join_order(&self) -> bool {
+        self.contains(OptFlags::JOIN_ORDER)
     }
 
     pub fn cover_ir_conversion(&self, requested: OptFlags) -> bool {
@@ -105,11 +119,7 @@ impl OptFlags {
 
 impl Default for OptFlags {
     fn default() -> Self {
-        Self::from_bits_truncate(u32::MAX)
-            & !Self::STREAMING
-            & !Self::EAGER
-            & !Self::GPU
-            & !Self::QUERY_MONITORING
+        DEFAULT_OPT_FLAGS
     }
 }
 

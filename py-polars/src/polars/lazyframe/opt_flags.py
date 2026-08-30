@@ -1,25 +1,12 @@
 from __future__ import annotations
 
 import contextlib
-from typing import cast
+import functools
 
-from polars._utils.deprecation import issue_deprecation_warning
+from polars._utils.expired import RemovedParameter, removed_parameters
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import PyOptFlags
-
-import inspect
-from functools import wraps
-from typing import TYPE_CHECKING, TypeVar
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-    from typing import ParamSpec
-
-    from polars._utils.various import IdentityFunction
-
-    P = ParamSpec("P")
-    T = TypeVar("T")
 
 
 class QueryOptFlags:
@@ -31,6 +18,14 @@ class QueryOptFlags:
         at any point without it being considered a breaking change.
     """
 
+    @removed_parameters(
+        RemovedParameter(
+            name="collapse_joins",
+            deprecated_in="1.33.1",
+            removed_in="2.0",
+            hint="Use `predicate_pushdown` instead.",
+        ),
+    )
     def __init__(
         self,
         *,
@@ -41,11 +36,12 @@ class QueryOptFlags:
         comm_subplan_elim: None | bool = None,
         comm_subexpr_elim: None | bool = None,
         cluster_with_columns: None | bool = None,
-        collapse_joins: None | bool = None,
         check_order_observe: None | bool = None,
         fast_projection: None | bool = None,
         sort_collapse: None | bool = None,
         pre_partition_hive: None | bool = None,
+        join_order: None | bool = None,
+        row_estimate: None | bool = None,
     ) -> None:
         self._pyoptflags = PyOptFlags.default()
         self.update(
@@ -56,11 +52,12 @@ class QueryOptFlags:
             comm_subplan_elim=comm_subplan_elim,
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
             check_order_observe=check_order_observe,
             fast_projection=fast_projection,
             sort_collapse=sort_collapse,
             pre_partition_hive=pre_partition_hive,
+            join_order=join_order,
+            row_estimate=row_estimate,
         )
 
     @classmethod
@@ -70,6 +67,14 @@ class QueryOptFlags:
         return optflags
 
     @staticmethod
+    @removed_parameters(
+        RemovedParameter(
+            name="collapse_joins",
+            deprecated_in="1.33.1",
+            removed_in="2.0",
+            hint="Use `predicate_pushdown` instead.",
+        ),
+    )
     def none(
         *,
         predicate_pushdown: None | bool = None,
@@ -79,11 +84,12 @@ class QueryOptFlags:
         comm_subplan_elim: None | bool = None,
         comm_subexpr_elim: None | bool = None,
         cluster_with_columns: None | bool = None,
-        collapse_joins: None | bool = None,
         check_order_observe: None | bool = None,
         fast_projection: None | bool = None,
         sort_collapse: None | bool = None,
         pre_partition_hive: None | bool = None,
+        join_order: None | bool = None,
+        row_estimate: None | bool = None,
     ) -> QueryOptFlags:
         """Create new empty set off optimizations."""
         optflags = QueryOptFlags()
@@ -96,13 +102,22 @@ class QueryOptFlags:
             comm_subplan_elim=comm_subplan_elim,
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
-            collapse_joins=collapse_joins,
             check_order_observe=check_order_observe,
             fast_projection=fast_projection,
             sort_collapse=sort_collapse,
             pre_partition_hive=pre_partition_hive,
+            join_order=join_order,
+            row_estimate=row_estimate,
         )
 
+    @removed_parameters(
+        RemovedParameter(
+            name="collapse_joins",
+            deprecated_in="1.33.1",
+            removed_in="2.0",
+            hint="Use `predicate_pushdown` instead.",
+        ),
+    )
     def update(
         self,
         *,
@@ -113,11 +128,12 @@ class QueryOptFlags:
         comm_subplan_elim: None | bool = None,
         comm_subexpr_elim: None | bool = None,
         cluster_with_columns: None | bool = None,
-        collapse_joins: None | bool = None,
         check_order_observe: None | bool = None,
         fast_projection: None | bool = None,
         sort_collapse: None | bool = None,
         pre_partition_hive: None | bool = None,
+        join_order: None | bool = None,
+        row_estimate: None | bool = None,
     ) -> QueryOptFlags:
         """Update the current optimization flags."""
         if predicate_pushdown is not None:
@@ -134,14 +150,6 @@ class QueryOptFlags:
             self.comm_subexpr_elim = comm_subexpr_elim
         if cluster_with_columns is not None:
             self.cluster_with_columns = cluster_with_columns
-        if collapse_joins is not None:
-            issue_deprecation_warning(
-                "the `collapse_joins` parameter for `QueryOptFlags` is deprecated. "
-                "Use `predicate_pushdown` instead.",
-                version="1.33.1",
-            )
-            if not collapse_joins:
-                self.predicate_pushdown = False
         if check_order_observe is not None:
             self.check_order_observe = check_order_observe
         if fast_projection is not None:
@@ -150,6 +158,10 @@ class QueryOptFlags:
             self.sort_collapse = sort_collapse
         if pre_partition_hive is not None:
             self.pre_partition_hive = pre_partition_hive
+        if join_order is not None:
+            self.join_order = join_order
+        if row_estimate is not None:
+            self.row_estimate = row_estimate
 
         return self
 
@@ -271,6 +283,24 @@ class QueryOptFlags:
     def pre_partition_hive(self, value: bool) -> None:
         self._pyoptflags.pre_partition_hive = value
 
+    @property
+    def join_order(self) -> bool:
+        """Reorder runs of inner equi-joins by estimated cardinality."""
+        return self._pyoptflags.join_order
+
+    @join_order.setter
+    def join_order(self, value: bool) -> None:
+        self._pyoptflags.join_order = value
+
+    @property
+    def row_estimate(self) -> bool:
+        """Pick a join's build side from plan-time row estimates."""
+        return self._pyoptflags.row_estimate
+
+    @row_estimate.setter
+    def row_estimate(self, value: bool) -> None:
+        self._pyoptflags.row_estimate = value
+
     def __str__(self) -> str:
         return f"""
 QueryOptFlags {{
@@ -288,6 +318,8 @@ QueryOptFlags {{
     fast_projection: {self.fast_projection}
     sort_collapse: {self.sort_collapse}
     pre_partition_hive: {self.pre_partition_hive}
+    join_order: {self.join_order}
+    row_estimate: {self.row_estimate}
 
     eager: {self._pyoptflags.eager}
     streaming: {self._pyoptflags.streaming}
@@ -301,66 +333,26 @@ try:  # Module not available when building docs
 except (ImportError, NameError) as _:
     DEFAULT_QUERY_OPT_FLAGS = ()  # type: ignore[assignment]
 
+_removed_opt_parameter = functools.partial(
+    RemovedParameter,
+    deprecated_in="1.30.0",
+    removed_in="2.0",
+    hint="use the `optimizations` parameter.",
+)
 
-def forward_old_opt_flags() -> IdentityFunction:
-    """Decorator to mark to forward the old optimization flags."""
-
-    def helper(f: QueryOptFlags, field_name: str, value: bool) -> QueryOptFlags:  # noqa: FBT001
-        setattr(f, field_name, value)
-        return f
-
-    def helper_hidden(f: QueryOptFlags, field_name: str, value: bool) -> QueryOptFlags:  # noqa: FBT001
-        setattr(f._pyoptflags, field_name, value)
-        return f
-
-    def clear_optimizations(f: QueryOptFlags, value: bool) -> QueryOptFlags:  # noqa: FBT001
-        if value:
-            return QueryOptFlags.none()
-        else:
-            return f
-
-    def eager(f: QueryOptFlags, value: bool) -> QueryOptFlags:  # noqa: FBT001
-        if value:
-            return QueryOptFlags._eager()
-        else:
-            return f
-
-    OLD_OPT_PARAMETERS_MAPPING = {
-        "no_optimization": lambda f, v: clear_optimizations(f, v),
-        "_eager": lambda f, v: eager(f, v),
-        "type_coercion": lambda f, v: helper_hidden(f, "type_coercion", v),
-        "_type_check": lambda f, v: helper_hidden(f, "type_check", v),
-        "predicate_pushdown": lambda f, v: helper(f, "predicate_pushdown", v),
-        "projection_pushdown": lambda f, v: helper(f, "projection_pushdown", v),
-        "simplify_expression": lambda f, v: helper(f, "simplify_expression", v),
-        "slice_pushdown": lambda f, v: helper(f, "slice_pushdown", v),
-        "comm_subplan_elim": lambda f, v: helper(f, "comm_subplan_elim", v),
-        "comm_subexpr_elim": lambda f, v: helper(f, "comm_subexpr_elim", v),
-        "cluster_with_columns": lambda f, v: helper(f, "cluster_with_columns", v),
-        "collapse_joins": lambda f, v: helper(f, "collapse_joins", v),
-        "_check_order": lambda f, v: helper(f, "check_order_observe", v),
-    }
-
-    def decorate(function: Callable[P, T]) -> Callable[P, T]:
-        @wraps(function)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            optflags = cast(
-                "QueryOptFlags", kwargs.get("optimizations", DEFAULT_QUERY_OPT_FLAGS)
-            )
-            optflags = optflags.__copy__()
-            for key in list(kwargs.keys()):
-                cb = OLD_OPT_PARAMETERS_MAPPING.get(key)
-                if cb is not None:
-                    from polars._warnings import issue_warning
-
-                    message = f"optimization flag `{key}` is deprecated. Please use `optimizations` parameter\n(Deprecated in version 1.30.0)"
-                    issue_warning(message, DeprecationWarning)
-                    optflags = cb(optflags, kwargs.pop(key))  # type: ignore[no-untyped-call,unused-ignore]
-
-            kwargs["optimizations"] = optflags
-            return function(*args, **kwargs)
-
-        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
-        return wrapper
-
-    return decorate
+# List of removed old opt flags. To be passed to @removed_parameters().
+REMOVED_OLD_OPT_FLAGS = [
+    _removed_opt_parameter(name="no_optimization"),
+    _removed_opt_parameter(name="_eager"),
+    _removed_opt_parameter(name="type_coercion"),
+    _removed_opt_parameter(name="_type_check"),
+    _removed_opt_parameter(name="predicate_pushdown"),
+    _removed_opt_parameter(name="projection_pushdown"),
+    _removed_opt_parameter(name="simplify_expression"),
+    _removed_opt_parameter(name="slice_pushdown"),
+    _removed_opt_parameter(name="comm_subplan_elim"),
+    _removed_opt_parameter(name="comm_subexpr_elim"),
+    _removed_opt_parameter(name="cluster_with_columns"),
+    _removed_opt_parameter(name="collapse_joins"),
+    _removed_opt_parameter(name="_check_order"),
+]

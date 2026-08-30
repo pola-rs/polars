@@ -179,6 +179,20 @@ impl MetadataPerSource {
         }
     }
 
+    /// Whether every source's footer is resolved.
+    pub fn is_full(&self) -> bool {
+        matches!(self, Self::Full(_))
+    }
+
+    /// The resolved footers, ascending by source index.
+    pub fn resolved_metadata(&self) -> &[FileMetadataRef] {
+        match self {
+            Self::Unresolved => &[],
+            Self::Partial(p) => &p.metadata,
+            Self::Full(s) => s,
+        }
+    }
+
     /// Re-index to the sources surviving a filter.
     ///
     /// The `surviving` yields ascending pre-filter source indices.

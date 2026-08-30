@@ -837,7 +837,7 @@ impl utils::Decoder for BinViewDecoder {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BinaryIter<'a> {
     values: &'a [u8],
 

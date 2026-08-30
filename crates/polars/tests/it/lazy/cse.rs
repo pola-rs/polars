@@ -15,7 +15,7 @@ fn test_cse_union_schema_6504() -> PolarsResult<()> {
     .lazy();
 
     let q3 = q2
-        .join(q1.clone(), [col("b")], [col("b")], JoinType::Anti.into())
+        .join(q1.clone(), [col("b")], [col("b")], JoinType::Anti.into())?
         .with_column(lit(0).alias("a"))
         .select([col("a"), col("b")]);
 

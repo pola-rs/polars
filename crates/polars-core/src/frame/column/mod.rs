@@ -246,6 +246,15 @@ impl Column {
             _ => None,
         }
     }
+
+    /// Get the [`ScalarColumn`] as [`Series`] if it was already materialized.
+    #[inline]
+    pub fn lazy_as_materialized_series(&self) -> Option<&Series> {
+        match self {
+            Column::Series(s) => Some(s),
+            Column::Scalar(s) => s.lazy_as_materialized_series(),
+        }
+    }
     #[inline]
     pub fn as_scalar_column(&self) -> Option<&ScalarColumn> {
         match self {
@@ -1875,6 +1884,8 @@ impl Column {
     pub fn n_chunks(&self) -> usize {
         match self {
             Column::Series(s) => s.n_chunks(),
+            // A materialized scalar column can hold more than one chunk, and those
+            // chunks still have to take part in alignment.
             Column::Scalar(s) => s.lazy_as_materialized_series().map_or(1, |x| x.n_chunks()),
         }
     }

@@ -233,7 +233,7 @@ fn test_predicate_on_join_select_4884() -> PolarsResult<()> {
         .left_on([col("y")])
         .right_on([col("x")])
         .suffix("_right")
-        .finish()
+        .finish()?
         .select([col("x"), col("y_right").alias("y")])
         .filter(col("x").neq(col("y")).and(col("y").eq(2)))
         .collect()?;
