@@ -322,6 +322,7 @@ def read_database_uri(
     schema_overrides: SchemaDict | None = None,
     execute_options: None = None,
     pre_execution_query: str | list[str] | None = None,
+    connection_options: dict[str, Any] | None = None,
 ) -> DataFrame: ...
 
 
@@ -338,6 +339,7 @@ def read_database_uri(
     schema_overrides: None = None,
     execute_options: dict[str, Any] | None = None,
     pre_execution_query: str | list[str] | None = None,
+    connection_options: dict[str, Any] | None = None,
 ) -> DataFrame: ...
 
 
@@ -353,6 +355,7 @@ def read_database_uri(
     schema_overrides: SchemaDict | None = None,
     execute_options: dict[str, Any] | None = None,
     pre_execution_query: str | list[str] | None = None,
+    connection_options: dict[str, Any] | None = None,
 ) -> DataFrame:
     """
     Read the results of a SQL query into a DataFrame, given a URI.
@@ -404,6 +407,17 @@ def read_database_uri(
         SQL query or list of SQL queries executed before main query (connectorx>=0.4.2).
         Can be used to set runtime configurations using SET statements.
         Only applicable for Postgres and MySQL source.
+        Only applicable with the connectorx engine.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+    connection_options
+        A dictionary of key-value pairs to merge as URL query parameters into the
+        connection URI. If a key already exists in the URI, the value from
+        ``connection_options`` takes precedence. Values are URL-encoded and
+        serialized automatically (non-string values are converted via ``str``).
         Only applicable with the connectorx engine.
 
         .. warning::
@@ -501,6 +515,20 @@ def read_database_uri(
         if execute_options:
             msg = "the 'connectorx' engine does not support use of `execute_options`"
             raise ValueError(msg)
+        if connection_options:
+            issue_unstable_warning(
+                "the 'connection-options' parameter is considered unstable."
+            )
+            from urllib.parse import parse_qs, quote, urlparse, urlunparse
+
+            parsed = urlparse(uri)
+            existing = parse_qs(parsed.query, keep_blank_values=True)
+            for k, v in connection_options.items():
+                existing[k] = [str(v)]
+            query = "&".join(
+                f"{quote(k)}={quote(v)}" for k, vs in existing.items() for v in vs
+            )
+            uri = urlunparse(parsed._replace(query=query))
         if pre_execution_query:
             issue_unstable_warning(
                 "the 'pre-execution-query' parameter is considered unstable."
@@ -516,6 +544,9 @@ def read_database_uri(
             pre_execution_query=pre_execution_query,
         )
     elif engine == "adbc":
+        if connection_options:
+            msg = "the 'adbc' engine does not support use of `connection_options`"
+            raise ValueError(msg)
         if not isinstance(query, str):
             msg = f"only a single SQL query string is accepted for adbc, got a {qualified_type_name(query)!r} type"
             raise ValueError(msg)
