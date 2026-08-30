@@ -32,6 +32,8 @@ pub struct NodeStats {
     /// We want to know this as we divide a join by the number
     /// of distinct values in the original set.
     pub unfiltered: f64,
+    /// Rows the node cannot emit more than. A guarantee, not an estimate.
+    max_rows: Option<f64>,
     /// Per output column, sparse. An absent column is unknown.
     columns: Option<Arc<ScanColumnStatsMap>>,
 }
@@ -53,12 +55,18 @@ pub fn node_stats(
             unified_scan_args,
             ..
         } => {
-            let unfiltered = leaf_row_count(ir).value()? as f64;
-            // The slice is applied before the predicate, so it narrows first.
-            let mut filtered = match &unified_scan_args.pre_slice {
-                None => unfiltered,
-                Some(slice) => sliced(unfiltered, slice.clone()),
+            let rows = leaf_row_count(ir);
+            let unfiltered = rows.value()? as f64;
+            let mut max_rows = match rows {
+                Card::Exact(rows) => Some(rows as f64),
+                _ => None,
             };
+            // The slice is applied before the predicate, so it narrows first.
+            let mut filtered = unfiltered;
+            if let Some(slice) = &unified_scan_args.pre_slice {
+                filtered = sliced(filtered, slice.clone());
+                max_rows = max_rows.map(|m| sliced(m, slice.clone()));
+            }
             let columns = scan_columns(ir);
             if let Some(p) = predicate {
                 filtered = apply_predicate(
@@ -72,6 +80,7 @@ pub fn node_stats(
             Some(NodeStats {
                 filtered,
                 unfiltered,
+                max_rows,
                 columns,
             })
         },
@@ -142,37 +151,32 @@ pub fn node_stats(
                 None => inner,
                 // The dynamic predicate reaches the same rows sooner, it does not
                 // change which ones they are.
-                Some((offset, len, _)) => {
-                    let rows = sliced(inner.filtered, (*offset, *len));
-                    inner.selecting(rows)
-                },
+                Some((offset, len, _)) => inner.sliced_by((*offset, *len)),
             })
         },
 
         // A slice narrows the relation the way a filter does.
         IR::Slice { input, offset, len } => {
             let inner = node_stats(*input, ir_arena, expr_arena)?;
-            let rows = sliced(inner.filtered, (*offset, *len as usize));
-            Some(inner.selecting(rows))
+            Some(inner.sliced_by((*offset, *len as usize)))
         },
 
         // A union stacks its inputs, so it holds every row and every key of all of
         // them. Every input has to be measurable for the sum to mean anything.
         IR::Union { inputs, options } => {
-            let mut acc = NodeStats::default();
+            let mut acc = NodeStats::of_rows(0.0);
             for input in inputs {
                 let inner = node_stats(*input, ir_arena, expr_arena)?;
                 acc.filtered += inner.filtered;
                 acc.unfiltered += inner.unfiltered;
+                acc.max_rows = acc.max_rows.zip(inner.max_rows).map(|(a, b)| a + b);
             }
             acc.filtered = acc.filtered.max(MIN_CARDINALITY);
             acc.unfiltered = acc.unfiltered.max(MIN_CARDINALITY);
+            acc.max_rows = acc.max_rows.map(|m| m.max(MIN_CARDINALITY));
             Some(match options.slice {
                 None => acc,
-                Some(slice) => {
-                    let rows = sliced(acc.filtered, slice);
-                    acc.selecting(rows)
-                },
+                Some(slice) => acc.sliced_by(slice),
             })
         },
 
@@ -186,6 +190,7 @@ pub fn node_stats(
                 // it reaches no key the input did not already hold.
                 filtered: idxs.filtered,
                 unfiltered: inner.unfiltered,
+                max_rows: idxs.max_rows,
                 columns: inner.columns,
             })
         },
@@ -227,13 +232,27 @@ impl NodeStats {
         self
     }
 
-    /// Estimates for a relation of `rows` rows carrying no column statistics.
+    /// The same leaf narrowed by `slice`, applied to the estimate and the bound.
+    fn sliced_by(mut self, slice: impl Into<Slice> + Clone) -> Self {
+        self.max_rows = self.max_rows.map(|m| sliced(m, slice.clone()));
+        let filtered = sliced(self.filtered, slice);
+        self.selecting(filtered)
+    }
+
+    /// Estimates for a relation of exactly `rows` rows carrying no column
+    /// statistics.
     pub fn of_rows(rows: f64) -> Self {
         Self {
             filtered: rows,
             unfiltered: rows,
+            max_rows: Some(rows),
             columns: None,
         }
+    }
+
+    /// Rows the node is guaranteed not to exceed.
+    pub fn max_rows(&self) -> Option<f64> {
+        self.max_rows
     }
 
     /// Statistics for one output column.
@@ -350,12 +369,14 @@ fn one_row_per_group(
     let mut groups = NodeStats {
         filtered: n_groups(inner.filtered, keys.len(), ndv),
         unfiltered: n_groups(inner.unfiltered, keys.len(), ndv),
+        max_rows: inner.max_rows,
         columns: None,
     };
     if let Some(slice) = slice {
         // Grouping is what set the key domain here, so the slice narrows that too.
         groups.filtered = sliced(groups.filtered, slice);
         groups.unfiltered = sliced(groups.unfiltered, slice);
+        groups.max_rows = groups.max_rows.map(|m| sliced(m, slice));
     }
     groups.columns = single_key_column(keys, groups.filtered);
     groups
@@ -489,7 +510,7 @@ mod tests {
         NodeStats {
             filtered,
             unfiltered,
-            columns: None,
+            ..Default::default()
         }
     }
 
