@@ -194,6 +194,7 @@ pub fn optimize(
             pushdown_maintain_errors,
             opt_flags.streaming(),
             opt_flags.partition_hive(),
+            opt_flags.row_estimate(),
         )?;
     }
 
