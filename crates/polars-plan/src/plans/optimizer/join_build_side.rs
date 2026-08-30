@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use polars_core::prelude::{DataType, Schema};
-use polars_ops::prelude::{JoinBuildSide, JoinType};
+use polars_ops::prelude::JoinBuildSide;
 use polars_utils::arena::{Arena, Node};
 
 use crate::plans::{AExpr, IR, NodeStats, node_stats};
@@ -27,7 +27,6 @@ pub(super) fn set_join_build_sides(
 ) {
     let sample_limit = polars_config::config().join_sample_limit() as f64;
     let mut stack = vec![root];
-    let mut chosen = Vec::new();
     while let Some(node) = stack.pop() {
         let ir = ir_arena.get(node);
         ir.copy_inputs(&mut stack);
@@ -41,39 +40,23 @@ pub(super) fn set_join_build_sides(
             continue;
         };
         // A maintained order already fixes the build side, and an explicit
-        // request outranks anything we derive.
+        // request outranks anything we derive. Only equi and cross joins build
+        // one side into memory.
         if options.args.build_side.is_some()
             || options.args.maintain_order != MaintainOrderJoin::None
-            || !picks_build_side(&options.args.how)
+            || !(options.args.how.is_equi() || options.args.how.is_cross())
         {
             continue;
         }
-        if let Some(side) = build_side(
-            *input_left,
-            *input_right,
-            sample_limit,
-            ir_arena,
-            expr_arena,
-        ) {
-            chosen.push((node, side));
-        }
-    }
-
-    for (node, side) in chosen {
+        let (left, right) = (*input_left, *input_right);
+        let Some(side) = build_side(left, right, sample_limit, ir_arena, expr_arena) else {
+            continue;
+        };
         let IR::Join { options, .. } = ir_arena.get_mut(node) else {
             unreachable!()
         };
         Arc::make_mut(options).args.build_side = Some(side);
     }
-}
-
-/// Whether the streaming engine builds one side of a join of this type into
-/// memory. The others either read both sides in order or have no choice to make.
-fn picks_build_side(how: &JoinType) -> bool {
-    matches!(
-        how,
-        JoinType::Inner | JoinType::Left | JoinType::Right | JoinType::Full | JoinType::Cross
-    )
 }
 
 /// The side to build the hash table from, or `None` if the statistics do not

@@ -154,35 +154,20 @@ pub fn node_stats(
                 None => inner,
                 // The dynamic predicate reaches the same rows sooner, it does not
                 // change which ones they are.
-                Some((offset, len, _)) => {
-                    let rows = sliced(inner.filtered, (*offset, *len));
-                    let max_rows = inner.max_rows.map(|m| sliced(m, (*offset, *len)));
-                    NodeStats {
-                        max_rows,
-                        ..inner.selecting(rows)
-                    }
-                },
+                Some((offset, len, _)) => inner.sliced_by((*offset, *len)),
             })
         },
 
         // A slice narrows the relation the way a filter does.
         IR::Slice { input, offset, len } => {
             let inner = node_stats(*input, ir_arena, expr_arena)?;
-            let rows = sliced(inner.filtered, (*offset, *len as usize));
-            let max_rows = inner.max_rows.map(|m| sliced(m, (*offset, *len as usize)));
-            Some(NodeStats {
-                max_rows,
-                ..inner.selecting(rows)
-            })
+            Some(inner.sliced_by((*offset, *len as usize)))
         },
 
         // A union stacks its inputs, so it holds every row and every key of all of
         // them. Every input has to be measurable for the sum to mean anything.
         IR::Union { inputs, options } => {
-            let mut acc = NodeStats {
-                max_rows: Some(0.0),
-                ..Default::default()
-            };
+            let mut acc = NodeStats::of_rows(0.0);
             for input in inputs {
                 let inner = node_stats(*input, ir_arena, expr_arena)?;
                 acc.filtered += inner.filtered;
@@ -194,11 +179,7 @@ pub fn node_stats(
             acc.max_rows = acc.max_rows.map(|m| m.max(MIN_CARDINALITY));
             Some(match options.slice {
                 None => acc,
-                Some(slice) => {
-                    let rows = sliced(acc.filtered, slice);
-                    acc.max_rows = acc.max_rows.map(|m| sliced(m, slice));
-                    acc.selecting(rows)
-                },
+                Some(slice) => acc.sliced_by(slice),
             })
         },
 
@@ -252,6 +233,14 @@ impl NodeStats {
     fn selecting(mut self, filtered: f64) -> Self {
         self.filtered = filtered;
         self
+    }
+
+    /// The same leaf narrowed by `slice`, which bounds the estimate and the
+    /// guarantee alike.
+    fn sliced_by(mut self, slice: impl Into<Slice> + Clone) -> Self {
+        self.max_rows = self.max_rows.map(|m| sliced(m, slice.clone()));
+        let filtered = sliced(self.filtered, slice);
+        self.selecting(filtered)
     }
 
     /// Estimates for a relation of exactly `rows` rows carrying no column

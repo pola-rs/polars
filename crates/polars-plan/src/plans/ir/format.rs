@@ -223,6 +223,10 @@ impl<'a> IRDisplay<'a> {
                 let (left_keys, right_keys) = options.options.key_vecs();
                 let left_on = self.display_expr_slice(&left_keys);
                 let right_on = self.display_expr_slice(&right_keys);
+                let build_side = match &options.args.build_side {
+                    Some(side) => format!("\n{:indent$}BUILD SIDE: {side:?}", ""),
+                    None => String::new(),
+                };
 
                 // Fused cross + filter (show as nested loop join)
                 if let JoinTypeOptionsIR::CrossAndFilter { predicate } = &options.options {
@@ -233,7 +237,7 @@ impl<'a> IRDisplay<'a> {
                     } else {
                         format!("{how} NESTED LOOP")
                     };
-                    write!(f, "{:indent$}{name} JOIN ON {predicate}:", "")?;
+                    write!(f, "{:indent$}{name} JOIN ON {predicate}:{build_side}", "")?;
                     write!(f, "\n{:indent$}LEFT PLAN:", "")?;
                     self.with_root(*input_left)
                         ._format(f, sub_indent, seen_caches)?;
@@ -243,10 +247,7 @@ impl<'a> IRDisplay<'a> {
                     write!(f, "\n{:indent$}END {name} JOIN", "")
                 } else {
                     let how = &options.args.how;
-                    write!(f, "{:indent$}{how} JOIN:", "")?;
-                    if let Some(build_side) = &options.args.build_side {
-                        write!(f, "\n{:indent$}BUILD SIDE: {build_side:?}", "")?;
-                    }
+                    write!(f, "{:indent$}{how} JOIN:{build_side}", "")?;
                     write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
                     self.with_root(*input_left)
                         ._format(f, sub_indent, seen_caches)?;
