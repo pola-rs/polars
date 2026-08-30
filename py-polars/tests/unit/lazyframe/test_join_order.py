@@ -532,16 +532,20 @@ def null_count_frames(tmp_path: Path, *, nulls: int) -> dict[str, pl.LazyFrame]:
 
 
 def null_count_query(frames: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
-    return frames["fact"].join(
-        frames["dim_a"].filter(pl.col("a_flag").is_not_null()),
-        left_on="f_dim_a",
-        right_on="a_key",
-        coalesce=False,
-    ).join(
-        frames["dim_b"].filter(pl.col("b_val") > 5),
-        left_on="f_dim_b",
-        right_on="b_key",
-        coalesce=False,
+    return (
+        frames["fact"]
+        .join(
+            frames["dim_a"].filter(pl.col("a_flag").is_not_null()),
+            left_on="f_dim_a",
+            right_on="a_key",
+            coalesce=False,
+        )
+        .join(
+            frames["dim_b"].filter(pl.col("b_val") > 5),
+            left_on="f_dim_b",
+            right_on="b_key",
+            coalesce=False,
+        )
     )
 
 
