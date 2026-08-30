@@ -41,7 +41,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOu
 use crate::nodes::io_sources::multi_scan::reader_interface::{
     FileReader, FileReaderCallbacks, Projection, calc_row_position_after_slice,
 };
-use crate::nodes::io_sources::parquet::init::split_to_morsels;
+use crate::nodes::io_sources::shared::morsel_split::split_to_morsels;
 use crate::nodes::io_sources::shared::pipeline_budget::PipelineBudget;
 use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
