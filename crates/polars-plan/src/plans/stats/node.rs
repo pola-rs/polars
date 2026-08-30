@@ -20,15 +20,8 @@ use crate::plans::{
 const DEFAULT_SELECTIVITY: f64 = 0.2;
 
 /// Largest relative error an NDV may carry and still steer a decision.
-///
-/// Anything derived carries [`DEFAULT_REL_ERR`], so a source claiming less
-/// confidence than that is ignored.
 const MAX_NDV_REL_ERR: f32 = DEFAULT_REL_ERR;
 
-/// Floor for any estimate.
-///
-/// A leaf estimated at zero rows would compare smaller than everything else and
-/// dominate every ordering decision.
 const MIN_CARDINALITY: f64 = 1.0;
 
 /// Cardinality estimates for the rows a node emits.
@@ -37,16 +30,14 @@ pub struct NodeStats {
     /// Estimated rows, after any filter pushed into the leaf.
     pub filtered: f64,
     /// Estimated rows, before those filters.
-    ///
-    /// Used as the distinct-count proxy for this leaf's join keys. A join divides by
-    /// the size of the key domain rather than the filtered relation, which is what
-    /// carries a dimension's selectivity over to the fact table.
+    /// We want to know this as we divide a join by the number
+    /// of distinct values in the original set.
     pub unfiltered: f64,
     /// Per output column, sparse. An absent column is unknown.
     columns: Option<Arc<ScanColumnStatsMap>>,
 }
 
-/// Estimate the rows a subtree produces.
+/// Estimate the rows a subplan produces.
 ///
 /// `None` means the subtree is not modelled (a python scan, an opaque function, a
 /// gather by a computed index).
@@ -260,7 +251,7 @@ impl NodeStats {
     }
 
     /// Distinct values in `key`, when it is a plain column with a known NDV.
-    fn key_ndv(&self, key: &ExprIR) -> Option<f64> {
+    fn distinct_count(&self, key: &ExprIR) -> Option<f64> {
         self.ndv(key.output_name_inner().get()?)
     }
 
@@ -327,7 +318,11 @@ fn shadowed_columns(
     }
     let kept: ScanColumnStatsMap = columns
         .iter()
-        .filter(|(name, _)| !exprs.iter().any(|e| e.output_name() == *name && overwrites(e)))
+        .filter(|(name, _)| {
+            !exprs
+                .iter()
+                .any(|e| e.output_name() == *name && overwrites(e))
+        })
         .map(|(name, stats)| (name.clone(), stats.clone()))
         .collect();
     (!kept.is_empty()).then(|| Arc::new(kept))
@@ -477,7 +472,10 @@ pub fn key_domain(
     right: &NodeStats,
     right_key: &ExprIR,
 ) -> f64 {
-    let domain = match (left.key_ndv(left_key), right.key_ndv(right_key)) {
+    let domain = match (
+        left.distinct_count(left_key),
+        right.distinct_count(right_key),
+    ) {
         (Some(l), Some(r)) => l.max(r),
         _ => left.unfiltered.min(right.unfiltered),
     };
@@ -570,7 +568,11 @@ mod tests {
         let item = leaf(18_000.0, 18_000.0);
         let acc = 9_646.0;
 
-        let out = join_cardinality(acc, item.filtered, key_domain(&inventory, &key("k"), &item, &key("k")));
+        let out = join_cardinality(
+            acc,
+            item.filtered,
+            key_domain(&inventory, &key("k"), &item, &key("k")),
+        );
         assert!((out - acc).abs() < 1.0, "got {out}");
     }
 
@@ -713,6 +715,9 @@ mod tests {
         let two = apply_predicate(1000.0, 1000.0, and, &expr_arena, None);
         assert!((two - 40.0).abs() < 1e-9, "got {two}");
         // However many conjuncts pile up, an estimate never reaches zero.
-        assert_eq!(apply_predicate(1.0, 1.0, and, &expr_arena, None), MIN_CARDINALITY);
+        assert_eq!(
+            apply_predicate(1.0, 1.0, and, &expr_arena, None),
+            MIN_CARDINALITY
+        );
     }
 }
