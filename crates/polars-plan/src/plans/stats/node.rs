@@ -5,6 +5,9 @@
 
 use std::sync::Arc;
 
+use polars_utils::aliases::InitHashMaps;
+#[expect(clippy::disallowed_types)] // We don't iterate over it.
+use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
@@ -16,6 +19,11 @@ use crate::plans::{
     into_column,
 };
 use crate::prelude::{JoinType, Operator};
+
+/// Estimates already computed, keyed on the node they describe.
+// We don't iterate over it.
+#[expect(clippy::disallowed_types)]
+pub(super) type StatsCache = PlHashMap<Node, Option<NodeStats>>;
 
 /// Fallback selectivity for a filter conjunct with no better estimate.
 const DEFAULT_SELECTIVITY: f64 = 0.2;
@@ -44,14 +52,31 @@ pub struct NodeStats {
 ///
 /// `None` means the subtree is not modelled (a python scan, an opaque function, a
 /// gather by a computed index).
-#[recursive]
 pub fn node_stats(
     node: Node,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<NodeStats> {
+    node_stats_with_cache(node, ir_arena, expr_arena, &mut StatsCache::new())
+}
+
+/// [`node_stats`], reusing what `cache` already holds.
+///
+/// Every node is estimated from its inputs, so a caller asking about many nodes of
+/// one subplan would otherwise re-walk the same descendants once per ancestor. The
+/// cache is keyed on [`Node`] and is only valid while the arenas are unchanged.
+#[recursive]
+pub(super) fn node_stats_with_cache(
+    node: Node,
+    ir_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+    cache: &mut StatsCache,
+) -> Option<NodeStats> {
+    if let Some(hit) = cache.get(&node) {
+        return hit.clone();
+    }
     let ir = ir_arena.get(node);
-    match ir {
+    let stats = match ir {
         IR::Scan {
             predicate,
             unified_scan_args,
@@ -107,7 +132,7 @@ pub fn node_stats(
             if apply.is_some() || options.is_rolling() || options.is_dynamic() {
                 return None;
             }
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
             Some(one_row_per_group(inner, &names, options.slice))
         },
@@ -123,14 +148,14 @@ pub fn node_stats(
                     input_schema.iter_names().collect()
                 },
             };
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             Some(one_row_per_group(inner, &names, options.slice))
         },
 
         // A filter above the scan is equivalent to one pushed into it; predicate
         // pushdown normally leaves none here, but a leaf need not be a bare scan.
         IR::Filter { input, predicate } => {
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             let filtered = apply_predicate(
                 inner.filtered,
                 inner.unfiltered,
@@ -143,12 +168,12 @@ pub fn node_stats(
 
         // Row-preserving, so they pass both estimates through untouched.
         IR::SimpleProjection { input, .. } | IR::Cache { input, .. } => {
-            node_stats(*input, ir_arena, expr_arena)
+            node_stats_with_cache(*input, ir_arena, expr_arena, cache)
         },
 
         // A sort keeps every row it is given, and carries its own slice for a top-k.
         IR::Sort { input, slice, .. } => {
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             Some(match slice {
                 None => inner,
                 // The dynamic predicate reaches the same rows sooner, it does not
@@ -159,7 +184,7 @@ pub fn node_stats(
 
         // A slice narrows the relation the way a filter does.
         IR::Slice { input, offset, len } => {
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             Some(inner.sliced_by((*offset, *len as usize)))
         },
 
@@ -168,7 +193,7 @@ pub fn node_stats(
         IR::Union { inputs, options } => {
             let mut acc = NodeStats::of_rows(0.0);
             for input in inputs {
-                let inner = node_stats(*input, ir_arena, expr_arena)?;
+                let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
                 acc.filtered += inner.filtered;
                 acc.unfiltered += inner.unfiltered;
                 acc.max_rows = acc.max_rows.zip(inner.max_rows).map(|(a, b)| a + b);
@@ -194,8 +219,8 @@ pub fn node_stats(
             let JoinTypeOptionsIR::Equi { on } = &options.options else {
                 return None;
             };
-            let left = node_stats(*input_left, ir_arena, expr_arena)?;
-            let right = node_stats(*input_right, ir_arena, expr_arena)?;
+            let left = node_stats_with_cache(*input_left, ir_arena, expr_arena, cache)?;
+            let right = node_stats_with_cache(*input_right, ir_arena, expr_arena, cache)?;
 
             let key_domains: f64 = on
                 .iter()
@@ -219,8 +244,8 @@ pub fn node_stats(
         // A gather emits one row per index, and its indices are a frame of their own,
         // so its height is that frame's.
         IR::Gather { input, idxs, .. } => {
-            let idxs = node_stats(*idxs, ir_arena, expr_arena)?;
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let idxs = node_stats_with_cache(*idxs, ir_arena, expr_arena, cache)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             Some(NodeStats {
                 // A gather may repeat a row, so it can be taller than its input, but
                 // it reaches no key the input did not already hold.
@@ -238,7 +263,7 @@ pub fn node_stats(
             if expr.is_empty() || !expr.iter().all(|e| keeps_height(e, expr_arena)) {
                 return None;
             }
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             if expr.iter().all(|e| e.is_scalar(expr_arena)) {
                 return Some(NodeStats::of_rows(MIN_CARDINALITY));
             }
@@ -249,7 +274,7 @@ pub fn node_stats(
         // `with_columns` adds to the frame it is given rather than replacing it, so
         // the height is the input's even when every expression is a scalar.
         IR::HStack { input, exprs, .. } => {
-            let inner = node_stats(*input, ir_arena, expr_arena)?;
+            let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             let columns = shadowed_columns(&inner, exprs, expr_arena);
             Some(NodeStats { columns, ..inner })
         },
@@ -257,7 +282,9 @@ pub fn node_stats(
         // Anything else (python scan, opaque function, unpivot, ...) is not
         // modelled. Do not guess.
         _ => None,
-    }
+    };
+    cache.insert(node, stats.clone());
+    stats
 }
 
 impl NodeStats {

@@ -5,15 +5,15 @@ use polars_utils::aliases::InitHashMaps;
 use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::{Arena, Node};
 
-use super::node_stats;
+use super::node::{StatsCache, node_stats_with_cache};
 use crate::plans::{AExpr, IR};
 
 /// What a subplan costs and what it produces.
-pub struct SubplanCost {
+pub(crate) struct SubplanCost {
     /// Work in evaluating it, as the rows every node in it emits summed together.
-    pub work: f64,
+    pub(crate) work: f64,
     /// Rows the subplan itself emits.
-    pub rows: f64,
+    pub(crate) rows: f64,
 }
 
 /// Estimate what the subplan rooted at `node` costs.
@@ -29,7 +29,10 @@ pub(crate) fn subplan_cost(
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<SubplanCost> {
-    let rows = node_stats(node, ir_arena, expr_arena)?.filtered;
+    // One cache for the whole walk: every node here is an ancestor or a descendant of
+    // the others, so estimating them one at a time would re-walk the same subtrees.
+    let cache = &mut StatsCache::new();
+    let rows = node_stats_with_cache(node, ir_arena, expr_arena, cache)?.filtered;
     let mut work = 0.0;
     let mut stack = vec![node];
     let mut inputs = Vec::new();
@@ -40,11 +43,7 @@ pub(crate) fn subplan_cost(
         if !seen.insert(current) {
             continue;
         }
-        work += if current == node {
-            rows
-        } else {
-            node_stats(current, ir_arena, expr_arena)?.filtered
-        };
+        work += node_stats_with_cache(current, ir_arena, expr_arena, cache)?.filtered;
 
         if current != node && matches!(ir_arena.get(current), IR::Cache { .. }) {
             continue;
