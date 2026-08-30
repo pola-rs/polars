@@ -8,7 +8,6 @@ mod node;
 use std::sync::Arc;
 
 pub use node::{NodeStats, join_cardinality, key_domain, node_stats};
-
 #[allow(clippy::disallowed_types)]
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;

@@ -102,9 +102,8 @@ mod tests {
     use polars_utils::arena::{Arena, Node};
 
     use super::super::cluster::{Edge, Leaf};
-    use crate::plans::NodeStats;
     use super::*;
-    use crate::plans::{ExprIR, JoinOptionsIR, JoinTypeOptionsIR};
+    use crate::plans::{ExprIR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats};
     use crate::prelude::JoinArgs;
 
     fn dummy_options() -> std::sync::Arc<JoinOptionsIR> {

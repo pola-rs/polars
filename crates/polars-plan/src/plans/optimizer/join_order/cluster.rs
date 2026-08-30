@@ -16,10 +16,9 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
-use crate::plans::{NodeStats, node_stats};
 use crate::plans::{
-    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, OutputName, ProjectionOptions,
-    aexpr_to_leaf_names_iter,
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, OutputName, ProjectionOptions,
+    aexpr_to_leaf_names_iter, node_stats,
 };
 use crate::prelude::{JoinArgs, JoinType, MaintainOrderJoin};
 use crate::utils::rename_columns;
