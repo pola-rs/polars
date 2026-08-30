@@ -1,7 +1,13 @@
-//! Plan-time statistics for scan leaves.
+//! Plan-time statistics.
+//!
+//! [`ScanStats`] is what a scan leaf resolves at plan time. [`node_stats`]
+//! estimates the same shape for any node of the IR.
+
+mod node;
 
 use std::sync::Arc;
 
+pub use node::{NodeStats, join_cardinality, key_domain, node_stats};
 #[allow(clippy::disallowed_types)]
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
@@ -9,7 +15,7 @@ use polars_utils::pl_str::PlSmallStr;
 use crate::plans::IR;
 
 /// Relative error for an estimate that carries no better information.
-const DEFAULT_REL_ERR: f32 = 0.5;
+pub(crate) const DEFAULT_REL_ERR: f32 = 0.5;
 
 /// A cardinality: a count that may be unknown, guaranteed, or estimated.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
