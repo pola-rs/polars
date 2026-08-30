@@ -258,8 +258,7 @@ pub fn optimize(
         ir_arena.replace(root, ir);
     }
 
-    // Needs the final join order and the pushed-down projections that set what
-    // each side of a join actually holds.
+    // Needs the final join order and the pushed-down projections.
     if opt_flags.contains(OptFlags::ROW_ESTIMATE) && get_or_init_members!().has_joins_or_unions {
         join_build_side::set_join_build_sides(root, ir_arena, expr_arena);
     }

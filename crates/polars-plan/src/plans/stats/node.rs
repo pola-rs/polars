@@ -32,9 +32,7 @@ pub struct NodeStats {
     /// We want to know this as we divide a join by the number
     /// of distinct values in the original set.
     pub unfiltered: f64,
-    /// Rows the node cannot emit more than, when that is known.
-    ///
-    /// Unlike `filtered` this is a guarantee, not an estimate.
+    /// Rows the node cannot emit more than. A guarantee, not an estimate.
     max_rows: Option<f64>,
     /// Per output column, sparse. An absent column is unknown.
     columns: Option<Arc<ScanColumnStatsMap>>,
@@ -59,7 +57,6 @@ pub fn node_stats(
         } => {
             let rows = leaf_row_count(ir);
             let unfiltered = rows.value()? as f64;
-            // Only a guaranteed count bounds the scan; an estimate may be too low.
             let mut max_rows = match rows {
                 Card::Exact(rows) => Some(rows as f64),
                 _ => None,
@@ -235,8 +232,7 @@ impl NodeStats {
         self
     }
 
-    /// The same leaf narrowed by `slice`, which bounds the estimate and the
-    /// guarantee alike.
+    /// The same leaf narrowed by `slice`, applied to the estimate and the bound.
     fn sliced_by(mut self, slice: impl Into<Slice> + Clone) -> Self {
         self.max_rows = self.max_rows.map(|m| sliced(m, slice.clone()));
         let filtered = sliced(self.filtered, slice);
@@ -254,7 +250,7 @@ impl NodeStats {
         }
     }
 
-    /// Rows the node is guaranteed not to exceed, when that is known.
+    /// Rows the node is guaranteed not to exceed.
     pub fn max_rows(&self) -> Option<f64> {
         self.max_rows
     }
@@ -373,7 +369,6 @@ fn one_row_per_group(
     let mut groups = NodeStats {
         filtered: n_groups(inner.filtered, keys.len(), ndv),
         unfiltered: n_groups(inner.unfiltered, keys.len(), ndv),
-        // One row per group is never more rows than went in.
         max_rows: inner.max_rows,
         columns: None,
     };

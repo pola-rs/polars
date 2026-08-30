@@ -1,7 +1,4 @@
 //! Choose the build side of a join from plan-time statistics.
-//!
-//! The streaming engine otherwise samples both inputs at runtime, buffering up to
-//! `join_sample_limit` rows of each before it can start building.
 
 use std::sync::Arc;
 
@@ -12,8 +9,7 @@ use polars_utils::arena::{Arena, Node};
 use crate::plans::{AExpr, IR, NodeStats, node_stats};
 use crate::prelude::MaintainOrderJoin;
 
-/// A side has to be this many times smaller before it is picked over what the
-/// engine would measure for itself.
+/// A side has to be this many times smaller to be picked as the build side.
 const LOPSIDED_FACTOR: f64 = 8.0;
 
 /// Bytes assumed for a value whose width neither the statistics nor the dtype give.
@@ -39,9 +35,6 @@ pub(super) fn set_join_build_sides(
         else {
             continue;
         };
-        // A maintained order already fixes the build side, and an explicit
-        // request outranks anything we derive. Only equi and cross joins build
-        // one side into memory.
         if options.args.build_side.is_some()
             || options.args.maintain_order != MaintainOrderJoin::None
             || !(options.args.how.is_equi() || options.args.how.is_cross())
@@ -70,9 +63,6 @@ fn build_side(
 ) -> Option<JoinBuildSide> {
     let left = side_size(left, ir_arena, expr_arena)?;
     let right = side_size(right, ir_arena, expr_arena)?;
-    // Above the sample limit the engine sees only part of the side, so its own
-    // estimate is no better than ours. Below it, it sees the whole side and we
-    // should not override what it measures.
     if left.rows <= sample_limit && left.bytes * LOPSIDED_FACTOR <= right.bytes {
         Some(JoinBuildSide::ForceLeft)
     } else if right.rows <= sample_limit && right.bytes * LOPSIDED_FACTOR <= left.bytes {

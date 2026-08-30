@@ -39,9 +39,6 @@ bitflags! {
         /// Run every node eagerly. This turns off multi-node optimizations.
         const EAGER = 1 << 12;
         /// Try to estimate the number of rows so that joins can determine which side to keep in memory.
-        ///
-        /// Only set when the estimate bounds one side well below the other; otherwise
-        /// the streaming engine samples at runtime.
         const ROW_ESTIMATE = 1 << 13;
         /// Replace simple projections with a faster inlined projection that skips the expression engine.
         const FAST_PROJECTION = 1 << 14;
