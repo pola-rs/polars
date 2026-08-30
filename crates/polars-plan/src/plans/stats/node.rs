@@ -12,8 +12,10 @@ use recursive::recursive;
 
 use super::{Card, DEFAULT_REL_ERR, ScanColumnStats, ScanColumnStatsMap, leaf_row_count};
 use crate::plans::{
-    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, MintermIter, into_column,
+    AExpr, ExprIR, IR, IRBooleanFunction, IRFunctionExpr, JoinTypeOptionsIR, MintermIter,
+    into_column,
 };
+use crate::prelude::{JoinType, Operator};
 
 /// Fallback selectivity for a filter conjunct with no better estimate.
 const DEFAULT_SELECTIVITY: f64 = 0.2;
@@ -180,6 +182,40 @@ pub fn node_stats(
             })
         },
 
+        // Both sides are divided by the shared domain of a key pair, see
+        // `join_cardinality`.
+        IR::Join {
+            input_left,
+            input_right,
+            options,
+            ..
+        } => {
+            // As-of, inequality and range matches are not modelled.
+            let JoinTypeOptionsIR::Equi { on } = &options.options else {
+                return None;
+            };
+            let left = node_stats(*input_left, ir_arena, expr_arena)?;
+            let right = node_stats(*input_right, ir_arena, expr_arena)?;
+
+            let key_domains: f64 = on
+                .iter()
+                .map(|(left_key, right_key)| key_domain(&left, left_key, &right, right_key))
+                .product();
+            let how = &options.args.how;
+            let rows = |l: f64, r: f64| join_rows(how, l, r, join_cardinality(l, r, key_domains));
+
+            let stats = NodeStats {
+                filtered: rows(left.filtered, right.filtered)?,
+                unfiltered: rows(left.unfiltered, right.unfiltered)?,
+                max_rows: join_max_rows(how, &left, &right),
+                columns: join_columns(&left, &right),
+            };
+            Some(match options.args.slice {
+                None => stats,
+                Some(slice) => stats.sliced_by(slice),
+            })
+        },
+
         // A gather emits one row per index, and its indices are a frame of their own,
         // so its height is that frame's.
         IR::Gather { input, idxs, .. } => {
@@ -281,6 +317,62 @@ impl NodeStats {
         keys.iter()
             .map(|name| self.ndv(name))
             .try_fold(1.0, |acc, ndv| Some(acc * ndv?))
+    }
+}
+
+/// Rows a join of the given type emits, from the sizes of its sides and the rows an
+/// inner join over the same keys would match.
+///
+/// `None` for a join type that is not modelled.
+fn join_rows(how: &JoinType, left: f64, right: f64, inner: f64) -> Option<f64> {
+    let rows = match how {
+        JoinType::Inner => inner,
+        // An outer side keeps every row it has, matched or not.
+        JoinType::Left => inner.max(left),
+        JoinType::Right => inner.max(right),
+        JoinType::Full => inner.max(left + right),
+        // A semi-join emits the left rows that matched, an anti-join the rest.
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi => inner.min(left),
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Anti => left - inner.min(left),
+        JoinType::Cross => left * right,
+        _ => return None,
+    };
+    Some(rows.max(MIN_CARDINALITY))
+}
+
+/// A bound on the rows a join emits, for the types that have one. An equi-join can
+/// repeat a row of either side once per match on the other, so most of them do not.
+fn join_max_rows(how: &JoinType, left: &NodeStats, right: &NodeStats) -> Option<f64> {
+    match how {
+        // Every pair, and no more.
+        JoinType::Cross => Some(left.max_rows? * right.max_rows?),
+        // Both keep a subset of the left side.
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi | JoinType::Anti => left.max_rows,
+        _ => None,
+    }
+}
+
+/// Column statistics of a join output: those of both sides, minus any name they
+/// share. A shared name is either coalesced or suffixed, and which side the output
+/// column came from is no longer clear.
+fn join_columns(left: &NodeStats, right: &NodeStats) -> Option<Arc<ScanColumnStatsMap>> {
+    match (&left.columns, &right.columns) {
+        (None, None) => None,
+        (Some(columns), None) | (None, Some(columns)) => Some(columns.clone()),
+        (Some(left), Some(right)) => {
+            let mut merged = ScanColumnStatsMap::default();
+            let mut take_from = |from: &ScanColumnStatsMap, other: &ScanColumnStatsMap| {
+                for (name, stats) in from.iter().filter(|(name, _)| !other.contains_key(*name)) {
+                    merged.insert(name.clone(), stats.clone());
+                }
+            };
+            take_from(left, right);
+            take_from(right, left);
+            Some(Arc::new(merged))
+        },
     }
 }
 
@@ -446,21 +538,45 @@ fn conjunct_selectivity(
     columns: Option<&ScanColumnStatsMap>,
     rows: f64,
 ) -> Option<f64> {
-    let AExpr::Function {
-        input,
-        function: IRFunctionExpr::Boolean(function),
-        ..
-    } = expr_arena.get(conjunct)
-    else {
-        return None;
+    let (name, function) = match expr_arena.get(conjunct) {
+        AExpr::Function {
+            input,
+            function: IRFunctionExpr::Boolean(function),
+            ..
+        } => {
+            let [arg] = input.as_slice() else {
+                return None;
+            };
+            (into_column(arg.node(), expr_arena)?, function)
+        },
+        // Pushing an equi-join key into one of its sides leaves `x == x` behind. That
+        // is a null check on the key, not the arbitrary comparison it looks like.
+        AExpr::BinaryExpr {
+            left,
+            op: Operator::Eq,
+            right,
+        } => {
+            let name = into_column(*left, expr_arena)?;
+            if name != into_column(*right, expr_arena)? {
+                return None;
+            }
+            (name, &IRBooleanFunction::IsNotNull)
+        },
+        _ => return None,
     };
-    let [arg] = input.as_slice() else {
-        return None;
-    };
-    let name = into_column(arg.node(), expr_arena)?;
 
-    let nulls = columns?.get(name)?.null_count.confident(0.0)? as f64;
-    let null_fraction = (nulls / rows.max(MIN_CARDINALITY)).clamp(0.0, 1.0);
+    let Some(nulls) = columns
+        .and_then(|columns| columns.get(name))
+        .and_then(|stats| stats.null_count.confident(0.0))
+    else {
+        // Nothing describes the column. Most frames are mostly non-null; how many rows
+        // hold a null is anyone's guess.
+        return match function {
+            IRBooleanFunction::IsNotNull => Some(1.0),
+            _ => None,
+        };
+    };
+    let null_fraction = (nulls as f64 / rows.max(MIN_CARDINALITY)).clamp(0.0, 1.0);
     match function {
         IRBooleanFunction::IsNull => Some(null_fraction),
         IRBooleanFunction::IsNotNull => Some(1.0 - null_fraction),
@@ -594,6 +710,65 @@ mod tests {
             key_domain(&inventory, &key("k"), &item, &key("k")),
         );
         assert!((out - acc).abs() < 1.0, "got {out}");
+    }
+
+    /// Every join type is bounded by what its match semantics allow, whatever the
+    /// inner-join estimate says.
+    #[test]
+    fn join_types_stay_within_their_bounds() {
+        let (left, right) = (1000.0, 20.0);
+
+        // A match that keeps few rows: the outer sides still keep all of theirs.
+        let selective = 5.0;
+        assert_eq!(
+            join_rows(&JoinType::Inner, left, right, selective),
+            Some(5.0)
+        );
+        assert_eq!(
+            join_rows(&JoinType::Left, left, right, selective),
+            Some(left)
+        );
+        assert_eq!(
+            join_rows(&JoinType::Right, left, right, selective),
+            Some(right)
+        );
+        assert_eq!(
+            join_rows(&JoinType::Full, left, right, selective),
+            Some(left + right)
+        );
+
+        // A match that fans out: an outer join is at least as large as the inner one.
+        let fanning = 5000.0;
+        assert_eq!(
+            join_rows(&JoinType::Left, left, right, fanning),
+            Some(fanning)
+        );
+        assert_eq!(
+            join_rows(&JoinType::Cross, left, right, fanning),
+            Some(20_000.0)
+        );
+    }
+
+    /// A semi-join is a subset of its left side and an anti-join is the complement,
+    /// so the two must add up to it however far off the inner estimate is.
+    #[cfg(feature = "semi_anti_join")]
+    #[test]
+    fn semi_and_anti_partition_the_left_side() {
+        let left = 1000.0;
+        for inner in [0.0, 5.0, 400.0, 1000.0, 5000.0] {
+            let semi = join_rows(&JoinType::Semi, left, 20.0, inner).unwrap();
+            let anti = join_rows(&JoinType::Anti, left, 20.0, inner).unwrap();
+            assert!(semi <= left && anti <= left, "{inner}: {semi} / {anti}");
+            // Both floor at one row, so they only sum to the left side above that.
+            assert!(semi + anti <= left + MIN_CARDINALITY, "{inner}");
+        }
+    }
+
+    /// A join type we do not model must say so rather than fall back to a guess.
+    #[cfg(feature = "iejoin")]
+    #[test]
+    fn unmodelled_join_types_have_no_estimate() {
+        assert_eq!(join_rows(&JoinType::IEJoin, 1000.0, 20.0, 5.0), None);
     }
 
     /// The two ends of the group-count estimate are known exactly; only what lies
