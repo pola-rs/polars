@@ -54,9 +54,6 @@ pub(super) fn set_join_build_sides(
 
 /// The side to prefer building the hash table from, or `None` if the statistics
 /// do not settle it.
-///
-/// A preference only settles the case where the engine saturates its sample on
-/// both sides; anything it measures in full outranks it.
 fn build_side(
     left: Node,
     right: Node,
@@ -87,14 +84,11 @@ fn side_bytes(node: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Op
 fn row_width(schema: &Schema, stats: &NodeStats) -> f64 {
     schema
         .iter()
-        .map(|(name, dtype)| {
-            stats
-                .column(name)
-                .and_then(|c| c.avg_byte_width)
-                .map_or_else(
-                    || dtype.byte_width().map_or(DEFAULT_VALUE_WIDTH, |w| w as f64),
-                    f64::from,
-                )
-        })
+        .map(
+            |(name, dtype)| match stats.column(name).and_then(|c| c.avg_byte_width) {
+                Some(width) => f64::from(width),
+                None => dtype.byte_width().unwrap_or(DEFAULT_VALUE_WIDTH),
+            },
+        )
         .sum()
 }
