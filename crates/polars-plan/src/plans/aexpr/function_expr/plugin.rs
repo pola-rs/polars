@@ -66,12 +66,21 @@ fn retrieve_error_msg(lib: &Library) -> String {
     }
 }
 
+fn caller_context(parallel: bool) -> polars_ffi::version_0::CallerContext {
+    let mut context = polars_ffi::version_0::CallerContext::default();
+    if parallel {
+        context._set_parallel();
+    }
+    context
+}
+
 #[doc(hidden)]
 pub unsafe fn call_plugin(
     s: &[Column],
     lib: &str,
     symbol: &str,
     kwargs: &[u8],
+    parallel: bool,
 ) -> PolarsResult<Column> {
     let plugin = get_lib(lib)?;
     let lib = &plugin.0;
@@ -108,7 +117,7 @@ pub unsafe fn call_plugin(
 
         let mut return_value = SeriesExport::empty();
         let return_value_ptr = &mut return_value as *mut SeriesExport;
-        let context = CallerContext::default();
+        let context = caller_context(parallel);
         let context_ptr = &context as *const CallerContext;
         symbol(
             slice_ptr,
@@ -219,4 +228,15 @@ pub(super) unsafe fn plugin_field(
 fn check_panic(msg: &str) -> PolarsResult<()> {
     polars_ensure!(msg != "PANIC", ComputeError: "the plugin panicked\n\nThe message is suppressed. Set POLARS_VERBOSE=1 to send the panic message to stderr.");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::caller_context;
+
+    #[test]
+    fn caller_context_reflects_parallel_flag() {
+        assert!(!caller_context(false).parallel());
+        assert!(caller_context(true).parallel());
+    }
 }
