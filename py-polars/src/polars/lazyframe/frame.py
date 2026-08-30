@@ -4271,8 +4271,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             F.col(name).eq(value) for name, value in constraints.items()
         )
         if not (all_predicates or boolean_masks):
-            msg = "at least one predicate or constraint must be provided"
-            raise TypeError(msg)
+            return self.clone()
 
         # if multiple predicates, combine as 'horizontal' expression
         combined_predicate = (
@@ -4469,9 +4468,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if not constraints:
             # early-exit conditions (exclude/include all rows)
-            if not predicates or (len(predicates) == 1 and predicates[0] is True):
+            if not predicates or all(p is True for p in predicates):
                 return self.clone()
-            if len(predicates) == 1 and predicates[0] is False:
+            if all(p is False for p in predicates):
                 return self.clear()
 
         return self._filter(
@@ -4627,9 +4626,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if not constraints:
             # early-exit conditions (exclude/include all rows)
-            if not predicates or (len(predicates) == 1 and predicates[0] is True):
+            if not predicates or all(p is True for p in predicates):
                 return self.clear()
-            if len(predicates) == 1 and predicates[0] is False:
+            if all(p is False for p in predicates):
                 return self.clone()
 
         return self._filter(
