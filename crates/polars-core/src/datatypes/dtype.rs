@@ -528,6 +528,40 @@ impl DataType {
         }
     }
 
+    /// Bytes one value of this type takes, or `None` when that depends on the
+    /// value.
+    ///
+    /// A `Boolean` is bit-packed and reports one byte, the smallest size a value
+    /// can be counted in.
+    #[must_use]
+    pub fn byte_width(&self) -> Option<usize> {
+        use DataType::*;
+        Some(match self {
+            Null => 0,
+            Boolean | Int8 | UInt8 => 1,
+            Int16 | UInt16 | Float16 => 2,
+            Int32 | UInt32 | Float32 | Date => 4,
+            Int64 | UInt64 | Float64 | Datetime(_, _) | Duration(_) | Time => 8,
+            Int128 | UInt128 => 16,
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => 16,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(cats, _) => cats.physical().dtype().byte_width()?,
+            #[cfg(feature = "dtype-categorical")]
+            Enum(fcats, _) => fcats.physical().dtype().byte_width()?,
+            #[cfg(feature = "dtype-array")]
+            Array(inner, width) => inner.byte_width()? * width,
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields
+                .iter()
+                .map(|f| f.dtype().byte_width())
+                .sum::<Option<usize>>()?,
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, storage) => storage.byte_width()?,
+            _ => return None,
+        })
+    }
+
     #[must_use]
     pub fn to_storage(&self) -> DataType {
         use DataType::*;

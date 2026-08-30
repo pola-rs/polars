@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use polars_core::prelude::{DataType, Schema};
+use polars_core::prelude::Schema;
 use polars_ops::prelude::JoinBuildSide;
 use polars_utils::arena::{Arena, Node};
 
@@ -21,7 +21,6 @@ pub(super) fn set_join_build_sides(
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) {
-    let sample_limit = polars_config::config().join_sample_limit() as f64;
     let mut stack = vec![root];
     while let Some(node) = stack.pop() {
         let ir = ir_arena.get(node);
@@ -42,7 +41,7 @@ pub(super) fn set_join_build_sides(
             continue;
         }
         let (left, right) = (*input_left, *input_right);
-        let Some(side) = build_side(left, right, sample_limit, ir_arena, expr_arena) else {
+        let Some(side) = build_side(left, right, ir_arena, expr_arena) else {
             continue;
         };
         let IR::Join { options, .. } = ir_arena.get_mut(node) else {
@@ -57,35 +56,26 @@ pub(super) fn set_join_build_sides(
 fn build_side(
     left: Node,
     right: Node,
-    sample_limit: f64,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<JoinBuildSide> {
-    let left = side_size(left, ir_arena, expr_arena)?;
-    let right = side_size(right, ir_arena, expr_arena)?;
-    if left.rows <= sample_limit && left.bytes * LOPSIDED_FACTOR <= right.bytes {
+    let left = side_bytes(left, ir_arena, expr_arena)?;
+    let right = side_bytes(right, ir_arena, expr_arena)?;
+    if left * LOPSIDED_FACTOR <= right {
         Some(JoinBuildSide::ForceLeft)
-    } else if right.rows <= sample_limit && right.bytes * LOPSIDED_FACTOR <= left.bytes {
+    } else if right * LOPSIDED_FACTOR <= left {
         Some(JoinBuildSide::ForceRight)
     } else {
         None
     }
 }
 
-/// An upper bound on what one input of the join holds.
-struct SideSize {
-    rows: f64,
-    bytes: f64,
-}
-
-fn side_size(node: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<SideSize> {
+/// An upper bound on the bytes one input of the join holds.
+fn side_bytes(node: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<f64> {
     let stats = node_stats(node, ir_arena, expr_arena)?;
     let rows = stats.max_rows()?;
     let schema = ir_arena.get(node).schema(ir_arena);
-    Some(SideSize {
-        rows,
-        bytes: rows * row_width(&schema, &stats),
-    })
+    Some(rows * row_width(&schema, &stats))
 }
 
 /// Bytes one row of `schema` takes, from the statistics where they describe a
@@ -97,23 +87,10 @@ fn row_width(schema: &Schema, stats: &NodeStats) -> f64 {
             stats
                 .column(name)
                 .and_then(|c| c.avg_byte_width)
-                .map_or_else(|| dtype_width(dtype), f64::from)
+                .map_or_else(
+                    || dtype.byte_width().map_or(DEFAULT_VALUE_WIDTH, |w| w as f64),
+                    f64::from,
+                )
         })
         .sum()
-}
-
-/// Bytes one value of `dtype` takes, for the dtypes whose width does not depend on
-/// the value.
-fn dtype_width(dtype: &DataType) -> f64 {
-    use DataType::*;
-    match dtype {
-        Boolean | Int8 | UInt8 => 1.0,
-        Int16 | UInt16 | Float16 => 2.0,
-        Int32 | UInt32 | Float32 | Date => 4.0,
-        Int64 | UInt64 | Float64 | Datetime(..) | Duration(_) | Time => 8.0,
-        Int128 | UInt128 => 16.0,
-        #[cfg(feature = "dtype-categorical")]
-        Enum(..) | Categorical(..) => 4.0,
-        _ => DEFAULT_VALUE_WIDTH,
-    }
 }
