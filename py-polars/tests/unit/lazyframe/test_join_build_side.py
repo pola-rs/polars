@@ -25,8 +25,8 @@ def test_build_side_is_the_smaller_scan(
     lopsided: tuple[pl.LazyFrame, pl.LazyFrame],
 ) -> None:
     big, small = lopsided
-    assert "BUILD SIDE: ForceRight" in big.join(small, on="k").explain()
-    assert "BUILD SIDE: ForceLeft" in small.join(big, on="k").explain()
+    assert "BUILD SIDE: PreferRight" in big.join(small, on="k").explain()
+    assert "BUILD SIDE: PreferLeft" in small.join(big, on="k").explain()
 
     assert big.join(small, on="k").collect().height == 100
     assert small.join(big, on="k").collect().height == 100
@@ -39,7 +39,7 @@ def test_build_side_survives_a_filter_on_the_large_side(
     # small side is still bounded well below the large one.
     big, small = lopsided
     q = big.filter(pl.col("v") > 0).join(small, on="k")
-    assert "BUILD SIDE: ForceRight" in q.explain()
+    assert "BUILD SIDE: PreferRight" in q.explain()
     assert q.collect().height == 100
 
 

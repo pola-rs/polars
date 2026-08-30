@@ -15,7 +15,8 @@ const LOPSIDED_FACTOR: f64 = 8.0;
 /// Bytes assumed for a value whose width neither the statistics nor the dtype give.
 const DEFAULT_VALUE_WIDTH: f64 = 16.0;
 
-/// Set the build side of every join whose inputs are confidently lopsided.
+/// Set the preferred build side of every join whose inputs are confidently
+/// lopsided.
 pub(super) fn set_join_build_sides(
     root: Node,
     ir_arena: &mut Arena<IR>,
@@ -51,8 +52,11 @@ pub(super) fn set_join_build_sides(
     }
 }
 
-/// The side to build the hash table from, or `None` if the statistics do not
-/// settle it.
+/// The side to prefer building the hash table from, or `None` if the statistics
+/// do not settle it.
+///
+/// A preference only settles the case where the engine saturates its sample on
+/// both sides; anything it measures in full outranks it.
 fn build_side(
     left: Node,
     right: Node,
@@ -62,9 +66,9 @@ fn build_side(
     let left = side_bytes(left, ir_arena, expr_arena)?;
     let right = side_bytes(right, ir_arena, expr_arena)?;
     if left * LOPSIDED_FACTOR <= right {
-        Some(JoinBuildSide::ForceLeft)
+        Some(JoinBuildSide::PreferLeft)
     } else if right * LOPSIDED_FACTOR <= left {
-        Some(JoinBuildSide::ForceRight)
+        Some(JoinBuildSide::PreferRight)
     } else {
         None
     }
