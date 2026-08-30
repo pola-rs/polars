@@ -308,6 +308,7 @@ pub(crate) fn set_cache_states(
     if !cache_schema_and_children.is_empty() {
         let mut pred_pd =
             PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive);
+        let mut removed_predicate_caches = false;
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for (cache_id, v) in cache_schema_and_children.into_iter().rev() {
@@ -382,6 +383,7 @@ pub(crate) fn set_cache_states(
                     for (node, lp) in replacements {
                         lp_arena.replace(node, lp);
                     }
+                    removed_predicate_caches = true;
                     continue;
                 }
 
@@ -460,6 +462,19 @@ pub(crate) fn set_cache_states(
                     lp_arena.replace(child, lp.clone());
                 }
             }
+        }
+
+        if removed_predicate_caches {
+            set_cache_states(
+                root,
+                lp_arena,
+                expr_arena,
+                scratch,
+                verbose,
+                pushdown_maintain_errors,
+                streaming,
+                partition_hive,
+            )?;
         }
     }
     Ok(())

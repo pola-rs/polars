@@ -1717,7 +1717,11 @@ def test_cspe_cache_removal_keeps_nested_caches(
     )
 
 
-def test_cspe_nested_cache_does_not_block_pushable_filters() -> None:
+def test_cspe_nested_cache_does_not_block_pushable_filters(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_ALLOW_NESTED_CSPE", "1")
+
     buffer = io.BytesIO()
     pl.DataFrame({"a": range(100), "b": range(100)}).write_parquet(buffer)
 
