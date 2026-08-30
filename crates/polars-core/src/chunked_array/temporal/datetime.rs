@@ -298,4 +298,33 @@ mod test {
             [Some(i64::MIN), None, None]
         );
     }
+
+    #[test]
+    fn from_datetime_non_nanosecond_units() {
+        let datetime = DateTime::from_timestamp(1, 234_567_890)
+            .unwrap()
+            .naive_utc();
+
+        for (time_unit, expected) in [
+            (TimeUnit::Microseconds, 1_234_567),
+            (TimeUnit::Milliseconds, 1_234),
+        ] {
+            let dt = DatetimeChunked::from_naive_datetime(
+                PlSmallStr::from_static("name"),
+                [datetime],
+                time_unit,
+            );
+            assert_eq!(dt.physical().get(0), Some(expected));
+
+            let dt = DatetimeChunked::from_naive_datetime_options(
+                PlSmallStr::from_static("name"),
+                [Some(datetime), None],
+                time_unit,
+            );
+            assert_eq!(
+                dt.physical().iter().collect::<Vec<_>>(),
+                [Some(expected), None]
+            );
+        }
+    }
 }
