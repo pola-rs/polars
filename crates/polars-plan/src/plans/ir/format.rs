@@ -244,6 +244,9 @@ impl<'a> IRDisplay<'a> {
                 } else {
                     let how = &options.args.how;
                     write!(f, "{:indent$}{how} JOIN:", "")?;
+                    if let Some(build_side) = &options.args.build_side {
+                        write!(f, "\n{:indent$}BUILD SIDE: {build_side:?}", "")?;
+                    }
                     write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
                     self.with_root(*input_left)
                         ._format(f, sub_indent, seen_caches)?;
