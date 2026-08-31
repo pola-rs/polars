@@ -39,6 +39,8 @@ impl IR {
                         predicate,
                         validate_schema,
                         is_pure,
+                        explain_name: _,
+                        explain_detail: _,
                     },
             } => {
                 // Hash the Python function object using the pointer to the object.

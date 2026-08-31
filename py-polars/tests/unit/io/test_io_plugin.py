@@ -184,6 +184,53 @@ def test_datetime_io_predicate_pushdown_21790() -> None:
     assert str(column) == str(pl.col("timestamp"))
 
 
+def test_io_plugin_custom_explain() -> None:
+    def _source(
+        with_columns: list[str] | None,
+        predicate: pl.Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[pl.DataFrame]:
+        yield pl.DataFrame({"a": [1, 2, 3]})
+
+    default_plan = register_io_source(
+        io_source=_source,
+        schema={"a": pl.Int64},
+    ).explain()
+    assert "PYTHON SCAN" in default_plan
+    assert "PYTHON[" not in default_plan
+    assert "INFO:" not in default_plan
+
+    left = register_io_source(
+        io_source=_source,
+        schema={"a": pl.Int64},
+        explain_name="left",
+        explain_detail="left detail",
+    )
+    right = register_io_source(
+        io_source=_source,
+        schema={"a": pl.Int64},
+        explain_name="right",
+        explain_detail="right detail",
+    )
+
+    plan = left.explain()
+    assert "PYTHON[left] SCAN" in plan
+    assert "PROJECT */1 COLUMNS" in plan
+    assert "INFO: left detail" in plan
+
+    plans = {
+        "INNER JOIN": left.join(right, on="a").explain(),
+        "UNION": pl.concat([left, right]).explain(),
+    }
+    for operation, plan in plans.items():
+        assert operation in plan
+        assert "PYTHON[left] SCAN" in plan
+        assert "INFO: left detail" in plan
+        assert "PYTHON[right] SCAN" in plan
+        assert "INFO: right detail" in plan
+
+
 @pytest.mark.parametrize(("validate"), [(True), (False)])
 def test_reordered_columns_22731(validate: bool) -> None:
     def my_scan() -> pl.LazyFrame:

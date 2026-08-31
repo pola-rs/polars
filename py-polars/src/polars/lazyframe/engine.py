@@ -931,12 +931,11 @@ class GPUEngine(_LocalEngine):
         cudf_polars = import_optional(
             "cudf_polars",
             err_prefix="GPU engine requested, but required package",
+            err_suffix="could not be imported",
             install_message=(
-                "Please install using the command "
-                "`pip install cudf-polars-cu12` "
-                "(CUDA 12 is required for RAPIDS cuDF v25.08 and later). "
-                "If your system has a CUDA 11 driver, install with "
-                "`pip install cudf-polars-cu11==25.06` "
+                "Please install the cuDF Polars distribution matching your CUDA "
+                "version. See the GPU support documentation for installation "
+                "instructions: https://docs.pola.rs/user-guide/gpu-support/."
             ),
         )
         return partial(cudf_polars.execute_with_cudf, config=self)

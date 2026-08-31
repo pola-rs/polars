@@ -16,10 +16,9 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
-use super::stats::{LeafStats, leaf_stats};
 use crate::plans::{
-    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, OutputName, ProjectionOptions,
-    aexpr_to_leaf_names_iter,
+    AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, NodeStats, OutputName, ProjectionOptions,
+    aexpr_to_leaf_names_iter, node_stats,
 };
 use crate::prelude::{JoinArgs, JoinType, MaintainOrderJoin};
 use crate::utils::rename_columns;
@@ -34,7 +33,7 @@ type Renames = PlIndexMap<PlSmallStr, PlSmallStr>;
 pub(super) struct Leaf {
     pub(super) node: Node,
     pub(super) schema: SchemaRef,
-    pub(super) stats: LeafStats,
+    pub(super) stats: NodeStats,
 }
 
 /// One equi-key pair, resolved to the leaves it connects.
@@ -175,7 +174,7 @@ pub(super) fn extract(
     // which leaves happened to be measurable.
     let mut leaves = Vec::with_capacity(raw_leaves.len());
     for raw in raw_leaves {
-        let stats = leaf_stats(raw.node, ir_arena, expr_arena)?;
+        let stats = node_stats(raw.node, ir_arena, expr_arena)?;
         let schema = ir_arena.get(raw.node).schema(ir_arena).into_owned();
         let (node, schema) = rename_leaf(raw.node, schema, &raw.renames, ir_arena, expr_arena)?;
         leaves.push(Leaf {
