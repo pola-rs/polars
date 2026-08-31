@@ -475,6 +475,14 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             validity,
         }
     }
+
+    /// The single element every element of this array equals, if it is a non-empty scalar array.
+    ///
+    /// This is what lets equality and formatting avoid walking a scalar array of unbounded length.
+    #[inline]
+    fn scalar_element(&self) -> Option<Option<T>> {
+        (!self.is_empty() && self.is_scalar()).then(|| unsafe { self.get_unchecked(0) })
+    }
 }
 
 impl<T: NativeType> Default for PlPrimitiveArray<T> {
@@ -543,7 +551,17 @@ impl<'a, T: NativeType> IntoIterator for &'a PlPrimitiveArray<T> {
 /// Compares two arrays element-wise; the representation (dense or broadcast) is irrelevant.
 impl<T: NativeType> PartialEq for PlPrimitiveArray<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.length == other.length && self.iter().eq(other.iter())
+        if self.length != other.length {
+            return false;
+        }
+
+        // Never walk two scalar arrays element by element: their length is unbounded by their
+        // memory use.
+        if let (Some(lhs), Some(rhs)) = (self.scalar_element(), other.scalar_element()) {
+            return lhs == rhs;
+        }
+
+        self.iter().eq(other.iter())
     }
 }
 
@@ -564,9 +582,10 @@ impl<T: NativeType> std::fmt::Debug for PlPrimitiveArray<T> {
         f.write_str("PlPrimitiveArray")?;
 
         // Never materialize a scalar array: its length is unbounded by its memory use.
-        if self.is_scalar() && self.length > 1 {
-            let element = Element(unsafe { self.get_unchecked(0) });
-            return write!(f, "[{element:?}; {}]", self.length);
+        if self.length > 1 {
+            if let Some(element) = self.scalar_element() {
+                return write!(f, "[{:?}; {}]", Element(element), self.length);
+            }
         }
 
         f.debug_list().entries(self.iter().map(Element)).finish()
@@ -760,6 +779,22 @@ mod tests {
         assert_eq!(scalar, dense);
         assert_ne!(scalar, PlPrimitiveArray::new_scalar(7i32, 4));
         assert_ne!(scalar, PlPrimitiveArray::from_vec(vec![7i32, 7, 8]));
+        assert_ne!(scalar, PlPrimitiveArray::<i32>::new_null_scalar(3));
+    }
+
+    #[test]
+    fn equality_of_scalars_does_not_walk_elements() {
+        // Element-by-element comparison of a billion elements would not finish; the fast path must
+        // hit.
+        let arr = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
+
+        assert_eq!(arr, arr.clone());
+        assert_ne!(arr, PlPrimitiveArray::new_scalar(8i32, 1_000_000_000));
+        assert_ne!(arr, PlPrimitiveArray::<i32>::new_null_scalar(1_000_000_000));
+        assert_eq!(
+            PlPrimitiveArray::<i32>::new_null_scalar(1_000_000_000),
+            PlPrimitiveArray::<i32>::new_null_scalar(1_000_000_000),
+        );
     }
 
     #[test]
