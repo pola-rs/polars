@@ -250,9 +250,10 @@ fn non_repeated_group(
     match (logical_type, converted_type) {
         (Some(GroupLogicalType::List), _) => to_list(fields, parent_name, options),
         (None, Some(GroupConvertedType::List)) => to_list(fields, parent_name, options),
-        (Some(GroupLogicalType::Map), _) => to_list(fields, parent_name, options),
-        (None, Some(GroupConvertedType::Map) | Some(GroupConvertedType::MapKeyValue)) => {
-            to_map(fields, options)
+        (Some(GroupLogicalType::Map), _)
+        | (None, Some(GroupConvertedType::Map) | Some(GroupConvertedType::MapKeyValue)) => {
+            // Keep reading a malformed map as a list of entries
+            to_map(fields, options).or_else(|| to_list(fields, parent_name, options))
         },
         _ => to_struct(fields, options),
     }
@@ -287,11 +288,14 @@ fn to_map(fields: &[ParquetType], options: &SchemaInferenceOptions) -> Option<Ar
     else {
         return None;
     };
-    let entry = Field::new(
-        field_info.name.clone(),
-        to_struct(kv_fields, options)?,
-        false,
-    );
+    let entries = to_struct(kv_fields, options)?;
+
+    // `MapArray` requires exactly a key and a value field.
+    if !matches!(&entries, ArrowDataType::Struct(fields) if fields.len() == 2) {
+        return None;
+    }
+
+    let entry = Field::new(field_info.name.clone(), entries, false);
     Some(ArrowDataType::Map(Box::new(entry), false))
 }
 
