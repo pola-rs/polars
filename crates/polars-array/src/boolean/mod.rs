@@ -619,11 +619,6 @@ impl PlArray for PlBooleanArray {
     }
 
     #[inline]
-    fn to_flat_boxed(&self) -> Box<dyn PlArray> {
-        Box::new(self.to_flat())
-    }
-
-    #[inline]
     fn to_boxed(&self) -> Box<dyn PlArray> {
         Box::new(self.clone())
     }

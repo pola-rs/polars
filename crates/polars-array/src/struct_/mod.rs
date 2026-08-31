@@ -400,27 +400,6 @@ impl PlStructArray {
         unsafe { self.slice_unchecked(offset, length) };
         self
     }
-
-    /// Returns an equivalent array whose backing buffers, fields included, all hold one slot per
-    /// element.
-    ///
-    /// This materializes every scalar buffer and is therefore `O(len)`; it is a no-op clone when
-    /// this array [`is_flat`](Self::is_flat).
-    pub fn to_flat(&self) -> Self {
-        if self.is_flat() {
-            return self.clone();
-        }
-
-        Self {
-            fields: self
-                .fields
-                .iter()
-                .map(|field| field.to_flat_boxed())
-                .collect(),
-            length: self.length,
-            validity: self.validity().map(|validity| validity.to_flat()),
-        }
-    }
 }
 
 /// Returns `field` with `mask` merged into its validity, so that the undetermined values of rows
@@ -547,11 +526,6 @@ impl PlArray for PlStructArray {
     }
 
     #[inline]
-    fn to_flat_boxed(&self) -> Box<dyn PlArray> {
-        Box::new(self.to_flat())
-    }
-
-    #[inline]
     fn to_boxed(&self) -> Box<dyn PlArray> {
         Box::new(self.clone())
     }
@@ -640,7 +614,6 @@ mod tests {
         assert!(!arr.is_scalar());
         assert!(arr.is_flat());
         assert_eq!(arr, arr.clone());
-        assert_eq!(arr, arr.to_flat());
         assert_ne!(arr, PlStructArray::new(Vec::new(), 999, None));
     }
 
@@ -743,25 +716,6 @@ mod tests {
         assert_eq!(arr.field(1).len(), 2);
         assert!(arr.field(1).is_scalar());
         assert_eq!(arr.null_count(), 2);
-    }
-
-    #[test]
-    fn to_flat_materializes_the_fields_too() {
-        let scalar = PlStructArray::from_fields(scalar_fields(3))
-            .with_validity(Some(Bitmap::new_with_value(true, 1)));
-        let flat = scalar.to_flat();
-
-        assert!(flat.is_flat());
-        assert!(!flat.is_scalar());
-        assert_eq!(flat.len(), 3);
-        assert!(flat.field(0).is_flat());
-        assert!(flat.field(1).is_flat());
-        assert_eq!(flat.validity().unwrap().bitmap().len(), 3);
-        assert_eq!(flat, scalar);
-
-        // A flat array is only cloned.
-        let arr = PlStructArray::from_fields(flat_fields());
-        assert_eq!(arr.to_flat(), arr);
     }
 
     #[test]
@@ -911,9 +865,5 @@ mod tests {
                 .len(),
             2,
         );
-
-        let flat = arr.to_flat_boxed();
-        assert!(flat.is_flat());
-        assert_eq!(&flat, &arr);
     }
 }

@@ -205,13 +205,6 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
         self.with_validity(None)
     }
 
-    /// Returns an equivalent array whose backing buffers all hold one slot per element.
-    ///
-    /// This materializes any scalar buffer and is therefore `O(len)`; it is a no-op clone when
-    /// this array [`is_flat`](PlArray::is_flat).
-    #[must_use]
-    fn to_flat_boxed(&self) -> Box<dyn PlArray>;
-
     /// Clones this array into an owned `Box<dyn PlArray>`.
     ///
     /// This function is `O(1)`: every backing buffer is cheaply cloneable.
@@ -416,17 +409,6 @@ mod tests {
             arr.set_validity(Some(Bitmap::from_iter([true, false, true])));
             assert_eq!(arr.null_count(), 1);
             assert!(!arr.validity_is_scalar());
-        }
-    }
-
-    #[test]
-    fn to_flat_boxed_materializes_scalars() {
-        for arr in scalars(3) {
-            let flat = arr.to_flat_boxed();
-            assert!(flat.is_flat());
-            assert_eq!(flat.len(), 3);
-            assert_eq!(flat.array_type(), arr.array_type());
-            assert_eq!(&flat, &arr);
         }
     }
 
