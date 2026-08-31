@@ -12,7 +12,9 @@
 //! Unlike the `polars-arrow` arrays, these arrays carry no logical type; they are purely a physical
 //! representation. Logical typing lives at a higher level.
 
+pub mod bitmap;
 pub mod broadcast;
 pub mod primitive;
 
+pub use bitmap::PlBitmapRef;
 pub use primitive::PlPrimitiveArray;

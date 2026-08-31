@@ -1,9 +1,9 @@
 use std::ops::Range;
 
-use arrow::bitmap::Bitmap;
 use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
 
+use crate::bitmap::PlBitmapRef;
 use crate::broadcast::broadcast_index;
 
 /// Iterator over the values of a [`PlPrimitiveArray`](super::PlPrimitiveArray), ignoring validity.
@@ -68,15 +68,16 @@ unsafe impl<T: NativeType> TrustedLen for PlPrimitiveValuesIter<'_, T> {}
 #[derive(Clone)]
 pub struct PlPrimitiveIter<'a, T: NativeType> {
     values: &'a [T],
-    validity: Option<&'a Bitmap>,
+    validity: Option<PlBitmapRef<'a>>,
     range: Range<usize>,
 }
 
 impl<'a, T: NativeType> PlPrimitiveIter<'a, T> {
     /// # Safety
-    /// `values` and `validity` must be dense or broadcast for `length`, per [`crate::broadcast`].
+    /// `values` must be dense or broadcast for `length`, per [`crate::broadcast`], and `validity`
+    /// must have `length` bits.
     #[inline]
-    pub(super) fn new(values: &'a [T], validity: Option<&'a Bitmap>, length: usize) -> Self {
+    pub(super) fn new(values: &'a [T], validity: Option<PlBitmapRef<'a>>, length: usize) -> Self {
         Self {
             values,
             validity,
@@ -87,12 +88,9 @@ impl<'a, T: NativeType> PlPrimitiveIter<'a, T> {
     #[inline(always)]
     fn get(&self, i: usize) -> Option<T> {
         // SAFETY: `i` comes from `self.range`, so the broadcast indices are in bounds.
-        let is_valid = match self.validity {
-            None => true,
-            Some(validity) => unsafe {
-                validity.get_bit_unchecked(broadcast_index(i, validity.len()))
-            },
-        };
+        let is_valid = self
+            .validity
+            .is_none_or(|validity| unsafe { validity.get_unchecked(i) });
 
         is_valid.then(|| unsafe {
             *self

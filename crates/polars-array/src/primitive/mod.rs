@@ -3,6 +3,7 @@ use arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_ensure};
 
+use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{broadcast_index, is_valid_buffer_len};
 
 mod iterator;
@@ -188,19 +189,18 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         &self.values
     }
 
-    /// The backing validity mask, if any element may be null.
+    /// The validity mask, if any element may be null.
     ///
-    /// Like [`Self::values`], this is either dense or broadcast rather than always of length
-    /// [`Self::len`].
-    #[inline(always)]
-    pub const fn validity(&self) -> Option<&Bitmap> {
-        self.validity.as_ref()
-    }
-
-    /// Decomposes this array into its internal components: values, length and validity.
+    /// The returned [`PlBitmapRef`] has [`Self::len`] bits regardless of whether the backing
+    /// bitmap is dense or broadcast, so reading validity through it needs no knowledge of which
+    /// representation this array is in. Reach for the backing [`Bitmap`] with
+    /// [`PlBitmapRef::bitmap`], or materialize a dense one with [`PlBitmapRef::to_dense`].
     #[inline]
-    pub fn into_inner(self) -> (Buffer<T>, usize, Option<Bitmap>) {
-        (self.values, self.length, self.validity)
+    pub fn validity(&self) -> Option<PlBitmapRef<'_>> {
+        // SAFETY: the mask is dense or broadcast for `self.length`, upheld by every constructor.
+        self.validity
+            .as_ref()
+            .map(|validity| unsafe { PlBitmapRef::new_unchecked(validity, self.length) })
     }
 
     /// Whether the values buffer holds a single value shared by every element.
@@ -214,9 +214,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Whether the validity mask holds a single value shared by every element.
     #[inline]
     pub fn validity_is_broadcast(&self) -> bool {
-        self.validity
-            .as_ref()
-            .is_some_and(|v| v.len() != self.length)
+        self.validity().is_some_and(|v| v.is_broadcast())
     }
 
     /// Whether every backing buffer has one slot per element.
@@ -229,11 +227,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// single logical value repeated [`Self::len`] times in `O(1)` memory.
     #[inline]
     pub fn is_scalar(&self) -> bool {
-        self.values_are_broadcast()
-            && self
-                .validity
-                .as_ref()
-                .is_none_or(|v| v.len() != self.length)
+        self.values_are_broadcast() && self.validity().is_none_or(|v| v.is_broadcast())
     }
 
     /// The value shared by every element, if the values buffer is a broadcast buffer.
@@ -290,12 +284,9 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     #[inline]
     pub unsafe fn is_valid_unchecked(&self, i: usize) -> bool {
         debug_assert!(i < self.length);
-        match self.validity.as_ref() {
-            None => true,
-            Some(validity) => unsafe {
-                validity.get_bit_unchecked(broadcast_index(i, validity.len()))
-            },
-        }
+        // SAFETY: `i` is in bounds of the array, and therefore of its validity mask.
+        self.validity()
+            .is_none_or(|validity| unsafe { validity.get_unchecked(i) })
     }
 
     /// Returns whether the element at `i` is null.
@@ -340,18 +331,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// This is `O(1)` for a broadcast validity mask and `O(len)` for a dense one, amortized over
     /// repeated calls on the same [`Bitmap`].
     pub fn null_count(&self) -> usize {
-        match self.validity.as_ref() {
-            None => 0,
-            Some(validity) if validity.len() == self.length => validity.unset_bits(),
-            // Broadcast: all elements share the single bit.
-            Some(validity) => {
-                if validity.get_bit(0) {
-                    0
-                } else {
-                    self.length
-                }
-            },
-        }
+        self.validity().map_or(0, |validity| validity.unset_bits())
     }
 
     /// Whether this array has at least one null element.
@@ -371,7 +351,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Returns an iterator over the optional elements.
     #[inline]
     pub fn iter(&self) -> PlPrimitiveIter<'_, T> {
-        PlPrimitiveIter::new(&self.values, self.validity.as_ref(), self.length)
+        PlPrimitiveIter::new(&self.values, self.validity(), self.length)
     }
 
     /// Replaces the validity mask.
@@ -487,12 +467,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             Buffer::from(vec![self.values[0]; self.length])
         };
 
-        let validity = match self.validity.as_ref() {
-            Some(validity) if validity.len() != self.length => {
-                Some(Bitmap::new_with_value(validity.get_bit(0), self.length))
-            },
-            validity => validity.cloned(),
-        };
+        let validity = self.validity().map(|validity| validity.to_dense());
 
         Self {
             values,
@@ -659,6 +634,51 @@ mod tests {
     }
 
     #[test]
+    fn validity_hides_the_representation() {
+        let scalar = PlPrimitiveArray::<i32>::new_null_scalar(1_000);
+        let validity = scalar.validity().unwrap();
+
+        // The mask covers every element even though it is backed by a single bit.
+        assert_eq!(validity.len(), 1_000);
+        assert_eq!(validity.bitmap().len(), 1);
+        assert!(validity.is_broadcast());
+        assert_eq!(validity.broadcast_value(), Some(false));
+        assert!(!validity.get(999));
+        assert_eq!(validity.unset_bits(), 1_000);
+        assert_eq!(validity.set_bits(), 0);
+
+        // Materializing it yields exactly the mask a dense array would carry.
+        assert_eq!(
+            validity.to_dense(),
+            scalar.to_dense().validity().unwrap().to_dense()
+        );
+
+        let dense: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
+        let validity = dense.validity().unwrap();
+
+        assert_eq!(validity.len(), 3);
+        assert!(validity.is_dense());
+        assert_eq!(validity.broadcast_value(), None);
+        assert!(!validity.get(1));
+        assert_eq!(validity.unset_bits(), 1);
+        assert_eq!(validity.to_dense(), *validity.bitmap());
+    }
+
+    #[test]
+    fn validity_of_a_fully_valid_array() {
+        assert!(
+            PlPrimitiveArray::from_vec(vec![1i32, 2])
+                .validity()
+                .is_none()
+        );
+        assert!(
+            PlPrimitiveArray::new_scalar(7i32, 1_000)
+                .validity()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn from_iter_with_nulls() {
         let arr: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
 
@@ -698,7 +718,9 @@ mod tests {
 
         assert_eq!(arr.len(), 2);
         assert_eq!(arr.values().len(), 2);
-        assert_eq!(arr.validity().unwrap().len(), 1);
+        assert_eq!(arr.validity().unwrap().len(), 2);
+        assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
+        assert!(arr.validity().unwrap().is_broadcast());
         assert_eq!(arr.iter().collect::<Vec<_>>(), [None, None]);
     }
 
@@ -715,7 +737,8 @@ mod tests {
         let dense = null_scalar.to_dense();
 
         assert!(dense.is_dense());
-        assert_eq!(dense.validity().unwrap().len(), 3);
+        assert_eq!(dense.validity().unwrap().bitmap().len(), 3);
+        assert!(dense.validity().unwrap().is_dense());
         assert_eq!(dense.null_count(), 3);
         assert_eq!(dense, null_scalar);
     }
