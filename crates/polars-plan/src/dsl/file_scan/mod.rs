@@ -887,6 +887,12 @@ impl CastColumnsPolicy {
         }
 
         if let DataType::List(target_inner) = target_dtype {
+            #[cfg(feature = "dtype-map")]
+            if let Some(incoming_entries) = incoming_dtype.map_entries_dtype() {
+                self.should_cast_column(column_name, target_inner, &incoming_entries)?;
+                return Ok(true);
+            }
+
             let DataType::List(incoming_inner) = incoming_dtype else {
                 return mismatch_err("");
             };
@@ -909,6 +915,12 @@ impl CastColumnsPolicy {
 
         #[cfg(feature = "dtype-map")]
         if let DataType::Map(target_key, target_value) = target_dtype {
+            if let DataType::List(incoming_inner) = incoming_dtype {
+                let target_entries = target_dtype.map_entries_dtype().unwrap();
+                self.should_cast_column(column_name, &target_entries, incoming_inner)?;
+                return Ok(true);
+            }
+
             let DataType::Map(incoming_key, incoming_value) = incoming_dtype else {
                 return mismatch_err("");
             };

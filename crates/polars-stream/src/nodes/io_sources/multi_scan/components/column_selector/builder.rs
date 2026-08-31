@@ -184,6 +184,22 @@ impl ColumnSelectorBuilder {
         }
 
         if let DataType::List(target_inner) = target_dtype {
+            #[cfg(feature = "dtype-map")]
+            if let Some(incoming_entries) = incoming_dtype.map_entries_dtype() {
+                self.attach_transforms(
+                    ColumnSelector::Position(0),
+                    &incoming_entries,
+                    target_inner,
+                    target_name,
+                )?;
+
+                return Ok(ColumnTransform::Cast {
+                    dtype: target_dtype.clone(),
+                    options: CastOptions::NonStrict,
+                }
+                .into_selector(input_selector));
+            }
+
             let DataType::List(incoming_inner) = incoming_dtype else {
                 return mismatch_err("");
             };
@@ -230,6 +246,22 @@ impl ColumnSelectorBuilder {
 
         #[cfg(feature = "dtype-map")]
         if let DataType::Map(target_key, target_value) = target_dtype {
+            if let DataType::List(incoming_inner) = incoming_dtype {
+                let target_entries = target_dtype.map_entries_dtype().unwrap();
+                self.attach_transforms(
+                    ColumnSelector::Position(0),
+                    incoming_inner,
+                    &target_entries,
+                    target_name,
+                )?;
+
+                return Ok(ColumnTransform::Cast {
+                    dtype: target_dtype.clone(),
+                    options: CastOptions::NonStrict,
+                }
+                .into_selector(input_selector));
+            }
+
             let DataType::Map(incoming_key, incoming_value) = incoming_dtype else {
                 return mismatch_err("");
             };
