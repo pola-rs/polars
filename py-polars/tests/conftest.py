@@ -47,7 +47,7 @@ def pytest_handlecrashitem(
 
         # Suspend pytest's output capturing so the message reaches the real
         # streams instead of being buffered (and possibly lost) on crash.
-        capman = None
+        capman: Any = None
         if _xdist_crash_config is not None:
             capman = _xdist_crash_config.pluginmanager.getplugin("capturemanager")
         if capman is not None:
