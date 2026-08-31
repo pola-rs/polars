@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
+use polars_buffer::Buffer;
 use polars_core::prelude::PlIndexMap;
+use polars_utils::pl_path::PlRefPath;
 
 #[cfg(feature = "python")]
 pub use super::python_delta_dv_provider::{
@@ -23,11 +25,32 @@ pub enum DeletionFilesList {
     // Other possible options:
     // * ListArray(inner: Utf8Array)
     //
-    /// Iceberg positional deletes
-    IcebergPositionDelete(Arc<PlIndexMap<usize, Arc<[String]>>>),
+    /// Iceberg deletes
+    Iceberg(Arc<PlIndexMap<usize, IcebergDeletes>>),
     /// Delta deletion vector
     #[cfg(feature = "python")]
     Delta(DeltaDeletionVectorProvider),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, strum_macros::IntoStaticStr)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub enum IcebergDeletes {
+    PositionDeletes(Buffer<PlRefPath>),
+    DeletionVector(PlRefPath),
+}
+
+impl IcebergDeletes {
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            IcebergDeletes::PositionDeletes(x) => x.len(),
+            IcebergDeletes::DeletionVector(_) => 1,
+        }
+    }
 }
 
 impl DeletionFilesList {
@@ -36,9 +59,7 @@ impl DeletionFilesList {
         use DeletionFilesList::*;
 
         match this {
-            Some(IcebergPositionDelete(paths)) => {
-                (!paths.is_empty()).then_some(IcebergPositionDelete(paths))
-            },
+            Some(Iceberg(paths)) => (!paths.is_empty()).then_some(Iceberg(paths)),
             #[cfg(feature = "python")]
             Some(Delta(provider)) => Some(Delta(provider)),
             None => None,
@@ -50,7 +71,7 @@ impl DeletionFilesList {
         use DeletionFilesList::*;
 
         match self {
-            IcebergPositionDelete(paths) => Some(paths.len()),
+            Iceberg(paths) => Some(paths.len()),
             #[cfg(feature = "python")]
             Delta(_) => None,
         }
@@ -64,12 +85,10 @@ impl std::hash::Hash for DeletionFilesList {
         std::mem::discriminant(self).hash(state);
 
         match self {
-            IcebergPositionDelete(paths) => {
-                let addr = paths
-                    .first()
-                    .map_or(0, |(_, paths)| Arc::as_ptr(paths) as *const () as usize);
-
-                addr.hash(state)
+            Iceberg(paths) => {
+                for i in 0..8 {
+                    usize::hash(&paths.get_index(i).map_or(0, |x| *x.0), state)
+                }
             },
             #[cfg(feature = "python")]
             Delta(provider) => provider.hash(state),
@@ -82,7 +101,7 @@ impl std::fmt::Display for DeletionFilesList {
         use DeletionFilesList::*;
 
         match self {
-            IcebergPositionDelete(paths) => {
+            Iceberg(paths) => {
                 let s = if paths.len() == 1 { "" } else { "s" };
                 write!(f, "iceberg-position-delete: {} source{s}", paths.len())?;
             },

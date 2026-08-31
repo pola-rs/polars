@@ -1,7 +1,5 @@
 use std::hash::{Hash, Hasher};
 
-use polars_utils::arena::{Arena, Node};
-
 use crate::prelude::AExpr;
 
 impl Hash for AExpr {
@@ -112,19 +110,5 @@ impl Hash for AExpr {
             } => {},
             AExpr::Len => {},
         }
-    }
-}
-
-pub(crate) fn traverse_and_hash_aexpr<H: Hasher>(
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-    state: &mut H,
-) {
-    let mut scratch = vec![node];
-
-    while let Some(node) = scratch.pop() {
-        let ae = expr_arena.get(node);
-        ae.hash(state);
-        ae.children_rev(&mut scratch);
     }
 }

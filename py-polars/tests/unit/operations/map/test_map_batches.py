@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import re
 from functools import reduce
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import (
+    ArgumentRemovedError,
+    ComputeError,
+    InvalidOperationError,
+)
 from polars.testing import assert_frame_equal
 
 
@@ -172,3 +177,13 @@ def test_map_batches_no_return_dtype_25601(
     )
     expected = pl.DataFrame({"colx": expected_data})
     assert_frame_equal(result, expected)
+
+
+def test_removed_no_optimizations_parameter() -> None:
+    lf = pl.LazyFrame({"a": [1]})
+    msg = (
+        "Use the `predicate_pushdown`, `projection_pushdown`,"
+        " and `slice_pushdown` flags instead."
+    )
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        lf.map_batches(lambda df: df, no_optimizations=True)  # type: ignore[call-arg]

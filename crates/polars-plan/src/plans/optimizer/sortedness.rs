@@ -569,7 +569,6 @@ fn is_sorted_rec(
         },
         IR::Union { .. } => None,
         IR::HConcat { .. } => None,
-        IR::ExtContext { .. } => None,
         IR::Sink { .. } => None,
         IR::SinkMultiple { .. } => None,
         #[cfg(feature = "merge_sorted")]

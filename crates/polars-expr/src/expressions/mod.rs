@@ -796,17 +796,12 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         if self.has_window_function {
             state.insert_has_window_function_flag();
         }
-        self.expr.evaluate(df, &state).map(|c| {
-            // IO expression result should be boolean-typed.
-            debug_assert_eq!(c.dtype(), &DataType::Boolean);
-            (if c.len() == 1 && df.height() != 1 {
-                // filter(lit(True)) will hit here.
-                c.new_from_index(0, df.height())
-            } else {
-                c
-            })
-            .take_materialized_series()
-        })
+        // `filter(lit(True))` produces a unit-length column, which we broadcast.
+        let c = self.expr.evaluate(df, &state)?;
+        // IO expression result should be boolean-typed.
+        debug_assert_eq!(c.dtype(), &DataType::Boolean);
+        Ok(c.broadcast_owned_to(df.height())?
+            .take_materialized_series())
     }
 }
 

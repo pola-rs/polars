@@ -192,6 +192,7 @@ pub fn lower_ir(
 
     let ir_node = ir_arena.get(node);
     let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
+
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
             disable_morsel_split.get_or_insert(true);
@@ -829,7 +830,16 @@ pub fn lower_ir(
 
                     FileScanIR::ExpandedPaths { name: _ } => unreachable!(),
 
-                    FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
+                    FileScanIR::Anonymous { .. } => {
+                        return lower_subtree_to_inmem_engine(
+                            node,
+                            output_schema,
+                            ir_arena,
+                            expr_arena,
+                            phys_sm,
+                            ctx,
+                        );
+                    },
                 };
 
                 {
@@ -865,6 +875,8 @@ pub fn lower_ir(
                     let extra_columns_policy = match &*scan_type {
                         #[cfg(feature = "parquet")]
                         FileScanIR::Parquet { .. } => unified_scan_args.extra_columns_policy,
+                        #[cfg(feature = "csv")]
+                        FileScanIR::Csv { .. } => unified_scan_args.extra_columns_policy,
 
                         _ => {
                             if unified_scan_args.projection.is_some() {
@@ -901,6 +913,7 @@ pub fn lower_ir(
                         predicate_file_skip_applied,
                         hive_parts,
                         cast_columns_policy: unified_scan_args.cast_columns_policy,
+                        extra_columns_policy: unified_scan_args.extra_columns_policy,
                         missing_columns_policy: unified_scan_args.missing_columns_policy,
                         forbid_extra_columns,
                         include_file_paths: unified_scan_args.include_file_paths,
@@ -1035,15 +1048,8 @@ pub fn lower_ir(
             input_left,
             input_right,
             schema: _,
-            left_on,
-            right_on,
             options,
         } => {
-            if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate: _ }) = &options.options {
-                // Should not have been created by the optimizer.
-                panic!()
-            };
-
             #[cfg(feature = "iejoin")]
             const RANGE_JOIN_PREFER_DESCENDING: bool = false;
 
@@ -1051,8 +1057,7 @@ pub fn lower_ir(
             let (mut input_left, mut input_right) = (*input_left, *input_right);
             let input_left_schema = IR::schema_with_cache(input_left, ir_arena, schema_cache);
             let input_right_schema = IR::schema_with_cache(input_right, ir_arena, schema_cache);
-            let left_on = left_on.clone();
-            let right_on = right_on.clone();
+            let (left_on, right_on) = options.options.key_vecs();
             let get_expr_name = |e: &ExprIR| e.output_name().clone();
             let left_on_names = left_on.iter().map(get_expr_name).collect_vec();
             let right_on_names = right_on.iter().map(get_expr_name).collect_vec();
@@ -1198,11 +1203,16 @@ pub fn lower_ir(
             #[cfg(not(feature = "asof_join"))]
             let use_streaming_asof_join = false;
 
+            // A non-equality match condition is only handled natively by the range-join
+            // node; anything else falls back to the in-memory engine.
+            let match_condition_supported = options.is_pure_equi() || args.how.is_range();
+
             if (args.how.is_equi()
                 || args.how.is_semi_anti()
                 || args.how.is_cross()
                 || use_streaming_asof_join
                 || args.how.is_range())
+                && match_condition_supported
                 && !args.validation.needs_checks()
             {
                 // When lowering the expressions for the keys we need to ensure we keep around the
@@ -1294,7 +1304,11 @@ pub fn lower_ir(
                     _ if args.how.is_range() => {
                         use crate::nodes::joins::range_join::left_is_point;
 
-                        let Some(JoinTypeOptionsIR::IEJoin(range_options)) = options else {
+                        let JoinTypeOptionsIR::Range {
+                            ie_options: range_options,
+                            ..
+                        } = options
+                        else {
                             unreachable!()
                         };
 
@@ -1389,8 +1403,6 @@ pub fn lower_ir(
                 PhysNodeKind::InMemoryJoin {
                     input_left: phys_left,
                     input_right: phys_right,
-                    left_on,
-                    right_on,
                     args,
                     options,
                 }
@@ -1637,7 +1649,6 @@ pub fn lower_ir(
 
             return Ok(stream);
         },
-        IR::ExtContext { .. } => todo!(),
         IR::UnoptimizedDispatch {
             inputs,
             arg_map,
@@ -1872,4 +1883,57 @@ fn append_sorted_key_column(
         (phys_input, None)
     };
     Ok((phys_output, key_exprs, key_col_name))
+}
+
+/// Lowers the IR tree rooted at `ir_node` to the in-memory engine.
+fn lower_subtree_to_inmem_engine(
+    ir_node: Node,
+    ir_node_output_schema: Arc<Schema>,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    ctx: StreamingLowerIRContext<'_>,
+) -> PolarsResult<PhysStream> {
+    let mem_engine_executor = create_physical_plan(
+        ir_node,
+        ir_arena,
+        expr_arena,
+        Some(crate::dispatch::build_streaming_query_executor),
+    )?;
+
+    let input = phys_sm.insert(PhysNode::new(
+        Arc::new(Default::default()),
+        PhysNodeKind::InMemorySource {
+            df: Arc::new(DataFrame::empty_with_height(1)),
+            disable_morsel_split: true,
+        },
+    ));
+
+    let format_str = ctx.prepare_visualization.then(|| {
+        format!(
+            "{}",
+            IRPlanRef {
+                lp_top: ir_node,
+                lp_arena: ir_arena,
+                expr_arena,
+            }
+            .display()
+        )
+    });
+
+    let exec = parking_lot::Mutex::new(Some(mem_engine_executor));
+
+    Ok(PhysStream::first(phys_sm.insert(PhysNode::new(
+        ir_node_output_schema,
+        PhysNodeKind::InMemoryMap {
+            input: PhysStream::first(input),
+            map: Arc::new(move |_| {
+                exec.lock()
+                    .take()
+                    .unwrap()
+                    .execute(&mut ExecutionState::new())
+            }),
+            format_str,
+        },
+    ))))
 }

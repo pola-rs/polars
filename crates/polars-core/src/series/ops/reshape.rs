@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::gather::sublist::list::array_to_unit_list;

@@ -115,6 +115,8 @@ fn cast_impl_inner(
         Time => out.into_time(),
         #[cfg(feature = "dtype-decimal")]
         Decimal(precision, scale) => out.into_decimal(*precision, *scale)?,
+        #[cfg(feature = "dtype-extension")]
+        Extension(typ, _) => out.into_extension(typ.clone()),
         _ => out,
     };
 
@@ -171,43 +173,14 @@ where
             return Ok(out);
         }
         match dtype {
-            // LEGACY
-            // TODO @ cat-rework: remove after exposing to/from physical functions.
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(cats, _mapping) => {
-                polars_warn!(
-                    Deprecation,
-                    "casting from {:?} to {dtype:?} is deprecated.\n\
+            DataType::Categorical(..) | DataType::Enum(..) => {
+                polars_bail!(
+                    ComputeError:
+                    "casting from {} to {dtype} is not supported.\n\
                     Instead of `.cast({dtype:?}`, use `.cat.to({dtype:?})`.",
                     T::get_static_dtype()
                 );
-                let s = self.cast_with_options(&cats.physical().dtype(), options)?;
-                with_match_categorical_physical_type!(cats.physical(), |$C| {
-                    // SAFETY: we are guarded by the type system.
-                    type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
-                    let ca: &PhysCa = s.as_ref().as_ref();
-                    Ok(CategoricalChunked::<$C>::from_cats_and_dtype(ca.clone(), dtype.clone())
-                        .into_series())
-                })
-            },
-
-            // LEGACY
-            // TODO @ cat-rework: remove after exposing to/from physical functions.
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(fcats, _mapping) => {
-                polars_warn!(
-                    Deprecation,
-                    "casting from {:?} to {dtype:?} is deprecated.\n\
-                    Instead of `.cast({dtype:?}`, use `.cat.to({dtype:?})`.",
-                    T::get_static_dtype()
-                );
-                let s = self.cast_with_options(&fcats.physical().dtype(), options)?;
-                with_match_categorical_physical_type!(fcats.physical(), |$C| {
-                    // SAFETY: we are guarded by the type system.
-                    type PhysCa = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
-                    let ca: &PhysCa = s.as_ref().as_ref();
-                    Ok(CategoricalChunked::<$C>::from_cats_and_dtype(ca.clone(), dtype.clone()).into_series())
-                })
             },
 
             #[cfg(feature = "dtype-struct")]

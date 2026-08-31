@@ -112,7 +112,9 @@ where
         let zero: Simd<T, STRIPE> = Simd::default();
 
         let vsum = main
-            .chunks_exact(STRIPE)
+            .as_chunks::<STRIPE>()
+            .0
+            .iter()
             .enumerate()
             .map(|(i, a)| {
                 let m: Mask<T::Mask, STRIPE> = main_mask.get_simd(i * STRIPE);

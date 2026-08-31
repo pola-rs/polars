@@ -2,6 +2,7 @@
     all(target_arch = "aarch64", feature = "nightly"),
     feature(stdarch_aarch64_prefetch)
 )]
+#![allow(stable_features)] // float_algebraic is stable in nightly but not on stable yet
 #![cfg_attr(feature = "nightly", feature(float_algebraic))]
 #![cfg_attr(feature = "nightly", allow(internal_features))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -15,6 +16,7 @@ pub mod arg_min_max;
 pub mod array;
 pub mod binary_search;
 pub mod bool;
+pub mod broadcast;
 pub mod cache;
 pub mod calc_morsel_split;
 pub mod cardinality_sketch;
@@ -66,6 +68,7 @@ pub mod small_bytes;
 pub mod sort;
 pub mod sparse_init_vec;
 pub mod sync;
+pub mod tick_counter;
 pub mod total_ord;
 pub mod unique_id;
 pub mod vec;

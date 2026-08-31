@@ -1,3 +1,5 @@
+#[cfg(feature = "cse")]
+mod canonical;
 mod dot;
 mod equality;
 mod format;
@@ -11,6 +13,8 @@ mod unoptimized;
 use std::borrow::Cow;
 use std::fmt;
 
+#[cfg(feature = "cse")]
+pub(crate) use canonical::{CanonicalIRId, CanonicalIRMap};
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use equality::ExpressionComparator;
 pub use format::{ExprIRDisplay, IRDisplay, write_group_by, write_ir_non_recursive};
@@ -118,8 +122,7 @@ pub enum IR {
         input_left: Node,
         input_right: Node,
         schema: SchemaRef,
-        left_on: Vec<ExprIR>,
-        right_on: Vec<ExprIR>,
+        /// Holds the match condition, including the join keys.
         options: Arc<JoinOptionsIR>,
     },
     Gather {
@@ -151,11 +154,6 @@ pub enum IR {
         inputs: Vec<Node>,
         schema: SchemaRef,
         options: HConcatOptions,
-    },
-    ExtContext {
-        input: Node,
-        contexts: Vec<Node>,
-        schema: SchemaRef,
     },
     Sink {
         input: Node,

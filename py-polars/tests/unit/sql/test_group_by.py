@@ -739,7 +739,8 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
 
 def test_sum_and_total_28434() -> None:
     # `SUM` over an empty/all-null input should return NULL (SQL standard).
-    # `TOTAL` is the (SQLite) non-standard counterpart that returns zero.
+    # `TOTAL` is the (SQLite) non-standard counterpart that returns zero, and
+    # (per SQLite) always returns a floating point value.
     all_null = pl.DataFrame({"a": [None, None]}, schema={"a": pl.Int64})
     grp = pl.DataFrame(
         {"g": [1, 1, 2, 2], "a": [None, None, 3, 4]},
@@ -747,10 +748,10 @@ def test_sum_and_total_28434() -> None:
     )
     mixed = pl.DataFrame({"a": [1, None, 2]}, schema={"a": pl.Int64})
 
-    # scalar: all-null -> SUM is NULL, TOTAL is 0
+    # scalar: all-null -> SUM is NULL, TOTAL is 0.0
     expected = pl.DataFrame(
-        data={"s": [None], "t": [0]},
-        schema={"s": pl.Int64, "t": pl.Int64},
+        data={"s": [None], "t": [0.0]},
+        schema={"s": pl.Int64, "t": pl.Float64},
     )
     assert_frame_equal(
         all_null.sql("SELECT SUM(a) AS s, TOTAL(a) AS t FROM self"), expected
@@ -765,25 +766,40 @@ def test_sum_and_total_28434() -> None:
         expected,
     )
 
-    # all-null group -> (NULL, 0); a group with values sums identically for both
+    # all-null group -> (NULL, 0.0); a group with values sums identically for both
+    # (aside from TOTAL's REAL dtype)
     assert_frame_equal(
         grp.sql("SELECT g, SUM(a) AS s, TOTAL(a) AS t FROM self GROUP BY g ORDER BY g"),
         pl.DataFrame(
-            {"g": [1, 2], "s": [None, 7], "t": [0, 7]},
-            schema={"g": pl.Int64, "s": pl.Int64, "t": pl.Int64},
+            {"g": [1, 2], "s": [None, 7], "t": [0.0, 7.0]},
+            schema={"g": pl.Int64, "s": pl.Int64, "t": pl.Float64},
         ),
     )
     # a mix of null and non-null values sums identically for both
     assert_frame_equal(
         mixed.sql("SELECT SUM(a) AS s, TOTAL(a) AS t FROM self"),
-        pl.DataFrame({"s": [3], "t": [3]}, schema={"s": pl.Int64, "t": pl.Int64}),
+        pl.DataFrame({"s": [3], "t": [3.0]}, schema={"s": pl.Int64, "t": pl.Float64}),
     )
-    # dtype is preserved across numeric types (float stays float)
+    # `TOTAL` is always REAL/Float64, regardless of the input's numeric dtype
     all_null_f32 = pl.DataFrame({"a": [None, None]}, schema={"a": pl.Float32})
     assert_frame_equal(
         all_null_f32.sql("SELECT SUM(a) AS s, TOTAL(a) AS t FROM self"),
         pl.DataFrame(
-            {"s": [None], "t": [0.0]}, schema={"s": pl.Float32, "t": pl.Float32}
+            {"s": [None], "t": [0.0]}, schema={"s": pl.Float32, "t": pl.Float64}
+        ),
+    )
+
+    # `TOTAL(DISTINCT ...)` dedups like `SUM(DISTINCT ...)` before summing
+    dupes = pl.DataFrame({"a": [1, 1, 2, 2, None]}, schema={"a": pl.Int64})
+    assert_frame_equal(
+        dupes.sql("SELECT SUM(DISTINCT a) AS s, TOTAL(DISTINCT a) AS t FROM self"),
+        pl.DataFrame({"s": [3], "t": [3.0]}, schema={"s": pl.Int64, "t": pl.Float64}),
+    )
+    assert_frame_equal(
+        all_null.sql("SELECT SUM(DISTINCT a) AS s, TOTAL(DISTINCT a) AS t FROM self"),
+        pl.DataFrame(
+            data={"s": [None], "t": [0.0]},
+            schema={"s": pl.Int64, "t": pl.Float64},
         ),
     )
 
@@ -853,4 +869,95 @@ def test_corr_no_complete_pairs_returns_null() -> None:
         query="SELECT g, CORR(a, b) AS c FROM self GROUP BY g ORDER BY g",
         compare_with="duckdb",
         expected={"g": [1, 2], "c": [None, 1.0]},
+    )
+
+
+def test_correlated_subquery_in_group_by_select_list() -> None:
+    # Previously rejected as not participating in the GROUP BY, leaking an internal
+    # column name into the error.
+    frames = {
+        "t1": pl.DataFrame({"k": [1, 2, 3]}),
+        "t2": pl.DataFrame({"k": [1, 1, 2], "w": [5, 7, 9]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query=(
+            "SELECT k, (SELECT SUM(w) FROM t2 WHERE t2.k = t1.k) AS s "
+            "FROM t1 GROUP BY k ORDER BY k"
+        ),
+        compare_with="duckdb",
+        expected={"k": [1, 2, 3], "s": [12, 9, None]},
+    )
+
+
+def test_group_by_same_column_from_two_relation_aliases() -> None:
+    frames = {
+        "sales": pl.DataFrame(
+            {
+                "bill_addr": [10, 10, 11],
+                "ship_addr": [20, 21, 20],
+                "amount": [5, 7, 9],
+            }
+        ),
+        "addr": pl.DataFrame(
+            {
+                "addr_sk": [10, 11, 20, 21],
+                "street": ["main", "oak", "elm", "ash"],
+                "city": ["ams", "ams", "rtm", "utr"],
+            }
+        ),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT a1.street AS b_street, a2.street AS c_street, SUM(amount) AS total
+            FROM sales, addr a1, addr a2
+            WHERE bill_addr = a1.addr_sk AND ship_addr = a2.addr_sk
+            GROUP BY a1.street, a2.street
+            ORDER BY b_street, c_street
+        """,
+        compare_with="duckdb",
+        expected={
+            "b_street": ["main", "main", "oak"],
+            "c_street": ["ash", "elm", "elm"],
+            "total": [7, 5, 9],
+        },
+    )
+
+
+def test_group_by_relation_alias_key_not_projected() -> None:
+    frames = {
+        "sales": pl.DataFrame({"bill_addr": [10, 10, 11], "amount": [5, 7, 9]}),
+        "addr": pl.DataFrame({"addr_sk": [10, 11], "city": ["ams", "rtm"]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT SUM(amount) AS total
+            FROM sales, addr a1
+            WHERE bill_addr = a1.addr_sk
+            GROUP BY a1.city
+            ORDER BY total
+        """,
+        compare_with="duckdb",
+        expected={"total": [9, 12]},
+    )
+
+
+def test_group_by_relation_alias_key_projected_unqualified() -> None:
+    frames = {
+        "sales": pl.DataFrame({"a1k": [10, 11, 10], "a2k": [20, 21, 21]}),
+        "addr": pl.DataFrame({"addr_sk": [10, 11, 20, 21], "city": [*"abcd"]}),
+    }
+    assert_sql_matches(
+        frames=frames,
+        query="""
+            SELECT a2.city, COUNT(*) AS n
+            FROM sales, addr a1, addr a2
+            WHERE a1k = a1.addr_sk AND a2k = a2.addr_sk
+            GROUP BY a2.city
+            ORDER BY city
+        """,
+        compare_with="duckdb",
+        expected={"city": ["c", "d"], "n": [1, 2]},
     )
