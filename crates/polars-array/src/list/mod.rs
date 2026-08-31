@@ -564,6 +564,7 @@ impl PlListArray {
     #[inline]
     pub fn new_from_index(&self, index: usize, length: usize) -> Self {
         assert!(index < self.length, "index out of bounds");
+        assert!(length < usize::MAX);
         unsafe { self.new_from_index_unchecked(index, length) }
     }
 
