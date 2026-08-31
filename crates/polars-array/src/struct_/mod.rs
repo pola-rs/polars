@@ -3,7 +3,7 @@ use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
-use crate::bitmap::PlBitmapRef;
+use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::is_valid_buffer_len;
 
 /// An immutable, cheaply cloneable sequence of `length` optional rows, one value per field array.
@@ -390,15 +390,6 @@ fn masked(field: &dyn PlArray, mask: PlBitmapRef<'_>) -> Box<dyn PlArray> {
         None => mask.to_flat(),
     };
     field.with_validity(Some(validity))
-}
-
-/// Compares two validity masks over `length` elements, treating an absent mask as all valid.
-fn validity_eq(lhs: Option<PlBitmapRef<'_>>, rhs: Option<PlBitmapRef<'_>>, length: usize) -> bool {
-    match (lhs, rhs) {
-        (Some(lhs), Some(rhs)) => lhs == rhs,
-        (Some(mask), None) | (None, Some(mask)) => mask.set_bits() == length,
-        (None, None) => true,
-    }
 }
 
 impl Default for PlStructArray {

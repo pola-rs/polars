@@ -216,9 +216,10 @@ impl Eq for dyn PlArray + '_ {}
 #[cfg(test)]
 mod tests {
     use arrow::types::PrimitiveType;
+    use polars_buffer::Buffer;
 
     use super::*;
-    use crate::{PlBooleanArray, PlPrimitiveArray, PlStructArray};
+    use crate::{PlBooleanArray, PlListArray, PlPrimitiveArray, PlStructArray};
 
     fn arrays() -> Vec<Box<dyn PlArray>> {
         vec![
@@ -227,6 +228,10 @@ mod tests {
             Box::new(PlStructArray::from_fields(vec![Box::new(
                 PlPrimitiveArray::from_vec(vec![1i32, 2, 3]),
             )])),
+            Box::new(PlListArray::from_offsets(
+                Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
+                Buffer::from(vec![0u64, 1, 2, 3]),
+            )),
         ]
     }
 
@@ -323,6 +328,10 @@ mod tests {
             Box::new(PlBooleanArray::new_full_null(4)),
             Box::new(PlStructArray::new_full_null(
                 vec![Box::new(PlPrimitiveArray::<i32>::new_scalar(1, 4))],
+                4,
+            )),
+            Box::new(PlListArray::new_full_null(
+                Box::new(PlPrimitiveArray::<i32>::new_scalar(1, 4)),
                 4,
             )),
         ];

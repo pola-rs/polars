@@ -361,6 +361,22 @@ impl std::fmt::Debug for PlBitmap {
     }
 }
 
+/// Compares two validity masks over `length` elements, treating an absent mask as all valid.
+///
+/// This is what the arrays whose elements are not a single value — the nested ones — compare their
+/// validity with before looking at what they hold.
+pub(crate) fn validity_eq(
+    lhs: Option<PlBitmapRef<'_>>,
+    rhs: Option<PlBitmapRef<'_>>,
+    length: usize,
+) -> bool {
+    match (lhs, rhs) {
+        (Some(lhs), Some(rhs)) => lhs == rhs,
+        (Some(mask), None) | (None, Some(mask)) => mask.set_bits() == length,
+        (None, None) => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
