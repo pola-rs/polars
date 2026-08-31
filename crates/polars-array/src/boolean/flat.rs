@@ -4,7 +4,14 @@ use arrow::bitmap::Bitmap;
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 
 use super::PlBooleanArray;
-use crate::flat::Flat;
+use crate::flat::{Flat, MaybeFlat};
+
+impl MaybeFlat for PlBooleanArray {
+    #[inline]
+    fn is_flat(&self) -> bool {
+        self.is_flat()
+    }
+}
 
 /// The methods a [`PlBooleanArray`] gains from having one bit per element in every backing bitmap.
 ///

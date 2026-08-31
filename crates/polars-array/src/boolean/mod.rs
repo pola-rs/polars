@@ -602,11 +602,6 @@ impl PlArray for PlBooleanArray {
     }
 
     #[inline]
-    fn values_are_scalar(&self) -> bool {
-        self.values_are_scalar()
-    }
-
-    #[inline]
     fn slice(&mut self, offset: usize, length: usize) {
         self.slice(offset, length)
     }

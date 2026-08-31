@@ -13,9 +13,9 @@ use crate::bitmap::PlBitmapRef;
 /// means downcasting through [`PlArray::as_any`].
 ///
 /// Like the concrete arrays, an implementor stores its logical length separately from its backing
-/// buffers, so each buffer is independently either flat or scalar. See [`crate::broadcast`]
-/// for the rules, and [`PlArray::is_scalar`] to detect the `O(1)`-memory case a `dyn PlArray`
-/// must not walk element by element.
+/// buffers, so each buffer is independently either flat or scalar — see [`crate::broadcast`] for
+/// the rules. Which representation an array is in is a property of the concrete array; this trait
+/// does not expose it.
 ///
 /// # Example
 /// ```
@@ -25,7 +25,6 @@ use crate::bitmap::PlBitmapRef;
 ///
 /// assert_eq!(arr.array_type(), PlArrayType::Primitive(PrimitiveType::Int32));
 /// assert_eq!(arr.len(), 1_000_000_000);
-/// assert!(arr.is_scalar());
 /// assert_eq!(arr.null_count(), 0);
 ///
 /// let arr = arr.as_any().downcast_ref::<PlPrimitiveArray<i32>>().unwrap();
@@ -114,30 +113,6 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     #[inline]
     unsafe fn is_null_unchecked(&self, i: usize) -> bool {
         unsafe { !self.is_valid_unchecked(i) }
-    }
-
-    /// Whether the values buffer holds a single value shared by every element.
-    ///
-    /// This is `false` for a flat array of length one, where the two representations coincide.
-    fn values_are_scalar(&self) -> bool;
-
-    /// Whether the validity mask holds a single bit shared by every element.
-    #[inline]
-    fn validity_is_scalar(&self) -> bool {
-        self.validity().is_some_and(|validity| validity.is_scalar())
-    }
-
-    /// Whether every backing buffer has one slot per element.
-    #[inline]
-    fn is_flat(&self) -> bool {
-        !self.values_are_scalar() && !self.validity_is_scalar()
-    }
-
-    /// Whether this array is entirely stored in the scalar representation, and therefore is a
-    /// single logical value repeated [`PlArray::len`] times in `O(1)` memory.
-    #[inline]
-    fn is_scalar(&self) -> bool {
-        self.values_are_scalar() && self.validity().is_none_or(|validity| validity.is_scalar())
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
@@ -323,26 +298,20 @@ mod tests {
             assert!(!arr.has_nulls());
             assert!(arr.is_valid(2));
             assert!(!arr.is_null(2));
-            assert!(arr.is_flat());
-            assert!(!arr.is_scalar());
-            assert!(!arr.values_are_scalar());
-            assert!(!arr.validity_is_scalar());
         }
     }
 
     #[test]
     fn scalars_stay_cheap_behind_the_trait_object() {
+        // A billion elements would not be walked in reasonable time; that this test finishes is
+        // what shows the trait object never materializes the scalar representation.
         for arr in scalars(1_000_000_000) {
             assert_eq!(arr.len(), 1_000_000_000);
-            assert!(arr.is_scalar());
-            assert!(!arr.is_flat());
-            assert!(arr.values_are_scalar());
             assert_eq!(arr.null_count(), 0);
 
             // Slicing a scalar stays `O(1)`, and so does comparing it.
             let sliced = arr.sliced(500, 2);
             assert_eq!(sliced.len(), 2);
-            assert!(sliced.is_scalar());
             assert_eq!(&arr, &arr.clone());
         }
     }
@@ -363,7 +332,7 @@ mod tests {
             assert!(arr.has_nulls());
             assert!(arr.is_null(3));
             assert!(!arr.is_valid(3));
-            assert!(arr.validity_is_scalar());
+            assert!(arr.validity().unwrap().is_scalar());
             assert_eq!(arr.validity().unwrap().len(), 4);
             assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
 
@@ -400,15 +369,13 @@ mod tests {
             // A scalar mask of one unset bit nulls out every element.
             let nulled = arr.with_validity(Some(Bitmap::new_zeroed(1)));
             assert_eq!(nulled.null_count(), 3);
-            assert!(nulled.validity_is_scalar());
-            assert!(!nulled.is_flat());
-            assert!(!nulled.is_scalar());
+            assert!(nulled.validity().unwrap().is_scalar());
             assert_eq!(arr.null_count(), 0);
 
             let mut arr = arr;
             arr.set_validity(Some(Bitmap::from_iter([true, false, true])));
             assert_eq!(arr.null_count(), 1);
-            assert!(!arr.validity_is_scalar());
+            assert!(!arr.validity().unwrap().is_scalar());
         }
     }
 

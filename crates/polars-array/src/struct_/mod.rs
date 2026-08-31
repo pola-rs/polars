@@ -19,9 +19,9 @@ use crate::broadcast::is_valid_buffer_len;
 /// buffer in this crate. See [`crate::broadcast`] for the full rules.
 ///
 /// The fields need no such treatment here — each is a [`PlArray`] that already carries its own
-/// scalar representation. A struct array is therefore a *scalar* — one row repeated `length` times
-/// in `O(1)` memory — exactly when every field [`is_scalar`](PlArray::is_scalar) and its own
-/// validity mask is scalar or absent.
+/// scalar representation. A struct array is therefore a single row repeated `length` times in
+/// `O(1)` memory exactly when every field is scalar and its own validity mask is scalar or absent;
+/// whether that is so is a question for the concrete field arrays, not for this one.
 ///
 /// # Example
 /// ```
@@ -41,7 +41,7 @@ use crate::broadcast::is_valid_buffer_len;
 ///     Box::new(PlBooleanArray::new_scalar(true, 1_000_000_000)),
 /// ]);
 /// assert_eq!(scalar.len(), 1_000_000_000);
-/// assert!(scalar.is_scalar());
+/// assert_eq!(scalar.null_count(), 0);
 /// ```
 #[derive(Clone)]
 pub struct PlStructArray {
@@ -215,35 +215,12 @@ impl PlStructArray {
             .map(|validity| unsafe { PlBitmapRef::new_unchecked(validity, self.length) })
     }
 
-    /// Whether every field holds a single value shared by every element.
-    ///
-    /// A struct array holds no values of its own, so this asks whether every field
-    /// [`is_scalar`](PlArray::is_scalar) and the row at every index is therefore the same one. It
-    /// is `false` for an array without fields, which has nothing to scalar, and — like the
-    /// fields it defers to — `false` for a flat array of length one, where the two representations
-    /// coincide.
-    #[inline]
-    pub fn values_are_scalar(&self) -> bool {
-        !self.fields.is_empty() && self.fields.iter().all(|field| field.is_scalar())
-    }
-
     /// Whether the validity mask holds a single bit shared by every element.
+    ///
+    /// This says nothing about the fields, which carry their own representation.
     #[inline]
     pub fn validity_is_scalar(&self) -> bool {
         self.validity().is_some_and(|v| v.is_scalar())
-    }
-
-    /// Whether every backing buffer, in this array and in its fields, has one slot per element.
-    #[inline]
-    pub fn is_flat(&self) -> bool {
-        !self.validity_is_scalar() && self.fields.iter().all(|field| field.is_flat())
-    }
-
-    /// Whether this array is entirely stored in the scalar representation, and therefore is a
-    /// single logical row repeated [`Self::len`] times in `O(1)` memory.
-    #[inline]
-    pub fn is_scalar(&self) -> bool {
-        self.values_are_scalar() && self.validity().is_none_or(|v| v.is_scalar())
     }
 
     /// Returns whether the element at `i` is valid (non-null).
@@ -501,16 +478,6 @@ impl PlArray for PlStructArray {
     }
 
     #[inline]
-    fn values_are_scalar(&self) -> bool {
-        self.values_are_scalar()
-    }
-
-    #[inline]
-    fn is_flat(&self) -> bool {
-        self.is_flat()
-    }
-
-    #[inline]
     fn slice(&mut self, offset: usize, length: usize) {
         self.slice(offset, length)
     }
@@ -563,9 +530,6 @@ mod tests {
 
         assert_eq!(arr.len(), 3);
         assert_eq!(arr.num_fields(), 2);
-        assert!(arr.is_flat());
-        assert!(!arr.is_scalar());
-        assert!(!arr.values_are_scalar());
         assert_eq!(arr.null_count(), 0);
         assert!(arr.is_valid(1));
         assert!(!arr.is_null(1));
@@ -580,39 +544,22 @@ mod tests {
     }
 
     #[test]
-    fn scalar_defers_to_its_fields() {
+    fn scalar_fields_cost_nothing() {
+        // Nothing here may walk a billion rows: the fields keep their own scalar representation.
         let arr = PlStructArray::from_fields(scalar_fields(1_000_000_000));
 
         assert_eq!(arr.len(), 1_000_000_000);
-        assert!(arr.values_are_scalar());
-        assert!(arr.is_scalar());
-        assert!(!arr.is_flat());
+        assert_eq!(arr.num_fields(), 2);
         assert_eq!(arr.null_count(), 0);
-
-        // Only every field being scalar makes the row constant.
-        let mixed = PlStructArray::new(
-            vec![
-                Box::new(PlPrimitiveArray::<i32>::new_scalar(1, 3)),
-                Box::new(PlBooleanArray::from_vec(vec![true, false, true])),
-            ],
-            3,
-            None,
-        );
-        assert!(!mixed.values_are_scalar());
-        assert!(!mixed.is_scalar());
-        // ... and only every field being flat makes the array flat.
-        assert!(!mixed.is_flat());
+        assert!(arr.is_valid(999_999_999));
     }
 
     #[test]
-    fn an_array_without_fields_is_neither_scalar_nor_scalar() {
+    fn an_array_without_fields_has_a_length_of_its_own() {
         let arr = PlStructArray::new(Vec::new(), 1_000_000_000, None);
 
         assert_eq!(arr.len(), 1_000_000_000);
         assert_eq!(arr.num_fields(), 0);
-        assert!(!arr.values_are_scalar());
-        assert!(!arr.is_scalar());
-        assert!(arr.is_flat());
         assert_eq!(arr, arr.clone());
         assert_ne!(arr, PlStructArray::new(Vec::new(), 999, None));
     }
@@ -621,7 +568,6 @@ mod tests {
     fn null_scalar() {
         let arr = PlStructArray::new_full_null(scalar_fields(1_000_000_000), 1_000_000_000);
 
-        assert!(arr.is_scalar());
         assert!(arr.validity_is_scalar());
         assert_eq!(arr.validity().unwrap().len(), 1_000_000_000);
         assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
@@ -643,9 +589,6 @@ mod tests {
             PlStructArray::from_fields(flat_fields()).with_validity(Some(Bitmap::new_zeroed(1)));
 
         assert!(arr.validity_is_scalar());
-        assert!(!arr.values_are_scalar());
-        assert!(!arr.is_flat());
-        assert!(!arr.is_scalar());
         assert_eq!(arr.null_count(), 3);
     }
 
@@ -657,10 +600,7 @@ mod tests {
             Some(Bitmap::from_iter([true, false, true])),
         );
 
-        assert!(arr.values_are_scalar());
         assert!(!arr.validity_is_scalar());
-        assert!(!arr.is_flat());
-        assert!(!arr.is_scalar());
         assert_eq!(arr.null_count(), 1);
         assert!(arr.is_null(1));
     }
@@ -711,10 +651,8 @@ mod tests {
             .sliced(500, 2);
 
         assert_eq!(arr.len(), 2);
-        assert!(arr.is_scalar());
         assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
         assert_eq!(arr.field(1).len(), 2);
-        assert!(arr.field(1).is_scalar());
         assert_eq!(arr.null_count(), 2);
     }
 
@@ -807,7 +745,6 @@ mod tests {
 
         assert!(arr.is_empty());
         assert_eq!(arr.num_fields(), 0);
-        assert!(arr.is_flat());
         assert_eq!(arr.null_count(), 0);
         assert_eq!(arr, PlStructArray::default());
     }
@@ -846,8 +783,6 @@ mod tests {
         assert_eq!(arr.array_type(), PlArrayType::Struct);
         assert!(arr.array_type().is_struct());
         assert_eq!(arr.len(), 1_000);
-        assert!(arr.is_scalar());
-        assert!(!arr.is_flat());
         assert_eq!(arr.null_count(), 0);
 
         let nulled = arr.with_validity(Some(Bitmap::new_zeroed(1)));

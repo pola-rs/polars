@@ -7,20 +7,34 @@ use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::PlArray;
 
+/// An array that knows whether it is in the flat representation, and can therefore be wrapped in a
+/// [`Flat`].
+///
+/// Being flat or scalar is a property of a concrete array's own backing buffers, which is why this
+/// is not part of [`PlArray`]: a `dyn PlArray` hands out no buffers and exposes no representation.
+/// It is implemented by the leaf arrays, whose buffers are their own.
+pub trait MaybeFlat: PlArray {
+    /// Whether every backing buffer has one slot per element.
+    fn is_flat(&self) -> bool;
+}
+
 /// An array whose backing buffers all hold one slot per element.
 ///
 /// The arrays in this crate store their logical length separately from their backing buffers, so
 /// each buffer is independently either flat or scalar and reading an element goes through
 /// [`broadcast_index`](crate::broadcast::broadcast_index) — see [`crate::broadcast`] for the rules.
-/// This wrapper is the proof that none of that indirection is needed: the array it holds
-/// [`is_flat`](PlArray::is_flat), so every backing buffer has exactly one slot per element and can
-/// be handed out as an ordinary buffer.
+/// This wrapper is the proof that none of that indirection is needed: the array it holds is flat,
+/// so every backing buffer has exactly one slot per element and can be handed out as an ordinary
+/// buffer.
 ///
 /// That is what the specialized methods on the concrete wrappers exploit: they hand out the
 /// backing buffers of a [`PlPrimitiveArray`](crate::PlPrimitiveArray) or
 /// [`PlBooleanArray`](crate::PlBooleanArray) directly, and read and iterate them without a
 /// broadcast, mirroring [`PrimitiveArray`](arrow::array::PrimitiveArray) and
 /// [`BooleanArray`](arrow::array::BooleanArray).
+///
+/// Only an array that can report its own representation — a [`MaybeFlat`] — can be wrapped, which
+/// is what the constructors below check.
 ///
 /// A [`Flat`] derefs to the array it wraps, so every method of that array remains available; the
 /// specialized methods shadow the broadcast-aware ones of the same name. It does *not* deref
@@ -47,14 +61,14 @@ use crate::array::PlArray;
 #[repr(transparent)]
 pub struct Flat<T>(pub(crate) T);
 
-impl<T: PlArray> Flat<T> {
+impl<T: MaybeFlat> Flat<T> {
     /// Wraps `array`, which must be in the flat representation.
     ///
     /// This function is `O(1)`: it validates the representation rather than materializing it. Use
     /// the `to_flat` method of the concrete array to materialize a scalar one.
     ///
     /// # Errors
-    /// This function errors if `array` is not [`is_flat`](PlArray::is_flat).
+    /// This function errors if `array` is not [`is_flat`](MaybeFlat::is_flat).
     pub fn try_new(array: T) -> PolarsResult<Self> {
         polars_ensure!(
             array.is_flat(),
@@ -78,13 +92,15 @@ impl<T: PlArray> Flat<T> {
     /// Wraps `array` without checking its representation.
     ///
     /// # Safety
-    /// `array` must be [`is_flat`](PlArray::is_flat).
+    /// `array` must be [`is_flat`](MaybeFlat::is_flat).
     #[inline]
     pub unsafe fn new_unchecked(array: T) -> Self {
         debug_assert!(array.is_flat());
         Self(array)
     }
+}
 
+impl<T: PlArray> Flat<T> {
     /// Slices this array in place to `length` elements starting at `offset`.
     ///
     /// This function is `O(1)`; the result is flat, like every slice of a flat array.

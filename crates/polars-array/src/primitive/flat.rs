@@ -6,7 +6,14 @@ use arrow::types::NativeType;
 use polars_buffer::Buffer;
 
 use super::PlPrimitiveArray;
-use crate::flat::Flat;
+use crate::flat::{Flat, MaybeFlat};
+
+impl<T: NativeType> MaybeFlat for PlPrimitiveArray<T> {
+    #[inline]
+    fn is_flat(&self) -> bool {
+        self.is_flat()
+    }
+}
 
 /// The methods a [`PlPrimitiveArray`] gains from having one slot per element in every backing
 /// buffer.
