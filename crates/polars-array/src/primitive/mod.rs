@@ -151,7 +151,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     #[inline]
     pub fn new_scalar(value: T, length: usize) -> Self {
         Self {
-            values: Buffer::from(vec![value]),
+            values: Buffer::from_owner([value]),
             length,
             validity: None,
         }
@@ -161,7 +161,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     #[inline]
     pub fn new_null_scalar(length: usize) -> Self {
         Self {
-            values: Buffer::from(vec![T::default()]),
+            values: Buffer::zeroed(1),
             length,
             validity: Some(Bitmap::new_zeroed(1)),
         }
