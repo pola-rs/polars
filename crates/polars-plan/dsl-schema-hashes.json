@@ -78,7 +78,7 @@
   "HiveOptions": "e8b1c17603a6ce698ee31ceb2e82d5c9325cc3d93d9ddfe9d58a224dbde7f400",
   "HivePathProvider": "7f2a8a61152d613b4015ee4fd7907971e4dfce1e4c1afefb8808672237403327",
   "IcebergColumn": "171ff56c222358389754a7ff774eec6fc958478df2317720c63b4addc8f9a4c5",
-  "IcebergColumnType": "e612983b0dfce78d172af2e4bb4726e3303ede09ea3c1de8ec40e12ee7922dac",
+  "IcebergColumnType": "4380c68020aeb21513d682aa745d8a4fa984ef133fc27d4efbd03be10d80449a",
   "IcebergCommitMode": "330f974fb44353b3b95c1004864b84d88a03e756120e1a14385f84be8d4b5245",
   "IcebergDefaultFieldValues": "01e3ef8920228ef4a0b67cbef7ade4e9c60a0ed7ccb2b3ce66856e347e8d390c",
   "IcebergDeletes": "4ba807b2498742c1eef12f45b092de2ee2f6656f850c3c91d89b32e21148ba87",
