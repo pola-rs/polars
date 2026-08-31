@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import sys
 from pathlib import PosixPath
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -19,6 +20,44 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Run all queries by default of the distributed engine",
     )
+
+
+_xdist_crash_config: pytest.Config | None = None
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    # Stash the config so `pytest_handlecrashitem` (whose hookspec only receives
+    # crashitem/report/sched) can reach the capture manager to bypass capturing.
+    global _xdist_crash_config
+    _xdist_crash_config = config
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_handlecrashitem(
+    crashitem: str, report: pytest.TestReport, sched: object
+) -> None:
+    """Log which test an xdist worker was running when it crashed."""
+    try:
+        worker = getattr(report, "node", None)
+        worker_id = getattr(getattr(worker, "gateway", None), "id", "?")
+        line = f"xdist worker {worker_id} crashed while running {crashitem}"
+
+        def emit() -> None:
+            print(f"ERROR: {line}", file=sys.stderr, flush=True)
+
+        # Suspend pytest's output capturing so the message reaches the real
+        # streams instead of being buffered (and possibly lost) on crash.
+        capman = None
+        if _xdist_crash_config is not None:
+            capman = _xdist_crash_config.pluginmanager.getplugin("capturemanager")
+        if capman is not None:
+            with capman.global_and_fixture_disabled():
+                emit()
+        else:
+            emit()
+    except Exception as exc:
+        # Never let logging failures mask the underlying crash.
+        print(f"pytest_handlecrashitem logging failed: {exc!r}", file=sys.stderr)
 
 
 @pytest.fixture(autouse=True)
