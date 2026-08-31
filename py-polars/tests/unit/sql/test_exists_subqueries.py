@@ -457,11 +457,7 @@ def test_delete_with_exists_and_outer_predicate() -> None:
             """
         ).collect()
 
-    # this DELETE also leaks an internal correlation column, so compare the
-    # table's own columns
-    assert remaining.select("order_no", "warehouse", "state", "cost").to_dict(
-        as_series=False
-    ) == {
+    assert remaining.to_dict(as_series=False) == {
         "order_no": [2, 2, 3, 4],
         "warehouse": [10, 10, 30, 40],
         "state": ["GA", "GA", "CA", "GA"],
