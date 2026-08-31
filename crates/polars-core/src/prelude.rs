@@ -27,6 +27,7 @@ pub use crate::chunked_array::builder::{
 };
 pub use crate::chunked_array::collect::{ChunkedCollectInferIterExt, ChunkedCollectIterExt};
 #[cfg(feature = "dtype-categorical")]
+#[allow(unused)] // See rust-lang/rust/issues/160691.
 pub use crate::chunked_array::logical::categorical::*;
 #[cfg(feature = "ndarray")]
 pub use crate::chunked_array::ndarray::IndexOrder;

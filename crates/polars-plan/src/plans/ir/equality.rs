@@ -1,0 +1,419 @@
+use std::sync::Arc;
+
+use polars_utils::itertools::Itertools;
+
+use super::IR;
+use crate::plans::ExprIR;
+#[cfg(feature = "python")]
+use crate::plans::{PythonOptions, PythonPredicate};
+
+pub trait ExpressionComparator {
+    fn equals(&self, lhs: &ExprIR, rhs: &ExprIR) -> bool;
+}
+
+impl IR {
+    fn expr_iter_eq<'a, T>(lhs: T, rhs: T, cmp: &impl ExpressionComparator) -> bool
+    where
+        T: IntoIterator<Item = &'a ExprIR>,
+    {
+        let lhs = lhs.into_iter();
+        let rhs = rhs.into_iter();
+        lhs.eq_by_(rhs, |l, r| cmp.equals(l, r))
+    }
+
+    /// Compares two IR nodes at the top level, applying a custom comparator to compare child expressions
+    pub fn is_ir_equal_shallow(
+        &self,
+        other: &Self,
+        expression_cmp: &impl ExpressionComparator,
+    ) -> bool {
+        if std::mem::discriminant(self) != std::mem::discriminant(other) {
+            return false;
+        }
+
+        macro_rules! expr_eq {
+            ($lhs:expr, $rhs:expr) => {
+                expression_cmp.equals($lhs, $rhs)
+            };
+        }
+
+        macro_rules! expr_iter_eq {
+            ($lhs:expr, $rhs:expr) => {
+                Self::expr_iter_eq($lhs, $rhs, expression_cmp)
+            };
+        }
+
+        match self {
+            #[cfg(feature = "python")]
+            IR::PythonScan { options: l_options } => {
+                let IR::PythonScan { options: r_options } = other else {
+                    return false;
+                };
+                let PythonOptions {
+                    scan_fn: l_scan_fn,
+                    schema: l_schema,
+                    output_schema: l_output_schema,
+                    with_columns: l_with_columns,
+                    python_source: l_python_source,
+                    n_rows: l_n_rows,
+                    predicate: l_predicate,
+                    validate_schema: l_validate_schema,
+                    is_pure: l_is_pure,
+                    explain_name: _,
+                    explain_detail: _,
+                } = l_options;
+                let PythonOptions {
+                    scan_fn: r_scan_fn,
+                    schema: r_schema,
+                    output_schema: r_output_schema,
+                    with_columns: r_with_columns,
+                    python_source: r_python_source,
+                    n_rows: r_n_rows,
+                    predicate: r_predicate,
+                    validate_schema: r_validate_schema,
+                    is_pure: r_is_pure,
+                    explain_name: _,
+                    explain_detail: _,
+                } = r_options;
+
+                let scan_fn_eq = l_scan_fn.as_ref().map(|l| l.0.as_ptr())
+                    == r_scan_fn.as_ref().map(|r| r.0.as_ptr());
+
+                use PythonPredicate as PP;
+                let predicate_eq = (std::mem::discriminant(l_predicate)
+                    == std::mem::discriminant(r_predicate))
+                    && match l_predicate {
+                        // The PyArrow predicate is never returned by `IR::exprs()` so it will not
+                        // be interned, leading to a potential panic if we invoke `expression_cmp`
+                        // with it. In practice this is not an issue because it only gets introduced
+                        // during physical planning, but it is safest to just treat as unequal.
+                        PP::PyArrow(_) => false,
+                        PP::Polars(l_expr) => {
+                            let PP::Polars(r_expr) = r_predicate else {
+                                return false;
+                            };
+                            expr_eq!(l_expr, r_expr)
+                        },
+                        PP::None => true,
+                    };
+
+                (*l_is_pure && *r_is_pure)
+                    && scan_fn_eq
+                    && l_schema == r_schema
+                    && l_output_schema == r_output_schema
+                    && l_with_columns == r_with_columns
+                    && l_python_source == r_python_source
+                    && l_n_rows == r_n_rows
+                    && predicate_eq
+                    && l_validate_schema == r_validate_schema
+            },
+            IR::Slice {
+                offset: l_offset,
+                len: l_len,
+                input: _,
+            } => {
+                let IR::Slice {
+                    offset: r_offset,
+                    len: r_len,
+                    input: _,
+                } = other
+                else {
+                    return false;
+                };
+                l_len == r_len && l_offset == r_offset
+            },
+            IR::Filter {
+                input: _,
+                predicate: l_predicate,
+            } => {
+                let IR::Filter {
+                    input: _,
+                    predicate: r_predicate,
+                } = other
+                else {
+                    return false;
+                };
+                expr_eq!(l_predicate, r_predicate)
+            },
+            IR::Scan {
+                sources: l_sources,
+                file_info: _,
+                hive_parts: _,
+                predicate: l_predicate,
+                predicate_file_skip_applied: _,
+                output_schema: _,
+                scan_type: l_scan_type,
+                unified_scan_args: l_unified_scan_args,
+            } => {
+                let IR::Scan {
+                    sources: r_sources,
+                    file_info: _,
+                    hive_parts: _,
+                    predicate: r_predicate,
+                    predicate_file_skip_applied: _,
+                    output_schema: _,
+                    scan_type: r_scan_type,
+                    unified_scan_args: r_unified_scan_args,
+                } = other
+                else {
+                    return false;
+                };
+                l_sources == r_sources
+                    && expr_iter_eq!(l_predicate, r_predicate)
+                    && l_scan_type == r_scan_type
+                    && l_unified_scan_args == r_unified_scan_args
+            },
+            IR::DataFrameScan {
+                df: l_df,
+                schema: _,
+                output_schema: l_output_schema,
+            } => {
+                let IR::DataFrameScan {
+                    df: r_df,
+                    schema: _,
+                    output_schema: r_output_schema,
+                } = other
+                else {
+                    return false;
+                };
+                Arc::ptr_eq(l_df, r_df) && l_output_schema == r_output_schema
+            },
+            IR::SimpleProjection {
+                columns: l_columns,
+                input: _,
+            } => {
+                let IR::SimpleProjection {
+                    columns: r_columns,
+                    input: _,
+                } = other
+                else {
+                    return false;
+                };
+                l_columns == r_columns
+            },
+            IR::Select {
+                input: _,
+                expr: l_expr,
+                schema: _,
+                options: l_options,
+            } => {
+                let IR::Select {
+                    input: _,
+                    expr: r_expr,
+                    schema: _,
+                    options: r_options,
+                } = other
+                else {
+                    return false;
+                };
+                expr_iter_eq!(l_expr, r_expr) && l_options == r_options
+            },
+            IR::Sort {
+                input: _,
+                by_column: l_by_column,
+                slice: l_slice,
+                sort_options: l_sort_options,
+            } => {
+                let IR::Sort {
+                    input: _,
+                    by_column: r_by_column,
+                    slice: r_slice,
+                    sort_options: r_sort_options,
+                } = other
+                else {
+                    return false;
+                };
+                expr_iter_eq!(l_by_column, r_by_column)
+                    && l_slice == r_slice
+                    && l_sort_options == r_sort_options
+            },
+            IR::GroupBy {
+                input: _,
+                keys: l_keys,
+                aggs: l_aggs,
+                schema: _,
+                apply: l_apply,
+                maintain_order: l_maintain_order,
+                options: l_options,
+            } => {
+                let IR::GroupBy {
+                    input: _,
+                    keys: r_keys,
+                    aggs: r_aggs,
+                    schema: _,
+                    apply: r_apply,
+                    maintain_order: r_maintain_order,
+                    options: r_options,
+                } = other
+                else {
+                    return false;
+                };
+                expr_iter_eq!(l_keys, r_keys)
+                    && expr_iter_eq!(l_aggs, r_aggs)
+                    && l_apply == r_apply
+                    && l_maintain_order == r_maintain_order
+                    && l_options == r_options
+            },
+            IR::Join {
+                input_left: _,
+                input_right: _,
+                schema: _,
+                options: l_options,
+            } => {
+                let IR::Join {
+                    input_left: _,
+                    input_right: _,
+                    schema: _,
+                    options: r_options,
+                } = other
+                else {
+                    return false;
+                };
+                l_options.shallow_eq(r_options, expression_cmp)
+            },
+            IR::Gather {
+                input: _,
+                idxs: _,
+                null_on_oob: l_null_on_oob,
+            } => {
+                let IR::Gather {
+                    input: _,
+                    idxs: _,
+                    null_on_oob: r_null_on_oob,
+                } = other
+                else {
+                    return false;
+                };
+                l_null_on_oob == r_null_on_oob
+            },
+            IR::HStack {
+                input: _,
+                exprs: l_exprs,
+                schema: _,
+                options: l_options,
+            } => {
+                let IR::HStack {
+                    input: _,
+                    exprs: r_exprs,
+                    schema: _,
+                    options: r_options,
+                } = other
+                else {
+                    return false;
+                };
+                expr_iter_eq!(l_exprs, r_exprs) && l_options == r_options
+            },
+            IR::Distinct {
+                input: _,
+                options: l_options,
+            } => {
+                let IR::Distinct {
+                    input: _,
+                    options: r_options,
+                } = other
+                else {
+                    return false;
+                };
+                l_options == r_options
+            },
+            IR::MapFunction {
+                input: _,
+                function: l_function,
+            } => {
+                let IR::MapFunction {
+                    input: _,
+                    function: r_function,
+                } = other
+                else {
+                    return false;
+                };
+                l_function == r_function
+            },
+            IR::Union {
+                inputs: _,
+                options: l_options,
+            } => {
+                let IR::Union {
+                    inputs: _,
+                    options: r_options,
+                } = other
+                else {
+                    return false;
+                };
+                l_options == r_options
+            },
+            IR::HConcat {
+                inputs: _,
+                schema: _,
+                options: l_options,
+            } => {
+                let IR::HConcat {
+                    inputs: _,
+                    schema: _,
+                    options: r_options,
+                } = other
+                else {
+                    return false;
+                };
+                l_options == r_options
+            },
+            IR::Sink {
+                input: _,
+                payload: l_payload,
+            } => {
+                let IR::Sink {
+                    input: _,
+                    payload: r_payload,
+                } = other
+                else {
+                    return false;
+                };
+                l_payload.shallow_eq(r_payload, expression_cmp)
+            },
+            IR::SinkMultiple { inputs: _ } => {
+                // `inputs` are traversal inputs, compared via child ids. Nothing else here.
+                true
+            },
+            IR::Cache { input: _, id: l_id } => {
+                let IR::Cache { input: _, id: r_id } = other else {
+                    return false;
+                };
+                l_id == r_id
+            },
+            #[cfg(feature = "merge_sorted")]
+            IR::MergeSorted {
+                input_left: _,
+                input_right: _,
+                key: l_key,
+                maintain_order: l_maintain_order,
+            } => {
+                let IR::MergeSorted {
+                    input_left: _,
+                    input_right: _,
+                    key: r_key,
+                    maintain_order: r_maintain_order,
+                } = other
+                else {
+                    return false;
+                };
+                l_key == r_key && l_maintain_order == r_maintain_order
+            },
+            IR::UnoptimizedDispatch {
+                inputs: _,
+                arg_map: l_arg_map,
+                operation: l_operation,
+            } => {
+                let IR::UnoptimizedDispatch {
+                    inputs: _,
+                    arg_map: r_arg_map,
+                    operation: r_operation,
+                } = other
+                else {
+                    return false;
+                };
+                l_operation == r_operation && l_arg_map == r_arg_map
+            },
+            IR::Invalid => unreachable!("cannot compare `IR::Invalid`"),
+        }
+    }
+}

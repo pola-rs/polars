@@ -17,7 +17,6 @@ use datetime::coerce_temporal_dt;
 #[cfg(all(feature = "range", feature = "dtype-datetime"))]
 use datetime::{ensure_datetime, ensure_int, temporal_range_output_type};
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::*;
 #[cfg(all(
     feature = "range",
     any(feature = "dtype-date", feature = "dtype-datetime")
@@ -672,6 +671,7 @@ impl OptimizationRule for TypeCoercionRule {
                 if dtype.is_float() {
                     return Ok(None);
                 }
+                polars_ensure!(!dtype.is_struct(), opq = ewm, dtype);
 
                 let new_function = match ewm_variant {
                     IRFunctionExpr::EwmMean { .. } => IRFunctionExpr::EwmMean {
@@ -858,9 +858,9 @@ impl OptimizationRule for TypeCoercionRule {
             },
             #[cfg(feature = "list_gather")]
             AExpr::Function {
-                function: ref function @ IRFunctionExpr::ListExpr(IRListFunction::Gather(_)),
+                function: IRFunctionExpr::ListExpr(IRListFunction::Gather(_)),
                 ref input,
-                options,
+                ..
             } => {
                 let (_, type_left) =
                     unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
@@ -868,31 +868,7 @@ impl OptimizationRule for TypeCoercionRule {
                     unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
 
                 let DataType::List(inner_dtype) = &type_other else {
-                    // @HACK. This needs to happen until 2.0 because we support
-                    // `pl.col.a.list.gather(0)` and `pl.col.a.list.gather(pl.col.b)` where `b` is
-                    // an integer.
-                    let function = function.clone();
-                    let mut input = input.clone();
-
-                    polars_warn!(
-                        Deprecation,
-                        "`list.gather` with a flat datatype is deprecated.
-Please use `implode` to return to previous behavior.
-
-See https://github.com/pola-rs/polars/issues/22149 for more information."
-                    );
-
-                    let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                        input: input[1].node(),
-                        maintain_order: true,
-                    }));
-                    input[1].set_node(other_input);
-
-                    return Ok(Some(AExpr::Function {
-                        function,
-                        input,
-                        options,
-                    }));
+                    polars_bail!(InvalidOperation: "`list.gather` indices must be a list of integers, not a flat {type_other}. Use `implode` to wrap the flat value into a list.");
                 };
 
                 polars_ensure!(
@@ -912,7 +888,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                         | IRStringFunction::ExtractMany { .. },
                     ),
                 ref input,
-                options,
+                ..
             } => {
                 let (_, type_left) =
                     unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
@@ -920,29 +896,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
 
                 let DataType::List(inner_dtype) = &type_other else {
-                    // @HACK. This needs to happen until 2.0 because we support
-                    // `pl.col.a.str.contains_any(pl.col.b)` where `b` is a string.
-                    let function = function.clone();
-                    let mut input = input.clone();
-
-                    polars_warn!(
-                        Deprecation,
-                        "`{function}` with a flat string datatype is deprecated.
-Please use `implode` to return to previous behavior.
-See https://github.com/pola-rs/polars/issues/22149 for more information."
-                    );
-
-                    let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                        input: input[1].node(),
-                        maintain_order: true,
-                    }));
-                    input[1].set_node(other_input);
-
-                    return Ok(Some(AExpr::Function {
-                        function,
-                        input,
-                        options,
-                    }));
+                    polars_bail!(InvalidOperation: "`{function}` with a flat string datatype is invalid. Use `implode` to wrap the string value into a list.");
                 };
 
                 polars_ensure!(
@@ -984,10 +938,9 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             )?,
             #[cfg(all(feature = "strings", feature = "find_many"))]
             AExpr::Function {
-                function:
-                    ref function @ IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
+                function: IRFunctionExpr::StringExpr(IRStringFunction::ReplaceMany { .. }),
                 ref input,
-                options,
+                ..
             } => {
                 let (_, type_left) =
                     unpack!(get_aexpr_and_type(expr_arena, input[0].node(), schema));
@@ -996,43 +949,11 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let (_, type_replace_with) =
                     unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
 
-                let (
-                    DataType::List(type_patterns_inner_dtype),
-                    DataType::List(type_replace_with_inner_dtype),
-                ) = (&type_patterns, &type_replace_with)
-                else {
-                    // @HACK. This needs to happen until 2.0 because we support
-                    // `pl.col.a.str.replace_with(pl.col.b, ..)` where `b` is a string.
-                    let function = function.clone();
-                    let mut input = input.clone();
-
-                    polars_warn!(
-                        Deprecation,
-                        "`str.replace_many` with a flat string datatype is deprecated.
-please use `implode` to return to previous behavior.
-See https://github.com/pola-rs/polars/issues/22149 for more information."
-                    );
-
-                    if !type_patterns.is_list() {
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[1].node(),
-                            maintain_order: true,
-                        }));
-                        input[1].set_node(other_input);
-                    }
-                    if !type_replace_with.is_list() {
-                        let other_input = expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
-                            input: input[2].node(),
-                            maintain_order: true,
-                        }));
-                        input[2].set_node(other_input);
-                    }
-
-                    return Ok(Some(AExpr::Function {
-                        function,
-                        input,
-                        options,
-                    }));
+                let DataType::List(type_patterns_inner_dtype) = &type_patterns else {
+                    polars_bail!(InvalidOperation: "`str.replace_many` with a flat {type_patterns} datatype as pattern is invalid. Use `implode` to wrap the string value into a list.");
+                };
+                let DataType::List(type_replace_with_inner_dtype) = &type_replace_with else {
+                    polars_bail!(InvalidOperation: "`str.replace_many` with a flat {type_replace_with} datatype as replacement is invalid. Use `implode` to wrap the string value into a list.");
                 };
 
                 polars_ensure!(
@@ -1364,6 +1285,13 @@ fn inline_or_prune_cast(
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
+    // Casting to `Unknown(Any)` carries no information and
+    // the engine treats it as a no-op (see `Series::cast_with_options`), so
+    // prune the cast entirely to keep planner and engine consistent.
+    if let DataType::Unknown(UnknownKind::Any) = dtype {
+        return Ok(Some(aexpr.clone()));
+    }
+
     if !dtype.is_known() {
         return Ok(None);
     }

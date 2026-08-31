@@ -1,12 +1,15 @@
 import datetime as dt
 import io
 import itertools
+import re
 
 import pyarrow as pa
 import pyarrow.dataset as pad
 import pytest
 
 import polars as pl
+from polars.exceptions import ArgumentRemovedError
+from polars.lazyframe.opt_flags import QueryOptFlags
 from polars.testing import assert_frame_equal
 
 
@@ -1152,7 +1155,6 @@ def test_hconcat_reorder_projection_push_to_inputs() -> None:
             pl.LazyFrame(schema={"c": pl.Null, "d": pl.Null}),
         ],
         how="horizontal",
-        strict=True,
     )
 
     q = hconcat.select("b", "a", "d", "c")
@@ -1188,11 +1190,11 @@ def test_hconcat_projection_pushdown_lazy_schema_27818() -> None:
             ),
         ],
         how="horizontal",
-        strict=True,
     ).select("B", "C")
 
     f = io.BytesIO()
     q.sink_parquet(f)
+    f.seek(0)
 
     assert_frame_equal(
         pl.scan_parquet(f).collect(),
@@ -1288,4 +1290,47 @@ def test_predicate_pushdown_with_cse_sink_cross_filter_28287(
 
     f = io.BytesIO()
     lf.sink_parquet(f, engine=engine)  # type: ignore[call-overload]
+    f.seek(0)
     assert_frame_equal(pl.read_parquet(f), pl.DataFrame({"x": 2, "y": 20}))
+
+
+def test_streaming_engine_fused_filter_drop() -> None:
+    q = (
+        pl.LazyFrame({"x": [0, 1], "y": [False, True], "z": "Z"})
+        .filter("y")
+        .select("x", "z")
+    )
+
+    phys_plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+
+    assert phys_plan.index("project 2 / 3") > phys_plan.index("filter")
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 1, "z": "Z"}))
+
+
+def test_projection_pushdown_select_prune_expr_28729() -> None:
+    q = (
+        pl.LazyFrame({"x": [0, 1, 2]})
+        .join(
+            pl.LazyFrame({"x": [1, 1]}).select(pl.min("x").alias("x_rhs_sum")),
+            how="cross",
+        )
+        .select("x")
+    )
+
+    assert_frame_equal(
+        q.collect().sort("x"),
+        pl.DataFrame({"x": [0, 1, 2]}),
+    )
+
+
+def test_query_opt_flags_collapse_joins_removed() -> None:
+    msg = "Use `predicate_pushdown` instead."
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        QueryOptFlags(collapse_joins=False)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        QueryOptFlags.none(collapse_joins=False)  # type: ignore[call-arg]
+
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        QueryOptFlags().update(collapse_joins=False)  # type: ignore[call-arg]

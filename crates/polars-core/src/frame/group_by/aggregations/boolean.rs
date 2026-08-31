@@ -8,7 +8,12 @@ pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &IdxVec)) -> Option<bool> + Send + Sync,
 {
-    let ca: BooleanChunked = RAYON.install(|| groups.into_par_iter().map(f).collect());
+    let ca: BooleanChunked = RAYON.install(|| {
+        let groups_len = groups.len();
+        let first = groups.first();
+        let all = groups.all();
+        collect_bool_opt_par(PlSmallStr::EMPTY, groups_len, |g| f((first[g], &all[g])))
+    });
     ca.into_series()
 }
 
@@ -16,7 +21,8 @@ pub fn _agg_helper_slice_bool<F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<bool> + Send + Sync,
 {
-    let ca: BooleanChunked = RAYON.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: BooleanChunked =
+        RAYON.install(|| collect_bool_opt_par(PlSmallStr::EMPTY, groups.len(), |g| f(groups[g])));
     ca.into_series()
 }
 
@@ -293,7 +299,9 @@ impl BooleanChunked {
         let values = self.rechunk();
         let values = values.downcast_as_array();
 
-        let ca: BooleanChunked = RAYON.install(|| {
+        let groups_len = groups.len();
+
+        RAYON.install(|| {
             let validity = values
                 .validity()
                 .filter(|v| v.unset_bits() > 0)
@@ -302,51 +310,45 @@ impl BooleanChunked {
 
             if !ignore_nulls && let Some(validity) = validity {
                 match groups {
-                    GroupsType::Idx(idx) => idx
-                        .into_par_iter()
-                        .map(|(_, idx)| idx_kleene(values, validity, idx))
-                        .collect(),
-                    GroupsType::Slice {
-                        groups,
-                        overlapping: _,
-                        monotonic: _,
-                    } => groups
-                        .into_par_iter()
-                        .map(|[start, length]| slice_kleene(values, validity, *start, *length))
-                        .collect(),
+                    GroupsType::Idx(idx) => {
+                        let all = idx.all();
+                        collect_bool_opt_par(name, groups_len, |g| {
+                            idx_kleene(values, validity, &all[g])
+                        })
+                    },
+                    GroupsType::Slice { groups, .. } => {
+                        collect_bool_opt_par(name, groups_len, |g| {
+                            let [s, l] = groups[g];
+                            slice_kleene(values, validity, s, l)
+                        })
+                    },
                 }
             } else {
                 match groups {
-                    GroupsType::Idx(idx) => match validity {
-                        None => idx
-                            .into_par_iter()
-                            .map(|(_, idx)| idx_no_valid(values, idx))
-                            .collect(),
-                        Some(validity) => idx
-                            .into_par_iter()
-                            .map(|(_, idx)| idx_validity(values, validity, idx))
-                            .collect(),
+                    GroupsType::Idx(idx) => {
+                        let all = idx.all();
+                        match validity {
+                            None => collect_bool_par(name, groups_len, |g| {
+                                idx_no_valid(values, &all[g])
+                            }),
+                            Some(validity) => collect_bool_par(name, groups_len, |g| {
+                                idx_validity(values, validity, &all[g])
+                            }),
+                        }
                     },
-                    GroupsType::Slice {
-                        groups,
-                        overlapping: _,
-                        monotonic: _,
-                    } => match validity {
-                        None => groups
-                            .into_par_iter()
-                            .map(|[start, length]| slice_no_valid(values, *start, *length))
-                            .collect(),
-                        Some(validity) => groups
-                            .into_par_iter()
-                            .map(|[start, length]| {
-                                slice_validity(values, validity, *start, *length)
-                            })
-                            .collect(),
+                    GroupsType::Slice { groups, .. } => match validity {
+                        None => collect_bool_par(name, groups_len, |g| {
+                            let [s, l] = groups[g];
+                            slice_no_valid(values, s, l)
+                        }),
+                        Some(validity) => collect_bool_par(name, groups_len, |g| {
+                            let [s, l] = groups[g];
+                            slice_validity(values, validity, s, l)
+                        }),
                     },
                 }
             }
-        });
-        ca.with_name(name)
+        })
     }
 
     /// # Safety
@@ -460,4 +462,60 @@ impl BooleanChunked {
             },
         )
     }
+}
+
+pub fn collect_bool_par<F>(name: PlSmallStr, len: usize, f: F) -> BooleanChunked
+where
+    F: Fn(usize) -> bool + Send + Sync,
+{
+    let n_bytes = len.div_ceil(8);
+    let mut values: Vec<u8> = Vec::with_capacity(n_bytes);
+
+    (0..n_bytes)
+        .into_par_iter()
+        .map(|b| {
+            let lo = b * 8;
+            let hi = (lo + 8).min(len);
+            let mut v = 0u8;
+            for (bit, g) in (lo..hi).enumerate() {
+                v |= (f(g) as u8) << bit;
+            }
+            v
+        })
+        .collect_into_vec(&mut values);
+
+    BooleanChunked::from_bitmap(name, Bitmap::from_u8_vec(values, len))
+}
+
+pub fn collect_bool_opt_par<F>(name: PlSmallStr, len: usize, f: F) -> BooleanChunked
+where
+    F: Fn(usize) -> Option<bool> + Send + Sync,
+{
+    let n_bytes = len.div_ceil(8);
+    let mut values: Vec<u8> = Vec::with_capacity(n_bytes);
+    let mut validity: Vec<u8> = Vec::with_capacity(n_bytes);
+
+    (0..n_bytes)
+        .into_par_iter()
+        .map(|b| {
+            let lo = b * 8;
+            let hi = (lo + 8).min(len);
+            let (mut v, mut m) = (0u8, 0u8);
+            for (bit, g) in (lo..hi).enumerate() {
+                if let Some(x) = f(g) {
+                    m |= 1 << bit;
+                    v |= (x as u8) << bit;
+                }
+            }
+            (v, m)
+        })
+        .unzip_into_vecs(&mut values, &mut validity);
+
+    let values = Bitmap::from_u8_vec(values, len);
+    let validity = Bitmap::from_u8_vec(validity, len);
+    let validity = (validity.unset_bits() > 0).then_some(validity);
+    BooleanChunked::with_chunk(
+        name,
+        BooleanArray::new(ArrowDataType::Boolean, values, validity),
+    )
 }

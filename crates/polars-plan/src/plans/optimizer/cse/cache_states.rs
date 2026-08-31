@@ -1,17 +1,18 @@
 use std::ops::ControlFlow;
 
 use polars_error::PolarsResult;
+#[expect(clippy::disallowed_types)] // We don't iterate over it.
+use polars_utils::aliases::PlHashSet;
 use polars_utils::aliases::{InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
 use crate::dsl::Expr;
-use crate::plans::deep_copy::deep_copy_ir_delete_caches;
+use crate::plans::deep_copy::deep_copy_ir_delete_cache_id;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
-use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::visitor::AexprNode;
-use crate::plans::{AExpr, ExprIR, IR, PredicatePushDown};
+use crate::plans::{AExpr, ExprIR, IR, PredicatePushDown, subplan_cost};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 use crate::utils::aexpr_to_leaf_names;
 
@@ -126,7 +127,8 @@ type TwoParents = [Option<Node>; 2];
 // - NO FILTERS: run predicate pd from the cache nodes -> finish
 // - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
 // - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
-// - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
+// - The predicates above the cache nodes are all different -> remove the cache nodes if that is
+//   estimated to be cheaper than sharing the subplan -> finish
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn set_cache_states(
     root: Node,
@@ -137,10 +139,13 @@ pub(crate) fn set_cache_states(
     pushdown_maintain_errors: bool,
     streaming: bool,
     partition_hive: bool,
+    row_estimate: bool,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
     let mut names_scratch = vec![];
     let mut predicates_scratch = vec![];
+    #[expect(clippy::disallowed_types)] // We don't iterate over it.
+    let mut walked_cache_ids = PlHashSet::new();
 
     scratch.clear();
     stack.clear();
@@ -178,7 +183,7 @@ pub(crate) fn set_cache_states(
         root,
         &mut FnVisitors::new(
             || streaming,
-            |key, storage: &mut IRTraversalStorage<'_>, edges| {
+            |key, storage: &mut Arena<IR>, edges| {
                 let streaming = streaming || edges.outputs().iter().any(|x| *x);
 
                 match storage.get(key) {
@@ -207,10 +212,7 @@ pub(crate) fn set_cache_states(
         ),
         &mut vec![],
         &mut vec![],
-        IRTraversalStorage {
-            arena: lp_arena,
-            skip_subtree: |_| false,
-        },
+        lp_arena,
     )
     .continue_value()
     .unwrap();
@@ -282,6 +284,11 @@ pub(crate) fn set_cache_states(
                 }
             }
             frame.cache_id = Some(*id);
+
+            if !walked_cache_ids.insert(*id) {
+                scratch.clear();
+                continue;
+            }
         };
 
         // Shift parents.
@@ -305,7 +312,7 @@ pub(crate) fn set_cache_states(
             PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive);
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
-        for v in cache_schema_and_children.into_values().rev() {
+        for (cache_id, v) in cache_schema_and_children.into_iter().rev() {
             pred_pd.streaming = v.streaming;
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple distinct predicates, the caches carry different filters
@@ -316,12 +323,21 @@ pub(crate) fn set_cache_states(
             // without any benefit. See #19479.
             //
             // We therefore only remove the caches if _every_ filter above them is actually pushed
-            // by predicate pushdown. We probe this on cache-free copies of the subplans, buffering
-            // the optimized copies. If any filter was not pushed we bail out, keeping the caches;
-            // otherwise we commit the buffered copies, removing the caches.
+            // by predicate pushdown. We probe this on copies of the subplans that have only *this*
+            // cache id removed, buffering the optimized copies. If any filter was not pushed we
+            // bail out, keeping the caches. We then weigh the copies against materializing the
+            // subplan once and keep the caches unless the copies are cheaper, falling back to the
+            // pushdown probe alone when the plan carries no row estimates.
+            //
+            // Only the cache id under consideration is deleted from the copies. Caches nested
+            // below it have their own predicates and get their own decision in a later iteration;
+            // deleting them here would duplicate their subplan without any of them ever having
+            // been evaluated.
             if v.predicate_union.len() > 1 {
                 let mut replacements = Vec::with_capacity(v.cache_nodes.len());
                 let mut remove_caches = true;
+                // Summed over the copies; `None` once any of them is not modelled.
+                let mut removal_cost = row_estimate.then_some(0.0);
 
                 for (&cache, parents) in v.cache_nodes.iter().zip(v.parents.iter()) {
                     // Restart predicate and projection pushdown from most top parent.
@@ -345,8 +361,10 @@ pub(crate) fn set_cache_states(
                         predicate.clone()
                     });
 
-                    // Copy the subplan without caches and re-run predicate pushdown on the copy.
-                    let copied_node = deep_copy_ir_delete_caches(node, lp_arena, expr_arena);
+                    // Copy the subplan with this cache removed and re-run predicate pushdown on
+                    // the copy. Nested caches of other ids are preserved.
+                    let copied_node =
+                        deep_copy_ir_delete_cache_id(node, cache_id, lp_arena, expr_arena);
                     let lp = lp_arena.take(copied_node);
                     let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
 
@@ -360,7 +378,33 @@ pub(crate) fn set_cache_states(
                         break;
                     }
 
-                    replacements.push((node, lp));
+                    lp_arena.replace(copied_node, lp);
+                    if let Some(acc) = removal_cost {
+                        removal_cost =
+                            subplan_cost(copied_node, lp_arena, expr_arena).map(|c| acc + c.work);
+                    }
+
+                    replacements.push((node, lp_arena.take(copied_node)));
+                }
+
+                // Keeping the caches costs one evaluation of the subplan, plus a pass over the
+                // materialized rows for every reference that reads and filters them.
+                let keep_cost = if remove_caches && removal_cost.is_some() {
+                    let child = *v.children.first().unwrap();
+                    subplan_cost(child, lp_arena, expr_arena)
+                        .map(|c| c.work + v.cache_nodes.len() as f64 * c.rows)
+                } else {
+                    None
+                };
+
+                if let Some((removal_cost, keep_cost)) = removal_cost.zip(keep_cost) {
+                    remove_caches = removal_cost < keep_cost;
+                    if verbose {
+                        eprintln!(
+                            "cache removal estimated at {removal_cost:.3e} rows against \
+                             {keep_cost:.3e} for sharing the subplan"
+                        )
+                    }
                 }
 
                 if remove_caches {

@@ -5,23 +5,18 @@ from collections.abc import Collection, Sequence
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
-from polars import exceptions
 from polars import functions as F
-from polars._utils.deprecation import issue_deprecation_warning
+from polars._utils.expired import RemovedParameter, removed_parameters
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
-from polars._utils.various import _NamespaceSuggestMixin, _Omitted
+from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_expr
-from polars._warnings import issue_warning
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from polars import Expr, Series
     from polars._typing import (
         IntoExpr,
         IntoExprColumn,
-        ListToStructWidthStrategy,
         NullBehavior,
     )
 
@@ -39,6 +34,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         Get the value by index in the sublists.
 
         This is syntactic sugar for :meth:`Expr.list.get`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -65,6 +62,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def all(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether all boolean values in a list are true.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -102,6 +101,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def any(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether any boolean value in a list is true.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -142,6 +143,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
         Null values count towards the total.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Returns
         -------
         Expr
@@ -166,6 +169,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def drop_nulls(self) -> Expr:
         """
         Drop all null values in the list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         The original order of the remaining elements is preserved.
 
@@ -197,6 +202,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     ) -> Expr:
         """
         Sample from this list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -259,6 +266,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Sum all the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Notes
         -----
         If there are no non-null elements in a row, the output is `0`.
@@ -283,6 +292,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Compute the max value of the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
@@ -302,6 +313,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def min(self) -> Expr:
         """
         Compute the min value of the lists in the array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -323,6 +336,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Compute the mean value of the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
@@ -343,6 +358,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Compute the median value of the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
@@ -362,6 +379,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def std(self, ddof: int = 1) -> Expr:
         """
         Compute the std value of the lists in the array.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -390,6 +409,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Compute the var value of the lists in the array.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         ddof
@@ -416,6 +437,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
         Sort the lists in this column.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -458,6 +481,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Reverse the arrays in the list.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -480,7 +505,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
-        Get the unique/distinct values in the list.
+        Get the unique/distinct values in every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -508,7 +535,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def n_unique(self) -> Expr:
         """
-        Count the number of unique values in every sub-lists.
+        Count the number of unique values in every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -533,6 +562,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """
         Concat the arrays in a Series dtype List in linear time.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -576,7 +607,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         null_on_oob: bool = False,
     ) -> Expr:
         """
-        Get the value by index in the sublists.
+        Get the value by index in every sublist.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         So index `0` would return the first item of every sublist
         and index `-1` would return the last item of every sublist
@@ -617,7 +650,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         null_on_oob: bool = False,
     ) -> Expr:
         """
-        Take sublists by multiple indices.
+        Take sub-lists by multiple indices.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         The indices may be defined in a single column, or by sublists in another
         column of dtype `List`.
@@ -656,7 +691,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         offset: int | IntoExprColumn = 0,
     ) -> Expr:
         """
-        Take every n-th value start from offset in sublists.
+        Take every n-th value start from offset in every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -696,7 +733,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def first(self) -> Expr:
         """
-        Get the first value of the sublists.
+        Get the first value of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -717,7 +756,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def last(self) -> Expr:
         """
-        Get the last value of the sublists.
+        Get the last value of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Examples
         --------
@@ -739,7 +780,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     @unstable()
     def item(self, *, allow_empty: bool = False) -> Expr:
         """
-        Get the single value of the sublists.
+        Get the single value of the sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         This errors if the sublist length is not exactly one.
 
@@ -789,7 +832,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """
-        Check if sublists contain the given item.
+        Check if sub-lists contain the given item.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -823,9 +868,11 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Expr:
         """
-        Join all string items in a sublist and place a separator between them.
+        Join all string items in a sub-list and place a separator between them.
 
         This errors if inner type of list `!= String`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -875,7 +922,13 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def arg_min(self) -> Expr:
         """
-        Retrieve the index of the minimal value in every sublist.
+        Retrieve an index of a minimal value in every sublist.
+
+        When multiple values are equal to the minimum, this function may arbitrarily
+        return the index of any of the minimum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -905,7 +958,13 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def arg_max(self) -> Expr:
         """
-        Retrieve the index of the maximum value in every sublist.
+        Retrieve the index of the maximum value in every sub-list.
+
+        When multiple values are equal to the maximum, this function may arbitrarily
+        return the index of any of the maximum values. In this case, the returned index
+        is not guaranteed to be the same across multiple runs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Returns
         -------
@@ -935,7 +994,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
-        Calculate the first discrete difference between shifted items of every sublist.
+        Calculate the first discrete difference between shifted items of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -984,7 +1045,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def shift(self, n: int | IntoExprColumn = 1) -> Expr:
         """
-        Shift list values by the given number of indices.
+        Shift every sub-lists values by the given number of indices.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1033,7 +1096,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         self, offset: int | str | Expr, length: int | str | Expr | None = None
     ) -> Expr:
         """
-        Slice every sublist.
+        Slice every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1074,7 +1139,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def head(self, n: int | str | Expr = 5) -> Expr:
         """
-        Slice the first `n` values of every sublist.
+        Slice the first `n` values of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1099,7 +1166,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
     def tail(self, n: int | str | Expr = 5) -> Expr:
         """
-        Slice the last `n` values of every sublist.
+        Slice the last `n` values of every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1123,11 +1192,11 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.list_tail(n_pyexpr))
 
-    def explode(
-        self, *, empty_as_null: bool = _Omitted, keep_nulls: bool = True
-    ) -> Expr:
+    def explode(self, *, empty_as_null: bool = False, keep_nulls: bool = True) -> Expr:
         """
-        Returns a column with a separate row for every list element.
+        Returns a column with a separate row for every sub-list.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1148,7 +1217,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
-        >>> df.select(pl.col("a").list.explode(empty_as_null=False))
+        >>> df.select(pl.col("a").list.explode())
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -1163,13 +1232,6 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         │ 6   │
         └─────┘
         """
-        if empty_as_null is _Omitted:
-            issue_deprecation_warning(
-                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
-                "To keep the current behavior, explicitly set `empty_as_null=True`."
-            )
-            empty_as_null = True
-
         return wrap_expr(
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
@@ -1177,6 +1239,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def count_matches(self, element: IntoExpr) -> Expr:
         """
         Count how often the value produced by `element` occurs.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1207,6 +1271,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Convert a List column into an Array column with the same inner data type.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         width
@@ -1236,93 +1302,94 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         return wrap_expr(self._pyexpr.list_to_array(width))
 
-    def to_struct(
-        self,
-        n_field_strategy: ListToStructWidthStrategy | None = None,
-        fields: Sequence[str] | Callable[[int], str] | None = None,
-        upper_bound: int | None = None,
-    ) -> Expr:
+    @removed_parameters(
+        RemovedParameter(
+            name="n_field_strategy",
+            deprecated_in="1.20.0",
+            removed_in="2.0",
+            hint="Pass the field names explicitly via `fields`.",
+        ),
+        RemovedParameter(
+            name="upper_bound",
+            removed_in="2.0",
+            hint='Pass the field names explicitly via `fields` instead, e.g. `fields=[f"field_{i}" for i in range(upper_bound)]`.',
+        ),
+    )
+    def to_struct(self, fields: Sequence[str]) -> Expr:
         """
         Convert the Series of type `List` to a Series of type `Struct`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
-        n_field_strategy : {'first_non_null', 'max_width'}
-            Deprecated and ignored.
         fields
-            If the name and number of the desired fields is known in advance
-            a list of field names can be given, which will be assigned by index.
-            Otherwise, to dynamically assign field names, a custom function can be
-            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
-        upper_bound
-            A polars expression needs to be able to evaluate the output datatype at all
-            times, so the caller must provide an upper bound of the number of struct
-            fields that will be created if `fields` is not a sequence of field names.
-
-            .. versionchanged:: 1.33.0
-                The `n_field_strategy` parameter is ignored and deprecated. The `fields`
-                needs to be a sequence of field names or the upper bound is regarded as
-                ground truth.
+            Field names to use for the output. The number of names determines how
+            many fields will be in the output.
 
         Examples
         --------
-        Convert list to struct with default field name assignment:
-
-        >>> df = pl.DataFrame({"n": [[0, 1], [0, 1, 2]]})
-        >>> df.with_columns(
-        ...     struct=pl.col("n").list.to_struct(upper_bound=2)
-        ... )  # doctest: +SKIP
-        shape: (2, 2)
-        ┌───────────┬───────────┐
-        │ n         ┆ struct    │
-        │ ---       ┆ ---       │
-        │ list[i64] ┆ struct[2] │ # <- struct with 2 fields
-        ╞═══════════╪═══════════╡
-        │ [0, 1]    ┆ {0,1}     │ # OK
-        │ [0, 1, 2] ┆ {0,1}     │ # NOT OK - last value missing
-        └───────────┴───────────┘
-
-        Convert list to struct with field name assignment by function/index:
-
-        >>> df = pl.DataFrame({"n": [[0, 1], [2, 3]]})
-        >>> df.select(
-        ...     pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", upper_bound=2)
-        ... ).rows(named=True)  # doctest: +SKIP
-        [{'n': {'n0': 0, 'n1': 1}}, {'n': {'n0': 2, 'n1': 3}}]
-
-        Convert list to struct with field name assignment by index from a list of names:
-
-        >>> df.select(pl.col("n").list.to_struct(fields=["one", "two"])).rows(
-        ...     named=True
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "c": pl.Series(
+        ...             [
+        ...                 [1],
+        ...                 [0, 1],
+        ...                 [1, 0, 1],
+        ...                 [],
+        ...                 [None, 1],
+        ...                 None,
+        ...             ],
+        ...         )
+        ...     }
         ... )
-        [{'n': {'one': 0, 'two': 1}}, {'n': {'one': 2, 'two': 3}}]
+        >>> print(
+        ...     result := df.with_columns(
+        ...         c_struct=pl.col("c").list.to_struct(["x", "y"]),
+        ...     )
+        ... )
+        shape: (6, 2)
+        ┌───────────┬─────────────┐
+        │ c         ┆ c_struct    │
+        │ ---       ┆ ---         │
+        │ list[i64] ┆ struct[2]   │
+        ╞═══════════╪═════════════╡
+        │ [1]       ┆ {1,null}    │
+        │ [0, 1]    ┆ {0,1}       │
+        │ [1, 0, 1] ┆ {1,0}       │
+        │ []        ┆ {null,null} │
+        │ [null, 1] ┆ {null,1}    │
+        │ null      ┆ null        │
+        └───────────┴─────────────┘
+        >>> print(result["c_struct"].struct.unnest())
+        shape: (6, 2)
+        ┌──────┬──────┐
+        │ x    ┆ y    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ 1    ┆ null │
+        │ 0    ┆ 1    │
+        │ 1    ┆ 0    │
+        │ null ┆ null │
+        │ null ┆ 1    │
+        │ null ┆ null │
+        └──────┴──────┘
         """
-        if n_field_strategy is not None:
-            issue_warning(
-                "`Expr.list.to_struct` with `n_field_strategy` is deprecated and has no effect on execution.",
-                DeprecationWarning,
+        if isinstance(fields, str):
+            msg = (
+                "list.to_struct() got a str instead of a list. "
+                f"hint: pass ['{fields}'] instead of '{fields}'"
             )
-
-        if not isinstance(fields, Sequence):
-            if upper_bound is None:
-                msg = "`Expr.list.to_struct` requires either `fields` to be a sequence or `upper_bound` to be set.\n\nThis used to be allowed but produced unpredictable results."
-                raise exceptions.InvalidOperationError(msg)
-
-            issue_deprecation_warning(
-                "list.to_struct() without a list of field names is deprecated. Please "
-                "pass a list of field names."
-            )
-
-            if fields is None:
-                fields = [f"field_{i}" for i in range(upper_bound)]
-            else:
-                fields = [fields(i) for i in range(upper_bound)]
+            raise TypeError(msg)
 
         return wrap_expr(self._pyexpr.list_to_struct(fields))
 
     def eval(self, expr: Expr, *, parallel: bool = False) -> Expr:
         """
-        Run any polars expression against the lists' elements.
+        Run any polars expression against every lists' elements.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1362,6 +1429,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def agg(self, expr: Expr) -> Expr:
         """
         Run any polars aggregation expression against the lists' elements.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1405,6 +1474,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Filter elements in each list by a boolean expression.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         predicate
@@ -1434,6 +1505,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def set_union(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET UNION between the elements in this list and the elements of `other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1474,6 +1547,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def set_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET DIFFERENCE between the elements in this list and the elements of `other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------
@@ -1517,6 +1592,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         """
         Compute the SET INTERSECTION between the elements in this list and the elements of `other`.
 
+        .. engine-support:: in-memory, streaming, distributed
+
         Parameters
         ----------
         other
@@ -1554,6 +1631,8 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
     def set_symmetric_difference(self, other: IntoExpr | Collection[Any]) -> Expr:
         """
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of `other`.
+
+        .. engine-support:: in-memory, streaming, distributed
 
         Parameters
         ----------

@@ -696,7 +696,6 @@ def test_async_path_expansion_bracket_17629(tmp_path: Path) -> None:
     "method",
     ["parquet", "csv", "ipc", "ndjson"],
 )
-@pytest.mark.may_fail_auto_streaming  # unsupported negative slice offset -1 for CSV source
 def test_scan_in_memory(method: str) -> None:
     f = io.BytesIO()
     df = pl.DataFrame(
@@ -1464,6 +1463,7 @@ def test_scan_expand_paths_no_glob(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="polars/#28961")
 def test_scan_sink_error_captures_path() -> None:
     storage_options = {
         "aws_endpoint_url": "http://localhost:333",
@@ -1497,6 +1497,7 @@ def test_scan_sink_error_captures_path() -> None:
     ],
 )
 @pytest.mark.parametrize("partitioned", [True, False])
+@pytest.mark.debug
 @pytest.mark.write_disk
 def test_scan_metrics(
     plmonkeypatch: PlMonkeyPatch,
@@ -1560,6 +1561,7 @@ def test_scan_metrics(
     assert_frame_equal(out, df)
 
 
+@pytest.mark.debug
 @pytest.mark.write_disk
 def test_scan_sink_metrics_multiple_phases(
     plmonkeypatch: PlMonkeyPatch,
@@ -1636,6 +1638,7 @@ def test_scan_slice_filter_pushdown_22790() -> None:
     f = io.BytesIO()
     df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]})
     df.write_parquet(f)
+    f.seek(0)
 
     q = pl.scan_parquet(f).tail(5).filter((pl.col("a") % 5).is_between(2, 3))
 
@@ -1645,3 +1648,85 @@ def test_scan_slice_filter_pushdown_22790() -> None:
     assert plan.index("SLICE") > plan.index("SCAN")
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [7, 8]}))
+
+
+@pytest.mark.parametrize(
+    "format",
+    [
+        "csv",
+        "ipc",
+        "parquet",
+        "ndjson",
+    ],
+)
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+def test_read_projection_and_row_index(format: str, use_pyarrow: bool) -> None:
+    f = io.BytesIO()
+    getattr(pl.DataFrame({"a": 1, "b": 2}), f"write_{format}")(f)
+    f.seek(0)
+
+    read = getattr(pl, f"read_{format}")
+
+    if format == "ndjson":
+        with pytest.raises(TypeError, match="unexpected keyword argument 'columns'"):
+            read(f, columns=...)
+
+        return
+
+    assert_frame_equal(
+        read(f, columns=["b"], row_index_name="index", use_pyarrow=use_pyarrow),
+        pl.DataFrame(
+            {"index": 0, "b": 2}, schema_overrides={"index": pl.get_index_type()}
+        ),
+    )
+
+    f.seek(0)
+
+    assert_frame_equal(
+        read(f, columns=[1], row_index_name="index", use_pyarrow=use_pyarrow),
+        pl.DataFrame(
+            {"index": 0, "b": 2}, schema_overrides={"index": pl.get_index_type()}
+        ),
+    )
+
+
+@pytest.mark.parametrize("use_bytesio", [True, False])
+@pytest.mark.parametrize("lazy", [True, False])
+@pytest.mark.parametrize("format", ["parquet", "ipc", "csv", "ndjson"])
+@pytest.mark.write_disk
+def test_scan_from_object_nonzero_offset(
+    tmp_path: Path,
+    lazy: bool,
+    format: str,
+    use_bytesio: bool,
+) -> None:
+    def read(source: Any) -> Any:
+        return (
+            getattr(pl, f"scan_{format}")(source).collect()
+            if lazy
+            else getattr(pl, f"read_{format}")(source)
+        )
+
+    def write(df: pl.DataFrame, f: Any) -> None:
+        if lazy:
+            getattr(df.lazy(), f"sink_{format}")(f)
+        else:
+            getattr(df, f"write_{format}")(f)
+
+    path = tmp_path / "x"
+
+    f_bytesio = io.BytesIO()
+    padding = 100 * b"\xff"
+
+    with path.open("wb") as f_wb_disk:
+        f_wb = f_bytesio if use_bytesio else f_wb_disk
+        f_wb.write(padding)
+        write(pl.DataFrame({"x": 1}), f_wb)
+
+    f_bytesio.seek(0)
+
+    with path.open("rb") as f_rb_disk:
+        f_rb = f_bytesio if use_bytesio else f_rb_disk
+        assert f_rb.read(100) == padding
+
+        assert_frame_equal(read(f_rb), pl.DataFrame({"x": 1}))

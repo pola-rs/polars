@@ -13,7 +13,12 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError, DuplicateError, InvalidOperationError
+from polars.exceptions import (
+    ComputeError,
+    DuplicateError,
+    InvalidOperationError,
+    SchemaError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -262,38 +267,28 @@ def test_from_dicts_struct() -> None:
     ]
 
 
-@pytest.mark.may_fail_cloud  # reason: eager construct
-@pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        assert df.to_series().list.to_struct().to_list() == [
-            {"field_0": 1, "field_1": 2, "field_2": 3},
-            {"field_0": 1, "field_1": 2, "field_2": None},
-        ]
+    assert df.to_series().list.to_struct(
+        ["field_0", "field_1", "field_2"]
+    ).to_list() == [
+        {"field_0": 1, "field_1": 2, "field_2": 3},
+        {"field_0": 1, "field_1": 2, "field_2": None},
+    ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        assert df.to_series().list.to_struct(
-            fields=lambda idx: f"col_name_{idx}"
-        ).to_list() == [
-            {"col_name_0": 1, "col_name_1": 2},
-            {"col_name_0": 1, "col_name_1": 2},
-        ]
+    assert df.to_series().list.to_struct(["col_name_0", "col_name_1"]).to_list() == [
+        {"col_name_0": 1, "col_name_1": 2},
+        {"col_name_0": 1, "col_name_1": 2},
+    ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        assert df.to_series().list.to_struct("max_width").to_list() == [
-            {"field_0": 1, "field_1": 2, "field_2": None},
-            {"field_0": 1, "field_1": 2, "field_2": 3},
-        ]
-
-    # set upper bound
-    df = pl.DataFrame({"lists": [[1, 1, 1], [0, 1, 0], [1, 0, 0]]})
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        assert df.lazy().select(pl.col("lists").list.to_struct(upper_bound=3)).unnest(
-            "lists"
-        ).sum().collect().columns == ["field_0", "field_1", "field_2"]
+    assert df.to_series().list.to_struct(
+        ["field_0", "field_1", "field_2"]
+    ).to_list() == [
+        {"field_0": 1, "field_1": 2, "field_2": None},
+        {"field_0": 1, "field_1": 2, "field_2": 3},
+    ]
 
 
 def test_sort_df_with_list_struct() -> None:
@@ -1087,7 +1082,7 @@ def test_struct_chunked_zip_18119() -> None:
     b = pl.concat([b_dfs[4], b_dfs[1]])
     mask = pl.concat([mask_dfs[3], mask_dfs[2]])
 
-    df = pl.concat([a, b, mask], how="horizontal", strict=True)
+    df = pl.concat([a, b, mask], how="horizontal")
 
     assert_frame_equal(
         df.select(pl.when(pl.col.f).then(pl.col.a).otherwise(pl.col.b)),
@@ -1103,14 +1098,13 @@ def test_struct_null_zip() -> None:
     )
 
 
-def test_rename_fields_len_mismatch_deprecated() -> None:
+def test_rename_fields_len_mismatch_error() -> None:
     s = pl.Series("s", [{"a": 1, "b": 2}])
-    s.struct.rename_fields(["x"])  # Should not warn
 
     msg = "struct.rename_fields() argument has a different number of fields than the struct it operates on"
-    with pytest.warns(DeprecationWarning, match=re.escape(f"{msg} (1 vs 2)")):
+    with pytest.raises(SchemaError, match=re.escape(f"{msg} (1 vs 2).")):
         s.struct.rename_fields(["x"])
-    with pytest.warns(DeprecationWarning, match=re.escape(f"{msg} (3 vs 2)")):
+    with pytest.raises(SchemaError, match=re.escape(f"{msg} (3 vs 2).")):
         s.struct.rename_fields(["x", "y", "z"])
 
 
@@ -1230,7 +1224,6 @@ def test_zfs_row_encoding(size: int) -> None:
 
 
 @pytest.mark.may_fail_cloud  # reason: eager construct
-@pytest.mark.may_fail_auto_streaming
 def test_list_to_struct_19208() -> None:
     df = pl.DataFrame(
         {
@@ -1241,12 +1234,11 @@ def test_list_to_struct_19208() -> None:
             ]
         }
     )
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        assert pl.concat([df[0], df[1], df[2]]).select(
-            pl.col("nested").list.to_struct(upper_bound=1)
-        ).to_dict(as_series=False) == {
-            "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
-        }
+    assert pl.concat([df[0], df[1], df[2]]).select(
+        pl.col("nested").list.to_struct(["field_0"])
+    ).to_dict(as_series=False) == {
+        "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
+    }
 
 
 def test_struct_reverse_outer_validity_19445() -> None:
@@ -1450,7 +1442,7 @@ def test_struct_equal_missing_null_25360() -> None:
     q1 = lf.select(a1=pl.col.a.slice(1, 1).first())
     q2 = lf.group_by(pl.lit(1)).agg(a2=pl.col.a.slice(1, 1).first()).drop("literal")
 
-    q = pl.concat([q1, q2], how="horizontal", strict=True).collect()
+    q = pl.concat([q1, q2], how="horizontal").collect()
 
     result = q.select(
         eq=pl.col.a1.eq(pl.col.a2),
@@ -1935,7 +1927,6 @@ def test_with_fields_optimize_expr_fused_multiply_add_27233() -> None:
     expected = pl.concat(
         [df.unnest("s"), pl.DataFrame({"fma": [31, 61]})],
         how="horizontal",
-        strict=True,
     )
     assert_frame_equal(out.unnest("s"), expected)
 
@@ -1994,3 +1985,25 @@ def test_struct_with_fields_agglist_nulls_28674() -> None:
     )
 
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "op",
+    [
+        lambda x: x.sqrt(),
+        lambda x: x.cbrt(),
+        lambda x: x.pct_change(),
+        lambda x: x.ewm_mean(alpha=0.5),
+        lambda x: x.ewm_std(alpha=0.5),
+        lambda x: x.ewm_var(alpha=0.5),
+        lambda x: x.ewm_sum(alpha=0.5),
+    ],
+    ids=["sqrt", "cbrt", "pct_change", "ewm_mean", "ewm_std", "ewm_var", "ewm_sum"],
+)
+def test_numeric_op_on_struct_raises_28563(op: Any) -> None:
+    with pytest.raises(InvalidOperationError):
+        op(pl.Series("a", [{"x": 1}]))
+
+    lf = pl.LazyFrame({"meta": [{"id": 1}, {"id": 2}]})
+    with pytest.raises(InvalidOperationError):
+        lf.select(op(pl.col("meta"))).collect()

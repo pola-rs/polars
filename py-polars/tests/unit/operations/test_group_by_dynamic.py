@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
@@ -8,11 +9,22 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import AttributeRemovedError, ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import ClosedInterval, Label, StartBy
+
+
+@pytest.mark.parametrize(
+    ("name", "match"),
+    [
+        ("count", "use `GroupBy.len` instead."),
+    ],
+)
+def test_removed_methods(name: str, match: str) -> None:
+    with pytest.raises(AttributeRemovedError, match=re.escape(match)):
+        getattr(pl.DataFrame().group_by_dynamic("a", every="1i"), name)
 
 
 @pytest.mark.parametrize(
@@ -327,7 +339,7 @@ def test_rolling_kernels_group_by_dynamic_7548() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_auto_streaming  # Inconsistently fails in CI
 def test_rolling_dynamic_sortedness_check() -> None:
     # when the by argument is passed, the sortedness flag
     # will be unset as the take shuffles data, so we must explicitly

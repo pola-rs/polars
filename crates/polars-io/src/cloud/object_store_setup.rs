@@ -11,7 +11,10 @@ use polars_utils::{format_pl_smallstr, pl_serialize};
 use tokio::sync::RwLock;
 
 use super::{CloudLocation, CloudOptions, CloudType, PolarsObjectStore};
-use crate::cloud::{CloudConfig, CloudRetryConfig};
+use crate::cloud::http_rate_limit::{
+    DirectionalRateLimitConfig, InitPolicy, PacingBudget, RateLimiter,
+};
+use crate::cloud::{CloudConfig, CloudRateLimitConfig, CloudRetryConfig};
 
 /// Object stores must be cached. Every object-store will do DNS lookups and
 /// get rate limited when querying the DNS (can take up to 5s).
@@ -132,6 +135,7 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Polar
                  file_cache_ttl,
                  config,
                  retry_config,
+                 rate_limit_config,
                  #[cfg(feature = "cloud")]
                      credential_provider: _,
              }|
@@ -141,6 +145,7 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Polar
                     file_cache_ttl: *file_cache_ttl,
                     config: config.clone(),
                     retry_config: *retry_config,
+                    rate_limit_config: *rate_limit_config,
                     #[cfg(feature = "cloud")]
                     credential_provider: credential_cache_key,
                 })
@@ -195,6 +200,7 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Polar
         file_cache_ttl: u64,
         config: Option<CloudConfig>,
         retry_config: CloudRetryConfig,
+        rate_limit_config: CloudRateLimitConfig,
         #[cfg(feature = "cloud")]
         credential_provider: CacheKeyBytes,
     }
@@ -210,11 +216,19 @@ pub(crate) struct PolarsObjectStoreBuilder {
     path: PlRefPath,
     cloud_type: CloudType,
     options: Option<CloudOptions>,
+    // RateLimiter. Authoritative for config and read/write request rate cells (atomics).
+    // The rate-limiter, below the object store, updates them dynamically. The concurrency controller,
+    // above the object store, uses the request rate to limit the number of concurrent requests.
+    rate_limiter: Option<Arc<RateLimiter>>,
 }
 
 impl PolarsObjectStoreBuilder {
     pub(super) fn path(&self) -> &PlRefPath {
         &self.path
+    }
+
+    pub(crate) fn rate_limit_signal(&self) -> Option<PacingBudget> {
+        self.rate_limiter.as_ref().map(|r| r.read_budget())
     }
 
     pub(super) async fn build_impl(
@@ -233,7 +247,31 @@ impl PolarsObjectStoreBuilder {
             eprintln!(
                 "build object-store: file_cache_ttl: {}",
                 options.file_cache_ttl
-            )
+            );
+
+            fn eprint_rate_config(direction: &str, config: &DirectionalRateLimitConfig) {
+                eprintln!(
+                    "object-store rate_limiter config({})]: init_rate: {:.0}rps, floor_rate: {:.0}rps, ceiling_rate: {:.0}rps, horizon: {}ms, max_wait: {}ms, init_policy: {}",
+                    direction,
+                    config.init_rate,
+                    config.floor_rate,
+                    config.ceiling_rate,
+                    config.horizon.as_millis(),
+                    config.max_wait.as_millis(),
+                    {
+                        match config.init_policy {
+                            InitPolicy::SetToInit => "to_init",
+                            InitPolicy::SetToFloor => "to_floor",
+                            InitPolicy::Inherit => "inherit",
+                        }
+                    }
+                )
+            }
+
+            if let Some(rate_limiter) = &self.rate_limiter {
+                eprint_rate_config("read", &rate_limiter.config.read);
+                eprint_rate_config("write", &rate_limiter.config.write);
+            }
         }
 
         let store = match self.cloud_type {
@@ -241,7 +279,11 @@ impl PolarsObjectStoreBuilder {
                 #[cfg(feature = "aws")]
                 {
                     let store = options
-                        .build_aws(self.path.clone(), clear_cached_credentials)
+                        .build_aws(
+                            self.path.clone(),
+                            clear_cached_credentials,
+                            self.rate_limiter.as_deref(),
+                        )
                         .await?;
                     Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 }
@@ -251,7 +293,11 @@ impl PolarsObjectStoreBuilder {
             CloudType::Gcp => {
                 #[cfg(feature = "gcp")]
                 {
-                    let store = options.build_gcp(self.path.clone(), clear_cached_credentials)?;
+                    let store = options.build_gcp(
+                        self.path.clone(),
+                        clear_cached_credentials,
+                        self.rate_limiter.as_deref(),
+                    )?;
 
                     Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 }
@@ -262,8 +308,11 @@ impl PolarsObjectStoreBuilder {
                 {
                     #[cfg(feature = "azure")]
                     {
-                        let store =
-                            options.build_azure(self.path.clone(), clear_cached_credentials)?;
+                        let store = options.build_azure(
+                            self.path.clone(),
+                            clear_cached_credentials,
+                            self.rate_limiter.as_deref(),
+                        )?;
                         Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                     }
                 }
@@ -409,10 +458,24 @@ pub async fn build_object_store(
         .map_or(CloudType::File, CloudType::from_cloud_scheme);
     let cloud_location = CloudLocation::new(path.clone(), glob)?;
 
+    let disable_http_rate_limit = polars_config::config().disable_http_rate_limit();
+    let rate_limiter = match cloud_type {
+        CloudType::Aws | CloudType::Azure | CloudType::Gcp if !disable_http_rate_limit => {
+            Some(Arc::new(RateLimiter::new(
+                options
+                    .map(|options| options.rate_limit_config)
+                    .unwrap_or_default()
+                    .into(),
+            )))
+        },
+        _ => None,
+    };
+
     let store = PolarsObjectStoreBuilder {
         path,
         cloud_type,
         options: options.cloned(),
+        rate_limiter,
     }
     .build()
     .await?;

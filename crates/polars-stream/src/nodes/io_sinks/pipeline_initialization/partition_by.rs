@@ -92,7 +92,6 @@ pub fn start_partition_sink_pipeline(
         upload_chunk_size,
         upload_max_concurrency,
         io_metrics,
-        sinked_path_info_list: sinked_path_info_list.clone(),
     });
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =
@@ -169,6 +168,7 @@ pub fn start_partition_sink_pipeline(
         writer_starter: Arc::clone(&file_writer_starter),
         sync_on_close,
         num_pipelines_per_sink,
+        sinked_path_info_list: sinked_path_info_list.clone(),
     };
 
     let partition_morsel_sender = PartitionMorselSender {

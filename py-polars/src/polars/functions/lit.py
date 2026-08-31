@@ -17,7 +17,7 @@ from polars._dependencies import (
 from polars._dependencies import numpy as np
 from polars._utils.wrap import wrap_expr
 from polars.datatype_expr import DataTypeExpr
-from polars.datatypes import BaseExtension, Date, Datetime, Duration, Object
+from polars.datatypes import BaseExtension, Date, Datetime, Duration, Object, Unknown
 from polars.datatypes.convert import DataTypeMappings
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -92,6 +92,8 @@ def lit(
     elif dtype == Object:
         value_s = pl.Series("literal", [value], dtype=dtype)
         return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))
+    elif dtype == Unknown:
+        dtype = None
 
     if isinstance(value, datetime):
         if dtype == Date:

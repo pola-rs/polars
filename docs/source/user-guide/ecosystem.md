@@ -104,7 +104,7 @@ more details.
 
 [Mage](https://www.mage.ai) is an open-source data pipeline tool for transforming and integrating
 data. Learn about integration between Polars and Mage at
-[docs.mage.ai](https://docs.mage.ai/integrations/polars).
+[docs.mage.ai](https://docs.mage.ai/guides/blocks/polars).
 
 #### marimo
 

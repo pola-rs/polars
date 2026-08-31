@@ -22,8 +22,10 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import gen_uuid_v7
 
 if TYPE_CHECKING:
+    import pyarrow as pa
     import pyiceberg.catalog
     import pyiceberg.table
+    from pyiceberg.table import Transaction
 
     import polars as pl
     from polars._plr import PyLazyFrame
@@ -40,11 +42,14 @@ class IcebergSinkState:
 
     table_name: str
     mode: Literal["append", "overwrite"]
+    schema_mode: Literal["merge", "overwrite"] | None
+    snapshot_properties: dict[str, str]
     iceberg_storage_properties: StorageOptionsDict
 
     sink_uuid_str: str
 
     table_: NoPickleOption[pyiceberg.table.Table]
+    source_schema: pa.Schema | None
     commit_result_df: NoPickleOption[pl.DataFrame]
 
     @staticmethod
@@ -52,9 +57,15 @@ class IcebergSinkState:
         target: str | pyiceberg.table.Table,
         *,
         mode: Literal["append", "overwrite"] = "append",
+        schema_mode: Literal["merge", "overwrite"] | None = None,
+        snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
         storage_options: StorageOptionsDict | None = None,
     ) -> IcebergSinkState:
+        if schema_mode == "overwrite" and mode != "overwrite":
+            msg = "schema_mode='overwrite' requires mode='overwrite'"
+            raise ValueError(msg)
+
         catalog_config = (
             (
                 IcebergCatalogConfig._from_api_parameter_or_environment_default(
@@ -88,9 +99,12 @@ class IcebergSinkState:
             catalog_properties=catalog_config.properties,
             table_name=target if isinstance(target, str) else ".".join(target.name()),
             mode=mode,
+            schema_mode=schema_mode,
+            snapshot_properties=snapshot_properties or {},
             iceberg_storage_properties=storage_options or {},
             sink_uuid_str=gen_uuid_v7().hex(),
             table_=NoPickleOption(target if not isinstance(target, str) else None),
+            source_schema=None,
             commit_result_df=NoPickleOption(),
         )
 
@@ -117,7 +131,40 @@ class IcebergSinkState:
         )
 
     def attach_sink(self, lf: pl.LazyFrame) -> pl.LazyFrame:
+        if self.schema_mode is not None:
+            self.source_schema = lf.collect_schema().to_arrow()
         return wrap_ldf(lf._ldf.sink_iceberg(self))
+
+    def _get_source_schema(self) -> pa.Schema:
+        assert self.source_schema is not None
+        return self.source_schema
+
+    def _update_schema(self, transaction: Transaction) -> None:
+        if self.schema_mode == "merge":
+            with transaction.update_schema() as update:
+                update.union_by_name(self._get_source_schema())
+        elif self.schema_mode == "overwrite":
+            with transaction.update_schema(allow_incompatible_changes=True) as update:
+                update.set_identifier_fields()
+                for field in transaction.table_metadata.schema().fields:
+                    update.delete_column(field.name)
+
+            with transaction.update_schema(allow_incompatible_changes=True) as update:
+                update.union_by_name(self._get_source_schema())
+
+    def _schema_for_write(self, table: pyiceberg.table.Table) -> pa.Schema:
+        from pyiceberg.io.pyarrow import pyarrow_to_schema, schema_to_pyarrow
+
+        if self.schema_mode is None:
+            return schema_to_pyarrow(table.schema())
+
+        transaction = table.transaction()
+        self._update_schema(transaction)
+        evolved_schema = transaction.table_metadata.schema()
+        source_schema = pyarrow_to_schema(
+            self._get_source_schema(), name_mapping=evolved_schema.name_mapping
+        )
+        return schema_to_pyarrow(source_schema)
 
     def _attach_resolved_sink(self, plf: PyLazyFrame) -> PyLazyFrame:
         from pyiceberg.table import TableProperties
@@ -146,15 +193,22 @@ class IcebergSinkState:
             )
             raise NotImplementedError(msg)
 
-        if property_as_bool(
-            table_properties, TableProperties.OBJECT_STORE_ENABLED, False
-        ):
-            msg = f"sink to Iceberg table with '{TableProperties.OBJECT_STORE_ENABLED}'"
-            raise NotImplementedError(msg)
+        object_storage_enabled = property_as_bool(
+            table_properties,
+            TableProperties.OBJECT_STORE_ENABLED,
+            TableProperties.OBJECT_STORE_ENABLED_DEFAULT,
+        )
+        object_storage_partitioned_paths = (
+            property_as_bool(
+                table_properties,
+                TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS,
+                TableProperties.WRITE_OBJECT_STORE_PARTITIONED_PATHS_DEFAULT,
+            )
+            if object_storage_enabled
+            else None
+        )
 
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
-
-        arrow_schema = schema_to_pyarrow(table.schema())
+        arrow_schema = self._schema_for_write(table)
 
         approximate_bytes_per_file = 2 * 1024 * 1024 * 1024
 
@@ -171,8 +225,14 @@ class IcebergSinkState:
             wrap_ldf(plf)
             .sink_parquet(
                 pl.PartitionBy(
-                    _normalize_windows_iceberg_file_uri(self.output_base_path()),
-                    file_path_provider=PlIcebergPathProviderConfig(),
+                    _normalize_windows_iceberg_file_uri(
+                        self.sink_base_path(
+                            object_storage_enabled=object_storage_enabled
+                        )
+                    ),
+                    file_path_provider=PlIcebergPathProviderConfig(
+                        object_storage_partitioned_paths=object_storage_partitioned_paths
+                    ),
                     approximate_bytes_per_file=approximate_bytes_per_file,
                 ),
                 arrow_schema=arrow_schema,
@@ -203,10 +263,12 @@ class IcebergSinkState:
             ]
 
         with table.transaction() as tx:
+            self._update_schema(tx)
+
             if self.mode == "overwrite":
                 from pyiceberg.expressions import AlwaysTrue
 
-                tx.delete(AlwaysTrue())
+                tx.delete(AlwaysTrue(), snapshot_properties=self.snapshot_properties)
 
             if verbose:
                 eprint("IcebergSinkState[commit]: begin add_files")
@@ -215,6 +277,7 @@ class IcebergSinkState:
 
             tx.add_files(
                 data_file_paths,
+                snapshot_properties=self.snapshot_properties,
                 check_duplicate_files=False,
             )
 
@@ -255,22 +318,27 @@ class IcebergSinkState:
 
         return self.commit_result_df.get()  # type: ignore[return-value]
 
-    def output_base_path(self) -> str:
+    def sink_base_path(self, *, object_storage_enabled: bool) -> str:
         from pyiceberg.table import TableProperties
 
         table = self.table()
         table_metadata = table.metadata
         table_properties = table_metadata.properties
 
-        output_base_path = (
+        sink_base_path = (
             path.rstrip("/")
             if (path := table_properties.get(TableProperties.WRITE_DATA_PATH))
             else f"{table_metadata.location.rstrip('/')}/data"
         )
 
-        return f"{output_base_path}/{self.sink_uuid_str}/"
+        if object_storage_enabled:
+            return f"{sink_base_path}/"
+
+        return f"{sink_base_path}/{self.sink_uuid_str}/"
 
 
+@dataclass(frozen=True, kw_only=True)
 class PlIcebergPathProviderConfig(_InternalPlPathProviderConfig):
     pl_path_provider_id: ClassVar[str] = "iceberg"
     extension: ClassVar[Literal["parquet"]] = "parquet"
+    object_storage_partitioned_paths: bool | None = None

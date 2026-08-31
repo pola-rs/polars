@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from polars._utils.deprecation import deprecated
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.unstable import unstable
-from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
@@ -23,66 +22,6 @@ class CatNameSpace:
 
     def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
-
-    @deprecated(
-        "`cat.get_categories()` is deprecated. To get the distinct values present in "
-        "a Categorical column, use `Series.unique()`. For the fixed category list of an "
-        "Enum, use its `dtype.categories`. This method will be removed in Polars 2.0.",
-    )
-    def get_categories(self) -> Series:
-        """
-        Get the categories stored in this data type.
-
-        Examples
-        --------
-        >>> s = pl.Series(["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical)
-        >>> s.cat.get_categories()  # doctest: +SKIP
-        shape: (3,)
-        Series: '' [str]
-        [
-            "foo"
-            "bar"
-            "ham"
-        ]
-        """
-
-    @deprecated(
-        "`cat.is_local()` is deprecated; Categoricals no longer have a local scope. "
-        "This method will be removed in Polars 2.0."
-    )
-    def is_local(self) -> bool:
-        """
-        Return whether or not the column is a local categorical.
-
-        Always returns false.
-        """
-        return self._s.cat_is_local()
-
-    @deprecated(
-        "`cat.to_local()` is deprecated; Categoricals no longer have a local scope. "
-        "This method will be removed in Polars 2.0."
-    )
-    def to_local(self) -> Series:
-        """Simply returns the column as-is, local representations are deprecated."""
-        return wrap_s(self._s.cat_to_local())
-
-    @deprecated(
-        "`cat.uses_lexical_ordering()` is deprecated; Categoricals are now always ordered lexically. "
-        "This method will be removed in Polars 2.0."
-    )
-    def uses_lexical_ordering(self) -> bool:
-        """
-        Indicate whether the Series uses lexical ordering.
-
-        Always returns true.
-
-        Examples
-        --------
-        >>> s = pl.Series(["b", "a", "b"]).cast(pl.Categorical)
-        >>> s.cat.uses_lexical_ordering()  # doctest: +SKIP
-        True
-        """
-        return self._s.cat_uses_lexical_ordering()
 
     def len_bytes(self) -> Series:
         """
@@ -291,3 +230,18 @@ class CatNameSpace:
             This functionality is currently considered **unstable**. It may be
             changed at any point without it being considered a breaking change.
         """
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "is_local": "Categoricals no longer have a local scope.",
+                    "to_local": "Categoricals no longer have a local scope.",
+                    "uses_lexical_ordering": "Categoricals are now always ordered lexically.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)

@@ -4,13 +4,13 @@ use futures::FutureExt;
 use polars_async::executor;
 use polars_async::primitives::connector;
 use polars_error::PolarsResult;
-use polars_io::utils::file::Writable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::index::NonZeroIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks::components::size::TargetSinkMorselSize;
+use crate::nodes::io_sinks::components::writable::WriteTarget;
 use crate::utils::tokio_handle_ext;
 
 pub const IPC_RW_RECORD_BATCH_FLAGS_KEY: PlSmallStr =
@@ -31,13 +31,13 @@ pub trait FileWriterStarter: Send + Sync + 'static {
 }
 
 pub struct FileOpenTaskHandle {
-    handle: tokio_handle_ext::AbortOnDropHandle<PolarsResult<Writable>>,
+    handle: tokio_handle_ext::AbortOnDropHandle<PolarsResult<WriteTarget>>,
     sync_on_close: SyncOnCloseType,
 }
 
 impl FileOpenTaskHandle {
     pub fn new(
-        handle: tokio_handle_ext::AbortOnDropHandle<PolarsResult<Writable>>,
+        handle: tokio_handle_ext::AbortOnDropHandle<PolarsResult<WriteTarget>>,
         sync_on_close: SyncOnCloseType,
     ) -> Self {
         Self {
@@ -48,7 +48,7 @@ impl FileOpenTaskHandle {
 }
 
 impl std::future::Future for FileOpenTaskHandle {
-    type Output = PolarsResult<(Writable, SyncOnCloseType)>;
+    type Output = PolarsResult<(WriteTarget, SyncOnCloseType)>;
 
     fn poll(
         mut self: std::pin::Pin<&mut Self>,
@@ -57,7 +57,7 @@ impl std::future::Future for FileOpenTaskHandle {
         use std::task::Poll;
 
         let file: Result<_, tokio::task::JoinError> = futures::ready!(self.handle.poll_unpin(cx));
-        let file: PolarsResult<Writable> = file.unwrap();
+        let file: PolarsResult<WriteTarget> = file.unwrap();
 
         Poll::Ready(file.map(|file| (file, self.sync_on_close)))
     }

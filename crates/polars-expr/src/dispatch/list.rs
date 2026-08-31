@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
-use polars_core::prelude::{
-    ChunkExpandAtIndex, Column, DataType, IDX_DTYPE, IntoColumn, ListChunked, SortOptions,
-};
+use polars_core::error::{PolarsContext, PolarsResult, polars_bail, polars_ensure};
+use polars_core::prelude::{Column, DataType, IDX_DTYPE, IntoColumn, ListChunked, SortOptions};
 use polars_core::utils::CustomIterTools;
 use polars_ops::prelude::{ListNameSpaceImpl, slice_broadcast_list};
 use polars_plan::dsl::{ColumnsUdf, ReshapeDimension, SpecialEq};
 use polars_plan::plans::IRListFunction;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUdf>> {
@@ -70,13 +69,13 @@ pub(super) fn contains(args: &mut [Column], nulls_equal: bool) -> PolarsResult<C
     polars_ensure!(matches!(list.dtype(), DataType::List(_)),
         SchemaMismatch: "invalid series dtype: expected `List`, got `{}`", list.dtype(),
     );
-    let mut ca = polars_ops::prelude::is_in(
-        item.as_materialized_series(),
-        list.as_materialized_series(),
-        nulls_equal,
-    )?;
+    // Don't blow up the haystack in case of scalar.
+    let haystack = list.as_materialized_series_maintain_scalar();
+    let mut ca = polars_ops::prelude::is_in(item.as_materialized_series(), &haystack, nulls_equal)?;
     ca.rename(list.name().clone());
-    Ok(ca.into_column())
+    // In case of scalar, broadcast back to original length
+    ca.into_column()
+        .broadcast_owned_to(broadcast_len([list, item])?)
 }
 
 #[cfg(feature = "list_drop_nulls")]
@@ -232,11 +231,12 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
 }
 
 pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
+    let broadcast_len = broadcast_len(s.iter()).context("list concat")?;
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
     // TODO! don't auto cast here, but implode beforehand.
-    let mut first_ca = match first.try_list() {
+    let first_ca = match first.try_list() {
         Some(ca) => ca,
         None => {
             first = first
@@ -245,15 +245,8 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
             first.list().unwrap()
         },
     }
-    .clone();
-
-    if first_ca.len() == 1 && !other.is_empty() {
-        let broadcast_len = other.iter().map(|s| s.len()).filter(|l| *l != 1).max();
-        if let Some(l) = broadcast_len {
-            first_ca = first_ca.new_from_index(0, l)
-        }
-    }
-
+    .clone()
+    .broadcast_owned_to(broadcast_len)?;
     first_ca.lst_concat(other).map(IntoColumn::into_column)
 }
 
@@ -410,9 +403,7 @@ pub(super) fn to_array(s: &Column, width: usize) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "list_to_struct")]
-pub(super) fn to_struct(s: &Column, names: &Arc<[PlSmallStr]>) -> PolarsResult<Column> {
+pub(super) fn to_struct(s: &Column, fields: &[PlSmallStr]) -> PolarsResult<Column> {
     use polars_ops::prelude::ToStruct;
-
-    let args = polars_ops::prelude::ListToStructArgs::FixedWidth(names.clone());
-    Ok(s.list()?.to_struct(&args)?.into_column())
+    Ok(s.list()?.to_struct(fields)?.into_column())
 }
