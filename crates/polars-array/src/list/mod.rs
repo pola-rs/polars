@@ -13,9 +13,6 @@ mod iterator;
 
 pub use iterator::{PlListIter, PlListValuesIter};
 
-/// The offsets of an empty list array: the end of the last of no lists.
-static EMPTY_OFFSETS: &[u64] = &[0];
-
 /// An immutable, cheaply cloneable sequence of `length` optional lists over one values array.
 ///
 /// This is the variable-length nested array of this crate: it holds no values of its own, only a
@@ -188,7 +185,7 @@ impl PlListArray {
     pub fn new_empty(values: Box<dyn PlArray>) -> Self {
         Self {
             values,
-            offsets: Buffer::from_static(EMPTY_OFFSETS),
+            offsets: Buffer::zeroed(1),
             length: 0,
             validity: None,
         }
