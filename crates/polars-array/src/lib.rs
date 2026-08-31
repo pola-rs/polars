@@ -20,6 +20,7 @@ pub mod array_type;
 pub mod bitmap;
 pub mod boolean;
 pub mod broadcast;
+pub mod concatenate;
 pub mod flat;
 pub mod list;
 pub mod null;

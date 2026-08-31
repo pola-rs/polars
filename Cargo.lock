@@ -3106,6 +3106,7 @@ dependencies = [
  "polars-arrow",
  "polars-buffer",
  "polars-error",
+ "polars-utils",
 ]
 
 [[package]]
