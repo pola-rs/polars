@@ -11,12 +11,19 @@
 //!
 //! Unlike the `polars-arrow` arrays, these arrays carry no logical type; they are purely a physical
 //! representation. Logical typing lives at a higher level.
+//!
+//! Every array implements the trait object [`PlArray`] and can be downcast to a concrete struct
+//! based on the [`PlArrayType`] available from [`PlArray::dtype`].
 
+pub mod array;
 pub mod bitmap;
 pub mod boolean;
 pub mod broadcast;
+pub mod dtype;
 pub mod primitive;
 
+pub use array::PlArray;
 pub use bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 pub use boolean::PlBooleanArray;
+pub use dtype::{PlArrayType, PrimitiveType};
 pub use primitive::PlPrimitiveArray;

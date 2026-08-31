@@ -3,8 +3,10 @@ use arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_ensure};
 
+use crate::array::PlArray;
 use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{broadcast_index, is_valid_buffer_len};
+use crate::dtype::PlArrayType;
 
 mod iterator;
 
@@ -589,6 +591,70 @@ impl<T: NativeType> std::fmt::Debug for PlPrimitiveArray<T> {
         }
 
         f.debug_list().entries(self.iter().map(Element)).finish()
+    }
+}
+
+impl<T: NativeType> PlArray for PlPrimitiveArray<T> {
+    #[inline]
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    #[inline]
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    #[inline]
+    fn dtype(&self) -> PlArrayType {
+        PlArrayType::Primitive(T::PRIMITIVE)
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    #[inline]
+    fn validity(&self) -> Option<PlBitmapRef<'_>> {
+        self.validity()
+    }
+
+    #[inline]
+    fn values_are_broadcast(&self) -> bool {
+        self.values_are_broadcast()
+    }
+
+    #[inline]
+    fn slice(&mut self, offset: usize, length: usize) {
+        self.slice(offset, length)
+    }
+
+    #[inline]
+    unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
+        unsafe { self.slice_unchecked(offset, length) }
+    }
+
+    #[inline]
+    fn set_validity(&mut self, validity: Option<Bitmap>) {
+        self.set_validity(validity)
+    }
+
+    #[inline]
+    fn to_dense_boxed(&self) -> Box<dyn PlArray> {
+        Box::new(self.to_dense())
+    }
+
+    #[inline]
+    fn to_boxed(&self) -> Box<dyn PlArray> {
+        Box::new(self.clone())
+    }
+
+    fn eq_dyn(&self, other: &dyn PlArray) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .is_some_and(|other| self == other)
     }
 }
 
