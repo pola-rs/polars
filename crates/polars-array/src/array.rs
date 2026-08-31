@@ -184,7 +184,6 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     ///
     /// The result keeps the scalar representation wherever it admits it, so its length is
     /// unbounded by its memory use: this is `O(1)` for every array but a
-    /// [`PlListArray`](crate::PlListArray), whose offsets are always flat, and a
     /// [`PlStructArray`](crate::PlStructArray), which repeats one element per field. See the
     /// concrete arrays for the exact cost.
     ///

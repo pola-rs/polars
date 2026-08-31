@@ -7,8 +7,9 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
-use crate::broadcast::is_valid_buffer_len;
+use crate::broadcast::{broadcast_index, is_valid_buffer_len, is_valid_offsets_len};
 use crate::concatenate::concatenate;
+use crate::flat::Flat;
 
 mod iterator;
 
@@ -22,17 +23,22 @@ pub use iterator::{PlListIter, PlListValuesIter};
 /// array is a [`PlArray`], and what a caller thinks of as the list's inner type lives at a higher
 /// level.
 ///
-/// The offsets are always `u64` and always *flat*: a list array of `length` elements is backed by
-/// exactly `length + 1` offsets, since the end of one list is the start of the next and the last
-/// list needs an end of its own. There is therefore no scalar representation of a list repeated
-/// `length` times, and a list array always costs `O(len)` memory in its offsets — unlike every
-/// other array in this crate, whose backing buffers may each be scalar.
+/// The offsets are always `u64`, and what the separate `length` field buys is what it buys
+/// everywhere else in this crate: each backing buffer is either flat or scalar, so a list array
+/// whose length is unbounded by its memory use is representable. The offsets hold the start of
+/// every element plus the end of the last, so it is their *starts* that are flat or scalar:
 ///
-/// What the separate `length` field buys here is the same as everywhere else for the *validity
-/// mask*: it is read through
-/// [`broadcast_index(i, bitmap.len())`](crate::broadcast::broadcast_index), so it is either flat
-/// (one bit per element) or scalar (a single bit shared by every element), which is what lets a
-/// fully null list array carry a one-bit mask. See [`crate::broadcast`] for the full rules.
+/// * *flat*: `length + 1` offsets, one range per element laid end to end — the end of one list is
+///   the start of the next, and the last list needs an end of its own.
+/// * *scalar*: two offsets, the one range every element covers, which is what lets a single list
+///   repeated `length` times cost the memory of that one list.
+///
+/// Element `i` is read through
+/// [`broadcast_index(i, offsets.len() - 1)`](crate::broadcast::broadcast_index), and the validity
+/// mask through [`broadcast_index(i, bitmap.len())`](crate::broadcast::broadcast_index), so it is
+/// either flat (one bit per element) or scalar (a single bit shared by every element), which is
+/// what lets a fully null list array carry a one-bit mask. See [`crate::broadcast`] for the full
+/// rules.
 ///
 /// The values array is never trimmed to what the offsets reach: it may hold elements before the
 /// first offset and after the last, and after slicing it usually does.
@@ -64,6 +70,16 @@ pub use iterator::{PlListIter, PlListValuesIter};
 ///         .as_slice(),
 ///     [3, 4, 5],
 /// );
+///
+/// // A billion copies of one list cost that list: the offsets are the range they all share.
+/// let scalar = PlListArray::new_scalar(
+///     Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
+///     1_000_000_000,
+/// );
+/// assert_eq!(scalar.len(), 1_000_000_000);
+/// assert_eq!(scalar.offsets().as_slice(), [0, 2]);
+/// assert!(scalar.is_scalar());
+/// assert_eq!(scalar.value_range(999_999_999), 0..2);
 /// ```
 #[derive(Clone)]
 pub struct PlListArray {
@@ -76,12 +92,14 @@ pub struct PlListArray {
 impl PlListArray {
     /// Creates a [`PlListArray`] out of its internal components.
     ///
-    /// This function is `O(len)`: it walks the offsets to check that they are ordered.
+    /// This function walks the offsets to check that they are ordered, so it is `O(len)` for flat
+    /// offsets and `O(1)` for scalar ones.
     ///
     /// # Errors
-    /// This function errors if `offsets` does not hold exactly `length + 1` offsets, if the offsets
-    /// are not monotonically non-decreasing, if the last offset exceeds the length of `values`, or
-    /// if `validity` is neither flat (length equal to `length`) nor scalar (length one).
+    /// This function errors if `offsets` is neither flat (`length + 1` offsets) nor scalar (two
+    /// offsets), if the offsets are not monotonically non-decreasing, if the last offset exceeds
+    /// the length of `values`, or if `validity` is neither flat (length equal to `length`) nor
+    /// scalar (length one).
     pub fn try_new(
         values: Box<dyn PlArray>,
         offsets: Buffer<u64>,
@@ -89,10 +107,11 @@ impl PlListArray {
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
         polars_ensure!(
-            offsets.len().checked_sub(1) == Some(length),
+            is_valid_offsets_len(offsets.len(), length),
             ComputeError:
-            "offsets buffer of length {} is not valid for a list array of length {}: it needs one \
-             offset per element plus the end of the last",
+            "offsets buffer of length {} is neither flat nor scalar for a list array of length \
+             {}: it needs one offset per element plus the end of the last, or two offsets \
+             standing for the range every element shares",
             offsets.len(), length,
         );
 
@@ -106,11 +125,12 @@ impl PlListArray {
                 i + 1, window[1], window[0],
             );
         }
+        let last = offsets[offsets.len() - 1];
         polars_ensure!(
-            offsets[length] <= values.len() as u64,
+            last <= values.len() as u64,
             ComputeError:
             "the last offset of the list array is {}, which exceeds the length {} of its values",
-            offsets[length], values.len(),
+            last, values.len(),
         );
 
         if let Some(validity) = validity.as_ref() {
@@ -149,9 +169,9 @@ impl PlListArray {
     /// This function is `O(1)`.
     ///
     /// # Safety
-    /// `offsets` must hold exactly `length + 1` monotonically non-decreasing offsets, the last of
-    /// which does not exceed the length of `values`, and `validity` must be either flat (length
-    /// equal to `length`) or scalar (length one).
+    /// `offsets` must be monotonically non-decreasing, either flat (`length + 1` offsets) or
+    /// scalar (two offsets), and its last offset must not exceed the length of `values`;
+    /// `validity` must be either flat (length equal to `length`) or scalar (length one).
     #[inline]
     pub unsafe fn new_unchecked(
         values: Box<dyn PlArray>,
@@ -160,9 +180,9 @@ impl PlListArray {
         validity: Option<Bitmap>,
     ) -> Self {
         if cfg!(debug_assertions) {
-            assert_eq!(offsets.len().checked_sub(1), Some(length));
+            assert!(is_valid_offsets_len(offsets.len(), length));
             assert!(offsets.windows(2).all(|window| window[0] <= window[1]));
-            assert!(offsets[length] <= values.len() as u64);
+            assert!(offsets[offsets.len() - 1] <= values.len() as u64);
             assert!(
                 validity
                     .as_ref()
@@ -192,10 +212,11 @@ impl PlListArray {
         }
     }
 
-    /// Creates a fully valid [`PlListArray`] from `values` and `offsets`, taking its length from
-    /// the offsets.
+    /// Creates a fully valid, flat [`PlListArray`] from `values` and `offsets`, taking its length
+    /// from the offsets.
     ///
-    /// This function is `O(len)`.
+    /// The offsets are read as flat — `length + 1` of them — so this never builds the scalar
+    /// representation: [`Self::new_scalar`] is what does. This function is `O(len)`.
     ///
     /// # Panics
     /// Panics if `offsets` is empty — the end of the last list is always needed, so even an empty
@@ -208,16 +229,34 @@ impl PlListArray {
         Self::new(values, offsets, length, None)
     }
 
+    /// Creates a [`PlListArray`] of `length` copies of the list `element`, in the memory of that
+    /// one list.
+    ///
+    /// The list is given as the array of its values, which becomes the values array of the result:
+    /// every element covers all of it, through the two offsets they share. This function is `O(1)`,
+    /// and so is the result's memory use on top of `element`. Repeating a list that is already an
+    /// element of a list array is [`Self::new_from_index`].
+    #[inline]
+    pub fn new_scalar(element: Box<dyn PlArray>, length: usize) -> Self {
+        let offsets = Buffer::from_owner([0, element.len() as u64]);
+        Self {
+            values: element,
+            offsets,
+            length,
+            validity: None,
+        }
+    }
+
     /// Creates a [`PlListArray`] of `length` nulls over `values`.
     ///
     /// Every element is null, so its value is undetermined; each is given the empty list, which is
-    /// what keeps the validity mask a single bit and the values array untouched. The offsets still
-    /// hold one slot per element, so unlike the other arrays this is `O(length)` and not `O(1)`.
+    /// what keeps both the validity mask and the offsets a single shared slot, and the values array
+    /// untouched. This function is `O(1)`.
     #[inline]
     pub fn new_full_null(values: Box<dyn PlArray>, length: usize) -> Self {
         Self {
             values,
-            offsets: Buffer::zeroed(length + 1),
+            offsets: Buffer::zeroed(2),
             length,
             validity: Some(Bitmap::new_zeroed(1)),
         }
@@ -245,10 +284,12 @@ impl PlListArray {
         &*self.values
     }
 
-    /// The backing offsets buffer, which holds [`Self::len`] `+ 1` offsets into [`Self::values`].
+    /// The backing offsets buffer, which holds offsets into [`Self::values`].
     ///
-    /// The offsets are always flat, and are not normalized: the first one is whatever slicing left
-    /// it, not necessarily zero.
+    /// This is *not* guaranteed to hold [`Self::len`] `+ 1` offsets: it is either flat or scalar.
+    /// Read the range of an element with [`Self::value_range`], which broadcasts, rather than
+    /// indexing this buffer directly. The offsets are not normalized either: the first one is
+    /// whatever slicing left it, not necessarily zero.
     #[inline(always)]
     pub const fn offsets(&self) -> &Buffer<u64> {
         &self.offsets
@@ -274,12 +315,57 @@ impl PlListArray {
             .map(|validity| unsafe { PlBitmapRef::new_unchecked(validity, self.length) })
     }
 
-    /// Whether the validity mask holds a single bit shared by every element.
+    /// Whether the offsets hold the single range every element covers, so that every element is
+    /// the same list.
     ///
-    /// There is no such question to ask of the offsets, which are always flat.
+    /// This is `false` for a flat array of length one, where the two representations coincide.
+    #[inline]
+    pub fn offsets_are_scalar(&self) -> bool {
+        // The offsets are never empty, and hold one slot more than the starts that are flat or
+        // scalar for this array's length.
+        self.offsets.len() - 1 != self.length
+    }
+
+    /// Whether the validity mask holds a single bit shared by every element.
     #[inline]
     pub fn validity_is_scalar(&self) -> bool {
         self.validity().is_some_and(|v| v.is_scalar())
+    }
+
+    /// Whether both of this array's own backing buffers hold one slot per element.
+    ///
+    /// The values array carries its own representation, which this says nothing about.
+    #[inline]
+    pub fn is_flat(&self) -> bool {
+        !self.offsets_are_scalar() && !self.validity_is_scalar()
+    }
+
+    /// Whether this array's own backing buffers are entirely in the scalar representation, and
+    /// therefore stand for a single list repeated [`Self::len`] times in the memory of that list
+    /// alone.
+    #[inline]
+    pub fn is_scalar(&self) -> bool {
+        self.offsets_are_scalar() && self.validity().is_none_or(|v| v.is_scalar())
+    }
+
+    /// The single element every element of this array equals, if both of its own backing buffers
+    /// hold one slot.
+    ///
+    /// The inner [`Option`] is that element, so an array of nothing but nulls yields `Some(None)`.
+    /// Returns `None` for an empty array, and whenever a buffer is flat over more than one element
+    /// — its elements need not be equal, even if the other buffer is scalar.
+    ///
+    /// This is what lets equality avoid walking a scalar array of unbounded length.
+    #[inline]
+    pub fn scalar_value(&self) -> Option<Option<Box<dyn PlArray>>> {
+        let is_shared = self.offsets.len() == 2
+            && self
+                .validity
+                .as_ref()
+                .is_none_or(|validity| validity.len() == 1);
+
+        // SAFETY: the array is not empty, so element 0 is in bounds.
+        (is_shared && self.length > 0).then(|| unsafe { self.get_unchecked(0) })
     }
 
     /// The range of [`Self::values`] the element at `i` covers.
@@ -303,8 +389,13 @@ impl PlListArray {
     #[inline]
     pub unsafe fn value_range_unchecked(&self, i: usize) -> Range<usize> {
         debug_assert!(i < self.length);
-        // SAFETY: there is one offset per element plus one, so `i + 1` is in bounds. Every offset
-        // is at most the length of the values array, and therefore fits in a `usize`.
+
+        // Scalar offsets hold the one range every element covers, so they are read at slot zero.
+        let i = broadcast_index(i, self.offsets.len() - 1);
+
+        // SAFETY: the offsets hold one slot more than the starts `broadcast_index` maps onto, so
+        // `i + 1` is in bounds. Every offset is at most the length of the values array, and
+        // therefore fits in a `usize`.
         unsafe {
             let start = *self.offsets.get_unchecked(i) as usize;
             let end = *self.offsets.get_unchecked(i + 1) as usize;
@@ -511,10 +602,14 @@ impl PlListArray {
 
         // The values array is left as it is: the offsets are what point into it, and they are not
         // normalized, so the elements that fall outside the slice simply stop being reachable.
-        unsafe {
-            self.offsets
-                .slice_in_place_unchecked(offset..offset + length + 1)
-        };
+        // Scalar offsets are left alone as well, like a scalar mask: every element of the slice
+        // covers the same range every element of this array does.
+        if !self.offsets_are_scalar() {
+            unsafe {
+                self.offsets
+                    .slice_in_place_unchecked(offset..offset + length + 1)
+            };
+        }
 
         // A scalar mask is unaffected by slicing: every element reads the same bit.
         if let Some(validity) = self.validity.as_mut() {
@@ -552,26 +647,21 @@ impl PlListArray {
 
     /// Creates a [`PlListArray`] of `length` copies of the element at `index`.
     ///
-    /// There is no scalar representation of a repeated list — the offsets are always flat, and
-    /// they have to be ordered — so the values of the element are repeated as well: this is
-    /// `O(length * value_length(index))`, and `O(length)` for a null or empty element, whose values
-    /// need not be written out. The values are themselves a [`PlArray`], so a scalar one is
-    /// repeated in `O(1)`.
+    /// This function is `O(1)`: the offsets of the result are scalar, so every one of its elements
+    /// covers the range the element covers, of the very same values array. A null element repeats
+    /// as `length` nulls.
     ///
     /// # Panics
-    /// Panics if `index >= self.len()`, or if the total length of the values of the result
-    /// overflows a `usize`.
+    /// Panics if `index >= self.len()`.
     #[inline]
     pub fn new_from_index(&self, index: usize, length: usize) -> Self {
         assert!(index < self.length, "index out of bounds");
-        assert!(length < usize::MAX);
         unsafe { self.new_from_index_unchecked(index, length) }
     }
 
     /// Creates a [`PlListArray`] of `length` copies of the element at `index`.
     ///
-    /// # Panics
-    /// Panics if the total length of the values of the result overflows a `usize`.
+    /// This function is `O(1)`.
     ///
     /// # Safety
     /// `index` must be smaller than `self.len()`.
@@ -582,35 +672,121 @@ impl PlListArray {
             return Self::new_full_null(self.values.clone(), length);
         }
 
+        // Nothing is repeated: the values array is cloned as it is, and the two offsets every
+        // element of the result shares are the ones of the element being repeated.
         let range = unsafe { self.value_range_unchecked(index) };
-        if length == 0 || range.is_empty() {
-            // The values array is kept as it is — it is what determines the type of the lists —
-            // but no element of it is reachable.
-            return Self {
-                values: self.values.clone(),
-                offsets: Buffer::zeroed(length + 1),
-                length,
-                validity: None,
-            };
+
+        Self {
+            values: self.values.clone(),
+            offsets: Buffer::from_owner([range.start as u64, range.end as u64]),
+            length,
+            validity: None,
+        }
+    }
+
+    /// Returns an equivalent array whose own backing buffers both hold one slot per element.
+    ///
+    /// The values array is left as it is: it carries its own representation, which being
+    /// [`flat`](Self::is_flat) says nothing about. The result carries its representation in its
+    /// type: see [`Flat`] for what a flat array is a proof of.
+    ///
+    /// Materializing scalar offsets is what costs here, and it costs more than it does for the
+    /// other arrays: flat offsets lay the ranges of the elements end to end, so the one list every
+    /// element of a scalar array covers has to be written out once per element — this is `O(len *
+    /// value_length)`, and it is [`concatenate`] that does it, so the values of the result keep
+    /// whatever representation copies of that list concatenate into. It is only the offsets that
+    /// are materialized, in `O(len)`, when every element covers an empty range or is null: the
+    /// value of a null element is undetermined, so it need not be written out, and the empty list
+    /// is the same list wherever the offsets point.
+    ///
+    /// # Example
+    /// ```
+    /// use polars_array::{PlArray, PlListArray, PlPrimitiveArray};
+    ///
+    /// // Three copies of `[1, 2]`, over the values of that one list.
+    /// let scalar = PlListArray::new_scalar(
+    ///     Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
+    ///     3,
+    /// );
+    /// assert_eq!(scalar.offsets().as_slice(), [0, 2]);
+    ///
+    /// // Its flat counterpart holds the three lists one after the other.
+    /// let flat = scalar.to_flat();
+    /// assert_eq!(flat.offsets().as_slice(), [0, 2, 4, 6]);
+    /// assert_eq!(flat.values().len(), 6);
+    /// assert_eq!(flat, scalar);
+    /// ```
+    pub fn to_flat(&self) -> Flat<Self> {
+        if self.is_flat() {
+            return Flat(self.clone());
         }
 
-        // SAFETY: the offsets are ordered and bounded by the length of the values array.
-        let element = unsafe { self.values.sliced_unchecked(range.start, range.len()) };
+        let validity = self.validity().map(|validity| validity.to_flat());
 
-        // Concatenation is what materializes the repetition, and it keeps the values scalar when
-        // the element is itself a single repeated value.
-        let values = concatenate(&vec![&*element; length])
-            .expect("an array concatenates with copies of itself");
+        let (values, offsets) = if !self.offsets_are_scalar() {
+            (self.values.clone(), self.offsets.clone())
+        } else if self.length == 0
+            || self.offsets[0] == self.offsets[1]
+            || self.null_count() == self.length
+        {
+            // Every element is the empty list, or is null and therefore holds an undetermined one:
+            // no value is written out, and the offsets all point at the same place. That place is
+            // the start of the values array rather than the range every element covered, which is
+            // the same empty list and is a buffer that need not be written out either.
+            (self.values.clone(), Buffer::zeroed(self.length + 1))
+        } else {
+            // The one list every element covers, written out once per element. Concatenating it
+            // with copies of itself is what repeats it, and that keeps the values of the result
+            // scalar when the list is itself a single repeated value.
+            let range = unsafe { self.value_range_unchecked(0) };
+            let element = self.values.sliced(range.start, range.len());
+            let values = concatenate(&vec![&*element; self.length])
+                .expect("copies of one array always concatenate");
 
-        let value_length = range.len() as u64;
-        let offsets = (0..=length as u64)
-            .map(|i| i * value_length)
-            .collect::<Vec<_>>();
+            let offsets = (0..=self.length as u64)
+                .map(|i| i * range.len() as u64)
+                .collect::<Vec<_>>();
 
-        // SAFETY: every list of the result has the length of the element, so the offsets are
-        // ordered and there is one per element plus the end of the last, and the last of them is
-        // the total length the element was repeated over. Every element is valid.
-        unsafe { Self::new_unchecked(values, Buffer::from(offsets), length, None) }
+            (values, Buffer::from(offsets))
+        };
+
+        // SAFETY: the offsets are ordered, there is one per element plus the end of the last, and
+        // the last of them is within the values they were built for: the length of the values
+        // repeated once per element, or zero, which every values array holds. The mask is the flat
+        // counterpart of one that was flat or scalar for this array's length.
+        Flat(unsafe { Self::new_unchecked(values, offsets, self.length, validity) })
+    }
+
+    /// Borrows this array as a [`Flat`] one, if both of its own backing buffers already hold one
+    /// slot per element.
+    ///
+    /// This is the `O(1)` counterpart of [`Self::to_flat`]: it materializes nothing, and returns
+    /// `None` rather than writing out a scalar buffer when this array is not
+    /// [`flat`](Self::is_flat).
+    ///
+    /// # Example
+    /// ```
+    /// use polars_array::{PlListArray, PlPrimitiveArray};
+    /// use polars_buffer::Buffer;
+    ///
+    /// let arr = PlListArray::from_offsets(
+    ///     Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
+    ///     Buffer::from(vec![0u64, 2, 3]),
+    /// );
+    /// assert!(arr.as_flat().is_some());
+    ///
+    /// // A billion copies of one list share two offsets, so they have to be written out.
+    /// let scalar = PlListArray::new_scalar(
+    ///     Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
+    ///     1_000_000_000,
+    /// );
+    /// assert!(scalar.as_flat().is_none());
+    /// ```
+    #[inline]
+    pub fn as_flat(&self) -> Option<&Flat<Self>> {
+        // SAFETY: both own backing buffers of a flat array hold one slot per element.
+        self.is_flat()
+            .then(|| unsafe { Flat::from_ref_unchecked(self) })
     }
 }
 
@@ -637,9 +813,15 @@ impl PartialEq for PlListArray {
         }
 
         // Every element is null on both sides, so every value is undetermined and there is nothing
-        // left to compare.
+        // left to compare. This is also what keeps comparing two fully null scalar arrays `O(1)`.
         if self.length > 0 && self.null_count() == self.length {
             return true;
+        }
+
+        // Never walk two scalar arrays element by element: their length is unbounded by their
+        // memory use. Comparing the one element they each stand for costs that element.
+        if let (Some(lhs), Some(rhs)) = (self.scalar_value(), other.scalar_value()) {
+            return lhs == rhs;
         }
 
         (0..self.length).all(|i| unsafe {
@@ -650,10 +832,20 @@ impl PartialEq for PlListArray {
 
 impl Eq for PlListArray {}
 
+/// Compares an array of unknown representation against a flat one; see
+/// [`PartialEq<PlListArray> for Flat<PlListArray>`](Flat).
+impl PartialEq<Flat<PlListArray>> for PlListArray {
+    #[inline]
+    fn eq(&self, other: &Flat<PlListArray>) -> bool {
+        *self == other.0
+    }
+}
+
 impl std::fmt::Debug for PlListArray {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // The values array formats its own scalar representation, so this never materializes one;
-        // the offsets are always flat, and are listed like the values of a flat array.
+        // The values array formats its own scalar representation, so this never materializes one,
+        // and neither are the offsets: they are listed as they are backed, which is two of them
+        // for a scalar array.
         let mut s = f.debug_struct("PlListArray");
         s.field("length", &self.length);
         if let Some(validity) = self.validity() {
@@ -785,14 +977,16 @@ mod tests {
 
     #[test]
     fn null_scalar() {
-        // Every element is null, and every list is empty; the mask is a single bit, but there is
-        // still one offset per element.
+        // Every element is null, and every list is empty: the mask is a single bit, and the offsets
+        // are the empty range every element shares.
         let arr = PlListArray::new_full_null(values(), 1_000_000);
 
+        assert!(arr.is_scalar());
         assert!(arr.validity_is_scalar());
+        assert!(arr.offsets_are_scalar());
         assert_eq!(arr.validity().unwrap().len(), 1_000_000);
         assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
-        assert_eq!(arr.offsets().len(), 1_000_001);
+        assert_eq!(arr.offsets().as_slice(), [0, 0]);
         assert_eq!(arr.null_count(), 1_000_000);
         assert!(arr.has_nulls());
         assert!(arr.is_null(999_999));
@@ -846,7 +1040,8 @@ mod tests {
 
     #[test]
     fn try_new_rejects_invalid_components() {
-        // The offsets must hold one slot per element plus the end of the last.
+        // The offsets must hold one slot per element plus the end of the last, or be the two of a
+        // scalar array — see `scalar_offsets_stand_for_the_range_every_element_covers`.
         assert!(PlListArray::try_new(values(), Buffer::from(vec![0u64, 2, 5]), 3, None).is_err());
         assert!(PlListArray::try_new(values(), Buffer::from(vec![0u64, 2, 2, 5]), 3, None).is_ok());
 
@@ -1082,7 +1277,7 @@ mod tests {
             .into_inner();
 
         assert_eq!(values.len(), 5);
-        assert_eq!(offsets.as_slice(), [0, 0, 0, 0]);
+        assert_eq!(offsets.as_slice(), [0, 0]);
         assert_eq!(length, 3);
         assert_eq!(validity, Some(Bitmap::new_zeroed(1)));
     }
@@ -1105,6 +1300,17 @@ mod tests {
             format!("{arr:?}"),
             "PlListArray { length: 1, validity: PlBitmapRef[false], \
              offsets: [0, 1000000000], values: PlPrimitiveArray[7; 1000000000] }",
+        );
+
+        // Neither are scalar offsets: they are listed as they are backed, which is the two of them
+        // every element of a billion shares.
+        assert_eq!(
+            format!(
+                "{:?}",
+                arr.without_validity().new_from_index(0, 1_000_000_000)
+            ),
+            "PlListArray { length: 1000000000, offsets: [0, 1000000000], \
+             values: PlPrimitiveArray[7; 1000000000] }",
         );
     }
 
@@ -1144,19 +1350,21 @@ mod tests {
     fn new_from_index_repeats_one_list() {
         let arr = arr();
 
-        // The values of the element are repeated along with it: three copies of `[3, 4, 5]`.
+        // Nothing is repeated: every element of the result covers the range the element covers,
+        // of the very same values array.
         let repeated = arr.new_from_index(2, 3);
         assert_eq!(repeated.len(), 3);
-        assert_eq!(repeated.offsets().as_slice(), [0, 3, 6, 9]);
-        assert_eq!(repeated.values().len(), 9);
+        assert!(repeated.is_scalar());
+        assert_eq!(repeated.offsets().as_slice(), [2, 5]);
+        assert_eq!(repeated.values().len(), 5);
         assert_eq!(repeated.null_count(), 0);
         for i in 0..repeated.len() {
             assert_eq!(elements(&*repeated.value(i)), [Some(3), Some(4), Some(5)]);
         }
 
-        // An empty element has no values to repeat, so the values array is left as it is.
+        // An empty element repeats as the empty range it covers.
         let repeated = arr.new_from_index(1, 4);
-        assert_eq!(repeated.offsets().as_slice(), [0, 0, 0, 0, 0]);
+        assert_eq!(repeated.offsets().as_slice(), [2, 2]);
         assert_eq!(repeated.values().len(), 5);
         assert!(elements(&*repeated.value(3)).is_empty());
 
@@ -1166,11 +1374,14 @@ mod tests {
             .with_validity(Some(Bitmap::from_iter([false, true, true])))
             .new_from_index(0, 4);
         assert_eq!(nulls.null_count(), 4);
-        assert!(nulls.validity_is_scalar());
-        assert_eq!(nulls.offsets().as_slice(), [0, 0, 0, 0, 0]);
+        assert!(nulls.is_scalar());
+        assert_eq!(nulls.offsets().as_slice(), [0, 0]);
         assert_eq!(nulls.get(3), None);
 
         assert!(arr.new_from_index(0, 0).is_empty());
+
+        // The representation is not part of a value: the repetition of `[1, 2]` compares equal to
+        // the flat array of the two lists it stands for.
         assert_eq!(
             unsafe { arr.new_from_index_unchecked(0, 2) },
             PlListArray::from_offsets(
@@ -1181,6 +1392,136 @@ mod tests {
     }
 
     #[test]
+    fn a_repeated_list_costs_that_one_list() {
+        // A single list of a thousand values, repeated a billion times.
+        let arr = PlListArray::from_offsets(
+            Box::new(PlPrimitiveArray::from_vec((0..1_000i32).collect())),
+            Buffer::from(vec![0u64, 1_000]),
+        );
+        let repeated = arr.new_from_index(0, 1_000_000_000);
+
+        // Neither the values nor the offsets are written out: the offsets are the one range every
+        // element covers, of the values array the element was already taken over.
+        assert_eq!(repeated.len(), 1_000_000_000);
+        assert!(repeated.is_scalar());
+        assert!(!repeated.is_flat());
+        assert_eq!(repeated.offsets().as_slice(), [0, 1_000]);
+        assert_eq!(repeated.values().len(), 1_000);
+        assert_eq!(repeated.null_count(), 0);
+        assert_eq!(repeated.scalar_value(), Some(Some(arr.value(0))));
+
+        for i in [0, 1, 999_999_999] {
+            assert_eq!(repeated.value_range(i), 0..1_000);
+            assert_eq!(repeated.value_length(i), 1_000);
+            assert!(repeated.is_valid(i));
+        }
+
+        // Slicing it stays free, and keeps the scalar representation.
+        let sliced = repeated.clone().sliced(500_000_000, 2);
+        assert_eq!(sliced.len(), 2);
+        assert!(sliced.offsets_are_scalar());
+        assert_eq!(sliced.offsets().as_slice(), [0, 1_000]);
+        assert_eq!(sliced, arr.new_from_index(0, 2));
+
+        // The repetition of a repeated element is that same element again.
+        assert_eq!(sliced.new_from_index(1, 1_000_000_000), repeated);
+    }
+
+    #[test]
+    fn new_scalar_repeats_one_list() {
+        let arr = PlListArray::new_scalar(
+            Box::new(PlPrimitiveArray::new_scalar(7i32, 1_000_000_000)),
+            1_000_000_000,
+        );
+
+        assert_eq!(arr.len(), 1_000_000_000);
+        assert!(arr.is_scalar());
+        assert_eq!(arr.offsets().as_slice(), [0, 1_000_000_000]);
+        assert_eq!(arr.value_length(999_999_999), 1_000_000_000);
+        assert_eq!(arr.null_count(), 0);
+
+        // A single copy is one flat element: the two representations coincide.
+        let one = PlListArray::new_scalar(values(), 1);
+        assert!(!one.is_scalar());
+        assert!(one.is_flat());
+        assert_eq!(one.offsets().as_slice(), [0, 5]);
+        assert_eq!(
+            one,
+            PlListArray::from_offsets(values(), Buffer::from(vec![0u64, 5])),
+        );
+
+        // No copies at all is an empty array, which reads no offset.
+        assert!(PlListArray::new_scalar(values(), 0).is_empty());
+    }
+
+    #[test]
+    fn scalar_offsets_stand_for_the_range_every_element_covers() {
+        // Two offsets are valid for any length, and are the range every element covers.
+        let arr = PlListArray::new(values(), Buffer::from(vec![2u64, 5]), 3, None);
+
+        assert!(arr.offsets_are_scalar());
+        assert_eq!(arr.len(), 3);
+        assert_eq!(
+            arr.values_iter().map(|list| list.len()).collect::<Vec<_>>(),
+            [3, 3, 3],
+        );
+        assert_eq!(elements(&*arr.value(2)), [Some(3), Some(4), Some(5)]);
+
+        // Anything between the two representations is rejected, and so is an empty buffer.
+        assert!(PlListArray::try_new(values(), Buffer::from(vec![0u64, 2, 5]), 3, None).is_err());
+        assert!(PlListArray::try_new(values(), Buffer::new(), 0, None).is_err());
+
+        // Scalar offsets still have to be ordered and to fit in the values array.
+        assert!(PlListArray::try_new(values(), Buffer::from(vec![5u64, 2]), 3, None).is_err());
+        assert!(PlListArray::try_new(values(), Buffer::from(vec![0u64, 6]), 3, None).is_err());
+
+        // A scalar array compares equal to the flat one it stands for.
+        assert_eq!(
+            arr,
+            PlListArray::from_offsets(
+                Box::new(PlPrimitiveArray::from_vec(vec![
+                    3i32, 4, 5, 3, 4, 5, 3, 4, 5
+                ])),
+                Buffer::from(vec![0u64, 3, 6, 9]),
+            ),
+            "the same three lists, written out one after the other",
+        );
+        assert_ne!(
+            arr,
+            PlListArray::new(values(), Buffer::from(vec![2u64, 4]), 3, None),
+        );
+        assert_ne!(arr, arr.clone().sliced(0, 2));
+    }
+
+    #[test]
+    fn a_scalar_array_is_never_walked_element_by_element() {
+        let values: Box<dyn PlArray> = Box::new(PlPrimitiveArray::new_scalar(7i32, 1_000));
+        let arr = PlListArray::new_scalar(values.clone(), usize::MAX);
+
+        // Equality reads the one element the arrays stand for, and never their length.
+        assert_eq!(arr, PlListArray::new_scalar(values.clone(), usize::MAX));
+        assert_ne!(arr, PlListArray::new_scalar(values, usize::MAX - 1));
+        assert_ne!(
+            arr,
+            PlListArray::new_scalar(
+                Box::new(PlPrimitiveArray::new_scalar(7i32, 999)),
+                usize::MAX,
+            ),
+        );
+
+        // A flat mask over more than one element leaves the elements to be compared one by one, so
+        // there is no shared element to read.
+        let masked = arr
+            .sliced(0, 3)
+            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+        assert!(masked.offsets_are_scalar());
+        assert_eq!(masked.scalar_value(), None);
+        assert_eq!(masked.null_count(), 1);
+        assert_eq!(masked.get(1), None);
+        assert_eq!(masked.value_length(1), 1_000);
+    }
+
+    #[test]
     fn repeating_a_list_of_scalar_values_does_not_materialize_them() {
         // A single list of a billion sevens, over values that cost `O(1)`.
         let arr = PlListArray::from_offsets(
@@ -1188,14 +1529,13 @@ mod tests {
             Buffer::from(vec![0u64, 1_000_000_000]),
         );
 
-        // Nothing here may walk the values: repeating them keeps them scalar.
+        // Nothing here may walk the values: both elements of the result cover the same range of
+        // the same scalar values array.
         let repeated = arr.new_from_index(0, 2);
         assert_eq!(repeated.len(), 2);
-        assert_eq!(repeated.values().len(), 2_000_000_000);
-        assert_eq!(
-            repeated.offsets().as_slice(),
-            [0, 1_000_000_000, 2_000_000_000],
-        );
+        assert_eq!(repeated.values().len(), 1_000_000_000);
+        assert_eq!(repeated.offsets().as_slice(), [0, 1_000_000_000]);
+        assert_eq!(repeated.value_length(1), 1_000_000_000);
         assert!(
             repeated
                 .values()
@@ -1203,6 +1543,166 @@ mod tests {
                 .downcast_ref::<PlPrimitiveArray<i32>>()
                 .unwrap()
                 .is_scalar()
+        );
+    }
+
+    #[test]
+    fn to_flat_lays_the_lists_end_to_end() {
+        // Three copies of `[3, 4, 5]`, which share the one range they cover.
+        let arr = PlListArray::new(values(), Buffer::from(vec![2u64, 5]), 3, None);
+        let flat = arr.to_flat();
+
+        assert!(flat.is_flat());
+        assert_eq!(flat.len(), 3);
+        assert_eq!(flat.offsets().as_slice(), [0, 3, 6, 9]);
+        assert_eq!(flat.values().len(), 9);
+        assert_eq!(flat.null_count(), 0);
+        for i in 0..flat.len() {
+            assert_eq!(elements(&*flat.value(i)), [Some(3), Some(4), Some(5)]);
+        }
+
+        // The representation is not part of a value, in either direction.
+        assert_eq!(flat, arr);
+        assert_eq!(arr, flat);
+
+        // A flat validity mask is carried over as it is.
+        let masked = arr
+            .clone()
+            .with_validity(Some(Bitmap::from_iter([true, false, true])))
+            .to_flat();
+        assert!(masked.is_flat());
+        assert_eq!(masked.null_count(), 1);
+        assert_eq!(masked.offsets().as_slice(), [0, 3, 6, 9]);
+        assert_eq!(masked.get(1), None);
+    }
+
+    #[test]
+    fn to_flat_of_an_already_flat_array_only_clones() {
+        let arr = arr();
+        let flat = arr.to_flat();
+
+        assert_eq!(flat, arr);
+        assert!(
+            flat.offsets().is_same_buffer(arr.offsets()),
+            "the offsets must be shared, not written out again",
+        );
+
+        // Only the mask is materialized when it is the only scalar buffer.
+        let scalar_mask = arr.clone().with_validity(Some(Bitmap::new_zeroed(1)));
+        assert!(!scalar_mask.is_flat());
+        let flat = scalar_mask.to_flat();
+
+        assert!(flat.is_flat());
+        assert_eq!(flat.validity().unwrap().len(), 3);
+        assert_eq!(flat.null_count(), 3);
+        assert!(
+            flat.offsets().is_same_buffer(arr.offsets()),
+            "the offsets were flat already",
+        );
+        assert_eq!(flat, scalar_mask);
+    }
+
+    #[test]
+    fn to_flat_writes_out_no_undetermined_list() {
+        // Every element is null, so its list is undetermined: it is only the offsets that are
+        // written out, and the values array is left untouched.
+        let all_null = PlListArray::new_full_null(values(), 4);
+        let flat = all_null.to_flat();
+
+        assert!(flat.is_flat());
+        assert_eq!(flat.offsets().as_slice(), [0, 0, 0, 0, 0]);
+        assert_eq!(flat.values().len(), 5);
+        assert_eq!(flat.null_count(), 4);
+        assert_eq!(flat, all_null);
+
+        // The same holds for a scalar array over a range every element covers, once a flat mask
+        // makes every one of them null.
+        let all_null = PlListArray::new(values(), Buffer::from(vec![2u64, 5]), 3, None)
+            .with_validity(Some(Bitmap::new_zeroed(3)));
+        let flat = all_null.to_flat();
+
+        assert_eq!(flat.offsets().as_slice(), [0, 0, 0, 0]);
+        assert_eq!(flat.values().len(), 5);
+        assert_eq!(flat, all_null);
+
+        // And for a scalar array of empty lists, which are the same list wherever they point.
+        let empty = PlListArray::new(values(), Buffer::from(vec![2u64, 2]), 3, None);
+        let flat = empty.to_flat();
+
+        assert_eq!(flat.offsets().as_slice(), [0, 0, 0, 0]);
+        assert_eq!(flat.values().len(), 5);
+        assert_eq!(flat.null_count(), 0);
+        assert_eq!(flat, empty);
+
+        // An empty array reaches no element, and keeps the one offset that ends the last list.
+        let flat = PlListArray::new_scalar(values(), 0).to_flat();
+        assert!(flat.is_empty());
+        assert!(flat.is_flat());
+        assert_eq!(flat.offsets().as_slice(), [0]);
+
+        // Its mask, which was a single bit for no element at all, is emptied along with it.
+        let flat = PlListArray::new_full_null(values(), 0).to_flat();
+        assert!(flat.is_empty());
+        assert!(flat.is_flat());
+        assert_eq!(flat.offsets().as_slice(), [0]);
+        assert_eq!(flat.null_count(), 0);
+    }
+
+    #[test]
+    fn to_flat_of_a_list_of_scalar_values_does_not_materialize_them() {
+        // A single list of a billion sevens, repeated three times.
+        let arr = PlListArray::new_scalar(
+            Box::new(PlPrimitiveArray::<i32>::new_scalar(7, 1_000_000_000)),
+            3,
+        );
+        let flat = arr.to_flat();
+
+        // The lists are written out one after the other, but the values they are taken over are
+        // three billion sevens that cost `O(1)`: concatenating copies of a scalar array is scalar.
+        assert!(flat.is_flat());
+        assert_eq!(
+            flat.offsets().as_slice(),
+            [0, 1_000_000_000, 2_000_000_000, 3_000_000_000]
+        );
+        assert_eq!(flat.values().len(), 3_000_000_000);
+        assert!(
+            flat.values()
+                .as_any()
+                .downcast_ref::<PlPrimitiveArray<i32>>()
+                .unwrap()
+                .is_scalar()
+        );
+        assert_eq!(flat.value_length(2), 1_000_000_000);
+    }
+
+    #[test]
+    fn as_flat_borrows_an_already_flat_array() {
+        let arr = arr();
+        let flat = arr.as_flat().expect("the array is flat");
+
+        assert_eq!(*flat, arr);
+        assert!(
+            flat.offsets().is_same_buffer(arr.offsets()),
+            "the offsets must be borrowed, not written out again",
+        );
+
+        // Neither scalar offsets nor a scalar validity mask can be borrowed as flat.
+        assert!(
+            PlListArray::new(values(), Buffer::from(vec![2u64, 5]), 3, None)
+                .as_flat()
+                .is_none()
+        );
+        assert!(
+            arr.with_validity(Some(Bitmap::new_zeroed(1)))
+                .as_flat()
+                .is_none()
+        );
+
+        // A scalar array of unbounded length is still `O(1)` to reject.
+        assert!(
+            PlListArray::new_scalar(values(), 1_000_000_000)
+                .as_flat()
+                .is_none()
         );
     }
 

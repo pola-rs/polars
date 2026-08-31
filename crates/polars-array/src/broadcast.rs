@@ -16,6 +16,19 @@
 //!
 //! Intermediate buffer lengths (`1 < buffer.len() < length`) are *not* valid, even though
 //! [`broadcast_index`] would happily map them: an array is either flat or scalar.
+//!
+//! # The offsets of a list array
+//!
+//! The offsets of a [`PlListArray`](crate::PlListArray) are the one backing buffer that does not
+//! hold one slot per element when it is flat: element `i` covers the range
+//! `offsets[i]..offsets[i + 1]`, so the buffer holds the start of every element plus the end of the
+//! last. It is the *starts* that are flat or scalar, and they are one slot shorter than the buffer:
+//!
+//! * *flat*: `offsets.len() == length + 1`, one range per element, laid end to end.
+//! * *scalar*: `offsets.len() == 2`, a single range shared by all `length` elements.
+//!
+//! Such a buffer is read through [`broadcast_index(i, offsets.len() - 1)`](broadcast_index), and
+//! validated with [`is_valid_offsets_len`].
 
 /// Maps a logical element index onto a slot in a backing buffer of length `buffer_len`.
 ///
@@ -33,4 +46,17 @@ pub const fn broadcast_index(i: usize, buffer_len: usize) -> usize {
 #[inline]
 pub const fn is_valid_buffer_len(buffer_len: usize, length: usize) -> bool {
     buffer_len == length || buffer_len == 1
+}
+
+/// Whether an offsets buffer of length `offsets_len` is valid for a list array of length `length`.
+///
+/// The offsets hold one more slot than the starts they begin with — the end of the last element —
+/// so this is [`is_valid_buffer_len`] of one slot fewer. An empty buffer is never valid: the end of
+/// the last element is needed even when there are no elements. See the [module docs](self).
+#[inline]
+pub const fn is_valid_offsets_len(offsets_len: usize, length: usize) -> bool {
+    match offsets_len.checked_sub(1) {
+        Some(starts_len) => is_valid_buffer_len(starts_len, length),
+        None => false,
+    }
 }

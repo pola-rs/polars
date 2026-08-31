@@ -20,9 +20,9 @@
 //! * Every element of every array is null: the result is a fully null array of the total length,
 //!   whose values are undetermined and therefore need not be written out.
 //!
-//! The last two are `O(total length)` for a [`PlListArray`], which pays for one offset per element
-//! no matter what its elements are. A [`PlNullArray`] is nothing but a length, so concatenating
-//! null arrays is always `O(1)`.
+//! A [`PlNullArray`] is nothing but a length, so concatenating null arrays is always `O(1)`. None
+//! of these paths reaches the values of a [`PlListArray`] or the fields of a [`PlStructArray`], so
+//! neither is checked for concatenability when one of them is taken.
 //!
 //! Outside those cases the values of the result are flat, but its validity mask still is not
 //! materialized unless it has to be — see [`concatenate_validities`].
@@ -323,8 +323,10 @@ pub fn concatenate_struct(arrays: &[&PlStructArray]) -> PolarsResult<PlStructArr
 /// values their lists reach.
 ///
 /// The offsets are rebased onto that values array, and the values an input holds outside its own
-/// offsets — which slicing leaves behind — are dropped. Offsets are always flat, so unlike the
-/// other arrays this is `O(total length)` even when every element is null.
+/// offsets — which slicing leaves behind — are dropped. See the [module docs](self) for when the
+/// result keeps the scalar representation; outside those cases the offsets of the result are flat,
+/// so an input whose own offsets are scalar has its element written out once per element it stands
+/// for, since no two elements of a flat list array can cover the same range.
 ///
 /// # Errors
 /// This function errors if `arrays` is empty, since there is no values array to take the lists of
@@ -344,6 +346,23 @@ pub fn concatenate_list(arrays: &[&PlListArray]) -> PolarsResult<PlListArray> {
 
     let (length, null_count) = total_length_and_null_count(arrays);
 
+    // Every element is null, so every list is undetermined and none of them has to be written out;
+    // the values array is what determines the type of the lists, of which the first one will do.
+    if length > 0 && null_count == length {
+        return Ok(PlListArray::new_full_null(
+            arrays[0].values().to_boxed(),
+            length,
+        ));
+    }
+
+    // Every array stands for the same repeated element, which the result repeats over all of them.
+    if let Some(element) = shared_element(arrays, PlListArray::scalar_value) {
+        return Ok(match element {
+            Some(element) => PlListArray::new_scalar(element, length),
+            None => PlListArray::new_full_null(arrays[0].values().to_boxed(), length),
+        });
+    }
+
     // The values of each array are sliced to what its offsets reach, so that the offsets of the
     // result can be rebased onto their concatenation.
     let mut values = Vec::with_capacity(arrays.len());
@@ -353,19 +372,39 @@ pub fn concatenate_list(arrays: &[&PlListArray]) -> PolarsResult<PlListArray> {
     let mut end = 0;
     for array in arrays {
         let array_offsets = array.offsets();
-        let (first, last) = (array_offsets[0], array_offsets[array.len()]);
+        let first = array_offsets[0];
 
-        values.push(
-            array
+        if array.is_empty() {
+            // No element of the array is reachable, but its values are still what the type of its
+            // lists is taken from, which every array has to agree on.
+            values.push(array.values().sliced(first as usize, 0));
+        } else if array.offsets_are_scalar() {
+            // Every element of the array covers the same range, which the result writes out once
+            // per element: concatenating the element with copies of itself is what repeats it, and
+            // that keeps the values scalar when the element is itself a single repeated value.
+            let last = array_offsets[1];
+            let element = array
                 .values()
-                .sliced(first as usize, (last - first) as usize),
-        );
-        offsets.extend(
-            array_offsets[1..]
-                .iter()
-                .map(|offset| end + (offset - first)),
-        );
-        end += last - first;
+                .sliced(first as usize, (last - first) as usize);
+            values.push(concatenate(&vec![&*element; array.len()])?);
+
+            let value_length = last - first;
+            offsets.extend((1..=array.len() as u64).map(|i| end + i * value_length));
+            end += value_length * array.len() as u64;
+        } else {
+            let last = array_offsets[array.len()];
+            values.push(
+                array
+                    .values()
+                    .sliced(first as usize, (last - first) as usize),
+            );
+            offsets.extend(
+                array_offsets[1..]
+                    .iter()
+                    .map(|offset| end + (offset - first)),
+            );
+            end += last - first;
+        }
     }
 
     let values = concatenate(&values.iter().map(|values| &**values).collect::<Vec<_>>())?;
@@ -728,20 +767,116 @@ mod tests {
 
     #[test]
     fn sliced_list_arrays_keep_only_the_values_they_reach() {
+        // The lists `[3, 4, 5]` and `[]`, over values that still hold `1` and `2` before them.
+        let arr = PlListArray::from_offsets(
+            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4, 5])),
+            Buffer::from(vec![0u64, 2, 2, 5, 5]),
+        )
+        .sliced(2, 2);
+        let concatenated = concatenate_list(&[&arr, &arr]).unwrap();
+
+        assert_eq!(concatenated.len(), 4);
+        assert_eq!(concatenated.offsets().as_slice(), [0, 3, 3, 6, 6]);
+        assert_eq!(concatenated.values().len(), 6);
+        assert_eq!(
+            elements(&*concatenated.value(2)),
+            [Some(3), Some(4), Some(5)]
+        );
+    }
+
+    #[test]
+    fn list_arrays_standing_for_the_same_list_concatenate_into_that_list() {
         // The list `[3, 4, 5]`, over values that still hold `1` and `2` before it.
         let arr = PlListArray::from_offsets(
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4, 5])),
             Buffer::from(vec![0u64, 2, 2, 5]),
         )
         .sliced(2, 1);
-        let concatenated = concatenate_list(&[&arr, &arr]).unwrap();
 
-        assert_eq!(concatenated.len(), 2);
-        assert_eq!(concatenated.offsets().as_slice(), [0, 3, 6]);
-        assert_eq!(concatenated.values().len(), 6);
+        // Every array stands for the same one list, so the result stands for it as well: only the
+        // values that list reaches are kept, and nothing is written out per element.
+        let concatenated =
+            concatenate_list(&[&arr, &arr.new_from_index(0, 1_000_000_000)]).unwrap();
+
+        assert_eq!(concatenated.len(), 1_000_000_001);
+        assert!(concatenated.is_scalar());
+        assert_eq!(concatenated.offsets().as_slice(), [0, 3]);
+        assert_eq!(concatenated.values().len(), 3);
         assert_eq!(
-            elements(&*concatenated.value(1)),
-            [Some(3), Some(4), Some(5)]
+            elements(&*concatenated.value(1_000_000_000)),
+            [Some(3), Some(4), Some(5)],
+        );
+
+        // Lists that do not agree are written out one per element instead.
+        let other = PlListArray::from_offsets(
+            Box::new(PlPrimitiveArray::from_vec(vec![9i32])),
+            Buffer::from(vec![0u64, 1]),
+        );
+        let concatenated = concatenate_list(&[&arr.new_from_index(0, 2), &other]).unwrap();
+
+        assert!(!concatenated.is_scalar());
+        assert_eq!(concatenated.offsets().as_slice(), [0, 3, 6, 7]);
+        assert_eq!(
+            elements(concatenated.values()),
+            [
+                Some(3),
+                Some(4),
+                Some(5),
+                Some(3),
+                Some(4),
+                Some(5),
+                Some(9)
+            ],
+        );
+    }
+
+    #[test]
+    fn fully_null_list_arrays_concatenate_without_writing_out_their_offsets() {
+        let null = PlListArray::new_full_null(
+            Box::new(PlPrimitiveArray::<i32>::new_empty()),
+            1_000_000_000,
+        );
+        let concatenated = concatenate_list(&[&null, &null]).unwrap();
+
+        assert_eq!(concatenated.len(), 2_000_000_000);
+        assert_eq!(concatenated.null_count(), 2_000_000_000);
+        assert!(concatenated.is_scalar());
+        assert_eq!(concatenated.offsets().as_slice(), [0, 0]);
+        assert_eq!(concatenated.validity().unwrap().bitmap().len(), 1);
+    }
+
+    #[test]
+    fn a_list_array_of_scalar_offsets_is_written_out_once_per_element() {
+        // A thousand copies of the list `[7; 1_000_000_000]`, in `O(1)` memory.
+        let scalar = PlListArray::new_scalar(
+            Box::new(PlPrimitiveArray::new_scalar(7i32, 1_000_000_000)),
+            1_000,
+        );
+        let flat = PlListArray::from_offsets(
+            Box::new(PlPrimitiveArray::new_scalar(7i32, 1)),
+            Buffer::from(vec![0u64, 1]),
+        );
+
+        // No two elements of a flat list array can cover the same range, so the offsets of the
+        // result step through the repeated element — but its values stay scalar.
+        let concatenated = concatenate_list(&[&scalar, &flat]).unwrap();
+
+        assert_eq!(concatenated.len(), 1_001);
+        assert!(!concatenated.is_scalar());
+        assert_eq!(concatenated.offsets().len(), 1_002);
+        assert_eq!(
+            concatenated.value_range(999),
+            999_000_000_000..1_000_000_000_000
+        );
+        assert_eq!(concatenated.value_length(1_000), 1);
+        assert_eq!(concatenated.values().len(), 1_000_000_000_001);
+        assert!(
+            concatenated
+                .values()
+                .as_any()
+                .downcast_ref::<PlPrimitiveArray<i32>>()
+                .unwrap()
+                .values_are_scalar()
         );
     }
 

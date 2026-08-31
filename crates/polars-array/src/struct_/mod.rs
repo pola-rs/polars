@@ -381,8 +381,7 @@ impl PlStructArray {
     /// Creates a [`PlStructArray`] of `length` copies of the row at `index`.
     ///
     /// Every field repeats its own element, so this is `O(num_fields)` and the result is one row in
-    /// `O(1)` memory — except for a [`PlListArray`](crate::PlListArray) field, which pays for one
-    /// offset per element. A null row repeats as `length` nulls.
+    /// `O(1)` memory. A null row repeats as `length` nulls.
     ///
     /// # Panics
     /// Panics if `index >= self.len()`.
