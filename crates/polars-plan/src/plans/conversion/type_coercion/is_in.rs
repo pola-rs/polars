@@ -53,8 +53,8 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
     let type_left_materialized = type_left.clone().materialize_unknown(false)?;
     let Some(type_other_inner) = type_other.inner_dtype() else {
-        polars_bail!(InvalidOperation: "'{op:?}' cannot check for {type_left:?} values in {type_other:?} data.\n\
-        Hint: container dtype ({type_other:?}) must be nested");
+        polars_bail!(InvalidOperation: "'{op:?}' cannot check for {type_other:?} values in {type_left:?} data.\n\
+        Hint: container dtype ({type_left:?}) must be nested");
     };
 
     let casted_inner_expr = match (&type_left_materialized, type_other_inner) {
@@ -101,7 +101,7 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         },
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
-            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data")
+            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_other:?} values in {type_left:?} data")
         },
         // can't check for more granular time_unit in less-granular time_unit data,
         // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
@@ -132,12 +132,12 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 } else {
                     // We disabled lossless coercion of the operands in 2.0.
                     let lossy_supertype = try_get_supertype(dtml, dto)?;
-                    polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data.\n\
+                    polars_bail!(InvalidOperation: "'{op}' cannot check for {type_other:?} values in {type_left:?} data.\n\
                         Hint: Before version 2.0, Polars would perform this check by lossily coercing the operands to {lossy_supertype:?}. \
                         However, since Polars 2.0, for is_in() it is required to explicitly cast (one of) the operands to a compatible type.")
                 }
             }
-            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data")
+            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_other:?} values in {type_left:?} data")
         },
     };
     Ok(Some(casted_inner_expr))
