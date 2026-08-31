@@ -13,17 +13,17 @@
 //! representation. Logical typing lives at a higher level.
 //!
 //! Every array implements the trait object [`PlArray`] and can be downcast to a concrete struct
-//! based on the [`PlArrayType`] available from [`PlArray::dtype`].
+//! based on the [`PlArrayType`] available from [`PlArray::array_type`].
 
 pub mod array;
+pub mod array_type;
 pub mod bitmap;
 pub mod boolean;
 pub mod broadcast;
-pub mod dtype;
 pub mod primitive;
 
 pub use array::PlArray;
+pub use array_type::{PlArrayType, PrimitiveType};
 pub use bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 pub use boolean::PlBooleanArray;
-pub use dtype::{PlArrayType, PrimitiveType};
 pub use primitive::PlPrimitiveArray;

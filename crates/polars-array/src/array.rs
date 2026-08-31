@@ -2,14 +2,14 @@ use std::any::Any;
 
 use arrow::bitmap::Bitmap;
 
+use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
-use crate::dtype::PlArrayType;
 
 /// A trait object over the arrays in this crate.
 ///
 /// This is the counterpart of [`Array`](arrow::array::Array): a dyn-compatible view of everything
 /// the concrete arrays have in common, infallibly downcast to a concrete type according to
-/// [`PlArray::dtype`]. It exposes only what does not depend on the element type; reading values
+/// [`PlArray::array_type`]. It exposes only what does not depend on the element type; reading values
 /// means downcasting through [`PlArray::as_any`].
 ///
 /// Like the concrete arrays, an implementor stores its logical length separately from its backing
@@ -23,7 +23,7 @@ use crate::dtype::PlArrayType;
 ///
 /// let arr: Box<dyn PlArray> = Box::new(PlPrimitiveArray::<i32>::new_scalar(7, 1_000_000_000));
 ///
-/// assert_eq!(arr.dtype(), PlArrayType::Primitive(PrimitiveType::Int32));
+/// assert_eq!(arr.array_type(), PlArrayType::Primitive(PrimitiveType::Int32));
 /// assert_eq!(arr.len(), 1_000_000_000);
 /// assert!(arr.is_scalar());
 /// assert_eq!(arr.null_count(), 0);
@@ -44,7 +44,7 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     /// In combination with [`PlArray::as_any`], this can be used to downcast a `dyn PlArray` to a
     /// concrete array. It is determined by the Rust type of the array rather than stored in it,
     /// which is why it is returned by value and cannot be changed.
-    fn dtype(&self) -> PlArrayType;
+    fn array_type(&self) -> PlArrayType;
 
     /// The number of elements in this array.
     fn len(&self) -> usize;
@@ -264,11 +264,14 @@ mod tests {
     }
 
     #[test]
-    fn dtype_identifies_the_concrete_array() {
+    fn array_type_identifies_the_concrete_array() {
         let arr: Box<dyn PlArray> = Box::new(PlPrimitiveArray::from_vec(vec![1u8, 2]));
-        assert_eq!(arr.dtype(), PlArrayType::Primitive(PrimitiveType::UInt8));
-        assert!(arr.dtype().is_primitive());
-        assert!(arr.dtype().eq_primitive(PrimitiveType::UInt8));
+        assert_eq!(
+            arr.array_type(),
+            PlArrayType::Primitive(PrimitiveType::UInt8)
+        );
+        assert!(arr.array_type().is_primitive());
+        assert!(arr.array_type().eq_primitive(PrimitiveType::UInt8));
         assert_eq!(
             arr.as_any()
                 .downcast_ref::<PlPrimitiveArray<u8>>()
@@ -284,9 +287,9 @@ mod tests {
         );
 
         let arr: Box<dyn PlArray> = Box::new(PlBooleanArray::from_vec(vec![true]));
-        assert_eq!(arr.dtype(), PlArrayType::Boolean);
-        assert!(arr.dtype().is_boolean());
-        assert!(!arr.dtype().is_primitive());
+        assert_eq!(arr.array_type(), PlArrayType::Boolean);
+        assert!(arr.array_type().is_boolean());
+        assert!(!arr.array_type().is_primitive());
         assert!(
             arr.as_any()
                 .downcast_ref::<PlBooleanArray>()
@@ -373,7 +376,7 @@ mod tests {
         for arr in arrays() {
             let sliced = arr.sliced(1, 2);
             assert_eq!(sliced.len(), 2);
-            assert_eq!(sliced.dtype(), arr.dtype());
+            assert_eq!(sliced.array_type(), arr.array_type());
 
             let sliced = unsafe { arr.sliced_unchecked(1, 2) };
             assert_eq!(sliced.len(), 2);
@@ -418,7 +421,7 @@ mod tests {
             let dense = arr.to_dense_boxed();
             assert!(dense.is_dense());
             assert_eq!(dense.len(), 3);
-            assert_eq!(dense.dtype(), arr.dtype());
+            assert_eq!(dense.array_type(), arr.array_type());
             assert_eq!(&dense, &arr);
         }
     }

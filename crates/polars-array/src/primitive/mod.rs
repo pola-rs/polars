@@ -6,7 +6,7 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{broadcast_index, is_valid_buffer_len};
-use crate::dtype::PlArrayType;
+use crate::array_type::PlArrayType;
 
 mod iterator;
 
@@ -606,7 +606,7 @@ impl<T: NativeType> PlArray for PlPrimitiveArray<T> {
     }
 
     #[inline]
-    fn dtype(&self) -> PlArrayType {
+    fn array_type(&self) -> PlArrayType {
         PlArrayType::Primitive(T::PRIMITIVE)
     }
 
