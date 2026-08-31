@@ -36,6 +36,7 @@ tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 bytes = { workspace = true }
+polars-descriptions = { workspace = true }
 serde_json = { workspace = true }
 
 [build-dependencies]
