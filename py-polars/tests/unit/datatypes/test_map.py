@@ -653,3 +653,77 @@ def test_map_scan_canonicalizes_after_a_key_cast() -> None:
         [{"key": Decimal("9.9"), "value": 9}],
         [{"key": Decimal("1.0"), "value": 2}],
     ]
+
+
+def _parquet_buffer(s: pl.Series) -> IO[bytes]:
+    buf = io.BytesIO()
+    s.to_frame().write_parquet(buf)
+    buf.seek(0)
+    return buf
+
+
+@pytest.mark.parametrize(("dtype", "values"), ARROW_SHAPES)
+def test_map_parquet_roundtrip(dtype: pl.DataType, values: list[Any]) -> None:
+    s = pl.Series("c", values, dtype=dtype)
+    back = pl.read_parquet(_parquet_buffer(s))
+    assert back.schema == {"c": dtype}
+    assert_series_equal(back["c"], s)
+
+
+def test_map_scan_as_entries_schema_override() -> None:
+    dtype = pl.Map(pl.Int32, pl.String)
+    entries = pl.List(pl.Struct({"key": pl.Int32, "value": pl.String}))
+    s = pl.Series("x", [{1: "a", 2: "b"}, None, {}], dtype=dtype)
+
+    assert pl.scan_parquet(_parquet_buffer(s)).collect_schema() == {"x": dtype}
+    assert pl.scan_parquet(_parquet_buffer(s), schema={"x": entries}).collect()[
+        "x"
+    ].to_list() == [
+        [{"key": 1, "value": "a"}, {"key": 2, "value": "b"}],
+        None,
+        [],
+    ]
+
+    # An unrelated target is still refused.
+    with pytest.raises(SchemaError, match="data type mismatch"):
+        pl.scan_parquet(_parquet_buffer(s), schema={"x": pl.List(pl.Int64)}).collect()
+
+
+def test_map_scan_from_entries_schema_override() -> None:
+    entries = pl.List(pl.Struct({"key": pl.Int32, "value": pl.String}))
+    dtype = pl.Map(pl.Int32, pl.String)
+    s = pl.Series("x", [[{"key": 1, "value": "a"}, {"key": 1, "value": "b"}]], entries)
+
+    assert pl.scan_parquet(_parquet_buffer(s)).collect_schema() == {"x": entries}
+    out = pl.scan_parquet(_parquet_buffer(s), schema={"x": dtype}).collect()
+    assert out.schema == {"x": dtype}
+    # We deduplicate the map entries, so this is not lossless
+    assert out["x"].to_list() == [{1: "b"}]
+
+
+def test_map_parquet_entries_satisfy_a_map_schema() -> None:
+    # A `List(Struct {key, value})` column can be written under a user-provided
+    # arrow Map schema, never being a Map.
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    df = pl.DataFrame(
+        {
+            "m": [
+                [{"key": "a", "value": 1}],
+                [{"key": "a", "value": 2}, {"key": "b", "value": 3}],
+            ]
+        }
+    )
+    assert df.schema == {"m": pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))}
+
+    buf = io.BytesIO()
+    schema = pa.schema([pa.field("m", pa.map_(pa.large_string(), pa.int64()))])
+    df.write_parquet(buf, arrow_schema=schema)
+
+    buf.seek(0)
+    assert pq.read_schema(buf).field("m").type == schema.field("m").type
+
+    buf.seek(0)
+    assert pl.scan_parquet(buf).collect_schema() == {"m": pl.Map(pl.String, pl.Int64)}
+    buf.seek(0)
+    assert pl.read_parquet(buf)["m"].to_list() == [{"a": 1}, {"a": 2, "b": 3}]
