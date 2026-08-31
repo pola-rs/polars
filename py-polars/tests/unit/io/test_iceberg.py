@@ -70,6 +70,7 @@ from polars.io.iceberg._dataset import (
     IcebergScanTableSerializer,
     IcebergTableWrap,
     _NativeIcebergScanData,
+    _StreamingNativeIcebergScanData,
 )
 from polars.io.iceberg._sink import IcebergSinkState, PlIcebergPathProviderConfig
 from polars.io.iceberg._utils import (
@@ -3488,6 +3489,65 @@ def test_scan_iceberg_fast_count(tmp_path: Path, reader_override: Any) -> None:
         .item()
         == 5
     )
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_streams_native_file_tasks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+    )
+
+    for value in range(3):
+        pl.DataFrame({"a": [value]}).write_iceberg(tbl, mode="append")
+
+    import polars.io.iceberg._dataset
+
+    monkeypatch.setattr(polars.io.iceberg._dataset, "_ICEBERG_FILE_TASK_BATCH_SIZE", 2)
+
+    scan_type = type(tbl.scan())
+    original_scan_plan_helper = scan_type.scan_plan_helper
+    num_scan_plan_helper_calls = 0
+
+    def scan_plan_helper(scan: Any) -> Any:
+        nonlocal num_scan_plan_helper_calls
+        num_scan_plan_helper_calls += 1
+        return original_scan_plan_helper(scan)
+
+    def plan_files(scan: Any) -> Any:
+        msg = "plan_files() should not be called"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(scan_type, "scan_plan_helper", scan_plan_helper)
+    monkeypatch.setattr(scan_type, "plan_files", plan_files)
+
+    batch_sizes = []
+    original_to_lazyframe = _NativeIcebergScanData.to_lazyframe
+
+    def to_lazyframe(scan_data: _NativeIcebergScanData) -> pl.LazyFrame:
+        batch_sizes.append(len(scan_data.sources))
+        return original_to_lazyframe(scan_data)
+
+    monkeypatch.setattr(_NativeIcebergScanData, "to_lazyframe", to_lazyframe)
+
+    q = pl.scan_iceberg(tbl, reader_override="native")
+    assert q.collect_schema() == pl.Schema({"a": pl.Int64})
+    assert num_scan_plan_helper_calls == 0
+
+    assert_frame_equal(q.collect().sort("a"), pl.DataFrame({"a": [0, 1, 2]}))
+    assert num_scan_plan_helper_calls == 1
+    assert batch_sizes == [2, 1]
+
+    q = pickle.loads(pickle.dumps(q))
+    assert_frame_equal(q.collect().sort("a"), pl.DataFrame({"a": [0, 1, 2]}))
+    assert num_scan_plan_helper_calls == 2
+    assert batch_sizes == [2, 1, 2, 1]
+
+    resolver = new_iceberg_scan_resolver(tbl)
+    resolver.reader_override = "native"
+    assert isinstance(resolver._to_dataset_scan_impl(), _StreamingNativeIcebergScanData)
 
 
 def test_scan_iceberg_idxsize_limit() -> None:
