@@ -293,7 +293,7 @@ impl TryFrom<SerializableScalar> for Scalar {
             S::Float64(v) => Self::from(v),
             S::List(v) => Self::new_list(v),
             #[cfg(feature = "dtype-map")]
-            S::Map(entries) => Self::new_map(entries),
+            S::Map(entries) => Self::map_from_entries(entries),
             S::Boolean(v) => Self::from(v),
             S::String(v) => Self::from(v),
             S::Binary(v) => Self::from(v),

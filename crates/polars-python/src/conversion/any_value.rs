@@ -14,11 +14,12 @@ use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, TimeUnit};
 use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
 #[cfg(feature = "dtype-map")]
-use polars::prelude::{IntoSeries, StructChunked};
 use polars_compute::decimal::{DEC128_MAX_PREC, DecimalFmtBuffer, dec128_fits};
-use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 #[cfg(feature = "dtype-map")]
-use polars_core::utils::arrow::array::{MAP_ENTRIES_NAME, MAP_KEY_NAME, MAP_VALUE_NAME};
+use polars_core::prelude::try_unpack_map_entries;
+use polars_core::scalar::Scalar;
+use polars_core::utils::any_values_to_supertype_and_n_dtypes;
+use polars_core::utils::arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
@@ -206,17 +207,10 @@ fn get_map(
     }
 
     // We must call the Python constructor in order to preserve the Python casting rules.
-    let n_entries = keys.len();
     let keys = py_series_of(py, MAP_KEY_NAME, keys, key_dtype, strict)?;
     let values = py_series_of(py, MAP_VALUE_NAME, values, value_dtype, strict)?;
 
-    let entries = StructChunked::from_series(
-        MAP_ENTRIES_NAME.clone(),
-        n_entries,
-        [&keys, &values].into_iter(),
-    )
-    .map_err(PyPolarsErr::from)?;
-    Ok(AnyValue::Map(entries.into_series()))
+    Ok(Scalar::new_map(&keys, &values).into_value())
 }
 
 #[cfg(feature = "dtype-map")]
@@ -270,13 +264,7 @@ fn is_map_entries(ob: &Bound<'_, PyAny>) -> PyResult<bool> {
 
 /// Render a map's entries as a Python dict.
 fn map_dict<'py>(py: Python<'py>, entries: &Series) -> PyResult<Bound<'py, PyDict>> {
-    let fields = entries
-        .struct_()
-        .map_err(PyPolarsErr::from)?
-        .fields_as_series();
-    let [keys, values] = fields.as_slice() else {
-        unreachable!("map entries must have two fields")
-    };
+    let (keys, values) = try_unpack_map_entries(entries).map_err(PyPolarsErr::from)?;
     if keys.dtype().is_nested() {
         return Err(PyTypeError::new_err(format!(
             "cannot convert a Map with key dtype `{}` to a Python dict: \

@@ -110,57 +110,33 @@ impl MapChunked {
         map_av(unsafe { self.storage.get_unchecked(i) })
     }
 
+    /// The key child, one element per entry across all rows.
+    pub fn keys(&self) -> Series {
+        unpack_map_entries(&self.entries()).0
+    }
+
     /// The value child, one element per entry across all rows.
     pub fn values(&self) -> Series {
-        self.entries().field_by_name(&MAP_VALUE_NAME).unwrap()
+        unpack_map_entries(&self.entries()).1
     }
 
     /// Replace the value child, keeping the keys and the entry layout.
     pub fn with_values(&self, values: &Series) -> Self {
-        let entries = self.entries();
-
-        // We want to avoid an accidental broadcast that would happen if we called `StructChunked::from_series` with a `Series` of length 1.
-        assert_eq!(
-            values.len(),
-            entries.len(),
-            "map values must have one element per entry"
-        );
-
-        let mut new_entries = StructChunked::from_series(
-            MAP_ENTRIES_NAME.clone(),
-            entries.len(),
-            [
-                &entries.field_by_name(&MAP_KEY_NAME).unwrap(),
-                &values.clone().with_name(MAP_VALUE_NAME.clone()),
-            ]
-            .into_iter(),
-        )
-        .expect("map entry children are equal-length and distinctly named");
-        new_entries.zip_outer_validity(&entries);
+        let storage = self.storage.list().unwrap();
+        let (keys, _) = unpack_map_entries(&storage.get_inner());
+        let storage = repack_map_storage(storage, &keys, values).into_series();
 
         let dtype = DataType::Map(
             Box::new(self.key_dtype().clone()),
             Box::new(values.dtype().clone()),
         );
-        let storage = self
-            .storage
-            .list()
-            .unwrap()
-            .with_inner_values(&new_entries.into_series())
-            .into_series();
 
         unsafe { Self::from_storage_unchecked(dtype, storage) }
     }
 
     /// The entries of every row, flattened.
-    fn entries(&self) -> StructChunked {
-        self.storage
-            .list()
-            .unwrap()
-            .get_inner()
-            .struct_()
-            .unwrap()
-            .clone()
+    fn entries(&self) -> Series {
+        self.storage.list().unwrap().get_inner()
     }
 
     pub fn cast_with_options(
@@ -239,41 +215,101 @@ pub(crate) fn ensure_map_entries_dtype(dtype: &DataType) -> PolarsResult<()> {
     Ok(())
 }
 
-/// Apply `f` to the key and value children of `List(Struct {key, value})` Map storage.
+fn unpack_map_entries(entries: &Series) -> (Series, Series) {
+    let fields = entries.struct_().unwrap().fields_as_series();
+    let Ok([first, second]) = <[Series; 2]>::try_from(fields) else {
+        unreachable!("map entries have two fields")
+    };
+
+    // Reversed fields are legal input to the `List(Struct) -> Map` cast.
+    let (keys, values) = if first.name() == &MAP_KEY_NAME {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    debug_assert_eq!(keys.name(), &MAP_KEY_NAME);
+    debug_assert_eq!(values.name(), &MAP_VALUE_NAME);
+
+    (keys, values)
+}
+
+/// Return the key and value fields of map entries, matched by name.
 ///
-/// Derives the output dtype from the returned children while preserving the nested layout.
+/// Arrow and Parquet match fields positionally, so their importers must not use this helper.
+#[doc(hidden)]
+pub fn try_unpack_map_entries(entries: &Series) -> PolarsResult<(Series, Series)> {
+    ensure_map_entries_dtype(entries.dtype())?;
+    Ok(unpack_map_entries(entries))
+}
+
+/// Pack equally sized flat key and value fields into map entries.
+///
+/// The result does not retain Map row boundaries. Rebuilding a Map column must reattach it to
+/// its original [`ListChunked`] storage.
+pub(crate) fn pack_map_entries(keys: &Series, values: &Series) -> Series {
+    // `StructChunked::from_series` broadcasts unit-length fields.
+    assert_eq!(
+        keys.len(),
+        values.len(),
+        "map keys and values must have equal lengths"
+    );
+
+    StructChunked::from_series(
+        MAP_ENTRIES_NAME.clone(),
+        keys.len(),
+        [
+            &keys.clone().with_name(MAP_KEY_NAME.clone()),
+            &values.clone().with_name(MAP_VALUE_NAME.clone()),
+        ]
+        .into_iter(),
+    )
+    .expect("map entry children are equal-length and distinctly named")
+    .into_series()
+}
+
+/// Rebuild Map storage from flat fields, preserving all nested layout.
+///
+/// This keeps entry validity, list offsets, and list validity.
+fn repack_map_storage(storage: &ListChunked, keys: &Series, values: &Series) -> ListChunked {
+    let entries = storage.get_inner();
+    assert_eq!(
+        keys.len(),
+        entries.len(),
+        "map keys must have one element per entry"
+    );
+    assert_eq!(
+        values.len(),
+        entries.len(),
+        "map values must have one element per entry"
+    );
+
+    let packed = pack_map_entries(keys, values);
+    let mut packed = packed.struct_().unwrap().clone();
+    packed.zip_outer_validity(entries.struct_().expect("map entries are a struct"));
+
+    storage.with_inner_values(&packed.into_series())
+}
+
+/// Transform the flat entry fields and rebuild the original Map storage.
+///
+/// Preserves entry validity, list offsets, and list validity. The transform must preserve the
+/// total number of entries; the output dtype is derived from its returned fields.
 pub(crate) fn try_apply_map_entries(
     storage: &ListChunked,
     f: impl FnOnce(&Series, &Series) -> PolarsResult<(Series, Series)>,
 ) -> PolarsResult<ListChunked> {
-    ensure_map_entries_dtype(storage.inner_dtype())?;
-
     let entries = storage.get_inner();
-    let entries_ca = entries.struct_().unwrap();
-    // Names keep reversed input fields from swapping key and value semantics.
-    let fields = entries_ca.fields_as_series();
-    let field = |name: &PlSmallStr| fields.iter().find(|s| s.name() == name).unwrap();
-    let key = field(&MAP_KEY_NAME);
-    let value = field(&MAP_VALUE_NAME);
+    let (key, value) = try_unpack_map_entries(&entries)?;
 
     let entries_len = entries.len();
-    let (mut key, mut value) = f(key, value)?;
+    let (key, value) = f(&key, &value)?;
     polars_ensure!(
         key.len() == entries_len && value.len() == entries_len,
         ShapeMismatch: "Map entry transform changed the entry count from {entries_len} to ({}, {})",
         key.len(), value.len(),
     );
 
-    key.rename(MAP_KEY_NAME.clone());
-    value.rename(MAP_VALUE_NAME.clone());
-    let mut new_entries = StructChunked::from_series(
-        MAP_ENTRIES_NAME.clone(),
-        entries_len,
-        [&key, &value].into_iter(),
-    )?;
-    new_entries.zip_outer_validity(entries_ca);
-
-    Ok(storage.with_inner_values(&new_entries.into_series()))
+    Ok(repack_map_storage(storage, &key, &value))
 }
 
 fn map_av(av: AnyValue<'_>) -> AnyValue<'_> {

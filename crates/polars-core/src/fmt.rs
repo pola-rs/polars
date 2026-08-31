@@ -1275,10 +1275,8 @@ impl Display for PlTzAware<'_> {
 /// Renders a map row as `{"a": 1, "b": 2}`
 #[cfg(feature = "dtype-map")]
 fn fmt_map(f: &mut Formatter<'_>, entries: &Series) -> fmt::Result {
-    let fields = entries.struct_().unwrap().fields_as_series();
-    let [keys, values] = fields.as_slice() else {
-        unreachable!("map entries must have two fields")
-    };
+    let (keys, values) =
+        try_unpack_map_entries(entries).expect("Map entries have canonical key and value fields");
 
     // Same truncation as `Series::fmt_list`.
     let max_items = get_list_len_limit();
