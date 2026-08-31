@@ -127,6 +127,17 @@ impl<T: PlArray> Flat<T> {
 }
 
 impl<T> Flat<T> {
+    /// Borrows `array` as a flat one.
+    ///
+    /// # Safety
+    /// Every backing buffer of `array` must hold one slot per element.
+    #[inline(always)]
+    pub(crate) unsafe fn from_ref_unchecked(array: &T) -> &Self {
+        // SAFETY: `Flat` is `repr(transparent)` over the array it wraps, which the caller
+        // guarantees is flat.
+        unsafe { &*(std::ptr::from_ref(array).cast::<Self>()) }
+    }
+
     /// The array itself, which is in the flat representation.
     #[inline(always)]
     pub const fn as_array(&self) -> &T {

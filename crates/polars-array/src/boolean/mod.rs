@@ -229,13 +229,24 @@ impl PlBooleanArray {
         self.values_are_scalar() && self.validity().is_none_or(|v| v.is_scalar())
     }
 
-    /// The value shared by every element, if the values bitmap is a scalar bitmap.
+    /// The single element every element of this array equals, if every backing bitmap holds one
+    /// bit.
     ///
-    /// Returns `None` for a flat array and for an empty array. The value of a null element is
-    /// undetermined, so this may return a value even when all elements are null.
+    /// The inner [`Option`] is that element, so an array of nothing but nulls yields
+    /// `Some(None)`. Returns `None` for an empty array, and whenever a backing bitmap is flat over
+    /// more than one element — its elements need not be equal, even if the other bitmap is scalar.
+    ///
+    /// This is what lets equality and formatting avoid walking a scalar array of unbounded length.
     #[inline]
-    pub fn scalar_value(&self) -> Option<bool> {
-        self.values().scalar_value()
+    pub fn scalar_value(&self) -> Option<Option<bool>> {
+        let is_shared = self.values.len() == 1
+            && self
+                .validity
+                .as_ref()
+                .is_none_or(|validity| validity.len() == 1);
+
+        // SAFETY: the array is not empty, so element 0 is in bounds.
+        (is_shared && self.length > 0).then(|| unsafe { self.get_unchecked(0) })
     }
 
     /// Returns the value at `i`.
@@ -450,19 +461,45 @@ impl PlBooleanArray {
             return Flat(self.clone());
         }
 
+        let values = if self.values_are_scalar() && self.scalar_value() == Some(None) {
+            // Every element is null, and the value of a null element is undetermined, so the
+            // repeated bit need not be written out: a zeroed bitmap stands in for it.
+            Bitmap::new_zeroed(self.length)
+        } else {
+            self.values().to_flat()
+        };
+
         Flat(Self {
-            values: self.values().to_flat(),
+            values,
             length: self.length,
             validity: self.validity().map(|validity| validity.to_flat()),
         })
     }
 
-    /// The single element every element of this array equals, if it is a non-empty scalar array.
+    /// Borrows this array as a [`Flat`] one, if every backing bitmap already holds one bit per
+    /// element.
     ///
-    /// This is what lets equality and formatting avoid walking a scalar array of unbounded length.
+    /// This is the `O(1)` counterpart of [`Self::to_flat`]: it materializes nothing, and returns
+    /// `None` rather than expanding a scalar bitmap when this array is not
+    /// [`flat`](Self::is_flat).
+    ///
+    /// # Example
+    /// ```
+    /// use polars_array::PlBooleanArray;
+    ///
+    /// let arr = PlBooleanArray::from_vec(vec![true, false]);
+    /// assert_eq!(arr.as_flat().unwrap().values_iter().collect::<Vec<_>>(), [true, false]);
+    ///
+    /// // A scalar array holds one bit for both elements, so it has to be materialized.
+    /// let scalar = PlBooleanArray::new_scalar(true, 2);
+    /// assert!(scalar.as_flat().is_none());
+    /// assert_eq!(scalar.to_flat().values().len(), 2);
+    /// ```
     #[inline]
-    fn scalar_element(&self) -> Option<Option<bool>> {
-        (!self.is_empty() && self.is_scalar()).then(|| unsafe { self.get_unchecked(0) })
+    pub fn as_flat(&self) -> Option<&Flat<Self>> {
+        // SAFETY: every backing bitmap of a flat array holds one bit per element.
+        self.is_flat()
+            .then(|| unsafe { Flat::from_ref_unchecked(self) })
     }
 }
 
@@ -538,7 +575,7 @@ impl PartialEq for PlBooleanArray {
 
         // Never walk two scalar arrays element by element: their length is unbounded by their
         // memory use.
-        if let (Some(lhs), Some(rhs)) = (self.scalar_element(), other.scalar_element()) {
+        if let (Some(lhs), Some(rhs)) = (self.scalar_value(), other.scalar_value()) {
             return lhs == rhs;
         }
 
@@ -566,7 +603,7 @@ impl std::fmt::Debug for PlBooleanArray {
 
         // Never materialize a scalar array: its length is unbounded by its memory use.
         if self.length > 1 {
-            if let Some(element) = self.scalar_element() {
+            if let Some(element) = self.scalar_value() {
                 return write!(f, "[{:?}; {}]", Element(element), self.length);
             }
         }
@@ -659,7 +696,7 @@ mod tests {
         assert_eq!(arr.values().len(), 4);
         assert!(arr.is_scalar());
         assert!(!arr.is_flat());
-        assert_eq!(arr.scalar_value(), Some(true));
+        assert_eq!(arr.scalar_value(), Some(Some(true)));
         assert_eq!(arr.null_count(), 0);
 
         for i in 0..arr.len() {
@@ -667,6 +704,44 @@ mod tests {
         }
         assert_eq!(arr.iter().collect::<Vec<_>>(), [Some(true); 4]);
         assert_eq!(arr.values_iter().rev().collect::<Vec<_>>(), [true; 4]);
+    }
+
+    #[test]
+    fn scalar_value_accounts_for_validity() {
+        // An array of nothing but nulls has a shared element, and that element is null.
+        assert_eq!(PlBooleanArray::new_full_null(3).scalar_value(), Some(None));
+        assert_eq!(
+            PlBooleanArray::new_scalar(true, 3)
+                .with_validity(Some(Bitmap::new_zeroed(1)))
+                .scalar_value(),
+            Some(None),
+        );
+
+        // A scalar mask of set bits leaves the shared value valid.
+        assert_eq!(
+            PlBooleanArray::new_scalar(true, 3)
+                .with_validity(Some(Bitmap::new_with_value(true, 1)))
+                .scalar_value(),
+            Some(Some(true)),
+        );
+
+        // A flat mask over scalar values: the elements differ, so there is no shared element.
+        assert_eq!(
+            PlBooleanArray::new_scalar(true, 3)
+                .with_validity(Some(Bitmap::from_iter([true, false, true])))
+                .scalar_value(),
+            None,
+        );
+
+        // The two representations coincide for a single element, which is therefore shared.
+        assert_eq!(
+            PlBooleanArray::from_vec(vec![true]).scalar_value(),
+            Some(Some(true)),
+        );
+        assert_eq!(
+            PlBooleanArray::from_vec(vec![true, false]).scalar_value(),
+            None
+        );
     }
 
     #[test]

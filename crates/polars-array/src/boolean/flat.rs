@@ -191,6 +191,60 @@ mod tests {
     }
 
     #[test]
+    fn to_flat_of_an_all_null_scalar_does_not_write_out_the_values() {
+        // The values of null elements are undetermined, so they are handed out zeroed rather than
+        // the repeated bit being written out.
+        let all_null =
+            PlBooleanArray::new_scalar(true, 3).with_validity(Some(Bitmap::new_zeroed(1)));
+        let flat = all_null.to_flat();
+
+        assert!(flat.is_flat());
+        assert_eq!(flat.null_count(), 3);
+        assert_eq!(flat, all_null);
+        assert_eq!(flat.values().len(), 3);
+        assert_eq!(flat.values().unset_bits(), 3);
+
+        // A valid scalar array still has its bit repeated.
+        let flat = PlBooleanArray::new_scalar(true, 3).to_flat();
+        assert_eq!(flat.values().set_bits(), 3);
+
+        // So does one whose nulls do not cover every element.
+        let flat = PlBooleanArray::new_scalar(true, 3)
+            .with_validity(Some(Bitmap::from_iter([true, false, true])))
+            .to_flat();
+        assert_eq!(flat.values().set_bits(), 3);
+    }
+
+    #[test]
+    fn as_flat_borrows_an_already_flat_array() {
+        let arr: PlBooleanArray = [Some(true), None, Some(false)].into_iter().collect();
+        let flat = arr.as_flat().expect("the array is flat");
+
+        assert_eq!(flat.values(), arr.values().bitmap());
+        assert_eq!(*flat, arr);
+        assert_eq!(
+            flat.iter().collect::<Vec<_>>(),
+            [Some(true), None, Some(false)]
+        );
+
+        // Neither a scalar bitmap nor a scalar validity mask can be borrowed as flat.
+        assert!(PlBooleanArray::new_scalar(true, 3).as_flat().is_none());
+        assert!(
+            PlBooleanArray::from_vec(vec![true, false, true])
+                .with_validity(Some(Bitmap::new_zeroed(1)))
+                .as_flat()
+                .is_none()
+        );
+
+        // A scalar array of unbounded length is still `O(1)` to reject.
+        assert!(
+            PlBooleanArray::new_full_null(1_000_000_000)
+                .as_flat()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn to_flat_of_a_flat_array_only_clones() {
         let arr: PlBooleanArray = [Some(true), None, Some(false)].into_iter().collect();
         let flat = arr.to_flat();

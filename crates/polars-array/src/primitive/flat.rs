@@ -204,6 +204,60 @@ mod tests {
     }
 
     #[test]
+    fn to_flat_of_an_all_null_scalar_does_not_write_out_the_values() {
+        // The values of null elements are undetermined, so they are handed out zeroed rather than
+        // materialized one by one — out of the shared zeroed buffer, without an allocation.
+        let all_null =
+            PlPrimitiveArray::new_scalar(7i32, 3).with_validity(Some(Bitmap::new_zeroed(1)));
+        let flat = all_null.to_flat();
+
+        assert!(flat.is_flat());
+        assert_eq!(flat.null_count(), 3);
+        assert_eq!(flat, all_null);
+        assert_eq!(flat.as_slice(), [0, 0, 0]);
+        assert!(flat.values().is_same_buffer(&Buffer::zeroed(3)));
+
+        // A valid scalar array still has its value repeated.
+        let flat = PlPrimitiveArray::new_scalar(7i32, 3).to_flat();
+        assert_eq!(flat.as_slice(), [7, 7, 7]);
+
+        // So does one whose nulls do not cover every element.
+        let flat = PlPrimitiveArray::new_scalar(7i32, 3)
+            .with_validity(Some(Bitmap::from_iter([true, false, true])))
+            .to_flat();
+        assert_eq!(flat.as_slice(), [7, 7, 7]);
+    }
+
+    #[test]
+    fn as_flat_borrows_an_already_flat_array() {
+        let arr: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
+        let flat = arr.as_flat().expect("the array is flat");
+
+        assert_eq!(flat.as_slice(), [1, 0, 3]);
+        assert_eq!(*flat, arr);
+        assert!(
+            flat.values().is_same_buffer(arr.values()),
+            "the values buffer must be borrowed, not materialized again",
+        );
+
+        // Neither a scalar buffer nor a scalar validity mask can be borrowed as flat.
+        assert!(PlPrimitiveArray::new_scalar(7i32, 3).as_flat().is_none());
+        assert!(
+            PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
+                .with_validity(Some(Bitmap::new_zeroed(1)))
+                .as_flat()
+                .is_none()
+        );
+
+        // A scalar array of unbounded length is still `O(1)` to reject.
+        assert!(
+            PlPrimitiveArray::<i32>::new_full_null(1_000_000_000)
+                .as_flat()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn to_flat_of_a_flat_array_only_clones() {
         let arr: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
         let flat = arr.to_flat();

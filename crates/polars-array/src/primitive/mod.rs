@@ -234,13 +234,24 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         self.values_are_scalar() && self.validity().is_none_or(|v| v.is_scalar())
     }
 
-    /// The value shared by every element, if the values buffer is a scalar buffer.
+    /// The single element every element of this array equals, if every backing buffer holds one
+    /// slot.
     ///
-    /// Returns `None` for a flat array and for an empty array. The value of a null element is
-    /// undetermined, so this may return a value even when all elements are null.
+    /// The inner [`Option`] is that element, so an array of nothing but nulls yields
+    /// `Some(None)`. Returns `None` for an empty array, and whenever a backing buffer is flat over
+    /// more than one element — its elements need not be equal, even if the other buffer is scalar.
+    ///
+    /// This is what lets equality and formatting avoid walking a scalar array of unbounded length.
     #[inline]
-    pub fn scalar_value(&self) -> Option<T> {
-        (self.values.len() == 1 && self.length > 0).then(|| self.values[0])
+    pub fn scalar_value(&self) -> Option<Option<T>> {
+        let is_shared = self.values.len() == 1
+            && self
+                .validity
+                .as_ref()
+                .is_none_or(|validity| validity.len() == 1);
+
+        // SAFETY: the array is not empty, so element 0 is in bounds.
+        (is_shared && self.length > 0).then(|| unsafe { self.get_unchecked(0) })
     }
 
     /// Returns the value at `i`.
@@ -468,6 +479,10 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             self.values.clone()
         } else if self.length == 0 {
             Buffer::new()
+        } else if self.scalar_value() == Some(None) {
+            // Every element is null, and the value of a null element is undetermined, so the
+            // repeated value need not be written out: a zeroed buffer stands in for it.
+            Buffer::zeroed(self.length)
         } else {
             Buffer::from(vec![self.values[0]; self.length])
         };
@@ -481,12 +496,30 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         })
     }
 
-    /// The single element every element of this array equals, if it is a non-empty scalar array.
+    /// Borrows this array as a [`Flat`] one, if every backing buffer already holds one slot per
+    /// element.
     ///
-    /// This is what lets equality and formatting avoid walking a scalar array of unbounded length.
+    /// This is the `O(1)` counterpart of [`Self::to_flat`]: it materializes nothing, and returns
+    /// `None` rather than expanding a scalar buffer when this array is not
+    /// [`flat`](Self::is_flat).
+    ///
+    /// # Example
+    /// ```
+    /// use polars_array::PlPrimitiveArray;
+    ///
+    /// let arr = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
+    /// assert_eq!(arr.as_flat().unwrap().as_slice(), [1, 2, 3]);
+    ///
+    /// // A scalar array holds one slot for all three elements, so it has to be materialized.
+    /// let scalar = PlPrimitiveArray::new_scalar(7i32, 3);
+    /// assert!(scalar.as_flat().is_none());
+    /// assert_eq!(scalar.to_flat().as_slice(), [7, 7, 7]);
+    /// ```
     #[inline]
-    fn scalar_element(&self) -> Option<Option<T>> {
-        (!self.is_empty() && self.is_scalar()).then(|| unsafe { self.get_unchecked(0) })
+    pub fn as_flat(&self) -> Option<&Flat<Self>> {
+        // SAFETY: every backing buffer of a flat array holds one slot per element.
+        self.is_flat()
+            .then(|| unsafe { Flat::from_ref_unchecked(self) })
     }
 }
 
@@ -562,7 +595,7 @@ impl<T: NativeType> PartialEq for PlPrimitiveArray<T> {
 
         // Never walk two scalar arrays element by element: their length is unbounded by their
         // memory use.
-        if let (Some(lhs), Some(rhs)) = (self.scalar_element(), other.scalar_element()) {
+        if let (Some(lhs), Some(rhs)) = (self.scalar_value(), other.scalar_value()) {
             return lhs == rhs;
         }
 
@@ -588,7 +621,7 @@ impl<T: NativeType> std::fmt::Debug for PlPrimitiveArray<T> {
 
         // Never materialize a scalar array: its length is unbounded by its memory use.
         if self.length > 1 {
-            if let Some(element) = self.scalar_element() {
+            if let Some(element) = self.scalar_value() {
                 return write!(f, "[{:?}; {}]", Element(element), self.length);
             }
         }
@@ -677,7 +710,7 @@ mod tests {
         assert_eq!(arr.values().len(), 1);
         assert!(arr.is_scalar());
         assert!(!arr.is_flat());
-        assert_eq!(arr.scalar_value(), Some(7));
+        assert_eq!(arr.scalar_value(), Some(Some(7)));
         assert_eq!(arr.null_count(), 0);
 
         for i in 0..arr.len() {
@@ -685,6 +718,47 @@ mod tests {
         }
         assert_eq!(arr.iter().collect::<Vec<_>>(), [Some(7); 4]);
         assert_eq!(arr.values_iter().rev().collect::<Vec<_>>(), [7; 4]);
+    }
+
+    #[test]
+    fn scalar_value_accounts_for_validity() {
+        // An array of nothing but nulls has a shared element, and that element is null.
+        assert_eq!(
+            PlPrimitiveArray::<i32>::new_full_null(3).scalar_value(),
+            Some(None),
+        );
+        assert_eq!(
+            PlPrimitiveArray::new_scalar(7i32, 3)
+                .with_validity(Some(Bitmap::new_zeroed(1)))
+                .scalar_value(),
+            Some(None),
+        );
+
+        // A scalar mask of set bits leaves the shared value valid.
+        assert_eq!(
+            PlPrimitiveArray::new_scalar(7i32, 3)
+                .with_validity(Some(Bitmap::new_with_value(true, 1)))
+                .scalar_value(),
+            Some(Some(7)),
+        );
+
+        // A flat mask over scalar values: the elements differ, so there is no shared element.
+        assert_eq!(
+            PlPrimitiveArray::new_scalar(7i32, 3)
+                .with_validity(Some(Bitmap::from_iter([true, false, true])))
+                .scalar_value(),
+            None,
+        );
+
+        // The two representations coincide for a single element, which is therefore shared.
+        assert_eq!(
+            PlPrimitiveArray::from_vec(vec![1i32]).scalar_value(),
+            Some(Some(1)),
+        );
+        assert_eq!(
+            PlPrimitiveArray::from_vec(vec![1i32, 2]).scalar_value(),
+            None
+        );
     }
 
     #[test]
