@@ -254,12 +254,26 @@ mod tests {
     use arrow::types::PrimitiveType;
 
     use super::*;
-    use crate::{PlBooleanArray, PlPrimitiveArray};
+    use crate::{PlBooleanArray, PlPrimitiveArray, PlStructArray};
 
     fn arrays() -> Vec<Box<dyn PlArray>> {
         vec![
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
             Box::new(PlBooleanArray::from_vec(vec![true, false, true])),
+            Box::new(PlStructArray::from_fields(vec![Box::new(
+                PlPrimitiveArray::from_vec(vec![1i32, 2, 3]),
+            )])),
+        ]
+    }
+
+    /// A scalar array of each type, all of `length` elements.
+    fn scalars(length: usize) -> Vec<Box<dyn PlArray>> {
+        vec![
+            Box::new(PlPrimitiveArray::<i64>::new_scalar(7, length)),
+            Box::new(PlBooleanArray::new_scalar(true, length)),
+            Box::new(PlStructArray::from_fields(vec![Box::new(
+                PlPrimitiveArray::<i64>::new_scalar(7, length),
+            )])),
         ]
     }
 
@@ -329,12 +343,7 @@ mod tests {
 
     #[test]
     fn scalars_stay_cheap_behind_the_trait_object() {
-        let arrs: Vec<Box<dyn PlArray>> = vec![
-            Box::new(PlPrimitiveArray::<i64>::new_scalar(7, 1_000_000_000)),
-            Box::new(PlBooleanArray::new_scalar(true, 1_000_000_000)),
-        ];
-
-        for arr in arrs {
+        for arr in scalars(1_000_000_000) {
             assert_eq!(arr.len(), 1_000_000_000);
             assert!(arr.is_scalar());
             assert!(!arr.is_dense());
@@ -354,6 +363,10 @@ mod tests {
         let arrs: Vec<Box<dyn PlArray>> = vec![
             Box::new(PlPrimitiveArray::<i32>::new_full_null(4)),
             Box::new(PlBooleanArray::new_full_null(4)),
+            Box::new(PlStructArray::new_full_null(
+                vec![Box::new(PlPrimitiveArray::<i32>::new_scalar(1, 4))],
+                4,
+            )),
         ];
 
         for arr in arrs {
@@ -412,12 +425,7 @@ mod tests {
 
     #[test]
     fn to_dense_boxed_materializes_broadcasts() {
-        let arrs: Vec<Box<dyn PlArray>> = vec![
-            Box::new(PlPrimitiveArray::<i32>::new_scalar(7, 3)),
-            Box::new(PlBooleanArray::new_scalar(true, 3)),
-        ];
-
-        for arr in arrs {
+        for arr in scalars(3) {
             let dense = arr.to_dense_boxed();
             assert!(dense.is_dense());
             assert_eq!(dense.len(), 3);
@@ -443,6 +451,11 @@ mod tests {
         assert_ne!(&scalar, &other);
 
         // Same values, different array type.
+        let struct_: Box<dyn PlArray> = Box::new(PlStructArray::from_fields(vec![Box::new(
+            PlPrimitiveArray::from_vec(vec![1i32, 1, 1]),
+        )]));
+        assert_ne!(&scalar, &struct_);
+
         let boolean: Box<dyn PlArray> = Box::new(PlBooleanArray::from_vec(vec![true, true, true]));
         assert_ne!(&scalar, &boolean);
         assert_eq!(

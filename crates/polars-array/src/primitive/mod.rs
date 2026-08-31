@@ -4,9 +4,9 @@ use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::PlArray;
+use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{broadcast_index, is_valid_buffer_len};
-use crate::array_type::PlArrayType;
 
 mod iterator;
 

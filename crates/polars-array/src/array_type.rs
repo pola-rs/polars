@@ -31,6 +31,11 @@ pub enum PlArrayType {
     /// A [`PlPrimitiveArray<T>`](crate::PlPrimitiveArray) where `T::PRIMITIVE` is this
     /// [`PrimitiveType`]: a value with a known compile-time size.
     Primitive(PrimitiveType),
+    /// A [`PlStructArray`](crate::PlStructArray): a row of one value per field array.
+    ///
+    /// The fields are part of neither this type nor the array's identity: two struct arrays are
+    /// both [`PlArrayType::Struct`] no matter how many fields they have or what is in them.
+    Struct,
 }
 
 impl PlArrayType {
@@ -50,5 +55,11 @@ impl PlArrayType {
     #[inline]
     pub fn is_boolean(&self) -> bool {
         matches!(self, Self::Boolean)
+    }
+
+    /// Whether this is [`PlArrayType::Struct`].
+    #[inline]
+    pub fn is_struct(&self) -> bool {
+        matches!(self, Self::Struct)
     }
 }

@@ -2,9 +2,9 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::PlArray;
+use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapIter, PlBitmapRef};
 use crate::broadcast::is_valid_buffer_len;
-use crate::array_type::PlArrayType;
 
 mod iterator;
 
