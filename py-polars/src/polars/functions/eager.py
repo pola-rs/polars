@@ -693,14 +693,18 @@ def merge_sorted(
     key: str | Sequence[str],
     *,
     maintain_order: bool = False,
+    descending: bool = False,
+    nulls_last: bool = False,
 ) -> PolarsType:
     """
     Merge multiple sorted DataFrames or LazyFrames by the sorted key.
 
     The output of this operation will also be sorted.
-    It is the callers responsibility that the frames
-    are sorted in ascending order by that key(s) otherwise
-    the output will not make sense.
+    It is the callers responsibility that the frames are already sorted by the
+    key(s) in exactly the order described by ``descending`` and ``nulls_last``.
+    This is an assumption about the inputs, not an instruction to sort them; it
+    is never validated, and if it does not hold the order of the output will not
+    make sense.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed
@@ -718,6 +722,12 @@ def merge_sorted(
         If ``True``, the output is guaranteed to have left-biased ordering
         for equal keys: rows from the left frame appear before rows from
         the right frame when their keys are equal.
+    descending
+        If ``True``, the inputs are assumed to be sorted in descending order,
+        and the merged output will also be in descending order.
+    nulls_last
+        If ``True``, null keys are assumed to trail all non-null keys, and
+        will appear at the end of the merged output.
 
     Examples
     --------
@@ -752,7 +762,8 @@ def merge_sorted(
     Unless ``maintain_order=True``, no guarantee is given over the output
     row order when the key is equal between dataframes.
 
-    The key(s) must be sorted in ascending order.
+    Unlike :func:`DataFrame.sort`, ``descending`` and ``nulls_last`` are single
+    flags rather than per-key sequences: they apply to every column in ``key``.
     """
     elems: Sequence[PolarsType] = list(items)
 
@@ -773,7 +784,13 @@ def merge_sorted(
     frames = [df.lazy() for df in elems]
 
     def reduce_fn(x: pl.LazyFrame, y: pl.LazyFrame) -> pl.LazyFrame:
-        return x.merge_sorted(y, key=key, maintain_order=maintain_order)
+        return x.merge_sorted(
+            y,
+            key=key,
+            maintain_order=maintain_order,
+            descending=descending,
+            nulls_last=nulls_last,
+        )
 
     lf = reduce_balanced(reduce_fn, frames)
     eager = isinstance(elems[0], pl.DataFrame)

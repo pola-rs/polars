@@ -1921,6 +1921,8 @@ impl LazyFrame {
         other: LazyFrame,
         key: I,
         maintain_order: bool,
+        descending: bool,
+        nulls_last: bool,
     ) -> PolarsResult<LazyFrame>
     where
         I: IntoIterator<Item = S>,
@@ -1938,6 +1940,8 @@ impl LazyFrame {
             input_right: Arc::new(other.logical_plan),
             key,
             maintain_order,
+            descending,
+            nulls_last,
         };
         Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
     }

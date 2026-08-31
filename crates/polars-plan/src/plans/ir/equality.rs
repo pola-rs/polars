@@ -386,17 +386,24 @@ impl IR {
                 input_right: _,
                 key: l_key,
                 maintain_order: l_maintain_order,
+                descending: l_descending,
+                nulls_last: l_nulls_last,
             } => {
                 let IR::MergeSorted {
                     input_left: _,
                     input_right: _,
                     key: r_key,
                     maintain_order: r_maintain_order,
+                    descending: r_descending,
+                    nulls_last: r_nulls_last,
                 } = other
                 else {
                     return false;
                 };
-                l_key == r_key && l_maintain_order == r_maintain_order
+                l_key == r_key
+                    && l_maintain_order == r_maintain_order
+                    && l_descending == r_descending
+                    && l_nulls_last == r_nulls_last
             },
             IR::UnoptimizedDispatch {
                 inputs: _,

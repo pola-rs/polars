@@ -12584,15 +12584,18 @@ class DataFrame:
         key: str | Sequence[str],
         *,
         maintain_order: bool = False,
+        descending: bool = False,
+        nulls_last: bool = False,
     ) -> DataFrame:
         """
         Take two sorted DataFrames and merge them by the sorted key.
 
         The output of this operation will also be sorted.
-        It is the callers responsibility that the frames
-        are sorted in ascending order by the key(s), with null
-        keys at the start, otherwise the order of the output
-        will not make sense.
+        It is the callers responsibility that the frames are already sorted by the
+        key(s) in exactly the order described by ``descending`` and ``nulls_last``.
+        This is an assumption about the inputs, not an instruction to sort them; it
+        is never validated, and if it does not hold the order of the output will not
+        make sense.
 
         The schemas of both DataFrames must be equal.
 
@@ -12608,6 +12611,12 @@ class DataFrame:
             If ``True``, the output is guaranteed to have left-biased ordering
             for equal keys: rows from the left frame appear before rows from
             the right frame when their keys are equal.
+        descending
+            If ``True``, the inputs are assumed to be sorted in descending order,
+            and the merged output will also be in descending order.
+        nulls_last
+            If ``True``, null keys are assumed to trail all non-null keys, and
+            will appear at the end of the merged output.
 
         Examples
         --------
@@ -12681,7 +12690,8 @@ class DataFrame:
         Unless ``maintain_order=True``, no guarantee is given over the output
         row order when the key is equal between the both dataframes.
 
-        The key(s) must be sorted in ascending order.
+        Unlike :meth:`sort`, ``descending`` and ``nulls_last`` are single flags
+        rather than per-key sequences: they apply to every column in ``key``.
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
@@ -12689,7 +12699,13 @@ class DataFrame:
 
         return (
             self.lazy()
-            .merge_sorted(other.lazy(), key, maintain_order=maintain_order)
+            .merge_sorted(
+                other.lazy(),
+                key,
+                maintain_order=maintain_order,
+                descending=descending,
+                nulls_last=nulls_last,
+            )
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 

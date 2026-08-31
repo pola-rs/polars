@@ -419,12 +419,16 @@ impl<'a> TreeFmtNode<'a> {
                     input_right,
                     key,
                     maintain_order,
+                    descending,
+                    nulls_last,
                 } => ND(
                     wh(
                         h,
                         &format!(
-                            "MERGE SORTED[maintain_order: {:?}] ON [{}]",
+                            "MERGE SORTED[maintain_order: {:?}, descending: {:?}, nulls_last: {:?}] ON [{}]",
                             maintain_order,
+                            descending,
+                            nulls_last,
                             key.iter()
                                 .map(|k| format!("'{k}'"))
                                 .collect::<Vec<_>>()

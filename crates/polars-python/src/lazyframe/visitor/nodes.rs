@@ -319,6 +319,10 @@ pub struct MergeSorted {
     key: Vec<String>,
     #[pyo3(get)]
     maintain_order: bool,
+    #[pyo3(get)]
+    descending: bool,
+    #[pyo3(get)]
+    nulls_last: bool,
 }
 
 #[pyclass(frozen)]
@@ -811,11 +815,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             input_right,
             key,
             maintain_order,
+            descending,
+            nulls_last,
         } => MergeSorted {
             input_left: input_left.0,
             input_right: input_right.0,
             key: key.iter().map(|k| k.to_string()).collect(),
             maintain_order: *maintain_order,
+            descending: *descending,
+            nulls_last: *nulls_last,
         }
         .into_py_any(py),
         IR::UnoptimizedDispatch { .. } => Err(PyNotImplementedError::new_err(

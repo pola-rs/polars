@@ -532,6 +532,8 @@ pub enum PhysNodeKind {
         input_left: PhysStream,
         input_right: PhysStream,
         maintain_order: bool,
+        descending: bool,
+        nulls_last: bool,
     },
 
     Gather {
