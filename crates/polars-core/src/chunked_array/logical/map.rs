@@ -110,6 +110,59 @@ impl MapChunked {
         map_av(unsafe { self.storage.get_unchecked(i) })
     }
 
+    /// The value child, one element per entry across all rows.
+    pub fn values(&self) -> Series {
+        self.entries().field_by_name(&MAP_VALUE_NAME).unwrap()
+    }
+
+    /// Replace the value child, keeping the keys and the entry layout.
+    pub fn with_values(&self, values: &Series) -> Self {
+        let entries = self.entries();
+
+        // We want to avoid an accidental broadcast that would happen if we called `StructChunked::from_series` with a `Series` of length 1.
+        assert_eq!(
+            values.len(),
+            entries.len(),
+            "map values must have one element per entry"
+        );
+
+        let mut new_entries = StructChunked::from_series(
+            MAP_ENTRIES_NAME.clone(),
+            entries.len(),
+            [
+                &entries.field_by_name(&MAP_KEY_NAME).unwrap(),
+                &values.clone().with_name(MAP_VALUE_NAME.clone()),
+            ]
+            .into_iter(),
+        )
+        .expect("map entry children are equal-length and distinctly named");
+        new_entries.zip_outer_validity(&entries);
+
+        let dtype = DataType::Map(
+            Box::new(self.key_dtype().clone()),
+            Box::new(values.dtype().clone()),
+        );
+        let storage = self
+            .storage
+            .list()
+            .unwrap()
+            .with_inner_values(&new_entries.into_series())
+            .into_series();
+
+        unsafe { Self::from_storage_unchecked(dtype, storage) }
+    }
+
+    /// The entries of every row, flattened.
+    fn entries(&self) -> StructChunked {
+        self.storage
+            .list()
+            .unwrap()
+            .get_inner()
+            .struct_()
+            .unwrap()
+            .clone()
+    }
+
     pub fn cast_with_options(
         &self,
         dtype: &DataType,

@@ -228,6 +228,40 @@ impl ColumnSelectorBuilder {
             );
         }
 
+        #[cfg(feature = "dtype-map")]
+        if let DataType::Map(target_key, target_value) = target_dtype {
+            let DataType::Map(incoming_key, incoming_value) = incoming_dtype else {
+                return mismatch_err("");
+            };
+
+            // Mirrors what `should_cast_column` does for non-streaming scans.
+            let Ok(cast_key) = incoming_key.matches_schema_type(target_key) else {
+                return mismatch_err("Map key types are not castable");
+            };
+
+            // We can transform the value child if needed, because it can not break the map invariants.
+            let mut selector = match self.attach_transforms(
+                ColumnSelector::Position(0),
+                incoming_value,
+                target_value,
+                target_name,
+            )? {
+                ColumnSelector::Position(0) => input_selector,
+                value_selector => ColumnTransform::MapValuesMapping { value_selector }
+                    .into_selector(input_selector),
+            };
+
+            if cast_key {
+                selector = ColumnTransform::Cast {
+                    dtype: target_dtype.clone(),
+                    options: CastOptions::NonStrict,
+                }
+                .into_selector(selector);
+            }
+
+            return Ok(selector);
+        }
+
         // Eq here should be cheap as we have intercepted all nested types above.
         debug_assert!(!target_dtype.is_nested() || target_dtype.is_extension());
 

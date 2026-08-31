@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -13,6 +14,7 @@ from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+    from typing import IO
 
 ENTRIES = pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))
 
@@ -571,3 +573,83 @@ def test_map_arrow_import_keeps_duplicate_keys() -> None:
     ]
     # Eventually, we build a Python dict, which keeps only the last value
     assert s.to_list() == [{"a": 2}]
+
+
+def _ipc_buffer(s: pl.Series) -> IO[bytes]:
+    buf = io.BytesIO()
+    s.to_frame().write_ipc(buf)
+    buf.seek(0)
+    return buf
+
+
+def test_map_scan_unifies_value_across_files() -> None:
+    # Follow the same unification rules as List, applied to the Map values only.
+    ordered = pl.Map(pl.String, pl.Struct({"a": pl.Int64, "b": pl.String}))
+    swapped = pl.Map(pl.String, pl.Struct({"b": pl.String, "a": pl.Int64}))
+    rows: list[Any] = [
+        {"k": {"a": 1, "b": "x"}},
+        None,
+        {},
+        {"p": {"a": 3, "b": "z"}, "q": {"a": 4, "b": "w"}},
+    ]
+    rows_swapped: list[Any] = [None, {}, {"k": {"b": "y", "a": 2}}]
+
+    with pytest.raises(InvalidOperationError, match="field name mismatch"):
+        pl.Series("m", rows_swapped, swapped).cast(ordered)
+
+    sources = [
+        _ipc_buffer(pl.Series("m", rows, ordered)),
+        _ipc_buffer(pl.Series("m", rows_swapped, swapped)),
+    ]
+    out = pl.scan_ipc(sources).collect()
+    assert out.schema == {"m": ordered}
+    assert out["m"].to_list() == [*rows, *rows_swapped]
+
+
+def test_map_scan_unifies_nested_value_across_files() -> None:
+    ordered = pl.Map(pl.String, pl.List(pl.Struct({"a": pl.Int64, "b": pl.String})))
+    swapped = pl.Map(pl.String, pl.List(pl.Struct({"b": pl.String, "a": pl.Int64})))
+    sources = [
+        _ipc_buffer(pl.Series("m", [{"k": [{"a": 1, "b": "x"}]}], ordered)),
+        _ipc_buffer(pl.Series("m", [{"k": [{"b": "y", "a": 2}]}], swapped)),
+    ]
+
+    out = pl.scan_ipc(sources).collect()
+    assert out.schema == {"m": ordered}
+    assert out["m"].to_list() == [
+        {"k": [{"a": 1, "b": "x"}]},
+        {"k": [{"a": 2, "b": "y"}]},
+    ]
+
+
+def test_map_scan_refuses_key_change_across_files() -> None:
+    # If this used regular casting during unification,
+    # the key dtype would be promoted to String.
+    sources = [
+        _ipc_buffer(pl.Series("m", [{"k": 1}], pl.Map(pl.String, pl.Int64))),
+        _ipc_buffer(pl.Series("m", [{7: 2}], pl.Map(pl.Int32, pl.Int64))),
+    ]
+
+    with pytest.raises(SchemaError, match="data type mismatch for column m"):
+        pl.scan_ipc(sources).collect()
+
+
+def test_map_scan_canonicalizes_after_a_key_cast() -> None:
+    # Decimal rescale is the one admitted key cast that is not injective, so the cast
+    # has to merge the entries it collapses -- first key position, last value.
+    hi = pl.Map(pl.Decimal(10, 2), pl.Int64)
+    lo = pl.Map(pl.Decimal(10, 1), pl.Int64)
+    sources = [
+        _ipc_buffer(pl.Series("m", [{Decimal("9.9"): 9}], lo)),
+        _ipc_buffer(
+            pl.Series("m", [{Decimal("1.01"): 1, Decimal("1.02"): 2}], hi),
+        ),
+    ]
+
+    out = pl.scan_ipc(sources).collect()
+    assert out.schema == {"m": lo}
+    entries = pl.List(pl.Struct({"key": pl.Decimal(10, 1), "value": pl.Int64}))
+    assert out["m"].cast(entries).to_list() == [
+        [{"key": Decimal("9.9"), "value": 9}],
+        [{"key": Decimal("1.0"), "value": 2}],
+    ]
