@@ -3,20 +3,8 @@
 use std::ops::Deref;
 
 use arrow::bitmap::Bitmap;
-use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::PlArray;
-
-/// An array that knows whether it is in the flat representation, and can therefore be wrapped in a
-/// [`Flat`].
-///
-/// Being flat or scalar is a property of a concrete array's own backing buffers, which is why this
-/// is not part of [`PlArray`]: a `dyn PlArray` hands out no buffers and exposes no representation.
-/// It is implemented by the leaf arrays, whose buffers are their own.
-pub trait MaybeFlat: PlArray {
-    /// Whether every backing buffer has one slot per element.
-    fn is_flat(&self) -> bool;
-}
 
 /// An array whose backing buffers all hold one slot per element.
 ///
@@ -32,9 +20,6 @@ pub trait MaybeFlat: PlArray {
 /// [`PlBooleanArray`](crate::PlBooleanArray) directly, and read and iterate them without a
 /// broadcast, mirroring [`PrimitiveArray`](arrow::array::PrimitiveArray) and
 /// [`BooleanArray`](arrow::array::BooleanArray).
-///
-/// Only an array that can report its own representation — a [`MaybeFlat`] — can be wrapped, which
-/// is what the constructors below check.
 ///
 /// A [`Flat`] derefs to the array it wraps, so every method of that array remains available; the
 /// specialized methods shadow the broadcast-aware ones of the same name. It does *not* deref
@@ -60,45 +45,6 @@ pub trait MaybeFlat: PlArray {
 /// ```
 #[repr(transparent)]
 pub struct Flat<T>(pub(crate) T);
-
-impl<T: MaybeFlat> Flat<T> {
-    /// Wraps `array`, which must be in the flat representation.
-    ///
-    /// This function is `O(1)`: it validates the representation rather than materializing it. Use
-    /// the `to_flat` method of the concrete array to materialize a scalar one.
-    ///
-    /// # Errors
-    /// This function errors if `array` is not [`is_flat`](MaybeFlat::is_flat).
-    pub fn try_new(array: T) -> PolarsResult<Self> {
-        polars_ensure!(
-            array.is_flat(),
-            ComputeError:
-            "array of length {} is not flat: at least one of its backing buffers is scalar",
-            array.len(),
-        );
-
-        Ok(Self(array))
-    }
-
-    /// Wraps `array`, which must be in the flat representation.
-    ///
-    /// # Panics
-    /// Panics under the conditions [`Self::try_new`] errors.
-    #[inline]
-    pub fn new(array: T) -> Self {
-        Self::try_new(array).unwrap()
-    }
-
-    /// Wraps `array` without checking its representation.
-    ///
-    /// # Safety
-    /// `array` must be [`is_flat`](MaybeFlat::is_flat).
-    #[inline]
-    pub unsafe fn new_unchecked(array: T) -> Self {
-        debug_assert!(array.is_flat());
-        Self(array)
-    }
-}
 
 impl<T: PlArray> Flat<T> {
     /// Slices this array in place to `length` elements starting at `offset`.
@@ -256,20 +202,6 @@ impl<T: std::fmt::Debug> std::fmt::Debug for Flat<T> {
 mod tests {
     use super::*;
     use crate::{PlBooleanArray, PlPrimitiveArray};
-
-    #[test]
-    fn new_validates_the_representation() {
-        let flat = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
-        assert!(Flat::try_new(flat.clone()).is_ok());
-        assert_eq!(Flat::new(flat.clone()).values().as_slice(), [1, 2, 3]);
-
-        assert!(Flat::try_new(PlPrimitiveArray::new_scalar(7i32, 3)).is_err());
-        assert!(Flat::try_new(PlPrimitiveArray::<i32>::new_full_null(3)).is_err());
-        assert!(
-            Flat::try_new(flat.with_validity(Some(Bitmap::new_zeroed(1)))).is_err(),
-            "a scalar validity mask leaves an array with flat values unflat",
-        );
-    }
 
     #[test]
     fn slicing_stays_flat() {
