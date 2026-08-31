@@ -1944,9 +1944,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                 },
                 #[cfg(feature = "peaks")]
-                IRFunctionExpr::PeakMin => ("peak_max",).into_py_any(py),
+                IRFunctionExpr::PeakMin => ("peak_min",).into_py_any(py),
                 #[cfg(feature = "peaks")]
-                IRFunctionExpr::PeakMax => ("peak_min",).into_py_any(py),
+                IRFunctionExpr::PeakMax => ("peak_max",).into_py_any(py),
                 #[cfg(feature = "cutqcut")]
                 IRFunctionExpr::Cut {
                     breaks,

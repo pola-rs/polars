@@ -10861,9 +10861,9 @@ class Expr(metaclass=_Meta):
         │ --- │
         │ i64 │
         ╞═════╡
-        │ 3   │
-        │ 3   │
         │ 1   │
+        │ 3   │
+        │ 3   │
         └─────┘
         """
         if n is not None and fraction is not None:

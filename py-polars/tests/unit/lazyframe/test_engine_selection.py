@@ -49,11 +49,15 @@ def test_engine_selection_eager_quiet(df: pl.LazyFrame, engine: EngineType) -> N
 
 
 def test_engine_import_error_raises(df: pl.LazyFrame, engine: EngineType) -> None:
-    with pytest.raises(
-        ImportError,
-        match="GPU engine requested",
-    ):
+    with pytest.raises(ModuleNotFoundError) as exc_info:
         df.collect(engine=engine)
+
+    error = str(exc_info.value)
+    assert "GPU engine requested" in error
+    assert "'cudf_polars' could not be imported" in error
+    assert "cuDF Polars distribution matching your CUDA version" in error
+    assert "https://docs.pola.rs/user-guide/gpu-support/" in error
+    assert "CUDA 12 is required" not in error
 
 
 @pytest.mark.parametrize(
