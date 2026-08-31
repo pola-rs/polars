@@ -153,7 +153,7 @@ impl PlBooleanArray {
 
     /// Creates a [`PlBooleanArray`] of `length` nulls, in `O(1)` memory.
     #[inline]
-    pub fn new_null_scalar(length: usize) -> Self {
+    pub fn new_full_null(length: usize) -> Self {
         Self {
             values: Bitmap::new_zeroed(1),
             length,
@@ -612,7 +612,7 @@ mod tests {
 
     #[test]
     fn null_scalar() {
-        let arr = PlBooleanArray::new_null_scalar(3);
+        let arr = PlBooleanArray::new_full_null(3);
 
         assert_eq!(arr.len(), 3);
         assert!(arr.is_scalar());
@@ -747,7 +747,7 @@ mod tests {
         assert_eq!(dense.values_iter().collect::<Vec<_>>(), [true; 3]);
         assert_eq!(dense, scalar);
 
-        let null_scalar = PlBooleanArray::new_null_scalar(3);
+        let null_scalar = PlBooleanArray::new_full_null(3);
         let dense = null_scalar.to_dense();
 
         assert!(dense.is_dense());
@@ -774,7 +774,7 @@ mod tests {
         assert_eq!(scalar, dense);
         assert_ne!(scalar, PlBooleanArray::new_scalar(true, 4));
         assert_ne!(scalar, PlBooleanArray::from_vec(vec![true, true, false]));
-        assert_ne!(scalar, PlBooleanArray::new_null_scalar(3));
+        assert_ne!(scalar, PlBooleanArray::new_full_null(3));
     }
 
     #[test]
@@ -785,10 +785,10 @@ mod tests {
 
         assert_eq!(arr, arr.clone());
         assert_ne!(arr, PlBooleanArray::new_scalar(false, 1_000_000_000));
-        assert_ne!(arr, PlBooleanArray::new_null_scalar(1_000_000_000));
+        assert_ne!(arr, PlBooleanArray::new_full_null(1_000_000_000));
         assert_eq!(
-            PlBooleanArray::new_null_scalar(1_000_000_000),
-            PlBooleanArray::new_null_scalar(1_000_000_000),
+            PlBooleanArray::new_full_null(1_000_000_000),
+            PlBooleanArray::new_full_null(1_000_000_000),
         );
     }
 
@@ -828,7 +828,7 @@ mod tests {
         let arr = PlBooleanArray::new_scalar(true, 1_000_000_000);
         assert_eq!(format!("{arr:?}"), "PlBooleanArray[true; 1000000000]");
 
-        let arr = PlBooleanArray::new_null_scalar(1_000_000_000);
+        let arr = PlBooleanArray::new_full_null(1_000_000_000);
         assert_eq!(format!("{arr:?}"), "PlBooleanArray[null; 1000000000]");
 
         let arr: PlBooleanArray = [Some(true), None].into_iter().collect();

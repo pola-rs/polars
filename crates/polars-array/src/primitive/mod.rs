@@ -159,7 +159,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
 
     /// Creates a [`PlPrimitiveArray`] of `length` nulls, in `O(1)` memory.
     #[inline]
-    pub fn new_null_scalar(length: usize) -> Self {
+    pub fn new_full_null(length: usize) -> Self {
         Self {
             values: Buffer::zeroed(1),
             length,
@@ -630,7 +630,7 @@ mod tests {
 
     #[test]
     fn null_scalar() {
-        let arr = PlPrimitiveArray::<i32>::new_null_scalar(3);
+        let arr = PlPrimitiveArray::<i32>::new_full_null(3);
 
         assert_eq!(arr.len(), 3);
         assert!(arr.is_scalar());
@@ -654,7 +654,7 @@ mod tests {
 
     #[test]
     fn validity_hides_the_representation() {
-        let scalar = PlPrimitiveArray::<i32>::new_null_scalar(1_000);
+        let scalar = PlPrimitiveArray::<i32>::new_full_null(1_000);
         let validity = scalar.validity().unwrap();
 
         // The mask covers every element even though it is backed by a single bit.
@@ -752,7 +752,7 @@ mod tests {
         assert_eq!(dense.values().as_slice(), [7, 7, 7]);
         assert_eq!(dense, scalar);
 
-        let null_scalar = PlPrimitiveArray::<i32>::new_null_scalar(3);
+        let null_scalar = PlPrimitiveArray::<i32>::new_full_null(3);
         let dense = null_scalar.to_dense();
 
         assert!(dense.is_dense());
@@ -779,7 +779,7 @@ mod tests {
         assert_eq!(scalar, dense);
         assert_ne!(scalar, PlPrimitiveArray::new_scalar(7i32, 4));
         assert_ne!(scalar, PlPrimitiveArray::from_vec(vec![7i32, 7, 8]));
-        assert_ne!(scalar, PlPrimitiveArray::<i32>::new_null_scalar(3));
+        assert_ne!(scalar, PlPrimitiveArray::<i32>::new_full_null(3));
     }
 
     #[test]
@@ -790,10 +790,10 @@ mod tests {
 
         assert_eq!(arr, arr.clone());
         assert_ne!(arr, PlPrimitiveArray::new_scalar(8i32, 1_000_000_000));
-        assert_ne!(arr, PlPrimitiveArray::<i32>::new_null_scalar(1_000_000_000));
+        assert_ne!(arr, PlPrimitiveArray::<i32>::new_full_null(1_000_000_000));
         assert_eq!(
-            PlPrimitiveArray::<i32>::new_null_scalar(1_000_000_000),
-            PlPrimitiveArray::<i32>::new_null_scalar(1_000_000_000),
+            PlPrimitiveArray::<i32>::new_full_null(1_000_000_000),
+            PlPrimitiveArray::<i32>::new_full_null(1_000_000_000),
         );
     }
 

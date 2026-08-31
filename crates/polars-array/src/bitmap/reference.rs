@@ -21,7 +21,7 @@ use crate::broadcast::{broadcast_index, is_valid_buffer_len};
 /// ```
 /// use polars_array::PlPrimitiveArray;
 ///
-/// let arr = PlPrimitiveArray::<i32>::new_null_scalar(1_000_000_000);
+/// let arr = PlPrimitiveArray::<i32>::new_full_null(1_000_000_000);
 /// let validity = arr.validity().unwrap();
 ///
 /// assert_eq!(validity.len(), 1_000_000_000);
