@@ -16,5 +16,5 @@ pub mod bitmap;
 pub mod broadcast;
 pub mod primitive;
 
-pub use bitmap::PlBitmapRef;
+pub use bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 pub use primitive::PlPrimitiveArray;

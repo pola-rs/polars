@@ -1,6 +1,7 @@
 use arrow::bitmap::Bitmap;
 use polars_error::{PolarsResult, polars_ensure};
 
+use crate::bitmap::PlBitmapIter;
 use crate::broadcast::{broadcast_index, is_valid_buffer_len};
 
 /// A borrowed validity mask of `length` bits, in either the dense or the broadcast representation.
@@ -13,7 +14,8 @@ use crate::broadcast::{broadcast_index, is_valid_buffer_len};
 ///
 /// This is what [`PlPrimitiveArray::validity`](crate::PlPrimitiveArray::validity) hands out, so
 /// that reading validity never has to reason about which representation the array happens to be
-/// in. Use [`Self::to_dense`] to materialize an ordinary one-bit-per-element [`Bitmap`].
+/// in. Use [`Self::to_dense`] to materialize an ordinary one-bit-per-element [`Bitmap`], or convert
+/// it into an owned [`PlBitmap`](crate::PlBitmap) to keep the mask around.
 ///
 /// # Example
 /// ```
@@ -175,21 +177,62 @@ impl<'a> PlBitmapRef<'a> {
             self.bitmap.clone()
         }
     }
+
+    /// Returns an iterator over the bits.
+    #[inline]
+    pub fn iter(&self) -> PlBitmapIter<'a> {
+        PlBitmapIter::new(*self)
+    }
 }
+
+impl<'a> IntoIterator for PlBitmapRef<'a> {
+    type Item = bool;
+    type IntoIter = PlBitmapIter<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+/// Compares two masks bit-wise; the representation (dense or broadcast) is irrelevant.
+impl PartialEq for PlBitmapRef<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.length != other.length {
+            return false;
+        }
+
+        // Never walk two broadcast masks bit by bit: their length is unbounded by their memory use.
+        if let (Some(lhs), Some(rhs)) = (self.broadcast_value(), other.broadcast_value()) {
+            return lhs == rhs;
+        }
+
+        self.iter().eq(other.iter())
+    }
+}
+
+impl Eq for PlBitmapRef<'_> {}
 
 impl std::fmt::Debug for PlBitmapRef<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("PlBitmapRef")?;
-
-        // Never materialize a broadcast mask: its length is unbounded by its memory use.
-        if self.is_broadcast() && self.length > 1 {
-            return write!(f, "[{}; {}]", self.bitmap.get_bit(0), self.length);
-        }
-
-        f.debug_list()
-            .entries((0..self.length).map(|i| unsafe { self.get_unchecked(i) }))
-            .finish()
+        fmt_bits(*self, "PlBitmapRef", f)
     }
+}
+
+/// Formats `mask` as `name[..]`, without ever materializing a broadcast mask.
+pub(super) fn fmt_bits(
+    mask: PlBitmapRef<'_>,
+    name: &str,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    f.write_str(name)?;
+
+    // Never materialize a broadcast mask: its length is unbounded by its memory use.
+    if mask.is_broadcast() && mask.len() > 1 {
+        return write!(f, "[{}; {}]", mask.bitmap().get_bit(0), mask.len());
+    }
+
+    f.debug_list().entries(mask.iter()).finish()
 }
 
 #[cfg(test)]
@@ -269,6 +312,38 @@ mod tests {
         assert!(PlBitmapRef::try_new(&bitmap, 3).is_err());
         assert!(PlBitmapRef::try_new(&bitmap, 2).is_ok());
         assert!(PlBitmapRef::try_new(&Bitmap::new_zeroed(1), 3).is_ok());
+    }
+
+    #[test]
+    fn iterates_both_representations() {
+        let bitmap = Bitmap::from_iter([true, false, true]);
+        let mask = PlBitmapRef::new(&bitmap, 3);
+
+        assert_eq!(mask.iter().collect::<Vec<_>>(), [true, false, true]);
+        assert_eq!(mask.iter().len(), 3);
+        assert_eq!(
+            mask.into_iter().rev().collect::<Vec<_>>(),
+            [true, false, true]
+        );
+
+        let bitmap = Bitmap::new_zeroed(1);
+        let mask = PlBitmapRef::new(&bitmap, 4);
+
+        assert_eq!(mask.iter().collect::<Vec<_>>(), [false; 4]);
+        assert_eq!(mask.iter().len(), 4);
+    }
+
+    #[test]
+    fn equality_ignores_representation() {
+        let dense = Bitmap::from_iter([false, false, false]);
+        let broadcast = Bitmap::new_zeroed(1);
+
+        assert_eq!(PlBitmapRef::new(&dense, 3), PlBitmapRef::new(&broadcast, 3),);
+        assert_ne!(PlBitmapRef::new(&dense, 3), PlBitmapRef::new(&broadcast, 4),);
+        assert_ne!(
+            PlBitmapRef::new(&dense, 3),
+            PlBitmapRef::new(&Bitmap::new_with_value(true, 1), 3),
+        );
     }
 
     #[test]
