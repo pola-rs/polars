@@ -180,6 +180,29 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
         self.with_validity(None)
     }
 
+    /// Returns an array of `length` copies of the element at `index`.
+    ///
+    /// The result keeps the scalar representation wherever it admits it, so its length is
+    /// unbounded by its memory use: this is `O(1)` for every array but a
+    /// [`PlListArray`](crate::PlListArray), whose offsets are always flat, and a
+    /// [`PlStructArray`](crate::PlStructArray), which repeats one element per field. See the
+    /// concrete arrays for the exact cost.
+    ///
+    /// # Panics
+    /// Panics if `index >= self.len()`.
+    #[must_use]
+    fn new_from_index(&self, index: usize, length: usize) -> Box<dyn PlArray> {
+        assert!(index < self.len(), "index out of bounds");
+        unsafe { self.new_from_index_unchecked(index, length) }
+    }
+
+    /// Returns an array of `length` copies of the element at `index`.
+    ///
+    /// # Safety
+    /// `index` must be smaller than `self.len()`.
+    #[must_use]
+    unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray>;
+
     /// Clones this array into an owned `Box<dyn PlArray>`.
     ///
     /// This function is `O(1)`: every backing buffer is cheaply cloneable.
@@ -435,5 +458,37 @@ mod tests {
 
         let arr: Box<dyn PlArray> = Box::new(PlBooleanArray::from_vec(vec![true, false]));
         assert_eq!(format!("{arr:?}"), "PlBooleanArray[true, false]");
+    }
+
+    #[test]
+    fn repeating_an_element_through_the_trait_object() {
+        for arr in arrays() {
+            let repeated = arr.new_from_index(1, 4);
+            assert_eq!(repeated.len(), 4);
+            assert_eq!(repeated.array_type(), arr.array_type());
+            assert_eq!(repeated.null_count(), 0);
+
+            // Every element of the result is the element that was repeated.
+            assert_eq!(&repeated.sliced(3, 1), &arr.sliced(1, 1));
+            assert_eq!(
+                &unsafe { arr.new_from_index_unchecked(0, 1) },
+                &arr.sliced(0, 1),
+            );
+
+            assert!(arr.new_from_index(0, 0).is_empty());
+        }
+
+        // The arrays that admit a scalar representation repeat an element in `O(1)`: that this
+        // test finishes is what shows a billion elements are never walked.
+        for arr in scalars(3) {
+            let repeated = arr.new_from_index(1, 1_000_000_000);
+            assert_eq!(repeated.len(), 1_000_000_000);
+            assert_eq!(repeated.null_count(), 0);
+        }
+
+        let nulls: Box<dyn PlArray> = Box::new(PlPrimitiveArray::<i32>::new_full_null(3));
+        let repeated = nulls.new_from_index(0, 1_000_000_000);
+        assert_eq!(repeated.null_count(), 1_000_000_000);
+        assert!(repeated.validity().unwrap().is_scalar());
     }
 }

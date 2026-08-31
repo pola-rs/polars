@@ -377,6 +377,43 @@ impl PlStructArray {
         unsafe { self.slice_unchecked(offset, length) };
         self
     }
+
+    /// Creates a [`PlStructArray`] of `length` copies of the row at `index`.
+    ///
+    /// Every field repeats its own element, so this is `O(num_fields)` and the result is one row in
+    /// `O(1)` memory — except for a [`PlListArray`](crate::PlListArray) field, which pays for one
+    /// offset per element. A null row repeats as `length` nulls.
+    ///
+    /// # Panics
+    /// Panics if `index >= self.len()`.
+    #[inline]
+    pub fn new_from_index(&self, index: usize, length: usize) -> Self {
+        assert!(index < self.length, "index out of bounds");
+        unsafe { self.new_from_index_unchecked(index, length) }
+    }
+
+    /// Creates a [`PlStructArray`] of `length` copies of the row at `index`.
+    ///
+    /// This function is `O(num_fields)`.
+    ///
+    /// # Safety
+    /// `index` must be smaller than `self.len()`.
+    pub unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
+        debug_assert!(index < self.length);
+
+        // The field values of a null row are undetermined, so they are repeated as they are found:
+        // it is the mask that makes every row of the result null.
+        let fields = self
+            .fields
+            .iter()
+            .map(|field| unsafe { field.new_from_index_unchecked(index, length) })
+            .collect();
+        let validity = unsafe { self.is_null_unchecked(index) }.then(|| Bitmap::new_zeroed(1));
+
+        // SAFETY: every field repeated one element `length` times, so it holds `length` elements,
+        // and the mask is a single bit and therefore scalar.
+        unsafe { Self::new_unchecked(fields, length, validity) }
+    }
 }
 
 /// Returns `field` with `mask` merged into its validity, so that the undetermined values of rows
@@ -481,6 +518,11 @@ impl PlArray for PlStructArray {
     #[inline]
     fn set_validity(&mut self, validity: Option<Bitmap>) {
         self.set_validity(validity)
+    }
+
+    #[inline]
+    unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray> {
+        Box::new(unsafe { self.new_from_index_unchecked(index, length) })
     }
 
     #[inline]
@@ -791,5 +833,43 @@ mod tests {
                 .len(),
             2,
         );
+    }
+
+    #[test]
+    fn new_from_index_repeats_one_row() {
+        let arr = PlStructArray::from_fields(flat_fields());
+
+        // Every field repeats its own element, so a billion rows cost `O(1)`.
+        let repeated = arr.new_from_index(2, 1_000_000_000);
+        assert_eq!(repeated.len(), 1_000_000_000);
+        assert_eq!(repeated.num_fields(), 2);
+        assert_eq!(repeated.null_count(), 0);
+        assert_eq!(
+            repeated,
+            PlStructArray::from_fields(vec![
+                Box::new(PlPrimitiveArray::<i32>::new_scalar(3, 1_000_000_000)),
+                Box::new(PlBooleanArray::new_scalar(true, 1_000_000_000)),
+            ]),
+        );
+
+        // A null row repeats as nulls, under a mask of a single bit; the fields still hold one
+        // element per row, undetermined as their values are.
+        let nulls = PlStructArray::new_full_null(flat_fields(), 3).new_from_index(0, 4);
+        assert_eq!(nulls.null_count(), 4);
+        assert!(nulls.validity_is_scalar());
+        assert_eq!(nulls.validity().unwrap().bitmap().len(), 1);
+        assert_eq!(nulls.field(0).len(), 4);
+
+        assert!(arr.new_from_index(0, 0).is_empty());
+        assert_eq!(
+            unsafe { arr.new_from_index_unchecked(0, 2) }.field(0).len(),
+            2,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "index out of bounds")]
+    fn repeating_a_row_out_of_bounds_panics() {
+        let _ = PlStructArray::from_fields(flat_fields()).new_from_index(3, 1);
     }
 }

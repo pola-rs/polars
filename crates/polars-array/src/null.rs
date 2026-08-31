@@ -174,6 +174,31 @@ impl PlNullArray {
         unsafe { self.slice_unchecked(offset, length) };
         self
     }
+
+    /// Creates a [`PlNullArray`] of `length` copies of the element at `index`, which is a null.
+    ///
+    /// This function is `O(1)`. The index is only bounds-checked: every element of this array is
+    /// the same null, so there is nothing to read at it.
+    ///
+    /// # Panics
+    /// Panics if `index >= self.len()`.
+    #[inline]
+    pub fn new_from_index(&self, index: usize, length: usize) -> Self {
+        assert!(index < self.length, "index out of bounds");
+        Self::new(length)
+    }
+
+    /// Creates a [`PlNullArray`] of `length` copies of the element at `index`, which is a null.
+    ///
+    /// This function is `O(1)`.
+    ///
+    /// # Safety
+    /// `index` must be smaller than `self.len()`.
+    #[inline]
+    pub const unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
+        debug_assert!(index < self.length);
+        Self::new(length)
+    }
 }
 
 impl Default for PlNullArray {
@@ -254,6 +279,11 @@ impl PlArray for PlNullArray {
     /// [`without_validity`](PlArray::without_validity) leaves every element null.
     #[inline]
     fn set_validity(&mut self, _validity: Option<Bitmap>) {}
+
+    #[inline]
+    unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray> {
+        Box::new(unsafe { self.new_from_index_unchecked(index, length) })
+    }
 
     #[inline]
     fn to_boxed(&self) -> Box<dyn PlArray> {
@@ -396,5 +426,26 @@ mod tests {
 
         let masked = arr.with_validity(Some(Bitmap::new_with_value(true, 3)));
         assert_eq!(masked.null_count(), 3);
+    }
+
+    #[test]
+    fn new_from_index_repeats_a_null() {
+        let arr = PlNullArray::new(3);
+
+        assert_eq!(
+            arr.new_from_index(2, 1_000_000_000),
+            PlNullArray::new(1_000_000_000),
+        );
+        assert_eq!(
+            unsafe { arr.new_from_index_unchecked(0, 2) },
+            PlNullArray::new(2)
+        );
+        assert!(arr.new_from_index(0, 0).is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "index out of bounds")]
+    fn repeating_an_element_out_of_bounds_panics() {
+        let _ = PlNullArray::new(3).new_from_index(3, 1);
     }
 }

@@ -451,6 +451,41 @@ impl PlBooleanArray {
         self
     }
 
+    /// Creates a [`PlBooleanArray`] of `length` copies of the element at `index`.
+    ///
+    /// This function is `O(1)`: the result is scalar, so it holds a single bit no matter how long
+    /// it is. A null element repeats as `length` nulls.
+    ///
+    /// # Panics
+    /// Panics if `index >= self.len()`.
+    #[inline]
+    pub fn new_from_index(&self, index: usize, length: usize) -> Self {
+        assert!(index < self.length, "index out of bounds");
+        unsafe { self.new_from_index_unchecked(index, length) }
+    }
+
+    /// Creates a [`PlBooleanArray`] of `length` copies of the element at `index`.
+    ///
+    /// This function is `O(1)`.
+    ///
+    /// # Safety
+    /// `index` must be smaller than `self.len()`.
+    #[inline]
+    pub unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
+        debug_assert!(index < self.length);
+
+        // The value of a null element is undetermined, so it is repeated as it is found: it is the
+        // mask that makes every element of the result null.
+        let value = unsafe { self.value_unchecked(index) };
+        let validity = unsafe { self.is_null_unchecked(index) }.then(|| Bitmap::new_zeroed(1));
+
+        Self {
+            values: Bitmap::new_with_value(value, 1),
+            length,
+            validity,
+        }
+    }
+
     /// Returns an equivalent array whose backing bitmaps all hold one bit per element.
     ///
     /// This materializes any scalar bitmap and is therefore `O(len)`; it is a no-op clone when
@@ -651,6 +686,11 @@ impl PlArray for PlBooleanArray {
     #[inline]
     fn set_validity(&mut self, validity: Option<Bitmap>) {
         self.set_validity(validity)
+    }
+
+    #[inline]
+    unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray> {
+        Box::new(unsafe { self.new_from_index_unchecked(index, length) })
     }
 
     #[inline]
@@ -938,5 +978,42 @@ mod tests {
 
         let arr: PlBooleanArray = [Some(true), None].into_iter().collect();
         assert_eq!(format!("{arr:?}"), "PlBooleanArray[true, null]");
+    }
+
+    #[test]
+    fn new_from_index_repeats_one_element() {
+        let arr = PlBooleanArray::from_iter([Some(true), None, Some(false)]);
+
+        // The result is scalar, so a billion copies of an element cost a single bit.
+        let repeated = arr.new_from_index(2, 1_000_000_000);
+        assert_eq!(repeated.len(), 1_000_000_000);
+        assert!(repeated.is_scalar());
+        assert_eq!(repeated.values().bitmap().len(), 1);
+        assert_eq!(repeated.scalar_value(), Some(Some(false)));
+
+        // A null element repeats as nulls, under a mask of a single bit.
+        let repeated = arr.new_from_index(1, 4);
+        assert_eq!(repeated.null_count(), 4);
+        assert_eq!(repeated.scalar_value(), Some(None));
+        assert_eq!(repeated.validity().unwrap().bitmap().len(), 1);
+
+        // Repeating an element of a scalar array reads the bit every element shares.
+        let scalar = PlBooleanArray::new_scalar(true, 1_000_000_000);
+        assert_eq!(
+            scalar.new_from_index(999_999_999, 3),
+            PlBooleanArray::new_scalar(true, 3),
+        );
+
+        assert!(arr.new_from_index(0, 0).is_empty());
+        assert_eq!(
+            unsafe { arr.new_from_index_unchecked(0, 2) },
+            PlBooleanArray::new_scalar(true, 2),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "index out of bounds")]
+    fn repeating_an_element_out_of_bounds_panics() {
+        let _ = PlBooleanArray::from_vec(vec![true, false]).new_from_index(2, 1);
     }
 }

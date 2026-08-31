@@ -465,6 +465,41 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         self
     }
 
+    /// Creates a [`PlPrimitiveArray`] of `length` copies of the element at `index`.
+    ///
+    /// This function is `O(1)`: the result is scalar, so it holds a single slot no matter how long
+    /// it is. A null element repeats as `length` nulls.
+    ///
+    /// # Panics
+    /// Panics if `index >= self.len()`.
+    #[inline]
+    pub fn new_from_index(&self, index: usize, length: usize) -> Self {
+        assert!(index < self.length, "index out of bounds");
+        unsafe { self.new_from_index_unchecked(index, length) }
+    }
+
+    /// Creates a [`PlPrimitiveArray`] of `length` copies of the element at `index`.
+    ///
+    /// This function is `O(1)`.
+    ///
+    /// # Safety
+    /// `index` must be smaller than `self.len()`.
+    #[inline]
+    pub unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
+        debug_assert!(index < self.length);
+
+        // The value of a null element is undetermined, so it is repeated as it is found: it is the
+        // mask that makes every element of the result null.
+        let value = unsafe { self.value_unchecked(index) };
+        let validity = unsafe { self.is_null_unchecked(index) }.then(|| Bitmap::new_zeroed(1));
+
+        Self {
+            values: Buffer::from_owner([value]),
+            length,
+            validity,
+        }
+    }
+
     /// Returns an equivalent array whose backing buffers all hold one slot per element.
     ///
     /// This materializes any scalar buffer and is therefore `O(len)`; it is a no-op clone when
@@ -669,6 +704,11 @@ impl<T: NativeType> PlArray for PlPrimitiveArray<T> {
     #[inline]
     fn set_validity(&mut self, validity: Option<Bitmap>) {
         self.set_validity(validity)
+    }
+
+    #[inline]
+    unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray> {
+        Box::new(unsafe { self.new_from_index_unchecked(index, length) })
     }
 
     #[inline]
@@ -939,5 +979,42 @@ mod tests {
 
         let arr: PlPrimitiveArray<i32> = [Some(1), None].into_iter().collect();
         assert_eq!(format!("{arr:?}"), "PlPrimitiveArray[1, null]");
+    }
+
+    #[test]
+    fn new_from_index_repeats_one_element() {
+        let arr = PlPrimitiveArray::from_iter([Some(1i32), None, Some(3)]);
+
+        // The result is scalar, so a billion copies of an element cost a single slot.
+        let repeated = arr.new_from_index(2, 1_000_000_000);
+        assert_eq!(repeated.len(), 1_000_000_000);
+        assert!(repeated.is_scalar());
+        assert_eq!(repeated.values().len(), 1);
+        assert_eq!(repeated.scalar_value(), Some(Some(3)));
+
+        // A null element repeats as nulls, under a mask of a single bit.
+        let repeated = arr.new_from_index(1, 4);
+        assert_eq!(repeated.null_count(), 4);
+        assert_eq!(repeated.scalar_value(), Some(None));
+        assert_eq!(repeated.validity().unwrap().bitmap().len(), 1);
+
+        // Repeating an element of a scalar array reads the slot every element shares.
+        let scalar = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
+        assert_eq!(
+            scalar.new_from_index(999_999_999, 3),
+            PlPrimitiveArray::new_scalar(7i32, 3),
+        );
+
+        assert!(arr.new_from_index(0, 0).is_empty());
+        assert_eq!(
+            unsafe { arr.new_from_index_unchecked(0, 2) },
+            PlPrimitiveArray::new_scalar(1i32, 2),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "index out of bounds")]
+    fn repeating_an_element_out_of_bounds_panics() {
+        let _ = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).new_from_index(3, 1);
     }
 }

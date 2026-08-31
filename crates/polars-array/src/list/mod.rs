@@ -8,6 +8,7 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::is_valid_buffer_len;
+use crate::concatenate::concatenate;
 
 mod iterator;
 
@@ -548,6 +549,70 @@ impl PlListArray {
         unsafe { self.slice_unchecked(offset, length) };
         self
     }
+
+    /// Creates a [`PlListArray`] of `length` copies of the element at `index`.
+    ///
+    /// There is no scalar representation of a repeated list — the offsets are always flat, and
+    /// they have to be ordered — so the values of the element are repeated as well: this is
+    /// `O(length * value_length(index))`, and `O(length)` for a null or empty element, whose values
+    /// need not be written out. The values are themselves a [`PlArray`], so a scalar one is
+    /// repeated in `O(1)`.
+    ///
+    /// # Panics
+    /// Panics if `index >= self.len()`, or if the total length of the values of the result
+    /// overflows a `usize`.
+    #[inline]
+    pub fn new_from_index(&self, index: usize, length: usize) -> Self {
+        assert!(index < self.length, "index out of bounds");
+        unsafe { self.new_from_index_unchecked(index, length) }
+    }
+
+    /// Creates a [`PlListArray`] of `length` copies of the element at `index`.
+    ///
+    /// # Panics
+    /// Panics if the total length of the values of the result overflows a `usize`.
+    ///
+    /// # Safety
+    /// `index` must be smaller than `self.len()`.
+    pub unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
+        debug_assert!(index < self.length);
+
+        // The value of a null element is undetermined, so every element of the result is given the
+        // empty list: that is what leaves the values array untouched and the mask a single bit.
+        if unsafe { self.is_null_unchecked(index) } {
+            return Self::new_full_null(self.values.clone(), length);
+        }
+
+        let range = unsafe { self.value_range_unchecked(index) };
+        if length == 0 || range.is_empty() {
+            // The values array is kept as it is — it is what determines the type of the lists —
+            // but no element of it is reachable.
+            return Self {
+                values: self.values.clone(),
+                offsets: Buffer::zeroed(length + 1),
+                length,
+                validity: None,
+            };
+        }
+
+        // SAFETY: the offsets are ordered and bounded by the length of the values array.
+        let element = unsafe { self.values.sliced_unchecked(range.start, range.len()) };
+
+        // Concatenation is what materializes the repetition, and it keeps the values scalar when
+        // the element is itself a single repeated value.
+        let values = concatenate(&vec![&*element; length])
+            .expect("an array concatenates with copies of itself");
+
+        let value_length = range.len() as u64;
+        let offsets = (0..=length as u64)
+            .map(|i| i * value_length)
+            .collect::<Vec<_>>();
+
+        // SAFETY: every list of the result has the length of the element, so the offsets are
+        // ordered and there is one per element plus the end of the last, and the last of them is
+        // the total length the element was repeated over. Every element is valid.
+        unsafe { Self::new_unchecked(values, Buffer::from(offsets), length, None) }
+    }
 }
 
 impl<'a> IntoIterator for &'a PlListArray {
@@ -639,6 +704,11 @@ impl PlArray for PlListArray {
     #[inline]
     fn set_validity(&mut self, validity: Option<Bitmap>) {
         self.set_validity(validity)
+    }
+
+    #[inline]
+    unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray> {
+        Box::new(unsafe { self.new_from_index_unchecked(index, length) })
     }
 
     #[inline]
@@ -1069,5 +1139,77 @@ mod tests {
 
         // A list array is not the array its lists are taken over.
         assert_ne!(&arr, &values());
+    }
+
+    #[test]
+    fn new_from_index_repeats_one_list() {
+        let arr = arr();
+
+        // The values of the element are repeated along with it: three copies of `[3, 4, 5]`.
+        let repeated = arr.new_from_index(2, 3);
+        assert_eq!(repeated.len(), 3);
+        assert_eq!(repeated.offsets().as_slice(), [0, 3, 6, 9]);
+        assert_eq!(repeated.values().len(), 9);
+        assert_eq!(repeated.null_count(), 0);
+        for i in 0..repeated.len() {
+            assert_eq!(elements(&*repeated.value(i)), [Some(3), Some(4), Some(5)]);
+        }
+
+        // An empty element has no values to repeat, so the values array is left as it is.
+        let repeated = arr.new_from_index(1, 4);
+        assert_eq!(repeated.offsets().as_slice(), [0, 0, 0, 0, 0]);
+        assert_eq!(repeated.values().len(), 5);
+        assert!(elements(&*repeated.value(3)).is_empty());
+
+        // A null element repeats as nulls, under a mask of a single bit, and every list is empty.
+        let nulls = arr
+            .clone()
+            .with_validity(Some(Bitmap::from_iter([false, true, true])))
+            .new_from_index(0, 4);
+        assert_eq!(nulls.null_count(), 4);
+        assert!(nulls.validity_is_scalar());
+        assert_eq!(nulls.offsets().as_slice(), [0, 0, 0, 0, 0]);
+        assert_eq!(nulls.get(3), None);
+
+        assert!(arr.new_from_index(0, 0).is_empty());
+        assert_eq!(
+            unsafe { arr.new_from_index_unchecked(0, 2) },
+            PlListArray::from_offsets(
+                Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 1, 2])),
+                Buffer::from(vec![0u64, 2, 4]),
+            ),
+        );
+    }
+
+    #[test]
+    fn repeating_a_list_of_scalar_values_does_not_materialize_them() {
+        // A single list of a billion sevens, over values that cost `O(1)`.
+        let arr = PlListArray::from_offsets(
+            Box::new(PlPrimitiveArray::<i32>::new_scalar(7, 1_000_000_000)),
+            Buffer::from(vec![0u64, 1_000_000_000]),
+        );
+
+        // Nothing here may walk the values: repeating them keeps them scalar.
+        let repeated = arr.new_from_index(0, 2);
+        assert_eq!(repeated.len(), 2);
+        assert_eq!(repeated.values().len(), 2_000_000_000);
+        assert_eq!(
+            repeated.offsets().as_slice(),
+            [0, 1_000_000_000, 2_000_000_000],
+        );
+        assert!(
+            repeated
+                .values()
+                .as_any()
+                .downcast_ref::<PlPrimitiveArray<i32>>()
+                .unwrap()
+                .is_scalar()
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "index out of bounds")]
+    fn repeating_a_list_out_of_bounds_panics() {
+        let _ = arr().new_from_index(3, 1);
     }
 }
