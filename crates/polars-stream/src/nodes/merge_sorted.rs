@@ -265,26 +265,23 @@ impl ComputeNode for MergeSortedNode {
                 if left_unmerged.is_empty() && right_unmerged.is_empty() =>
             {
                 let recv = port.parallel();
-                join_handles.extend(recv
-                    .into_iter()
-                    .zip(send)
-                    .map(|(mut recv, mut send)| {
-                        let seq = *seq;
-                        scope.spawn_task(TaskPriority::High, async move {
-                            while let Ok(mut morsel) = recv.recv().await {
-                                // Ensure the morsel sequence id stream is monotone non-decreasing.
-                                let seq = morsel.seq().offset_by(seq);
-                                morsel.set_seq(seq);
+                join_handles.extend(recv.into_iter().zip(send).map(|(mut recv, mut send)| {
+                    let seq = *seq;
+                    scope.spawn_task(TaskPriority::High, async move {
+                        while let Ok(mut morsel) = recv.recv().await {
+                            // Ensure the morsel sequence id stream is monotone non-decreasing.
+                            let seq = morsel.seq().offset_by(seq);
+                            morsel.set_seq(seq);
 
-                                remove_key_column(&mut *morsel.df_mut().await);
-                                if send.send(morsel).await.is_err() {
-                                    break;
-                                }
+                            remove_key_column(&mut *morsel.df_mut().await);
+                            if send.send(morsel).await.is_err() {
+                                break;
                             }
-                            
-                            Ok(())
-                        })
-                    }));
+                        }
+
+                        Ok(())
+                    })
+                }));
             },
 
             // This is the base case. Either:
