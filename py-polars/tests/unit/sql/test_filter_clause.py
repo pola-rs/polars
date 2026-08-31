@@ -129,4 +129,6 @@ def test_filter_clause_multi_parameter_func() -> None:
 def test_filter_clause_filter_plus_over_unsupported() -> None:
     df = pl.DataFrame({"grp": ["a", "b"], "x": [1, 2], "y": [10, 30]})
     with pytest.raises(SQLInterfaceError, match=r"FILTER.*OVER"):
-        pl.sql("SELECT SUM(x) FILTER (WHERE y > 20) OVER (PARTITION BY grp) FROM df")
+        pl.sql(
+            "SELECT SUM(x) FILTER (WHERE y > 20) OVER (PARTITION BY grp) FROM df"
+        ).collect()

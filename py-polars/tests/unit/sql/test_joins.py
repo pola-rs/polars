@@ -811,10 +811,10 @@ def test_natural_joins_01() -> None:
 
     # misc errors
     with pytest.raises(SQLSyntaxError, match=r"did you mean COLUMNS\(\*\)\?"):
-        pl.sql("SELECT * FROM df1 NATURAL JOIN df2 WHERE COLUMNS('*') >= 5")
+        pl.sql("SELECT * FROM df1 NATURAL JOIN df2 WHERE COLUMNS('*') >= 5").collect()
 
     with pytest.raises(SQLSyntaxError, match=r"COLUMNS expects a regex"):
-        pl.sql("SELECT COLUMNS(1234) FROM df1 NATURAL JOIN df2")
+        pl.sql("SELECT COLUMNS(1234) FROM df1 NATURAL JOIN df2").collect()
 
 
 @pytest.mark.parametrize(
@@ -1050,7 +1050,7 @@ def test_unnamed_nested_join_relation() -> None:
             JOIN (right JOIN right ON right.a = right.a)
             ON left.a = right.a
             """
-        )
+        ).collect()
 
 
 def test_nulls_equal_19624() -> None:
@@ -1467,7 +1467,7 @@ def test_unsupported_join_conditions(join_condition: str, expected_error: str) -
     df2 = pl.DataFrame({"id": [2, 3, 4], "val": [20, 30, 40]})
 
     with pytest.raises(SQLInterfaceError, match=expected_error):
-        pl.sql(f"SELECT * FROM df1 INNER JOIN df2 ON {join_condition}")
+        pl.sql(f"SELECT * FROM df1 INNER JOIN df2 ON {join_condition}").collect()
 
 
 def test_ambiguous_column_detection_in_joins() -> None:

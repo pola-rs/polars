@@ -169,6 +169,12 @@ pub enum DslPlan {
         key: Arc<[PlSmallStr]>,
         maintain_order: bool,
     },
+    /// A SQL query that is resolved during DSL -> IR conversion.
+    SQL {
+        query: Arc<String>,
+        /// The named relations that the query may reference.
+        relations: Vec<(PlSmallStr, DslPlan)>,
+    },
     IR {
         // Keep the original Dsl around as we need that for serialization.
         dsl: Arc<DslPlan>,
@@ -213,6 +219,7 @@ impl Clone for DslPlan {
             Self::Pivot { input, on, on_columns, index, values, agg, separator, maintain_order, column_naming }  => Self::Pivot { input: input.clone(), on: on.clone(), on_columns: on_columns.clone(), index: index.clone(), values: values.clone(), agg: agg.clone(), separator: separator.clone(), maintain_order: *maintain_order, column_naming: *column_naming },
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key, maintain_order } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone(), maintain_order: *maintain_order },
+            Self::SQL { query, relations } => Self::SQL { query: query.clone(), relations: relations.clone() },
             Self::IR {node, dsl, version, opt_flags} => Self::IR {node: *node, dsl: dsl.clone(), version: *version, opt_flags: *opt_flags},
         }
     }
