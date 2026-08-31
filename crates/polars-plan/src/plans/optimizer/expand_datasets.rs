@@ -5,7 +5,7 @@ use std::sync::Arc;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use polars_core::config;
-use polars_core::error::{PolarsResult, polars_bail};
+use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::runtime::ASYNC;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
@@ -334,6 +334,7 @@ fn expand_python_dataset(
                 deletion_files,
                 table_statistics,
                 row_count,
+                source_sizes,
             } = resolved_unified_scan_args.as_ref()
             else {
                 panic!(
@@ -386,6 +387,16 @@ fn expand_python_dataset(
                 ]);
             }
 
+            if let Some(source_sizes) = source_sizes {
+                polars_ensure!(
+                    source_sizes.len() == resolved_sources.len(),
+                    ShapeMismatch:
+                    "number of source sizes ({}) does not match number of scan sources ({})",
+                    source_sizes.len(),
+                    resolved_sources.len(),
+                );
+            }
+
             *sources = resolved_sources.clone();
 
             **scan_type = match *resolved_scan_type.clone() {
@@ -403,7 +414,7 @@ fn expand_python_dataset(
                     options,
                     // Metadata is resolved later in `parquet_file_info`.
                     metadata_per_source: Unresolved,
-                    bytes_per_source: None,
+                    bytes_per_source: source_sizes.clone(),
                 },
 
                 #[cfg(feature = "json")]

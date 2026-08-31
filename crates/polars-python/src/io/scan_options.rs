@@ -67,6 +67,7 @@ impl PyScanOptions<'_> {
             deletion_files: Option<Wrap<DeletionFilesList>>,
             table_statistics: Option<Wrap<TableStatistics>>,
             row_count: Option<(u64, u64)>,
+            source_sizes: Option<Vec<u64>>,
         }
 
         let Extract {
@@ -90,6 +91,7 @@ impl PyScanOptions<'_> {
             deletion_files,
             table_statistics,
             row_count,
+            source_sizes,
         } = self.0.extract()?;
 
         let cloud_options =
@@ -136,6 +138,7 @@ impl PyScanOptions<'_> {
             deletion_files,
             table_statistics: table_statistics.map(|x| x.0),
             row_count,
+            source_sizes: source_sizes.map(Arc::from),
         };
 
         Ok(unified_scan_args)

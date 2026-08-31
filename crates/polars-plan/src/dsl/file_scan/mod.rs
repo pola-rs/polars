@@ -591,6 +591,7 @@ pub struct UnifiedScanArgs {
     ///
     /// Note, intentionally store u64 instead of IdxSize to avoid erroring if it's unused.
     pub row_count: Option<(u64, u64)>,
+    pub source_sizes: Option<Arc<[u64]>>,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -632,6 +633,7 @@ impl Default for UnifiedScanArgs {
             deletion_files: None,
             table_statistics: None,
             row_count: None,
+            source_sizes: None,
         }
     }
 }

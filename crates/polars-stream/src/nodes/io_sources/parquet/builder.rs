@@ -19,6 +19,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 #[derive(Clone)]
 pub struct ParquetReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
+    pub bytes_per_source: Option<Arc<[u64]>>,
     pub options: Arc<ParquetOptions>,
     pub pipeline_budget: std::sync::OnceLock<PipelineBudget>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
@@ -29,6 +30,7 @@ impl std::fmt::Debug for ParquetReaderBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ParquetReaderBuilder")
             .field("first_metadata", &self.first_metadata)
+            .field("bytes_per_source", &self.bytes_per_source)
             .field("options", &self.options)
             .field("pipeline_budget", &self.pipeline_budget)
             .finish()
@@ -154,6 +156,10 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             } else {
                 None
             },
+            file_size: self
+                .bytes_per_source
+                .as_ref()
+                .and_then(|sizes| usize::try_from(sizes[scan_source_idx]).ok()),
             byte_source_builder,
             row_group_prefetch_sync: RowGroupPrefetchSync {
                 pipeline_budget,
