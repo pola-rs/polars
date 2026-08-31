@@ -1076,8 +1076,6 @@ def test_strict_struct_cast_field_name_mismatch() -> None:
     s = pl.Series("x", [{"a": 1}])
     with pytest.raises(InvalidOperationError, match="field name mismatch"):
         s.cast(pl.Struct({"b": pl.Int64}), strict=True)
-    expected = pl.Series("a", [2, 0, 1], dtype=pl.UInt32)
-    assert_series_equal(actual, expected)
 
 
 @pytest.mark.parametrize(
