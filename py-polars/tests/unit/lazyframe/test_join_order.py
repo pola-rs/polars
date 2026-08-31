@@ -563,3 +563,73 @@ def test_no_nulls_leaves_the_larger_dimension_last(tmp_path: Path) -> None:
     lf = null_count_query(null_count_frames(tmp_path, nulls=0))
 
     assert_reordered(lf, ["fact", "dim_a", "dim_b"], ["fact", "dim_b", "dim_a"])
+
+
+def self_join_frames(tmp_path: Path) -> dict[str, pl.LazyFrame]:
+    """A fact table joined to one dimension twice, plus a small second dimension."""
+    fact = pl.DataFrame(
+        {
+            "f_a": [i % 400 for i in range(4000)],
+            "f_b": [i % 400 for i in range(4000)],
+            "f_c": [i % 4 for i in range(4000)],
+        }
+    )
+    # Held by two leaves at once, so `d_key` and `d_val` are ambiguous names.
+    dim = pl.DataFrame(
+        {"d_key": list(range(400)), "d_val": [f"v{i}" for i in range(400)]}
+    )
+    # Selective: a filter leaves a single row.
+    other = pl.DataFrame({"o_key": list(range(4)), "o_flag": [i == 2 for i in range(4)]})
+    return write_scans(tmp_path, fact=fact, dim=dim, other=other)
+
+
+def self_join_query(frames: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
+    """`fact` joined to `dim` twice, with the selective dimension written last."""
+    dim = frames["dim"]
+    return (
+        frames["fact"]
+        .join(dim, left_on="f_a", right_on="d_key", coalesce=False)
+        .join(dim, left_on="f_b", right_on="d_key", coalesce=False)
+        .join(
+            frames["other"].filter(pl.col("o_flag")),
+            left_on="f_c",
+            right_on="o_key",
+            coalesce=False,
+        )
+    )
+
+
+def test_self_join_on_shared_column_names_is_reordered(tmp_path: Path) -> None:
+    # `d_key` and `d_val` are each held by two leaves. Once those are renamed apart
+    # the cluster can be ordered, and the selective `other` sorts ahead of both
+    # copies of `dim`.
+    lf = self_join_query(self_join_frames(tmp_path))
+
+    # Both copies of `dim` scan one file, which common-subplan elimination would
+    # otherwise fold into a single cached scan.
+    assert_reordered(
+        lf,
+        ["fact", "dim", "dim", "other"],
+        ["fact", "other", "dim", "dim"],
+        on_flags=pl.QueryOptFlags(join_order=True, comm_subplan_elim=False),
+        off_flags=pl.QueryOptFlags(join_order=False, comm_subplan_elim=False),
+    )
+
+
+def test_self_join_keeps_each_copy_of_a_shared_column(tmp_path: Path) -> None:
+    # Which physical column a suffixed name refers to depends on the join order, so
+    # the rebuilt plan aliases the renamed columns back onto the original ones.
+    lf = self_join_query(self_join_frames(tmp_path)).select(
+        "f_a", "f_b", "d_val", "d_val_right"
+    )
+
+    on = lf.collect(optimizations=ON)
+    assert on.height > 0
+    assert_frame_equal(lf.collect(optimizations=OFF).sort(pl.all()), on.sort(pl.all()))
+    # `d_val` is `dim` looked up by `f_a`, `d_val_right` by `f_b`.
+    assert on.get_column("d_val").to_list() == [
+        f"v{a}" for a in on.get_column("f_a").to_list()
+    ]
+    assert on.get_column("d_val_right").to_list() == [
+        f"v{b}" for b in on.get_column("f_b").to_list()
+    ]

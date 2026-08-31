@@ -160,6 +160,7 @@ mod tests {
             leaves,
             edges,
             output_schema: Schema::default().into(),
+            restore: Vec::new(),
             options: dummy_options(),
         };
 
