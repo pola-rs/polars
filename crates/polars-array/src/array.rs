@@ -13,7 +13,7 @@ use crate::bitmap::PlBitmapRef;
 /// means downcasting through [`PlArray::as_any`].
 ///
 /// Like the concrete arrays, an implementor stores its logical length separately from its backing
-/// buffers, so each buffer is independently either flat or broadcast. See [`crate::broadcast`]
+/// buffers, so each buffer is independently either flat or scalar. See [`crate::scalar`]
 /// for the rules, and [`PlArray::is_scalar`] to detect the `O(1)`-memory case a `dyn PlArray`
 /// must not walk element by element.
 ///
@@ -58,12 +58,12 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     /// The validity mask, if any element may be null.
     ///
     /// The returned [`PlBitmapRef`] has [`PlArray::len`] bits regardless of whether the backing
-    /// bitmap is flat or broadcast.
+    /// bitmap is flat or scalar.
     fn validity(&self) -> Option<PlBitmapRef<'_>>;
 
     /// The number of null elements.
     ///
-    /// This is `O(1)` for a broadcast validity mask and `O(len)` for a flat one, amortized over
+    /// This is `O(1)` for a scalar validity mask and `O(len)` for a flat one, amortized over
     /// repeated calls on the same [`Bitmap`].
     #[inline]
     fn null_count(&self) -> usize {
@@ -119,29 +119,25 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     /// Whether the values buffer holds a single value shared by every element.
     ///
     /// This is `false` for a flat array of length one, where the two representations coincide.
-    fn values_are_broadcast(&self) -> bool;
+    fn values_are_scalar(&self) -> bool;
 
     /// Whether the validity mask holds a single bit shared by every element.
     #[inline]
-    fn validity_is_broadcast(&self) -> bool {
-        self.validity()
-            .is_some_and(|validity| validity.is_broadcast())
+    fn validity_is_scalar(&self) -> bool {
+        self.validity().is_some_and(|validity| validity.is_scalar())
     }
 
     /// Whether every backing buffer has one slot per element.
     #[inline]
     fn is_flat(&self) -> bool {
-        !self.values_are_broadcast() && !self.validity_is_broadcast()
+        !self.values_are_scalar() && !self.validity_is_scalar()
     }
 
-    /// Whether this array is entirely stored in the broadcast representation, and therefore is a
+    /// Whether this array is entirely stored in the scalar representation, and therefore is a
     /// single logical value repeated [`PlArray::len`] times in `O(1)` memory.
     #[inline]
     fn is_scalar(&self) -> bool {
-        self.values_are_broadcast()
-            && self
-                .validity()
-                .is_none_or(|validity| validity.is_broadcast())
+        self.values_are_scalar() && self.validity().is_none_or(|validity| validity.is_scalar())
     }
 
     /// Slices this array in place to `length` elements starting at `offset`.
@@ -189,13 +185,13 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     /// Replaces the validity mask.
     ///
     /// # Panics
-    /// Panics if `validity` is neither flat nor broadcast for this array's length.
+    /// Panics if `validity` is neither flat nor scalar for this array's length.
     fn set_validity(&mut self, validity: Option<Bitmap>);
 
     /// Returns this array with its validity mask replaced.
     ///
     /// # Panics
-    /// Panics if `validity` is neither flat nor broadcast for this array's length.
+    /// Panics if `validity` is neither flat nor scalar for this array's length.
     #[must_use]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn PlArray> {
         let mut new = self.to_boxed();
@@ -211,7 +207,7 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
 
     /// Returns an equivalent array whose backing buffers all hold one slot per element.
     ///
-    /// This materializes any broadcast buffer and is therefore `O(len)`; it is a no-op clone when
+    /// This materializes any scalar buffer and is therefore `O(len)`; it is a no-op clone when
     /// this array [`is_flat`](PlArray::is_flat).
     #[must_use]
     fn to_flat_boxed(&self) -> Box<dyn PlArray>;
@@ -235,7 +231,7 @@ impl Clone for Box<dyn PlArray> {
     }
 }
 
-/// Compares two arrays element-wise; the representation (flat or broadcast) is irrelevant, but
+/// Compares two arrays element-wise; the representation (flat or scalar) is irrelevant, but
 /// arrays of different [`PlArrayType`] never compare equal.
 ///
 /// Compare two `Box<dyn PlArray>` through references (`&lhs == &rhs`): `==` on the boxes
@@ -336,8 +332,8 @@ mod tests {
             assert!(!arr.is_null(2));
             assert!(arr.is_flat());
             assert!(!arr.is_scalar());
-            assert!(!arr.values_are_broadcast());
-            assert!(!arr.validity_is_broadcast());
+            assert!(!arr.values_are_scalar());
+            assert!(!arr.validity_is_scalar());
         }
     }
 
@@ -347,7 +343,7 @@ mod tests {
             assert_eq!(arr.len(), 1_000_000_000);
             assert!(arr.is_scalar());
             assert!(!arr.is_flat());
-            assert!(arr.values_are_broadcast());
+            assert!(arr.values_are_scalar());
             assert_eq!(arr.null_count(), 0);
 
             // Slicing a scalar stays `O(1)`, and so does comparing it.
@@ -374,7 +370,7 @@ mod tests {
             assert!(arr.has_nulls());
             assert!(arr.is_null(3));
             assert!(!arr.is_valid(3));
-            assert!(arr.validity_is_broadcast());
+            assert!(arr.validity_is_scalar());
             assert_eq!(arr.validity().unwrap().len(), 4);
             assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
 
@@ -408,10 +404,10 @@ mod tests {
     #[test]
     fn setting_validity_through_the_trait_object() {
         for arr in arrays() {
-            // A broadcast mask of one unset bit nulls out every element.
+            // A scalar mask of one unset bit nulls out every element.
             let nulled = arr.with_validity(Some(Bitmap::new_zeroed(1)));
             assert_eq!(nulled.null_count(), 3);
-            assert!(nulled.validity_is_broadcast());
+            assert!(nulled.validity_is_scalar());
             assert!(!nulled.is_flat());
             assert!(!nulled.is_scalar());
             assert_eq!(arr.null_count(), 0);
@@ -419,12 +415,12 @@ mod tests {
             let mut arr = arr;
             arr.set_validity(Some(Bitmap::from_iter([true, false, true])));
             assert_eq!(arr.null_count(), 1);
-            assert!(!arr.validity_is_broadcast());
+            assert!(!arr.validity_is_scalar());
         }
     }
 
     #[test]
-    fn to_flat_boxed_materializes_broadcasts() {
+    fn to_flat_boxed_materializes_scalars() {
         for arr in scalars(3) {
             let flat = arr.to_flat_boxed();
             assert!(flat.is_flat());

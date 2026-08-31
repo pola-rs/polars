@@ -4,7 +4,7 @@ use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
 
 use crate::bitmap::PlBitmapRef;
-use crate::broadcast::broadcast_index;
+use crate::scalar::scalar_index;
 
 /// Iterator over the values of a [`PlPrimitiveArray`](super::PlPrimitiveArray), ignoring validity.
 #[derive(Clone)]
@@ -15,7 +15,7 @@ pub struct PlPrimitiveValuesIter<'a, T: NativeType> {
 
 impl<'a, T: NativeType> PlPrimitiveValuesIter<'a, T> {
     /// # Safety
-    /// `values` must be flat or broadcast for `length`, per [`crate::broadcast`].
+    /// `values` must be flat or scalar for `length`, per [`crate::scalar`].
     #[inline]
     pub(super) fn new(values: &'a [T], length: usize) -> Self {
         Self {
@@ -26,11 +26,11 @@ impl<'a, T: NativeType> PlPrimitiveValuesIter<'a, T> {
 
     #[inline(always)]
     fn get(&self, i: usize) -> T {
-        // SAFETY: `i` comes from `self.range`, so the broadcast index is in bounds.
+        // SAFETY: `i` comes from `self.range`, so the scalar index is in bounds.
         unsafe {
             *self
                 .values
-                .get_unchecked(broadcast_index(i, self.values.len()))
+                .get_unchecked(scalar_index(i, self.values.len()))
         }
     }
 }
@@ -74,7 +74,7 @@ pub struct PlPrimitiveIter<'a, T: NativeType> {
 
 impl<'a, T: NativeType> PlPrimitiveIter<'a, T> {
     /// # Safety
-    /// `values` must be flat or broadcast for `length`, per [`crate::broadcast`], and `validity`
+    /// `values` must be flat or scalar for `length`, per [`crate::scalar`], and `validity`
     /// must have `length` bits.
     #[inline]
     pub(super) fn new(values: &'a [T], validity: Option<PlBitmapRef<'a>>, length: usize) -> Self {
@@ -87,7 +87,7 @@ impl<'a, T: NativeType> PlPrimitiveIter<'a, T> {
 
     #[inline(always)]
     fn get(&self, i: usize) -> Option<T> {
-        // SAFETY: `i` comes from `self.range`, so the broadcast indices are in bounds.
+        // SAFETY: `i` comes from `self.range`, so the scalar indices are in bounds.
         let is_valid = self
             .validity
             .is_none_or(|validity| unsafe { validity.get_unchecked(i) });
@@ -95,7 +95,7 @@ impl<'a, T: NativeType> PlPrimitiveIter<'a, T> {
         is_valid.then(|| unsafe {
             *self
                 .values
-                .get_unchecked(broadcast_index(i, self.values.len()))
+                .get_unchecked(scalar_index(i, self.values.len()))
         })
     }
 }

@@ -6,7 +6,7 @@ use crate::bitmap::PlBitmapRef;
 
 /// Iterator over the optional elements of a [`PlBooleanArray`](super::PlBooleanArray).
 ///
-/// Neither a broadcast values bitmap nor a broadcast validity mask is materialized, so this is
+/// Neither a scalar values bitmap nor a scalar validity mask is materialized, so this is
 /// `O(1)` in memory regardless of the array's length.
 #[derive(Clone)]
 pub struct PlBooleanIter<'a> {

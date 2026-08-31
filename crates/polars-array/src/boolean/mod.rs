@@ -4,7 +4,7 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapIter, PlBitmapRef};
-use crate::broadcast::is_valid_buffer_len;
+use crate::scalar::is_valid_buffer_len;
 
 mod iterator;
 
@@ -18,9 +18,9 @@ pub use iterator::PlBooleanIter;
 ///
 /// The logical length is stored separately from the backing bitmaps, which lets a *scalar* array —
 /// one value repeated `length` times — be represented in `O(1)` memory. Element `i` reads slot
-/// [`broadcast_index(i, bitmap.len())`](crate::broadcast::broadcast_index) of each backing bitmap,
+/// [`scalar_index(i, bitmap.len())`](crate::scalar::scalar_index) of each backing bitmap,
 /// so both `values` and `validity` are independently either flat (one bit per element) or
-/// broadcast (a single shared bit). See [`crate::broadcast`] for the full rules.
+/// scalar (a single shared bit). See [`crate::scalar`] for the full rules.
 ///
 /// # Example
 /// ```
@@ -53,12 +53,12 @@ impl PlBooleanArray {
     ///
     /// # Errors
     /// This function errors if `values` or `validity` is neither flat (length equal to `length`)
-    /// nor broadcast (length one).
+    /// nor scalar (length one).
     pub fn try_new(values: Bitmap, length: usize, validity: Option<Bitmap>) -> PolarsResult<Self> {
         polars_ensure!(
             is_valid_buffer_len(values.len(), length),
             ComputeError:
-            "values bitmap of length {} is neither flat nor broadcast for an array of length {}",
+            "values bitmap of length {} is neither flat nor scalar for an array of length {}",
             values.len(), length,
         );
 
@@ -66,7 +66,7 @@ impl PlBooleanArray {
             polars_ensure!(
                 is_valid_buffer_len(validity.len(), length),
                 ComputeError:
-                "validity mask of length {} is neither flat nor broadcast for an array of length {}",
+                "validity mask of length {} is neither flat nor scalar for an array of length {}",
                 validity.len(), length,
             );
         }
@@ -90,7 +90,7 @@ impl PlBooleanArray {
     /// Creates a [`PlBooleanArray`] out of its internal components without validating them.
     ///
     /// # Safety
-    /// `values` and `validity` must each be either flat (length equal to `length`) or broadcast
+    /// `values` and `validity` must each be either flat (length equal to `length`) or scalar
     /// (length one).
     #[inline]
     pub unsafe fn new_unchecked(values: Bitmap, length: usize, validity: Option<Bitmap>) -> Self {
@@ -178,23 +178,23 @@ impl PlBooleanArray {
     /// The values, ignoring validity.
     ///
     /// The returned [`PlBitmapRef`] has [`Self::len`] bits regardless of whether the backing bitmap
-    /// is flat or broadcast, so reading values through it needs no knowledge of which
+    /// is flat or scalar, so reading values through it needs no knowledge of which
     /// representation this array is in. Reach for the backing [`Bitmap`] — which is *not*
     /// guaranteed to have [`Self::len`] bits — with [`PlBitmapRef::bitmap`], or materialize a flat
     /// one with [`PlBitmapRef::to_flat`].
     #[inline]
     pub fn values(&self) -> PlBitmapRef<'_> {
-        // SAFETY: the bitmap is flat or broadcast for `self.length`, upheld by every constructor.
+        // SAFETY: the bitmap is flat or scalar for `self.length`, upheld by every constructor.
         unsafe { PlBitmapRef::new_unchecked(&self.values, self.length) }
     }
 
     /// The validity mask, if any element may be null.
     ///
     /// The returned [`PlBitmapRef`] has [`Self::len`] bits regardless of whether the backing bitmap
-    /// is flat or broadcast, exactly like [`Self::values`].
+    /// is flat or scalar, exactly like [`Self::values`].
     #[inline]
     pub fn validity(&self) -> Option<PlBitmapRef<'_>> {
-        // SAFETY: the mask is flat or broadcast for `self.length`, upheld by every constructor.
+        // SAFETY: the mask is flat or scalar for `self.length`, upheld by every constructor.
         self.validity
             .as_ref()
             .map(|validity| unsafe { PlBitmapRef::new_unchecked(validity, self.length) })
@@ -204,36 +204,36 @@ impl PlBooleanArray {
     ///
     /// This is `false` for a flat array of length one, where the two representations coincide.
     #[inline]
-    pub fn values_are_broadcast(&self) -> bool {
+    pub fn values_are_scalar(&self) -> bool {
         self.values.len() != self.length
     }
 
     /// Whether the validity mask holds a single bit shared by every element.
     #[inline]
-    pub fn validity_is_broadcast(&self) -> bool {
-        self.validity().is_some_and(|v| v.is_broadcast())
+    pub fn validity_is_scalar(&self) -> bool {
+        self.validity().is_some_and(|v| v.is_scalar())
     }
 
     /// Whether every backing bitmap has one bit per element.
     #[inline]
     pub fn is_flat(&self) -> bool {
-        !self.values_are_broadcast() && !self.validity_is_broadcast()
+        !self.values_are_scalar() && !self.validity_is_scalar()
     }
 
-    /// Whether this array is entirely stored in the broadcast representation, and therefore is a
+    /// Whether this array is entirely stored in the scalar representation, and therefore is a
     /// single logical value repeated [`Self::len`] times in `O(1)` memory.
     #[inline]
     pub fn is_scalar(&self) -> bool {
-        self.values_are_broadcast() && self.validity().is_none_or(|v| v.is_broadcast())
+        self.values_are_scalar() && self.validity().is_none_or(|v| v.is_scalar())
     }
 
-    /// The value shared by every element, if the values bitmap is a broadcast bitmap.
+    /// The value shared by every element, if the values bitmap is a scalar bitmap.
     ///
     /// Returns `None` for a flat array and for an empty array. The value of a null element is
     /// undetermined, so this may return a value even when all elements are null.
     #[inline]
-    pub fn broadcast_value(&self) -> Option<bool> {
-        self.values().broadcast_value()
+    pub fn scalar_value(&self) -> Option<bool> {
+        self.values().scalar_value()
     }
 
     /// Returns the value at `i`.
@@ -319,7 +319,7 @@ impl PlBooleanArray {
 
     /// The number of null elements.
     ///
-    /// This is `O(1)` for a broadcast validity mask and `O(len)` for a flat one, amortized over
+    /// This is `O(1)` for a scalar validity mask and `O(len)` for a flat one, amortized over
     /// repeated calls on the same [`Bitmap`].
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
@@ -348,7 +348,7 @@ impl PlBooleanArray {
     /// Replaces the validity mask.
     ///
     /// # Panics
-    /// Panics if `validity` is neither flat nor broadcast for this array's length.
+    /// Panics if `validity` is neither flat nor scalar for this array's length.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
         self.set_validity(validity);
@@ -358,12 +358,12 @@ impl PlBooleanArray {
     /// Replaces the validity mask.
     ///
     /// # Panics
-    /// Panics if `validity` is neither flat nor broadcast for this array's length.
+    /// Panics if `validity` is neither flat nor scalar for this array's length.
     pub fn set_validity(&mut self, validity: Option<Bitmap>) {
         if let Some(validity) = validity.as_ref() {
             assert!(
                 is_valid_buffer_len(validity.len(), self.length),
-                "validity mask of length {} is neither flat nor broadcast for an array of length {}",
+                "validity mask of length {} is neither flat nor scalar for an array of length {}",
                 validity.len(),
                 self.length,
             );
@@ -401,8 +401,8 @@ impl PlBooleanArray {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // Broadcast bitmaps are unaffected by slicing: every element reads the same bit.
-        if !self.values_are_broadcast() {
+        // Scalar bitmaps are unaffected by slicing: every element reads the same bit.
+        if !self.values_are_scalar() {
             unsafe { self.values.slice_unchecked(offset, length) };
         }
         if let Some(validity) = self.validity.as_mut() {
@@ -440,7 +440,7 @@ impl PlBooleanArray {
 
     /// Returns an equivalent array whose backing bitmaps all hold one bit per element.
     ///
-    /// This materializes any broadcast bitmap and is therefore `O(len)`; it is a no-op clone when
+    /// This materializes any scalar bitmap and is therefore `O(len)`; it is a no-op clone when
     /// this array [`is_flat`](Self::is_flat).
     pub fn to_flat(&self) -> Self {
         if self.is_flat() {
@@ -526,7 +526,7 @@ impl<'a> IntoIterator for &'a PlBooleanArray {
     }
 }
 
-/// Compares two arrays element-wise; the representation (flat or broadcast) is irrelevant.
+/// Compares two arrays element-wise; the representation (flat or scalar) is irrelevant.
 impl PartialEq for PlBooleanArray {
     fn eq(&self, other: &Self) -> bool {
         if self.length != other.length {
@@ -599,8 +599,8 @@ impl PlArray for PlBooleanArray {
     }
 
     #[inline]
-    fn values_are_broadcast(&self) -> bool {
-        self.values_are_broadcast()
+    fn values_are_scalar(&self) -> bool {
+        self.values_are_scalar()
     }
 
     #[inline]
@@ -658,7 +658,7 @@ mod tests {
     }
 
     #[test]
-    fn scalar_broadcasts_values() {
+    fn scalar_scalars_values() {
         let arr = PlBooleanArray::new_scalar(true, 4);
 
         assert_eq!(arr.len(), 4);
@@ -666,7 +666,7 @@ mod tests {
         assert_eq!(arr.values().len(), 4);
         assert!(arr.is_scalar());
         assert!(!arr.is_flat());
-        assert_eq!(arr.broadcast_value(), Some(true));
+        assert_eq!(arr.scalar_value(), Some(true));
         assert_eq!(arr.null_count(), 0);
 
         for i in 0..arr.len() {
@@ -688,12 +688,12 @@ mod tests {
     }
 
     #[test]
-    fn flat_values_with_broadcast_validity() {
+    fn flat_values_with_scalar_validity() {
         let arr = PlBooleanArray::from_vec(vec![true, false, true])
             .with_validity(Some(Bitmap::new_zeroed(1)));
 
-        assert!(arr.validity_is_broadcast());
-        assert!(!arr.values_are_broadcast());
+        assert!(arr.validity_is_scalar());
+        assert!(!arr.values_are_scalar());
         assert!(!arr.is_flat());
         assert!(!arr.is_scalar());
         assert_eq!(arr.null_count(), 3);
@@ -701,12 +701,12 @@ mod tests {
     }
 
     #[test]
-    fn broadcast_values_with_flat_validity() {
+    fn scalar_values_with_flat_validity() {
         let arr = PlBooleanArray::new_scalar(true, 3)
             .with_validity(Some(Bitmap::from_iter([true, false, true])));
 
-        assert!(arr.values_are_broadcast());
-        assert!(!arr.validity_is_broadcast());
+        assert!(arr.values_are_scalar());
+        assert!(!arr.validity_is_scalar());
         assert!(!arr.is_flat());
         assert!(!arr.is_scalar());
         assert_eq!(arr.null_count(), 1);
@@ -724,8 +724,8 @@ mod tests {
         // The values cover every element even though they are backed by a single bit.
         assert_eq!(values.len(), 1_000);
         assert_eq!(values.bitmap().len(), 1);
-        assert!(values.is_broadcast());
-        assert_eq!(values.broadcast_value(), Some(true));
+        assert!(values.is_scalar());
+        assert_eq!(values.scalar_value(), Some(true));
         assert!(values.get(999));
         assert_eq!(values.set_bits(), 1_000);
 
@@ -790,7 +790,7 @@ mod tests {
     }
 
     #[test]
-    fn slicing_keeps_broadcast_validity() {
+    fn slicing_keeps_scalar_validity() {
         let arr = PlBooleanArray::from_vec(vec![true, false, true])
             .with_validity(Some(Bitmap::new_zeroed(1)))
             .sliced(1, 2);
@@ -799,12 +799,12 @@ mod tests {
         assert_eq!(arr.values().bitmap().len(), 2);
         assert_eq!(arr.validity().unwrap().len(), 2);
         assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
-        assert!(arr.validity().unwrap().is_broadcast());
+        assert!(arr.validity().unwrap().is_scalar());
         assert_eq!(arr.iter().collect::<Vec<_>>(), [None, None]);
     }
 
     #[test]
-    fn to_flat_materializes_broadcasts() {
+    fn to_flat_materializes_scalars() {
         let scalar = PlBooleanArray::new_scalar(true, 3);
         let flat = scalar.to_flat();
 
@@ -865,7 +865,7 @@ mod tests {
         assert!(arr.is_empty());
         assert!(arr.is_flat());
         assert_eq!(arr.null_count(), 0);
-        assert_eq!(arr.broadcast_value(), None);
+        assert_eq!(arr.scalar_value(), None);
         assert_eq!(arr.iter().next(), None);
     }
 

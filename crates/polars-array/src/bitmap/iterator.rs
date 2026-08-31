@@ -6,7 +6,7 @@ use crate::bitmap::PlBitmapRef;
 
 /// Iterator over the bits of a [`PlBitmap`](super::PlBitmap) or a [`PlBitmapRef`].
 ///
-/// A broadcast mask is iterated without being materialized, so this is `O(1)` in memory regardless
+/// A scalar mask is iterated without being materialized, so this is `O(1)` in memory regardless
 /// of the mask's length.
 #[derive(Clone)]
 pub struct PlBitmapIter<'a> {
