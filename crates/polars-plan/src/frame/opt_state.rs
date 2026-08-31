@@ -38,11 +38,7 @@ bitflags! {
         const STREAMING = 1 << 11;
         /// Run every node eagerly. This turns off multi-node optimizations.
         const EAGER = 1 << 12;
-        /// Let plan-time row estimates steer decisions that are otherwise made by a
-        /// structural rule: which side of a join to build, and whether common-subplan
-        /// caches are worth keeping.
-        ///
-        /// Join reordering has estimates of its own and sits behind [`Self::JOIN_ORDER`].
+        /// Use row estimates in cost planning.
         const ROW_ESTIMATE = 1 << 13;
         /// Replace simple projections with a faster inlined projection that skips the expression engine.
         const FAST_PROJECTION = 1 << 14;

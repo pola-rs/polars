@@ -20,10 +20,6 @@ pub(crate) struct SubplanCost {
 ///
 /// `None` when any node of it is not modelled: a plan we cannot describe must never
 /// come out looking cheap.
-///
-/// A `Cache` below `node` is materialized once however its own references are
-/// resolved, so it counts for the rows read out of it and not for the work that
-/// fills it.
 pub(crate) fn subplan_cost(
     node: Node,
     ir_arena: &Arena<IR>,

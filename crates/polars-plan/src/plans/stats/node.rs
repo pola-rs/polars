@@ -20,7 +20,6 @@ use crate::plans::{
 };
 use crate::prelude::{JoinType, Operator};
 
-/// Estimates already computed, keyed on the node they describe.
 // We don't iterate over it.
 #[expect(clippy::disallowed_types)]
 pub(super) type StatsCache = PlHashMap<Node, Option<NodeStats>>;
@@ -112,14 +111,10 @@ pub(super) fn node_stats_with_cache(
             })
         },
 
-        // An in-memory frame carries its rows with it, so the count is exact.
         IR::DataFrameScan { .. } => {
             let rows = (leaf_row_count(ir).value()? as f64).max(MIN_CARDINALITY);
             Some(NodeStats::of_rows(rows))
         },
-
-        // A group-by emits one row per distinct key, which is never more than its
-        // input and is exactly one when there is no key at all.
         IR::GroupBy {
             input,
             keys,
@@ -127,8 +122,7 @@ pub(super) fn node_stats_with_cache(
             apply,
             ..
         } => {
-            // A user function may emit any number of rows per group, and a
-            // rolling or dynamic group-by counts windows rather than keys.
+            // Those can produce more groups.
             if apply.is_some() || options.is_rolling() || options.is_dynamic() {
                 return None;
             }
@@ -136,9 +130,6 @@ pub(super) fn node_stats_with_cache(
             let names: Vec<&PlSmallStr> = keys.iter().map(|k| k.output_name()).collect();
             Some(one_row_per_group(inner, &names, options.slice))
         },
-
-        // `unique` keeps one row per distinct combination of its subset, which is a
-        // group-by over those columns. No subset means every column.
         IR::Distinct { input, options } => {
             let input_schema;
             let names: Vec<&PlSmallStr> = match &options.subset {
@@ -151,9 +142,6 @@ pub(super) fn node_stats_with_cache(
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             Some(one_row_per_group(inner, &names, options.slice))
         },
-
-        // A filter above the scan is equivalent to one pushed into it; predicate
-        // pushdown normally leaves none here, but a leaf need not be a bare scan.
         IR::Filter { input, predicate } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             let filtered = apply_predicate(
@@ -163,33 +151,22 @@ pub(super) fn node_stats_with_cache(
                 expr_arena,
                 inner.columns.as_deref(),
             );
-            Some(inner.selecting(filtered))
+            Some(inner.filter(filtered))
         },
-
-        // Row-preserving, so they pass both estimates through untouched.
         IR::SimpleProjection { input, .. } | IR::Cache { input, .. } => {
             node_stats_with_cache(*input, ir_arena, expr_arena, cache)
         },
-
-        // A sort keeps every row it is given, and carries its own slice for a top-k.
         IR::Sort { input, slice, .. } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             Some(match slice {
                 None => inner,
-                // The dynamic predicate reaches the same rows sooner, it does not
-                // change which ones they are.
-                Some((offset, len, _)) => inner.sliced_by((*offset, *len)),
+                Some((offset, len, _)) => inner.slice((*offset, *len)),
             })
         },
-
-        // A slice narrows the relation the way a filter does.
         IR::Slice { input, offset, len } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
-            Some(inner.sliced_by((*offset, *len as usize)))
+            Some(inner.slice((*offset, *len as usize)))
         },
-
-        // A union stacks its inputs, so it holds every row and every key of all of
-        // them. Every input has to be measurable for the sum to mean anything.
         IR::Union { inputs, options } => {
             let mut acc = NodeStats::of_rows(0.0);
             for input in inputs {
@@ -203,10 +180,9 @@ pub(super) fn node_stats_with_cache(
             acc.max_rows = acc.max_rows.map(|m| m.max(MIN_CARDINALITY));
             Some(match options.slice {
                 None => acc,
-                Some(slice) => acc.sliced_by(slice),
+                Some(slice) => acc.slice(slice),
             })
         },
-
         // Both sides are divided by the shared domain of a key pair, see
         // `join_cardinality`.
         IR::Join {
@@ -237,10 +213,9 @@ pub(super) fn node_stats_with_cache(
             };
             Some(match options.args.slice {
                 None => stats,
-                Some(slice) => stats.sliced_by(slice),
+                Some(slice) => stats.slice(slice),
             })
         },
-
         // A gather emits one row per index, and its indices are a frame of their own,
         // so its height is that frame's.
         IR::Gather { input, idxs, .. } => {
@@ -255,10 +230,6 @@ pub(super) fn node_stats_with_cache(
                 columns: inner.columns,
             })
         },
-
-        // A `select` keeps its input's height when every expression does. Aggregates
-        // collapse the frame to one row, and a mix of the two broadcasts the scalars
-        // back up to the height of the rest.
         IR::Select { input, expr, .. } => {
             if expr.is_empty() || !expr.iter().all(|e| keeps_height(e, expr_arena)) {
                 return None;
@@ -270,17 +241,11 @@ pub(super) fn node_stats_with_cache(
             let columns = passed_through_columns(&inner, expr, expr_arena);
             Some(NodeStats { columns, ..inner })
         },
-
-        // `with_columns` adds to the frame it is given rather than replacing it, so
-        // the height is the input's even when every expression is a scalar.
         IR::HStack { input, exprs, .. } => {
             let inner = node_stats_with_cache(*input, ir_arena, expr_arena, cache)?;
             let columns = shadowed_columns(&inner, exprs, expr_arena);
             Some(NodeStats { columns, ..inner })
         },
-
-        // Anything else (python scan, opaque function, unpivot, ...) is not
-        // modelled. Do not guess.
         _ => None,
     };
     cache.insert(node, stats.clone());
@@ -288,18 +253,17 @@ pub(super) fn node_stats_with_cache(
 }
 
 impl NodeStats {
-    /// The same leaf with fewer of its rows selected. The key domain is untouched:
-    /// the other side of a join still references all of it.
-    fn selecting(mut self, filtered: f64) -> Self {
+    /// The same leaf with fewer of its rows selected. The key domain is untouched.
+    fn filter(mut self, filtered: f64) -> Self {
         self.filtered = filtered;
         self
     }
 
     /// The same leaf narrowed by `slice`, applied to the estimate and the bound.
-    fn sliced_by(mut self, slice: impl Into<Slice> + Clone) -> Self {
+    fn slice(mut self, slice: impl Into<Slice> + Clone) -> Self {
         self.max_rows = self.max_rows.map(|m| sliced(m, slice.clone()));
         let filtered = sliced(self.filtered, slice);
-        self.selecting(filtered)
+        self.filter(filtered)
     }
 
     /// Estimates for a relation of exactly `rows` rows carrying no column
@@ -326,30 +290,28 @@ impl NodeStats {
     /// Distinct values in `name`, when known well enough to steer a decision.
     ///
     /// Never more than the rows the node emits.
-    fn ndv(&self, name: &str) -> Option<f64> {
+    fn distinct_count_key(&self, name: &str) -> Option<f64> {
         let distinct = self.column(name)?.distinct.confident(MAX_NDV_REL_ERR)?;
         Some((distinct as f64).clamp(MIN_CARDINALITY, self.unfiltered))
     }
 
     /// Distinct values in `key`, when it is a plain column with a known NDV.
     fn distinct_count(&self, key: &ExprIR) -> Option<f64> {
-        self.ndv(key.output_name_inner().get()?)
+        self.distinct_count_key(key.output_name_inner().get()?)
     }
 
     /// Distinct combinations of `keys`, or `None` unless every one is known.
     ///
     /// The product assumes the keys are independent, which is an upper bound; the
     /// caller caps it at the row count.
-    fn key_ndv_product(&self, keys: &[&PlSmallStr]) -> Option<f64> {
+    fn key_distinct_count_product(&self, keys: &[&PlSmallStr]) -> Option<f64> {
         keys.iter()
-            .map(|name| self.ndv(name))
+            .map(|name| self.distinct_count_key(name))
             .try_fold(1.0, |acc, ndv| Some(acc * ndv?))
     }
 }
 
 /// Rows a join of the given type emits, from the sizes of its sides and the rows an
-/// inner join over the same keys would match.
-///
 /// `None` for a join type that is not modelled.
 fn join_rows(how: &JoinType, left: f64, right: f64, inner: f64) -> Option<f64> {
     let rows = match how {
@@ -364,7 +326,9 @@ fn join_rows(how: &JoinType, left: f64, right: f64, inner: f64) -> Option<f64> {
         #[cfg(feature = "semi_anti_join")]
         JoinType::Anti => left - inner.min(left),
         JoinType::Cross => left * right,
-        _ => return None,
+        JoinType::AsOf(_) => return None,
+        JoinType::IEJoin => return None,
+        JoinType::Range => return None,
     };
     Some(rows.max(MIN_CARDINALITY))
 }
@@ -484,7 +448,7 @@ fn one_row_per_group(
     keys: &[&PlSmallStr],
     slice: Option<(i64, usize)>,
 ) -> NodeStats {
-    let ndv = inner.key_ndv_product(keys);
+    let ndv = inner.key_distinct_count_product(keys);
     let mut groups = NodeStats {
         filtered: n_groups(inner.filtered, keys.len(), ndv),
         unfiltered: n_groups(inner.unfiltered, keys.len(), ndv),
@@ -837,7 +801,7 @@ mod tests {
         let inventory = leaf(11_745_000.0, 11_745_000.0);
         let date_dim = leaf(73_049.0, 73_049.0);
         let rows = sliced(date_dim.filtered, (0i64, 10));
-        let head = date_dim.selecting(rows);
+        let head = date_dim.filter(rows);
 
         let out = join_cardinality(
             inventory.filtered,
