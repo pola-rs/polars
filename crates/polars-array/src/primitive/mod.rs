@@ -7,7 +7,9 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{broadcast_index, is_valid_buffer_len};
+use crate::flat::Flat;
 
+mod flat;
 mod iterator;
 
 pub use iterator::{PlPrimitiveIter, PlPrimitiveValuesIter};
@@ -455,10 +457,11 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Returns an equivalent array whose backing buffers all hold one slot per element.
     ///
     /// This materializes any scalar buffer and is therefore `O(len)`; it is a no-op clone when
-    /// this array [`is_flat`](Self::is_flat).
-    pub fn to_flat(&self) -> Self {
+    /// this array [`is_flat`](Self::is_flat). The result carries its representation in its type:
+    /// see [`Flat`] for what a flat array can do that this one cannot.
+    pub fn to_flat(&self) -> Flat<Self> {
         if self.is_flat() {
-            return self.clone();
+            return Flat(self.clone());
         }
 
         let values = if !self.values_are_scalar() {
@@ -471,11 +474,11 @@ impl<T: NativeType> PlPrimitiveArray<T> {
 
         let validity = self.validity().map(|validity| validity.to_flat());
 
-        Self {
+        Flat(Self {
             values,
             length: self.length,
             validity,
-        }
+        })
     }
 
     /// The single element every element of this array equals, if it is a non-empty scalar array.
@@ -728,10 +731,7 @@ mod tests {
         assert_eq!(validity.set_bits(), 0);
 
         // Materializing it yields exactly the mask a flat array would carry.
-        assert_eq!(
-            validity.to_flat(),
-            scalar.to_flat().validity().unwrap().to_flat()
-        );
+        assert_eq!(validity.to_flat(), *scalar.to_flat().validity().unwrap());
 
         let flat: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
         let validity = flat.validity().unwrap();
@@ -802,34 +802,6 @@ mod tests {
         assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
         assert!(arr.validity().unwrap().is_scalar());
         assert_eq!(arr.iter().collect::<Vec<_>>(), [None, None]);
-    }
-
-    #[test]
-    fn to_flat_materializes_scalars() {
-        let scalar = PlPrimitiveArray::new_scalar(7i32, 3);
-        let flat = scalar.to_flat();
-
-        assert!(flat.is_flat());
-        assert_eq!(flat.values().as_slice(), [7, 7, 7]);
-        assert_eq!(flat, scalar);
-
-        let null_scalar = PlPrimitiveArray::<i32>::new_full_null(3);
-        let flat = null_scalar.to_flat();
-
-        assert!(flat.is_flat());
-        assert_eq!(flat.validity().unwrap().bitmap().len(), 3);
-        assert!(flat.validity().unwrap().is_flat());
-        assert_eq!(flat.null_count(), 3);
-        assert_eq!(flat, null_scalar);
-    }
-
-    #[test]
-    fn to_flat_of_empty_scalar() {
-        let flat = PlPrimitiveArray::new_scalar(7i32, 0).to_flat();
-
-        assert!(flat.is_flat());
-        assert!(flat.is_empty());
-        assert_eq!(flat.values().len(), 0);
     }
 
     #[test]

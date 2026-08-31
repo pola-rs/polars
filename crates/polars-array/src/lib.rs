@@ -28,5 +28,6 @@ pub use array::PlArray;
 pub use array_type::{PlArrayType, PrimitiveType};
 pub use bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 pub use boolean::PlBooleanArray;
+pub use flat::Flat;
 pub use primitive::PlPrimitiveArray;
 pub use struct_::PlStructArray;

@@ -5,7 +5,9 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapIter, PlBitmapRef};
 use crate::broadcast::is_valid_buffer_len;
+use crate::flat::Flat;
 
+mod flat;
 mod iterator;
 
 pub use iterator::PlBooleanIter;
@@ -441,17 +443,18 @@ impl PlBooleanArray {
     /// Returns an equivalent array whose backing bitmaps all hold one bit per element.
     ///
     /// This materializes any scalar bitmap and is therefore `O(len)`; it is a no-op clone when
-    /// this array [`is_flat`](Self::is_flat).
-    pub fn to_flat(&self) -> Self {
+    /// this array [`is_flat`](Self::is_flat). The result carries its representation in its type:
+    /// see [`Flat`] for what a flat array can do that this one cannot.
+    pub fn to_flat(&self) -> Flat<Self> {
         if self.is_flat() {
-            return self.clone();
+            return Flat(self.clone());
         }
 
-        Self {
+        Flat(Self {
             values: self.values().to_flat(),
             length: self.length,
             validity: self.validity().map(|validity| validity.to_flat()),
-        }
+        })
     }
 
     /// The single element every element of this array equals, if it is a non-empty scalar array.
@@ -725,7 +728,7 @@ mod tests {
         assert_eq!(values.set_bits(), 1_000);
 
         // Materializing them yields exactly the bitmap a flat array would carry.
-        assert_eq!(values.to_flat(), *scalar.to_flat().values().bitmap());
+        assert_eq!(values.to_flat(), *scalar.to_flat().values());
     }
 
     #[test]
@@ -796,35 +799,6 @@ mod tests {
         assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
         assert!(arr.validity().unwrap().is_scalar());
         assert_eq!(arr.iter().collect::<Vec<_>>(), [None, None]);
-    }
-
-    #[test]
-    fn to_flat_materializes_scalars() {
-        let scalar = PlBooleanArray::new_scalar(true, 3);
-        let flat = scalar.to_flat();
-
-        assert!(flat.is_flat());
-        assert_eq!(flat.values().bitmap().len(), 3);
-        assert_eq!(flat.values_iter().collect::<Vec<_>>(), [true; 3]);
-        assert_eq!(flat, scalar);
-
-        let null_scalar = PlBooleanArray::new_full_null(3);
-        let flat = null_scalar.to_flat();
-
-        assert!(flat.is_flat());
-        assert_eq!(flat.validity().unwrap().bitmap().len(), 3);
-        assert!(flat.validity().unwrap().is_flat());
-        assert_eq!(flat.null_count(), 3);
-        assert_eq!(flat, null_scalar);
-    }
-
-    #[test]
-    fn to_flat_of_empty_scalar() {
-        let flat = PlBooleanArray::new_scalar(true, 0).to_flat();
-
-        assert!(flat.is_flat());
-        assert!(flat.is_empty());
-        assert_eq!(flat.values().bitmap().len(), 0);
     }
 
     #[test]
