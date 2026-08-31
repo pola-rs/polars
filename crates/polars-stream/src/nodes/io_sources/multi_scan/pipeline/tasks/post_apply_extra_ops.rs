@@ -19,6 +19,7 @@ pub struct PostApplyExtraOps {
     pub first_morsel: Morsel,
     pub first_morsel_position: RowCounter,
     pub num_pipelines: usize,
+    pub max_concurrent_scans: usize,
 }
 
 impl PostApplyExtraOps {
@@ -29,13 +30,16 @@ impl PostApplyExtraOps {
             first_morsel,
             first_morsel_position,
             num_pipelines,
+            max_concurrent_scans,
         } = self;
 
         let verbose = polars_core::config::verbose();
         let rows_before = Arc::new(RelaxedCell::new_u64(0));
         let rows_after = Arc::new(RelaxedCell::new_u64(0));
 
-        let (mut distr_tx, distr_receivers) = distributor_channel(num_pipelines, 1);
+        // Avoid O(n^2) memory for concurrent scans, with n being the number of threads.
+        let stage_pipelines = num_pipelines.div_ceil(max_concurrent_scans).max(1);
+        let (mut distr_tx, distr_receivers) = distributor_channel(stage_pipelines, 1);
 
         // Distributor
         {
