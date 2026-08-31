@@ -265,37 +265,26 @@ impl ComputeNode for MergeSortedNode {
                 if left_unmerged.is_empty() && right_unmerged.is_empty() =>
             {
                 let recv = port.parallel();
-                let inner_handles = recv
+                join_handles.extend(recv
                     .into_iter()
                     .zip(send)
                     .map(|(mut recv, mut send)| {
-                        let morsel_offset = *seq;
+                        let seq = *seq;
                         scope.spawn_task(TaskPriority::High, async move {
-                            let mut max_seq = morsel_offset;
                             while let Ok(mut morsel) = recv.recv().await {
                                 // Ensure the morsel sequence id stream is monotone non-decreasing.
-                                let seq = morsel.seq().offset_by(morsel_offset);
-                                max_seq = max_seq.max(seq);
+                                let seq = morsel.seq().offset_by(seq);
+                                morsel.set_seq(seq);
 
                                 remove_key_column(&mut *morsel.df_mut().await);
-
-                                morsel.set_seq(seq);
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }
                             }
-                            max_seq
+                            
+                            Ok(())
                         })
-                    })
-                    .collect::<Vec<_>>();
-
-                join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                    // Update our global maximum.
-                    for handle in inner_handles {
-                        *seq = (*seq).max(handle.await);
-                    }
-                    Ok(())
-                }));
+                    }));
             },
 
             // This is the base case. Either:
