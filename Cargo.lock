@@ -3100,6 +3100,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-array"
+version = "0.55.1"
+dependencies = [
+ "polars-arrow",
+ "polars-buffer",
+ "polars-error",
+]
+
+[[package]]
 name = "polars-arrow"
 version = "0.55.1"
 dependencies = [

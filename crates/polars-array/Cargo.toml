@@ -1,0 +1,20 @@
+[package]
+name = "polars-array"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Vector format for the Polars DataFrame library"
+
+[dependencies]
+arrow = { workspace = true }
+polars-buffer = { workspace = true }
+polars-error = { workspace = true }
+
+[features]
+default = []
+
+[lints]
+workspace = true
