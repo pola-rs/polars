@@ -279,6 +279,11 @@ fn decode_column(
 
     let mut series = Series::try_from((arrow_field, arrays))?;
 
+    // Parquet allows duplicate map keys; `Map` does not.
+    if let Some(canonical) = series.canonicalize_maps()? {
+        series = canonical;
+    }
+
     if let Some(col_idxs) = row_group_data
         .row_group_metadata
         .columns_idxs_under_root_iter(&arrow_field.name)
@@ -687,11 +692,17 @@ fn decode_column_prefiltered(
         }
     }
 
-    let series = if !prefilter {
+    let mut series = if !prefilter {
         series.filter(mask)?
     } else {
         series
     };
+
+    // Parquet allows duplicate map keys; `Map` does not. Done after the filter so that
+    // discarded rows cost nothing.
+    if let Some(canonical) = series.canonicalize_maps()? {
+        series = canonical;
+    }
 
     assert_eq!(series.len(), expected_num_rows);
 
