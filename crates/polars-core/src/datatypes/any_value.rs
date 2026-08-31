@@ -828,6 +828,7 @@ impl AnyValue<'_> {
 
         // Hash discriminant, not distinguishing between owned/non-owned.
         match self {
+            #[cfg(feature = "dtype-struct")]
             Struct(..) | StructOwned(..) => 0.hash(state),
             StringOwned(v) => std::mem::discriminant(&String(v)).hash(state),
             BinaryOwned(v) => std::mem::discriminant(&Binary(v)).hash(state),
