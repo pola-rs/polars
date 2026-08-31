@@ -507,3 +507,59 @@ def test_gather_leaf_is_estimated(tmp_path: Path) -> None:
     lf = star_query(frames)
 
     assert_reordered(lf, ["fact", "dim_b", "dim_a"], ["fact", "dim_a", "dim_b"])
+
+
+def null_count_frames(tmp_path: Path, *, nulls: int) -> dict[str, pl.LazyFrame]:
+    """A star schema whose `dim_a` filter is an `is_not_null`.
+
+    `dim_a` is the larger dimension, so it only sorts ahead of `dim_b` when the
+    null count says the filter is more selective than the flat fallback.
+    """
+    fact = pl.DataFrame(
+        {
+            "f_dim_a": [i % 1000 for i in range(20_000)],
+            "f_dim_b": [i % 100 for i in range(20_000)],
+        }
+    )
+    dim_a = pl.DataFrame(
+        {
+            "a_key": list(range(1000)),
+            "a_flag": [None if i < nulls else i for i in range(1000)],
+        }
+    )
+    dim_b = pl.DataFrame({"b_key": list(range(100)), "b_val": list(range(100))})
+    return write_scans(tmp_path, fact=fact, dim_a=dim_a, dim_b=dim_b)
+
+
+def null_count_query(frames: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
+    return (
+        frames["fact"]
+        .join(
+            frames["dim_a"].filter(pl.col("a_flag").is_not_null()),
+            left_on="f_dim_a",
+            right_on="a_key",
+            coalesce=False,
+        )
+        .join(
+            frames["dim_b"].filter(pl.col("b_val") > 5),
+            left_on="f_dim_b",
+            right_on="b_key",
+            coalesce=False,
+        )
+    )
+
+
+def test_null_count_drives_filter_selectivity(tmp_path: Path) -> None:
+    # 99% of `a_flag` is null, so `is_not_null` leaves ~10 of 1000 rows. That beats
+    # `dim_b`, whose opaque predicate falls back to the flat selectivity.
+    lf = null_count_query(null_count_frames(tmp_path, nulls=990))
+
+    assert_reordered(lf, ["fact", "dim_a", "dim_b"], ["fact", "dim_a", "dim_b"])
+
+
+def test_no_nulls_leaves_the_larger_dimension_last(tmp_path: Path) -> None:
+    # The same query over a column with no nulls at all: `is_not_null` keeps every
+    # row, so the smaller `dim_b` is joined first instead.
+    lf = null_count_query(null_count_frames(tmp_path, nulls=0))
+
+    assert_reordered(lf, ["fact", "dim_a", "dim_b"], ["fact", "dim_b", "dim_a"])
