@@ -1194,6 +1194,18 @@ def test_read_database_oracledb_engine_no_arrow_fallthrough() -> None:
             ),
             id="Unavailable `pre_execution_query` for adbc",
         ),
+        pytest.param(
+            *ExceptionTestParams(
+                read_method="read_database_uri",
+                query="SELECT * FROM test_data",
+                protocol="sqlite",
+                errclass=ValueError,
+                errmsg="the 'adbc' engine does not support use of `connection_options`",
+                engine="adbc",
+                kwargs={"connection_options": {"key": "value"}},
+            ),
+            id="Unavailable `connection_options` for adbc",
+        ),
     ],
 )
 def test_read_database_exceptions(
@@ -1215,6 +1227,8 @@ def test_read_database_exceptions(
             "engine": engine,
             "pre_execution_query": pre_execution_query,
         }
+        if kwargs is not None:
+            params.update(kwargs)
     else:
         params = {"connection": protocol, "query": query}
         if execute_options:
@@ -1360,3 +1374,82 @@ def test_read_database_uri_pre_execution_query_not_supported_success(
     )
 
     assert cx_mock.read_sql.call_args.kwargs.get("pre_execution_query") is None
+
+
+@pytest.mark.parametrize(
+    ("uri", "connection_options", "expected_uri"),
+    [
+        pytest.param(
+            "trino://user@host:8080/catalog",
+            {"schema": "analytics", "source": "polars"},
+            "trino://user@host:8080/catalog?schema=analytics&source=polars",
+            id="add params",
+        ),
+        pytest.param(
+            "trino://user@host:8080/catalog?verify=false",
+            {"source": "polars"},
+            "trino://user@host:8080/catalog?verify=false&source=polars",
+            id="keep existing params",
+        ),
+        pytest.param(
+            "snowflake://user:pass@org/testdb/public?warehouse=test&role=myrole",
+            {"role": "otherrole"},
+            "snowflake://user:pass@org/testdb/public?warehouse=test&role=otherrole",
+            id="override existing param",
+        ),
+        pytest.param(
+            "postgresql://user:pass@host:5432/db?options=%2Fx%20y&flag",
+            {"application_name": "polars"},
+            "postgresql://user:pass@host:5432/db?options=%2Fx%20y&flag&application_name=polars",
+            id="existing params passed through verbatim",
+        ),
+        pytest.param(
+            "sqlite:///path/to/db.sqlite",
+            {"mode": "ro"},
+            "sqlite:///path/to/db.sqlite?mode=ro",
+            id="uri without authority component",
+        ),
+        pytest.param(
+            "mysql://my#us3r:p433w0rd@host:9999/database",
+            {"source": "polars"},
+            "mysql://my#us3r:p433w0rd@host:9999/database?source=polars",
+            id="uri with special characters in credentials",
+        ),
+        pytest.param(
+            "mysql://test",
+            {"SSL": True, "verify": False, "timeout": 30},
+            "mysql://test?SSL=true&verify=false&timeout=30",
+            id="non-string values",
+        ),
+        pytest.param(
+            "postgresql://user:pass@host:5432/db",
+            {"options": "-c default_transaction_read_only=True"},
+            "postgresql://user:pass@host:5432/db?options=-c%20default_transaction_read_only%3DTrue",
+            id="percent-encoded value",
+        ),
+        pytest.param("mysql://test", None, "mysql://test", id="none is a no-op"),
+        pytest.param("mysql://test", {}, "mysql://test", id="empty dict is a no-op"),
+    ],
+)
+@patch("polars.DataFrame")
+@patch("polars.io.database._utils.import_optional")
+def test_read_database_uri_connection_options(
+    import_mock: Mock,
+    DataFrame_mock: Mock,
+    uri: str,
+    connection_options: dict[str, Any] | None,
+    expected_uri: str,
+) -> None:
+    cx_mock = Mock()
+    cx_mock.__version__ = "0.4.2"
+
+    import_mock.return_value = cx_mock
+
+    pl.read_database_uri(
+        query="SELECT 1",
+        uri=uri,
+        engine="connectorx",
+        connection_options=connection_options,
+    )
+
+    assert cx_mock.read_sql.call_args.kwargs["conn"] == expected_uri
