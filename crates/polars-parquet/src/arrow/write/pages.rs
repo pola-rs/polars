@@ -290,20 +290,38 @@ fn expand_list_validity<'a, O: Offset>(
     validity: BitmapState,
     array_stack: &mut Vec<(&'a dyn Array, BitmapState)>,
 ) {
+    expand_nested_validity(
+        array.len(),
+        array.offsets(),
+        array.values().as_ref(),
+        validity,
+        array_stack,
+    )
+}
+
+/// Push `values` with the outer validity expanded through `offsets`, so that it applies to
+/// each element rather than to each row.
+fn expand_nested_validity<'a, O: Offset>(
+    len: usize,
+    offsets_buffer: &OffsetsBuffer<O>,
+    values: &'a dyn Array,
+    validity: BitmapState,
+    array_stack: &mut Vec<(&'a dyn Array, BitmapState)>,
+) {
     let BitmapState::SomeSet(list_validity) = validity else {
         array_stack.push((
-            array.values().as_ref(),
+            values,
             match validity {
                 BitmapState::AllSet => BitmapState::AllSet,
                 BitmapState::SomeSet(_) => unreachable!(),
-                BitmapState::AllUnset(_) => BitmapState::AllUnset(array.values().len()),
+                BitmapState::AllUnset(_) => BitmapState::AllUnset(values.len()),
             },
         ));
         return;
     };
 
-    let offsets = array.offsets().buffer();
-    let mut validity = MutableBitmap::with_capacity(array.values().len());
+    let offsets = offsets_buffer.buffer();
+    let mut validity = MutableBitmap::with_capacity(values.len());
     let mut list_validity_iter = list_validity.iter();
 
     // @NOTE: We need to take into account here that the list might only point to a slice of the
@@ -325,13 +343,13 @@ fn expand_list_validity<'a, O: Offset>(
 
         idx += num_zeros;
     }
-    validity.extend_constant(array.values().len() - validity.len(), false);
+    validity.extend_constant(values.len() - validity.len(), false);
 
-    debug_assert_eq!(idx, array.len());
+    debug_assert_eq!(idx, len);
     let validity = validity.freeze();
 
-    debug_assert_eq!(validity.len(), array.values().len());
-    array_stack.push((array.values().as_ref(), BitmapState::SomeSet(validity)));
+    debug_assert_eq!(validity.len(), values.len());
+    array_stack.push((values, BitmapState::SomeSet(validity)));
 }
 
 #[derive(Clone)]
@@ -472,7 +490,14 @@ pub fn to_leaves(array: &dyn Array, leaves: &mut Vec<Box<dyn Array>>) {
             },
             P::Map => {
                 let array = array.as_any().downcast_ref::<MapArray>().unwrap();
-                array_stack.push((array.field().as_ref(), validity));
+
+                expand_nested_validity(
+                    array.len(),
+                    array.offsets(),
+                    array.field().as_ref(),
+                    validity,
+                    &mut array_stack,
+                );
             },
             P::Null
             | P::Boolean
