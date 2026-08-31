@@ -23,6 +23,7 @@ pub mod broadcast;
 pub mod concatenate;
 pub mod flat;
 pub mod list;
+mod macros;
 pub mod null;
 pub mod primitive;
 pub mod struct_;

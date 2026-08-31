@@ -27,16 +27,17 @@
 //! Outside those cases the values of the result are flat, but its validity mask still is not
 //! materialized unless it has to be — see [`concatenate_validities`].
 
-use arrow::array::View;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::types::{NativeType, days_ms, i256, months_days_ns};
+use arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
-use polars_utils::float16::pf16;
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
-use crate::{PlBooleanArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray};
+use crate::{
+    PlBooleanArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray,
+    with_match_pl_primitive_array_type,
+};
 
 /// Concatenates `arrays`, in order, into a single array of their common [`PlArrayType`].
 ///
@@ -90,17 +91,18 @@ pub fn concatenate(arrays: &[&dyn PlArray]) -> PolarsResult<Box<dyn PlArray>> {
 
     match array_type {
         PlArrayType::Boolean => Ok(Box::new(concatenate_boolean(&downcast_all(arrays)?))),
-        PlArrayType::Primitive(primitive) => PRIMITIVE_CONCATENATIONS
-            .iter()
-            .find_map(|concatenate| concatenate(arrays))
-            .ok_or_else(|| {
-                polars_err!(
-                    InvalidOperation:
-                    "cannot concatenate arrays of primitive type {:?} that do not all have the \
-                     same element type",
-                    primitive,
-                )
-            }),
+        PlArrayType::Primitive(primitive) => {
+            with_match_pl_primitive_array_type!(*first, |T| concatenate_primitive_as::<T>(arrays))
+                .flatten()
+                .ok_or_else(|| {
+                    polars_err!(
+                        InvalidOperation:
+                        "cannot concatenate arrays of primitive type {:?} that do not all have \
+                         the same element type",
+                        primitive,
+                    )
+                })
+        },
         PlArrayType::Struct => Ok(Box::new(concatenate_struct(&downcast_all(arrays)?)?)),
         PlArrayType::List => Ok(Box::new(concatenate_list(&downcast_all(arrays)?)?)),
         PlArrayType::Null => Ok(Box::new(concatenate_null(&downcast_all(arrays)?))),
@@ -449,6 +451,10 @@ fn downcast_all<'a, T: PlArray>(arrays: &[&'a dyn PlArray]) -> PolarsResult<Vec<
 
 /// Concatenates `arrays` as [`PlPrimitiveArray<T>`], or returns `None` if that is not the concrete
 /// array type of every one of them.
+///
+/// The element type this is called with is the one of the first array, which the others have to
+/// agree on: their equal [`PlArrayType`] does not make them agree, since a
+/// [`PrimitiveType`](crate::PrimitiveType) does not pin an element type down.
 fn concatenate_primitive_as<T: NativeType>(arrays: &[&dyn PlArray]) -> Option<Box<dyn PlArray>> {
     let arrays = arrays
         .iter()
@@ -457,37 +463,12 @@ fn concatenate_primitive_as<T: NativeType>(arrays: &[&dyn PlArray]) -> Option<Bo
     Some(Box::new(concatenate_primitive(&arrays)))
 }
 
-/// The concatenation of primitive arrays of one element type, which returns `None` for arrays of
-/// any other.
-type PrimitiveConcatenation = fn(&[&dyn PlArray]) -> Option<Box<dyn PlArray>>;
-
-/// The concatenation of primitive arrays, specialized to every element type one can be taken over.
-///
-/// [`NativeType`] is a sealed trait, so this list is exhaustive. Matching on the
-/// [`PrimitiveType`](crate::PrimitiveType) of the arrays would not be enough to pin their element
-/// type down: [`View`] and `u128` are both [`PrimitiveType::UInt128`](crate::PrimitiveType).
-const PRIMITIVE_CONCATENATIONS: &[PrimitiveConcatenation] = &[
-    concatenate_primitive_as::<i8>,
-    concatenate_primitive_as::<i16>,
-    concatenate_primitive_as::<i32>,
-    concatenate_primitive_as::<i64>,
-    concatenate_primitive_as::<i128>,
-    concatenate_primitive_as::<i256>,
-    concatenate_primitive_as::<u8>,
-    concatenate_primitive_as::<u16>,
-    concatenate_primitive_as::<u32>,
-    concatenate_primitive_as::<u64>,
-    concatenate_primitive_as::<u128>,
-    concatenate_primitive_as::<pf16>,
-    concatenate_primitive_as::<f32>,
-    concatenate_primitive_as::<f64>,
-    concatenate_primitive_as::<days_ms>,
-    concatenate_primitive_as::<months_days_ns>,
-    concatenate_primitive_as::<View>,
-];
-
 #[cfg(test)]
 mod tests {
+    use arrow::array::View;
+    use arrow::types::{days_ms, i256, months_days_ns};
+    use polars_utils::float16::pf16;
+
     use super::*;
 
     /// The elements of a `PlPrimitiveArray<i32>`, whatever representation it is in.
