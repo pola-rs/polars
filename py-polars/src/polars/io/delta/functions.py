@@ -5,9 +5,8 @@ import importlib.util
 from typing import TYPE_CHECKING, Any
 
 from polars._utils.expired import RemovedParameter, removed_parameters
-from polars._utils.wrap import wrap_ldf
 from polars.io.cloud._utils import NoPickleOption
-from polars.io.delta._dataset import DeltaDataset
+from polars.io.delta._scan_resolver import DeltaScanResolver
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -294,7 +293,6 @@ def scan_delta(
     ...     table_path, delta_table_options=delta_table_options
     ... ).collect()  # doctest: +SKIP
     """
-    from polars._plr import PyLazyFrame
     from polars.io.cloud.credential_provider._builder import (
         _init_credential_provider_builder,
     )
@@ -327,7 +325,7 @@ def scan_delta(
             **(storage_options or {}),
         }
 
-    dataset = DeltaDataset(
+    return DeltaScanResolver(
         table_=NoPickleOption(table),
         table_uri_=str(source) if table is None else None,
         version=version,
@@ -336,6 +334,4 @@ def scan_delta(
         delta_table_options=delta_table_options,
         use_pyarrow=use_pyarrow,
         pyarrow_options=pyarrow_options,
-    )
-
-    return wrap_ldf(PyLazyFrame.new_from_dataset_object(dataset))
+    ).lazy()
