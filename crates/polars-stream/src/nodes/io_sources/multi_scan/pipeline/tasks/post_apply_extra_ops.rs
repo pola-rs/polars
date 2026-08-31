@@ -116,7 +116,7 @@ impl PostApplyExtraOps {
             })
         };
 
-        let (rx, senders) = MorselLinearizer::new(num_pipelines, 4);
+        let (rx, senders) = MorselLinearizer::new(stage_pipelines, 4);
 
         let worker_handles = distr_receivers
             .into_iter()
