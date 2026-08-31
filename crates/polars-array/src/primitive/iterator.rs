@@ -4,7 +4,7 @@ use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
 
 use crate::bitmap::PlBitmapRef;
-use crate::scalar::scalar_index;
+use crate::broadcast::broadcast_index;
 
 /// Iterator over the values of a [`PlPrimitiveArray`](super::PlPrimitiveArray), ignoring validity.
 #[derive(Clone)]
@@ -15,7 +15,7 @@ pub struct PlPrimitiveValuesIter<'a, T: NativeType> {
 
 impl<'a, T: NativeType> PlPrimitiveValuesIter<'a, T> {
     /// # Safety
-    /// `values` must be flat or scalar for `length`, per [`crate::scalar`].
+    /// `values` must be flat or scalar for `length`, per [`crate::broadcast`].
     #[inline]
     pub(super) fn new(values: &'a [T], length: usize) -> Self {
         Self {
@@ -30,7 +30,7 @@ impl<'a, T: NativeType> PlPrimitiveValuesIter<'a, T> {
         unsafe {
             *self
                 .values
-                .get_unchecked(scalar_index(i, self.values.len()))
+                .get_unchecked(broadcast_index(i, self.values.len()))
         }
     }
 }
@@ -74,7 +74,7 @@ pub struct PlPrimitiveIter<'a, T: NativeType> {
 
 impl<'a, T: NativeType> PlPrimitiveIter<'a, T> {
     /// # Safety
-    /// `values` must be flat or scalar for `length`, per [`crate::scalar`], and `validity`
+    /// `values` must be flat or scalar for `length`, per [`crate::broadcast`], and `validity`
     /// must have `length` bits.
     #[inline]
     pub(super) fn new(values: &'a [T], validity: Option<PlBitmapRef<'a>>, length: usize) -> Self {
@@ -95,7 +95,7 @@ impl<'a, T: NativeType> PlPrimitiveIter<'a, T> {
         is_valid.then(|| unsafe {
             *self
                 .values
-                .get_unchecked(scalar_index(i, self.values.len()))
+                .get_unchecked(broadcast_index(i, self.values.len()))
         })
     }
 }

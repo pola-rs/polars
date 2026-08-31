@@ -4,7 +4,7 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
-use crate::scalar::is_valid_buffer_len;
+use crate::broadcast::is_valid_buffer_len;
 
 /// An immutable, cheaply cloneable sequence of `length` optional rows, one value per field array.
 ///
@@ -15,8 +15,8 @@ use crate::scalar::is_valid_buffer_len;
 ///
 /// The logical length is stored separately from the validity mask, which is what lets a fully null
 /// array be represented in `O(1)` memory: the mask is a single shared bit, read through
-/// [`scalar_index(i, bitmap.len())`](crate::scalar::scalar_index) like every other backing
-/// buffer in this crate. See [`crate::scalar`] for the full rules.
+/// [`broadcast_index(i, bitmap.len())`](crate::broadcast::broadcast_index) like every other backing
+/// buffer in this crate. See [`crate::broadcast`] for the full rules.
 ///
 /// The fields need no such treatment here — each is a [`PlArray`] that already carries its own
 /// scalar representation. A struct array is therefore a *scalar* — one row repeated `length` times

@@ -1,7 +1,7 @@
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_ensure};
 
-use crate::scalar::is_valid_buffer_len;
+use crate::broadcast::is_valid_buffer_len;
 
 mod iterator;
 mod reference;
@@ -16,8 +16,8 @@ pub use reference::PlBitmapRef;
 /// element, so a mask that is constant across a billion elements costs a billion bits to represent.
 /// This type pairs a bitmap with the logical `length` it stands for, which lets that constant mask
 /// be a single bit: bit `i` reads slot
-/// [`scalar_index(i, bitmap.len())`](crate::scalar::scalar_index) of the backing bitmap.
-/// See [`crate::scalar`] for the full rules.
+/// [`broadcast_index(i, bitmap.len())`](crate::broadcast::broadcast_index) of the backing bitmap.
+/// See [`crate::broadcast`] for the full rules.
 ///
 /// Cloning and slicing are `O(1)`, and so is constructing a mask of arbitrarily many equal bits.
 ///
@@ -124,7 +124,7 @@ impl PlBitmap {
     /// The backing bitmap.
     ///
     /// This is *not* guaranteed to have [`Self::len`] bits: it is either flat or scalar. Index
-    /// it through [`crate::scalar::scalar_index`], or call [`Self::to_flat`] first.
+    /// it through [`crate::broadcast::broadcast_index`], or call [`Self::to_flat`] first.
     #[inline(always)]
     pub const fn bitmap(&self) -> &Bitmap {
         &self.bitmap

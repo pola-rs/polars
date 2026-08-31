@@ -2,7 +2,7 @@
 //!
 //! Every array in this crate stores its logical length in a dedicated `length` field, decoupled
 //! from the lengths of its backing buffers. A backing buffer is read through
-//! [`scalar_index`]: element `i` of the array reads slot `i` of the buffer if the buffer is long
+//! [`broadcast_index`]: element `i` of the array reads slot `i` of the buffer if the buffer is long
 //! enough, and slot `0` otherwise.
 //!
 //! That leaves exactly two admissible states per buffer, which every constructor validates:
@@ -15,7 +15,7 @@
 //! (flat) as well as a one-element buffer (scalar), and neither is ever read.
 //!
 //! Intermediate buffer lengths (`1 < buffer.len() < length`) are *not* valid, even though
-//! [`scalar_index`] would happily map them: an array is either flat or scalar.
+//! [`broadcast_index`] would happily map them: an array is either flat or scalar.
 
 /// Maps a logical element index onto a slot in a backing buffer of length `buffer_len`.
 ///
@@ -25,7 +25,7 @@
 /// The result is only in bounds when `i` is a valid element index of an array whose length and
 /// buffers satisfy the invariants described in the [module docs](self).
 #[inline(always)]
-pub const fn scalar_index(i: usize, buffer_len: usize) -> usize {
+pub const fn broadcast_index(i: usize, buffer_len: usize) -> usize {
     if i < buffer_len { i } else { 0 }
 }
 

@@ -6,7 +6,7 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
-use crate::scalar::{scalar_index, is_valid_buffer_len};
+use crate::broadcast::{broadcast_index, is_valid_buffer_len};
 
 mod iterator;
 
@@ -19,9 +19,9 @@ pub use iterator::{PlPrimitiveIter, PlPrimitiveValuesIter};
 ///
 /// The logical length is stored separately from the backing buffers, which lets a *scalar* array —
 /// one value repeated `length` times — be represented in `O(1)` memory. Element `i` reads slot
-/// [`scalar_index(i, buf.len())`](crate::scalar::scalar_index) of each backing buffer, so
+/// [`broadcast_index(i, buf.len())`](crate::broadcast::broadcast_index) of each backing buffer, so
 /// both `values` and `validity` are independently either flat (one slot per element) or scalar
-/// (a single shared slot). See [`crate::scalar`] for the full rules.
+/// (a single shared slot). See [`crate::broadcast`] for the full rules.
 ///
 /// # Example
 /// ```
@@ -184,7 +184,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// The backing values buffer.
     ///
     /// This is *not* guaranteed to have [`Self::len`] elements: it is either flat or scalar.
-    /// Index it through [`scalar_index`](crate::scalar::scalar_index), or call
+    /// Index it through [`broadcast_index`](crate::broadcast::broadcast_index), or call
     /// [`Self::to_flat`] first.
     #[inline(always)]
     pub const fn values(&self) -> &Buffer<T> {
@@ -265,7 +265,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         unsafe {
             *self
                 .values
-                .get_unchecked(scalar_index(i, self.values.len()))
+                .get_unchecked(broadcast_index(i, self.values.len()))
         }
     }
 

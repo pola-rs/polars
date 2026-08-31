@@ -4,7 +4,7 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapIter, PlBitmapRef};
-use crate::scalar::is_valid_buffer_len;
+use crate::broadcast::is_valid_buffer_len;
 
 mod iterator;
 
@@ -18,9 +18,9 @@ pub use iterator::PlBooleanIter;
 ///
 /// The logical length is stored separately from the backing bitmaps, which lets a *scalar* array —
 /// one value repeated `length` times — be represented in `O(1)` memory. Element `i` reads slot
-/// [`scalar_index(i, bitmap.len())`](crate::scalar::scalar_index) of each backing bitmap,
+/// [`broadcast_index(i, bitmap.len())`](crate::broadcast::broadcast_index) of each backing bitmap,
 /// so both `values` and `validity` are independently either flat (one bit per element) or
-/// scalar (a single shared bit). See [`crate::scalar`] for the full rules.
+/// scalar (a single shared bit). See [`crate::broadcast`] for the full rules.
 ///
 /// # Example
 /// ```

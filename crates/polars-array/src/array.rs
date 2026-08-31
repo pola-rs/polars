@@ -13,7 +13,7 @@ use crate::bitmap::PlBitmapRef;
 /// means downcasting through [`PlArray::as_any`].
 ///
 /// Like the concrete arrays, an implementor stores its logical length separately from its backing
-/// buffers, so each buffer is independently either flat or scalar. See [`crate::scalar`]
+/// buffers, so each buffer is independently either flat or scalar. See [`crate::broadcast`]
 /// for the rules, and [`PlArray::is_scalar`] to detect the `O(1)`-memory case a `dyn PlArray`
 /// must not walk element by element.
 ///

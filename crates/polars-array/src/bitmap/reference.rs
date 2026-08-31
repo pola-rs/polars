@@ -2,15 +2,15 @@ use arrow::bitmap::Bitmap;
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::bitmap::PlBitmapIter;
-use crate::scalar::{scalar_index, is_valid_buffer_len};
+use crate::broadcast::{broadcast_index, is_valid_buffer_len};
 
 /// A borrowed validity mask of `length` bits, in either the flat or the scalar representation.
 ///
 /// A [`Bitmap`] always stores one bit per element, so a mask that is constant across a billion
 /// elements costs a billion bits to represent. This type pairs a bitmap with the logical `length`
 /// it stands for, which lets that constant mask be a single bit: bit `i` reads slot
-/// [`scalar_index(i, bitmap.len())`](crate::scalar::scalar_index) of the backing bitmap.
-/// See [`crate::scalar`] for the full rules.
+/// [`broadcast_index(i, bitmap.len())`](crate::broadcast::broadcast_index) of the backing bitmap.
+/// See [`crate::broadcast`] for the full rules.
 ///
 /// This is what [`PlPrimitiveArray::validity`](crate::PlPrimitiveArray::validity) hands out, so
 /// that reading validity never has to reason about which representation the array happens to be
@@ -88,7 +88,7 @@ impl<'a> PlBitmapRef<'a> {
     /// The backing bitmap.
     ///
     /// This is *not* guaranteed to have [`Self::len`] bits: it is either flat or scalar. Index
-    /// it through [`crate::scalar::scalar_index`], or call [`Self::to_flat`] first.
+    /// it through [`crate::broadcast::broadcast_index`], or call [`Self::to_flat`] first.
     #[inline(always)]
     pub const fn bitmap(&self) -> &'a Bitmap {
         self.bitmap
@@ -136,7 +136,7 @@ impl<'a> PlBitmapRef<'a> {
         debug_assert!(i < self.length);
         unsafe {
             self.bitmap
-                .get_bit_unchecked(scalar_index(i, self.bitmap.len()))
+                .get_bit_unchecked(broadcast_index(i, self.bitmap.len()))
         }
     }
 

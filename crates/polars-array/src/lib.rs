@@ -19,7 +19,7 @@ pub mod array;
 pub mod array_type;
 pub mod bitmap;
 pub mod boolean;
-pub mod scalar;
+pub mod broadcast;
 pub mod primitive;
 pub mod struct_;
 
