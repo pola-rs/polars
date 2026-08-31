@@ -13,8 +13,10 @@
 //! representation. Logical typing lives at a higher level.
 
 pub mod bitmap;
+pub mod boolean;
 pub mod broadcast;
 pub mod primitive;
 
 pub use bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
+pub use boolean::PlBooleanArray;
 pub use primitive::PlPrimitiveArray;
