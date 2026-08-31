@@ -474,15 +474,18 @@ impl PlBooleanArray {
     pub unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
         debug_assert!(index < self.length);
 
+        if unsafe { self.is_null_unchecked(index) } {
+            return Self::new_full_null(length);
+        }
+
         // The value of a null element is undetermined, so it is repeated as it is found: it is the
         // mask that makes every element of the result null.
         let value = unsafe { self.value_unchecked(index) };
-        let validity = unsafe { self.is_null_unchecked(index) }.then(|| Bitmap::new_zeroed(1));
 
         Self {
             values: Bitmap::new_with_value(value, 1),
             length,
-            validity,
+            validity: None,
         }
     }
 

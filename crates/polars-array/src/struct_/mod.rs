@@ -401,14 +401,23 @@ impl PlStructArray {
     pub unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
         debug_assert!(index < self.length);
 
+        let validity = unsafe { self.is_null_unchecked(index) }.then(|| Bitmap::new_zeroed(1));
+
         // The field values of a null row are undetermined, so they are repeated as they are found:
         // it is the mask that makes every row of the result null.
         let fields = self
             .fields
             .iter()
-            .map(|field| unsafe { field.new_from_index_unchecked(index, length) })
+            .map(|field| unsafe {
+                if validity.is_some() {
+                    field
+                        .with_validity(validity.clone())
+                        .new_from_index_unchecked(index, length)
+                } else {
+                    field.new_from_index_unchecked(index, length)
+                }
+            })
             .collect();
-        let validity = unsafe { self.is_null_unchecked(index) }.then(|| Bitmap::new_zeroed(1));
 
         // SAFETY: every field repeated one element `length` times, so it holds `length` elements,
         // and the mask is a single bit and therefore scalar.

@@ -577,8 +577,6 @@ impl PlListArray {
     pub unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
         debug_assert!(index < self.length);
 
-        // The value of a null element is undetermined, so every element of the result is given the
-        // empty list: that is what leaves the values array untouched and the mask a single bit.
         if unsafe { self.is_null_unchecked(index) } {
             return Self::new_full_null(self.values.clone(), length);
         }
