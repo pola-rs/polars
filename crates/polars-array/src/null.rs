@@ -6,25 +6,12 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 
-/// The validity mask every [`PlNullArray`] hands out: a single unset bit, read by every element of
-/// every null array.
-///
-/// A [`Bitmap`] cannot be built in a constant, so this is initialized on first use and then shared
-/// for the rest of the program; a [`PlNullArray`] therefore stores no mask of its own.
-static ALL_NULL: LazyLock<Bitmap> = LazyLock::new(|| Bitmap::new_zeroed(1));
-
 /// An immutable, cheaply cloneable sequence of `length` nulls.
 ///
 /// This is the array of the type that holds nothing but nulls: it has no values, no element type
 /// and no buffers, only a length. Every element is null, which is what distinguishes it from the
 /// fully null array of any other type — there is no value hiding under the mask, undetermined or
 /// otherwise.
-///
-/// Because there is nothing to store, an array of any length costs `O(1)` memory, and every
-/// operation on it is `O(1)`. Its validity mask is the single shared bit of [`struct@ALL_NULL`],
-/// handed out as a scalar [`PlBitmapRef`] over [`Self::len`] elements exactly like the scalar masks
-/// of the other arrays — see [`crate::broadcast`] for the rules. Having no buffers, it is neither
-/// meaningfully flat nor meaningfully scalar, and so has no `to_flat` counterpart.
 ///
 /// # Example
 /// ```
@@ -81,15 +68,10 @@ impl PlNullArray {
     }
 
     /// The validity mask, which masks out every element.
-    ///
-    /// The returned [`PlBitmapRef`] has [`Self::len`] bits, backed by the single unset bit of
-    /// [`struct@ALL_NULL`]. It borrows from that static rather than from this array, so it outlives
-    /// the array it came from.
     #[inline]
     pub fn validity(&self) -> PlBitmapRef<'static> {
-        let bitmap: &'static Bitmap = &ALL_NULL;
-        // SAFETY: a bitmap of one bit is a scalar bitmap for an array of any length.
-        unsafe { PlBitmapRef::new_unchecked(bitmap, self.length) }
+        return unsafe { PlBitmapRef::new_unchecked(&SCALAR, self.length) };
+        static SCALAR: LazyLock<Bitmap> = LazyLock::new(|| Bitmap::new_zeroed(1));
     }
 
     /// The number of null elements, which is every element.
