@@ -827,7 +827,7 @@ impl AnyValue<'_> {
         use AnyValue::*;
 
         // Hash discriminant, not distinguishing between owned/non-owned.
-        let discriminant = match self {
+        match self {
             Struct(..) | StructOwned(..) => 0.hash(state),
             StringOwned(v) => std::mem::discriminant(&String(v)).hash(state),
             BinaryOwned(v) => std::mem::discriminant(&Binary(v)).hash(state),
