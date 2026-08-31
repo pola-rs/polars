@@ -36,6 +36,8 @@ pub enum PlArrayType {
     /// The fields are part of neither this type nor the array's identity: two struct arrays are
     /// both [`PlArrayType::Struct`] no matter how many fields they have or what is in them.
     Struct,
+    /// A [`PlNullArray`](crate::PlNullArray): a null, with no value under it.
+    Null,
 }
 
 impl PlArrayType {
@@ -61,5 +63,11 @@ impl PlArrayType {
     #[inline]
     pub fn is_struct(&self) -> bool {
         matches!(self, Self::Struct)
+    }
+
+    /// Whether this is [`PlArrayType::Null`].
+    #[inline]
+    pub fn is_null(&self) -> bool {
+        matches!(self, Self::Null)
     }
 }

@@ -21,6 +21,7 @@ pub mod bitmap;
 pub mod boolean;
 pub mod broadcast;
 pub mod flat;
+pub mod null;
 pub mod primitive;
 pub mod struct_;
 
@@ -29,5 +30,6 @@ pub use array_type::{PlArrayType, PrimitiveType};
 pub use bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 pub use boolean::PlBooleanArray;
 pub use flat::Flat;
+pub use null::PlNullArray;
 pub use primitive::PlPrimitiveArray;
 pub use struct_::PlStructArray;
