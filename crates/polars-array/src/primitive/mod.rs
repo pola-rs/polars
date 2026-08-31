@@ -20,16 +20,16 @@ pub use iterator::{PlPrimitiveIter, PlPrimitiveValuesIter};
 /// The logical length is stored separately from the backing buffers, which lets a *scalar* array —
 /// one value repeated `length` times — be represented in `O(1)` memory. Element `i` reads slot
 /// [`broadcast_index(i, buf.len())`](crate::broadcast::broadcast_index) of each backing buffer, so
-/// both `values` and `validity` are independently either dense (one slot per element) or broadcast
+/// both `values` and `validity` are independently either flat (one slot per element) or broadcast
 /// (a single shared slot). See [`crate::broadcast`] for the full rules.
 ///
 /// # Example
 /// ```
 /// use polars_array::PlPrimitiveArray;
 ///
-/// let dense = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
-/// assert_eq!(dense.len(), 3);
-/// assert_eq!(dense.iter().collect::<Vec<_>>(), [Some(1), Some(2), Some(3)]);
+/// let flat = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
+/// assert_eq!(flat.len(), 3);
+/// assert_eq!(flat.iter().collect::<Vec<_>>(), [Some(1), Some(2), Some(3)]);
 ///
 /// // A scalar array of a billion elements costs a single `i32` of memory.
 /// let scalar = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
@@ -50,7 +50,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// This function is `O(1)`.
     ///
     /// # Errors
-    /// This function errors if `values` or `validity` is neither dense (length equal to `length`)
+    /// This function errors if `values` or `validity` is neither flat (length equal to `length`)
     /// nor broadcast (length one).
     pub fn try_new(
         values: Buffer<T>,
@@ -60,7 +60,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         polars_ensure!(
             is_valid_buffer_len(values.len(), length),
             ComputeError:
-            "values buffer of length {} is neither dense nor broadcast for an array of length {}",
+            "values buffer of length {} is neither flat nor broadcast for an array of length {}",
             values.len(), length,
         );
 
@@ -68,7 +68,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             polars_ensure!(
                 is_valid_buffer_len(validity.len(), length),
                 ComputeError:
-                "validity mask of length {} is neither dense nor broadcast for an array of length {}",
+                "validity mask of length {} is neither flat nor broadcast for an array of length {}",
                 validity.len(), length,
             );
         }
@@ -92,7 +92,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Creates a [`PlPrimitiveArray`] out of its internal components without validating them.
     ///
     /// # Safety
-    /// `values` and `validity` must each be either dense (length equal to `length`) or broadcast
+    /// `values` and `validity` must each be either flat (length equal to `length`) or broadcast
     /// (length one).
     #[inline]
     pub unsafe fn new_unchecked(
@@ -126,7 +126,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         }
     }
 
-    /// Creates a dense, fully valid [`PlPrimitiveArray`] from `values`.
+    /// Creates a flat, fully valid [`PlPrimitiveArray`] from `values`.
     #[inline]
     pub fn from_values(values: Buffer<T>) -> Self {
         let length = values.len();
@@ -137,13 +137,13 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         }
     }
 
-    /// Creates a dense, fully valid [`PlPrimitiveArray`] from a [`Vec`].
+    /// Creates a flat, fully valid [`PlPrimitiveArray`] from a [`Vec`].
     #[inline]
     pub fn from_vec(values: Vec<T>) -> Self {
         Self::from_values(Buffer::from(values))
     }
 
-    /// Creates a dense, fully valid [`PlPrimitiveArray`] by copying `values`.
+    /// Creates a flat, fully valid [`PlPrimitiveArray`] by copying `values`.
     #[inline]
     pub fn from_slice(values: &[T]) -> Self {
         Self::from_vec(values.to_vec())
@@ -183,9 +183,9 @@ impl<T: NativeType> PlPrimitiveArray<T> {
 
     /// The backing values buffer.
     ///
-    /// This is *not* guaranteed to have [`Self::len`] elements: it is either dense or broadcast.
+    /// This is *not* guaranteed to have [`Self::len`] elements: it is either flat or broadcast.
     /// Index it through [`broadcast_index`](crate::broadcast::broadcast_index), or call
-    /// [`Self::to_dense`] first.
+    /// [`Self::to_flat`] first.
     #[inline(always)]
     pub const fn values(&self) -> &Buffer<T> {
         &self.values
@@ -194,12 +194,12 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// The validity mask, if any element may be null.
     ///
     /// The returned [`PlBitmapRef`] has [`Self::len`] bits regardless of whether the backing
-    /// bitmap is dense or broadcast, so reading validity through it needs no knowledge of which
+    /// bitmap is flat or broadcast, so reading validity through it needs no knowledge of which
     /// representation this array is in. Reach for the backing [`Bitmap`] with
-    /// [`PlBitmapRef::bitmap`], or materialize a dense one with [`PlBitmapRef::to_dense`].
+    /// [`PlBitmapRef::bitmap`], or materialize a flat one with [`PlBitmapRef::to_flat`].
     #[inline]
     pub fn validity(&self) -> Option<PlBitmapRef<'_>> {
-        // SAFETY: the mask is dense or broadcast for `self.length`, upheld by every constructor.
+        // SAFETY: the mask is flat or broadcast for `self.length`, upheld by every constructor.
         self.validity
             .as_ref()
             .map(|validity| unsafe { PlBitmapRef::new_unchecked(validity, self.length) })
@@ -207,7 +207,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
 
     /// Whether the values buffer holds a single value shared by every element.
     ///
-    /// This is `false` for a dense array of length one, where the two representations coincide.
+    /// This is `false` for a flat array of length one, where the two representations coincide.
     #[inline]
     pub fn values_are_broadcast(&self) -> bool {
         self.values.len() != self.length
@@ -221,7 +221,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
 
     /// Whether every backing buffer has one slot per element.
     #[inline]
-    pub fn is_dense(&self) -> bool {
+    pub fn is_flat(&self) -> bool {
         !self.values_are_broadcast() && !self.validity_is_broadcast()
     }
 
@@ -234,7 +234,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
 
     /// The value shared by every element, if the values buffer is a broadcast buffer.
     ///
-    /// Returns `None` for a dense array and for an empty array. The value of a null element is
+    /// Returns `None` for a flat array and for an empty array. The value of a null element is
     /// undetermined, so this may return a value even when all elements are null.
     #[inline]
     pub fn broadcast_value(&self) -> Option<T> {
@@ -330,7 +330,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
 
     /// The number of null elements.
     ///
-    /// This is `O(1)` for a broadcast validity mask and `O(len)` for a dense one, amortized over
+    /// This is `O(1)` for a broadcast validity mask and `O(len)` for a flat one, amortized over
     /// repeated calls on the same [`Bitmap`].
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
@@ -359,7 +359,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Replaces the validity mask.
     ///
     /// # Panics
-    /// Panics if `validity` is neither dense nor broadcast for this array's length.
+    /// Panics if `validity` is neither flat nor broadcast for this array's length.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
         self.set_validity(validity);
@@ -369,12 +369,12 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Replaces the validity mask.
     ///
     /// # Panics
-    /// Panics if `validity` is neither dense nor broadcast for this array's length.
+    /// Panics if `validity` is neither flat nor broadcast for this array's length.
     pub fn set_validity(&mut self, validity: Option<Bitmap>) {
         if let Some(validity) = validity.as_ref() {
             assert!(
                 is_valid_buffer_len(validity.len(), self.length),
-                "validity mask of length {} is neither dense nor broadcast for an array of length {}",
+                "validity mask of length {} is neither flat nor broadcast for an array of length {}",
                 validity.len(),
                 self.length,
             );
@@ -455,9 +455,9 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Returns an equivalent array whose backing buffers all hold one slot per element.
     ///
     /// This materializes any broadcast buffer and is therefore `O(len)`; it is a no-op clone when
-    /// this array [`is_dense`](Self::is_dense).
-    pub fn to_dense(&self) -> Self {
-        if self.is_dense() {
+    /// this array [`is_flat`](Self::is_flat).
+    pub fn to_flat(&self) -> Self {
+        if self.is_flat() {
             return self.clone();
         }
 
@@ -469,7 +469,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             Buffer::from(vec![self.values[0]; self.length])
         };
 
-        let validity = self.validity().map(|validity| validity.to_dense());
+        let validity = self.validity().map(|validity| validity.to_flat());
 
         Self {
             values,
@@ -550,7 +550,7 @@ impl<'a, T: NativeType> IntoIterator for &'a PlPrimitiveArray<T> {
     }
 }
 
-/// Compares two arrays element-wise; the representation (dense or broadcast) is irrelevant.
+/// Compares two arrays element-wise; the representation (flat or broadcast) is irrelevant.
 impl<T: NativeType> PartialEq for PlPrimitiveArray<T> {
     fn eq(&self, other: &Self) -> bool {
         if self.length != other.length {
@@ -641,8 +641,8 @@ impl<T: NativeType> PlArray for PlPrimitiveArray<T> {
     }
 
     #[inline]
-    fn to_dense_boxed(&self) -> Box<dyn PlArray> {
-        Box::new(self.to_dense())
+    fn to_flat_boxed(&self) -> Box<dyn PlArray> {
+        Box::new(self.to_flat())
     }
 
     #[inline]
@@ -663,11 +663,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dense() {
+    fn flat() {
         let arr = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
 
         assert_eq!(arr.len(), 3);
-        assert!(arr.is_dense());
+        assert!(arr.is_flat());
         assert!(!arr.is_scalar());
         assert_eq!(arr.null_count(), 0);
         assert_eq!(arr.value(1), 2);
@@ -683,7 +683,7 @@ mod tests {
         assert_eq!(arr.len(), 4);
         assert_eq!(arr.values().len(), 1);
         assert!(arr.is_scalar());
-        assert!(!arr.is_dense());
+        assert!(!arr.is_flat());
         assert_eq!(arr.broadcast_value(), Some(7));
         assert_eq!(arr.null_count(), 0);
 
@@ -706,13 +706,13 @@ mod tests {
     }
 
     #[test]
-    fn dense_values_with_broadcast_validity() {
+    fn flat_values_with_broadcast_validity() {
         let arr =
             PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).with_validity(Some(Bitmap::new_zeroed(1)));
 
         assert!(arr.validity_is_broadcast());
         assert!(!arr.values_are_broadcast());
-        assert!(!arr.is_dense());
+        assert!(!arr.is_flat());
         assert!(!arr.is_scalar());
         assert_eq!(arr.null_count(), 3);
         assert_eq!(arr.iter().collect::<Vec<_>>(), [None, None, None]);
@@ -732,21 +732,21 @@ mod tests {
         assert_eq!(validity.unset_bits(), 1_000);
         assert_eq!(validity.set_bits(), 0);
 
-        // Materializing it yields exactly the mask a dense array would carry.
+        // Materializing it yields exactly the mask a flat array would carry.
         assert_eq!(
-            validity.to_dense(),
-            scalar.to_dense().validity().unwrap().to_dense()
+            validity.to_flat(),
+            scalar.to_flat().validity().unwrap().to_flat()
         );
 
-        let dense: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
-        let validity = dense.validity().unwrap();
+        let flat: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
+        let validity = flat.validity().unwrap();
 
         assert_eq!(validity.len(), 3);
-        assert!(validity.is_dense());
+        assert!(validity.is_flat());
         assert_eq!(validity.broadcast_value(), None);
         assert!(!validity.get(1));
         assert_eq!(validity.unset_bits(), 1);
-        assert_eq!(validity.to_dense(), *validity.bitmap());
+        assert_eq!(validity.to_flat(), *validity.bitmap());
     }
 
     #[test]
@@ -785,7 +785,7 @@ mod tests {
     }
 
     #[test]
-    fn slicing_a_dense_array_slices_its_buffers() {
+    fn slicing_a_flat_array_slices_its_buffers() {
         let arr: PlPrimitiveArray<i32> = [Some(1), None, Some(3), Some(4)].into_iter().collect();
         let arr = arr.sliced(1, 2);
 
@@ -810,39 +810,39 @@ mod tests {
     }
 
     #[test]
-    fn to_dense_materializes_broadcasts() {
+    fn to_flat_materializes_broadcasts() {
         let scalar = PlPrimitiveArray::new_scalar(7i32, 3);
-        let dense = scalar.to_dense();
+        let flat = scalar.to_flat();
 
-        assert!(dense.is_dense());
-        assert_eq!(dense.values().as_slice(), [7, 7, 7]);
-        assert_eq!(dense, scalar);
+        assert!(flat.is_flat());
+        assert_eq!(flat.values().as_slice(), [7, 7, 7]);
+        assert_eq!(flat, scalar);
 
         let null_scalar = PlPrimitiveArray::<i32>::new_full_null(3);
-        let dense = null_scalar.to_dense();
+        let flat = null_scalar.to_flat();
 
-        assert!(dense.is_dense());
-        assert_eq!(dense.validity().unwrap().bitmap().len(), 3);
-        assert!(dense.validity().unwrap().is_dense());
-        assert_eq!(dense.null_count(), 3);
-        assert_eq!(dense, null_scalar);
+        assert!(flat.is_flat());
+        assert_eq!(flat.validity().unwrap().bitmap().len(), 3);
+        assert!(flat.validity().unwrap().is_flat());
+        assert_eq!(flat.null_count(), 3);
+        assert_eq!(flat, null_scalar);
     }
 
     #[test]
-    fn to_dense_of_empty_scalar() {
-        let dense = PlPrimitiveArray::new_scalar(7i32, 0).to_dense();
+    fn to_flat_of_empty_scalar() {
+        let flat = PlPrimitiveArray::new_scalar(7i32, 0).to_flat();
 
-        assert!(dense.is_dense());
-        assert!(dense.is_empty());
-        assert_eq!(dense.values().len(), 0);
+        assert!(flat.is_flat());
+        assert!(flat.is_empty());
+        assert_eq!(flat.values().len(), 0);
     }
 
     #[test]
     fn equality_ignores_representation() {
         let scalar = PlPrimitiveArray::new_scalar(7i32, 3);
-        let dense = PlPrimitiveArray::from_vec(vec![7i32, 7, 7]);
+        let flat = PlPrimitiveArray::from_vec(vec![7i32, 7, 7]);
 
-        assert_eq!(scalar, dense);
+        assert_eq!(scalar, flat);
         assert_ne!(scalar, PlPrimitiveArray::new_scalar(7i32, 4));
         assert_ne!(scalar, PlPrimitiveArray::from_vec(vec![7i32, 7, 8]));
         assert_ne!(scalar, PlPrimitiveArray::<i32>::new_full_null(3));
@@ -868,7 +868,7 @@ mod tests {
         let arr = PlPrimitiveArray::<i32>::new_empty();
 
         assert!(arr.is_empty());
-        assert!(arr.is_dense());
+        assert!(arr.is_flat());
         assert_eq!(arr.null_count(), 0);
         assert_eq!(arr.broadcast_value(), None);
         assert_eq!(arr.iter().next(), None);

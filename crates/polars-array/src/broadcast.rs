@@ -7,15 +7,15 @@
 //!
 //! That leaves exactly two admissible states per buffer, which every constructor validates:
 //!
-//! * *dense*: `buffer.len() == length`, the usual one-slot-per-element layout.
+//! * *flat*: `buffer.len() == length`, the usual one-slot-per-element layout.
 //! * *broadcast*: `buffer.len() == 1`, a single value shared by all `length` elements.
 //!
-//! A buffer of length one is simultaneously dense and broadcast when `length == 1`; the two
+//! A buffer of length one is simultaneously flat and broadcast when `length == 1`; the two
 //! interpretations agree, so this is not ambiguous. A `length` of zero admits an empty buffer
-//! (dense) as well as a one-element buffer (broadcast), and neither is ever read.
+//! (flat) as well as a one-element buffer (broadcast), and neither is ever read.
 //!
 //! Intermediate buffer lengths (`1 < buffer.len() < length`) are *not* valid, even though
-//! [`broadcast_index`] would happily map them: an array is either dense or broadcast.
+//! [`broadcast_index`] would happily map them: an array is either flat or broadcast.
 
 /// Maps a logical element index onto a slot in a backing buffer of length `buffer_len`.
 ///

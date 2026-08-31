@@ -15,7 +15,7 @@ pub struct PlPrimitiveValuesIter<'a, T: NativeType> {
 
 impl<'a, T: NativeType> PlPrimitiveValuesIter<'a, T> {
     /// # Safety
-    /// `values` must be dense or broadcast for `length`, per [`crate::broadcast`].
+    /// `values` must be flat or broadcast for `length`, per [`crate::broadcast`].
     #[inline]
     pub(super) fn new(values: &'a [T], length: usize) -> Self {
         Self {
@@ -74,7 +74,7 @@ pub struct PlPrimitiveIter<'a, T: NativeType> {
 
 impl<'a, T: NativeType> PlPrimitiveIter<'a, T> {
     /// # Safety
-    /// `values` must be dense or broadcast for `length`, per [`crate::broadcast`], and `validity`
+    /// `values` must be flat or broadcast for `length`, per [`crate::broadcast`], and `validity`
     /// must have `length` bits.
     #[inline]
     pub(super) fn new(values: &'a [T], validity: Option<PlBitmapRef<'a>>, length: usize) -> Self {

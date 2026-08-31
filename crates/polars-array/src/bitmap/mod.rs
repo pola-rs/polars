@@ -9,7 +9,7 @@ mod reference;
 pub use iterator::PlBitmapIter;
 pub use reference::PlBitmapRef;
 
-/// An immutable, cheaply cloneable mask of `length` bits, in either the dense or the broadcast
+/// An immutable, cheaply cloneable mask of `length` bits, in either the flat or the broadcast
 /// representation.
 ///
 /// This is the owned counterpart of [`PlBitmapRef`]. A [`Bitmap`] always stores one bit per
@@ -37,7 +37,7 @@ pub use reference::PlBitmapRef;
 /// assert_eq!(mask.len(), 2);
 /// assert_eq!(mask.bitmap().len(), 1);
 ///
-/// // It compares equal to the dense mask it stands for.
+/// // It compares equal to the flat mask it stands for.
 /// assert_eq!(mask, PlBitmap::from_iter([false, false]));
 /// ```
 #[derive(Clone)]
@@ -52,13 +52,13 @@ impl PlBitmap {
     /// This function is `O(1)`.
     ///
     /// # Errors
-    /// This function errors if `bitmap` is neither dense (length equal to `length`) nor broadcast
+    /// This function errors if `bitmap` is neither flat (length equal to `length`) nor broadcast
     /// (length one).
     pub fn try_new(bitmap: Bitmap, length: usize) -> PolarsResult<Self> {
         polars_ensure!(
             is_valid_buffer_len(bitmap.len(), length),
             ComputeError:
-            "bitmap of length {} is neither dense nor broadcast for a mask of length {}",
+            "bitmap of length {} is neither flat nor broadcast for a mask of length {}",
             bitmap.len(), length,
         );
 
@@ -77,7 +77,7 @@ impl PlBitmap {
     /// Creates a [`PlBitmap`] of `length` bits backed by `bitmap`, without validating it.
     ///
     /// # Safety
-    /// `bitmap` must be either dense (length equal to `length`) or broadcast (length one).
+    /// `bitmap` must be either flat (length equal to `length`) or broadcast (length one).
     #[inline]
     pub unsafe fn new_unchecked(bitmap: Bitmap, length: usize) -> Self {
         debug_assert!(is_valid_buffer_len(bitmap.len(), length));
@@ -93,7 +93,7 @@ impl PlBitmap {
         }
     }
 
-    /// Creates a dense [`PlBitmap`] holding the bits of `bitmap`.
+    /// Creates a flat [`PlBitmap`] holding the bits of `bitmap`.
     #[inline]
     pub fn from_bitmap(bitmap: Bitmap) -> Self {
         let length = bitmap.len();
@@ -123,8 +123,8 @@ impl PlBitmap {
 
     /// The backing bitmap.
     ///
-    /// This is *not* guaranteed to have [`Self::len`] bits: it is either dense or broadcast. Index
-    /// it through [`crate::broadcast::broadcast_index`], or call [`Self::to_dense`] first.
+    /// This is *not* guaranteed to have [`Self::len`] bits: it is either flat or broadcast. Index
+    /// it through [`crate::broadcast::broadcast_index`], or call [`Self::to_flat`] first.
     #[inline(always)]
     pub const fn bitmap(&self) -> &Bitmap {
         &self.bitmap
@@ -133,7 +133,7 @@ impl PlBitmap {
     /// Borrows this mask as a [`PlBitmapRef`].
     #[inline]
     pub fn as_ref(&self) -> PlBitmapRef<'_> {
-        // SAFETY: the bitmap is dense or broadcast for `self.length`, upheld by every constructor.
+        // SAFETY: the bitmap is flat or broadcast for `self.length`, upheld by every constructor.
         unsafe { PlBitmapRef::new_unchecked(&self.bitmap, self.length) }
     }
 
@@ -145,7 +145,7 @@ impl PlBitmap {
 
     /// Whether the backing bitmap holds a single bit shared by every element.
     ///
-    /// This is `false` for a dense mask of length one, where the two representations coincide.
+    /// This is `false` for a flat mask of length one, where the two representations coincide.
     #[inline]
     pub fn is_broadcast(&self) -> bool {
         self.bitmap.len() != self.length
@@ -153,14 +153,14 @@ impl PlBitmap {
 
     /// Whether the backing bitmap holds one bit per element.
     #[inline]
-    pub fn is_dense(&self) -> bool {
+    pub fn is_flat(&self) -> bool {
         !self.is_broadcast()
     }
 
     /// The bit shared by every element, if the backing bitmap holds a single bit.
     ///
-    /// Returns `None` for a dense mask of more than one bit, and for an empty mask. A mask of
-    /// length one is both dense and broadcast, so it yields its only bit.
+    /// Returns `None` for a flat mask of more than one bit, and for an empty mask. A mask of
+    /// length one is both flat and broadcast, so it yields its only bit.
     #[inline]
     pub fn broadcast_value(&self) -> Option<bool> {
         self.as_ref().broadcast_value()
@@ -186,7 +186,7 @@ impl PlBitmap {
 
     /// The number of unset bits.
     ///
-    /// This is `O(1)` for a broadcast mask and `O(len)` for a dense one, amortized over repeated
+    /// This is `O(1)` for a broadcast mask and `O(len)` for a flat one, amortized over repeated
     /// calls on the same [`Bitmap`].
     #[inline]
     pub fn unset_bits(&self) -> usize {
@@ -195,7 +195,7 @@ impl PlBitmap {
 
     /// The number of set bits.
     ///
-    /// This is `O(1)` for a broadcast mask and `O(len)` for a dense one, amortized over repeated
+    /// This is `O(1)` for a broadcast mask and `O(len)` for a flat one, amortized over repeated
     /// calls on the same [`Bitmap`].
     #[inline]
     pub fn set_bits(&self) -> usize {
@@ -232,7 +232,7 @@ impl PlBitmap {
         debug_assert!(offset + length <= self.length);
 
         // A broadcast bitmap is unaffected by slicing: every element reads the same bit.
-        if self.is_dense() {
+        if self.is_flat() {
             unsafe { self.bitmap.slice_unchecked(offset, length) };
         }
 
@@ -266,15 +266,15 @@ impl PlBitmap {
     /// Returns an equivalent mask whose backing bitmap holds one bit per element.
     ///
     /// This expands a broadcast mask and is therefore `O(len)`; it is a no-op clone when this mask
-    /// [`is_dense`](Self::is_dense).
-    pub fn to_dense(&self) -> Self {
-        Self::from_bitmap(self.as_ref().to_dense())
+    /// [`is_flat`](Self::is_flat).
+    pub fn to_flat(&self) -> Self {
+        Self::from_bitmap(self.as_ref().to_flat())
     }
 
     /// Consumes this mask into an ordinary [`Bitmap`] holding one bit per element.
     ///
     /// This expands a broadcast mask and is therefore `O(len)`; it is free when this mask
-    /// [`is_dense`](Self::is_dense).
+    /// [`is_flat`](Self::is_flat).
     pub fn into_bitmap(self) -> Bitmap {
         if self.is_broadcast() {
             Bitmap::new_with_value(self.bitmap.get_bit(0), self.length)
@@ -331,7 +331,7 @@ impl<'a> IntoIterator for &'a PlBitmap {
     }
 }
 
-/// Compares two masks bit-wise; the representation (dense or broadcast) is irrelevant.
+/// Compares two masks bit-wise; the representation (flat or broadcast) is irrelevant.
 impl PartialEq for PlBitmap {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -366,11 +366,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dense() {
+    fn flat() {
         let mask = PlBitmap::from_iter([true, false, true]);
 
         assert_eq!(mask.len(), 3);
-        assert!(mask.is_dense());
+        assert!(mask.is_flat());
         assert!(!mask.is_broadcast());
         assert_eq!(mask.broadcast_value(), None);
         assert!(mask.get(0));
@@ -378,7 +378,7 @@ mod tests {
         assert_eq!(mask.unset_bits(), 1);
         assert_eq!(mask.set_bits(), 2);
         assert_eq!(mask.iter().collect::<Vec<_>>(), [true, false, true]);
-        assert_eq!(mask.to_dense(), mask);
+        assert_eq!(mask.to_flat(), mask);
     }
 
     #[test]
@@ -388,18 +388,18 @@ mod tests {
         assert_eq!(mask.len(), 1_000);
         assert_eq!(mask.bitmap().len(), 1);
         assert!(mask.is_broadcast());
-        assert!(!mask.is_dense());
+        assert!(!mask.is_flat());
         assert_eq!(mask.broadcast_value(), Some(false));
         assert!(!mask.get(999));
         assert_eq!(mask.unset_bits(), 1_000);
         assert_eq!(mask.set_bits(), 0);
         assert!(mask.iter().all(|bit| !bit));
 
-        let dense = mask.to_dense();
-        assert!(dense.is_dense());
-        assert_eq!(dense.bitmap().len(), 1_000);
-        assert_eq!(dense.unset_bits(), 1_000);
-        assert_eq!(dense, mask);
+        let flat = mask.to_flat();
+        assert!(flat.is_flat());
+        assert_eq!(flat.bitmap().len(), 1_000);
+        assert_eq!(flat.unset_bits(), 1_000);
+        assert_eq!(flat, mask);
     }
 
     #[test]
@@ -407,7 +407,7 @@ mod tests {
         let mask = PlBitmap::new_empty();
 
         assert!(mask.is_empty());
-        assert!(mask.is_dense());
+        assert!(mask.is_flat());
         assert_eq!(mask.broadcast_value(), None);
         assert_eq!(mask.unset_bits(), 0);
         assert_eq!(mask.set_bits(), 0);
@@ -420,7 +420,7 @@ mod tests {
     fn length_one_is_both_representations() {
         let mask = PlBitmap::from_iter([true]);
 
-        assert!(mask.is_dense());
+        assert!(mask.is_flat());
         assert_eq!(mask.broadcast_value(), Some(true));
         assert!(mask.get(0));
         assert_eq!(mask.set_bits(), 1);
@@ -438,12 +438,12 @@ mod tests {
     }
 
     #[test]
-    fn slicing_a_dense_mask_slices_its_bitmap() {
+    fn slicing_a_flat_mask_slices_its_bitmap() {
         let mask = PlBitmap::from_iter([true, false, true, false]).sliced(1, 2);
 
         assert_eq!(mask.len(), 2);
         assert_eq!(mask.bitmap().len(), 2);
-        assert!(mask.is_dense());
+        assert!(mask.is_flat());
         assert_eq!(mask.iter().collect::<Vec<_>>(), [false, true]);
     }
 
@@ -471,11 +471,11 @@ mod tests {
     #[test]
     fn equality_ignores_representation() {
         let broadcast = PlBitmap::new_scalar(true, 3);
-        let dense = PlBitmap::from_iter([true, true, true]);
+        let flat = PlBitmap::from_iter([true, true, true]);
 
-        assert_eq!(broadcast, dense);
-        assert_eq!(broadcast.as_ref(), dense);
-        assert_eq!(dense, broadcast.as_ref());
+        assert_eq!(broadcast, flat);
+        assert_eq!(broadcast.as_ref(), flat);
+        assert_eq!(flat, broadcast.as_ref());
         assert_ne!(broadcast, PlBitmap::new_scalar(true, 4));
         assert_ne!(broadcast, PlBitmap::from_iter([true, true, false]));
         assert_ne!(broadcast, PlBitmap::new_scalar(false, 3));

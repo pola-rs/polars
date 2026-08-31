@@ -13,7 +13,7 @@ use crate::bitmap::PlBitmapRef;
 /// means downcasting through [`PlArray::as_any`].
 ///
 /// Like the concrete arrays, an implementor stores its logical length separately from its backing
-/// buffers, so each buffer is independently either dense or broadcast. See [`crate::broadcast`]
+/// buffers, so each buffer is independently either flat or broadcast. See [`crate::broadcast`]
 /// for the rules, and [`PlArray::is_scalar`] to detect the `O(1)`-memory case a `dyn PlArray`
 /// must not walk element by element.
 ///
@@ -58,12 +58,12 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     /// The validity mask, if any element may be null.
     ///
     /// The returned [`PlBitmapRef`] has [`PlArray::len`] bits regardless of whether the backing
-    /// bitmap is dense or broadcast.
+    /// bitmap is flat or broadcast.
     fn validity(&self) -> Option<PlBitmapRef<'_>>;
 
     /// The number of null elements.
     ///
-    /// This is `O(1)` for a broadcast validity mask and `O(len)` for a dense one, amortized over
+    /// This is `O(1)` for a broadcast validity mask and `O(len)` for a flat one, amortized over
     /// repeated calls on the same [`Bitmap`].
     #[inline]
     fn null_count(&self) -> usize {
@@ -118,7 +118,7 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
 
     /// Whether the values buffer holds a single value shared by every element.
     ///
-    /// This is `false` for a dense array of length one, where the two representations coincide.
+    /// This is `false` for a flat array of length one, where the two representations coincide.
     fn values_are_broadcast(&self) -> bool;
 
     /// Whether the validity mask holds a single bit shared by every element.
@@ -130,7 +130,7 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
 
     /// Whether every backing buffer has one slot per element.
     #[inline]
-    fn is_dense(&self) -> bool {
+    fn is_flat(&self) -> bool {
         !self.values_are_broadcast() && !self.validity_is_broadcast()
     }
 
@@ -189,13 +189,13 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     /// Replaces the validity mask.
     ///
     /// # Panics
-    /// Panics if `validity` is neither dense nor broadcast for this array's length.
+    /// Panics if `validity` is neither flat nor broadcast for this array's length.
     fn set_validity(&mut self, validity: Option<Bitmap>);
 
     /// Returns this array with its validity mask replaced.
     ///
     /// # Panics
-    /// Panics if `validity` is neither dense nor broadcast for this array's length.
+    /// Panics if `validity` is neither flat nor broadcast for this array's length.
     #[must_use]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn PlArray> {
         let mut new = self.to_boxed();
@@ -212,9 +212,9 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     /// Returns an equivalent array whose backing buffers all hold one slot per element.
     ///
     /// This materializes any broadcast buffer and is therefore `O(len)`; it is a no-op clone when
-    /// this array [`is_dense`](PlArray::is_dense).
+    /// this array [`is_flat`](PlArray::is_flat).
     #[must_use]
-    fn to_dense_boxed(&self) -> Box<dyn PlArray>;
+    fn to_flat_boxed(&self) -> Box<dyn PlArray>;
 
     /// Clones this array into an owned `Box<dyn PlArray>`.
     ///
@@ -235,7 +235,7 @@ impl Clone for Box<dyn PlArray> {
     }
 }
 
-/// Compares two arrays element-wise; the representation (dense or broadcast) is irrelevant, but
+/// Compares two arrays element-wise; the representation (flat or broadcast) is irrelevant, but
 /// arrays of different [`PlArrayType`] never compare equal.
 ///
 /// Compare two `Box<dyn PlArray>` through references (`&lhs == &rhs`): `==` on the boxes
@@ -334,7 +334,7 @@ mod tests {
             assert!(!arr.has_nulls());
             assert!(arr.is_valid(2));
             assert!(!arr.is_null(2));
-            assert!(arr.is_dense());
+            assert!(arr.is_flat());
             assert!(!arr.is_scalar());
             assert!(!arr.values_are_broadcast());
             assert!(!arr.validity_is_broadcast());
@@ -346,7 +346,7 @@ mod tests {
         for arr in scalars(1_000_000_000) {
             assert_eq!(arr.len(), 1_000_000_000);
             assert!(arr.is_scalar());
-            assert!(!arr.is_dense());
+            assert!(!arr.is_flat());
             assert!(arr.values_are_broadcast());
             assert_eq!(arr.null_count(), 0);
 
@@ -412,7 +412,7 @@ mod tests {
             let nulled = arr.with_validity(Some(Bitmap::new_zeroed(1)));
             assert_eq!(nulled.null_count(), 3);
             assert!(nulled.validity_is_broadcast());
-            assert!(!nulled.is_dense());
+            assert!(!nulled.is_flat());
             assert!(!nulled.is_scalar());
             assert_eq!(arr.null_count(), 0);
 
@@ -424,13 +424,13 @@ mod tests {
     }
 
     #[test]
-    fn to_dense_boxed_materializes_broadcasts() {
+    fn to_flat_boxed_materializes_broadcasts() {
         for arr in scalars(3) {
-            let dense = arr.to_dense_boxed();
-            assert!(dense.is_dense());
-            assert_eq!(dense.len(), 3);
-            assert_eq!(dense.array_type(), arr.array_type());
-            assert_eq!(&dense, &arr);
+            let flat = arr.to_flat_boxed();
+            assert!(flat.is_flat());
+            assert_eq!(flat.len(), 3);
+            assert_eq!(flat.array_type(), arr.array_type());
+            assert_eq!(&flat, &arr);
         }
     }
 
@@ -443,8 +443,8 @@ mod tests {
     #[test]
     fn equality_ignores_representation_but_not_type() {
         let scalar: Box<dyn PlArray> = Box::new(PlPrimitiveArray::<i32>::new_scalar(1, 3));
-        let dense: Box<dyn PlArray> = Box::new(PlPrimitiveArray::from_vec(vec![1i32, 1, 1]));
-        assert_eq!(&scalar, &dense);
+        let flat: Box<dyn PlArray> = Box::new(PlPrimitiveArray::from_vec(vec![1i32, 1, 1]));
+        assert_eq!(&scalar, &flat);
 
         // Same values, different element type.
         let other: Box<dyn PlArray> = Box::new(PlPrimitiveArray::from_vec(vec![1i64, 1, 1]));

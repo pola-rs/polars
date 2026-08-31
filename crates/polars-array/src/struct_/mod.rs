@@ -57,7 +57,7 @@ impl PlStructArray {
     ///
     /// # Errors
     /// This function errors if any field does not have exactly `length` elements, or if `validity`
-    /// is neither dense (length equal to `length`) nor broadcast (length one).
+    /// is neither flat (length equal to `length`) nor broadcast (length one).
     pub fn try_new(
         fields: Vec<Box<dyn PlArray>>,
         length: usize,
@@ -76,7 +76,7 @@ impl PlStructArray {
             polars_ensure!(
                 is_valid_buffer_len(validity.len(), length),
                 ComputeError:
-                "validity mask of length {} is neither dense nor broadcast for an array of length {}",
+                "validity mask of length {} is neither flat nor broadcast for an array of length {}",
                 validity.len(), length,
             );
         }
@@ -100,7 +100,7 @@ impl PlStructArray {
     /// Creates a [`PlStructArray`] out of its internal components without validating them.
     ///
     /// # Safety
-    /// Every field must have exactly `length` elements, and `validity` must be either dense
+    /// Every field must have exactly `length` elements, and `validity` must be either flat
     /// (length equal to `length`) or broadcast (length one).
     #[inline]
     pub unsafe fn new_unchecked(
@@ -204,12 +204,12 @@ impl PlStructArray {
     /// The validity mask, if any element may be null.
     ///
     /// The returned [`PlBitmapRef`] has [`Self::len`] bits regardless of whether the backing bitmap
-    /// is dense or broadcast, so reading validity through it needs no knowledge of which
+    /// is flat or broadcast, so reading validity through it needs no knowledge of which
     /// representation this array is in. This mask says nothing about the fields: a valid row may
     /// still hold a null value in any of them.
     #[inline]
     pub fn validity(&self) -> Option<PlBitmapRef<'_>> {
-        // SAFETY: the mask is dense or broadcast for `self.length`, upheld by every constructor.
+        // SAFETY: the mask is flat or broadcast for `self.length`, upheld by every constructor.
         self.validity
             .as_ref()
             .map(|validity| unsafe { PlBitmapRef::new_unchecked(validity, self.length) })
@@ -220,7 +220,7 @@ impl PlStructArray {
     /// A struct array holds no values of its own, so this asks whether every field
     /// [`is_scalar`](PlArray::is_scalar) and the row at every index is therefore the same one. It
     /// is `false` for an array without fields, which has nothing to broadcast, and — like the
-    /// fields it defers to — `false` for a dense array of length one, where the two representations
+    /// fields it defers to — `false` for a flat array of length one, where the two representations
     /// coincide.
     #[inline]
     pub fn values_are_broadcast(&self) -> bool {
@@ -235,8 +235,8 @@ impl PlStructArray {
 
     /// Whether every backing buffer, in this array and in its fields, has one slot per element.
     #[inline]
-    pub fn is_dense(&self) -> bool {
-        !self.validity_is_broadcast() && self.fields.iter().all(|field| field.is_dense())
+    pub fn is_flat(&self) -> bool {
+        !self.validity_is_broadcast() && self.fields.iter().all(|field| field.is_flat())
     }
 
     /// Whether this array is entirely stored in the broadcast representation, and therefore is a
@@ -292,7 +292,7 @@ impl PlStructArray {
     ///
     /// Null values inside the fields do not count: only rows this array itself masks out are null.
     ///
-    /// This is `O(1)` for a broadcast validity mask and `O(len)` for a dense one, amortized over
+    /// This is `O(1)` for a broadcast validity mask and `O(len)` for a flat one, amortized over
     /// repeated calls on the same [`Bitmap`].
     pub fn null_count(&self) -> usize {
         self.validity().map_or(0, |validity| validity.unset_bits())
@@ -307,7 +307,7 @@ impl PlStructArray {
     /// Replaces the validity mask.
     ///
     /// # Panics
-    /// Panics if `validity` is neither dense nor broadcast for this array's length.
+    /// Panics if `validity` is neither flat nor broadcast for this array's length.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
         self.set_validity(validity);
@@ -317,12 +317,12 @@ impl PlStructArray {
     /// Replaces the validity mask.
     ///
     /// # Panics
-    /// Panics if `validity` is neither dense nor broadcast for this array's length.
+    /// Panics if `validity` is neither flat nor broadcast for this array's length.
     pub fn set_validity(&mut self, validity: Option<Bitmap>) {
         if let Some(validity) = validity.as_ref() {
             assert!(
                 is_valid_buffer_len(validity.len(), self.length),
-                "validity mask of length {} is neither dense nor broadcast for an array of length {}",
+                "validity mask of length {} is neither flat nor broadcast for an array of length {}",
                 validity.len(),
                 self.length,
             );
@@ -405,9 +405,9 @@ impl PlStructArray {
     /// element.
     ///
     /// This materializes every broadcast buffer and is therefore `O(len)`; it is a no-op clone when
-    /// this array [`is_dense`](Self::is_dense).
-    pub fn to_dense(&self) -> Self {
-        if self.is_dense() {
+    /// this array [`is_flat`](Self::is_flat).
+    pub fn to_flat(&self) -> Self {
+        if self.is_flat() {
             return self.clone();
         }
 
@@ -415,10 +415,10 @@ impl PlStructArray {
             fields: self
                 .fields
                 .iter()
-                .map(|field| field.to_dense_boxed())
+                .map(|field| field.to_flat_boxed())
                 .collect(),
             length: self.length,
-            validity: self.validity().map(|validity| validity.to_dense()),
+            validity: self.validity().map(|validity| validity.to_flat()),
         }
     }
 }
@@ -430,8 +430,8 @@ impl PlStructArray {
 /// broadcast, so materializing it costs no more than the mask already does.
 fn masked(field: &dyn PlArray, mask: PlBitmapRef<'_>) -> Box<dyn PlArray> {
     let validity = match field.validity() {
-        Some(field_validity) => and(&field_validity.to_dense(), &mask.to_dense()),
-        None => mask.to_dense(),
+        Some(field_validity) => and(&field_validity.to_flat(), &mask.to_flat()),
+        None => mask.to_flat(),
     };
     field.with_validity(Some(validity))
 }
@@ -452,7 +452,7 @@ impl Default for PlStructArray {
     }
 }
 
-/// Compares two arrays row-wise; the representation (dense or broadcast) is irrelevant, and so are
+/// Compares two arrays row-wise; the representation (flat or broadcast) is irrelevant, and so are
 /// the field values of null rows.
 impl PartialEq for PlStructArray {
     fn eq(&self, other: &Self) -> bool {
@@ -527,8 +527,8 @@ impl PlArray for PlStructArray {
     }
 
     #[inline]
-    fn is_dense(&self) -> bool {
-        self.is_dense()
+    fn is_flat(&self) -> bool {
+        self.is_flat()
     }
 
     #[inline]
@@ -547,8 +547,8 @@ impl PlArray for PlStructArray {
     }
 
     #[inline]
-    fn to_dense_boxed(&self) -> Box<dyn PlArray> {
-        Box::new(self.to_dense())
+    fn to_flat_boxed(&self) -> Box<dyn PlArray> {
+        Box::new(self.to_flat())
     }
 
     #[inline]
@@ -569,7 +569,7 @@ mod tests {
     use super::*;
     use crate::{PlBooleanArray, PlPrimitiveArray};
 
-    fn dense_fields() -> Vec<Box<dyn PlArray>> {
+    fn flat_fields() -> Vec<Box<dyn PlArray>> {
         vec![
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
             Box::new(PlBooleanArray::from_vec(vec![true, false, true])),
@@ -584,12 +584,12 @@ mod tests {
     }
 
     #[test]
-    fn dense() {
-        let arr = PlStructArray::from_fields(dense_fields());
+    fn flat() {
+        let arr = PlStructArray::from_fields(flat_fields());
 
         assert_eq!(arr.len(), 3);
         assert_eq!(arr.num_fields(), 2);
-        assert!(arr.is_dense());
+        assert!(arr.is_flat());
         assert!(!arr.is_scalar());
         assert!(!arr.values_are_broadcast());
         assert_eq!(arr.null_count(), 0);
@@ -612,7 +612,7 @@ mod tests {
         assert_eq!(arr.len(), 1_000_000_000);
         assert!(arr.values_are_broadcast());
         assert!(arr.is_scalar());
-        assert!(!arr.is_dense());
+        assert!(!arr.is_flat());
         assert_eq!(arr.null_count(), 0);
 
         // Only every field being scalar makes the row constant.
@@ -626,8 +626,8 @@ mod tests {
         );
         assert!(!mixed.values_are_broadcast());
         assert!(!mixed.is_scalar());
-        // ... and only every field being dense makes the array dense.
-        assert!(!mixed.is_dense());
+        // ... and only every field being flat makes the array flat.
+        assert!(!mixed.is_flat());
     }
 
     #[test]
@@ -638,9 +638,9 @@ mod tests {
         assert_eq!(arr.num_fields(), 0);
         assert!(!arr.values_are_broadcast());
         assert!(!arr.is_scalar());
-        assert!(arr.is_dense());
+        assert!(arr.is_flat());
         assert_eq!(arr, arr.clone());
-        assert_eq!(arr, arr.to_dense());
+        assert_eq!(arr, arr.to_flat());
         assert_ne!(arr, PlStructArray::new(Vec::new(), 999, None));
     }
 
@@ -665,19 +665,19 @@ mod tests {
     }
 
     #[test]
-    fn dense_fields_with_broadcast_validity() {
+    fn flat_fields_with_broadcast_validity() {
         let arr =
-            PlStructArray::from_fields(dense_fields()).with_validity(Some(Bitmap::new_zeroed(1)));
+            PlStructArray::from_fields(flat_fields()).with_validity(Some(Bitmap::new_zeroed(1)));
 
         assert!(arr.validity_is_broadcast());
         assert!(!arr.values_are_broadcast());
-        assert!(!arr.is_dense());
+        assert!(!arr.is_flat());
         assert!(!arr.is_scalar());
         assert_eq!(arr.null_count(), 3);
     }
 
     #[test]
-    fn scalar_fields_with_dense_validity() {
+    fn scalar_fields_with_flat_validity() {
         let arr = PlStructArray::new(
             scalar_fields(3),
             3,
@@ -686,7 +686,7 @@ mod tests {
 
         assert!(arr.values_are_broadcast());
         assert!(!arr.validity_is_broadcast());
-        assert!(!arr.is_dense());
+        assert!(!arr.is_flat());
         assert!(!arr.is_scalar());
         assert_eq!(arr.null_count(), 1);
         assert!(arr.is_null(1));
@@ -694,11 +694,11 @@ mod tests {
 
     #[test]
     fn try_new_rejects_mismatched_lengths() {
-        assert!(PlStructArray::try_new(dense_fields(), 2, None).is_err());
-        assert!(PlStructArray::try_new(dense_fields(), 3, None).is_ok());
-        assert!(PlStructArray::try_new(dense_fields(), 3, Some(Bitmap::new_zeroed(2))).is_err());
-        assert!(PlStructArray::try_new(dense_fields(), 3, Some(Bitmap::new_zeroed(1))).is_ok());
-        assert!(PlStructArray::try_new(dense_fields(), 3, Some(Bitmap::new_zeroed(3))).is_ok());
+        assert!(PlStructArray::try_new(flat_fields(), 2, None).is_err());
+        assert!(PlStructArray::try_new(flat_fields(), 3, None).is_ok());
+        assert!(PlStructArray::try_new(flat_fields(), 3, Some(Bitmap::new_zeroed(2))).is_err());
+        assert!(PlStructArray::try_new(flat_fields(), 3, Some(Bitmap::new_zeroed(1))).is_ok());
+        assert!(PlStructArray::try_new(flat_fields(), 3, Some(Bitmap::new_zeroed(3))).is_ok());
 
         let ragged = vec![
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])) as Box<dyn PlArray>,
@@ -710,7 +710,7 @@ mod tests {
     #[test]
     fn slicing_slices_every_field() {
         let arr = PlStructArray::new(
-            dense_fields(),
+            flat_fields(),
             3,
             Some(Bitmap::from_iter([true, false, true])),
         )
@@ -746,46 +746,45 @@ mod tests {
     }
 
     #[test]
-    fn to_dense_materializes_the_fields_too() {
+    fn to_flat_materializes_the_fields_too() {
         let scalar = PlStructArray::from_fields(scalar_fields(3))
             .with_validity(Some(Bitmap::new_with_value(true, 1)));
-        let dense = scalar.to_dense();
+        let flat = scalar.to_flat();
 
-        assert!(dense.is_dense());
-        assert!(!dense.is_scalar());
-        assert_eq!(dense.len(), 3);
-        assert!(dense.field(0).is_dense());
-        assert!(dense.field(1).is_dense());
-        assert_eq!(dense.validity().unwrap().bitmap().len(), 3);
-        assert_eq!(dense, scalar);
+        assert!(flat.is_flat());
+        assert!(!flat.is_scalar());
+        assert_eq!(flat.len(), 3);
+        assert!(flat.field(0).is_flat());
+        assert!(flat.field(1).is_flat());
+        assert_eq!(flat.validity().unwrap().bitmap().len(), 3);
+        assert_eq!(flat, scalar);
 
-        // A dense array is only cloned.
-        let arr = PlStructArray::from_fields(dense_fields());
-        assert_eq!(arr.to_dense(), arr);
+        // A flat array is only cloned.
+        let arr = PlStructArray::from_fields(flat_fields());
+        assert_eq!(arr.to_flat(), arr);
     }
 
     #[test]
     fn equality_ignores_representation() {
         let scalar = PlStructArray::from_fields(scalar_fields(3));
-        let dense = PlStructArray::from_fields(vec![
+        let flat = PlStructArray::from_fields(vec![
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 1, 1])),
             Box::new(PlBooleanArray::from_vec(vec![true, true, true])),
         ]);
 
-        assert_eq!(scalar, dense);
+        assert_eq!(scalar, flat);
         assert_ne!(scalar, PlStructArray::from_fields(scalar_fields(4)));
-        assert_ne!(scalar, PlStructArray::from_fields(dense_fields()));
+        assert_ne!(scalar, PlStructArray::from_fields(flat_fields()));
 
         // An absent mask and an all-set one are the same thing.
         assert_eq!(
             scalar,
-            dense
-                .clone()
+            flat.clone()
                 .with_validity(Some(Bitmap::new_with_value(true, 3))),
         );
         assert_ne!(
             scalar,
-            dense.with_validity(Some(Bitmap::from_iter([true, false, true]))),
+            flat.with_validity(Some(Bitmap::from_iter([true, false, true]))),
         );
 
         // The fields are positional, and a missing one is not the same array.
@@ -798,7 +797,7 @@ mod tests {
     #[test]
     fn equality_ignores_the_field_values_of_null_rows() {
         let mask = Bitmap::from_iter([true, false, true]);
-        let lhs = PlStructArray::new(dense_fields(), 3, Some(mask.clone()));
+        let lhs = PlStructArray::new(flat_fields(), 3, Some(mask.clone()));
         let rhs = PlStructArray::new(
             vec![
                 Box::new(PlPrimitiveArray::from_vec(vec![1i32, 42, 3])),
@@ -854,14 +853,14 @@ mod tests {
 
         assert!(arr.is_empty());
         assert_eq!(arr.num_fields(), 0);
-        assert!(arr.is_dense());
+        assert!(arr.is_flat());
         assert_eq!(arr.null_count(), 0);
         assert_eq!(arr, PlStructArray::default());
     }
 
     #[test]
     fn into_inner_returns_the_components() {
-        let arr = PlStructArray::new_full_null(dense_fields(), 3);
+        let arr = PlStructArray::new_full_null(flat_fields(), 3);
         let (fields, length, validity) = arr.into_inner();
 
         assert_eq!(fields.len(), 2);
@@ -878,7 +877,7 @@ mod tests {
              fields: [PlPrimitiveArray[1; 1000000000], PlBooleanArray[true; 1000000000]] }",
         );
 
-        let arr = PlStructArray::from_fields(dense_fields());
+        let arr = PlStructArray::from_fields(flat_fields());
         assert_eq!(
             format!("{arr:?}"),
             "PlStructArray { length: 3, fields: [PlPrimitiveArray[1, 2, 3], \
@@ -894,7 +893,7 @@ mod tests {
         assert!(arr.array_type().is_struct());
         assert_eq!(arr.len(), 1_000);
         assert!(arr.is_scalar());
-        assert!(!arr.is_dense());
+        assert!(!arr.is_flat());
         assert_eq!(arr.null_count(), 0);
 
         let nulled = arr.with_validity(Some(Bitmap::new_zeroed(1)));
@@ -913,8 +912,8 @@ mod tests {
             2,
         );
 
-        let dense = arr.to_dense_boxed();
-        assert!(dense.is_dense());
-        assert_eq!(&dense, &arr);
+        let flat = arr.to_flat_boxed();
+        assert!(flat.is_flat());
+        assert_eq!(&flat, &arr);
     }
 }
