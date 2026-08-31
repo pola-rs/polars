@@ -311,8 +311,8 @@ impl NodeStats {
     }
 }
 
-/// Rows a join of the given type emits, from the sizes of its sides and the rows an
-/// `None` for a join type that is not modelled.
+/// Rows a join of the given type emits, given the sizes of its sides and the rows an
+/// inner join of them would emit. `None` for a join type that is not modelled.
 fn join_rows(how: &JoinType, left: f64, right: f64, inner: f64) -> Option<f64> {
     let rows = match how {
         JoinType::Inner => inner,
@@ -326,9 +326,8 @@ fn join_rows(how: &JoinType, left: f64, right: f64, inner: f64) -> Option<f64> {
         #[cfg(feature = "semi_anti_join")]
         JoinType::Anti => left - inner.min(left),
         JoinType::Cross => left * right,
-        JoinType::AsOf(_) => return None,
-        JoinType::IEJoin => return None,
-        JoinType::Range => return None,
+        // As-of, inequality and range matches are not modelled.
+        _ => return None,
     };
     Some(rows.max(MIN_CARDINALITY))
 }
