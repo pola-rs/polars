@@ -30,11 +30,16 @@
 //! paths is taken. The widths of fixed size list arrays are checked either way: they are what the
 //! lists of the result are as wide as.
 //!
+//! The data buffers of a [`PlBinaryViewArray`] are not copied either, whichever path is taken:
+//! they are appended to one another and it is the views that are rebased onto them, so
+//! concatenating binary view arrays costs a view per element rather than the bytes of one.
+//!
 //! Outside those cases the values of the result are flat, but its validity mask still is not
 //! materialized unless it has to be — see [`concatenate_validities`].
 
 use std::ops::{Deref, Range};
 
+use arrow::array::View;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::types::NativeType;
 use polars_buffer::Buffer;
@@ -43,8 +48,8 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::{
-    PlBooleanArray, PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray,
-    PlStructArray, with_match_pl_primitive_array_type,
+    PlBinaryViewArray, PlBooleanArray, PlFixedSizeListArray, PlListArray, PlNullArray,
+    PlPrimitiveArray, PlStructArray, with_match_pl_primitive_array_type,
 };
 
 /// The elements of a slice, in order, a number of times over, each as what it stands for.
@@ -304,6 +309,10 @@ fn concatenate_impl<S>(
                     )
                 })
         },
+        PlArrayType::BinaryView => {
+            let map = downcast_map::<PlBinaryViewArray, _>(&iter, array_type)?;
+            Ok(Box::new(concatenate_binview_impl(iter.mapped(&map))))
+        },
         PlArrayType::Struct => {
             let map = downcast_map::<PlStructArray, _>(&iter, array_type)?;
             Ok(Box::new(concatenate_struct_impl(iter.mapped(&map))?))
@@ -491,6 +500,109 @@ fn concatenate_boolean_impl<S>(
     // SAFETY: the values hold one bit per element of the concatenation, and the mask is the one
     // `concatenate_validities_with` built for that many elements.
     unsafe { PlBooleanArray::new_unchecked(values.freeze(), length, validity) }
+}
+
+/// Concatenates `arrays`, in order, into a single [`PlBinaryViewArray`] over the data buffers of
+/// all of them.
+///
+/// The bytes of the elements are never copied: the data buffers of the arrays are appended to one
+/// another and the views are rebased onto them, so this costs a view per element rather than the
+/// bytes of one. See the [module docs](self) for when the result keeps the scalar representation
+/// instead of being materialized. Concatenating no arrays yields an empty array.
+///
+/// # Panics
+/// Panics if the arrays hold more data buffers between them than a view can index.
+///
+/// # Example
+/// ```
+/// use polars_array::concatenate::concatenate_binview;
+/// use polars_array::PlBinaryViewArray;
+///
+/// let lhs = PlBinaryViewArray::from_values_iter([b"foo".as_slice()]);
+/// let rhs = PlBinaryViewArray::from_values_iter([b"bar".as_slice(), b"baz"]);
+/// let concatenated = concatenate_binview(&[&lhs, &rhs]);
+///
+/// assert_eq!(concatenated.len(), 3);
+/// assert_eq!(concatenated.value(2), b"baz");
+/// ```
+pub fn concatenate_binview(arrays: &[&PlBinaryViewArray]) -> PlBinaryViewArray {
+    concatenate_binview_impl(SliceBroadcastIter::new(arrays, 1, &pointee))
+}
+
+/// [`concatenate_binview`], over the arrays `iter` yields.
+fn concatenate_binview_impl<S>(
+    iter: SliceBroadcastIter<'_, '_, PlBinaryViewArray, S>,
+) -> PlBinaryViewArray {
+    if let Some(array) = only_non_empty(&iter) {
+        return array.clone();
+    }
+
+    let (length, null_count) = total_length_and_null_count(&iter);
+
+    // There is no element to concatenate, however many arrays there are, so there is no data
+    // buffer to keep around for one either.
+    if length == 0 {
+        return PlBinaryViewArray::new_empty();
+    }
+
+    // Every element is null, so every value is undetermined and none of them has to be written.
+    if null_count == length {
+        return PlBinaryViewArray::new_full_null(length);
+    }
+
+    // Every array stands for the same repeated element, which the result repeats over all of them.
+    if let Some(element) = shared_element(&iter, PlBinaryViewArray::scalar_value) {
+        return match element {
+            Some(value) => PlBinaryViewArray::new_scalar(value, length),
+            None => PlBinaryViewArray::new_full_null(length),
+        };
+    }
+
+    let validity = concatenate_validities_with(iter.clone(), length, null_count);
+
+    // One pass over the distinct arrays is what the concatenation is made of: the copies of them
+    // hold the very same views over the very same data buffers, so neither is built twice.
+    let mut buffers: Vec<Buffer<u8>> = Vec::new();
+    let mut views: Vec<View> = Vec::with_capacity(length);
+    for array in iter.distinct().filter(|array| !array.is_empty()) {
+        buffers.extend(array.data_buffers().iter().cloned());
+        let end = u32::try_from(buffers.len())
+            .expect("the concatenation holds more data buffers than a view can index");
+        let buffer_offset = end - array.data_buffers().len() as u32;
+
+        // A view that inlines its bytes reads no data buffer, so it is already what it stands for.
+        let rebase = |mut view: View| {
+            if !view.is_inline() {
+                view.buffer_idx += buffer_offset;
+            }
+            view
+        };
+
+        if array.views_are_scalar() {
+            views.extend(std::iter::repeat_n(rebase(array.views()[0]), array.len()));
+        } else {
+            views.extend(array.views().iter().copied().map(rebase));
+        }
+    }
+
+    // Every copy of the distinct arrays holds the same elements over again, which is the pass that
+    // was just built, repeated.
+    let pass = views.len();
+    for _ in 1..iter.repeats() {
+        views.extend_from_within(..pass);
+    }
+
+    // SAFETY: the views hold one slot per element of the concatenation, each rebased onto the
+    // buffers of the array it came from, and the mask is the one `concatenate_validities_with`
+    // built for that many elements.
+    unsafe {
+        PlBinaryViewArray::new_unchecked(
+            Buffer::from(views),
+            buffers.into_iter().collect(),
+            length,
+            validity,
+        )
+    }
 }
 
 /// Concatenates `arrays`, in order, into a single [`PlFixedSizeListArray`] over the concatenation
@@ -817,9 +929,9 @@ fn total_length_and_null_count<A: PlArray + ?Sized, S>(
 /// The arrays that hold no elements are skipped: they have no element to disagree. Returns `None`
 /// when no array holds elements, since there is then no element to repeat. Only the distinct
 /// arrays are looked at: a repeated array agrees with itself.
-fn shared_element<A: PlArray, T: PartialEq, S>(
-    iter: &SliceBroadcastIter<'_, '_, A, S>,
-    element: impl Fn(&A) -> Option<T>,
+fn shared_element<'a, A: PlArray, T: PartialEq, S>(
+    iter: &SliceBroadcastIter<'a, '_, A, S>,
+    element: impl Fn(&'a A) -> Option<T>,
 ) -> Option<T> {
     let mut shared = None;
     for array in iter.distinct().filter(|array| !array.is_empty()) {
@@ -1760,5 +1872,162 @@ mod tests {
                 .unwrap()
                 .values_are_scalar()
         );
+    }
+
+    /// A value of more than `View::MAX_INLINE_SIZE` bytes, which no view inlines.
+    const LONG: &[u8] = b"a value that is too long to inline";
+
+    /// The elements of a `PlBinaryViewArray`, whatever representation it is in.
+    fn bytes(array: &dyn PlArray) -> Vec<Option<&[u8]>> {
+        array
+            .as_any()
+            .downcast_ref::<PlBinaryViewArray>()
+            .unwrap()
+            .iter()
+            .collect()
+    }
+
+    #[test]
+    fn binview_arrays_are_appended_in_order() {
+        let lhs = PlBinaryViewArray::from_values_iter([b"foo".as_slice()]);
+        let rhs: PlBinaryViewArray = [Some(b"bar".as_slice()), None].into_iter().collect();
+        let concatenated = concatenate_binview(&[&lhs, &rhs]);
+
+        assert_eq!(concatenated.len(), 3);
+        assert_eq!(concatenated.null_count(), 1);
+        assert!(concatenated.is_flat());
+        assert_eq!(
+            concatenated.iter().collect::<Vec<_>>(),
+            [Some(b"foo".as_slice()), Some(b"bar"), None],
+        );
+
+        // The same arrays, reached through the trait object.
+        let concatenated = concatenate(&[&lhs as &dyn PlArray, &rhs]).unwrap();
+        assert_eq!(concatenated.array_type(), PlArrayType::BinaryView);
+        assert_eq!(
+            bytes(&*concatenated),
+            [Some(b"foo".as_slice()), Some(b"bar"), None],
+        );
+    }
+
+    #[test]
+    fn binview_data_buffers_are_appended_rather_than_the_bytes() {
+        let lhs = PlBinaryViewArray::from_values_iter([LONG, b"foo".as_slice()]);
+        let rhs = PlBinaryViewArray::from_values_iter([b"bar".as_slice(), LONG]);
+        let concatenated = concatenate_binview(&[&lhs, &rhs]);
+
+        // One buffer from each array, and the views of the second rebased onto them.
+        assert_eq!(concatenated.data_buffers().len(), 2);
+        assert_eq!(concatenated.view(0).buffer_idx, 0);
+        assert_eq!(concatenated.view(3).buffer_idx, 1);
+        assert_eq!(
+            concatenated.iter().collect::<Vec<_>>(),
+            [
+                Some(LONG),
+                Some(b"foo".as_slice()),
+                Some(b"bar"),
+                Some(LONG)
+            ],
+        );
+
+        // The bytes themselves were never copied.
+        assert!(
+            concatenated.data_buffers()[0].is_same_buffer(&lhs.data_buffers()[0]),
+            "the data buffers must be shared, not copied",
+        );
+        assert!(concatenated.data_buffers()[1].is_same_buffer(&rhs.data_buffers()[0]));
+    }
+
+    #[test]
+    fn binview_scalars_concatenate_in_o_1() {
+        // A billion elements would not be walked in reasonable time; that this test finishes is
+        // what shows the scalar representation is kept.
+        let arr = PlBinaryViewArray::new_scalar(LONG, 1_000_000_000);
+        let concatenated = concatenate_binview(&[&arr, &arr]);
+
+        assert_eq!(concatenated.len(), 2_000_000_000);
+        assert_eq!(concatenated.views().len(), 1);
+        assert!(concatenated.is_scalar());
+        assert_eq!(concatenated.value(1_999_999_999), LONG);
+
+        // Every element of every array is null, so a single view and a single bit stand for all
+        // of them.
+        let nulls = PlBinaryViewArray::new_full_null(1_000_000_000);
+        let concatenated = concatenate_binview(&[&nulls, &nulls]);
+
+        assert_eq!(concatenated.null_count(), 2_000_000_000);
+        assert!(concatenated.is_scalar());
+
+        // Arrays standing for different elements have to be materialized.
+        let other = PlBinaryViewArray::new_scalar(b"foo", 2);
+        let concatenated =
+            concatenate_binview(&[&other, &PlBinaryViewArray::new_scalar(b"bar", 1)]);
+
+        assert!(!concatenated.is_scalar());
+        assert_eq!(
+            concatenated.iter().collect::<Vec<_>>(),
+            [Some(b"foo".as_slice()), Some(b"foo"), Some(b"bar")],
+        );
+    }
+
+    #[test]
+    fn binview_scalar_views_are_written_out_once_per_element() {
+        let scalar = PlBinaryViewArray::new_scalar(LONG, 2);
+        let flat = PlBinaryViewArray::from_values_iter([b"foo".as_slice()]);
+        let concatenated = concatenate_binview(&[&scalar, &flat]);
+
+        assert!(concatenated.is_flat());
+        assert_eq!(concatenated.views().len(), 3);
+        assert_eq!(
+            concatenated.iter().collect::<Vec<_>>(),
+            [Some(LONG), Some(LONG), Some(b"foo".as_slice())],
+        );
+        // The bytes of the repeated element are still held once.
+        assert_eq!(concatenated.total_buffer_len(), LONG.len());
+    }
+
+    #[test]
+    fn binview_empty_arrays_contribute_nothing() {
+        let empty = PlBinaryViewArray::new_empty();
+        let arr = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), LONG]);
+
+        assert_eq!(concatenate_binview(&[&empty, &arr, &empty]), arr);
+        assert!(concatenate_binview(&[&empty, &empty]).is_empty());
+
+        let concatenated = concatenate_binview(&[]);
+        assert!(concatenated.is_empty());
+        assert!(concatenated.validity().is_none());
+        assert!(concatenated.data_buffers().is_empty());
+    }
+
+    #[test]
+    fn binview_copies_of_an_array_share_its_data_buffers() {
+        let arr = PlBinaryViewArray::from_values_iter([LONG, b"foo".as_slice()]);
+        let repeated = concatenate_repeated(&arr, 3).unwrap();
+        let repeated = repeated
+            .as_any()
+            .downcast_ref::<PlBinaryViewArray>()
+            .unwrap();
+
+        assert_eq!(repeated.len(), 6);
+        assert_eq!(
+            repeated.iter().collect::<Vec<_>>(),
+            [Some(LONG), Some(b"foo".as_slice())].repeat(3),
+        );
+
+        // The copies read the very same buffer rather than one apiece.
+        assert_eq!(repeated.data_buffers().len(), 1);
+        assert!(repeated.data_buffers()[0].is_same_buffer(&arr.data_buffers()[0]));
+
+        // Copies of a single element are that element repeated, which stays scalar.
+        let repeated = concatenate_repeated(&arr.clone().sliced(0, 1), 1_000_000_000).unwrap();
+        let repeated = repeated
+            .as_any()
+            .downcast_ref::<PlBinaryViewArray>()
+            .unwrap();
+
+        assert_eq!(repeated.len(), 1_000_000_000);
+        assert!(repeated.is_scalar());
+        assert_eq!(repeated.value(999_999_999), LONG);
     }
 }
