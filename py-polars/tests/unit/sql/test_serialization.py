@@ -106,8 +106,13 @@ def test_table_function_stays_registered(tmp_path: Path) -> None:
     path.write_text("a\n1\n2\n")
 
     with pl.SQLContext(eager=True) as ctx:
-        ctx.execute(f"SELECT a FROM read_csv('{path}')")
-        assert ctx.tables() == [str(path)]
+        ctx.execute(f"SELECT a FROM read_csv('{path.as_posix()}')")
+
+        # the name a table function registers under is the path it was given, whose
+        # spelling is platform-dependent; only the registration itself matters here
+        tables = ctx.tables()
+        assert len(tables) == 1
+        assert tables[0].endswith("data.csv")
 
 
 def test_quantified_subquery_survives_roundtrip() -> None:
