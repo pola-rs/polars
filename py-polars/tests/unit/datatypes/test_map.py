@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, SchemaError
+import polars.selectors as cs
+from polars.exceptions import ComputeError, InvalidOperationError, SchemaError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -968,3 +969,162 @@ def test_map_construction_tolerates_uninformative_first_row(first: Any) -> None:
     s = pl.Series("m", [first, {"a": 1}], dtype=MAP)
     assert s.dtype == MAP
     assert s.to_list() == [first, {"a": 1}]
+
+
+@pytest.mark.parametrize(
+    ("dtype", "value"),
+    [
+        pytest.param(
+            pl.Map(pl.String, pl.Datetime("us")),
+            {"a": datetime(2020, 1, 1)},
+            id="datetime-value",
+        ),
+        pytest.param(
+            pl.Map(pl.String, pl.Date), {"a": date(2020, 1, 1)}, id="date-value"
+        ),
+        pytest.param(
+            pl.Map(pl.String, pl.Duration("ms")),
+            {"a": timedelta(days=1)},
+            id="duration-value",
+        ),
+        pytest.param(
+            pl.Map(pl.String, pl.Decimal(10, 2)),
+            {"a": Decimal("1.50")},
+            id="decimal-value",
+        ),
+        pytest.param(
+            pl.Map(pl.String, pl.Categorical), {"a": "x"}, id="categorical-value"
+        ),
+        pytest.param(pl.Map(pl.String, pl.Enum(["x"])), {"a": "x"}, id="enum-value"),
+        pytest.param(
+            pl.Map(pl.Datetime("us"), pl.Int64),
+            {datetime(2020, 1, 1): 1},
+            id="datetime-key",
+        ),
+        pytest.param(pl.Map(pl.Categorical, pl.Int64), {"x": 1}, id="categorical-key"),
+    ],
+)
+def test_map_group_by_agg_list_keeps_logical_children(
+    dtype: pl.Map, value: dict[Any, Any]
+) -> None:
+    # `Map::to_physical` recurses into the children, so the aggregated list must not be
+    # relabelled as if the storage were fully physical.
+    s = pl.Series("m", [value, None], dtype=dtype)
+    df = pl.DataFrame({"g": [1, 1], "m": s})
+
+    out = df.group_by("g").agg("m")
+    assert out["m"].dtype == pl.List(dtype)
+    assert out["m"].to_list() == [[value, None]]
+
+
+def test_map_shift_with_fill_value() -> None:
+    s = pl.Series("m", [{"a": 1}, {"b": 2}, {"c": 3}], dtype=MAP)
+    df = pl.DataFrame({"m": s})
+
+    out = df.select(pl.col("m").shift(1, fill_value=pl.col("m").last()))["m"]
+    assert_series_equal(out, pl.Series("m", [{"c": 3}, {"a": 1}, {"b": 2}], dtype=MAP))
+
+    out = df.select(pl.col("m").shift(-1, fill_value=pl.col("m").first()))["m"]
+    assert_series_equal(out, pl.Series("m", [{"b": 2}, {"c": 3}, {"a": 1}], dtype=MAP))
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pytest.param(pl.Map(pl.String, pl.Object), id="object-value"),
+        pytest.param(pl.Map(pl.String, pl.List(pl.Object)), id="nested-object-value"),
+    ],
+)
+def test_map_object_value_dtype_is_rejected(dtype: pl.Map) -> None:
+    # A `Struct` cannot hold objects, and map entries are a struct.
+    for build in (
+        lambda: pl.Series("m", [], dtype=dtype),
+        lambda: pl.Series("m", [None], dtype=dtype),
+        lambda: pl.DataFrame(schema={"m": dtype}),
+        lambda: pl.select(pl.lit(None).cast(dtype)),
+    ):
+        with pytest.raises(InvalidOperationError, match="Map value dtype"):
+            build()
+
+
+def test_bare_map_class_is_not_a_dtype() -> None:
+    # `Map(Null, _)` is not a valid dtype, so there is no bare stand-in the way `List`
+    # has `List(Null)`.
+    for build in (
+        lambda: pl.Series("m", [None], dtype=pl.Map),
+        lambda: pl.DataFrame(schema={"m": pl.Map}),
+        lambda: pl.select(pl.lit(None).cast(pl.Map)),
+    ):
+        with pytest.raises(TypeError, match="Map requires a key and a value type"):
+            build()
+
+
+def test_bare_map_class_selects_every_map_column() -> None:
+    df = pl.DataFrame(
+        {
+            "m": pl.Series([{"a": 1}], dtype=MAP),
+            "n": pl.Series([{1: "a"}], dtype=pl.Map(pl.Int64, pl.String)),
+            "l": pl.Series([[1]], dtype=pl.List(pl.Int64)),
+        }
+    )
+
+    assert df.select(pl.col(pl.Map)).columns == ["m", "n"]
+    assert df.select(cs.map()).columns == ["m", "n"]
+    assert df.select(cs.by_dtype(pl.Map)).columns == ["m", "n"]
+    assert df.select(~cs.map()).columns == ["l"]
+
+    # A parametrized Map still matches exactly.
+    assert df.select(pl.col(MAP)).columns == ["m"]
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        pytest.param(lambda df: df.write_json(), id="json"),
+        pytest.param(lambda df: df.write_ndjson(), id="ndjson"),
+    ],
+)
+def test_map_json_write_errors(write: Callable[[pl.DataFrame], str]) -> None:
+    df = pl.DataFrame({"m": pl.Series([{"a": 1}], dtype=MAP)})
+    with pytest.raises(ComputeError, match="cannot write 'Map' datatype to json"):
+        write(df)
+
+    nested = pl.DataFrame({"m": pl.Series([[{"a": 1}]], dtype=pl.List(MAP))})
+    with pytest.raises(ComputeError, match="cannot write 'Map' datatype to json"):
+        write(nested)
+
+
+def test_map_json_read_errors() -> None:
+    with pytest.raises(ComputeError):
+        pl.read_json(io.BytesIO(b'[{"m": {"a": 1}}]'), schema={"m": MAP})
+    with pytest.raises(ComputeError):
+        pl.read_ndjson(io.BytesIO(b'{"m": {"a": 1}}\n'), schema={"m": MAP})
+
+
+def test_map_is_first_and_last_distinct() -> None:
+    s = pl.Series("m", [{"a": 1}, {"b": 2}, {"a": 1}, None, None], dtype=MAP)
+    assert s.is_first_distinct().to_list() == [True, True, False, True, False]
+    assert s.is_last_distinct().to_list() == [False, True, True, False, True]
+
+    # Nested keys and values are row-encoded, unlike the plain `List` path.
+    nested = (
+        pl.Series(
+            "m",
+            [[{"key": [1], "value": {"x": 1}}], [{"key": [1], "value": {"x": 1}}]],
+            dtype=pl.List(
+                pl.Struct(
+                    {"key": pl.List(pl.Int64), "value": pl.Struct({"x": pl.Int64})}
+                )
+            ),
+        )
+        .to_frame()
+        .select(pl.first().list.to_map())["m"]
+    )
+    assert nested.is_first_distinct().to_list() == [True, False]
+    assert nested.is_last_distinct().to_list() == [False, True]
+
+
+def test_map_inequality_comparison_names_the_map_dtype() -> None:
+    s = pl.Series("m", [{"a": 1}], dtype=MAP)
+    with pytest.raises(InvalidOperationError, match=r"dtype: map\[str, i64\]"):
+        pl.select(pl.lit(s) < pl.lit(s))
