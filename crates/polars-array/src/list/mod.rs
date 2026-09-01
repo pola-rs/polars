@@ -8,7 +8,7 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{broadcast_index, is_valid_buffer_len, is_valid_offsets_len};
-use crate::concatenate::concatenate;
+use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
 
 mod iterator;
@@ -693,11 +693,11 @@ impl PlListArray {
     /// Materializing scalar offsets is what costs here, and it costs more than it does for the
     /// other arrays: flat offsets lay the ranges of the elements end to end, so the one list every
     /// element of a scalar array covers has to be written out once per element — this is `O(len *
-    /// value_length)`, and it is [`concatenate`] that does it, so the values of the result keep
-    /// whatever representation copies of that list concatenate into. It is only the offsets that
-    /// are materialized, in `O(len)`, when every element covers an empty range or is null: the
-    /// value of a null element is undetermined, so it need not be written out, and the empty list
-    /// is the same list wherever the offsets point.
+    /// value_length)`, and it is [`concatenate_repeated`] that does it, so the values of the
+    /// result keep whatever representation copies of that list concatenate into. It is only the
+    /// offsets that are materialized, in `O(len)`, when every element covers an empty range or is
+    /// null: the value of a null element is undetermined, so it need not be written out, and the
+    /// empty list is the same list wherever the offsets point.
     ///
     /// # Example
     /// ```
@@ -740,7 +740,7 @@ impl PlListArray {
             // scalar when the list is itself a single repeated value.
             let range = unsafe { self.value_range_unchecked(0) };
             let element = self.values.sliced(range.start, range.len());
-            let values = concatenate(&vec![&*element; self.length])
+            let values = concatenate_repeated(&*element, self.length)
                 .expect("copies of one array always concatenate");
 
             let offsets = (0..=self.length as u64)
