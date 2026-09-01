@@ -769,7 +769,7 @@ def _can_stream_iceberg_file_tasks(tbl: pyiceberg.table.Table, scan: Any) -> boo
         return False
 
     manifests = snapshot.manifests(tbl.io)
-    planner = getattr(scan, "_manifest_planner", scan)
+    planner: Any = getattr(scan, "_manifest_planner", scan)
 
     return (
         all(
@@ -822,7 +822,7 @@ def _iter_iceberg_data_files(scan: Any) -> Iterator[pyiceberg.manifest.DataFile]
     if snapshot is None:
         return
 
-    planner = getattr(scan, "_manifest_planner", scan)
+    planner: Any = getattr(scan, "_manifest_planner", scan)
     manifest_evaluators: dict[int, Any] = {}
     manifests: list[Any] = []
 
