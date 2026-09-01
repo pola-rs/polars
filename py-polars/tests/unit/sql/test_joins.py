@@ -946,7 +946,7 @@ def test_join_derived_table_isolated_state() -> None:
                 LEFT JOIN (SELECT IDT, INFO2 FROM df2) t2 ON df1.IDT = t2.IDT
                 LEFT JOIN (SELECT IDT, INFO3 FROM df2) t3 ON df1.IDT = t3.IDT
         """,
-        compare_with="duckdb",
+        compare_with="sqlite",
         expected={
             "IDT": ["1"],
             "INFO1": ["my_info1"],
@@ -1115,7 +1115,7 @@ def test_join_on_literal_string_comparison(
     # the outer join cases are what distinguish a correctly-placed join key from a
     # post-join filter: a row that fails the constant comparison must still be
     # emitted (null-extended) rather than dropped
-    expected_rows = {
+    expected_rows: dict[tuple[str, str], list[tuple[str, str, str | None]]] = {
         ("left", "INNER"): [("adam", "admin", "SEC"), ("alice", "admin", "IT")],
         ("left", "LEFT"): [
             ("adam", "admin", "SEC"),
@@ -1130,7 +1130,7 @@ def test_join_on_literal_string_comparison(
             ("bob", "user", None),
             ("charlie", "user", "IT"),
         ],
-    }[filtered_side, join_type]
+    }
 
     assert_sql_matches(
         frames,
@@ -1140,9 +1140,9 @@ def test_join_on_literal_string_comparison(
             {join_type} JOIN df2 ON df1.name = df2.name AND {extra_condition}
             ORDER BY df1.name
         """,
-        compare_with="duckdb",
+        compare_with="sqlite",
         expected=pl.DataFrame(
-            data=expected_rows,
+            data=expected_rows[filtered_side, join_type],
             schema={"name": str, "role": str, "dept": str},
             orient="row",
         ),
@@ -1176,7 +1176,7 @@ def test_join_on_literal_comparison_ambiguous_column(
             {join_type} JOIN df2 ON df1.id = df2.id AND {extra_condition}
             ORDER BY df1.id
         """,
-        compare_with="duckdb",
+        compare_with="sqlite",
     )
 
 
@@ -1842,7 +1842,7 @@ def test_join_non_equi_case_predicate(sales_frame: pl.LazyFrame) -> None:
                 > CASE WHEN a.total > 0 THEN b.total / a.total ELSE NULL END
             ORDER BY a.cid
         """,
-        compare_with="duckdb",
+        compare_with="sqlite",
     )
 
 
@@ -1859,7 +1859,7 @@ def test_join_predicate_spanning_later_relation(sales_frame: pl.LazyFrame) -> No
               AND d.total > c.total
             ORDER BY a.cid, c_total, d_total
         """,
-        compare_with="duckdb",
+        compare_with="sqlite",
     )
 
 
@@ -1871,7 +1871,7 @@ def test_join_non_equi_nested_alias_in_equi_key(sales_frame: pl.LazyFrame) -> No
             WHERE a.cid + 0 = b.cid + 0 AND a.kind = 's' AND b.kind = 'w'
             ORDER BY a.cid
         """,
-        compare_with="duckdb",
+        compare_with="sqlite",
     )
 
 
@@ -1914,5 +1914,5 @@ def test_join_predicate_operand_spanning_both_sides() -> None:
                 > CASE WHEN ss2.s > 0 THEN ss3.s / ss2.s ELSE NULL END
             ORDER BY ss1.k
         """,
-        compare_with="duckdb",
+        compare_with="sqlite",
     )
