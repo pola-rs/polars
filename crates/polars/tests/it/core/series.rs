@@ -53,7 +53,10 @@ fn test_fill_null_median() -> PolarsResult<()> {
 
 #[test]
 fn test_fill_null_median_even_count() -> PolarsResult<()> {
-    let s = Series::new("a".into(), &[Some(1.0), None, Some(2.0), None, Some(4.0), Some(10.0)]);
+    let s = Series::new(
+        "a".into(),
+        &[Some(1.0), None, Some(2.0), None, Some(4.0), Some(10.0)],
+    );
     let filled = s.fill_null(FillNullStrategy::Median)?;
     let expected = Series::new("a".into(), &[1.0, 3.0, 2.0, 3.0, 4.0, 10.0]);
     assert_eq!(filled, expected);
