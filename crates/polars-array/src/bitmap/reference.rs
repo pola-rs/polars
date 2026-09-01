@@ -96,16 +96,19 @@ impl<'a> PlBitmapRef<'a> {
 
     /// Whether the backing bitmap holds a single bit shared by every element.
     ///
-    /// This is `false` for a flat mask of length one, where the two representations coincide.
+    /// A mask of one bit over one element is both scalar and [`flat`](Self::is_flat): the two
+    /// representations coincide, and this reports them both.
     #[inline]
     pub fn is_scalar(&self) -> bool {
-        self.bitmap.len() != self.length
+        self.bitmap.len() == 1
     }
 
     /// Whether the backing bitmap holds one bit per element.
+    ///
+    /// A mask of one bit over one element is both flat and [`scalar`](Self::is_scalar).
     #[inline]
     pub fn is_flat(&self) -> bool {
-        !self.is_scalar()
+        self.bitmap.len() == self.length
     }
 
     /// The bit shared by every element, if the backing bitmap holds a single bit.
@@ -171,10 +174,10 @@ impl<'a> PlBitmapRef<'a> {
     /// This expands a scalar mask and is therefore `O(len)`; it is a no-op clone when this mask
     /// [`is_flat`](Self::is_flat).
     pub fn to_flat(&self) -> Bitmap {
-        if self.is_scalar() {
-            Bitmap::new_with_value(self.bitmap.get_bit(0), self.length)
-        } else {
+        if self.is_flat() {
             self.bitmap.clone()
+        } else {
+            Bitmap::new_with_value(self.bitmap.get_bit(0), self.length)
         }
     }
 

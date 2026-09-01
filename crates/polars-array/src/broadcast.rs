@@ -11,8 +11,10 @@
 //! * *scalar*: `buffer.len() == 1`, a single value shared by all `length` elements.
 //!
 //! A buffer of length one is simultaneously flat and scalar when `length == 1`; the two
-//! interpretations agree, so this is not ambiguous. A `length` of zero admits an empty buffer
-//! (flat) as well as a one-element buffer (scalar), and neither is ever read.
+//! interpretations agree, so this is not ambiguous. The predicates of the arrays report that
+//! faithfully: an array of one element is both `is_flat` and `is_scalar`, since a single element
+//! is a single shared value. A `length` of zero admits an empty buffer (flat) as well as a
+//! one-element buffer (scalar), and neither is ever read.
 //!
 //! Intermediate buffer lengths (`1 < buffer.len() < length`) are *not* valid, even though
 //! [`broadcast_index`] would happily map them: an array is either flat or scalar.
@@ -29,6 +31,20 @@
 //!
 //! Such a buffer is read through [`broadcast_index(i, offsets.len() - 1)`](broadcast_index), and
 //! validated with [`is_valid_offsets_len`].
+//!
+//! # The values of a fixed size list array
+//!
+//! The values of a [`PlFixedSizeListArray`](crate::PlFixedSizeListArray) are the other backing
+//! buffer that does not hold one slot per element: element `i` covers `width` of them at a time.
+//! It is therefore the *elements* the buffer holds that are flat or scalar, and each of them is
+//! `width` slots wide:
+//!
+//! * *flat*: `values.len() == length * width`, the values of every element laid end to end.
+//! * *scalar*: `values.len() == width`, the one element all `length` elements share.
+//!
+//! Such a buffer is read at `broadcast_index(i, length) * width`, and validated with
+//! [`is_valid_fixed_size_values_len`]. Being empty leaves no element for a scalar values array to
+//! stand for, so a `length` of zero admits only empty values, unlike the buffers above.
 
 /// Maps a logical element index onto a slot in a backing buffer of length `buffer_len`.
 ///
@@ -58,5 +74,26 @@ pub const fn is_valid_offsets_len(offsets_len: usize, length: usize) -> bool {
     match offsets_len.checked_sub(1) {
         Some(starts_len) => is_valid_buffer_len(starts_len, length),
         None => false,
+    }
+}
+
+/// Whether a values array of `values_len` values is valid for a fixed size list array of `length`
+/// elements that are `width` values wide.
+///
+/// The values hold `width` slots per element rather than one, so this is [`is_valid_buffer_len`]
+/// scaled by the width: `length * width` values when the array is flat, and the `width` of the one
+/// element every element shares when it is scalar. An empty array has no element for a scalar
+/// values array to stand for, so it admits only empty values. See the [module docs](self).
+#[inline]
+pub const fn is_valid_fixed_size_values_len(
+    values_len: usize,
+    width: usize,
+    length: usize,
+) -> bool {
+    match length.checked_mul(width) {
+        Some(flat_len) if values_len == flat_len => true,
+        // A flat values array that overflows a `usize` is longer than any buffer can be, so the
+        // scalar representation is all that is left.
+        _ => length >= 1 && values_len == width,
     }
 }

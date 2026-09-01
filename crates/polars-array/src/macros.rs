@@ -78,7 +78,9 @@ mod tests {
     use arrow::types::{days_ms, i256, months_days_ns};
     use polars_utils::float16::pf16;
 
-    use crate::{PlArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray};
+    use crate::{
+        PlArray, PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray,
+    };
 
     /// Whether the body runs with `T` bound to the element type of an array of `T`.
     fn dispatches<T: arrow::types::NativeType>() -> bool {
@@ -112,11 +114,15 @@ mod tests {
 
     #[test]
     fn arrays_that_are_not_primitive_have_no_element_type() {
-        let arrays: [Box<dyn PlArray>; 3] = [
+        let arrays: [Box<dyn PlArray>; 4] = [
             Box::new(PlNullArray::new(1)),
             Box::new(PlListArray::new_empty(Box::new(
                 PlPrimitiveArray::<i32>::new_empty(),
             ))),
+            Box::new(PlFixedSizeListArray::new_empty(
+                Box::new(PlPrimitiveArray::<i32>::new_empty()),
+                2,
+            )),
             Box::new(PlStructArray::new_empty()),
         ];
         for array in &arrays {

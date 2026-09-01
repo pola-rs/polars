@@ -318,12 +318,23 @@ impl PlListArray {
     /// Whether the offsets hold the single range every element covers, so that every element is
     /// the same list.
     ///
-    /// This is `false` for a flat array of length one, where the two representations coincide.
+    /// An array of one element is both scalar and [`flat`](Self::is_flat): the two representations
+    /// coincide, and this reports them both.
     #[inline]
     pub fn offsets_are_scalar(&self) -> bool {
-        // The offsets are never empty, and hold one slot more than the starts that are flat or
-        // scalar for this array's length.
-        self.offsets.len() - 1 != self.length
+        // The offsets hold one slot more than the starts that are flat or scalar for this array's
+        // length, so the two of a scalar array are a single start and the end of it.
+        self.offsets.len() == 2
+    }
+
+    /// Whether the offsets hold the range of every element, laid end to end.
+    ///
+    /// An array of one element is both flat and [`scalar`](Self::offsets_are_scalar).
+    #[inline]
+    pub fn offsets_are_flat(&self) -> bool {
+        // The offsets are never empty, and hold the start of every element plus the end of the
+        // last.
+        self.offsets.len() - 1 == self.length
     }
 
     /// Whether the validity mask holds a single bit shared by every element.
@@ -334,10 +345,11 @@ impl PlListArray {
 
     /// Whether both of this array's own backing buffers hold one slot per element.
     ///
-    /// The values array carries its own representation, which this says nothing about.
+    /// The values array carries its own representation, which this says nothing about. An array of
+    /// one element is both flat and [`scalar`](Self::is_scalar).
     #[inline]
     pub fn is_flat(&self) -> bool {
-        !self.offsets_are_scalar() && !self.validity_is_scalar()
+        self.offsets_are_flat() && self.validity().is_none_or(|validity| validity.is_flat())
     }
 
     /// Whether this array's own backing buffers are entirely in the scalar representation, and
@@ -604,7 +616,7 @@ impl PlListArray {
         // normalized, so the elements that fall outside the slice simply stop being reachable.
         // Scalar offsets are left alone as well, like a scalar mask: every element of the slice
         // covers the same range every element of this array does.
-        if !self.offsets_are_scalar() {
+        if self.offsets_are_flat() {
             unsafe {
                 self.offsets
                     .slice_in_place_unchecked(offset..offset + length + 1)
@@ -723,7 +735,7 @@ impl PlListArray {
 
         let validity = self.validity().map(|validity| validity.to_flat());
 
-        let (values, offsets) = if !self.offsets_are_scalar() {
+        let (values, offsets) = if self.offsets_are_flat() {
             (self.values.clone(), self.offsets.clone())
         } else if self.length == 0
             || self.offsets[0] == self.offsets[1]
@@ -1440,9 +1452,9 @@ mod tests {
         assert_eq!(arr.value_length(999_999_999), 1_000_000_000);
         assert_eq!(arr.null_count(), 0);
 
-        // A single copy is one flat element: the two representations coincide.
+        // A single copy is one element, which the two representations both stand for.
         let one = PlListArray::new_scalar(values(), 1);
-        assert!(!one.is_scalar());
+        assert!(one.is_scalar());
         assert!(one.is_flat());
         assert_eq!(one.offsets().as_slice(), [0, 5]);
         assert_eq!(

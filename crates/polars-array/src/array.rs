@@ -241,7 +241,9 @@ mod tests {
     use polars_buffer::Buffer;
 
     use super::*;
-    use crate::{PlBooleanArray, PlListArray, PlPrimitiveArray, PlStructArray};
+    use crate::{
+        PlBooleanArray, PlFixedSizeListArray, PlListArray, PlPrimitiveArray, PlStructArray,
+    };
 
     fn arrays() -> Vec<Box<dyn PlArray>> {
         vec![
@@ -254,6 +256,10 @@ mod tests {
                 Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
                 Buffer::from(vec![0u64, 1, 2, 3]),
             )),
+            Box::new(PlFixedSizeListArray::from_values(
+                Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4, 5, 6])),
+                2,
+            )),
         ]
     }
 
@@ -265,6 +271,10 @@ mod tests {
             Box::new(PlStructArray::from_fields(vec![Box::new(
                 PlPrimitiveArray::<i64>::new_scalar(7, length),
             )])),
+            Box::new(PlFixedSizeListArray::new_scalar(
+                Box::new(PlPrimitiveArray::from_vec(vec![1i64, 2])),
+                length,
+            )),
         ]
     }
 
@@ -354,6 +364,10 @@ mod tests {
             )),
             Box::new(PlListArray::new_full_null(
                 Box::new(PlPrimitiveArray::<i32>::new_scalar(1, 4)),
+                4,
+            )),
+            Box::new(PlFixedSizeListArray::new_full_null(
+                Box::new(PlPrimitiveArray::<i32>::new_scalar(1, 2)),
                 4,
             )),
         ];

@@ -209,10 +209,19 @@ impl<T: NativeType> PlPrimitiveArray<T> {
 
     /// Whether the values buffer holds a single value shared by every element.
     ///
-    /// This is `false` for a flat array of length one, where the two representations coincide.
+    /// An array of one element is both scalar and [`flat`](Self::is_flat): the two representations
+    /// coincide, and this reports them both.
     #[inline]
     pub fn values_are_scalar(&self) -> bool {
-        self.values.len() != self.length
+        self.values.len() == 1
+    }
+
+    /// Whether the values buffer holds one slot per element.
+    ///
+    /// An array of one element is both flat and [`scalar`](Self::values_are_scalar).
+    #[inline]
+    pub fn values_are_flat(&self) -> bool {
+        self.values.len() == self.length
     }
 
     /// Whether the validity mask holds a single value shared by every element.
@@ -222,9 +231,11 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     }
 
     /// Whether every backing buffer has one slot per element.
+    ///
+    /// An array of one element is both flat and [`scalar`](Self::is_scalar).
     #[inline]
     pub fn is_flat(&self) -> bool {
-        !self.values_are_scalar() && !self.validity_is_scalar()
+        self.values_are_flat() && self.validity().is_none_or(|validity| validity.is_flat())
     }
 
     /// Whether this array is entirely stored in the scalar representation, and therefore is a
@@ -426,7 +437,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         debug_assert!(offset + length <= self.length);
 
         // Scalar buffers are unaffected by slicing: every element reads the same slot.
-        if !self.values_are_scalar() {
+        if self.values_are_flat() {
             unsafe {
                 self.values
                     .slice_in_place_unchecked(offset..offset + length)
@@ -513,7 +524,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             return Flat(self.clone());
         }
 
-        let values = if !self.values_are_scalar() {
+        let values = if self.values_are_flat() {
             self.values.clone()
         } else if self.length == 0 {
             Buffer::new()

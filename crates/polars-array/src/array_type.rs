@@ -41,6 +41,13 @@ pub enum PlArrayType {
     /// The values are part of neither this type nor the array's identity: two list arrays are both
     /// [`PlArrayType::List`] no matter what array their lists are taken over.
     List,
+    /// A [`PlFixedSizeListArray`](crate::PlFixedSizeListArray): a list of a fixed number of
+    /// values.
+    ///
+    /// Neither the values nor the width are part of this type or of the array's identity: two
+    /// fixed size list arrays are both [`PlArrayType::FixedSizeList`] no matter how wide their
+    /// lists are or what array they are taken over.
+    FixedSizeList,
     /// A [`PlNullArray`](crate::PlNullArray): a null, with no value under it.
     Null,
 }
@@ -74,6 +81,12 @@ impl PlArrayType {
     #[inline]
     pub fn is_list(&self) -> bool {
         matches!(self, Self::List)
+    }
+
+    /// Whether this is [`PlArrayType::FixedSizeList`].
+    #[inline]
+    pub fn is_fixed_size_list(&self) -> bool {
+        matches!(self, Self::FixedSizeList)
     }
 
     /// Whether this is [`PlArrayType::Null`].

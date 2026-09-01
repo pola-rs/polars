@@ -25,8 +25,10 @@
 //! [`PlArray::new_from_index`] repeats, which is `O(1)` for every array but a [`PlStructArray`].
 //!
 //! A [`PlNullArray`] is nothing but a length, so concatenating null arrays is always `O(1)`. None
-//! of these paths reaches the values of a [`PlListArray`] or the fields of a [`PlStructArray`], so
-//! neither is checked for concatenability when one of them is taken.
+//! of these paths reaches the values of a [`PlListArray`] or a [`PlFixedSizeListArray`], nor the
+//! fields of a [`PlStructArray`], so none of them is checked for concatenability when one of these
+//! paths is taken. The widths of fixed size list arrays are checked either way: they are what the
+//! lists of the result are as wide as.
 //!
 //! Outside those cases the values of the result are flat, but its validity mask still is not
 //! materialized unless it has to be — see [`concatenate_validities`].
@@ -41,8 +43,8 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::{
-    PlBooleanArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray,
-    with_match_pl_primitive_array_type,
+    PlBooleanArray, PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray,
+    PlStructArray, with_match_pl_primitive_array_type,
 };
 
 /// The elements of a slice, in order, a number of times over, each as what it stands for.
@@ -310,6 +312,12 @@ fn concatenate_impl<S>(
             let map = downcast_map::<PlListArray, _>(&iter, array_type)?;
             Ok(Box::new(concatenate_list_impl(iter.mapped(&map))?))
         },
+        PlArrayType::FixedSizeList => {
+            let map = downcast_map::<PlFixedSizeListArray, _>(&iter, array_type)?;
+            Ok(Box::new(concatenate_fixed_size_list_impl(
+                iter.mapped(&map),
+            )?))
+        },
         PlArrayType::Null => {
             let map = downcast_map::<PlNullArray, _>(&iter, array_type)?;
             Ok(Box::new(concatenate_null_impl(iter.mapped(&map))))
@@ -483,6 +491,104 @@ fn concatenate_boolean_impl<S>(
     // SAFETY: the values hold one bit per element of the concatenation, and the mask is the one
     // `concatenate_validities_with` built for that many elements.
     unsafe { PlBooleanArray::new_unchecked(values.freeze(), length, validity) }
+}
+
+/// Concatenates `arrays`, in order, into a single [`PlFixedSizeListArray`] over the concatenation
+/// of the values their lists reach.
+///
+/// Every array has to agree on the width, which is what the lists of the result are as wide as.
+/// See the [module docs](self) for when the result keeps the scalar representation; outside those
+/// cases the values of the result are flat, so an input whose own values are scalar has its
+/// element written out once per element it stands for, since the values of a flat fixed size list
+/// array hold one width per element.
+///
+/// # Errors
+/// This function errors if `arrays` is empty, since there is no values array to take the lists of
+/// the result over, if the arrays do not all have the same width, or if the values do not
+/// concatenate.
+pub fn concatenate_fixed_size_list(
+    arrays: &[&PlFixedSizeListArray],
+) -> PolarsResult<PlFixedSizeListArray> {
+    concatenate_fixed_size_list_impl(SliceBroadcastIter::new(arrays, 1, &pointee))
+}
+
+/// [`concatenate_fixed_size_list`], over the arrays `iter` yields.
+fn concatenate_fixed_size_list_impl<S>(
+    iter: SliceBroadcastIter<'_, '_, PlFixedSizeListArray, S>,
+) -> PolarsResult<PlFixedSizeListArray> {
+    let mut distinct = iter.distinct();
+    let Some(first) = distinct.next() else {
+        polars_bail!(
+            InvalidOperation:
+            "cannot concatenate an empty list of fixed size list arrays: there is no values array              to take the lists of the result over"
+        );
+    };
+
+    let width = first.width();
+    for array in distinct {
+        polars_ensure!(
+            array.width() == width,
+            InvalidOperation:
+            "cannot concatenate a fixed size list array of width {} with one of width {}",
+            width, array.width(),
+        );
+    }
+
+    if let Some(array) = only_non_empty(&iter) {
+        return Ok(array.clone());
+    }
+
+    let (length, null_count) = total_length_and_null_count(&iter);
+
+    // The values of some element, which is what the undetermined values of a fully null result are
+    // taken from: every array agrees on the width, so any element of any of them is as wide as the
+    // result needs. There is one whenever the concatenation holds an element at all.
+    let undetermined = || {
+        let array = iter
+            .distinct()
+            .find(|array| !array.is_empty())
+            .expect("a concatenation that holds elements has an array that holds one");
+        // SAFETY: the array was just seen to hold an element.
+        unsafe { array.value_unchecked(0) }
+    };
+
+    // Every element is null, so every list is undetermined and none of them has to be written out.
+    if length > 0 && null_count == length {
+        return Ok(PlFixedSizeListArray::new_full_null(undetermined(), length));
+    }
+
+    // Every array stands for the same repeated element, which the result repeats over all of them.
+    if let Some(element) = shared_element(&iter, PlFixedSizeListArray::scalar_value) {
+        return Ok(match element {
+            Some(element) => PlFixedSizeListArray::new_scalar(element, length),
+            // An element shared as null makes every element of every array null, which the branch
+            // above has already returned.
+            None => PlFixedSizeListArray::new_full_null(undetermined(), length),
+        });
+    }
+
+    // The values of each array are what its elements cover, which is the whole values array of a
+    // flat one; scalar values are the one element they share, which the result writes out once per
+    // element it stands for.
+    let mut values = Vec::with_capacity(iter.len());
+    for array in iter.clone() {
+        if array.values_are_flat() {
+            values.push(array.values().to_boxed());
+        } else {
+            // Concatenating the element with copies of itself is what repeats it, and that keeps
+            // the values scalar when the element is itself a single repeated value.
+            values.push(concatenate_repeated(array.values(), array.len())?);
+        }
+    }
+
+    // The values of the arrays are concatenated through the boxes they were sliced into.
+    let values = concatenate_impl(SliceBroadcastIter::new(values.as_slice(), 1, &pointee))?;
+    let validity = concatenate_validities_with(iter, length, null_count);
+
+    // SAFETY: every array contributed the width of each of its elements, so the values hold one
+    // width per element of the concatenation. The mask is the one `concatenate_validities_with`
+    // built for that many elements.
+    Ok(unsafe { PlFixedSizeListArray::new_unchecked(values, width, length, validity) })
 }
 
 /// Concatenates `arrays`, in order, into a single [`PlNullArray`].
@@ -1166,6 +1272,200 @@ mod tests {
         let wide =
             PlListArray::from_offsets(Box::new(PlPrimitiveArray::from_vec(vec![1i64])), offsets);
         assert!(concatenate_list(&[&narrow, &wide]).is_err());
+    }
+
+    #[test]
+    fn fixed_size_list_arrays_lay_their_values_end_to_end() {
+        // The lists `[1, 2]` and `[3, 4]`.
+        let lhs = PlFixedSizeListArray::from_values(
+            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4])),
+            2,
+        );
+        // The list `[7, 8]`, and a null one.
+        let rhs = PlFixedSizeListArray::new(
+            Box::new(PlPrimitiveArray::from_vec(vec![7i32, 8, 9, 10])),
+            2,
+            2,
+            Some(Bitmap::from_iter([true, false])),
+        );
+        let concatenated = concatenate_fixed_size_list(&[&lhs, &rhs]).unwrap();
+
+        assert_eq!(concatenated.len(), 4);
+        assert_eq!(concatenated.width(), 2);
+        assert_eq!(concatenated.null_count(), 1);
+        assert!(concatenated.is_null(3));
+        assert!(concatenated.is_flat());
+        assert_eq!(elements(&*concatenated.value(2)), [Some(7), Some(8)]);
+        assert_eq!(
+            elements(concatenated.values()),
+            [
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(7),
+                Some(8),
+                Some(9),
+                Some(10),
+            ],
+        );
+    }
+
+    #[test]
+    fn fixed_size_list_arrays_standing_for_the_same_list_concatenate_into_that_list() {
+        let arr = PlFixedSizeListArray::new_scalar(
+            Box::new(PlPrimitiveArray::from_vec(vec![3i32, 4, 5])),
+            1,
+        );
+
+        // Every array stands for the same one list, so the result stands for it as well: nothing
+        // is written out per element.
+        let concatenated =
+            concatenate_fixed_size_list(&[&arr, &arr.new_from_index(0, 1_000_000_000)]).unwrap();
+
+        assert_eq!(concatenated.len(), 1_000_000_001);
+        assert!(concatenated.is_scalar());
+        assert_eq!(concatenated.width(), 3);
+        assert_eq!(concatenated.values().len(), 3);
+        assert_eq!(
+            elements(&*concatenated.value(1_000_000_000)),
+            [Some(3), Some(4), Some(5)],
+        );
+
+        // Lists that do not agree are written out one per element instead.
+        let other = PlFixedSizeListArray::from_values(
+            Box::new(PlPrimitiveArray::from_vec(vec![9i32, 9, 9])),
+            3,
+        );
+        let concatenated =
+            concatenate_fixed_size_list(&[&arr.new_from_index(0, 2), &other]).unwrap();
+
+        assert_eq!(concatenated.len(), 3);
+        assert!(!concatenated.is_scalar());
+        assert!(concatenated.values_are_flat());
+        assert_eq!(
+            elements(concatenated.values()),
+            [
+                Some(3),
+                Some(4),
+                Some(5),
+                Some(3),
+                Some(4),
+                Some(5),
+                Some(9),
+                Some(9),
+                Some(9),
+            ],
+        );
+    }
+
+    #[test]
+    fn fully_null_fixed_size_list_arrays_concatenate_without_writing_out_their_values() {
+        let null = PlFixedSizeListArray::new_full_null(
+            Box::new(PlPrimitiveArray::<i32>::new_full_null(2)),
+            1_000_000_000,
+        );
+        let concatenated = concatenate_fixed_size_list(&[&null, &null]).unwrap();
+
+        assert_eq!(concatenated.len(), 2_000_000_000);
+        assert_eq!(concatenated.null_count(), 2_000_000_000);
+        assert!(concatenated.is_scalar());
+        assert_eq!(concatenated.width(), 2);
+        assert_eq!(concatenated.values().len(), 2);
+        assert_eq!(concatenated.validity().unwrap().bitmap().len(), 1);
+    }
+
+    #[test]
+    fn a_fixed_size_list_array_of_scalar_values_is_written_out_once_per_element() {
+        // A thousand copies of the list `[7, 7, 7, 7]`, in the memory of that one list.
+        let scalar = PlFixedSizeListArray::new_scalar(
+            Box::new(PlPrimitiveArray::new_scalar(7i32, 4)),
+            1_000,
+        );
+        let other = PlFixedSizeListArray::from_values(
+            Box::new(PlPrimitiveArray::from_vec(vec![9i32, 9, 9, 9])),
+            4,
+        );
+
+        // The values of a flat fixed size list array hold one width per element, so the repeated
+        // element is written out that many times.
+        let concatenated = concatenate_fixed_size_list(&[&scalar, &other]).unwrap();
+
+        assert_eq!(concatenated.len(), 1_001);
+        assert!(!concatenated.is_scalar());
+        assert!(concatenated.values_are_flat());
+        assert_eq!(concatenated.values().len(), 4_004);
+        assert_eq!(elements(&*concatenated.value(999)), [Some(7); 4]);
+        assert_eq!(elements(&*concatenated.value(1_000)), [Some(9); 4]);
+    }
+
+    #[test]
+    fn copies_of_a_fixed_size_list_array_standing_for_one_list_stand_for_it_as_well() {
+        let arr = PlFixedSizeListArray::new_scalar(
+            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
+            1_000_000,
+        );
+        let repeated = concatenate_repeated(&arr, 1_000).unwrap();
+
+        assert_eq!(repeated.len(), 1_000_000_000);
+
+        let repeated = repeated
+            .as_any()
+            .downcast_ref::<PlFixedSizeListArray>()
+            .unwrap();
+        assert!(repeated.is_scalar());
+        assert_eq!(repeated.width(), 2);
+        assert_eq!(repeated.values().len(), 2);
+    }
+
+    #[test]
+    fn fixed_size_list_arrays_have_to_agree_on_their_width() {
+        let two = PlFixedSizeListArray::from_values(
+            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4])),
+            2,
+        );
+        let four = PlFixedSizeListArray::from_values(
+            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4])),
+            4,
+        );
+        let err = concatenate_fixed_size_list(&[&two, &four])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("width"), "{err}");
+
+        // There is no values array to take the lists of the result over.
+        let err = concatenate_fixed_size_list(&[]).unwrap_err().to_string();
+        assert!(err.contains("values array"), "{err}");
+
+        // The values have to concatenate: lists of `i32` are not lists of `i64`.
+        let wide = PlFixedSizeListArray::from_values(
+            Box::new(PlPrimitiveArray::from_vec(vec![1i64, 2, 3, 4])),
+            2,
+        );
+        assert!(concatenate_fixed_size_list(&[&two, &wide]).is_err());
+    }
+
+    #[test]
+    fn fixed_size_list_arrays_concatenate_through_the_trait_object() {
+        let lhs = PlFixedSizeListArray::from_values(
+            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
+            2,
+        );
+        let rhs = PlFixedSizeListArray::from_values(
+            Box::new(PlPrimitiveArray::from_vec(vec![3i32, 4])),
+            2,
+        );
+        let concatenated = concatenate(&[&lhs as &dyn PlArray, &rhs]).unwrap();
+
+        assert_eq!(concatenated.array_type(), PlArrayType::FixedSizeList);
+        assert_eq!(concatenated.len(), 2);
+        assert_eq!(
+            &concatenated,
+            &(Box::new(PlFixedSizeListArray::from_values(
+                Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4])),
+                2,
+            )) as Box<dyn PlArray>),
+        );
     }
 
     #[test]
