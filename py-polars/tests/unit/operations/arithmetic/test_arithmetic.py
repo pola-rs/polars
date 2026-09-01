@@ -1109,3 +1109,57 @@ def test_truediv_decimal_schema_28372() -> None:
     )
     assert_schema_equal(lf.collect_schema(), expected.collect_schema())
     assert_frame_equal(lf, expected)
+
+
+@pytest.mark.parametrize("int_dtype", INTEGER_DTYPES)
+@pytest.mark.parametrize(
+    ("op_func", "op_sym"),
+    [
+        (operator.add, "+"),
+        (operator.sub, "-"),
+        (operator.mul, "*"),
+        (operator.truediv, "/"),
+    ],
+    ids=["add", "sub", "mul", "truediv"],
+)
+def test_decimal_integer_arithmetic_schema_28654(
+    int_dtype: pl.DataType,
+    op_func: Any,
+    op_sym: str,
+) -> None:
+    """Test schema matches eager execution for Decimal op integer.
+
+    Regression test for https://github.com/pola-rs/polars/issues/28654
+    """
+    from decimal import Decimal as D
+
+    dec_prec, dec_scale = 10, 2
+
+    lf = pl.LazyFrame(
+        {
+            "dec": pl.Series([D("1.50")], dtype=pl.Decimal(dec_prec, dec_scale)),
+            "i": pl.Series([2], dtype=int_dtype),
+        }
+    )
+    q = lf.select(op_func(pl.col("dec"), pl.col("i")).alias("o"))
+
+    lazy_schema = q.collect_schema()
+    eager_schema = q.collect().schema
+
+    assert lazy_schema == eager_schema, (
+        f"Schema mismatch for Decimal({dec_prec}, {dec_scale}) {op_sym} {int_dtype}: "
+        f"collect_schema()={lazy_schema!r} != collect().schema={eager_schema!r}"
+    )
+
+    # The output dtype should always be Decimal with the maximum precision (38)
+    # because the runtime always operates with DEC128_MAX_PREC.
+    out_dtype = lazy_schema["o"]
+    assert isinstance(out_dtype, pl.Decimal), (
+        f"Expected Decimal output, got {out_dtype} for {int_dtype} {op_sym} Decimal"
+    )
+    assert out_dtype.precision == 38, (
+        f"Expected precision=38, got {out_dtype.precision} for {int_dtype} {op_sym} Decimal"
+    )
+    assert out_dtype.scale == dec_scale, (
+        f"Expected scale={dec_scale}, got {out_dtype.scale} for {int_dtype} {op_sym} Decimal"
+    )
