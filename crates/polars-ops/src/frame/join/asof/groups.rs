@@ -17,6 +17,12 @@ use rayon::prelude::*;
 use super::*;
 use crate::frame::join::{prepare_binary, prepare_keys_multiple};
 
+/// Reduces monomorphization: the rayon plumbing is instantiated once per `R`
+/// rather than once per closure.
+fn par_map_collect<R: Send>(n: usize, f: &(dyn Fn(usize) -> R + Sync)) -> Vec<R> {
+    RAYON.install(|| (0..n).into_par_iter().map(f).collect())
+}
+
 fn compute_len_offsets<I: IntoIterator<Item = usize>>(iter: I) -> Vec<usize> {
     let mut cumlen = 0;
     iter.into_iter()
@@ -112,10 +118,11 @@ where
     let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
-    let out = split_by_left
-        .into_par_iter()
-        .zip(offsets)
-        .map(|(by_left, offset)| {
+    let parts = split_by_left.into_iter().zip(offsets).collect::<Vec<_>>();
+    let bufs = par_map_collect(parts.len(), &|part_idx| {
+        let (by_left, offset) = &parts[part_idx];
+        let offset = *offset;
+        {
             let mut results = Vec::with_capacity(by_left.len());
             let mut group_states: PlHashMap<IdxSize, A> =
                 PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
@@ -152,9 +159,8 @@ where
                 results.push(materialize_nullable(id));
             }
             results
-        });
-
-    let bufs = RAYON.install(|| out.collect::<Vec<_>>());
+        }
+    });
     Ok(flatten_nullable(&bufs))
 }
 
@@ -183,10 +189,11 @@ where
     let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
-    let iter = prep_by_left
-        .into_par_iter()
-        .zip(offsets)
-        .map(|(by_left, offset)| {
+    let parts = prep_by_left.into_iter().zip(offsets).collect::<Vec<_>>();
+    let bufs = par_map_collect(parts.len(), &|part_idx| {
+        let (by_left, offset) = &parts[part_idx];
+        let offset = *offset;
+        {
             let mut results = Vec::with_capacity(by_left.len());
             let mut group_states: PlHashMap<_, A> = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
 
@@ -216,8 +223,8 @@ where
                 results.push(materialize_nullable(id));
             }
             results
-        });
-    let bufs = RAYON.install(|| iter.collect::<Vec<_>>());
+        }
+    });
     flatten_nullable(&bufs)
 }
 
