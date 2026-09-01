@@ -16,7 +16,8 @@
 //! based on the [`PlArrayType`] available from [`PlArray::array_type`]. Code that is generic over
 //! the array rather than over its element type is written against [`StaticArray`], the typed
 //! counterpart of that trait, and an array that is not laid out already is built by a
-//! [`StaticArrayBuilder`] — see [`builder`].
+//! [`StaticArrayBuilder`] — see [`builder`]. An array of a known type is also collected from an
+//! iterator of its elements — see [`collect`].
 
 pub mod array;
 pub mod array_type;
@@ -25,6 +26,7 @@ pub mod bitmap;
 pub mod boolean;
 pub mod broadcast;
 pub mod builder;
+pub mod collect;
 pub mod concatenate;
 pub mod fixed_size_list;
 pub mod flat;
@@ -41,6 +43,7 @@ pub use binview::{PlBinaryViewArray, PlBinaryViewArrayBuilder};
 pub use bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 pub use boolean::{PlBooleanArray, PlBooleanArrayBuilder};
 pub use builder::{PlArrayBuilder, StaticArrayBuilder};
+pub use collect::{ArrayCollectIterExt, ArrayFromIter};
 pub use fixed_size_list::{PlFixedSizeListArray, PlFixedSizeListArrayBuilder};
 pub use flat::Flat;
 pub use list::{PlListArray, PlListArrayBuilder};
