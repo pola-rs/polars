@@ -2140,12 +2140,18 @@ impl SQLContext {
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
-            (lf, _) =
+            let mut placeholders;
+            (lf, placeholders) =
                 self.process_subqueries(lf, vec![&mut filter_expression], SubqueryShape::Scalar)?;
             lf = match filter_mode {
                 FilterMode::KeepTrue => lf.filter(filter_expression),
                 FilterMode::RemoveTrue => lf.remove(filter_expression),
             };
+
+            // Flag and placeholder columns exist only for the filter above. A SELECT
+            // projects them away afterwards, but a DELETE returns this frame as-is.
+            placeholders.extend(bindings.into_iter().map(|(_, _, name)| name));
+            lf = drop_subquery_placeholders(lf, placeholders);
         }
         Ok(lf)
     }
