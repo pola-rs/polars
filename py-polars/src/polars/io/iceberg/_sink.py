@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 
     import polars as pl
     from polars._plr import PyLazyFrame
-    from polars._typing import StorageOptionsDict
+    from polars._typing import ParquetCompression, StorageOptionsDict
 
 
 _IcebergSinkedFile = tuple[str, int, int, bytes]
@@ -351,6 +351,10 @@ class IcebergSinkState:
     schema_mode: Literal["merge", "overwrite"] | None
     snapshot_properties: dict[str, str]
     iceberg_storage_properties: StorageOptionsDict
+    compression: ParquetCompression
+    compression_level: int | None
+    row_group_size: int | None
+    maintain_order: bool
 
     sink_uuid_str: str
 
@@ -367,6 +371,10 @@ class IcebergSinkState:
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
         storage_options: StorageOptionsDict | None = None,
+        compression: ParquetCompression = "zstd",
+        compression_level: int | None = None,
+        row_group_size: int | None = None,
+        maintain_order: bool = True,
     ) -> IcebergSinkState:
         if schema_mode == "overwrite" and mode != "overwrite":
             msg = "schema_mode='overwrite' requires mode='overwrite'"
@@ -408,6 +416,10 @@ class IcebergSinkState:
             schema_mode=schema_mode,
             snapshot_properties=snapshot_properties or {},
             iceberg_storage_properties=storage_options or {},
+            compression=compression,
+            compression_level=compression_level,
+            row_group_size=row_group_size,
+            maintain_order=maintain_order,
             sink_uuid_str=gen_uuid_v7().hex(),
             table_=NoPickleOption(target if not isinstance(target, str) else None),
             source_schema=None,
@@ -546,6 +558,10 @@ class IcebergSinkState:
                     approximate_bytes_per_file=approximate_bytes_per_file,
                 ),
                 arrow_schema=arrow_schema,
+                compression=self.compression,
+                compression_level=self.compression_level,
+                row_group_size=self.row_group_size,
+                maintain_order=self.maintain_order,
                 storage_options=self._get_converted_storage_options(),
                 lazy=True,
             )
