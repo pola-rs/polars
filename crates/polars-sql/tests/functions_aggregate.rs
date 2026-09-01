@@ -82,7 +82,7 @@ fn test_quantile_out_of_range() {
             let query = format!("SELECT {func}(Data, {q})");
             let mut ctx = SQLContext::new();
             ctx.register("df", create_df());
-            let actual = ctx.execute(&query);
+            let actual = ctx.execute(&query).and_then(|lf| lf.collect());
             assert!(actual.is_err())
         }
     }

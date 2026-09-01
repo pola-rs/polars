@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     import pyarrow as pa
     import pyiceberg.catalog
     import pyiceberg.table
-    from pyiceberg.io import FileIO
     from pyiceberg.io.pyarrow import (
         DataFileStatistics,
         MetricModeTypes,
@@ -43,6 +42,9 @@ if TYPE_CHECKING:
     import polars as pl
     from polars._plr import PyLazyFrame
     from polars._typing import ParquetCompression, StorageOptionsDict
+
+
+_IcebergSinkedFile = tuple[str, int, int, bytes]
 
 
 def _nested_partition_source_ids(schema: Schema, spec: PartitionSpec) -> set[int]:
@@ -107,10 +109,9 @@ def _infer_partition_from_statistics(
     return Record(*partition_values)
 
 
-def _data_files_with_nested_partitions(
+def _data_files_from_sink_metadata(
     table_metadata: TableMetadata,
-    file_paths: list[str],
-    file_io: FileIO,
+    sinked_files: list[_IcebergSinkedFile],
     nested_source_ids: set[int],
 ) -> Iterable[DataFile]:
     from pyiceberg.io.pyarrow import (
@@ -136,27 +137,26 @@ def _data_files_with_nested_partitions(
     executor = ExecutorFactory.get_or_create()
     futures = [
         executor.submit(
-            _data_file_with_nested_partitions,
+            _data_file_from_sink_metadata,
             table_metadata,
-            file_path,
-            file_io,
+            sinked_file,
             statistics_plan,
             parquet_column_mapping,
             nested_metrics_modes,
         )
-        for file_path in file_paths
+        for sinked_file in sinked_files
     ]
     return [future.result() for future in futures]
 
 
-def _data_file_with_nested_partitions(
+def _data_file_from_sink_metadata(
     table_metadata: TableMetadata,
-    file_path: str,
-    file_io: FileIO,
+    sinked_file: _IcebergSinkedFile,
     statistics_plan: dict[int, StatisticsCollector],
     parquet_column_mapping: dict[str, int],
     nested_metrics_modes: dict[int, MetricModeTypes],
 ) -> DataFile:
+    import pyarrow as pa
     import pyarrow.parquet as pq
     from pyiceberg.io.pyarrow import (
         MetricModeTypes,
@@ -166,9 +166,15 @@ def _data_file_with_nested_partitions(
     from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
 
     schema = table_metadata.schema()
-    input_file = file_io.new_input(file_path)
-    with input_file.open() as input_stream:
-        parquet_metadata = pq.read_metadata(input_stream)
+    file_path, num_rows, num_bytes, parquet_metadata_bytes = sinked_file
+    parquet_metadata = pq.read_metadata(pa.BufferReader(parquet_metadata_bytes))
+
+    if parquet_metadata.num_rows != num_rows:
+        msg = (
+            f"native sink row count {num_rows} does not match Parquet metadata "
+            f"row count {parquet_metadata.num_rows} for '{file_path}'"
+        )
+        raise ValueError(msg)
 
     _check_pyarrow_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
     statistics = data_file_statistics_from_parquet_metadata(
@@ -193,7 +199,7 @@ def _data_file_with_nested_partitions(
         "file_path": file_path,
         "file_format": FileFormat.PARQUET,
         "partition": partition,
-        "file_size_in_bytes": len(input_file),
+        "file_size_in_bytes": num_bytes,
         "sort_order_id": None,
         "spec_id": table_metadata.default_spec_id,
         "equality_ids": None,
@@ -208,8 +214,7 @@ def _data_file_with_nested_partitions(
 
 def _add_files(
     transaction: Transaction,
-    table: pyiceberg.table.Table,
-    file_paths: list[str],
+    sinked_files: list[_IcebergSinkedFile],
     snapshot_properties: dict[str, str],
 ) -> None:
     from pyiceberg.table import TableProperties
@@ -218,14 +223,6 @@ def _add_files(
     nested_source_ids = _nested_partition_source_ids(
         table_metadata.schema(), table_metadata.spec()
     )
-    if not nested_source_ids:
-        transaction.add_files(
-            file_paths,
-            snapshot_properties=snapshot_properties,
-            check_duplicate_files=False,
-        )
-        return
-
     if table_metadata.name_mapping() is None:
         transaction.set_properties(
             {
@@ -236,10 +233,9 @@ def _add_files(
     with transaction.update_snapshot(
         snapshot_properties=snapshot_properties
     ).fast_append() as append_files:
-        for data_file in _data_files_with_nested_partitions(
+        for data_file in _data_files_from_sink_metadata(
             table_metadata,
-            file_paths,
-            table.io,
+            sinked_files,
             nested_source_ids,
         ):
             append_files.append_data_file(data_file)
@@ -572,7 +568,7 @@ class IcebergSinkState:
             ._ldf
         )
 
-    def commit(self, data_file_paths: list[str]) -> pl.DataFrame:
+    def commit(self, sinked_files: list[_IcebergSinkedFile]) -> pl.DataFrame:
         import polars as pl
         import polars._utils.logging
 
@@ -587,9 +583,14 @@ class IcebergSinkState:
         original_metadata_location = table.metadata_location
 
         if sys.platform == "win32":
-            data_file_paths = [
-                (f"file://{p[8:]}" if p.startswith("file:///") else p)
-                for p in data_file_paths
+            sinked_files = [
+                (
+                    f"file://{path[8:]}" if path.startswith("file:///") else path,
+                    num_rows,
+                    num_bytes,
+                    parquet_metadata,
+                )
+                for path, num_rows, num_bytes, parquet_metadata in sinked_files
             ]
 
         with table.transaction() as tx:
@@ -607,8 +608,7 @@ class IcebergSinkState:
 
             _add_files(
                 tx,
-                table,
-                data_file_paths,
+                sinked_files,
                 self.snapshot_properties,
             )
 
