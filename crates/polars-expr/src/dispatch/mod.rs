@@ -112,6 +112,8 @@ mod extension;
 mod groups_dispatch;
 mod horizontal;
 mod list;
+#[cfg(feature = "dtype-map")]
+mod map;
 mod misc;
 mod pow;
 #[cfg(feature = "random")]
@@ -148,6 +150,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "dtype-extension")]
         F::Extension(func) => extension::function_expr_to_udf(func),
         F::ListExpr(func) => list::function_expr_to_udf(func),
+        #[cfg(feature = "dtype-map")]
+        F::MapExpr(func) => map::function_expr_to_udf(func),
         #[cfg(feature = "strings")]
         F::StringExpr(func) => strings::function_expr_to_udf(func),
         #[cfg(feature = "dtype-struct")]

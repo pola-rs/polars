@@ -29,6 +29,8 @@ impl IRFunctionExpr {
             #[cfg(feature = "dtype-extension")]
             Extension(func) => func.get_field(mapper),
             ListExpr(func) => func.get_field(mapper),
+            #[cfg(feature = "dtype-map")]
+            MapExpr(func) => func.get_field(mapper),
             #[cfg(feature = "strings")]
             StringExpr(s) => s.get_field(mapper),
             #[cfg(feature = "dtype-struct")]

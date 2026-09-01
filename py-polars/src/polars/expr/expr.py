@@ -65,6 +65,7 @@ from polars.expr.categorical import ExprCatNameSpace
 from polars.expr.datetime import ExprDateTimeNameSpace
 from polars.expr.ext import ExprExtensionNameSpace
 from polars.expr.list import ExprListNameSpace
+from polars.expr.map import ExprMapNameSpace
 from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
@@ -307,6 +308,15 @@ class Expr(metaclass=_Meta):
         └─────┘
         """
         return ExprStructNameSpace(self)
+
+    @property
+    def map(self) -> ExprMapNameSpace:
+        """
+        Create an object namespace of all map related expressions.
+
+        See the individual method pages for full details.
+        """
+        return ExprMapNameSpace(self)
 
     @property
     def ext(self) -> ExprExtensionNameSpace:
