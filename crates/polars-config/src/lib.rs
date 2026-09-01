@@ -79,7 +79,7 @@ const OOC_MEMORY_BUDGET_MB: &str = "POLARS_OOC_MEMORY_BUDGET_MB";
 const DEFAULT_OOC_MEMORY_BUDGET_MB: u64 = u64::MAX;
 
 const OOC_MEMORY_PREFETCH_FRACTION: &str = "POLARS_OOC_MEMORY_PREFETCH_FRACTION";
-const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.8;
+const DEFAULT_OOC_MEMORY_PREFETCH_FRACTION: f64 = 0.9;
 
 const OOC_DISK_BUDGET_MB: &str = "POLARS_OOC_DISK_BUDGET_MB";
 const DEFAULT_OOC_DISK_BUDGET_MB: u64 = u64::MAX;
@@ -391,7 +391,7 @@ impl Config {
                 Ordering::Relaxed,
             ),
             OOC_MEMORY_PREFETCH_FRACTION => self.ooc_memory_prefetch_fraction.store(
-                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 0.95))
+                val.and_then(|x| parse::parse_f64_with_limits(var, x, 0.0, 0.99))
                     .unwrap_or(DEFAULT_OOC_MEMORY_PREFETCH_FRACTION)
                     .to_bits(),
                 Ordering::Relaxed,

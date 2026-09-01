@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use polars_utils::pl_str::PlSmallStr;
@@ -6,25 +6,38 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use rand::{Rng, RngExt};
 use rand_distr::Distribution;
 
+static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
+
 // Used to normalize divisor to avoid absurdly high scores. Set to 1us.
 const BASE_IO_TIME: f64 = 1e-6;
 pub(crate) const UNEXPLORED_SCORE: f64 = 1e30_f64;
 const EXPLORED_WEIGHT_THRESHOLD: f64 = 1.1; // Just over 1 so sample variance correction is stable.
-const UNSPILL_EVENT_HALF_LIFE_SEC: f64 = 5.0;
-const NANOSECONDS_IN_SECOND: f64 = 1e9;
+const BANDIT_EVENT_HALF_LIFE_SEC: f64 = 1.0;
+const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
 
 pub struct SpillContextStatistics {
+    recent_spilled_drain_events: RelaxedCell<u64>,
+    last_recent_sync_ts: RelaxedCell<u64>,
+
     prefetch_without_spill_streak: RelaxedCell<u64>,
-    score_cache: RelaxedCell<u64>,
+
+    spill_score_cache: RelaxedCell<u64>,
+    prefetch_score_cache: RelaxedCell<u64>,
     stats: Mutex<Statistics>,
 }
 
 impl SpillContextStatistics {
     pub(crate) fn new(name: PlSmallStr) -> Self {
         Self {
+            last_recent_sync_ts: RelaxedCell::new_u64(EPOCH.elapsed().as_nanos() as u64),
+            recent_spilled_drain_events: RelaxedCell::new_u64(0),
+
             prefetch_without_spill_streak: RelaxedCell::new_u64(0),
+
             // TODO: starting score based on context.
-            score_cache: RelaxedCell::new_u64(UNEXPLORED_SCORE.to_bits()),
+            spill_score_cache: RelaxedCell::new_u64(UNEXPLORED_SCORE.to_bits()),
+            prefetch_score_cache: RelaxedCell::new_u64(UNEXPLORED_SCORE.to_bits()),
+
             stats: Mutex::new(Statistics {
                 name,
                 ..Default::default()
@@ -34,7 +47,10 @@ impl SpillContextStatistics {
 
     pub(crate) fn reset(&self, name: PlSmallStr) {
         let mut stats = self.stats.lock().unwrap();
-        self.score_cache.store(UNEXPLORED_SCORE.to_bits());
+        self.recent_spilled_drain_events.store(0);
+        self.prefetch_without_spill_streak.store(0);
+        self.spill_score_cache.store(UNEXPLORED_SCORE.to_bits());
+        self.prefetch_score_cache.store(UNEXPLORED_SCORE.to_bits());
         *stats = Statistics {
             name,
             ..Default::default()
@@ -52,15 +68,20 @@ impl Drop for SpillContextStatistics {
             let unspill_io = Duration::from_secs_f64(stats.unspill_time);
             let spills_tot = stats.successful_spills + stats.failed_spills;
             let spills_succ = 100.0 * stats.successful_spills as f64 / spills_tot as f64;
-            let explore_tot = stats.total_explorations;
-            let explore_succ = 100.0 * stats.successful_explorations as f64 / explore_tot as f64;
+            let spill_explore_tot = stats.total_spill_explorations;
+            let spill_explore_succ =
+                100.0 * stats.successful_spill_explorations as f64 / spill_explore_tot as f64;
+            let prefetch_explore_tot = stats.total_prefetch_explorations;
+            let prefetch_explore_succ =
+                100.0 * stats.successful_prefetch_explorations as f64 / prefetch_explore_tot as f64;
 
             eprintln!(
                 "spill_stats({name}): \
                 relief_mb_s({relief:.2}), \
                 io(spill={spill_io:.2?}, unspill={unspill_io:.2?}), \
                 spill(succ={spills_succ:.1}%, n={spills_tot}), \
-                explore(succ={explore_succ:.1}%, n={explore_tot})"
+                spill_explore(succ={spill_explore_succ:.1}%, n={spill_explore_tot}), \
+                prefetch_explore(succ={prefetch_explore_succ:.1}%, n={prefetch_explore_tot})"
             )
         }
     }
@@ -75,8 +96,10 @@ struct Statistics {
     unspill_time: f64,
     successful_spills: u64,
     failed_spills: u64,
-    total_explorations: u64,
-    successful_explorations: u64,
+    total_spill_explorations: u64,
+    successful_spill_explorations: u64,
+    total_prefetch_explorations: u64,
+    successful_prefetch_explorations: u64,
 
     // Historical stats for the multi-armed bandit algorithm. These are
     // discounted statistics (meaning they decay over time), where weight is the
@@ -97,11 +120,16 @@ struct Statistics {
     bandit_rt_sum: f64,
 
     // Context exploration attempts.
-    bandit_explore_weight: f64,
-    bandit_explore_success: f64,
+    bandit_spill_explore_weight: f64,
+    bandit_spill_explore_success: f64,
+    bandit_prefetch_explore_weight: f64,
+    bandit_prefetch_explore_success: f64,
 
     // Number of unspills that weren't due to prefetching.
     bandit_non_prefetch_unspill_weight: f64,
+
+    // Number of times a spilled token was unregistered (drained) from its context.
+    bandit_spilled_drain_weight: f64,
 
     // Stats of currently active spills. We prefer integers here for accuracy,
     // but have to use floats for the bigger accumulators. Those are only used
@@ -126,34 +154,66 @@ impl SpillContextStatistics {
         self.stats.lock().unwrap().name.clone()
     }
 
-    // Returns a sample of the expected performance of this context, discounting
-    // older data. The score is the number of spilled byte-seconds divided by
-    // the IO time in seconds. The discount is a time-based exponential decay
-    // which assigns lower weight to older spill events (with a half-life of
-    // UNSPILL_EVENT_HALF_LIFE_SEC), and full weight to current spills.
-    pub fn sample_score<R: Rng>(&self, rng: &mut R) -> f64 {
+    // Returns a sample of the expected spill performance of this context,
+    // discounting older data. The score is the number of spilled byte-seconds
+    // divided by the IO time in seconds. The discount is a time-based
+    // exponential decay which assigns lower weight to older spill events (with
+    // a half-life of UNSPILL_EVENT_HALF_LIFE_SEC), and full weight to current
+    // spills.
+    pub fn sample_spill_score<R: Rng>(&self, rng: &mut R) -> f64 {
         // Try to re-compute, if lock is taken just take cached value.
         if let Ok(mut stats) = self.stats.try_lock() {
-            let score = stats.sample_score(rng);
-            self.score_cache.store(score.to_bits());
+            stats.step_time(Instant::now());
+
+            let score = stats.sample_spill_score(rng);
+            self.spill_score_cache.store(score.to_bits());
             score
         } else {
-            f64::from_bits(self.score_cache.load())
+            f64::from_bits(self.spill_score_cache.load())
         }
     }
 
-    pub fn start_exploration_event(&self) {
-        // We don't bother stepping time here as it's already done in score sampling.
-        let mut stats = self.stats.lock().unwrap();
-        stats.total_explorations += 1;
-        stats.bandit_explore_weight += 1.0;
+    pub fn sample_prefetch_score<R: Rng>(&self, rng: &mut R) -> f64 {
+        // Try to re-compute, if lock is taken just take cached value.
+        if let Ok(mut stats) = self.stats.try_lock() {
+            let now = Instant::now();
+            stats.step_time(now);
+            stats.bandit_spilled_drain_weight += self.recent_spilled_drain_events.swap(0) as f64;
+
+            let score = stats.sample_prefetch_score(rng);
+            self.prefetch_score_cache.store(score.to_bits());
+            score
+        } else {
+            f64::from_bits(self.prefetch_score_cache.load())
+        }
     }
 
-    pub fn finish_exploration_event(&self, success: bool) {
+    pub fn start_spill_exploration_event(&self) {
         // We don't bother stepping time here as it's already done in score sampling.
         let mut stats = self.stats.lock().unwrap();
-        stats.successful_explorations += success as u64;
-        stats.bandit_explore_success += success as u64 as f64;
+        stats.total_spill_explorations += 1;
+        stats.bandit_spill_explore_weight += 1.0;
+    }
+
+    pub fn finish_spill_exploration_event(&self, success: bool) {
+        // We don't bother stepping time here as it's already done in score sampling.
+        let mut stats = self.stats.lock().unwrap();
+        stats.successful_spill_explorations += success as u64;
+        stats.bandit_spill_explore_success += success as u64 as f64;
+    }
+
+    pub fn start_prefetch_exploration_event(&self) {
+        // We don't bother stepping time here as it's already done in score sampling.
+        let mut stats = self.stats.lock().unwrap();
+        stats.total_prefetch_explorations += 1;
+        stats.bandit_prefetch_explore_weight += 1.0;
+    }
+
+    pub fn finish_prefetch_exploration_event(&self, success: bool) {
+        // We don't bother stepping time here as it's already done in score sampling.
+        let mut stats = self.stats.lock().unwrap();
+        stats.successful_prefetch_explorations += success as u64;
+        stats.bandit_prefetch_explore_success += success as u64 as f64;
     }
 
     pub fn add_spill_start(&self) {
@@ -166,6 +226,21 @@ impl SpillContextStatistics {
 
     pub fn add_prefetch_start(&self) {
         self.prefetch_without_spill_streak.fetch_add(1);
+    }
+
+    pub fn add_spilled_drain_event(&self) {
+        // Since this can get called quite often we do a simple atomic operation
+        // and only grab a lock every millisecond.
+        self.recent_spilled_drain_events.fetch_add(1);
+
+        let now = Instant::now();
+        let ts = (now - *EPOCH).as_nanos() as u64;
+        if ts.saturating_sub(self.last_recent_sync_ts.load()) >= NANOSECONDS_IN_SECOND / 1000 {
+            let mut stats = self.stats.lock().unwrap();
+            stats.step_time(now);
+            stats.bandit_spilled_drain_weight += self.recent_spilled_drain_events.swap(0) as f64;
+            self.last_recent_sync_ts.store(ts);
+        }
     }
 
     pub fn add_failed_spill(&self, spill_start: Instant) {
@@ -193,7 +268,7 @@ impl SpillContextStatistics {
 
         let mean_b_before = stats.active_spills_bytes as f64 / stats.active_spills.max(1) as f64;
         let mean_r_before = stats.active_spills_bytes_ns as f64
-            / (stats.active_spills.max(1) as f64 * NANOSECONDS_IN_SECOND);
+            / (stats.active_spills.max(1) as f64 * NANOSECONDS_IN_SECOND as f64);
 
         stats.spill_time += spill_time.as_secs_f64();
         stats.successful_spills += 1;
@@ -203,7 +278,7 @@ impl SpillContextStatistics {
 
         let mean_b_after = stats.active_spills_bytes as f64 / stats.active_spills as f64;
         let mean_r_after = stats.active_spills_bytes_ns as f64
-            / (stats.active_spills as f64 * NANOSECONDS_IN_SECOND);
+            / (stats.active_spills as f64 * NANOSECONDS_IN_SECOND as f64);
 
         let delta_r = -0.0;
         let delta_b = n_bytes as f64;
@@ -231,7 +306,7 @@ impl SpillContextStatistics {
 
         let mean_b_before = stats.active_spills_bytes as f64 / stats.active_spills as f64;
         let mean_r_before = stats.active_spills_bytes_ns as f64
-            / (stats.active_spills as f64 * NANOSECONDS_IN_SECOND);
+            / (stats.active_spills as f64 * NANOSECONDS_IN_SECOND as f64);
 
         let spilled_time = unspill_start - spilled_start;
         let unspill_time = now - unspill_start;
@@ -258,7 +333,7 @@ impl SpillContextStatistics {
             let delta_r = delta_b * elapsed_s;
             let mean_b_after = stats.active_spills_bytes as f64 / stats.active_spills as f64;
             let mean_r_after = stats.active_spills_bytes_ns as f64
-                / (stats.active_spills as f64 * NANOSECONDS_IN_SECOND);
+                / (stats.active_spills as f64 * NANOSECONDS_IN_SECOND as f64);
             stats.active_spills_dp_rr -= (delta_r - mean_r_before) * (delta_r - mean_r_after);
             stats.active_spills_dp_rb -= (delta_r - mean_r_before) * (delta_b - mean_b_after);
             stats.active_spills_dp_bb -= (delta_b - mean_b_before) * (delta_b - mean_b_after);
@@ -266,7 +341,7 @@ impl SpillContextStatistics {
 
         stats.add_bandit_spill_event(
             n_bytes as u64,
-            spill_time_ns as f64 / NANOSECONDS_IN_SECOND,
+            spill_time_ns as f64 / NANOSECONDS_IN_SECOND as f64,
             spilled_time.as_secs_f64(),
             unspill_time.as_secs_f64(),
         );
@@ -305,7 +380,7 @@ impl Statistics {
         self.active_spills_dp_rb += self.active_spills_dp_bb * dt_s;
 
         // Exponentially decay old bandit events.
-        let mult = -f64::ln(2.0) / UNSPILL_EVENT_HALF_LIFE_SEC;
+        let mult = -f64::ln(2.0) / BANDIT_EVENT_HALF_LIFE_SEC;
         let decay_factor = f64::exp(mult * dt_s);
         self.bandit_weight *= decay_factor;
         self.bandit_r_sum *= decay_factor;
@@ -314,10 +389,13 @@ impl Statistics {
         self.bandit_tt_sum *= decay_factor;
         self.bandit_rt_sum *= decay_factor;
 
-        self.bandit_explore_success *= decay_factor;
-        self.bandit_explore_weight *= decay_factor;
+        self.bandit_spill_explore_success *= decay_factor;
+        self.bandit_spill_explore_weight *= decay_factor;
+        self.bandit_prefetch_explore_success *= decay_factor;
+        self.bandit_prefetch_explore_weight *= decay_factor;
 
         self.bandit_non_prefetch_unspill_weight *= decay_factor;
+        self.bandit_spilled_drain_weight *= decay_factor;
 
         self.last_update = now;
     }
@@ -341,15 +419,14 @@ impl Statistics {
         self.bandit_rt_sum += r * t;
     }
 
-    fn sample_score<R: Rng>(&mut self, rng: &mut R) -> f64 {
-        self.step_time(Instant::now());
-
+    fn sample_spill_score<R: Rng>(&mut self, rng: &mut R) -> f64 {
         // Take into account how often we've tried to inspect this context and
         // didn't find anything to spill.
-        if self.bandit_explore_weight >= EXPLORED_WEIGHT_THRESHOLD {
-            // Bernoulli Thompson sampling of a probability.
-            let alpha = 1.0 + self.bandit_explore_success.max(0.0);
-            let beta = 1.0 + (self.bandit_explore_weight - self.bandit_explore_success).max(0.0);
+        if self.bandit_spill_explore_weight >= EXPLORED_WEIGHT_THRESHOLD {
+            // Bernoulli-Thompson sampling of a probability.
+            let alpha = 1.0 + self.bandit_spill_explore_success.max(0.0);
+            let beta = 1.0
+                + (self.bandit_spill_explore_weight - self.bandit_spill_explore_success).max(0.0);
             let p = rand_distr::Beta::new(alpha, beta).unwrap().sample(rng);
             if !rng.random_bool(p) {
                 return 0.0;
@@ -376,8 +453,8 @@ impl Statistics {
 
             let w = self.active_spills as f64;
             let b = self.active_spills_bytes as f64;
-            let r = self.active_spills_bytes_ns as f64 / NANOSECONDS_IN_SECOND;
-            let t = self.active_spills_io_time_ns as f64 / NANOSECONDS_IN_SECOND;
+            let r = self.active_spills_bytes_ns as f64 / NANOSECONDS_IN_SECOND as f64;
+            let t = self.active_spills_io_time_ns as f64 / NANOSECONDS_IN_SECOND as f64;
             let io_sec_per_byte = t / b;
 
             let rr = self.active_spills_dp_rr + r * (r / w);
@@ -428,6 +505,28 @@ impl Statistics {
             }
         }
     }
+
+    fn sample_prefetch_score<R: Rng>(&mut self, rng: &mut R) -> f64 {
+        // Take into account how often we've tried to inspect this context and
+        // didn't find anything to prefetch.
+        if self.bandit_prefetch_explore_weight >= EXPLORED_WEIGHT_THRESHOLD {
+            // Bernoulli-Thompson sampling of a probability.
+            let alpha = 1.0 + self.bandit_prefetch_explore_success.max(0.0);
+            let beta = 1.0
+                + (self.bandit_prefetch_explore_weight - self.bandit_prefetch_explore_success)
+                    .max(0.0);
+            let p = rand_distr::Beta::new(alpha, beta).unwrap().sample(rng);
+            if !rng.random_bool(p) {
+                return 0.0;
+            }
+        }
+
+        let weight =
+            self.bandit_non_prefetch_unspill_weight + 0.2 * self.bandit_spilled_drain_weight;
+
+        // Efraimidis-Spirakis weighted random sampling.
+        rng.random::<f64>().powf(1.0 / (1.0 + weight))
+    }
 }
 
 impl Default for Statistics {
@@ -440,9 +539,10 @@ impl Default for Statistics {
             unspill_time: 0.0,
             successful_spills: 0,
             failed_spills: 0,
-            successful_explorations: 0,
-            total_explorations: 0,
-            last_update: Instant::now(),
+            successful_spill_explorations: 0,
+            total_spill_explorations: 0,
+            successful_prefetch_explorations: 0,
+            total_prefetch_explorations: 0,
 
             bandit_weight: 0.0,
             bandit_r_sum: 0.0,
@@ -451,10 +551,13 @@ impl Default for Statistics {
             bandit_tt_sum: 0.0,
             bandit_rt_sum: 0.0,
 
-            bandit_explore_weight: 0.0,
-            bandit_explore_success: 0.0,
+            bandit_spill_explore_weight: 0.0,
+            bandit_spill_explore_success: 0.0,
+            bandit_prefetch_explore_weight: 0.0,
+            bandit_prefetch_explore_success: 0.0,
 
             bandit_non_prefetch_unspill_weight: 0.0,
+            bandit_spilled_drain_weight: 0.0,
 
             active_spills: 0,
             active_spills_io_time_ns: 0,
@@ -464,6 +567,8 @@ impl Default for Statistics {
             active_spills_dp_rr: 0.0,
             active_spills_dp_bb: 0.0,
             active_spills_dp_rb: 0.0,
+
+            last_update: Instant::now(),
         }
     }
 }

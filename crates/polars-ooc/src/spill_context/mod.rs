@@ -179,6 +179,13 @@ pub(crate) enum InsertReason {
     TooSmall(Timestamp),
 }
 
+pub(crate) enum PrefetchScheduleResult {
+    NothingToPrefetch,
+    NoPermitsLeft,
+    Okay,
+    StaleContext,
+}
+
 #[derive(Default)]
 struct SharedState {
     spill_queue: SpillQueue,
@@ -327,19 +334,20 @@ impl SpillContextInner {
         }
     }
 
-    pub(crate) fn schedule_prefetch(&self, ctx_id: u64) {
+    pub(crate) fn schedule_prefetch(&self, ctx_id: u64) -> PrefetchScheduleResult {
         let mut shared = self.shared.lock().unwrap();
         if ctx_id != self.context_id.load(Ordering::Relaxed) {
-            return;
+            return PrefetchScheduleResult::StaleContext;
         }
 
         self.drain_staging(&mut shared, false);
 
+        let mut prefetched = false;
         let mm = memory_manager();
         let mut rng = rand::rng();
         for _ in 0..self.stats.suggested_prefetch_amount() {
             let Some(permit) = mm.try_get_prefetch_permit() else {
-                return;
+                return PrefetchScheduleResult::NoPermitsLeft;
             };
 
             let pop = match self.policy() {
@@ -353,11 +361,19 @@ impl SpillContextInner {
                 continue;
             };
 
+            prefetched = true;
             self.stats.add_prefetch_start();
+            let prefetch_fut = token.prefetch(); // Create fut outside of spawn to update statistics now.
             polars_async::executor::spawn(TaskPriority::Low, async move {
-                token.prefetch().await;
+                prefetch_fut.await;
                 drop(permit);
             });
+        }
+
+        if prefetched {
+            PrefetchScheduleResult::Okay
+        } else {
+            PrefetchScheduleResult::NothingToPrefetch
         }
     }
 }
