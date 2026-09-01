@@ -11,6 +11,7 @@ use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
 
 mod builder;
+mod flat;
 mod iterator;
 
 pub use builder::PlFixedSizeListArrayBuilder;
@@ -67,7 +68,8 @@ pub use iterator::{PlFixedSizeListIter, PlFixedSizeListValuesIter};
 ///         .as_any()
 ///         .downcast_ref::<PlPrimitiveArray<i32>>()
 ///         .unwrap()
-///         .values()
+///         .flat_values()
+///         .unwrap()
 ///         .as_slice(),
 ///     [5, 6],
 /// );
@@ -78,7 +80,7 @@ pub use iterator::{PlFixedSizeListIter, PlFixedSizeListValuesIter};
 ///     1_000_000_000,
 /// );
 /// assert_eq!(scalar.len(), 1_000_000_000);
-/// assert_eq!(scalar.values().len(), 2);
+/// assert_eq!(scalar.scalar_values().unwrap().len(), 2);
 /// assert!(scalar.is_scalar());
 /// assert_eq!(scalar.value_range(999_999_999), 0..2);
 /// ```
@@ -283,17 +285,38 @@ impl PlFixedSizeListArray {
         self.width
     }
 
-    /// The values array the lists are taken over.
+    /// The values array the lists are taken over, if it holds the values of every element, laid
+    /// end to end.
     ///
-    /// This is *not* guaranteed to hold [`Self::len`] `*` [`Self::width`] values: it is either
-    /// flat or scalar. Read an element of this array with [`Self::value`] instead of indexing it
-    /// directly.
+    /// Element `i` is then the [`width`](Self::width) values at `i * width`, with no
+    /// [`broadcast_index`](crate::broadcast::broadcast_index) in the way. This is the `O(1)`
+    /// counterpart of [`Self::to_flat`]: it materializes nothing, and returns `None` rather than
+    /// repeating a scalar values array. Reach for the list a scalar values array shares with
+    /// [`Self::scalar_values`] instead — between them the two cover every array that has elements
+    /// at all, so a `None` from both is an empty array. The values of null elements are
+    /// undetermined (they can be any list of the width).
     #[inline]
-    pub fn values(&self) -> &dyn PlArray {
-        &*self.values
+    pub fn flat_values(&self) -> Option<&dyn PlArray> {
+        self.values_are_flat().then_some(&*self.values)
+    }
+
+    /// The list every element of this array reads, if the values hold a single element.
+    ///
+    /// This is the values half of [`Self::scalar_value`], which additionally asks that the
+    /// validity mask be scalar and reports the null the mask makes of this list. Returns `None`
+    /// for values that are flat over more than one element, and for an empty array, which has no
+    /// element to share a list. The value of a null element is undetermined (it can be any list of
+    /// the width).
+    #[inline]
+    pub fn scalar_values(&self) -> Option<&dyn PlArray> {
+        self.values_are_scalar().then_some(&*self.values)
     }
 
     /// Consumes this array into its internal components.
+    ///
+    /// The values are *not* guaranteed to hold [`Self::len`] `*` [`Self::width`] values: they are
+    /// either flat or scalar, which is why the width and the length come with them. See
+    /// [`crate::broadcast`] for how to read them.
     #[inline]
     pub fn into_inner(self) -> (Box<dyn PlArray>, usize, usize, Option<Bitmap>) {
         (self.values, self.width, self.length, self.validity)
@@ -378,8 +401,12 @@ impl PlFixedSizeListArray {
         (is_shared && self.length > 0).then(|| unsafe { self.get_unchecked(0) })
     }
 
-    /// The range of [`Self::values`] the element at `i` covers, which is always [`Self::width`]
+    /// The range of the values array the element at `i` covers, which is always [`Self::width`]
     /// values wide.
+    ///
+    /// This is an index into the array [`Self::flat_values`] hands out, or into the single element
+    /// [`Self::scalar_values`] does — for scalar values every element covers the same range, which
+    /// is all of them.
     ///
     /// # Panics
     /// Panics if `i >= self.len()`.
@@ -389,7 +416,7 @@ impl PlFixedSizeListArray {
         unsafe { self.value_range_unchecked(i) }
     }
 
-    /// The range of [`Self::values`] the element at `i` covers, which is always [`Self::width`]
+    /// The range of the values array the element at `i` covers, which is always [`Self::width`]
     /// values wide.
     ///
     /// # Safety
@@ -722,7 +749,7 @@ impl PlFixedSizeListArray {
     ///     Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
     ///     3,
     /// );
-    /// assert_eq!(scalar.values().len(), 2);
+    /// assert!(scalar.flat_values().is_none());
     ///
     /// // Its flat counterpart holds the three lists one after the other.
     /// let flat = scalar.to_flat();
@@ -966,7 +993,7 @@ mod tests {
         assert!(!arr.is_scalar());
         assert!(arr.values_are_flat());
         assert!(!arr.values_are_scalar());
-        assert_eq!(arr.values().len(), 6);
+        assert_eq!(arr.flat_values().unwrap().len(), 6);
 
         assert_eq!(arr.value_range(0), 0..2);
         assert_eq!(arr.value_range(1), 2..4);
@@ -978,18 +1005,51 @@ mod tests {
     }
 
     #[test]
+    fn the_values_array_is_reached_through_its_representation() {
+        let arr = arr();
+
+        assert_eq!(arr.flat_values().map(PlArray::len), Some(6));
+        assert!(arr.scalar_values().is_none());
+
+        // A scalar array hands out no flat values; it is its one list that is reached instead.
+        let element = Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2]));
+        let arr = PlFixedSizeListArray::new_scalar(element, 1_000_000_000);
+
+        assert!(arr.flat_values().is_none());
+        assert_eq!(arr.scalar_values().map(PlArray::len), Some(2));
+
+        // The values are read whether or not the mask makes the elements null.
+        let arr = arr.sliced(0, 3).with_validity(Some(Bitmap::new_zeroed(3)));
+
+        assert_eq!(arr.scalar_values().map(PlArray::len), Some(2));
+        assert!(
+            arr.scalar_value().is_none(),
+            "a flat mask leaves no shared element"
+        );
+
+        // An empty array holds no element for scalar values to stand for, so it is always flat.
+        let empty = PlFixedSizeListArray::new_empty(values(), 2);
+
+        assert_eq!(empty.flat_values().map(PlArray::len), Some(0));
+        assert!(empty.scalar_values().is_none());
+    }
+
+    #[test]
     fn an_empty_array_holds_no_values() {
         let arr = PlFixedSizeListArray::new_empty(values(), 2);
 
         assert!(arr.is_empty());
         assert_eq!(arr.width(), 2);
-        assert_eq!(arr.values().len(), 0);
+        assert_eq!(arr.flat_values().unwrap().len(), 0);
         assert!(arr.is_flat());
         assert!(!arr.is_scalar());
         assert_eq!(arr.scalar_value(), None);
 
         // The values are what determines the type of the lists, of which there are none.
-        assert_eq!(arr.values().array_type(), values().array_type());
+        assert_eq!(
+            arr.flat_values().unwrap().array_type(),
+            values().array_type()
+        );
     }
 
     #[test]
@@ -1007,8 +1067,7 @@ mod tests {
         assert!(!arr.values_are_flat());
         assert_eq!(arr.width(), 2);
         assert_eq!(arr.validity().unwrap().len(), 1_000_000);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
-        assert_eq!(arr.values().len(), 2);
+        assert_eq!(arr.scalar_values().unwrap().len(), 2);
         assert_eq!(arr.null_count(), 1_000_000);
         assert!(arr.has_nulls());
         assert!(arr.is_null(999_999));
@@ -1092,14 +1151,17 @@ mod tests {
         assert!(arr.is_flat());
 
         // There are no offsets to leave the values outside the slice behind.
-        assert_eq!(arr.values().len(), 4);
-        assert_eq!(elements(arr.values()), [Some(3), Some(4), Some(5), Some(6)],);
+        assert_eq!(arr.flat_values().unwrap().len(), 4);
+        assert_eq!(
+            elements(arr.flat_values().unwrap()),
+            [Some(3), Some(4), Some(5), Some(6)],
+        );
         assert_eq!(elements(&*arr.value(1)), [Some(5), Some(6)]);
 
         // Slicing away every element leaves no values behind either.
         let arr = arr.sliced(2, 0);
         assert!(arr.is_empty());
-        assert_eq!(arr.values().len(), 0);
+        assert_eq!(arr.flat_values().unwrap().len(), 0);
         assert_eq!(arr.width(), 2);
     }
 
@@ -1111,7 +1173,6 @@ mod tests {
 
         assert_eq!(arr.len(), 2);
         assert_eq!(arr.validity().unwrap().len(), 2);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
         assert!(arr.validity_is_scalar());
         assert_eq!(arr.null_count(), 2);
     }
@@ -1126,14 +1187,14 @@ mod tests {
         let sliced = arr.clone().sliced(500, 2);
         assert_eq!(sliced.len(), 2);
         assert!(sliced.is_scalar());
-        assert_eq!(sliced.values().len(), 2);
+        assert_eq!(sliced.scalar_values().unwrap().len(), 2);
         assert_eq!(elements(&*sliced.value(1)), [Some(1), Some(2)]);
 
         // An empty slice keeps no element to share the values, so they go with it.
         let empty = arr.sliced(0, 0);
         assert!(empty.is_empty());
         assert_eq!(empty.width(), 2);
-        assert_eq!(empty.values().len(), 0);
+        assert_eq!(empty.flat_values().unwrap().len(), 0);
     }
 
     #[test]
@@ -1177,7 +1238,7 @@ mod tests {
         assert_eq!(arr.width(), 1_000_000_000);
         assert!(arr.is_scalar());
         assert!(!arr.values_are_flat());
-        assert_eq!(arr.values().len(), 1_000_000_000);
+        assert_eq!(arr.scalar_values().unwrap().len(), 1_000_000_000);
         assert_eq!(arr.value_range(999_999_999), 0..1_000_000_000);
         assert_eq!(arr.null_count(), 0);
 
@@ -1192,7 +1253,7 @@ mod tests {
         let none = PlFixedSizeListArray::new_scalar(values(), 0);
         assert!(none.is_empty());
         assert_eq!(none.width(), 6);
-        assert_eq!(none.values().len(), 0);
+        assert_eq!(none.flat_values().unwrap().len(), 0);
 
         // A length times a width that overflows a `usize` is a length no flat array can have, and
         // the scalar representation is all that is left.
@@ -1214,7 +1275,7 @@ mod tests {
         assert_eq!(repeated.len(), 1_000_000_000);
         assert_eq!(repeated.width(), 2);
         assert!(repeated.is_scalar());
-        assert_eq!(repeated.values().len(), 2);
+        assert_eq!(repeated.scalar_values().unwrap().len(), 2);
         assert_eq!(repeated.null_count(), 0);
         assert_eq!(elements(&*repeated.value(999_999_999)), [Some(3), Some(4)]);
 
@@ -1271,7 +1332,7 @@ mod tests {
         let arr = arr.with_validity(Some(Bitmap::new_zeroed(1)));
         let flat = arr.to_flat();
         assert!(flat.is_flat());
-        assert_eq!(flat.validity().unwrap().bitmap().len(), 3);
+        assert_eq!(flat.validity().unwrap().len(), 3);
         assert_eq!(flat.values().len(), 6);
         assert_eq!(flat, arr);
     }
@@ -1426,7 +1487,7 @@ mod tests {
 
         assert_eq!(arr.len(), 5);
         assert_eq!(arr.width(), 0);
-        assert_eq!(arr.values().len(), 0);
+        assert_eq!(arr.flat_values().unwrap().len(), 0);
         // Every representation of no values at all is the same one.
         assert!(arr.is_flat());
         assert!(arr.is_scalar());
@@ -1443,7 +1504,10 @@ mod tests {
 
         assert_eq!(outer.len(), 2);
         assert_eq!(outer.width(), 3);
-        assert_eq!(outer.values().array_type(), PlArrayType::FixedSizeList);
+        assert_eq!(
+            outer.flat_values().unwrap().array_type(),
+            PlArrayType::FixedSizeList
+        );
 
         let element = outer.value(1);
         assert_eq!(element.len(), 3);

@@ -40,7 +40,7 @@ pub use iterator::PlBooleanIter;
 /// // A scalar array of a billion elements costs a single bit of memory.
 /// let scalar = PlBooleanArray::new_scalar(true, 1_000_000_000);
 /// assert_eq!(scalar.len(), 1_000_000_000);
-/// assert_eq!(scalar.values().bitmap().len(), 1);
+/// assert!(scalar.values_are_scalar());
 /// assert!(scalar.value(999_999_999));
 /// ```
 #[derive(Clone)]
@@ -184,12 +184,38 @@ impl PlBooleanArray {
     /// The returned [`PlBitmapRef`] has [`Self::len`] bits regardless of whether the backing bitmap
     /// is flat or scalar, so reading values through it needs no knowledge of which
     /// representation this array is in. Reach for the backing [`Bitmap`] — which is *not*
-    /// guaranteed to have [`Self::len`] bits — with [`PlBitmapRef::bitmap`], or materialize a flat
+    /// guaranteed to have [`Self::len`] bits — with [`Self::flat_values`], or materialize a flat
     /// one with [`PlBitmapRef::to_flat`].
     #[inline]
     pub fn values(&self) -> PlBitmapRef<'_> {
         // SAFETY: the bitmap is flat or scalar for `self.length`, upheld by every constructor.
         unsafe { PlBitmapRef::new_unchecked(&self.values, self.length) }
+    }
+
+    /// The backing values bitmap, if it holds one bit per element.
+    ///
+    /// Bit `i` is then the value of element `i`, with no
+    /// [`broadcast_index`](crate::broadcast::broadcast_index) in the way. This is the `O(1)`
+    /// counterpart of [`Self::to_flat`]: it materializes nothing, and returns `None` rather than
+    /// expanding a scalar bitmap. Reach for the bit a scalar bitmap shares with
+    /// [`Self::scalar_values`] instead — between them the two cover every array that has elements
+    /// at all, so a `None` from both is an empty array. The values of null elements are
+    /// undetermined (they can be anything).
+    #[inline]
+    pub fn flat_values(&self) -> Option<&Bitmap> {
+        self.values_are_flat().then_some(&self.values)
+    }
+
+    /// The value every element of this array reads, if the values bitmap holds a single bit.
+    ///
+    /// This is the values half of [`Self::scalar_value`], which additionally asks that the
+    /// validity mask be scalar and reports the null the mask makes of this value. Returns `None`
+    /// for a values bitmap that is flat over more than one element, and for an empty array, which
+    /// has no element to share a value. The value of a null element is undetermined (it can be
+    /// anything).
+    #[inline]
+    pub fn scalar_values(&self) -> Option<bool> {
+        self.values().scalar_value()
     }
 
     /// The validity mask, if any element may be null.
@@ -782,7 +808,7 @@ mod tests {
         let arr = PlBooleanArray::new_scalar(true, 4);
 
         assert_eq!(arr.len(), 4);
-        assert_eq!(arr.values().bitmap().len(), 1);
+        assert!(arr.values_are_scalar());
         assert_eq!(arr.values().len(), 4);
         assert!(arr.is_scalar());
         assert!(!arr.is_flat());
@@ -794,6 +820,38 @@ mod tests {
         }
         assert_eq!(arr.iter().collect::<Vec<_>>(), [Some(true); 4]);
         assert_eq!(arr.values_iter().rev().collect::<Vec<_>>(), [true; 4]);
+    }
+
+    #[test]
+    fn the_values_bitmap_is_reached_through_its_representation() {
+        let arr = PlBooleanArray::from_vec(vec![true, false, true]);
+
+        assert_eq!(arr.flat_values().map(Bitmap::len), Some(3));
+        assert_eq!(arr.scalar_values(), None);
+
+        // A scalar array hands out no flat bitmap; it is its single bit that is reached instead.
+        let arr = PlBooleanArray::new_scalar(true, 1_000_000_000);
+
+        assert_eq!(arr.flat_values(), None);
+        assert_eq!(arr.scalar_values(), Some(true));
+
+        // The values are read whether or not the mask makes the elements null.
+        let arr = PlBooleanArray::new_scalar(true, 3).with_validity(Some(Bitmap::new_zeroed(3)));
+
+        assert_eq!(arr.scalar_values(), Some(true));
+        assert_eq!(
+            arr.scalar_value(),
+            None,
+            "a flat mask leaves no shared element"
+        );
+
+        // An empty array has no value to share, and is flat unless it is backed by a stray bit.
+        assert_eq!(
+            PlBooleanArray::new_empty().flat_values().map(Bitmap::len),
+            Some(0)
+        );
+        assert_eq!(PlBooleanArray::new_scalar(true, 0).flat_values(), None);
+        assert_eq!(PlBooleanArray::new_scalar(true, 0).scalar_values(), None);
     }
 
     #[test]
@@ -881,7 +939,7 @@ mod tests {
 
         // The values cover every element even though they are backed by a single bit.
         assert_eq!(values.len(), 1_000);
-        assert_eq!(values.bitmap().len(), 1);
+        assert!(values.flat_bitmap().is_none());
         assert!(values.is_scalar());
         assert_eq!(values.scalar_value(), Some(true));
         assert!(values.get(999));
@@ -930,7 +988,7 @@ mod tests {
         let arr = PlBooleanArray::new_scalar(true, 1_000).sliced(500, 2);
 
         assert_eq!(arr.len(), 2);
-        assert_eq!(arr.values().bitmap().len(), 1);
+        assert!(arr.values_are_scalar());
         assert_eq!(arr.iter().collect::<Vec<_>>(), [Some(true), Some(true)]);
     }
 
@@ -942,8 +1000,8 @@ mod tests {
         let arr = arr.sliced(1, 2);
 
         assert_eq!(arr.len(), 2);
-        assert_eq!(arr.values().bitmap().len(), 2);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 2);
+        assert_eq!(arr.flat_values().unwrap().len(), 2);
+        assert_eq!(arr.validity().unwrap().flat_bitmap().unwrap().len(), 2);
         assert_eq!(arr.iter().collect::<Vec<_>>(), [None, Some(false)]);
     }
 
@@ -954,9 +1012,8 @@ mod tests {
             .sliced(1, 2);
 
         assert_eq!(arr.len(), 2);
-        assert_eq!(arr.values().bitmap().len(), 2);
+        assert_eq!(arr.flat_values().unwrap().len(), 2);
         assert_eq!(arr.validity().unwrap().len(), 2);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
         assert!(arr.validity().unwrap().is_scalar());
         assert_eq!(arr.iter().collect::<Vec<_>>(), [None, None]);
     }
@@ -1038,14 +1095,14 @@ mod tests {
         let repeated = arr.new_from_index(2, 1_000_000_000);
         assert_eq!(repeated.len(), 1_000_000_000);
         assert!(repeated.is_scalar());
-        assert_eq!(repeated.values().bitmap().len(), 1);
+        assert!(repeated.values_are_scalar());
         assert_eq!(repeated.scalar_value(), Some(Some(false)));
 
         // A null element repeats as nulls, under a mask of a single bit.
         let repeated = arr.new_from_index(1, 4);
         assert_eq!(repeated.null_count(), 4);
         assert_eq!(repeated.scalar_value(), Some(None));
-        assert_eq!(repeated.validity().unwrap().bitmap().len(), 1);
+        assert!(repeated.validity().unwrap().is_scalar());
 
         // Repeating an element of a scalar array reads the bit every element shares.
         let scalar = PlBooleanArray::new_scalar(true, 1_000_000_000);

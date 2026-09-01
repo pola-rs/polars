@@ -25,8 +25,8 @@ use crate::broadcast::{assert_broadcastable, broadcast_index, is_valid_buffer_le
 /// let validity = arr.validity().unwrap();
 ///
 /// assert_eq!(validity.len(), 1_000_000_000);
-/// assert_eq!(validity.bitmap().len(), 1);
-/// assert!(validity.is_scalar());
+/// assert_eq!(validity.scalar_value(), Some(false));
+/// assert!(validity.flat_bitmap().is_none());
 /// assert!(!validity.get(999_999_999));
 /// ```
 #[derive(Clone, Copy)]
@@ -85,13 +85,26 @@ impl<'a> PlBitmapRef<'a> {
         self.length == 0
     }
 
-    /// The backing bitmap.
+    /// The backing bitmap, if it holds one bit per element.
     ///
-    /// This is *not* guaranteed to have [`Self::len`] bits: it is either flat or scalar. Index
-    /// it through [`crate::broadcast::broadcast_index`], or call [`Self::to_flat`] first.
+    /// This is the `O(1)` counterpart of [`Self::to_flat`]: it materializes nothing, and returns
+    /// `None` rather than expanding a scalar mask. Reach for the bit a scalar mask shares with
+    /// [`Self::scalar_value`] instead — between them the two cover every mask that has bits at
+    /// all, so a `None` from both is an empty mask.
+    #[inline]
+    pub fn flat_bitmap(&self) -> Option<&'a Bitmap> {
+        self.is_flat().then_some(self.bitmap)
+    }
+
+    /// Returns the backing bitmap and the logical length of this mask.
+    ///
+    /// The bitmap is *not* guaranteed to have [`Self::len`] bits: it is either flat or scalar,
+    /// which is why the length comes with it. Index it through
+    /// [`broadcast_index`](crate::broadcast::broadcast_index), or reach for
+    /// [`Self::flat_bitmap`] to get one that needs no such care.
     #[inline(always)]
-    pub const fn bitmap(&self) -> &'a Bitmap {
-        self.bitmap
+    pub const fn into_inner(self) -> (&'a Bitmap, usize) {
+        (self.bitmap, self.length)
     }
 
     /// Whether the backing bitmap holds a single bit shared by every element.
@@ -248,7 +261,7 @@ pub(super) fn fmt_bits(
 
     // Never materialize a scalar mask: its length is unbounded by its memory use.
     if mask.is_scalar() && mask.len() > 1 {
-        return write!(f, "[{}; {}]", mask.bitmap().get_bit(0), mask.len());
+        return write!(f, "[{}; {}]", mask.bitmap.get_bit(0), mask.len());
     }
 
     f.debug_list().entries(mask.iter()).finish()
@@ -325,6 +338,34 @@ mod tests {
     }
 
     #[test]
+    fn the_backing_bitmap_is_reached_through_its_representation() {
+        let bitmap = Bitmap::from_iter([true, false, true]);
+        let mask = PlBitmapRef::new(&bitmap, 3);
+
+        assert_eq!(mask.flat_bitmap(), Some(&bitmap));
+        assert_eq!(mask.scalar_value(), None);
+        assert_eq!(mask.into_inner(), (&bitmap, 3));
+
+        // A scalar mask hands out no flat bitmap; it is its single bit that is reached instead.
+        let bitmap = Bitmap::new_zeroed(1);
+        let mask = PlBitmapRef::new(&bitmap, 1_000_000_000);
+
+        assert_eq!(mask.flat_bitmap(), None);
+        assert_eq!(mask.scalar_value(), Some(false));
+        assert_eq!(mask.into_inner(), (&bitmap, 1_000_000_000));
+
+        // An empty mask has no bit to share, and is flat unless it is backed by a stray one.
+        assert_eq!(
+            PlBitmapRef::new(&Bitmap::new(), 0)
+                .flat_bitmap()
+                .map(Bitmap::len),
+            Some(0)
+        );
+        assert_eq!(PlBitmapRef::new(&bitmap, 0).flat_bitmap(), None);
+        assert_eq!(PlBitmapRef::new(&bitmap, 0).scalar_value(), None);
+    }
+
+    #[test]
     fn try_new_rejects_mismatched_bitmaps() {
         let bitmap = Bitmap::new_zeroed(2);
 
@@ -359,7 +400,8 @@ mod tests {
 
         let broadcast = mask.broadcast(1_000_000_000);
         assert_eq!(broadcast.len(), 1_000_000_000);
-        assert_eq!(broadcast.bitmap().len(), 1);
+        assert!(broadcast.flat_bitmap().is_none());
+        assert_eq!(broadcast.scalar_value(), Some(true));
         assert_eq!(broadcast.set_bits(), 1_000_000_000);
         assert_eq!(broadcast.iter().take(3).collect::<Vec<_>>(), [true; 3]);
 

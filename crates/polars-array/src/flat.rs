@@ -33,7 +33,7 @@ use crate::array::PlArray;
 ///
 /// // A scalar array holds one slot for all three elements.
 /// let scalar = PlPrimitiveArray::new_scalar(7i32, 3);
-/// assert_eq!(scalar.values().len(), 1);
+/// assert_eq!(scalar.scalar_values(), Some(7));
 ///
 /// // Its flat counterpart holds one slot per element, and hands them out as a slice.
 /// let flat: Flat<PlPrimitiveArray<i32>> = scalar.to_flat();

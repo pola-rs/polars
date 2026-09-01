@@ -220,7 +220,7 @@ mod tests {
         let arr: PlBooleanArray = [Some(true), None, Some(false)].into_iter().collect();
         let flat = arr.as_flat().expect("the array is flat");
 
-        assert_eq!(flat.values(), arr.values().bitmap());
+        assert_eq!(flat.values(), arr.flat_values().unwrap());
         assert_eq!(*flat, arr);
         assert_eq!(
             flat.iter().collect::<Vec<_>>(),
@@ -250,7 +250,7 @@ mod tests {
         let flat = arr.to_flat();
 
         assert_eq!(flat, arr);
-        assert_eq!(flat.values(), arr.values().bitmap());
+        assert_eq!(flat.values(), arr.flat_values().unwrap());
     }
 
     #[test]

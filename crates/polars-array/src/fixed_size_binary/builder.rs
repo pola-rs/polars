@@ -36,7 +36,7 @@ use crate::builder::{
 /// assert_eq!(built.width(), 2);
 /// assert_eq!(built.null_count(), 1);
 /// // Every element covers a width of bytes, including the null one.
-/// assert_eq!(built.values().as_slice(), [0, 0, 1, 2, 3, 4]);
+/// assert_eq!(built.flat_values().unwrap().as_slice(), [0, 0, 1, 2, 3, 4]);
 /// ```
 pub struct PlFixedSizeBinaryArrayBuilder {
     values: Vec<u8>,
@@ -86,12 +86,13 @@ impl PlFixedSizeBinaryArrayBuilder {
     /// Scalar values are not materialized to be read: the one element they hold is appended once
     /// per element the subslice covers.
     fn extend_values(&mut self, other: &PlFixedSizeBinaryArray, start: usize, length: usize) {
-        if other.values_are_scalar() {
-            self.extend_repeated(other.values().as_slice(), length);
-        } else {
-            let bytes = &other.values()[start * self.width..(start + length) * self.width];
+        if let Some(values) = other.flat_values() {
+            let bytes = &values[start * self.width..(start + length) * self.width];
             self.values.extend_from_slice(bytes);
+        } else if let Some(element) = other.scalar_values() {
+            self.extend_repeated(element, length);
         }
+        // An empty array is neither, and the subslice it admits covers no element to append.
     }
 
     /// Appends `element` `repeats` times over.
@@ -184,15 +185,15 @@ impl StaticArrayBuilder for PlFixedSizeBinaryArrayBuilder {
         assert_subslice(other.len(), start, length);
         self.values.reserve(length * repeats * self.width);
 
-        if other.values_are_scalar() {
-            // Every element covers the same bytes, so which of them is repeated is immaterial.
-            self.extend_values(other, start, length * repeats);
-        } else {
+        if let Some(values) = other.flat_values() {
             for i in start..start + length {
                 // SAFETY: the subslice was just checked against the length of the array.
                 let range = unsafe { other.value_range_unchecked(i) };
-                self.extend_repeated(&other.values()[range], repeats);
+                self.extend_repeated(&values[range], repeats);
             }
+        } else {
+            // Every element covers the same bytes, so which of them is repeated is immaterial.
+            self.extend_values(other, start, length * repeats);
         }
 
         subslice_extend_each_repeated_validity(
@@ -214,15 +215,15 @@ impl StaticArrayBuilder for PlFixedSizeBinaryArrayBuilder {
         self.assert_width(other);
         self.values.reserve(idxs.len() * self.width);
 
-        if other.values_are_scalar() {
-            // Every index reads the one element the values hold.
-            self.extend_values(other, 0, idxs.len());
-        } else {
+        if let Some(values) = other.flat_values() {
             for idx in idxs {
                 // SAFETY: the indices are in bounds of the array, whose values are flat.
                 let range = unsafe { other.value_range_unchecked(*idx as usize) };
-                self.values.extend_from_slice(&other.values()[range]);
+                self.values.extend_from_slice(&values[range]);
             }
+        } else {
+            // Every index reads the one element the values hold.
+            self.extend_values(other, 0, idxs.len());
         }
 
         // SAFETY: the indices are in bounds of the array, and therefore of its mask.
@@ -243,8 +244,8 @@ impl StaticArrayBuilder for PlFixedSizeBinaryArrayBuilder {
             let idx = *idx as usize;
             if idx < other.len() {
                 // SAFETY: the index was just checked against the length of the array.
-                let range = unsafe { other.value_range_unchecked(idx) };
-                self.values.extend_from_slice(&other.values()[range]);
+                self.values
+                    .extend_from_slice(unsafe { other.value_unchecked(idx) });
             } else {
                 // An out-of-bounds index stands for a null, which covers a width of zeros.
                 self.values.resize(self.values.len() + self.width, 0);
@@ -303,7 +304,7 @@ mod tests {
         );
 
         // Every element covers the width, whether or not it is null.
-        assert_eq!(built.values().len(), 18);
+        assert_eq!(built.flat_values().unwrap().len(), 18);
         assert!(built.is_flat());
     }
 
@@ -342,7 +343,7 @@ mod tests {
         assert_eq!(built.len(), 7);
         assert_eq!(built.null_count(), 1);
         // The out-of-bounds index is a null, whose bytes are written out as zeros.
-        assert_eq!(built.values().as_slice(), b"abababababab\0\0");
+        assert_eq!(built.flat_values().unwrap().as_slice(), b"abababababab\0\0");
         assert_eq!(built.get(5), Some(b"ab".as_slice()));
         assert_eq!(built.get(6), None);
     }
@@ -357,7 +358,7 @@ mod tests {
         let built = builder.freeze();
         assert_eq!(built.len(), 3);
         assert_eq!(built.null_count(), 3);
-        assert_eq!(built.values().len(), 6);
+        assert_eq!(built.flat_values().unwrap().len(), 6);
     }
 
     #[test]
@@ -372,7 +373,7 @@ mod tests {
         assert_eq!(built.len(), 5);
         assert_eq!(built.width(), 0);
         assert_eq!(built.null_count(), 2);
-        assert!(built.values().is_empty());
+        assert!(built.flat_values().unwrap().is_empty());
         assert_eq!(built.get(4), Some([].as_slice()));
     }
 

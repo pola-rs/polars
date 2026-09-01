@@ -22,7 +22,8 @@ use crate::flat::Flat;
 impl Flat<PlBinaryViewArray> {
     /// The backing views buffer, holding exactly [`len`](PlBinaryViewArray::len) slots.
     ///
-    /// Unlike [`PlBinaryViewArray::views`], this is guaranteed to hold one view per element: slot
+    /// Unlike [`PlBinaryViewArray::flat_views`], this needs no [`Option`] to admit a scalar views
+    /// buffer: it is guaranteed to hold one view per element, so slot
     /// `i` is element `i`. The views of null elements are undetermined (they can be anything that
     /// reads bytes the array holds).
     #[inline(always)]
@@ -250,7 +251,7 @@ mod tests {
         assert_eq!(flat.value(0), b"foo");
         assert_eq!(*flat, arr);
         assert!(
-            flat.views().is_same_buffer(arr.views()),
+            flat.views().is_same_buffer(arr.flat_views().unwrap()),
             "the views buffer must be borrowed, not materialized again",
         );
 
@@ -278,7 +279,7 @@ mod tests {
 
         assert_eq!(flat, arr);
         assert!(
-            flat.views().is_same_buffer(arr.views()),
+            flat.views().is_same_buffer(arr.flat_views().unwrap()),
             "the views buffer must be shared, not materialized again",
         );
     }

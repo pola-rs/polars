@@ -184,9 +184,9 @@ impl PlBinaryViewArrayBuilder {
         // are reached — and at most copied — once, however many elements are appended. Which of
         // them are null does not come into it: the value of a null element is undetermined, so
         // writing the shared one out for it is as good as anything else.
-        if other.views_are_scalar() {
+        if let Some(view) = other.scalar_views() {
             if count > 0 {
-                let view = self.take_view(other.views()[0], other.data_buffers(), share);
+                let view = self.take_view(view, other.data_buffers(), share);
                 self.views.extend(std::iter::repeat_n(view, count));
             }
             return;

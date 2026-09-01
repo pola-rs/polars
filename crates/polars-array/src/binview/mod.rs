@@ -47,7 +47,7 @@ pub use iterator::{PlBinaryViewIter, PlBinaryViewValuesIter};
 /// // A scalar array of a billion elements costs a single view of memory.
 /// let scalar = PlBinaryViewArray::new_scalar(b"foo", 1_000_000_000);
 /// assert_eq!(scalar.len(), 1_000_000_000);
-/// assert_eq!(scalar.views().len(), 1);
+/// assert!(scalar.flat_views().is_none());
 /// assert_eq!(scalar.value(999_999_999), b"foo");
 /// ```
 #[derive(Clone)]
@@ -261,20 +261,35 @@ impl PlBinaryViewArray {
         self.length == 0
     }
 
-    /// The backing views buffer.
+    /// The backing views buffer, if it holds one slot per element.
     ///
-    /// This is *not* guaranteed to have [`Self::len`] elements: it is either flat or scalar.
-    /// Index it through [`broadcast_index`](crate::broadcast::broadcast_index), or call
-    /// [`Self::to_flat`] first.
-    #[inline(always)]
-    pub const fn views(&self) -> &Buffer<View> {
-        &self.views
+    /// Slot `i` is then the view of element `i`, with no [`broadcast_index`] in the way. This is
+    /// the `O(1)` counterpart of [`Self::to_flat`]: it materializes nothing, and returns `None`
+    /// rather than writing out a scalar buffer. Reach for the view a scalar buffer shares with
+    /// [`Self::scalar_views`] instead — between them the two cover every array that has elements
+    /// at all, so a `None` from both is an empty array. The views of null elements are
+    /// undetermined (they can be anything that reads bytes this array holds).
+    #[inline]
+    pub fn flat_views(&self) -> Option<&Buffer<View>> {
+        self.views_are_flat().then_some(&self.views)
+    }
+
+    /// The view every element of this array reads, if the views buffer holds a single slot.
+    ///
+    /// This is the views half of [`Self::scalar_value`], which additionally asks that the validity
+    /// mask be scalar and reports the null the mask makes of this view. Returns `None` for a views
+    /// buffer that is flat over more than one element, and for an empty array, which has no
+    /// element to share a view. The view of a null element is undetermined (it can be anything
+    /// that reads bytes this array holds).
+    #[inline]
+    pub fn scalar_views(&self) -> Option<View> {
+        (self.views_are_scalar() && self.length > 0).then(|| self.views[0])
     }
 
     /// The buffers the views that do not inline their bytes point into.
     ///
-    /// These are indexed by the views rather than by an element index, so — unlike
-    /// [`Self::views`] — they are neither flat nor scalar for this array's length, and being
+    /// These are indexed by the views rather than by an element index, so — unlike the views
+    /// themselves — they are neither flat nor scalar for this array's length, and being
     /// [`flat`](Self::is_flat) says nothing about them.
     #[inline(always)]
     pub const fn data_buffers(&self) -> &Buffer<Buffer<u8>> {
@@ -742,7 +757,7 @@ impl PlBinaryViewArray {
     /// use polars_array::PlBinaryViewArray;
     ///
     /// let scalar = PlBinaryViewArray::new_scalar(b"foo", 3);
-    /// assert_eq!(scalar.views().len(), 1);
+    /// assert!(scalar.flat_views().is_none());
     ///
     /// let flat = scalar.to_flat();
     /// assert_eq!(flat.views().len(), 3);
@@ -1063,7 +1078,8 @@ mod tests {
         let arr = PlBinaryViewArray::new_scalar(b"foo", 4);
 
         assert_eq!(arr.len(), 4);
-        assert_eq!(arr.views().len(), 1);
+        assert!(arr.flat_views().is_none());
+        assert!(arr.scalar_views().is_some());
         assert!(arr.is_scalar());
         assert!(!arr.is_flat());
         assert_eq!(arr.scalar_value(), Some(Some(b"foo".as_slice())));
@@ -1084,6 +1100,42 @@ mod tests {
         assert_eq!(arr.total_buffer_len(), LONG.len());
         assert_eq!(arr.total_bytes_len(), LONG.len() * 1_000_000_000);
         assert_eq!(arr.value(999_999_999), LONG);
+    }
+
+    #[test]
+    fn the_views_buffer_is_reached_through_its_representation() {
+        let arr = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"bar"]);
+
+        assert_eq!(arr.flat_views().map(Buffer::len), Some(2));
+        assert_eq!(arr.scalar_views(), None);
+
+        // A scalar array hands out no flat buffer; it is its single view that is reached instead.
+        let arr = PlBinaryViewArray::new_scalar(b"foo", 1_000_000_000);
+
+        assert_eq!(arr.flat_views(), None);
+        assert_eq!(arr.scalar_views().map(|view| view.length), Some(3));
+
+        // The views are read whether or not the mask makes the elements null.
+        let arr =
+            PlBinaryViewArray::new_scalar(b"foo", 3).with_validity(Some(Bitmap::new_zeroed(3)));
+
+        assert_eq!(arr.scalar_views().map(|view| view.length), Some(3));
+        assert_eq!(
+            arr.scalar_value(),
+            None,
+            "a flat mask leaves no shared element"
+        );
+
+        // An empty array has no view to share, and is flat unless it is backed by a stray one.
+        assert_eq!(
+            PlBinaryViewArray::new_empty().flat_views().map(Buffer::len),
+            Some(0)
+        );
+        assert_eq!(PlBinaryViewArray::new_scalar(b"foo", 0).flat_views(), None);
+        assert_eq!(
+            PlBinaryViewArray::new_scalar(b"foo", 0).scalar_views(),
+            None
+        );
     }
 
     #[test]
@@ -1182,7 +1234,7 @@ mod tests {
         let arr = PlBinaryViewArray::new_scalar(b"foo", 1_000).sliced(500, 2);
 
         assert_eq!(arr.len(), 2);
-        assert_eq!(arr.views().len(), 1);
+        assert!(arr.flat_views().is_none());
         assert_eq!(arr.iter().collect::<Vec<_>>(), [Some(b"foo".as_slice()); 2],);
     }
 
@@ -1194,7 +1246,7 @@ mod tests {
         let sliced = arr.clone().sliced(1, 2);
 
         assert_eq!(sliced.len(), 2);
-        assert_eq!(sliced.views().len(), 2);
+        assert_eq!(sliced.flat_views().unwrap().len(), 2);
         assert_eq!(sliced.validity().unwrap().len(), 2);
         assert_eq!(sliced.iter().collect::<Vec<_>>(), [None, Some(LONG)]);
 
@@ -1211,9 +1263,8 @@ mod tests {
             .sliced(1, 2);
 
         assert_eq!(arr.len(), 2);
-        assert_eq!(arr.views().len(), 2);
+        assert_eq!(arr.flat_views().unwrap().len(), 2);
         assert_eq!(arr.validity().unwrap().len(), 2);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
         assert!(arr.validity().unwrap().is_scalar());
         assert_eq!(arr.iter().collect::<Vec<_>>(), [None, None]);
     }
@@ -1382,7 +1433,7 @@ mod tests {
         let repeated = arr.new_from_index(2, 1_000_000_000);
         assert_eq!(repeated.len(), 1_000_000_000);
         assert!(repeated.is_scalar());
-        assert_eq!(repeated.views().len(), 1);
+        assert!(repeated.flat_views().is_none());
         assert_eq!(repeated.scalar_value(), Some(Some(LONG)));
 
         // It keeps the one data buffer its view reads, and rebases the view onto it.
@@ -1398,7 +1449,7 @@ mod tests {
         let repeated = arr.new_from_index(1, 4);
         assert_eq!(repeated.null_count(), 4);
         assert_eq!(repeated.scalar_value(), Some(None));
-        assert_eq!(repeated.validity().unwrap().bitmap().len(), 1);
+        assert!(repeated.validity().unwrap().is_scalar());
 
         // Repeating an element of a scalar array reads the view every element shares.
         let scalar = PlBinaryViewArray::new_scalar(b"foo", 1_000_000_000);

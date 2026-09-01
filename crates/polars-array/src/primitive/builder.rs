@@ -7,7 +7,6 @@ use polars_utils::IdxSize;
 use polars_utils::vec::PushUnchecked;
 
 use super::PlPrimitiveArray;
-use crate::broadcast::broadcast_index;
 use crate::builder::{
     ShareStrategy, StaticArrayBuilder, assert_subslice, gather_extend_validity,
     opt_gather_extend_validity, subslice_extend_each_repeated_validity, subslice_extend_validity,
@@ -29,7 +28,7 @@ use crate::builder::{
 /// builder.extend(&PlPrimitiveArray::from_vec(vec![1u8, 2]), ShareStrategy::Never);
 ///
 /// let array = builder.freeze();
-/// assert_eq!(array.values().as_slice(), [0, 1, 2]);
+/// assert_eq!(array.flat_values().unwrap().as_slice(), [0, 1, 2]);
 /// assert_eq!(array.null_count(), 1);
 /// ```
 pub struct PlPrimitiveArrayBuilder<T: NativeType> {
@@ -58,13 +57,13 @@ impl<T: NativeType> PlPrimitiveArrayBuilder<T> {
     /// A scalar values buffer is not materialized to be read: the one value it holds is the value
     /// of every element the subslice covers.
     fn extend_values(&mut self, other: &PlPrimitiveArray<T>, start: usize, length: usize) {
-        if other.values_are_scalar() {
-            let value = other.values()[0];
-            self.values.resize(self.values.len() + length, value);
-        } else {
+        if let Some(values) = other.flat_values() {
             self.values
-                .extend_from_slice(&other.values()[start..start + length]);
+                .extend_from_slice(&values[start..start + length]);
+        } else if let Some(value) = other.scalar_values() {
+            self.values.resize(self.values.len() + length, value);
         }
+        // An empty array is neither, and the subslice it admits covers no element to append.
     }
 }
 
@@ -145,13 +144,8 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
         assert_subslice(other.len(), start, length);
         self.values.reserve(length * repeats);
 
-        if other.values_are_scalar() {
-            // Every element repeats the same value, so which of them is repeated is immaterial.
-            let value = other.values()[0];
-            self.values
-                .resize(self.values.len() + length * repeats, value);
-        } else {
-            for value in &other.values()[start..start + length] {
+        if let Some(values) = other.flat_values() {
+            for value in &values[start..start + length] {
                 // SAFETY: room for every repeat of every value was just reserved.
                 unsafe {
                     for _ in 0..repeats {
@@ -159,7 +153,12 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
                     }
                 }
             }
+        } else if let Some(value) = other.scalar_values() {
+            // Every element repeats the same value, so which of them is repeated is immaterial.
+            self.values
+                .resize(self.values.len() + length * repeats, value);
         }
+        // An empty array is neither, and the subslice it admits covers no element to append.
 
         subslice_extend_each_repeated_validity(
             &mut self.validity,
@@ -176,18 +175,18 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
         idxs: &[IdxSize],
         _share: ShareStrategy,
     ) {
-        if other.values_are_scalar() {
-            // Every index reads the one value the array holds.
-            let value = other.values()[0];
-            self.values.resize(self.values.len() + idxs.len(), value);
-        } else {
-            let values = other.values().as_slice();
+        if let Some(values) = other.flat_values() {
+            let values = values.as_slice();
             // SAFETY: the indices are in bounds of the array, whose values are flat.
             self.values.extend(
                 idxs.iter()
                     .map(|idx| unsafe { *values.get_unchecked(*idx as usize) }),
             );
+        } else if let Some(value) = other.scalar_values() {
+            // Every index reads the one value the array holds.
+            self.values.resize(self.values.len() + idxs.len(), value);
         }
+        // An empty array is neither, and admits no index to gather.
 
         // SAFETY: the indices are in bounds of the array, and therefore of its mask.
         unsafe { gather_extend_validity(&mut self.validity, other.validity(), idxs) };
@@ -201,12 +200,11 @@ impl<T: NativeType> StaticArrayBuilder for PlPrimitiveArrayBuilder<T> {
     ) {
         self.values.reserve(idxs.len());
 
-        let values = other.values().as_slice();
         for idx in idxs {
             let idx = *idx as usize;
             let value = if idx < other.len() {
                 // SAFETY: the index is in bounds of the array, so it broadcasts into the values.
-                unsafe { *values.get_unchecked(broadcast_index(idx, values.len())) }
+                unsafe { other.value_unchecked(idx) }
             } else {
                 // The value of a null element is undetermined, so anything at all does.
                 T::default()

@@ -396,7 +396,6 @@ mod tests {
             assert!(!arr.is_valid(3));
             assert!(arr.validity().unwrap().is_scalar());
             assert_eq!(arr.validity().unwrap().len(), 4);
-            assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
 
             let valid = arr.without_validity();
             assert_eq!(valid.null_count(), 0);

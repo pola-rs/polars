@@ -27,7 +27,7 @@ use crate::builder::{ShareStrategy, StaticArrayBuilder, assert_subslice};
 /// // The mask covers every element, backed by a single bit.
 /// let validity = arr.validity();
 /// assert_eq!(validity.len(), 1_000_000_000);
-/// assert_eq!(validity.bitmap().len(), 1);
+/// assert_eq!(validity.scalar_value(), Some(false));
 /// assert!(validity.is_scalar());
 /// ```
 #[derive(Clone, Copy)]
@@ -448,7 +448,7 @@ mod tests {
         let validity = PlNullArray::new(1_000_000_000).validity();
 
         assert_eq!(validity.len(), 1_000_000_000);
-        assert_eq!(validity.bitmap().len(), 1);
+        assert!(validity.flat_bitmap().is_none());
         assert!(validity.is_scalar());
         assert_eq!(validity.unset_bits(), 1_000_000_000);
         assert_eq!(validity.set_bits(), 0);
@@ -458,8 +458,8 @@ mod tests {
         // Every array reads the same bit, so the mask outlives the array it came from.
         let validity: PlBitmapRef<'static> = PlNullArray::new(2).validity();
         assert!(std::ptr::eq(
-            validity.bitmap(),
-            PlNullArray::new(7).validity().bitmap(),
+            validity.into_inner().0,
+            PlNullArray::new(7).validity().into_inner().0,
         ));
 
         // A mask of one bit over one element is flat and scalar at once, like everywhere else.

@@ -19,7 +19,8 @@ use crate::flat::Flat;
 impl<T: NativeType> Flat<PlPrimitiveArray<T>> {
     /// The backing values buffer, holding exactly [`len`](PlPrimitiveArray::len) slots.
     ///
-    /// Unlike [`PlPrimitiveArray::values`], this is guaranteed to hold one slot per element: slot
+    /// Unlike [`PlPrimitiveArray::flat_values`], this needs no [`Option`] to admit a scalar values
+    /// buffer: it is guaranteed to hold one slot per element, so slot
     /// `i` is element `i`. The values of null elements are undetermined (they can be anything).
     #[inline(always)]
     pub const fn values(&self) -> &Buffer<T> {
@@ -236,7 +237,7 @@ mod tests {
         assert_eq!(flat.as_slice(), [1, 0, 3]);
         assert_eq!(*flat, arr);
         assert!(
-            flat.values().is_same_buffer(arr.values()),
+            flat.values().is_same_buffer(arr.flat_values().unwrap()),
             "the values buffer must be borrowed, not materialized again",
         );
 
@@ -264,7 +265,7 @@ mod tests {
 
         assert_eq!(flat, arr);
         assert!(
-            flat.values().is_same_buffer(arr.values()),
+            flat.values().is_same_buffer(arr.flat_values().unwrap()),
             "the values buffer must be shared, not materialized again",
         );
     }

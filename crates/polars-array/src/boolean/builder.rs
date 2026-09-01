@@ -53,13 +53,13 @@ impl PlBooleanArrayBuilder {
     /// A scalar values bitmap is not materialized to be read: the one bit it holds is the value of
     /// every element the subslice covers.
     fn extend_values(&mut self, other: &PlBooleanArray, start: usize, length: usize) {
-        let values = other.values();
-        match values.scalar_value() {
-            Some(value) => self.values.extend_constant(length, value),
-            None => self
-                .values
-                .subslice_extend_from_bitmap(values.bitmap(), start, length),
+        if let Some(values) = other.flat_values() {
+            self.values
+                .subslice_extend_from_bitmap(values, start, length);
+        } else if let Some(value) = other.scalar_values() {
+            self.values.extend_constant(length, value);
         }
+        // An empty array is neither, and the subslice it admits covers no element to append.
     }
 }
 
@@ -131,17 +131,14 @@ impl StaticArrayBuilder for PlBooleanArrayBuilder {
         assert_subslice(other.len(), start, length);
         self.values.reserve(length * repeats);
 
-        let values = other.values();
-        match values.scalar_value() {
+        if let Some(values) = other.flat_values() {
+            self.values
+                .subslice_extend_each_repeated_from_bitmap(values, start, length, repeats);
+        } else if let Some(value) = other.scalar_values() {
             // Every element repeats the same value, so which of them is repeated is immaterial.
-            Some(value) => self.values.extend_constant(length * repeats, value),
-            None => self.values.subslice_extend_each_repeated_from_bitmap(
-                values.bitmap(),
-                start,
-                length,
-                repeats,
-            ),
+            self.values.extend_constant(length * repeats, value);
         }
+        // An empty array is neither, and the subslice it admits covers no element to append.
 
         subslice_extend_each_repeated_validity(
             &mut self.validity,

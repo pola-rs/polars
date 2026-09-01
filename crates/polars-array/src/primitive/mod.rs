@@ -33,12 +33,13 @@ pub use iterator::{PlPrimitiveIter, PlPrimitiveValuesIter};
 ///
 /// let flat = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
 /// assert_eq!(flat.len(), 3);
+/// assert_eq!(flat.flat_values().unwrap().as_slice(), [1, 2, 3]);
 /// assert_eq!(flat.iter().collect::<Vec<_>>(), [Some(1), Some(2), Some(3)]);
 ///
 /// // A scalar array of a billion elements costs a single `i32` of memory.
 /// let scalar = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
 /// assert_eq!(scalar.len(), 1_000_000_000);
-/// assert_eq!(scalar.values().len(), 1);
+/// assert_eq!(scalar.scalar_values(), Some(7));
 /// assert_eq!(scalar.value(999_999_999), 7);
 /// ```
 #[derive(Clone)]
@@ -185,14 +186,29 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         self.length == 0
     }
 
-    /// The backing values buffer.
+    /// The backing values buffer, if it holds one slot per element.
     ///
-    /// This is *not* guaranteed to have [`Self::len`] elements: it is either flat or scalar.
-    /// Index it through [`broadcast_index`](crate::broadcast::broadcast_index), or call
-    /// [`Self::to_flat`] first.
-    #[inline(always)]
-    pub const fn values(&self) -> &Buffer<T> {
-        &self.values
+    /// Slot `i` is then the value of element `i`, with no [`broadcast_index`] in the way. This is
+    /// the `O(1)` counterpart of [`Self::to_flat`]: it materializes nothing, and returns `None`
+    /// rather than expanding a scalar buffer. Reach for the value a scalar buffer shares with
+    /// [`Self::scalar_values`] instead — between them the two cover every array that has elements
+    /// at all, so a `None` from both is an empty array. The values of null elements are
+    /// undetermined (they can be anything).
+    #[inline]
+    pub fn flat_values(&self) -> Option<&Buffer<T>> {
+        self.values_are_flat().then_some(&self.values)
+    }
+
+    /// The value every element of this array reads, if the values buffer holds a single slot.
+    ///
+    /// This is the values half of [`Self::scalar_value`], which additionally asks that the
+    /// validity mask be scalar and reports the null the mask makes of this value. Returns `None`
+    /// for a values buffer that is flat over more than one element, and for an empty array, which
+    /// has no element to share a value. The value of a null element is undetermined (it can be
+    /// anything).
+    #[inline]
+    pub fn scalar_values(&self) -> Option<T> {
+        (self.values_are_scalar() && self.length > 0).then(|| self.values[0])
     }
 
     /// The validity mask, if any element may be null.
@@ -200,7 +216,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// The returned [`PlBitmapRef`] has [`Self::len`] bits regardless of whether the backing
     /// bitmap is flat or scalar, so reading validity through it needs no knowledge of which
     /// representation this array is in. Reach for the backing [`Bitmap`] with
-    /// [`PlBitmapRef::bitmap`], or materialize a flat one with [`PlBitmapRef::to_flat`].
+    /// [`PlBitmapRef::flat_bitmap`], or materialize a flat one with [`PlBitmapRef::to_flat`].
     #[inline]
     pub fn validity(&self) -> Option<PlBitmapRef<'_>> {
         // SAFETY: the mask is flat or scalar for `self.length`, upheld by every constructor.
@@ -802,7 +818,8 @@ mod tests {
         let arr = PlPrimitiveArray::new_scalar(7i32, 4);
 
         assert_eq!(arr.len(), 4);
-        assert_eq!(arr.values().len(), 1);
+        assert!(arr.flat_values().is_none());
+        assert_eq!(arr.scalar_values(), Some(7));
         assert!(arr.is_scalar());
         assert!(!arr.is_flat());
         assert_eq!(arr.scalar_value(), Some(Some(7)));
@@ -813,6 +830,43 @@ mod tests {
         }
         assert_eq!(arr.iter().collect::<Vec<_>>(), [Some(7); 4]);
         assert_eq!(arr.values_iter().rev().collect::<Vec<_>>(), [7; 4]);
+    }
+
+    #[test]
+    fn the_values_buffer_is_reached_through_its_representation() {
+        let arr = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
+
+        assert_eq!(
+            arr.flat_values().map(Buffer::as_slice),
+            Some([1, 2, 3].as_slice())
+        );
+        assert_eq!(arr.scalar_values(), None);
+
+        // A scalar array hands out no flat buffer; it is its single value that is reached instead.
+        let arr = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
+
+        assert_eq!(arr.flat_values(), None);
+        assert_eq!(arr.scalar_values(), Some(7));
+
+        // The values are read whether or not the mask makes the elements null.
+        let arr = PlPrimitiveArray::new_scalar(7i32, 3).with_validity(Some(Bitmap::new_zeroed(3)));
+
+        assert_eq!(arr.scalar_values(), Some(7));
+        assert_eq!(
+            arr.scalar_value(),
+            None,
+            "a flat mask leaves no shared element"
+        );
+
+        // An empty array has no value to share, and is flat unless it is backed by a stray slot.
+        assert_eq!(
+            PlPrimitiveArray::<i32>::new_empty()
+                .flat_values()
+                .map(Buffer::len),
+            Some(0),
+        );
+        assert_eq!(PlPrimitiveArray::new_scalar(7i32, 0).flat_values(), None);
+        assert_eq!(PlPrimitiveArray::new_scalar(7i32, 0).scalar_values(), None);
     }
 
     #[test]
@@ -887,7 +941,7 @@ mod tests {
 
         // The mask covers every element even though it is backed by a single bit.
         assert_eq!(validity.len(), 1_000);
-        assert_eq!(validity.bitmap().len(), 1);
+        assert!(validity.flat_bitmap().is_none());
         assert!(validity.is_scalar());
         assert_eq!(validity.scalar_value(), Some(false));
         assert!(!validity.get(999));
@@ -905,7 +959,7 @@ mod tests {
         assert_eq!(validity.scalar_value(), None);
         assert!(!validity.get(1));
         assert_eq!(validity.unset_bits(), 1);
-        assert_eq!(validity.to_flat(), *validity.bitmap());
+        assert_eq!(validity.to_flat(), *validity.flat_bitmap().unwrap());
     }
 
     #[test]
@@ -939,7 +993,7 @@ mod tests {
         let arr = PlPrimitiveArray::new_scalar(7i32, 1_000).sliced(500, 2);
 
         assert_eq!(arr.len(), 2);
-        assert_eq!(arr.values().len(), 1);
+        assert!(arr.flat_values().is_none());
         assert_eq!(arr.iter().collect::<Vec<_>>(), [Some(7), Some(7)]);
     }
 
@@ -949,7 +1003,7 @@ mod tests {
         let arr = arr.sliced(1, 2);
 
         assert_eq!(arr.len(), 2);
-        assert_eq!(arr.values().len(), 2);
+        assert_eq!(arr.flat_values().unwrap().len(), 2);
         assert_eq!(arr.validity().unwrap().len(), 2);
         assert_eq!(arr.iter().collect::<Vec<_>>(), [None, Some(3)]);
     }
@@ -961,9 +1015,8 @@ mod tests {
             .sliced(1, 2);
 
         assert_eq!(arr.len(), 2);
-        assert_eq!(arr.values().len(), 2);
+        assert_eq!(arr.flat_values().unwrap().len(), 2);
         assert_eq!(arr.validity().unwrap().len(), 2);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
         assert!(arr.validity().unwrap().is_scalar());
         assert_eq!(arr.iter().collect::<Vec<_>>(), [None, None]);
     }
@@ -1044,14 +1097,14 @@ mod tests {
         let repeated = arr.new_from_index(2, 1_000_000_000);
         assert_eq!(repeated.len(), 1_000_000_000);
         assert!(repeated.is_scalar());
-        assert_eq!(repeated.values().len(), 1);
+        assert!(repeated.flat_values().is_none());
         assert_eq!(repeated.scalar_value(), Some(Some(3)));
 
         // A null element repeats as nulls, under a mask of a single bit.
         let repeated = arr.new_from_index(1, 4);
         assert_eq!(repeated.null_count(), 4);
         assert_eq!(repeated.scalar_value(), Some(None));
-        assert_eq!(repeated.validity().unwrap().bitmap().len(), 1);
+        assert!(repeated.validity().unwrap().is_scalar());
 
         // Repeating an element of a scalar array reads the slot every element shares.
         let scalar = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);

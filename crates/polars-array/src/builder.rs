@@ -53,7 +53,7 @@
 //!
 //! assert_eq!(builder.len(), 6);
 //! let array = builder.freeze();
-//! assert_eq!(array.values().as_slice(), [1, 2, 3, 0, 7, 7]);
+//! assert_eq!(array.flat_values().unwrap().as_slice(), [1, 2, 3, 0, 7, 7]);
 //! assert_eq!(array.null_count(), 1);
 //! ```
 
@@ -553,8 +553,14 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
                 .as_any()
                 .downcast_ref::<PlFixedSizeListArray>()
                 .unwrap();
+            // The values are either flat or scalar, and hold the values the elements are made
+            // of either way — which is all a builder for them is taken from.
+            let values = array
+                .flat_values()
+                .or_else(|| array.scalar_values())
+                .expect("the values of a fixed size list array are either flat or scalar");
             Box::new(PlFixedSizeListArrayBuilder::new(
-                builder_like(array.values()),
+                builder_like(values),
                 array.width(),
             ))
         },
@@ -599,7 +605,8 @@ pub(crate) fn subslice_extend_validity(
         None => dst.extend_constant(length, true),
         Some(validity) => match validity.scalar_value() {
             Some(bit) => dst.extend_constant(length, bit),
-            None => dst.subslice_extend_from_opt_validity(Some(validity.bitmap()), start, length),
+            // The mask is not scalar, so it holds one bit per element.
+            None => dst.subslice_extend_from_opt_validity(validity.flat_bitmap(), start, length),
         },
     }
 }
@@ -620,8 +627,9 @@ pub(crate) fn subslice_extend_each_repeated_validity(
         None => dst.extend_constant(length * repeats, true),
         Some(validity) => match validity.scalar_value() {
             Some(bit) => dst.extend_constant(length * repeats, bit),
+            // The mask is not scalar, so it holds one bit per element.
             None => dst.subslice_extend_each_repeated_from_opt_validity(
-                Some(validity.bitmap()),
+                validity.flat_bitmap(),
                 start,
                 length,
                 repeats,
@@ -645,7 +653,7 @@ pub(crate) unsafe fn gather_extend_validity(
             Some(bit) => dst.extend_constant(idxs.len(), bit),
             // SAFETY: the mask is flat, so the indices are in bounds of the bitmap itself.
             None => unsafe {
-                dst.gather_extend_from_opt_validity(Some(validity.bitmap()), idxs);
+                dst.gather_extend_from_opt_validity(validity.flat_bitmap(), idxs);
             },
         },
     }
@@ -668,7 +676,8 @@ pub(crate) fn opt_gather_extend_validity(
                     dst.extend_constant(1, bit && (*idx as usize) < length);
                 }
             },
-            None => dst.opt_gather_extend_from_opt_validity(Some(validity.bitmap()), idxs, length),
+            // The mask is not scalar, so it holds one bit per element.
+            None => dst.opt_gather_extend_from_opt_validity(validity.flat_bitmap(), idxs, length),
         },
     }
 }
@@ -823,7 +832,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(values.width(), 3);
-        assert_eq!(values.values().array_type(), PlArrayType::Boolean);
+        assert_eq!(
+            values.flat_values().unwrap().array_type(),
+            PlArrayType::Boolean
+        );
     }
 
     #[test]

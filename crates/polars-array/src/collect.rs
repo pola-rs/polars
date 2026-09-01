@@ -131,7 +131,7 @@ pub trait ArrayFromIter<T>: Sized {
 /// use polars_array::{PlBooleanArray, PlPrimitiveArray};
 ///
 /// let squares: PlPrimitiveArray<i32> = (1..=4).map(|x| x * x).collect_arr();
-/// assert_eq!(squares.values().as_slice(), [1, 4, 9, 16]);
+/// assert_eq!(squares.flat_values().unwrap().as_slice(), [1, 4, 9, 16]);
 ///
 /// let parity: PlBooleanArray = squares.values_iter().map(|x| x % 2 == 0).collect_arr();
 /// assert_eq!(parity.values_iter().collect::<Vec<_>>(), [false, true, false, true]);
@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn primitive_collects_values_and_optional_values() {
         let values: PlPrimitiveArray<i32> = [1, 2, 3].into_iter().collect_arr();
-        assert_eq!(values.values().as_slice(), [1, 2, 3]);
+        assert_eq!(values.flat_values().unwrap().as_slice(), [1, 2, 3]);
         assert_eq!(values.null_count(), 0);
 
         let options: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect_arr();
@@ -433,7 +433,7 @@ mod tests {
             .into_iter()
             .try_collect_arr()
             .unwrap();
-        assert_eq!(array.values().as_slice(), [1, 2]);
+        assert_eq!(array.flat_values().unwrap().as_slice(), [1, 2]);
 
         let array: PlPrimitiveArray<i32> = [Ok::<_, ()>(Some(1)), Ok(None)]
             .into_iter()
@@ -526,7 +526,7 @@ mod tests {
             .into_iter()
             .try_collect_arr_trusted()
             .unwrap();
-        assert_eq!(array.values().as_slice(), [1, 2]);
+        assert_eq!(array.flat_values().unwrap().as_slice(), [1, 2]);
 
         let failed: Result<PlBooleanArray, &str> = vec![Ok(true), Err("nope")]
             .into_iter()
@@ -556,7 +556,7 @@ mod tests {
         }
 
         let array: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect_arr();
-        assert_eq!(compacted(&array).values().as_slice(), [1, 3]);
+        assert_eq!(compacted(&array).flat_values().unwrap().as_slice(), [1, 3]);
 
         let array: PlBooleanArray = [Some(true), None].into_iter().collect_arr();
         assert_eq!(compacted(&array).len(), 1);

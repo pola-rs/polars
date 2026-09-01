@@ -615,7 +615,6 @@ mod tests {
 
         assert!(arr.validity_is_scalar());
         assert_eq!(arr.validity().unwrap().len(), 1_000_000_000);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
         assert_eq!(arr.null_count(), 1_000_000_000);
         assert!(arr.has_nulls());
         assert!(arr.is_null(999_999_999));
@@ -677,14 +676,15 @@ mod tests {
         assert_eq!(arr.len(), 2);
         assert_eq!(arr.field(0).len(), 2);
         assert_eq!(arr.field(1).len(), 2);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 2);
+        assert_eq!(arr.validity().unwrap().flat_bitmap().unwrap().len(), 2);
         assert_eq!(arr.null_count(), 1);
         assert_eq!(
             arr.field(0)
                 .as_any()
                 .downcast_ref::<PlPrimitiveArray<i32>>()
                 .unwrap()
-                .values()
+                .flat_values()
+                .unwrap()
                 .as_slice(),
             [2, 3],
         );
@@ -696,7 +696,7 @@ mod tests {
             .sliced(500, 2);
 
         assert_eq!(arr.len(), 2);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
+        assert!(arr.validity().unwrap().is_scalar());
         assert_eq!(arr.field(1).len(), 2);
         assert_eq!(arr.null_count(), 2);
     }
@@ -869,7 +869,6 @@ mod tests {
         let nulls = PlStructArray::new_full_null(flat_fields(), 3).new_from_index(0, 4);
         assert_eq!(nulls.null_count(), 4);
         assert!(nulls.validity_is_scalar());
-        assert_eq!(nulls.validity().unwrap().bitmap().len(), 1);
         assert_eq!(nulls.field(0).len(), 4);
 
         assert!(arr.new_from_index(0, 0).is_empty());

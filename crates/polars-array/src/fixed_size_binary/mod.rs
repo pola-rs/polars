@@ -62,7 +62,7 @@ pub use iterator::{PlFixedSizeBinaryIter, PlFixedSizeBinaryValuesIter};
 /// // A billion copies of one value cost that value: the bytes are the element they all share.
 /// let scalar = PlFixedSizeBinaryArray::new_scalar(b"ab", 1_000_000_000);
 /// assert_eq!(scalar.len(), 1_000_000_000);
-/// assert_eq!(scalar.values().len(), 2);
+/// assert_eq!(scalar.scalar_values(), Some(b"ab".as_slice()));
 /// assert!(scalar.is_scalar());
 /// assert_eq!(scalar.value(999_999_999), b"ab");
 /// ```
@@ -277,17 +277,37 @@ impl PlFixedSizeBinaryArray {
         self.width
     }
 
-    /// The backing values buffer.
+    /// The backing values buffer, if it holds the bytes of every element, laid end to end.
     ///
-    /// This is *not* guaranteed to hold [`Self::len`] `*` [`Self::width`] bytes: it is either flat
-    /// or scalar. Read an element with [`Self::value`] instead of indexing it directly, or call
-    /// [`Self::to_flat`] first.
-    #[inline(always)]
-    pub const fn values(&self) -> &Buffer<u8> {
-        &self.values
+    /// Element `i` is then the [`width`](Self::width) bytes at `i * width`, with no
+    /// [`broadcast_index`](crate::broadcast::broadcast_index) in the way. This is the `O(1)`
+    /// counterpart of [`Self::to_flat`]: it materializes nothing, and returns `None` rather than
+    /// repeating a scalar buffer. Reach for the bytes a scalar buffer shares with
+    /// [`Self::scalar_values`] instead — between them the two cover every array that has elements
+    /// at all, so a `None` from both is an empty array. The values of null elements are
+    /// undetermined (they can be any byte string of the width).
+    #[inline]
+    pub fn flat_values(&self) -> Option<&Buffer<u8>> {
+        self.values_are_flat().then_some(&self.values)
+    }
+
+    /// The bytes every element of this array reads, if the values hold a single element.
+    ///
+    /// This is the values half of [`Self::scalar_value`], which additionally asks that the
+    /// validity mask be scalar and reports the null the mask makes of these bytes. Returns `None`
+    /// for values that are flat over more than one element, and for an empty array, which has no
+    /// element to share a value. The value of a null element is undetermined (it can be any byte
+    /// string of the width).
+    #[inline]
+    pub fn scalar_values(&self) -> Option<&[u8]> {
+        self.values_are_scalar().then(|| self.values.as_slice())
     }
 
     /// Consumes this array into its internal components.
+    ///
+    /// The values are *not* guaranteed to hold [`Self::len`] `*` [`Self::width`] bytes: they are
+    /// either flat or scalar, which is why the width and the length come with them. See
+    /// [`crate::broadcast`] for how to read them.
     #[inline]
     pub fn into_inner(self) -> (Buffer<u8>, usize, usize, Option<Bitmap>) {
         (self.values, self.width, self.length, self.validity)
@@ -369,8 +389,12 @@ impl PlFixedSizeBinaryArray {
         (is_shared && self.length > 0).then(|| unsafe { self.get_unchecked(0) })
     }
 
-    /// The range of [`Self::values`] the element at `i` covers, which is always [`Self::width`]
-    /// bytes wide.
+    /// The range of the backing values buffer the element at `i` covers, which is always
+    /// [`Self::width`] bytes wide.
+    ///
+    /// This is an index into the buffer [`Self::flat_values`] hands out, or into the single
+    /// element [`Self::scalar_values`] does — for scalar values every element covers the same
+    /// range, which is all of them.
     ///
     /// # Panics
     /// Panics if `i >= self.len()`.
@@ -380,8 +404,8 @@ impl PlFixedSizeBinaryArray {
         unsafe { self.value_range_unchecked(i) }
     }
 
-    /// The range of [`Self::values`] the element at `i` covers, which is always [`Self::width`]
-    /// bytes wide.
+    /// The range of the backing values buffer the element at `i` covers, which is always
+    /// [`Self::width`] bytes wide.
     ///
     /// # Safety
     /// `i` must be smaller than `self.len()`.
@@ -721,7 +745,7 @@ impl PlFixedSizeBinaryArray {
     ///
     /// // Three copies of `ab`, over the bytes of that one value.
     /// let scalar = PlFixedSizeBinaryArray::new_scalar(b"ab", 3);
-    /// assert_eq!(scalar.values().len(), 2);
+    /// assert!(scalar.flat_values().is_none());
     ///
     /// // Its flat counterpart holds the three elements one after the other.
     /// let flat = scalar.to_flat();
@@ -950,7 +974,7 @@ mod tests {
         assert!(!arr.is_scalar());
         assert!(arr.values_are_flat());
         assert!(!arr.values_are_scalar());
-        assert_eq!(arr.values().len(), 6);
+        assert_eq!(arr.flat_values().unwrap().len(), 6);
 
         assert_eq!(arr.value_range(0), 0..2);
         assert_eq!(arr.value_range(1), 2..4);
@@ -963,12 +987,43 @@ mod tests {
     }
 
     #[test]
+    fn the_values_buffer_is_reached_through_its_representation() {
+        let arr = arr();
+
+        assert_eq!(arr.flat_values().map(Buffer::len), Some(6));
+        assert_eq!(arr.scalar_values(), None);
+
+        // A scalar array hands out no flat buffer; it is its one element that is reached instead.
+        let arr = PlFixedSizeBinaryArray::new_scalar(b"ab", 1_000_000_000);
+
+        assert_eq!(arr.flat_values(), None);
+        assert_eq!(arr.scalar_values(), Some(b"ab".as_slice()));
+
+        // The values are read whether or not the mask makes the elements null.
+        let arr =
+            PlFixedSizeBinaryArray::new_scalar(b"ab", 3).with_validity(Some(Bitmap::new_zeroed(3)));
+
+        assert_eq!(arr.scalar_values(), Some(b"ab".as_slice()));
+        assert_eq!(
+            arr.scalar_value(),
+            None,
+            "a flat mask leaves no shared element"
+        );
+
+        // An empty array holds no element for scalar values to stand for, so it is always flat.
+        let empty = PlFixedSizeBinaryArray::new_empty(2);
+
+        assert_eq!(empty.flat_values().map(Buffer::len), Some(0));
+        assert_eq!(empty.scalar_values(), None);
+    }
+
+    #[test]
     fn an_empty_array_holds_no_bytes() {
         let arr = PlFixedSizeBinaryArray::new_empty(2);
 
         assert!(arr.is_empty());
         assert_eq!(arr.width(), 2);
-        assert_eq!(arr.values().len(), 0);
+        assert_eq!(arr.flat_values().unwrap().len(), 0);
         assert!(arr.is_flat());
         assert!(!arr.is_scalar());
         assert_eq!(arr.scalar_value(), None);
@@ -987,8 +1042,7 @@ mod tests {
         assert!(!arr.values_are_flat());
         assert_eq!(arr.width(), 2);
         assert_eq!(arr.validity().unwrap().len(), 1_000_000);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
-        assert_eq!(arr.values().len(), 2);
+        assert_eq!(arr.scalar_values().unwrap().len(), 2);
         assert_eq!(arr.null_count(), 1_000_000);
         assert!(arr.has_nulls());
         assert!(arr.is_null(999_999));
@@ -1083,13 +1137,13 @@ mod tests {
         assert!(arr.is_flat());
 
         // There is nothing to leave the bytes outside the slice behind.
-        assert_eq!(arr.values().as_slice(), [3, 4, 5, 6]);
+        assert_eq!(arr.flat_values().unwrap().as_slice(), [3, 4, 5, 6]);
         assert_eq!(arr.value(1), [5, 6]);
 
         // Slicing away every element leaves no bytes behind either.
         let arr = arr.sliced(2, 0);
         assert!(arr.is_empty());
-        assert_eq!(arr.values().len(), 0);
+        assert_eq!(arr.flat_values().unwrap().len(), 0);
         assert_eq!(arr.width(), 2);
     }
 
@@ -1101,7 +1155,6 @@ mod tests {
 
         assert_eq!(arr.len(), 2);
         assert_eq!(arr.validity().unwrap().len(), 2);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
         assert!(arr.validity_is_scalar());
         assert_eq!(arr.null_count(), 2);
     }
@@ -1113,14 +1166,14 @@ mod tests {
         let sliced = arr.clone().sliced(500, 2);
         assert_eq!(sliced.len(), 2);
         assert!(sliced.is_scalar());
-        assert_eq!(sliced.values().len(), 2);
+        assert_eq!(sliced.scalar_values().unwrap().len(), 2);
         assert_eq!(sliced.value(1), b"ab");
 
         // An empty slice keeps no element to share the bytes, so they go with it.
         let empty = arr.sliced(0, 0);
         assert!(empty.is_empty());
         assert_eq!(empty.width(), 2);
-        assert_eq!(empty.values().len(), 0);
+        assert_eq!(empty.flat_values().unwrap().len(), 0);
     }
 
     #[test]
@@ -1161,7 +1214,7 @@ mod tests {
         assert_eq!(arr.width(), 2);
         assert!(arr.is_scalar());
         assert!(!arr.values_are_flat());
-        assert_eq!(arr.values().len(), 2);
+        assert_eq!(arr.scalar_values().unwrap().len(), 2);
         assert_eq!(arr.value_range(999_999_999), 0..2);
         assert_eq!(arr.value(999_999_999), b"ab");
         assert_eq!(arr.null_count(), 0);
@@ -1178,7 +1231,7 @@ mod tests {
         let none = PlFixedSizeBinaryArray::new_scalar(b"ab", 0);
         assert!(none.is_empty());
         assert_eq!(none.width(), 2);
-        assert_eq!(none.values().len(), 0);
+        assert_eq!(none.flat_values().unwrap().len(), 0);
 
         // A length times a width that overflows a `usize` is a length no flat array can have, and
         // the scalar representation is all that is left.
@@ -1196,16 +1249,15 @@ mod tests {
         assert_eq!(repeated.len(), 1_000_000_000);
         assert_eq!(repeated.width(), 2);
         assert!(repeated.is_scalar());
-        assert_eq!(repeated.values().len(), 2);
+        assert_eq!(repeated.scalar_values().unwrap().len(), 2);
         assert_eq!(repeated.null_count(), 0);
         assert_eq!(repeated.value(999_999_999), [3, 4]);
 
         // The element is sliced out of the values it was already in, rather than copied.
-        assert!(
-            repeated
-                .values()
-                .is_same_buffer(&arr.values().clone().sliced(2..4)),
-        );
+        assert!(std::ptr::eq(
+            repeated.scalar_values().unwrap().as_ptr(),
+            &arr.flat_values().unwrap()[2],
+        ));
 
         // A null element repeats as nulls, over a zeroed element of the width.
         let nulls = arr
@@ -1308,7 +1360,7 @@ mod tests {
 
         assert_eq!(arr.len(), 5);
         assert_eq!(arr.width(), 0);
-        assert_eq!(arr.values().len(), 0);
+        assert_eq!(arr.flat_values().unwrap().len(), 0);
         // Every representation of no bytes at all is the same one.
         assert!(arr.is_flat());
         assert!(arr.is_scalar());

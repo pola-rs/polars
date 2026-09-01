@@ -101,32 +101,29 @@ impl<B: PlArrayBuilder> PlListArrayBuilder<B> {
         length: usize,
         share: ShareStrategy,
     ) {
-        if other.offsets_are_scalar() {
-            if length == 0 {
-                return;
-            }
+        let Some(offsets) = other.flat_offsets() else {
+            // The offsets are not flat, so every element covers the same range — which is appended
+            // once per element. An empty array holds no range for the subslice to cover, but the
+            // subslice it admits covers no element either.
+            if let Some(range) = other.scalar_offsets() {
+                self.values.subslice_extend_repeated(
+                    other.values(),
+                    range.start,
+                    range.len(),
+                    length,
+                    share,
+                );
 
-            // Every element covers the same range, which is appended once per element; the array
-            // is not empty, so the first element is the one to read it off.
-            let range = other.value_range(0);
-            self.values.subslice_extend_repeated(
-                other.values(),
-                range.start,
-                range.len(),
-                length,
-                share,
-            );
-
-            let mut offset = self.last_offset();
-            self.offsets.reserve(length);
-            for _ in 0..length {
-                offset += range.len() as u64;
-                self.offsets.push(offset);
+                let mut offset = self.last_offset();
+                self.offsets.reserve(length);
+                for _ in 0..length {
+                    offset += range.len() as u64;
+                    self.offsets.push(offset);
+                }
             }
             return;
-        }
+        };
 
-        let offsets = other.offsets();
         let (first, last) = (offsets[start], offsets[start + length]);
         self.values.subslice_extend(
             other.values(),
@@ -223,10 +220,7 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlListArrayBuilder<B> {
         assert_subslice(other.len(), start, length);
         self.offsets.reserve(length * repeats);
 
-        if other.offsets_are_scalar() {
-            // Every element covers the same range, so which of them is repeated is immaterial.
-            self.extend_values(other, start, length * repeats, share);
-        } else {
+        if other.offsets_are_flat() {
             for i in start..start + length {
                 // SAFETY: `i` is in bounds of the array, whose offsets are flat.
                 let range = unsafe { other.value_range_unchecked(i) };
@@ -241,6 +235,9 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlListArrayBuilder<B> {
                     self.push_offset(range.len());
                 }
             }
+        } else {
+            // Every element covers the same range, so which of them is repeated is immaterial.
+            self.extend_values(other, start, length * repeats, share);
         }
 
         subslice_extend_each_repeated_validity(
@@ -260,10 +257,7 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlListArrayBuilder<B> {
     ) {
         self.offsets.reserve(idxs.len());
 
-        if other.offsets_are_scalar() {
-            // Every index reads the one range the array holds.
-            self.extend_values(other, 0, idxs.len(), share);
-        } else {
+        if other.offsets_are_flat() {
             // A run of consecutive indices is a subslice, which the child appends in one go.
             let mut run_start = 0;
             while run_start < idxs.len() {
@@ -278,6 +272,9 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlListArrayBuilder<B> {
                 self.extend_values(other, first, run_length, share);
                 run_start += run_length;
             }
+        } else {
+            // Every index reads the one range the array holds.
+            self.extend_values(other, 0, idxs.len(), share);
         }
 
         // SAFETY: the indices are in bounds of the array, and therefore of its mask.

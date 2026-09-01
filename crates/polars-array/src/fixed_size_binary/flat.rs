@@ -19,7 +19,8 @@ impl Flat<PlFixedSizeBinaryArray> {
     /// The backing values buffer, holding exactly [`len`](PlFixedSizeBinaryArray::len) `*`
     /// [`width`](PlFixedSizeBinaryArray::width) bytes.
     ///
-    /// Unlike [`PlFixedSizeBinaryArray::values`], this is guaranteed to hold the bytes of every
+    /// Unlike [`PlFixedSizeBinaryArray::flat_values`], this needs no [`Option`] to admit scalar
+    /// values: it is guaranteed to hold the bytes of every
     /// element, laid end to end: element `i` is the `width` bytes at `i * width`. The values of
     /// null elements are undetermined (they can be any byte string of the width).
     #[inline(always)]
@@ -189,7 +190,7 @@ mod tests {
 
         assert_eq!(flat, arr);
         assert!(
-            flat.values().is_same_buffer(arr.values()),
+            flat.values().is_same_buffer(arr.flat_values().unwrap()),
             "the values buffer must be shared, not materialized again",
         );
     }

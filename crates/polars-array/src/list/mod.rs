@@ -14,6 +14,7 @@ use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
 
 mod builder;
+mod flat;
 mod iterator;
 
 pub use builder::PlListArrayBuilder;
@@ -70,7 +71,8 @@ pub use iterator::{PlListIter, PlListValuesIter};
 ///         .as_any()
 ///         .downcast_ref::<PlPrimitiveArray<i32>>()
 ///         .unwrap()
-///         .values()
+///         .flat_values()
+///         .unwrap()
 ///         .as_slice(),
 ///     [3, 4, 5],
 /// );
@@ -81,8 +83,8 @@ pub use iterator::{PlListIter, PlListValuesIter};
 ///     1_000_000_000,
 /// );
 /// assert_eq!(scalar.len(), 1_000_000_000);
-/// assert_eq!(scalar.offsets().as_slice(), [0, 2]);
-/// assert!(scalar.is_scalar());
+/// assert_eq!(scalar.scalar_offsets(), Some(0..2));
+/// assert!(scalar.flat_offsets().is_none());
 /// assert_eq!(scalar.value_range(999_999_999), 0..2);
 /// ```
 #[derive(Clone)]
@@ -288,18 +290,43 @@ impl PlListArray {
         &*self.values
     }
 
-    /// The backing offsets buffer, which holds offsets into [`Self::values`].
+    /// The backing offsets buffer, if it holds the range of every element, laid end to end.
     ///
-    /// This is *not* guaranteed to hold [`Self::len`] `+ 1` offsets: it is either flat or scalar.
-    /// Read the range of an element with [`Self::value_range`], which broadcasts, rather than
-    /// indexing this buffer directly. The offsets are not normalized either: the first one is
-    /// whatever slicing left it, not necessarily zero.
-    #[inline(always)]
-    pub const fn offsets(&self) -> &Buffer<u64> {
-        &self.offsets
+    /// Element `i` then covers `offsets[i]..offsets[i + 1]` of [`Self::values`], with no
+    /// [`broadcast_index`] in the way, and the buffer holds [`Self::len`] `+ 1` offsets — the
+    /// start of every element plus the end of the last. This is the `O(1)` counterpart of
+    /// [`Self::to_flat`]: it materializes nothing, and returns `None` rather than writing out
+    /// scalar offsets. Reach for the range scalar offsets share with
+    /// [`Self::scalar_offsets`] instead — between them the two cover every array that has elements
+    /// at all, so a `None` from both is an empty array.
+    ///
+    /// The offsets are not normalized: the first one is whatever slicing left it, not necessarily
+    /// zero.
+    #[inline]
+    pub fn flat_offsets(&self) -> Option<&Buffer<u64>> {
+        self.offsets_are_flat().then_some(&self.offsets)
+    }
+
+    /// The range of [`Self::values`] every element of this array covers, if the offsets hold a
+    /// single range.
+    ///
+    /// This is the offsets half of [`Self::scalar_value`], which additionally asks that the
+    /// validity mask be scalar and reports the null the mask makes of this list. Returns `None`
+    /// for offsets that are flat over more than one element, and for an empty array, which has no
+    /// element to share a range. The range of a null element is undetermined (it can be any valid
+    /// range).
+    #[inline]
+    pub fn scalar_offsets(&self) -> Option<Range<usize>> {
+        // SAFETY: the array is not empty, so element 0 is in bounds.
+        (self.offsets_are_scalar() && self.length > 0)
+            .then(|| unsafe { self.value_range_unchecked(0) })
     }
 
     /// Consumes this array into its internal components.
+    ///
+    /// The offsets are *not* guaranteed to hold [`Self::len`] `+ 1` slots: they are either flat or
+    /// scalar, which is why the length comes with them. See [`crate::broadcast`] for how to read
+    /// them.
     #[inline]
     pub fn into_inner(self) -> (Box<dyn PlArray>, Buffer<u64>, usize, Option<Bitmap>) {
         (self.values, self.offsets, self.length, self.validity)
@@ -757,7 +784,7 @@ impl PlListArray {
     ///     Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
     ///     3,
     /// );
-    /// assert_eq!(scalar.offsets().as_slice(), [0, 2]);
+    /// assert_eq!(scalar.scalar_offsets(), Some(0..2));
     ///
     /// // Its flat counterpart holds the three lists one after the other.
     /// let flat = scalar.to_flat();
@@ -998,7 +1025,7 @@ mod tests {
         assert!(!arr.has_nulls());
         assert!(arr.is_valid(1));
         assert!(!arr.is_null(1));
-        assert_eq!(arr.offsets().as_slice(), [0, 2, 2, 5]);
+        assert_eq!(arr.flat_offsets().unwrap().as_slice(), [0, 2, 2, 5]);
         assert_eq!(arr.values().len(), 5);
 
         assert_eq!(arr.value_range(0), 0..2);
@@ -1012,6 +1039,45 @@ mod tests {
         assert!(elements(&*arr.value(1)).is_empty());
         assert_eq!(elements(&*arr.value(2)), [Some(3), Some(4), Some(5)]);
         assert_eq!(elements(&*arr.get(0).unwrap()), [Some(1), Some(2)]);
+    }
+
+    #[test]
+    fn the_offsets_are_reached_through_their_representation() {
+        let arr = arr();
+
+        assert_eq!(
+            arr.flat_offsets().map(Buffer::as_slice),
+            Some([0, 2, 2, 5].as_slice())
+        );
+        assert_eq!(arr.scalar_offsets(), None);
+
+        // Scalar offsets hand out no flat buffer; it is the one range they hold that is reached.
+        let element = Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2]));
+        let arr = PlListArray::new_scalar(element, 1_000_000_000);
+
+        assert_eq!(arr.flat_offsets(), None);
+        assert_eq!(arr.scalar_offsets(), Some(0..2));
+
+        // The offsets are read whether or not the mask makes the elements null.
+        let arr = arr.sliced(0, 3).with_validity(Some(Bitmap::new_zeroed(3)));
+
+        assert_eq!(arr.scalar_offsets(), Some(0..2));
+        assert!(
+            arr.scalar_value().is_none(),
+            "a flat mask leaves no shared element"
+        );
+
+        // An empty array has no range to share, and is flat unless it is backed by a stray one.
+        assert_eq!(
+            PlListArray::new_empty(values())
+                .flat_offsets()
+                .map(Buffer::as_slice),
+            Some([0].as_slice()),
+        );
+
+        let empty = PlListArray::new_scalar(values(), 0);
+        assert_eq!(empty.flat_offsets(), None);
+        assert_eq!(empty.scalar_offsets(), None);
     }
 
     #[test]
@@ -1034,8 +1100,7 @@ mod tests {
         assert!(arr.validity_is_scalar());
         assert!(arr.offsets_are_scalar());
         assert_eq!(arr.validity().unwrap().len(), 1_000_000);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
-        assert_eq!(arr.offsets().as_slice(), [0, 0]);
+        assert_eq!(arr.scalar_offsets(), Some(0..0));
         assert_eq!(arr.null_count(), 1_000_000);
         assert!(arr.has_nulls());
         assert!(arr.is_null(999_999));
@@ -1126,8 +1191,8 @@ mod tests {
         .sliced(1, 2);
 
         assert_eq!(arr.len(), 2);
-        assert_eq!(arr.offsets().as_slice(), [2, 2, 5]);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 2);
+        assert_eq!(arr.flat_offsets().unwrap().as_slice(), [2, 2, 5]);
+        assert_eq!(arr.validity().unwrap().flat_bitmap().unwrap().len(), 2);
         assert_eq!(arr.null_count(), 1);
 
         // The values array is left alone; the offsets are what point into it.
@@ -1137,7 +1202,7 @@ mod tests {
         // Slicing away every element leaves the end of the last list behind.
         let arr = arr.sliced(2, 0);
         assert!(arr.is_empty());
-        assert_eq!(arr.offsets().as_slice(), [5]);
+        assert_eq!(arr.flat_offsets().unwrap().as_slice(), [5]);
     }
 
     #[test]
@@ -1148,7 +1213,6 @@ mod tests {
 
         assert_eq!(arr.len(), 2);
         assert_eq!(arr.validity().unwrap().len(), 2);
-        assert_eq!(arr.validity().unwrap().bitmap().len(), 1);
         assert!(arr.validity_is_scalar());
         assert_eq!(arr.null_count(), 2);
     }
@@ -1255,7 +1319,7 @@ mod tests {
 
         assert!(arr.is_empty());
         assert_eq!(arr.null_count(), 0);
-        assert_eq!(arr.offsets().as_slice(), [0]);
+        assert_eq!(arr.flat_offsets().unwrap().as_slice(), [0]);
         assert_eq!(arr.iter().next(), None);
         assert_eq!(
             arr,
@@ -1404,7 +1468,7 @@ mod tests {
         let repeated = arr.new_from_index(2, 3);
         assert_eq!(repeated.len(), 3);
         assert!(repeated.is_scalar());
-        assert_eq!(repeated.offsets().as_slice(), [2, 5]);
+        assert_eq!(repeated.scalar_offsets(), Some(2..5));
         assert_eq!(repeated.values().len(), 5);
         assert_eq!(repeated.null_count(), 0);
         for i in 0..repeated.len() {
@@ -1413,7 +1477,7 @@ mod tests {
 
         // An empty element repeats as the empty range it covers.
         let repeated = arr.new_from_index(1, 4);
-        assert_eq!(repeated.offsets().as_slice(), [2, 2]);
+        assert_eq!(repeated.scalar_offsets(), Some(2..2));
         assert_eq!(repeated.values().len(), 5);
         assert!(elements(&*repeated.value(3)).is_empty());
 
@@ -1424,7 +1488,7 @@ mod tests {
             .new_from_index(0, 4);
         assert_eq!(nulls.null_count(), 4);
         assert!(nulls.is_scalar());
-        assert_eq!(nulls.offsets().as_slice(), [0, 0]);
+        assert_eq!(nulls.scalar_offsets(), Some(0..0));
         assert_eq!(nulls.get(3), None);
 
         assert!(arr.new_from_index(0, 0).is_empty());
@@ -1454,7 +1518,7 @@ mod tests {
         assert_eq!(repeated.len(), 1_000_000_000);
         assert!(repeated.is_scalar());
         assert!(!repeated.is_flat());
-        assert_eq!(repeated.offsets().as_slice(), [0, 1_000]);
+        assert_eq!(repeated.scalar_offsets(), Some(0..1_000));
         assert_eq!(repeated.values().len(), 1_000);
         assert_eq!(repeated.null_count(), 0);
         assert_eq!(repeated.scalar_value(), Some(Some(arr.value(0))));
@@ -1469,7 +1533,7 @@ mod tests {
         let sliced = repeated.clone().sliced(500_000_000, 2);
         assert_eq!(sliced.len(), 2);
         assert!(sliced.offsets_are_scalar());
-        assert_eq!(sliced.offsets().as_slice(), [0, 1_000]);
+        assert_eq!(sliced.scalar_offsets(), Some(0..1_000));
         assert_eq!(sliced, arr.new_from_index(0, 2));
 
         // The repetition of a repeated element is that same element again.
@@ -1485,7 +1549,7 @@ mod tests {
 
         assert_eq!(arr.len(), 1_000_000_000);
         assert!(arr.is_scalar());
-        assert_eq!(arr.offsets().as_slice(), [0, 1_000_000_000]);
+        assert_eq!(arr.scalar_offsets(), Some(0..1_000_000_000));
         assert_eq!(arr.value_length(999_999_999), 1_000_000_000);
         assert_eq!(arr.null_count(), 0);
 
@@ -1493,7 +1557,7 @@ mod tests {
         let one = PlListArray::new_scalar(values(), 1);
         assert!(one.is_scalar());
         assert!(one.is_flat());
-        assert_eq!(one.offsets().as_slice(), [0, 5]);
+        assert_eq!(one.flat_offsets().unwrap().as_slice(), [0, 5]);
         assert_eq!(
             one,
             PlListArray::from_offsets(values(), Buffer::from(vec![0u64, 5])),
@@ -1583,7 +1647,7 @@ mod tests {
         let repeated = arr.new_from_index(0, 2);
         assert_eq!(repeated.len(), 2);
         assert_eq!(repeated.values().len(), 1_000_000_000);
-        assert_eq!(repeated.offsets().as_slice(), [0, 1_000_000_000]);
+        assert_eq!(repeated.scalar_offsets(), Some(0..1_000_000_000));
         assert_eq!(repeated.value_length(1), 1_000_000_000);
         assert!(
             repeated
@@ -1632,7 +1696,7 @@ mod tests {
 
         assert_eq!(flat, arr);
         assert!(
-            flat.offsets().is_same_buffer(arr.offsets()),
+            flat.offsets().is_same_buffer(arr.flat_offsets().unwrap()),
             "the offsets must be shared, not written out again",
         );
 
@@ -1645,7 +1709,7 @@ mod tests {
         assert_eq!(flat.validity().unwrap().len(), 3);
         assert_eq!(flat.null_count(), 3);
         assert!(
-            flat.offsets().is_same_buffer(arr.offsets()),
+            flat.offsets().is_same_buffer(arr.flat_offsets().unwrap()),
             "the offsets were flat already",
         );
         assert_eq!(flat, scalar_mask);
@@ -1731,7 +1795,7 @@ mod tests {
 
         assert_eq!(*flat, arr);
         assert!(
-            flat.offsets().is_same_buffer(arr.offsets()),
+            flat.offsets().is_same_buffer(arr.flat_offsets().unwrap()),
             "the offsets must be borrowed, not written out again",
         );
 

@@ -34,7 +34,8 @@ use crate::builder::{
 ///     2,
 /// );
 ///
-/// let mut builder = PlFixedSizeListArrayBuilder::new(builder_like(array.values()), 2);
+/// let values = array.flat_values().unwrap();
+/// let mut builder = PlFixedSizeListArrayBuilder::new(builder_like(values), 2);
 /// builder.extend_nulls(1);
 /// builder.extend(&array, ShareStrategy::Always);
 ///
@@ -43,7 +44,7 @@ use crate::builder::{
 /// assert_eq!(built.width(), 2);
 /// assert_eq!(built.null_count(), 1);
 /// // Every element covers a width of values, including the null one.
-/// assert_eq!(built.values().len(), 6);
+/// assert_eq!(built.flat_values().unwrap().len(), 6);
 /// ```
 pub struct PlFixedSizeListArrayBuilder<B: PlArrayBuilder = Box<dyn PlArrayBuilder>> {
     values: B,
@@ -101,19 +102,16 @@ impl<B: PlArrayBuilder> PlFixedSizeListArrayBuilder<B> {
         length: usize,
         share: ShareStrategy,
     ) {
-        if other.values_are_scalar() {
+        if let Some(values) = other.flat_values() {
+            self.values
+                .subslice_extend(values, start * self.width, length * self.width, share);
+        } else if let Some(element) = other.scalar_values() {
             // Every element covers the one list the values hold, which is appended once per
             // element.
             self.values
-                .subslice_extend_repeated(other.values(), 0, self.width, length, share);
-        } else {
-            self.values.subslice_extend(
-                other.values(),
-                start * self.width,
-                length * self.width,
-                share,
-            );
+                .subslice_extend_repeated(element, 0, self.width, length, share);
         }
+        // An empty array is neither, and the subslice it admits covers no element to append.
     }
 }
 
@@ -191,19 +189,19 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
         assert_subslice(other.len(), start, length);
         self.values.reserve(length * repeats * self.width);
 
-        if other.values_are_scalar() {
-            // Every element covers the same list, so which of them is repeated is immaterial.
-            self.extend_values(other, start, length * repeats, share);
-        } else {
+        if let Some(values) = other.flat_values() {
             for i in start..start + length {
                 self.values.subslice_extend_repeated(
-                    other.values(),
+                    values,
                     i * self.width,
                     self.width,
                     repeats,
                     share,
                 );
             }
+        } else {
+            // Every element covers the same list, so which of them is repeated is immaterial.
+            self.extend_values(other, start, length * repeats, share);
         }
 
         subslice_extend_each_repeated_validity(
@@ -225,10 +223,7 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
         self.assert_width(other);
         self.values.reserve(idxs.len() * self.width);
 
-        if other.values_are_scalar() {
-            // Every index reads the one list the values hold.
-            self.extend_values(other, 0, idxs.len(), share);
-        } else {
+        if other.values_are_flat() {
             // A run of consecutive indices is a subslice, which the child appends in one go.
             let mut run_start = 0;
             while run_start < idxs.len() {
@@ -243,6 +238,9 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
                 self.extend_values(other, first, run_length, share);
                 run_start += run_length;
             }
+        } else {
+            // Every index reads the one list the values hold.
+            self.extend_values(other, 0, idxs.len(), share);
         }
 
         // SAFETY: the indices are in bounds of the array, and therefore of its mask.
@@ -259,13 +257,19 @@ impl<B: PlArrayBuilder> StaticArrayBuilder for PlFixedSizeListArrayBuilder<B> {
         self.assert_width(other);
         self.values.reserve(idxs.len() * self.width);
 
+        // The values are either flat or scalar, and the ranges below index them either way.
+        let values = other
+            .flat_values()
+            .or_else(|| other.scalar_values())
+            .expect("the values of a fixed size list array are either flat or scalar");
+
         for idx in idxs {
             let idx = *idx as usize;
             if idx < other.len() {
                 // SAFETY: the index was just checked against the length of the array.
                 let range = unsafe { other.value_range_unchecked(idx) };
                 self.values
-                    .subslice_extend(other.values(), range.start, self.width, share);
+                    .subslice_extend(values, range.start, self.width, share);
             } else {
                 // An out-of-bounds index stands for a null, which covers a width of nulls.
                 self.values.extend_nulls(self.width);
@@ -312,7 +316,11 @@ mod tests {
     }
 
     fn builder() -> PlFixedSizeListArrayBuilder {
-        PlFixedSizeListArrayBuilder::with_capacity(builder_like(array().values()), 2, 8)
+        PlFixedSizeListArrayBuilder::with_capacity(
+            builder_like(array().flat_values().unwrap()),
+            2,
+            8,
+        )
     }
 
     #[test]
@@ -342,7 +350,7 @@ mod tests {
         );
 
         // Every element covers the width, whether or not it is null.
-        assert_eq!(built.values().len(), 18);
+        assert_eq!(built.flat_values().unwrap().len(), 18);
     }
 
     #[test]
@@ -373,7 +381,8 @@ mod tests {
             1_000_000_000,
         );
 
-        let mut builder = PlFixedSizeListArrayBuilder::new(builder_like(array.values()), 2);
+        let mut builder =
+            PlFixedSizeListArrayBuilder::new(builder_like(array.scalar_values().unwrap()), 2);
         builder.subslice_extend(&array, 999_999_998, 2, ShareStrategy::Always);
         builder.subslice_extend_each_repeated(&array, 0, 1, 2, ShareStrategy::Always);
         unsafe { builder.gather_extend(&array, &[999_999_999], ShareStrategy::Always) };
@@ -402,13 +411,14 @@ mod tests {
             1_000_000_000,
         );
 
-        let mut builder = PlFixedSizeListArrayBuilder::new(builder_like(array.values()), 2);
+        let mut builder =
+            PlFixedSizeListArrayBuilder::new(builder_like(array.scalar_values().unwrap()), 2);
         builder.subslice_extend(&array, 0, 3, ShareStrategy::Always);
 
         let built = builder.freeze();
         assert_eq!(built.len(), 3);
         assert_eq!(built.null_count(), 3);
-        assert_eq!(built.values().len(), 6);
+        assert_eq!(built.flat_values().unwrap().len(), 6);
     }
 
     #[test]
@@ -417,7 +427,8 @@ mod tests {
         let array =
             PlFixedSizeListArray::new(Box::new(PlPrimitiveArray::<i32>::new_empty()), 0, 3, None);
 
-        let mut builder = PlFixedSizeListArrayBuilder::new(builder_like(array.values()), 0);
+        let mut builder =
+            PlFixedSizeListArrayBuilder::new(builder_like(array.scalar_values().unwrap()), 0);
         builder.extend_nulls(2);
         builder.extend(&array, ShareStrategy::Always);
 
@@ -425,7 +436,7 @@ mod tests {
         assert_eq!(built.len(), 5);
         assert_eq!(built.width(), 0);
         assert_eq!(built.null_count(), 2);
-        assert!(built.values().is_empty());
+        assert!(built.flat_values().unwrap().is_empty());
     }
 
     #[test]

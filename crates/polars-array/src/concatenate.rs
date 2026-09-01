@@ -412,7 +412,7 @@ fn concatenate_validities_with<A: PlArray + ?Sized, S>(
 /// let concatenated = concatenate_primitive(&[&lhs, &rhs]);
 ///
 /// assert_eq!(concatenated.len(), 2_000_000_000);
-/// assert_eq!(concatenated.values().len(), 1);
+/// assert_eq!(concatenated.scalar_values(), Some(7));
 /// assert!(concatenated.is_scalar());
 /// ```
 pub fn concatenate_primitive<T: NativeType>(
@@ -448,10 +448,10 @@ fn concatenate_primitive_impl<T: NativeType, S>(
 
     let mut values = Vec::with_capacity(length);
     for array in iter.filter(|array| !array.is_empty()) {
-        if array.values_are_scalar() {
-            values.extend(std::iter::repeat_n(array.value(0), array.len()));
-        } else {
-            values.extend_from_slice(array.values().as_slice());
+        if let Some(array_values) = array.flat_values() {
+            values.extend_from_slice(array_values.as_slice());
+        } else if let Some(value) = array.scalar_values() {
+            values.extend(std::iter::repeat_n(value, array.len()));
         }
     }
 
@@ -495,11 +495,10 @@ fn concatenate_boolean_impl<S>(
 
     let mut values = BitmapBuilder::with_capacity(length);
     for array in iter.filter(|array| !array.is_empty()) {
-        let array_values = array.values();
-        if array_values.is_scalar() {
-            values.extend_constant(array.len(), array_values.get(0));
-        } else {
-            values.extend_from_bitmap(array_values.bitmap());
+        if let Some(array_values) = array.flat_values() {
+            values.extend_from_bitmap(array_values);
+        } else if let Some(value) = array.scalar_values() {
+            values.extend_constant(array.len(), value);
         }
     }
 
@@ -584,10 +583,10 @@ fn concatenate_binview_impl<S>(
             view
         };
 
-        if array.views_are_scalar() {
-            views.extend(std::iter::repeat_n(rebase(array.views()[0]), array.len()));
-        } else {
-            views.extend(array.views().iter().copied().map(rebase));
+        if let Some(array_views) = array.flat_views() {
+            views.extend(array_views.iter().copied().map(rebase));
+        } else if let Some(view) = array.scalar_views() {
+            views.extend(std::iter::repeat_n(rebase(view), array.len()));
         }
     }
 
@@ -634,7 +633,7 @@ fn concatenate_binview_impl<S>(
 /// let concatenated = concatenate_fixed_size_binary(&[&arr, &arr]).unwrap();
 ///
 /// assert_eq!(concatenated.len(), 2_000_000_000);
-/// assert_eq!(concatenated.values().len(), 2);
+/// assert_eq!(concatenated.scalar_values(), Some(b"ab".as_slice()));
 /// assert!(concatenated.is_scalar());
 /// ```
 pub fn concatenate_fixed_size_binary(
@@ -697,12 +696,11 @@ fn concatenate_fixed_size_binary_impl<S>(
         .expect("the values of the concatenation overflow a `usize`");
     let mut values: Vec<u8> = Vec::with_capacity(flat_len);
     for array in iter.distinct().filter(|array| !array.is_empty()) {
-        if array.values_are_flat() {
-            values.extend_from_slice(array.values().as_slice());
-        } else {
+        if let Some(array_values) = array.flat_values() {
+            values.extend_from_slice(array_values.as_slice());
+        } else if let Some(element) = array.scalar_values() {
             // Scalar values are the one element every element covers, which the result writes out
             // once per element it stands for.
-            let element = array.values().as_slice();
             for _ in 0..array.len() {
                 values.extend_from_slice(element);
             }
@@ -801,12 +799,12 @@ fn concatenate_fixed_size_list_impl<S>(
     // element it stands for.
     let mut values = Vec::with_capacity(iter.len());
     for array in iter.clone() {
-        if array.values_are_flat() {
-            values.push(array.values().to_boxed());
-        } else {
+        if let Some(array_values) = array.flat_values() {
+            values.push(array_values.to_boxed());
+        } else if let Some(element) = array.scalar_values() {
             // Concatenating the element with copies of itself is what repeats it, and that keeps
             // the values scalar when the element is itself a single repeated value.
-            values.push(concatenate_repeated(array.values(), array.len())?);
+            values.push(concatenate_repeated(element, array.len())?);
         }
     }
 
@@ -946,28 +944,12 @@ fn concatenate_list_impl<S>(
 
     let mut end = 0;
     for array in iter.clone() {
-        let array_offsets = array.offsets();
-        let first = array_offsets[0];
-
         if array.is_empty() {
             // No element of the array is reachable, but its values are still what the type of its
             // lists is taken from, which every array has to agree on.
-            values.push(array.values().sliced(first as usize, 0));
-        } else if array.offsets_are_scalar() {
-            // Every element of the array covers the same range, which the result writes out once
-            // per element: concatenating the element with copies of itself is what repeats it, and
-            // that keeps the values scalar when the element is itself a single repeated value.
-            let last = array_offsets[1];
-            let element = array
-                .values()
-                .sliced(first as usize, (last - first) as usize);
-            values.push(concatenate_repeated(&*element, array.len())?);
-
-            let value_length = last - first;
-            offsets.extend((1..=array.len() as u64).map(|i| end + i * value_length));
-            end += value_length * array.len() as u64;
-        } else {
-            let last = array_offsets[array.len()];
+            values.push(array.values().sliced(0, 0));
+        } else if let Some(array_offsets) = array.flat_offsets() {
+            let (first, last) = (array_offsets[0], array_offsets[array.len()]);
             values.push(
                 array
                     .values()
@@ -979,6 +961,16 @@ fn concatenate_list_impl<S>(
                     .map(|offset| end + (offset - first)),
             );
             end += last - first;
+        } else if let Some(range) = array.scalar_offsets() {
+            // Every element of the array covers the same range, which the result writes out once
+            // per element: concatenating the element with copies of itself is what repeats it, and
+            // that keeps the values scalar when the element is itself a single repeated value.
+            let element = array.values().sliced(range.start, range.len());
+            values.push(concatenate_repeated(&*element, array.len())?);
+
+            let value_length = range.len() as u64;
+            offsets.extend((1..=array.len() as u64).map(|i| end + i * value_length));
+            end += value_length * array.len() as u64;
         }
     }
 
@@ -1166,7 +1158,7 @@ mod tests {
         let concatenated = concatenate_primitive(&[&empty, &scalar, &empty]);
 
         assert_eq!(concatenated.len(), 1_000_000_000);
-        assert_eq!(concatenated.values().len(), 1);
+        assert!(concatenated.flat_values().is_none());
     }
 
     #[test]
@@ -1186,7 +1178,10 @@ mod tests {
         let concatenated = concatenate_primitive(&[&sixes, &sevens]);
 
         assert!(concatenated.is_flat());
-        assert_eq!(concatenated.values().as_slice(), [6, 6, 6, 7, 7]);
+        assert_eq!(
+            concatenated.flat_values().unwrap().as_slice(),
+            [6, 6, 6, 7, 7]
+        );
     }
 
     #[test]
@@ -1199,7 +1194,7 @@ mod tests {
         assert_eq!(concatenated.null_count(), 1_000_000_002);
         assert!(concatenated.validity().unwrap().is_scalar());
         // The values of null elements are undetermined, so none of them is written out.
-        assert_eq!(concatenated.values().len(), 1);
+        assert!(concatenated.flat_values().is_none());
     }
 
     #[test]
@@ -1361,7 +1356,10 @@ mod tests {
         let concatenated = concatenate_list(&[&lhs, &rhs]).unwrap();
 
         assert_eq!(concatenated.len(), 5);
-        assert_eq!(concatenated.offsets().as_slice(), [0, 2, 2, 5, 6, 6]);
+        assert_eq!(
+            concatenated.flat_offsets().unwrap().as_slice(),
+            [0, 2, 2, 5, 6, 6]
+        );
         assert_eq!(concatenated.null_count(), 1);
         assert!(concatenated.is_null(4));
         assert_eq!(elements(&*concatenated.value(3)), [Some(7)]);
@@ -1383,7 +1381,10 @@ mod tests {
         let concatenated = concatenate_list(&[&arr, &arr]).unwrap();
 
         assert_eq!(concatenated.len(), 4);
-        assert_eq!(concatenated.offsets().as_slice(), [0, 3, 3, 6, 6]);
+        assert_eq!(
+            concatenated.flat_offsets().unwrap().as_slice(),
+            [0, 3, 3, 6, 6]
+        );
         assert_eq!(concatenated.values().len(), 6);
         assert_eq!(
             elements(&*concatenated.value(2)),
@@ -1407,7 +1408,7 @@ mod tests {
 
         assert_eq!(concatenated.len(), 1_000_000_001);
         assert!(concatenated.is_scalar());
-        assert_eq!(concatenated.offsets().as_slice(), [0, 3]);
+        assert_eq!(concatenated.scalar_offsets(), Some(0..3));
         assert_eq!(concatenated.values().len(), 3);
         assert_eq!(
             elements(&*concatenated.value(1_000_000_000)),
@@ -1422,7 +1423,10 @@ mod tests {
         let concatenated = concatenate_list(&[&arr.new_from_index(0, 2), &other]).unwrap();
 
         assert!(!concatenated.is_scalar());
-        assert_eq!(concatenated.offsets().as_slice(), [0, 3, 6, 7]);
+        assert_eq!(
+            concatenated.flat_offsets().unwrap().as_slice(),
+            [0, 3, 6, 7]
+        );
         assert_eq!(
             elements(concatenated.values()),
             [
@@ -1448,8 +1452,8 @@ mod tests {
         assert_eq!(concatenated.len(), 2_000_000_000);
         assert_eq!(concatenated.null_count(), 2_000_000_000);
         assert!(concatenated.is_scalar());
-        assert_eq!(concatenated.offsets().as_slice(), [0, 0]);
-        assert_eq!(concatenated.validity().unwrap().bitmap().len(), 1);
+        assert_eq!(concatenated.scalar_offsets(), Some(0..0));
+        assert!(concatenated.validity().unwrap().is_scalar());
     }
 
     #[test]
@@ -1470,7 +1474,7 @@ mod tests {
 
         assert_eq!(concatenated.len(), 1_001);
         assert!(!concatenated.is_scalar());
-        assert_eq!(concatenated.offsets().len(), 1_002);
+        assert_eq!(concatenated.flat_offsets().unwrap().len(), 1_002);
         assert_eq!(
             concatenated.value_range(999),
             999_000_000_000..1_000_000_000_000
@@ -1526,7 +1530,7 @@ mod tests {
         assert!(concatenated.is_flat());
         assert_eq!(elements(&*concatenated.value(2)), [Some(7), Some(8)]);
         assert_eq!(
-            elements(concatenated.values()),
+            elements(concatenated.flat_values().unwrap()),
             [
                 Some(1),
                 Some(2),
@@ -1555,7 +1559,7 @@ mod tests {
         assert_eq!(concatenated.len(), 1_000_000_001);
         assert!(concatenated.is_scalar());
         assert_eq!(concatenated.width(), 3);
-        assert_eq!(concatenated.values().len(), 3);
+        assert_eq!(concatenated.scalar_values().unwrap().len(), 3);
         assert_eq!(
             elements(&*concatenated.value(1_000_000_000)),
             [Some(3), Some(4), Some(5)],
@@ -1573,7 +1577,7 @@ mod tests {
         assert!(!concatenated.is_scalar());
         assert!(concatenated.values_are_flat());
         assert_eq!(
-            elements(concatenated.values()),
+            elements(concatenated.flat_values().unwrap()),
             [
                 Some(3),
                 Some(4),
@@ -1600,8 +1604,8 @@ mod tests {
         assert_eq!(concatenated.null_count(), 2_000_000_000);
         assert!(concatenated.is_scalar());
         assert_eq!(concatenated.width(), 2);
-        assert_eq!(concatenated.values().len(), 2);
-        assert_eq!(concatenated.validity().unwrap().bitmap().len(), 1);
+        assert_eq!(concatenated.scalar_values().unwrap().len(), 2);
+        assert!(concatenated.validity().unwrap().is_scalar());
     }
 
     #[test]
@@ -1623,7 +1627,7 @@ mod tests {
         assert_eq!(concatenated.len(), 1_001);
         assert!(!concatenated.is_scalar());
         assert!(concatenated.values_are_flat());
-        assert_eq!(concatenated.values().len(), 4_004);
+        assert_eq!(concatenated.flat_values().unwrap().len(), 4_004);
         assert_eq!(elements(&*concatenated.value(999)), [Some(7); 4]);
         assert_eq!(elements(&*concatenated.value(1_000)), [Some(9); 4]);
     }
@@ -1644,7 +1648,7 @@ mod tests {
             .unwrap();
         assert!(repeated.is_scalar());
         assert_eq!(repeated.width(), 2);
-        assert_eq!(repeated.values().len(), 2);
+        assert_eq!(repeated.scalar_values().unwrap().len(), 2);
     }
 
     #[test]
@@ -1658,7 +1662,10 @@ mod tests {
         assert_eq!(concatenated.width(), 2);
         assert_eq!(concatenated.null_count(), 1);
         assert!(concatenated.is_flat());
-        assert_eq!(concatenated.values().as_slice(), [1, 2, 3, 4, 5, 6]);
+        assert_eq!(
+            concatenated.flat_values().unwrap().as_slice(),
+            [1, 2, 3, 4, 5, 6]
+        );
         assert_eq!(
             concatenated.iter().collect::<Vec<_>>(),
             [Some([1, 2].as_slice()), Some([3, 4].as_slice()), None,]
@@ -1675,7 +1682,7 @@ mod tests {
         assert_eq!(concatenated.len(), 2_000_000_001);
         assert!(concatenated.is_scalar());
         assert_eq!(concatenated.width(), 2);
-        assert_eq!(concatenated.values().len(), 2);
+        assert_eq!(concatenated.scalar_values().unwrap().len(), 2);
         assert_eq!(concatenated.value(2_000_000_000), b"ab");
 
         // Elements that do not agree are written out one per element instead.
@@ -1686,7 +1693,7 @@ mod tests {
         assert_eq!(concatenated.len(), 3);
         assert!(!concatenated.is_scalar());
         assert!(concatenated.values_are_flat());
-        assert_eq!(concatenated.values().as_slice(), b"ababcd");
+        assert_eq!(concatenated.flat_values().unwrap().as_slice(), b"ababcd");
     }
 
     #[test]
@@ -1698,8 +1705,8 @@ mod tests {
         assert_eq!(concatenated.null_count(), 2_000_000_000);
         assert!(concatenated.is_scalar());
         assert_eq!(concatenated.width(), 2);
-        assert_eq!(concatenated.values().len(), 2);
-        assert_eq!(concatenated.validity().unwrap().bitmap().len(), 1);
+        assert_eq!(concatenated.scalar_values().unwrap().len(), 2);
+        assert!(concatenated.validity().unwrap().is_scalar());
     }
 
     #[test]
@@ -1713,7 +1720,7 @@ mod tests {
             .unwrap();
         assert_eq!(repeated.len(), 6);
         assert_eq!(
-            repeated.values().as_slice(),
+            repeated.flat_values().unwrap().as_slice(),
             [1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]
         );
 
@@ -1728,7 +1735,7 @@ mod tests {
             .unwrap();
         assert!(repeated.is_scalar());
         assert_eq!(repeated.width(), 2);
-        assert_eq!(repeated.values().len(), 2);
+        assert_eq!(repeated.scalar_values().unwrap().len(), 2);
     }
 
     #[test]
@@ -1809,7 +1816,7 @@ mod tests {
         let concatenated = concatenate_list(&[&list(vec![1, 2]), &list(vec![3])]).unwrap();
 
         assert_eq!(concatenated.len(), 2);
-        assert_eq!(concatenated.offsets().as_slice(), [0, 2, 3]);
+        assert_eq!(concatenated.flat_offsets().unwrap().as_slice(), [0, 2, 3]);
 
         let values = concatenated
             .values()
@@ -2025,7 +2032,10 @@ mod tests {
         let repeated = repeated.as_any().downcast_ref::<PlListArray>().unwrap();
 
         assert_eq!(repeated.len(), 6);
-        assert_eq!(repeated.offsets().as_slice(), [0, 2, 3, 5, 6, 8, 9]);
+        assert_eq!(
+            repeated.flat_offsets().unwrap().as_slice(),
+            [0, 2, 3, 5, 6, 8, 9]
+        );
         assert_eq!(elements(&*repeated.value(2)), [Some(1), Some(2)]);
 
         // No copy holds an element, but the values are still what the type of the lists is taken
@@ -2060,7 +2070,7 @@ mod tests {
         // Every element of every copy is the same list, so nothing is written out per element.
         assert_eq!(repeated.len(), 4);
         assert!(repeated.is_scalar());
-        assert_eq!(repeated.offsets().as_slice(), [0, 1_000_000_000]);
+        assert_eq!(repeated.scalar_offsets(), Some(0..1_000_000_000));
         assert_eq!(repeated.values().len(), 1_000_000_000);
     }
 
@@ -2079,7 +2089,7 @@ mod tests {
         // No two elements of a flat list array can cover the same range, so the offsets of the
         // result step through the repeated element — but its values stay scalar.
         assert_eq!(repeated.len(), 4);
-        assert_eq!(repeated.offsets().as_slice(), [0, 1, 2, 3, 4]);
+        assert_eq!(repeated.flat_offsets().unwrap().as_slice(), [0, 1, 2, 3, 4]);
         assert_eq!(repeated.null_count(), 2);
         assert!(repeated.is_null(3));
         assert_eq!(elements(&*repeated.value(2)), [Some(7)]);
@@ -2165,7 +2175,7 @@ mod tests {
         let concatenated = concatenate_binview(&[&arr, &arr]);
 
         assert_eq!(concatenated.len(), 2_000_000_000);
-        assert_eq!(concatenated.views().len(), 1);
+        assert!(concatenated.flat_views().is_none());
         assert!(concatenated.is_scalar());
         assert_eq!(concatenated.value(1_999_999_999), LONG);
 
@@ -2196,7 +2206,7 @@ mod tests {
         let concatenated = concatenate_binview(&[&scalar, &flat]);
 
         assert!(concatenated.is_flat());
-        assert_eq!(concatenated.views().len(), 3);
+        assert_eq!(concatenated.flat_views().unwrap().len(), 3);
         assert_eq!(
             concatenated.iter().collect::<Vec<_>>(),
             [Some(LONG), Some(LONG), Some(b"foo".as_slice())],

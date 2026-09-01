@@ -28,14 +28,14 @@ pub use reference::PlBitmapRef;
 /// // A constant mask over a billion elements costs a single bit.
 /// let mask = PlBitmap::new_scalar(false, 1_000_000_000);
 /// assert_eq!(mask.len(), 1_000_000_000);
-/// assert_eq!(mask.bitmap().len(), 1);
-/// assert!(mask.is_scalar());
+/// assert_eq!(mask.scalar_value(), Some(false));
+/// assert!(mask.flat_bitmap().is_none());
 /// assert!(!mask.get(999_999_999));
 ///
 /// // Slicing it stays free, and keeps the scalar representation.
 /// let mask = mask.sliced(500, 2);
 /// assert_eq!(mask.len(), 2);
-/// assert_eq!(mask.bitmap().len(), 1);
+/// assert!(mask.is_scalar());
 ///
 /// // It compares equal to the flat mask it stands for.
 /// assert_eq!(mask, PlBitmap::from_iter([false, false]));
@@ -121,13 +121,15 @@ impl PlBitmap {
         self.length == 0
     }
 
-    /// The backing bitmap.
+    /// The backing bitmap, if it holds one bit per element.
     ///
-    /// This is *not* guaranteed to have [`Self::len`] bits: it is either flat or scalar. Index
-    /// it through [`crate::broadcast::broadcast_index`], or call [`Self::to_flat`] first.
-    #[inline(always)]
-    pub const fn bitmap(&self) -> &Bitmap {
-        &self.bitmap
+    /// This is the `O(1)` counterpart of [`Self::to_flat`]: it materializes nothing, and returns
+    /// `None` rather than expanding a scalar mask. Reach for the bit a scalar mask shares with
+    /// [`Self::scalar_value`] instead — between them the two cover every mask that has bits at
+    /// all, so a `None` from both is an empty mask.
+    #[inline]
+    pub fn flat_bitmap(&self) -> Option<&Bitmap> {
+        self.is_flat().then_some(&self.bitmap)
     }
 
     /// Borrows this mask as a [`PlBitmapRef`].
@@ -138,6 +140,11 @@ impl PlBitmap {
     }
 
     /// Returns the backing bitmap and the logical length of this mask.
+    ///
+    /// The bitmap is *not* guaranteed to have [`Self::len`] bits: it is either flat or scalar,
+    /// which is why the length comes with it. Index it through
+    /// [`broadcast_index`](crate::broadcast::broadcast_index), or reach for
+    /// [`Self::flat_bitmap`] to get one that needs no such care.
     #[inline]
     pub fn into_inner(self) -> (Bitmap, usize) {
         (self.bitmap, self.length)
@@ -312,8 +319,9 @@ impl From<MutableBitmap> for PlBitmap {
 impl From<PlBitmapRef<'_>> for PlBitmap {
     #[inline]
     fn from(mask: PlBitmapRef<'_>) -> Self {
+        let (bitmap, length) = mask.into_inner();
         // SAFETY: a `PlBitmapRef` upholds the same invariant.
-        unsafe { Self::new_unchecked(mask.bitmap().clone(), mask.len()) }
+        unsafe { Self::new_unchecked(bitmap.clone(), length) }
     }
 }
 
@@ -405,7 +413,7 @@ mod tests {
         let mask = PlBitmap::new_scalar(false, 1_000);
 
         assert_eq!(mask.len(), 1_000);
-        assert_eq!(mask.bitmap().len(), 1);
+        assert!(mask.flat_bitmap().is_none());
         assert!(mask.is_scalar());
         assert!(!mask.is_flat());
         assert_eq!(mask.scalar_value(), Some(false));
@@ -416,7 +424,7 @@ mod tests {
 
         let flat = mask.to_flat();
         assert!(flat.is_flat());
-        assert_eq!(flat.bitmap().len(), 1_000);
+        assert_eq!(flat.flat_bitmap().unwrap().len(), 1_000);
         assert_eq!(flat.unset_bits(), 1_000);
         assert_eq!(flat, mask);
     }
@@ -451,7 +459,7 @@ mod tests {
         let mask = PlBitmap::new_scalar(true, 1_000_000_000).sliced(500, 2);
 
         assert_eq!(mask.len(), 2);
-        assert_eq!(mask.bitmap().len(), 1);
+        assert!(mask.flat_bitmap().is_none());
         assert!(mask.is_scalar());
         assert_eq!(mask.iter().collect::<Vec<_>>(), [true, true]);
     }
@@ -461,7 +469,7 @@ mod tests {
         let mask = PlBitmap::from_iter([true, false, true, false]).sliced(1, 2);
 
         assert_eq!(mask.len(), 2);
-        assert_eq!(mask.bitmap().len(), 2);
+        assert_eq!(mask.flat_bitmap().unwrap().len(), 2);
         assert!(mask.is_flat());
         assert_eq!(mask.iter().collect::<Vec<_>>(), [false, true]);
     }
@@ -514,7 +522,7 @@ mod tests {
         let bitmap = Bitmap::from_iter([true, false]);
         let mask = PlBitmap::from(PlBitmapRef::new(&bitmap, 2));
 
-        assert_eq!(mask.bitmap(), &bitmap);
+        assert_eq!(mask.flat_bitmap(), Some(&bitmap));
         assert_eq!(mask.clone().into_bitmap(), bitmap);
         assert_eq!(mask.into_inner(), (bitmap, 2));
 
@@ -524,7 +532,7 @@ mod tests {
 
         assert!(mask.is_scalar());
         assert_eq!(mask.len(), 1_000);
-        assert_eq!(mask.bitmap().len(), 1);
+        assert_eq!(mask.into_inner().0.len(), 1);
     }
 
     #[test]
@@ -535,6 +543,28 @@ mod tests {
         assert_eq!(bitmap.set_bits(), 3);
 
         assert!(PlBitmap::new_scalar(true, 0).into_bitmap().is_empty());
+    }
+
+    #[test]
+    fn the_backing_bitmap_is_reached_through_its_representation() {
+        let mask = PlBitmap::from_iter([true, false, true]);
+
+        assert_eq!(mask.flat_bitmap().map(Bitmap::len), Some(3));
+        assert_eq!(mask.scalar_value(), None);
+
+        // A scalar mask hands out no flat bitmap; it is its single bit that is reached instead.
+        let mask = PlBitmap::new_scalar(true, 1_000_000_000);
+
+        assert_eq!(mask.flat_bitmap(), None);
+        assert_eq!(mask.scalar_value(), Some(true));
+
+        // An empty mask has no bit to share, and is flat unless it is backed by a stray one.
+        assert_eq!(
+            PlBitmap::new_empty().flat_bitmap().map(Bitmap::len),
+            Some(0)
+        );
+        assert_eq!(PlBitmap::new_scalar(true, 0).flat_bitmap(), None);
+        assert_eq!(PlBitmap::new_scalar(true, 0).scalar_value(), None);
     }
 
     #[test]
