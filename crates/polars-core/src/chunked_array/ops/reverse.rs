@@ -50,8 +50,11 @@ impl ChunkReverse for ListChunked {
         if self.is_empty() {
             return self.clone();
         };
-        let ca: Self = self.series_iter().rev().collect_trusted();
-        ca.with_name(self.name().clone())
+        let idx = IdxCa::from_vec(
+            PlSmallStr::EMPTY,
+            (0..self.len() as IdxSize).rev().collect(),
+        );
+        unsafe { self.take_unchecked(&idx) }
     }
 }
 
