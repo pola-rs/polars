@@ -101,18 +101,14 @@ where
     let split_by_right = split_and_flatten(by_right, n_threads);
     let offsets = compute_len_offsets(split_by_left.iter().map(|s| s.len()));
 
-    let right_slices = split_by_right
+    let right_arrays = split_by_right
         .iter()
         .map(|ca| {
             assert_eq!(ca.chunks().len(), 1);
-            ca.downcast_iter()
-                .next()
-                .unwrap()
-                .iter()
-                .map(|v| v.copied())
+            ca.downcast_iter().next().unwrap()
         })
-        .collect();
-    let hash_tbls = build_tables(right_slices, false);
+        .collect::<Vec<_>>();
+    let hash_tbls = build_tables_from_arrays::<S>(&right_arrays, false);
     let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
