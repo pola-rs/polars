@@ -3206,7 +3206,7 @@ class Expr(metaclass=_Meta):
         ----------
         value
             Value used to fill null values.
-        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}
+        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'median', 'zero', 'one'}
             Strategy used to fill null values.
         limit
             Number of consecutive null values to fill when using the 'forward' or
@@ -3263,6 +3263,17 @@ class Expr(metaclass=_Meta):
         │ 1    ┆ 4   │
         │ 2    ┆ 4   │
         │ null ┆ 6   │
+        └──────┴─────┘
+        >>> df.with_columns(pl.col("b").fill_null(strategy="median"))
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ i64  ┆ f64 │
+        ╞══════╪═════╡
+        │ 1    ┆ 4.0 │
+        │ 2    ┆ 5.0 │
+        │ null ┆ 6.0 │
         └──────┴─────┘
         >>> df.with_columns(pl.col("b").fill_null(pl.col("b").median()))
         shape: (3, 2)

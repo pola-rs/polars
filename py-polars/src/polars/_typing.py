@@ -216,7 +216,7 @@ DeletionFiles: TypeAlias = (
     | tuple[Literal["delta-deletion-vector"], Callable[["DataFrame"], "DataFrame"]]
 )
 FillNullStrategy: TypeAlias = Literal[
-    "forward", "backward", "min", "max", "mean", "zero", "one"
+    "forward", "backward", "min", "max", "mean", "median", "zero", "one"
 ]
 FloatFmt: TypeAlias = Literal["full", "mixed"]
 IndexOrder: TypeAlias = Literal["c", "fortran"]

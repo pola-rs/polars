@@ -185,3 +185,16 @@ def test_fill_null_null_dtype_24451() -> None:
 def test_fill_null_arr_nonull_cat_28247() -> None:
     s = pl.Series([["a", "b"]], dtype=pl.Array(pl.Categorical, 2))
     assert_series_equal(s, s.arr.eval(pl.element().fill_null(strategy="forward")))
+
+
+def test_fill_null_median() -> None:
+    df = pl.DataFrame({"a": [1, None, 2, None, 10]})
+    result = df.fill_null(strategy="median")
+    expected = pl.DataFrame({"a": [1.0, 2.0, 2.0, 2.0, 10.0]})
+    assert_frame_equal(result, expected)
+
+    lazy_result = df.lazy().fill_null(strategy="median").collect()
+    assert_frame_equal(lazy_result, expected)
+
+    s = pl.Series("a", [0.0, 1.0, None, 2.0, None, 3.0])
+    assert s.fill_null(strategy="median").to_list() == [0.0, 1.0, 1.5, 2.0, 1.5, 3.0]

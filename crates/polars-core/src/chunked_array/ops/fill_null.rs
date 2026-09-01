@@ -15,6 +15,7 @@ impl Series {
     /// * Forward fill (replace None with the previous value)
     /// * Backward fill (replace None with the next value)
     /// * Mean fill (replace None with the mean of the whole array)
+    /// * Median fill (replace None with the median of the whole array)
     /// * Min fill (replace None with the minimum of the whole array)
     /// * Max fill (replace None with the maximum of the whole array)
     /// * Zero fill (replace None with the value zero)
@@ -45,6 +46,9 @@ impl Series {
     ///     let filled = s.fill_null(FillNullStrategy::Mean)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
     ///
+    ///     let filled = s.fill_null(FillNullStrategy::Median)?;
+    ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
+    ///
     ///     let filled = s.fill_null(FillNullStrategy::Zero)?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(0), Some(2)]);
     ///
@@ -67,6 +71,7 @@ impl Series {
                         | FillNullStrategy::Max
                         | FillNullStrategy::Min
                         | FillNullStrategy::Mean
+                        | FillNullStrategy::Median
                 ))
         {
             return Ok(self.clone());
@@ -233,6 +238,13 @@ where
                 .map(|v| NumCast::from(v).unwrap())
                 .ok_or_else(err_fill_null)?,
         )?,
+        FillNullStrategy::Median => ca.fill_null_with_values(
+            ca.clone()
+                .into_series()
+                .median()
+                .map(|v| NumCast::from(v).unwrap())
+                .ok_or_else(err_fill_null)?,
+        )?,
         FillNullStrategy::One => return ca.fill_null_with_values(One::one()),
         FillNullStrategy::Zero => return ca.fill_null_with_values(Zero::zero()),
         FillNullStrategy::Forward(None) => fill_forward_numeric(ca),
@@ -382,6 +394,7 @@ fn fill_null_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsResu
             .fill_null_with_values(ca.max().ok_or_else(err_fill_null)?)
             .map(|ca| ca.into_series()),
         FillNullStrategy::Mean => polars_bail!(opq = mean, "Boolean"),
+        FillNullStrategy::Median => polars_bail!(opq = median, "Boolean"),
         FillNullStrategy::One => ca.fill_null_with_values(true).map(|ca| ca.into_series()),
         FillNullStrategy::Zero => ca.fill_null_with_values(false).map(|ca| ca.into_series()),
         FillNullStrategy::Forward(_) => unreachable!(),

@@ -2091,6 +2091,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         FillNullStrategy::Min => ("min", py.None()),
                         FillNullStrategy::Max => ("max", py.None()),
                         FillNullStrategy::Mean => ("mean", py.None()),
+                        FillNullStrategy::Median => ("median", py.None()),
                         FillNullStrategy::Zero => ("zero", py.None()),
                         FillNullStrategy::One => ("one", py.None()),
                     };

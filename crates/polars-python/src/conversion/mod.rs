@@ -1620,11 +1620,12 @@ pub(crate) fn parse_fill_null_strategy(
         "min" => FillNullStrategy::Min,
         "max" => FillNullStrategy::Max,
         "mean" => FillNullStrategy::Mean,
+        "median" => FillNullStrategy::Median,
         "zero" => FillNullStrategy::Zero,
         "one" => FillNullStrategy::One,
         e => {
             return Err(PyValueError::new_err(format!(
-                "`strategy` must be one of {{'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}}, got {e}",
+                "`strategy` must be one of {{'forward', 'backward', 'min', 'max', 'mean', 'median', 'zero', 'one'}}, got {e}",
             )));
         },
     };

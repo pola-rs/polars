@@ -41,3 +41,38 @@ fn test_construct_list_of_null_series() {
     assert_eq!(s.null_count(), 0);
     assert_eq!(s.field().name(), "a");
 }
+
+#[test]
+fn test_fill_null_median() -> PolarsResult<()> {
+    let s = Series::new("a".into(), &[Some(1.0), None, Some(3.0), None, Some(5.0)]);
+    let filled = s.fill_null(FillNullStrategy::Median)?;
+    let expected = Series::new("a".into(), &[1.0, 3.0, 3.0, 3.0, 5.0]);
+    assert_eq!(filled, expected);
+    Ok(())
+}
+
+#[test]
+fn test_fill_null_median_even_count() -> PolarsResult<()> {
+    let s = Series::new("a".into(), &[Some(1.0), None, Some(2.0), None, Some(4.0), Some(10.0)]);
+    let filled = s.fill_null(FillNullStrategy::Median)?;
+    let expected = Series::new("a".into(), &[1.0, 3.0, 2.0, 3.0, 4.0, 10.0]);
+    assert_eq!(filled, expected);
+    Ok(())
+}
+
+#[test]
+fn test_fill_null_median_integer() -> PolarsResult<()> {
+    let s = Series::new("a".into(), &[Some(1), None, Some(2), None, Some(10)]);
+    let filled = s.fill_null(FillNullStrategy::Median)?;
+    let expected = Series::new("a".into(), &[Some(1), Some(2), Some(2), Some(2), Some(10)]);
+    assert_eq!(filled, expected);
+    Ok(())
+}
+
+#[test]
+fn test_fill_null_median_all_null() -> PolarsResult<()> {
+    let s = Series::new("a".into(), &[None::<f64>, None, None]);
+    let filled = s.fill_null(FillNullStrategy::Median)?;
+    assert_eq!(filled.null_count(), 3);
+    Ok(())
+}
