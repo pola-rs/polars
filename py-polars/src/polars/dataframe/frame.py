@@ -58,10 +58,12 @@ from polars._utils.construction import (
     series_to_pydf,
 )
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
-    deprecated,
-    issue_deprecation_warning,
+from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
+    getattr_fallback,
+    raise_for_removed_attributes,
+    removed_parameters,
 )
 from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse import parse_into_expression
@@ -71,7 +73,6 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     NO_DEFAULT,
     _in_notebook,
-    _Omitted,
     is_bool_sequence,
     normalize_filepath,
     parse_version,
@@ -121,7 +122,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import (
         Callable,
         Collection,
@@ -167,6 +167,7 @@ if TYPE_CHECKING:
         JoinBuildSide,
         JoinStrategy,
         JoinValidation,
+        JoinWhereStrategy,
         Label,
         MaintainOrderJoin,
         MultiColSelector,
@@ -194,15 +195,9 @@ if TYPE_CHECKING:
     )
     from polars._utils.various import NoDefault
     from polars.config import TableFormatNames
-    from polars.interchange.dataframe import PolarsDataFrame
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.partition import PartitionBy
     from polars.ml.torch import PolarsDataset
-
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
     T = TypeVar("T")
     P = ParamSpec("P")
@@ -574,7 +569,6 @@ class DataFrame:
         schema: SchemaDefinition | None = None,
         *,
         schema_overrides: SchemaDict | None = None,
-        rechunk: bool = True,
     ) -> DataFrame:
         """
         Construct a DataFrame from an Arrow table.
@@ -599,15 +593,13 @@ class DataFrame:
         schema_overrides : dict, default None
             Support type specification or override of one or more columns; note that
             any dtypes inferred from the columns param will be overridden.
-        rechunk : bool, default True
-            Make sure that all data is in contiguous memory.
         """
         return cls._from_pydf(
             arrow_to_pydf(
                 data,
                 schema=schema,
                 schema_overrides=schema_overrides,
-                rechunk=rechunk,
+                rechunk=False,
             )
         )
 
@@ -1033,62 +1025,6 @@ class DataFrame:
 
         return arr
 
-    @deprecated(
-        "Support for the dataframe interchange protocol is deprecated since version 1.40.0"
-    )
-    def __dataframe__(
-        self,
-        nan_as_null: bool = False,  # noqa: FBT001
-        allow_copy: bool = True,  # noqa: FBT001
-    ) -> PolarsDataFrame:
-        """
-        Convert to a dataframe object implementing the dataframe interchange protocol.
-
-        .. deprecated:: 1.40.0
-            Support for the Dataframe Interchange Protocol is deprecated.
-
-        Parameters
-        ----------
-        nan_as_null
-            Overwrite null values in the data with `NaN`.
-
-            .. warning::
-                This functionality has not been implemented and the parameter will be
-                removed in a future version.
-                Setting this to `True` will raise a `NotImplementedError`.
-        allow_copy
-            Allow memory to be copied to perform the conversion. If set to `False`,
-            causes conversions that are not zero-copy to fail.
-
-        Notes
-        -----
-        Details on the Python dataframe interchange protocol:
-        https://data-apis.org/dataframe-protocol/latest/index.html
-
-        Examples
-        --------
-        Convert a Polars DataFrame to a generic dataframe object and access some
-        properties.
-
-        >>> df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
-        >>> dfi = df.__dataframe__()  # doctest: +SKIP
-        >>> dfi.num_rows()  # doctest: +SKIP
-        2
-        >>> dfi.get_column(1).dtype  # doctest: +SKIP
-        (<DtypeKind.FLOAT: 2>, 64, 'g', '=')
-        """
-        if nan_as_null:
-            msg = (
-                "functionality for `nan_as_null` has not been implemented and the"
-                " parameter will be removed in a future version"
-                "\n\nUse the default `nan_as_null=False`."
-            )
-            raise NotImplementedError(msg)
-
-        from polars.interchange.dataframe import PolarsDataFrame
-
-        return PolarsDataFrame(self, allow_copy=allow_copy)
-
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
         """Compare a DataFrame with another object."""
         if isinstance(other, DataFrame):
@@ -1111,7 +1047,7 @@ class DataFrame:
 
         suffix = "__POLARS_CMP_OTHER"
         other_renamed = other.select(F.all().name.suffix(suffix))
-        combined = F.concat([self, other_renamed], how="horizontal", strict=True)
+        combined = F.concat([self, other_renamed], how="horizontal")
 
         if op == "eq":
             expr = [F.col(n) == F.col(f"{n}{suffix}") for n in self.columns]
@@ -1744,7 +1680,14 @@ class DataFrame:
         )
         return s.get_index_signed(row)
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        )
+    )
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Table:
         """
         Collect the underlying arrow arrays in an Arrow Table.
@@ -1929,6 +1872,15 @@ class DataFrame:
         """
         return self.rows(named=True)
 
+    @removed_parameters(
+        RemovedParameter(
+            name="use_pyarrow",
+            deprecated_in="0.20.28",
+            removed_in="2.0",
+            hint="Polars now uses its native engine for conversion to NumPy by default."
+            " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
+        )
+    )
     def to_numpy(
         self,
         *,
@@ -1936,7 +1888,6 @@ class DataFrame:
         writable: bool = False,
         allow_copy: bool = True,
         structured: bool = False,
-        use_pyarrow: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this DataFrame to a NumPy ndarray.
@@ -1972,15 +1923,6 @@ class DataFrame:
             returned instead.
 
             .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
-
-        use_pyarrow
-            Use `pyarrow.Array.to_numpy
-            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-
-            function for the conversion to NumPy if necessary.
-
-            .. deprecated:: 0.20.28
-                Polars now uses its native engine by default for conversion to NumPy.
 
         Examples
         --------
@@ -2046,13 +1988,6 @@ class DataFrame:
         array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
               dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
         """  # noqa: W505
-        if use_pyarrow is not None:
-            issue_deprecation_warning(
-                "the `use_pyarrow` parameter for `DataFrame.to_numpy` is deprecated."
-                " Polars now uses its native engine by default for conversion to NumPy.",
-                version="0.20.28",
-            )
-
         if structured:
             if not allow_copy and not self.is_empty():
                 msg = "copy not allowed: cannot create structured array without copying data"
@@ -2065,10 +2000,9 @@ class DataFrame:
                     arr = s.struct.unnest().to_numpy(
                         structured=True,
                         allow_copy=True,
-                        use_pyarrow=use_pyarrow,
                     )
                 else:
-                    arr = s.to_numpy(use_pyarrow=use_pyarrow)
+                    arr = s.to_numpy()
 
                 if s.dtype == String and not s.has_nulls():
                     arr = arr.astype(str, copy=False)
@@ -2491,9 +2425,7 @@ class DataFrame:
                 if features is not None
                 else self.drop(*label_frame.columns)
             ).cast(to_dtype)  # type: ignore[arg-type]
-            frame = F.concat(
-                [label_frame, features_frame], how="horizontal", strict=True
-            )
+            frame = F.concat([label_frame, features_frame], how="horizontal")
         else:
             label_frame = None
             features_frame = None
@@ -3033,7 +2965,6 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int | None = ...,
     ) -> str: ...
 
     @overload
@@ -3060,9 +2991,16 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int | None = ...,
     ) -> None: ...
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
+    )
     def write_csv(
         self,
         file: str | Path | IO[str] | IO[bytes] | None = None,
@@ -3088,7 +3026,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> str | None:
         """
         Write to comma-separated values (CSV) file.
@@ -3197,11 +3134,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
 
         Examples
         --------
@@ -3259,7 +3191,6 @@ class DataFrame:
             quote_style=quote_style,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             optimizations=QueryOptFlags._eager(),
             engine=engine,
         )
@@ -3290,6 +3221,7 @@ class DataFrame:
         result: str = self.write_csv(file=None, separator=separator, **kwargs)
         _write_clipboard_string(result)
 
+    @unstable()
     def write_avro(
         self,
         file: str | Path | IO[bytes],
@@ -3298,6 +3230,10 @@ class DataFrame:
     ) -> None:
         """
         Write to Apache Avro file.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -3925,7 +3861,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3940,10 +3875,22 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        ),
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        ),
+    )
     def write_ipc(
         self,
         file: str | Path | IO[bytes] | None,
@@ -3955,7 +3902,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -4003,11 +3949,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
 
         Examples
         --------
@@ -4050,7 +3991,6 @@ class DataFrame:
                 record_batch_size=record_batch_size,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
-                retries=retries,
                 optimizations=QueryOptFlags._eager(),
                 engine="streaming",
             )
@@ -4074,7 +4014,14 @@ class DataFrame:
         compat_level: CompatLevel | None = None,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        )
+    )
     def write_ipc_stream(
         self,
         file: str | Path | IO[bytes] | None,
@@ -4133,6 +4080,14 @@ class DataFrame:
         self._df.write_ipc_stream(file, compression, compat_level_py)
         return file if return_bytes else None  # type: ignore[return-value]
 
+    @removed_parameters(
+        RemovedParameter(
+            name="retries",
+            deprecated_in="1.37.1",
+            removed_in="2.0",
+            hint="Specify `max_retries` in `storage_options` instead.",
+        )
+    )
     def write_parquet(
         self,
         file: str | Path | IO[bytes],
@@ -4150,7 +4105,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
         mkdir: bool = False,
@@ -4240,11 +4194,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         metadata
             A dictionary or callback to add key-values to the file-level Parquet
             metadata.
@@ -4380,7 +4329,6 @@ class DataFrame:
             data_page_size=data_page_size,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             metadata=metadata,
             arrow_schema=arrow_schema,
             engine=engine,
@@ -4790,7 +4738,6 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
-        overwrite_schema: bool | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
@@ -4802,18 +4749,25 @@ class DataFrame:
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["merge"],
-        overwrite_schema: bool | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_merge_options: dict[str, Any],
     ) -> deltalake.table.TableMerger: ...
 
+    @removed_parameters(
+        RemovedParameter(
+            name="overwrite_schema",
+            deprecated_in="0.20.14",
+            removed_in="2.0",
+            hint="Use the `delta_write_options` parameter instead and pass"
+            ' `{"schema_mode": "overwrite"}`.',
+        ),
+    )
     def write_delta(
         self,
         target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
-        overwrite_schema: bool | None = None,
         storage_options: StorageOptionsDict | None = None,
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
@@ -4837,12 +4791,6 @@ class DataFrame:
             - If 'ignore', will not write anything if table already exists.
             - If 'merge', return a `TableMerger` object to merge data from the DataFrame
               with the existing data.
-        overwrite_schema
-            If True, allows updating the schema of the table.
-
-            .. deprecated:: 0.20.14
-                Use the parameter `delta_write_options` instead and pass
-                `{"schema_mode": "overwrite"}`.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
@@ -4982,13 +4930,6 @@ class DataFrame:
         ...     .execute()
         ... )  # doctest: +SKIP
         """
-        if overwrite_schema is not None:
-            issue_deprecation_warning(
-                "the parameter `overwrite_schema` for `write_delta` is deprecated."
-                ' Use the parameter `delta_write_options` instead and pass `{"schema_mode": "overwrite"}`.',
-                version="0.20.14",
-            )
-
         from polars.io.delta._utils import (
             _check_for_unsupported_types,
             _check_if_delta_available,
@@ -5054,9 +4995,6 @@ class DataFrame:
         else:
             if delta_write_options is None:
                 delta_write_options = {}
-
-            if overwrite_schema:
-                delta_write_options["schema_mode"] = "overwrite"
 
             write_deltalake(
                 table_or_uri=target,
@@ -5736,7 +5674,14 @@ class DataFrame:
         return_type: Literal["frame", "self"],
     ) -> DataFrame: ...
 
-    @deprecate_renamed_parameter("return_as_string", "return_type", version="1.35.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="return_as_string",
+            new_name="return_type",
+            deprecated_in="1.35.0",
+            removed_in="2.0",
+        )
+    )
     def glimpse(
         self,
         *,
@@ -5848,9 +5793,7 @@ class DataFrame:
         │ 3.0 ┆ null ┆ true  ┆ c    ┆ null ┆ 2022-01-01 │
         └─────┴──────┴───────┴──────┴──────┴────────────┘
         """  # noqa: W505
-        # handle boolean value from now-deprecated `return_as_string` parameter
-        if isinstance(return_type, bool) or return_type is None:  # type: ignore[redundant-expr]
-            return_type = "string" if return_type else None  # type: ignore[redundant-expr]
+        if return_type is None:
             return_frame = False
         else:
             return_frame = return_type == "frame"
@@ -6278,7 +6221,14 @@ class DataFrame:
             ctx.register(name=name, frame=self)
             return ctx.execute(query)
 
-    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
+    )
     def top_k(
         self,
         k: int,
@@ -6354,20 +6304,23 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
+        optimizations = QueryOptFlags._eager()
+        optimizations.slice_pushdown = True
+        optimizations.predicate_pushdown = True
         return (
             self.lazy()
             .top_k(k, by=by, reverse=reverse)
-            ._collect_eager(
-                optimizations=QueryOptFlags(
-                    projection_pushdown=False,
-                    predicate_pushdown=False,
-                    comm_subplan_elim=False,
-                    slice_pushdown=True,
-                )
-            )
+            ._collect_eager(optimizations=optimizations)
         )
 
-    @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="descending",
+            new_name="reverse",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+        )
+    )
     def bottom_k(
         self,
         k: int,
@@ -6443,17 +6396,13 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
+        optimizations = QueryOptFlags._eager()
+        optimizations.slice_pushdown = True
+        optimizations.predicate_pushdown = True
         return (
             self.lazy()
             .bottom_k(k, by=by, reverse=reverse)
-            ._collect_eager(
-                optimizations=QueryOptFlags(
-                    projection_pushdown=False,
-                    predicate_pushdown=False,
-                    comm_subplan_elim=False,
-                    slice_pushdown=True,
-                )
-            )
+            ._collect_eager(optimizations=optimizations)
         )
 
     def equals(self, other: DataFrame, *, null_equal: bool = True) -> bool:
@@ -7123,47 +7072,6 @@ class DataFrame:
             msg = f"`offset` input for `with_row_index` cannot be {issue}, got {offset}"
             raise ValueError(msg) from None
 
-    @deprecated(
-        "`DataFrame.with_row_count` is deprecated; use `with_row_index` instead."
-        " Note that the default column name has changed from 'row_nr' to 'index'."
-    )
-    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> DataFrame:
-        """
-        Add a column at index 0 that counts the rows.
-
-        .. deprecated:: 0.20.4
-            Use the :meth:`with_row_index` method instead.
-            Note that the default column name has changed from 'row_nr' to 'index'.
-
-        Parameters
-        ----------
-        name
-            Name of the column to add.
-        offset
-            Start the row count at this offset. Default = 0
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 3, 5],
-        ...         "b": [2, 4, 6],
-        ...     }
-        ... )
-        >>> df.with_row_count()  # doctest: +SKIP
-        shape: (3, 3)
-        ┌────────┬─────┬─────┐
-        │ row_nr ┆ a   ┆ b   │
-        │ ---    ┆ --- ┆ --- │
-        │ u32    ┆ i64 ┆ i64 │
-        ╞════════╪═════╪═════╡
-        │ 0      ┆ 1   ┆ 2   │
-        │ 1      ┆ 3   ┆ 4   │
-        │ 2      ┆ 5   ┆ 6   │
-        └────────┴─────┴─────┘
-        """
-        return self.with_row_index(name, offset)
-
     def group_by(
         self,
         *by: IntoExpr | Iterable[IntoExpr],
@@ -7315,7 +7223,11 @@ class DataFrame:
             self, *by, **named_by, maintain_order=maintain_order, predicates=None
         )
 
-    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
+    )
     def rolling(
         self,
         index_column: IntoExpr,
@@ -7473,7 +7385,11 @@ class DataFrame:
             predicates=None,
         )
 
-    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
+    )
     def group_by_dynamic(
         self,
         index_column: IntoExpr,
@@ -7794,7 +7710,11 @@ class DataFrame:
             predicates=None,
         )
 
-    @deprecate_renamed_parameter("by", "group_by", version="0.20.14")
+    @removed_parameters(
+        RenamedParameter(
+            name="by", new_name="group_by", deprecated_in="0.20.14", removed_in="2.0"
+        )
+    )
     def upsample(
         self,
         time_column: str,
@@ -8012,6 +7932,11 @@ class DataFrame:
             will error. Currently, the `in-memory` engine cannot check the sortedness
             if 'by' groups are provided. The `streaming` engine will only check the
             sortedness of the rows it processes.
+
+        See Also
+        --------
+        join
+        join_where
 
         Examples
         --------
@@ -8251,7 +8176,14 @@ class DataFrame:
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    @deprecate_renamed_parameter("join_nulls", "nulls_equal", version="1.24")
+    @removed_parameters(
+        RenamedParameter(
+            name="join_nulls",
+            new_name="nulls_equal",
+            deprecated_in="1.24",
+            removed_in="2.0",
+        )
+    )
     def join(
         self,
         other: DataFrame,
@@ -8399,6 +8331,7 @@ class DataFrame:
         See Also
         --------
         join_asof
+        join_where
 
         Examples
         --------
@@ -8530,14 +8463,11 @@ class DataFrame:
         self,
         other: DataFrame,
         *predicates: Expr | Iterable[Expr],
+        how: JoinWhereStrategy = "inner",
         suffix: str = "_right",
     ) -> DataFrame:
         """
         Perform a join based on one or multiple (in)equality predicates.
-
-        This performs an inner join, so only rows where all predicates are true
-        are included in the result, and a row from either DataFrame may be included
-        multiple times in the result.
 
         .. note::
             The row order of the input DataFrames is not preserved.
@@ -8554,8 +8484,15 @@ class DataFrame:
             (In)Equality condition to join the two tables on.
             When a column name occurs in both tables, the proper suffix must
             be applied in the predicate.
+        how : {'inner', 'left', 'right'}
+            Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
+
+        See Also
+        --------
+        join
+        join_asof
 
         Examples
         --------
@@ -8614,6 +8551,29 @@ class DataFrame:
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         │ 102 ┆ 160 ┆ 16  ┆ 4     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
+
+        Pass `how="left"` to additionally keep left rows that match nothing, with the
+        right columns set to `null`.
+
+        >>> east.join_where(
+        ...     west,
+        ...     pl.col("dur") < pl.col("time"),
+        ...     pl.col("rev") < pl.col("cost"),
+        ...     how="left",
+        ... )
+        shape: (6, 8)
+        ┌─────┬─────┬─────┬───────┬──────┬──────┬──────┬─────────────┐
+        │ id  ┆ dur ┆ rev ┆ cores ┆ t_id ┆ time ┆ cost ┆ cores_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---         │
+        │ i64 ┆ i64 ┆ i64 ┆ i64   ┆ i64  ┆ i64  ┆ i64  ┆ i64         │
+        ╞═════╪═════╪═════╪═══════╪══════╪══════╪══════╪═════════════╡
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 498  ┆ 130  ┆ 13   ┆ 2           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 100 ┆ 120 ┆ 12  ┆ 2     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
+        │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
+        │ 102 ┆ 160 ┆ 16  ┆ 4     ┆ null ┆ null ┆ null ┆ null        │
+        └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
         """
         require_same_type(self, other)
 
@@ -8624,6 +8584,7 @@ class DataFrame:
             .join_where(
                 other.lazy(),
                 *predicates,
+                how=how,
                 suffix=suffix,
             )
             ._collect_eager(optimizations=QueryOptFlags._eager())
@@ -9528,7 +9489,7 @@ class DataFrame:
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        empty_as_null: bool = _Omitted,
+        empty_as_null: bool = False,
         keep_nulls: bool = True,
     ) -> DataFrame:
         """
@@ -9570,7 +9531,7 @@ class DataFrame:
         │ b       ┆ [4, 5]    │
         │ c       ┆ [6, 7, 8] │
         └─────────┴───────────┘
-        >>> df.explode("numbers", empty_as_null=False)
+        >>> df.explode("numbers")
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │
@@ -9600,7 +9561,11 @@ class DataFrame:
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
-    @deprecate_renamed_parameter("columns", "on", version="1.0.0")
+    @removed_parameters(
+        RenamedParameter(
+            name="columns", new_name="on", deprecated_in="1.0.0", removed_in="2.0"
+        )
+    )
     def pivot(
         self,
         on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
@@ -9893,11 +9858,17 @@ class DataFrame:
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        on = None if on is None else _expand_selectors(self, on)
-        index_expanded = [] if index is None else _expand_selectors(self, index)
+        from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self._from_pydf(
-            self._df.unpivot(on, index_expanded, value_name, variable_name)
+        return (
+            self.lazy()
+            .unpivot(
+                on=on,
+                index=index,
+                variable_name=variable_name,
+                value_name=value_name,
+            )
+            ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 
     def unstack(
@@ -11523,45 +11494,6 @@ class DataFrame:
         )
         return 0 if df.is_empty() else df.row(0)[0]
 
-    @deprecated(
-        "`DataFrame.approx_n_unique` is deprecated; "
-        "use `select(pl.all().approx_n_unique())` instead."
-    )
-    def approx_n_unique(self) -> DataFrame:
-        """
-        Approximate count of unique values.
-
-        .. deprecated:: 0.20.11
-            Use the `select(pl.all().approx_n_unique())` method instead.
-
-        This is done using the HyperLogLog++ algorithm for cardinality estimation.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3, 4],
-        ...         "b": [1, 2, 1, 1],
-        ...     }
-        ... )
-        >>> df.approx_n_unique()  # doctest: +SKIP
-        shape: (1, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ u32 ┆ u32 │
-        ╞═════╪═════╡
-        │ 4   ┆ 2   │
-        └─────┴─────┘
-        """
-        from polars.lazyframe.opt_flags import QueryOptFlags
-
-        return (
-            self.lazy()
-            .approx_n_unique()
-            ._collect_eager(optimizations=QueryOptFlags._eager())
-        )
-
     def rechunk(self) -> DataFrame:
         """
         Rechunk the data in this DataFrame to a contiguous allocation.
@@ -11644,8 +11576,8 @@ class DataFrame:
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 3   ┆ 8   ┆ c   │
         │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
         """
         if n is not None and fraction is not None:
@@ -12372,14 +12304,11 @@ class DataFrame:
         │ 4   ┆ 8   │
         └─────┴─────┘
         """
-        return self.select(F.col("*").gather_every(n, offset))
+        return self.lazy().gather_every(n, offset).collect()
 
     def hash_rows(
         self,
         seed: int = 0,
-        seed_1: int | None = None,
-        seed_2: int | None = None,
-        seed_3: int | None = None,
     ) -> Series:
         """
         Hash and combine the rows in this DataFrame.
@@ -12390,12 +12319,6 @@ class DataFrame:
         ----------
         seed
             Random seed parameter. Defaults to 0.
-        seed_1
-            Random seed parameter. Defaults to `seed` if not set.
-        seed_2
-            Random seed parameter. Defaults to `seed` if not set.
-        seed_3
-            Random seed parameter. Defaults to `seed` if not set.
 
         Notes
         -----
@@ -12421,11 +12344,7 @@ class DataFrame:
             2047317070637311557
         ]
         """
-        k0 = seed
-        k1 = seed_1 if seed_1 is not None else seed
-        k2 = seed_2 if seed_2 is not None else seed
-        k3 = seed_3 if seed_3 is not None else seed
-        return wrap_s(self._df.hash_rows(k0, k1, k2, k3))
+        return wrap_s(self._df.hash_rows(seed))
 
     def interpolate(self) -> DataFrame:
         """
@@ -12992,49 +12911,6 @@ class DataFrame:
 
         return self.lazy().count()._collect_eager(optimizations=QueryOptFlags._eager())
 
-    @deprecated(
-        "`DataFrame.melt` is deprecated; use `DataFrame.unpivot` instead, with "
-        "`index` instead of `id_vars` and `on` instead of `value_vars`"
-    )
-    def melt(
-        self,
-        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
-        variable_name: str | None = None,
-        value_name: str | None = None,
-    ) -> DataFrame:
-        """
-        Unpivot a DataFrame from wide to long format.
-
-        Optionally leaves identifiers set.
-
-        This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars) while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis leaving just
-        two non-identifier columns, 'variable' and 'value'.
-
-        .. deprecated:: 1.0.0
-            Use the :meth:`.unpivot` method instead.
-
-        Parameters
-        ----------
-        id_vars
-            Column(s) or selector(s) to use as identifier variables.
-        value_vars
-            Column(s) or selector(s) to use as values variables; if `value_vars`
-            is empty all columns that are not in `id_vars` will be used.
-        variable_name
-            Name to give to the `variable` column. Defaults to "variable"
-        value_name
-            Name to give to the `value` column. Defaults to "value"
-        """
-        return self.unpivot(
-            index=id_vars,
-            on=value_vars,
-            variable_name=variable_name,
-            value_name=value_name,
-        )
-
     def show(
         self,
         limit: int | None = 5,
@@ -13473,6 +13349,22 @@ class DataFrame:
                 nulls_last=nulls_last,
             )
         ).to_series()
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "__dataframe__": "the dataframe interchange protocol is not supported anymore. Consider using `to_arrow` or `to_pandas` instead.",
+                    "melt": "use `DataFrame.unpivot` instead, with `index` instead of `id_vars` and `on` instead of `value_vars`",
+                    "with_row_count": "use `with_row_index` instead. Note that the default column name has changed from 'row_nr' to 'index'.",
+                    "approx_n_unique": "use `select(pl.all().approx_n_unique())` instead.",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

@@ -8,7 +8,7 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::PlIndexSet;
 use polars_core::schema::Schema;
-use polars_error::feature_gated;
+use polars_error::{feature_gated, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::IOMetrics;
 use polars_io::utils::file::Writable;
@@ -534,7 +534,7 @@ pub struct FileSinkOptions {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Hash, PartialEq)]
 pub enum SinkedPathsCallback {
-    IcebergCommit(IcebergSinkState),
+    IcebergCommit(Box<IcebergSinkState>),
     Callback(PlanCallback<SinkedPathsCallbackArgs, ()>),
 }
 
@@ -552,6 +552,7 @@ pub struct SinkedPathInfo {
     pub path: PlRefPath,
     pub num_rows: u64,
     pub num_bytes: u64,
+    pub parquet_metadata: Option<Vec<u8>>,
 }
 
 impl SinkedPathsCallback {
@@ -567,28 +568,40 @@ impl SinkedPathsCallback {
                         use pyo3::intern;
                         use pyo3::types::PyList;
 
-                        let py_paths = PyList::empty(py);
+                        let py_files = PyList::empty(py);
 
                         let SinkedPathsCallbackArgs { path_info_list } = args;
 
                         for SinkedPathInfo {
                             path,
-                            num_rows: _,
-                            num_bytes: _,
+                            num_rows,
+                            num_bytes,
+                            parquet_metadata,
                         } in path_info_list
                         {
-                            use pyo3::types::PyListMethods;
+                            use pyo3::types::{PyBytes, PyListMethods};
 
                             let path: &str = path.as_str();
+                            let parquet_metadata = parquet_metadata.ok_or_else(|| {
+                                polars_err!(
+                                    ComputeError:
+                                    "Iceberg sink did not receive Parquet metadata for '{path}'"
+                                )
+                            })?;
 
-                            py_paths.append(path)?;
+                            py_files.append((
+                                path,
+                                num_rows,
+                                num_bytes,
+                                PyBytes::new(py, &parquet_metadata),
+                            ))?;
                         }
 
-                        sink_state.clone().into_sink_state_obj()?.call_method1(
-                            py,
-                            intern!(py, "commit"),
-                            (py_paths,),
-                        )?;
+                        sink_state
+                            .as_ref()
+                            .clone()
+                            .into_sink_state_obj()?
+                            .call_method1(py, intern!(py, "commit"), (py_files,))?;
 
                         PolarsResult::Ok(())
                     })
@@ -612,6 +625,7 @@ impl SinkedPathsCallback {
                     path,
                     num_rows,
                     num_bytes,
+                    parquet_metadata: _,
                 } in path_info_list
                 {
                     use pyo3::types::PyListMethods;

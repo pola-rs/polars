@@ -92,7 +92,7 @@ pub struct AsOfJoinNode {
     right_buffer: DataFrameSearchBuffer,
     output_seq: MorselSeq,
     // Slots to store the last non-null row of the previous morsel.
-    // Used to check that that side is sorted across morsel boundaries.
+    // Used to check that each side is sorted across morsel boundaries.
     last_non_null_row_left: Option<DataFrame>,
     last_non_null_row_right: Option<DataFrame>,
 }

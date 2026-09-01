@@ -34,7 +34,8 @@ __pycache__/
 
 # Rust
 target/
-.cargo/config.toml
+.cargo/config.generated.toml
+.cargo/config.local.toml
 
 # Data
 *.csv
@@ -59,3 +60,4 @@ target/
 site/
 
 .claude/
+CLAUDE.md

@@ -56,7 +56,7 @@ impl PolarsCloudObserver {
     fn new(observer: PolarsCloudQueryObserver) -> Self {
         Self {
             observer,
-            query_id: Uuid::new_v4(),
+            query_id: Uuid::now_v7(),
         }
     }
 }

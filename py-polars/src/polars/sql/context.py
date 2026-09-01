@@ -11,7 +11,7 @@ from polars._dependencies import _check_for_pandas, _check_for_pyarrow
 from polars._dependencies import pandas as pd
 from polars._dependencies import pyarrow as pa
 from polars._typing import FrameType
-from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.expired import RenamedParameter, removed_parameters
 from polars._utils.pycapsule import is_pycapsule
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import _get_stack_locals, qualified_type_name
@@ -138,7 +138,14 @@ class SQLContext(Generic[FrameType]):
         **named_frames: CompatibleFrameType | None,
     ) -> None: ...
 
-    @deprecate_renamed_parameter("eager_execution", "eager", version="0.20.31")
+    @removed_parameters(
+        RenamedParameter(
+            name="eager_execution",
+            new_name="eager",
+            deprecated_in="0.20.31",
+            removed_in="2.0",
+        ),
+    )
     def __init__(
         self,
         frames: Mapping[str, CompatibleFrameType | None] | None = None,
@@ -149,9 +156,6 @@ class SQLContext(Generic[FrameType]):
     ) -> None:
         """
         Initialize a new `SQLContext`.
-
-        .. versionchanged:: 0.20.31
-            The `eager_execution` parameter was renamed `eager`.
 
         Parameters
         ----------
@@ -254,7 +258,9 @@ class SQLContext(Generic[FrameType]):
         Join a polars LazyFrame with a pandas DataFrame (note use of the preferred
         `pl.sql` method, which is equivalent to `SQLContext.execute_global`):
 
-        >>> pl.sql("SELECT df.*, c FROM df JOIN df_pandas USING(a)").collect()
+        >>> pl.sql(
+        ...     "SELECT df.*, c FROM df JOIN df_pandas USING(a) ORDER BY ALL"
+        ... ).collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -355,7 +361,8 @@ class SQLContext(Generic[FrameType]):
         query
             A valid string SQL query.
         eager
-            Apply the query eagerly, returning `DataFrame` instead of `LazyFrame`.
+            Execute the query immediately, returning a `DataFrame` instead of
+            `LazyFrame`.
             If unset, the value of the init-time "eager" parameter will be used.
             Note that the query itself is always executed in lazy-mode; this
             parameter only impacts the type of the returned frame.
@@ -418,7 +425,7 @@ class SQLContext(Generic[FrameType]):
         ┌────────┬─────────────┬─────────┐
         │ decade ┆ total_gross ┆ n_films │
         │ ---    ┆ ---         ┆ ---     │
-        │ i64    ┆ i64         ┆ u32     │
+        │ i64    ┆ i64         ┆ i64     │
         ╞════════╪═════════════╪═════════╡
         │ 2000   ┆ 533316061   ┆ 1       │
         │ 1990   ┆ 232338648   ┆ 3       │
@@ -426,7 +433,7 @@ class SQLContext(Generic[FrameType]):
         └────────┴─────────────┴─────────┘
         """
         res = wrap_ldf(self._ctxt.execute(query))
-        return res._collect_eager() if (eager or self._eager_execution) else res
+        return res.collect() if eager or self._eager_execution else res
 
     def register(self, name: str, frame: CompatibleFrameType | None) -> Self:
         """

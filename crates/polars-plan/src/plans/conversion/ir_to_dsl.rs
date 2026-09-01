@@ -167,10 +167,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Var(Arc::new(exp), ddof).into()
             },
-            IRAggExpr::AggGroups(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::AggGroups(Arc::new(exp)).into()
-            },
             IRAggExpr::Count {
                 input,
                 include_nulls,
@@ -328,7 +324,9 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Slice(offset, length) => A::Slice(offset, length),
                 IA::Explode(options) => A::Explode(options),
                 #[cfg(feature = "array_to_struct")]
-                IA::ToStruct(ng) => A::ToStruct(ng),
+                IA::ToStruct { fields } => A::ToStruct {
+                    fields: Some(fields),
+                },
             })
         },
         IF::BinaryExpr(f) => {
@@ -360,7 +358,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             use CategoricalFunction as C;
             use IRCategoricalFunction as IC;
             F::Categorical(match f {
-                IC::GetCategories => C::GetCategories,
                 #[cfg(feature = "strings")]
                 IC::LenBytes => C::LenBytes,
                 #[cfg(feature = "strings")]
@@ -594,7 +591,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::OrdinalDay => B::OrdinalDay,
                 IB::Time => B::Time,
                 IB::Date => B::Date,
-                IB::Datetime => B::Datetime,
                 #[cfg(feature = "dtype-duration")]
                 IB::Duration(time_unit) => B::Duration(time_unit),
                 IB::Hour => B::Hour,
@@ -619,7 +615,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::TotalNanoseconds { fractional } => B::TotalNanoseconds { fractional },
                 IB::ToString(v) => B::ToString(v),
                 IB::CastTimeUnit(time_unit) => B::CastTimeUnit(time_unit),
-                IB::WithTimeUnit(time_unit) => B::WithTimeUnit(time_unit),
                 #[cfg(feature = "timezones")]
                 IB::ConvertTimeZone(time_zone) => B::ConvertTimeZone(time_zone),
                 IB::TimeStamp(time_unit) => B::TimeStamp(time_unit),
@@ -748,7 +743,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             })
         },
         #[cfg(feature = "row_hash")]
-        IF::Hash(s0, s1, s2, s3) => F::Hash(s0, s1, s2, s3),
+        IF::Hash(seed) => F::Hash(seed),
         #[cfg(feature = "arg_where")]
         IF::ArgWhere => F::ArgWhere,
         #[cfg(feature = "index_of")]
@@ -909,7 +904,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 options,
             }
         },
-        IF::Rechunk => F::Rechunk,
         IF::ShiftAndFill => F::ShiftAndFill,
         IF::Shift => F::Shift,
         IF::DropNans => F::DropNans,

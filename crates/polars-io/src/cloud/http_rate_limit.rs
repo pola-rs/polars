@@ -52,8 +52,8 @@ use crate::cloud::{CloudDirectionalRateLimitConfig, CloudRateLimitConfig};
 static CONTROLLER_ID: AtomicU32 = AtomicU32::new(0);
 
 // Verbose.
-static LOG_RATE_LIMIT: LazyLock<bool> =
-    LazyLock::new(|| std::env::var("POLARS_LOG_RATE_LIMIT").is_ok());
+static LOG_HTTP_RATE_LIMIT: LazyLock<bool> =
+    LazyLock::new(|| std::env::var("POLARS_LOG_HTTP_RATE_LIMIT").is_ok());
 
 // Request/s rate init and boundaries.
 const DEFAULT_INIT_RATE: f64 = 1000.0;
@@ -553,7 +553,7 @@ impl AdaptiveRateController {
         };
 
         // Log.
-        if *LOG_RATE_LIMIT {
+        if *LOG_HTTP_RATE_LIMIT {
             eprintln!(
                 "[http rate_limit #{}_{} {}] ..cut (anchored): rate: {:.1}, success_rate: {:.1}, last_max: {:.1}",
                 self.id,
@@ -709,7 +709,7 @@ impl AdaptiveRateController {
             .store(now_ns + TICK_INTERVAL.as_nanos() as u64, Relaxed);
 
         // Logging.
-        if *LOG_RATE_LIMIT {
+        if *LOG_HTTP_RATE_LIMIT {
             eprintln!(
                 "[http rate_limit #{}_{} {}] {}: rate: {:.1}, success_rate_ewma: {:.1}, last_max: {:.1}, \
                     elapsed: {:.1}s, win_admit: {}, win_deny: {}, win_success: {}, win_throttle: {},  q_depth: {}",

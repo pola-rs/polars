@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import os
 from abc import ABC, abstractmethod
 from functools import partial
 from pathlib import Path
@@ -11,7 +10,6 @@ from typing import IO, TYPE_CHECKING, Any, ClassVar, Literal, overload
 
 from polars._dependencies import import_optional
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
-from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import normalize_filepath, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_ldf
@@ -20,7 +18,7 @@ from polars.lazyframe.in_process import InProcessQuery
 from polars.lazyframe.query_result import SingleNodeQueryResult
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping
+    from collections.abc import Callable, Iterable, Mapping
 
     from rmm.mr import DeviceMemoryResource  # type: ignore[import-not-found]
 
@@ -62,30 +60,6 @@ def _to_sink_target(
     else:
         msg = f"`path` argument has invalid type {qualified_type_name(path)!r}, and cannot be turned into a sink target"
         raise TypeError(msg)
-
-
-def _with_monitoring(optimizations: QueryOptFlags) -> QueryOptFlags:
-    """Register the query observer, and flag `optimizations` accordingly."""
-    monitor = os.environ.get("POLARS_QUERY_MONITORING") == "1"
-    if monitor:
-        import polars._plr as plr
-
-        plr.set_query_monitoring(True)
-
-    optimizations = optimizations.__copy__()
-    optimizations._pyoptflags.query_monitoring = monitor
-    return optimizations
-
-
-def _apply_retries_deprecation(
-    retries: int | None, storage_options: StorageOptionsDict | None
-) -> StorageOptionsDict | None:
-    if retries is not None:
-        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-        issue_deprecation_warning(msg)
-        storage_options = storage_options or {}
-        storage_options["max_retries"] = retries
-    return storage_options
 
 
 class Engine(ABC):
@@ -198,7 +172,7 @@ class Engine(ABC):
         maintain_order: bool = True,
         chunk_size: int | None = None,
         lazy: bool = False,
-    ) -> Iterator[DataFrame]:
+    ) -> _CollectBatches:
         """Execute `lf`, yielding its result in batches."""
         msg = f"`collect_batches` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
@@ -234,7 +208,6 @@ class Engine(ABC):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
@@ -258,7 +231,6 @@ class Engine(ABC):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         lazy: bool,
@@ -295,7 +267,6 @@ class Engine(ABC):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         lazy: bool,
@@ -316,7 +287,6 @@ class Engine(ABC):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         lazy: bool,
@@ -346,10 +316,43 @@ class _LocalEngine(Engine):
 
     _name: ClassVar[str]
 
+    # Subclasses that do not call `super().__init__()` still see the default value.
+    monitoring: bool | None = None
+    """Whether queries are monitored (``None`` uses the configured default)."""
+
+    def __init__(self, *, monitoring: bool | None = None) -> None:
+        if monitoring:
+            from polars._utils.monitoring import activate_monitoring
+
+            activate_monitoring()
+        self.monitoring = monitoring
+
+    def __repr__(self) -> str:
+        args = "" if self.monitoring is None else f"monitoring={self.monitoring!r}"
+        return f"{type(self).__name__}({args})"
+
     @property
     def name(self) -> str:
         """Name of the engine."""
         return self._name
+
+    def _with_monitoring(self, optimizations: QueryOptFlags) -> QueryOptFlags:
+        """Register the query observer when enabled and update `optimizations`."""
+        from polars._utils.monitoring import monitoring_enabled_globally
+
+        monitor = (
+            monitoring_enabled_globally()
+            if self.monitoring is None
+            else self.monitoring
+        )
+        if monitor:
+            import polars._plr as plr
+
+            plr.set_query_monitoring(True)
+
+        optimizations = optimizations.__copy__()
+        optimizations._pyoptflags.query_monitoring = monitor
+        return optimizations
 
     def execute(self, lf: LazyFrame, *, optimizations: QueryOptFlags) -> QueryResult:
         df = self.collect(lf, optimizations=optimizations)
@@ -404,7 +407,7 @@ class _LocalEngine(Engine):
         callback = self._post_opt_callback(
             background=background, eager=optimizations._pyoptflags.eager
         )
-        optimizations = _with_monitoring(optimizations)
+        optimizations = self._with_monitoring(optimizations)
 
         ldf = lf._ldf.with_optimizations(optimizations._pyoptflags)
         if background:
@@ -425,6 +428,7 @@ class _LocalEngine(Engine):
         if self.name == "streaming":
             issue_unstable_warning("streaming mode is considered unstable.")
 
+        optimizations = self._with_monitoring(optimizations)
         ldf = lf._ldf.with_optimizations(optimizations._pyoptflags)
         result: AsyncResult[DataFrame] = (
             _GeventDataFrameResult() if gevent else _AioDataFrameResult()
@@ -440,7 +444,8 @@ class _LocalEngine(Engine):
         maintain_order: bool = True,
         chunk_size: int | None = None,
         lazy: bool = False,
-    ) -> Iterator[DataFrame]:
+    ) -> _CollectBatches:
+        optimizations = self._with_monitoring(optimizations)
         ldf = lf._ldf.with_optimizations(optimizations._pyoptflags)
         return _CollectBatches(
             ldf.collect_batches(
@@ -456,6 +461,7 @@ class _LocalEngine(Engine):
     ) -> list[DataFrame]:
         import polars._plr as plr
 
+        optimizations = self._with_monitoring(optimizations)
         out = plr.collect_all(
             [lf._ldf for lf in lfs], self.name, optimizations._pyoptflags
         )
@@ -470,6 +476,7 @@ class _LocalEngine(Engine):
     ) -> AsyncResult[list[DataFrame]]:
         import polars._plr as plr
 
+        optimizations = self._with_monitoring(optimizations)
         result: AsyncResult[list[DataFrame]] = (
             _GeventDataFrameResult() if gevent else _AioDataFrameResult()
         )
@@ -504,7 +511,6 @@ class _LocalEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
@@ -543,8 +549,6 @@ class _LocalEngine(Engine):
                 "distinct_count": True,
                 "null_count": True,
             }
-
-        storage_options = _apply_retries_deprecation(retries, storage_options)
 
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_parquet"
@@ -595,7 +599,6 @@ class _LocalEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         lazy: bool,
@@ -608,8 +611,6 @@ class _LocalEngine(Engine):
             _init_credential_provider_builder,
         )
         from polars.io.partition import _SinkOptions
-
-        storage_options = _apply_retries_deprecation(retries, storage_options)
 
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_ipc"
@@ -674,7 +675,6 @@ class _LocalEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         lazy: bool,
@@ -697,8 +697,6 @@ class _LocalEngine(Engine):
         del credential_provider
 
         target = _to_sink_target(path)
-
-        storage_options = _apply_retries_deprecation(retries, storage_options)
 
         sink_options = _SinkOptions(
             mkdir=mkdir,
@@ -742,7 +740,6 @@ class _LocalEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         lazy: bool,
@@ -752,8 +749,6 @@ class _LocalEngine(Engine):
             _init_credential_provider_builder,
         )
         from polars.io.partition import _SinkOptions
-
-        storage_options = _apply_retries_deprecation(retries, storage_options)
 
         credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_ndjson"
@@ -823,13 +818,37 @@ class _AutoEngine(_LocalEngine):
 
 
 class InMemoryEngine(_LocalEngine):
-    """The in-memory engine."""
+    """
+    The in-memory engine.
+
+    Parameters
+    ----------
+    monitoring : bool, default None
+        Whether to monitor queries run by this engine. ``None`` uses the setting from
+        :meth:`Config.enable_monitoring`; ``True`` or ``False`` overrides it. Setting
+        this to ``True`` requires the ``polars-cloud`` package.
+    """
 
     _name = "in-memory"
 
 
 class StreamingEngine(_LocalEngine):
-    """The streaming engine."""
+    """
+    The streaming engine.
+
+    Parameters
+    ----------
+    monitoring : bool, default None
+        Whether to monitor queries run by this engine. ``None`` uses the setting from
+        :meth:`Config.enable_monitoring`; ``True`` or ``False`` overrides it. Setting
+        this to ``True`` requires the ``polars-cloud`` package.
+
+    Examples
+    --------
+    Monitor a single query, regardless of the configured default:
+
+    >>> lf.collect(engine=pl.StreamingEngine(monitoring=True))  # doctest: +SKIP
+    """
 
     _name = "streaming"
 
@@ -880,8 +899,16 @@ class GPUEngine(_LocalEngine):
         device: int | None = None,
         memory_resource: Any | None = None,
         raise_on_fail: bool = False,
+        monitoring: bool = False,
         **kwargs: Any,
     ) -> None:
+        # We do want a named param for `monitoring`, because otherwise it will silently
+        # end up in `kwargs`
+        if monitoring:
+            msg = "query monitoring is not supported by the GPU engine"
+            raise NotImplementedError(msg)
+        super().__init__(monitoring=False)
+
         self.device = device
         self.memory_resource = memory_resource
         # Avoids need for changes in cudf-polars
@@ -904,12 +931,11 @@ class GPUEngine(_LocalEngine):
         cudf_polars = import_optional(
             "cudf_polars",
             err_prefix="GPU engine requested, but required package",
+            err_suffix="could not be imported",
             install_message=(
-                "Please install using the command "
-                "`pip install cudf-polars-cu12` "
-                "(CUDA 12 is required for RAPIDS cuDF v25.08 and later). "
-                "If your system has a CUDA 11 driver, install with "
-                "`pip install cudf-polars-cu11==25.06` "
+                "Please install the cuDF Polars distribution matching your CUDA "
+                "version. See the GPU support documentation for installation "
+                "instructions: https://docs.pola.rs/user-guide/gpu-support/."
             ),
         )
         return partial(cudf_polars.execute_with_cudf, config=self)

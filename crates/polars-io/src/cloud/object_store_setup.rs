@@ -458,13 +458,16 @@ pub async fn build_object_store(
         .map_or(CloudType::File, CloudType::from_cloud_scheme);
     let cloud_location = CloudLocation::new(path.clone(), glob)?;
 
+    let disable_http_rate_limit = polars_config::config().disable_http_rate_limit();
     let rate_limiter = match cloud_type {
-        CloudType::Aws | CloudType::Azure | CloudType::Gcp => Some(Arc::new(RateLimiter::new(
-            options
-                .map(|options| options.rate_limit_config)
-                .unwrap_or_default()
-                .into(),
-        ))),
+        CloudType::Aws | CloudType::Azure | CloudType::Gcp if !disable_http_rate_limit => {
+            Some(Arc::new(RateLimiter::new(
+                options
+                    .map(|options| options.rate_limit_config)
+                    .unwrap_or_default()
+                    .into(),
+            )))
+        },
         _ => None,
     };
 

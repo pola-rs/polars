@@ -119,6 +119,10 @@ def test_collect_batches_accepts_gpu_engine_object(lf: pl.LazyFrame) -> None:
     ],
 )
 def test_select_engine(spelling: EngineType, expected: str) -> None:
+    if os.environ.get("POLARS_ENGINE_AFFINITY") is not None:
+        pytest.skip(
+            "POLARS_ENGINE_AFFINITY is set; this may override the test's expectations"
+        )
     selected = _select_engine(spelling)
     assert isinstance(selected, pl.Engine)
     assert selected.name == expected
@@ -176,6 +180,11 @@ def test_gpu_engine_construction_unchanged() -> None:
     engine = pl.GPUEngine(raise_on_fail=True)
     assert engine.config == {"raise_on_fail": True}
     assert engine.name == "gpu"
+    assert engine.monitoring is False
+
+    engine = pl.GPUEngine(monitoring=False)
+    assert engine.config == {"raise_on_fail": False}
+    assert engine.monitoring is False
 
 
 def test_gpu_engine_stays_hashable_and_picklable() -> None:
@@ -183,6 +192,15 @@ def test_gpu_engine_stays_hashable_and_picklable() -> None:
     engine = pl.GPUEngine(device=1)
     assert hash(engine) is not None
     assert pickle.loads(pickle.dumps(engine)).config == engine.config
+
+
+def test_named_engines_are_unmonitored_singletons() -> None:
+    # Named engines resolve to shared instances, so nothing may mutate `monitoring`.
+    for name in ("streaming", "in-memory"):
+        selected = _select_engine(name)  # type: ignore[arg-type]
+        assert isinstance(selected, _LocalEngine)
+        assert selected.monitoring is None
+        assert _select_engine(name) is selected  # type: ignore[arg-type]
 
 
 class _CountingEngine(pl.Engine):

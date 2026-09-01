@@ -206,7 +206,7 @@ def test_categorical_list() -> None:
     assert s.dtype == pl.List
     assert s.dtype.inner == pl.Categorical  # type: ignore[attr-defined]
     assert s.to_list() == values
-    assert s.explode(empty_as_null=False).to_list() == ["a", "b", "c", "a", "d", "d"]
+    assert s.explode().to_list() == ["a", "b", "c", "a", "d", "d"]
 
 
 def test_group_by_list_column() -> None:
@@ -342,7 +342,11 @@ def test_list_sum_and_dtypes() -> None:
         )
 
         assert_frame_equal(
-            df.select("a").explode("a", empty_as_null=False).sum(),
+            df.select("a")
+            .explode(
+                "a",
+            )
+            .sum(),
             pl.DataFrame(pl.Series("a", [32], dtype=dt_out)),
             check_dtypes=True,
             check_exact=True,
@@ -546,7 +550,9 @@ def test_logical_parallel_list_collect() -> None:
         )
         .group_by("Group")
         .agg(pl.col("Values").value_counts(sort=True))
-        .explode("Values", empty_as_null=False)
+        .explode(
+            "Values",
+        )
         .unnest("Values")
     )
     assert out.dtypes == [pl.String, pl.Categorical, pl.get_index_type()]
@@ -564,24 +570,6 @@ def test_list_recursive_categorical_cast() -> None:
     s = pl.Series(values).cast(dtype)
     assert s.dtype == dtype
     assert s.to_list() == values
-
-
-@pytest.mark.parametrize(
-    ("data", "expected_data", "dtype"),
-    [
-        ([None, 1, 2], [None, [1], [2]], pl.Int64),
-        ([None, 1.0, 2.0], [None, [1.0], [2.0]], pl.Float64),
-        ([None, "x", "y"], [None, ["x"], ["y"]], pl.String),
-        ([None, True, False], [None, [True], [False]], pl.Boolean),
-    ],
-)
-def test_non_nested_cast_to_list(
-    data: list[Any], expected_data: list[Any], dtype: PolarsDataType
-) -> None:
-    s = pl.Series(data, dtype=dtype)
-    casted_s = s.cast(pl.List(dtype))
-    expected = pl.Series(expected_data, dtype=pl.List(dtype))
-    assert_series_equal(casted_s, expected)
 
 
 def test_list_new_from_index_logical() -> None:
@@ -638,9 +626,15 @@ def test_struct_with_nulls_as_list() -> None:
 def test_list_amortized_iter_clear_settings_10126() -> None:
     out = (
         pl.DataFrame({"a": [[1], [1], [2]], "b": [[1, 2], [1, 3], [4]]})
-        .explode("a", empty_as_null=False)
+        .explode(
+            "a",
+        )
         .group_by("a")
-        .agg(pl.col("b").list.explode(keep_nulls=False, empty_as_null=False))
+        .agg(
+            pl.col("b").list.explode(
+                keep_nulls=False,
+            )
+        )
         .with_columns(pl.col("b").list.unique())
         .sort("a")
     )
@@ -727,22 +721,20 @@ def test_list_std(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").list.std().name.suffix("_std"),
         pl.col("float").list.std().name.suffix("_std"),
-        pl.col("duration").list.std().name.suffix("_std"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_std", [1.5811388300841898], dtype=pl.Float64),
             pl.Series("float_std", [1.5811388300841898], dtype=pl.Float64),
-            pl.Series(
-                "duration_std",
-                [timedelta(microseconds=1581)],
-                dtype=pl.Duration(time_unit="us"),
-            ),
         ]
     )
 
     assert_frame_equal(result, expected)
+
+    # `std` is not supported for Duration (see #23608).
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("duration").list.std())
 
 
 def test_list_median(data_dispersion: pl.DataFrame) -> None:
@@ -887,7 +879,7 @@ def test_sort() -> None:
 def test_list_agg_temporal(inner_dtype: PolarsDataType, agg: str) -> None:
     lf = pl.LazyFrame({"a": [[1, 3]]}, schema={"a": pl.List(inner_dtype)})
     result = lf.select(getattr(pl.col("a").list, agg)())
-    expected = lf.select(getattr(pl.col("a").explode(empty_as_null=False), agg)())
+    expected = lf.select(getattr(pl.col("a").explode(), agg)())
     assert result.collect_schema() == expected.collect_schema()
     assert_frame_equal(result.collect(), expected.collect())
 

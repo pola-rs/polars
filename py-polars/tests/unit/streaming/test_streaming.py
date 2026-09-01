@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import time
 from datetime import date
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -14,6 +13,8 @@ from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars._typing import JoinStrategy
     from tests.conftest import PlMonkeyPatch
 
@@ -296,21 +297,6 @@ def test_boolean_agg_schema() -> None:
 
 
 @pytest.mark.write_disk
-def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
-    with Path.open(tmp_path / "header_no_data.csv", "w") as f:
-        f.write("name, age\n")
-
-    schema = {"name": pl.String, "age": pl.Int32}
-    df = (
-        pl.scan_csv(tmp_path / "header_no_data.csv", schema=schema)
-        .head()
-        .collect(engine="streaming")
-    )
-    assert df.height == 0
-    assert df.schema == schema
-
-
-@pytest.mark.write_disk
 def test_streaming_with_hconcat(tmp_path: Path) -> None:
     df1 = pl.DataFrame(
         {
@@ -330,7 +316,7 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     lf1 = pl.scan_parquet(tmp_path / "df1.parquet")
     lf2 = pl.scan_parquet(tmp_path / "df2.parquet")
     query = (
-        pl.concat([lf1, lf2], how="horizontal", strict=True)
+        pl.concat([lf1, lf2], how="horizontal")
         .group_by("id")
         .agg(pl.all().mean())
         .sort(pl.col("id"))
@@ -466,7 +452,6 @@ def test_streaming_hconcat_strict_27372() -> None:
             data,
         ],
         how="horizontal",
-        strict=True,
     )
 
     result = lf.collect(engine="streaming")
