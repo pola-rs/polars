@@ -18,6 +18,7 @@ This page gives an overview of all public Polars expressions.
    extension
    functions
    list
+   map
    modify_select
    meta
    miscellaneous
