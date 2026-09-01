@@ -2958,6 +2958,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | polars.io.iceberg.IcebergCatalogConfig
         | None = None,
         storage_options: StorageOptionsDict | None = None,
+        compression: ParquetCompression = "zstd",
+        compression_level: int | None = None,
+        row_group_size: int | None = None,
+        maintain_order: bool = True,
         engine: EngineType = "auto",
     ) -> pl.DataFrame:
         """
@@ -2998,6 +3002,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             For cloud storages, this may include configurations for authentication etc.
 
             More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+        compression
+            Parquet compression codec.
+        compression_level
+            Compression level to use. Higher compression levels usually reduce file
+            size at the expense of write throughput.
+        row_group_size
+            Row group size in number of rows.
+        maintain_order
+            Maintain the input row order in the written files. Setting this to
+            `False` can improve throughput.
         engine
             Engine used to produce rows for the local `pyiceberg` writer.
 
@@ -3029,6 +3043,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             snapshot_properties=snapshot_properties,
             catalog=catalog,
             storage_options=storage_options,
+            compression=compression,
+            compression_level=compression_level,
+            row_group_size=row_group_size,
+            maintain_order=maintain_order,
         )
 
         sink_state.attach_sink(self).collect(engine=engine)
