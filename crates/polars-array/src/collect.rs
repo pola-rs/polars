@@ -30,6 +30,11 @@
 //! field arrays. Those are built with a builder — see [`crate::builder`] — or, when the pieces are
 //! laid out already, by the constructors of the arrays themselves.
 //!
+//! A [`PlFixedSizeBinaryArray`](crate::PlFixedSizeBinaryArray) has none either, for the first of
+//! those reasons alone: its elements are byte strings like those of a [`PlBinaryViewArray`], but
+//! nothing about an iterator of them says how wide the elements of an empty one are. Its builder
+//! is the one that takes that width.
+//!
 //! # Example
 //! ```
 //! use polars_array::collect::{ArrayCollectIterExt, ArrayFromIter};

@@ -43,12 +43,13 @@
 //! Such a buffer is read through [`broadcast_index(i, offsets.len() - 1)`](broadcast_index), and
 //! validated with [`is_valid_offsets_len`].
 //!
-//! # The values of a fixed size list array
+//! # The values of a fixed size array
 //!
-//! The values of a [`PlFixedSizeListArray`](crate::PlFixedSizeListArray) are the other backing
-//! buffer that does not hold one slot per element: element `i` covers `width` of them at a time.
-//! It is therefore the *elements* the buffer holds that are flat or scalar, and each of them is
-//! `width` slots wide:
+//! The values of a [`PlFixedSizeListArray`](crate::PlFixedSizeListArray) — and the bytes of a
+//! [`PlFixedSizeBinaryArray`](crate::PlFixedSizeBinaryArray), which are governed by the same rule —
+//! are the other backing buffer that does not hold one slot per element: element `i` covers `width`
+//! of them at a time. It is therefore the *elements* the buffer holds that are flat or scalar, and
+//! each of them is `width` slots wide:
 //!
 //! * *flat*: `values.len() == length * width`, the values of every element laid end to end.
 //! * *scalar*: `values.len() == width`, the one element all `length` elements share.

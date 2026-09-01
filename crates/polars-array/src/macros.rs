@@ -79,7 +79,8 @@ mod tests {
     use polars_utils::float16::pf16;
 
     use crate::{
-        PlArray, PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray,
+        PlArray, PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlNullArray,
+        PlPrimitiveArray, PlStructArray,
     };
 
     /// Whether the body runs with `T` bound to the element type of an array of `T`.
@@ -114,8 +115,9 @@ mod tests {
 
     #[test]
     fn arrays_that_are_not_primitive_have_no_element_type() {
-        let arrays: [Box<dyn PlArray>; 4] = [
+        let arrays: [Box<dyn PlArray>; 5] = [
             Box::new(PlNullArray::new(1)),
+            Box::new(PlFixedSizeBinaryArray::new_empty(2)),
             Box::new(PlListArray::new_empty(Box::new(
                 PlPrimitiveArray::<i32>::new_empty(),
             ))),

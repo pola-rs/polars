@@ -242,8 +242,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        PlBinaryViewArray, PlBooleanArray, PlFixedSizeListArray, PlListArray, PlPrimitiveArray,
-        PlStructArray,
+        PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray,
+        PlListArray, PlPrimitiveArray, PlStructArray,
     };
 
     fn arrays() -> Vec<Box<dyn PlArray>> {
@@ -255,6 +255,10 @@ mod tests {
                 b"bar",
                 b"a value that is too long to inline",
             ])),
+            Box::new(PlFixedSizeBinaryArray::from_vec(
+                vec![1u8, 2, 3, 4, 5, 6],
+                2,
+            )),
             Box::new(PlStructArray::from_fields(vec![Box::new(
                 PlPrimitiveArray::from_vec(vec![1i32, 2, 3]),
             )])),
@@ -278,6 +282,7 @@ mod tests {
                 b"a value that is too long to inline",
                 length,
             )),
+            Box::new(PlFixedSizeBinaryArray::new_scalar(b"ab", length)),
             Box::new(PlStructArray::from_fields(vec![Box::new(
                 PlPrimitiveArray::<i64>::new_scalar(7, length),
             )])),
@@ -369,6 +374,7 @@ mod tests {
             Box::new(PlPrimitiveArray::<i32>::new_full_null(4)),
             Box::new(PlBooleanArray::new_full_null(4)),
             Box::new(PlBinaryViewArray::new_full_null(4)),
+            Box::new(PlFixedSizeBinaryArray::new_full_null(2, 4)),
             Box::new(PlStructArray::new_full_null(
                 vec![Box::new(PlPrimitiveArray::<i32>::new_scalar(1, 4))],
                 4,

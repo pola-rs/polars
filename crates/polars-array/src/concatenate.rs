@@ -27,8 +27,8 @@
 //! A [`PlNullArray`] is nothing but a length, so concatenating null arrays is always `O(1)`. None
 //! of these paths reaches the values of a [`PlListArray`] or a [`PlFixedSizeListArray`], nor the
 //! fields of a [`PlStructArray`], so none of them is checked for concatenability when one of these
-//! paths is taken. The widths of fixed size list arrays are checked either way: they are what the
-//! lists of the result are as wide as.
+//! paths is taken. The widths of fixed size list and fixed size binary arrays are checked either
+//! way: they are what the elements of the result are as wide as.
 //!
 //! The data buffers of a [`PlBinaryViewArray`] are not copied either, whichever path is taken:
 //! they are appended to one another and it is the views that are rebased onto them, so
@@ -48,8 +48,8 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::{
-    PlBinaryViewArray, PlBooleanArray, PlFixedSizeListArray, PlListArray, PlNullArray,
-    PlPrimitiveArray, PlStructArray, with_match_pl_primitive_array_type,
+    PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray,
+    PlNullArray, PlPrimitiveArray, PlStructArray, with_match_pl_primitive_array_type,
 };
 
 /// The elements of a slice, in order, a number of times over, each as what it stands for.
@@ -312,6 +312,12 @@ fn concatenate_impl<S>(
         PlArrayType::BinaryView => {
             let map = downcast_map::<PlBinaryViewArray, _>(&iter, array_type)?;
             Ok(Box::new(concatenate_binview_impl(iter.mapped(&map))))
+        },
+        PlArrayType::FixedSizeBinary => {
+            let map = downcast_map::<PlFixedSizeBinaryArray, _>(&iter, array_type)?;
+            Ok(Box::new(concatenate_fixed_size_binary_impl(
+                iter.mapped(&map),
+            )?))
         },
         PlArrayType::Struct => {
             let map = downcast_map::<PlStructArray, _>(&iter, array_type)?;
@@ -603,6 +609,117 @@ fn concatenate_binview_impl<S>(
             validity,
         )
     }
+}
+
+/// Concatenates `arrays`, in order, into a single [`PlFixedSizeBinaryArray`] over the bytes their
+/// elements cover.
+///
+/// Every array has to agree on the width, which is what the elements of the result are as wide as.
+/// See the [module docs](self) for when the result keeps the scalar representation; outside those
+/// cases the values of the result are flat, so an input whose own values are scalar has its element
+/// written out once per element it stands for, since the values of a flat fixed size binary array
+/// hold one width per element.
+///
+/// # Errors
+/// This function errors if `arrays` is empty, since there is then no width for the elements of the
+/// result to have, or if the arrays do not all have the same width.
+///
+/// # Example
+/// ```
+/// use polars_array::concatenate::concatenate_fixed_size_binary;
+/// use polars_array::PlFixedSizeBinaryArray;
+///
+/// // Two arrays standing for the same repeated element concatenate in `O(width)`.
+/// let arr = PlFixedSizeBinaryArray::new_scalar(b"ab", 1_000_000_000);
+/// let concatenated = concatenate_fixed_size_binary(&[&arr, &arr]).unwrap();
+///
+/// assert_eq!(concatenated.len(), 2_000_000_000);
+/// assert_eq!(concatenated.values().len(), 2);
+/// assert!(concatenated.is_scalar());
+/// ```
+pub fn concatenate_fixed_size_binary(
+    arrays: &[&PlFixedSizeBinaryArray],
+) -> PolarsResult<PlFixedSizeBinaryArray> {
+    concatenate_fixed_size_binary_impl(SliceBroadcastIter::new(arrays, 1, &pointee))
+}
+
+/// [`concatenate_fixed_size_binary`], over the arrays `iter` yields.
+fn concatenate_fixed_size_binary_impl<S>(
+    iter: SliceBroadcastIter<'_, '_, PlFixedSizeBinaryArray, S>,
+) -> PolarsResult<PlFixedSizeBinaryArray> {
+    let mut distinct = iter.distinct();
+    let Some(first) = distinct.next() else {
+        polars_bail!(
+            InvalidOperation:
+            "cannot concatenate an empty list of fixed size binary arrays: there is no width for \
+             the elements of the result to have"
+        );
+    };
+
+    let width = first.width();
+    for array in distinct {
+        polars_ensure!(
+            array.width() == width,
+            InvalidOperation:
+            "cannot concatenate a fixed size binary array of width {} with one of width {}",
+            width, array.width(),
+        );
+    }
+
+    if let Some(array) = only_non_empty(&iter) {
+        return Ok(array.clone());
+    }
+
+    let (length, null_count) = total_length_and_null_count(&iter);
+
+    // Every element is null, so every value is undetermined and none of them has to be written
+    // out: a zeroed element of the width stands in for the one they all cover.
+    if length > 0 && null_count == length {
+        return Ok(PlFixedSizeBinaryArray::new_full_null(width, length));
+    }
+
+    // Every array stands for the same repeated element, which the result repeats over all of them.
+    if let Some(element) = shared_element(&iter, PlFixedSizeBinaryArray::scalar_value) {
+        return Ok(match element {
+            Some(element) => PlFixedSizeBinaryArray::new_scalar(element, length),
+            // An element shared as null makes every element of every array null, which the branch
+            // above has already returned.
+            None => PlFixedSizeBinaryArray::new_full_null(width, length),
+        });
+    }
+
+    let validity = concatenate_validities_with(iter.clone(), length, null_count);
+
+    // One pass over the distinct arrays is what the concatenation is made of: the copies of them
+    // cover the very same bytes over again, so the pass is repeated rather than built twice.
+    let flat_len = length
+        .checked_mul(width)
+        .expect("the values of the concatenation overflow a `usize`");
+    let mut values: Vec<u8> = Vec::with_capacity(flat_len);
+    for array in iter.distinct().filter(|array| !array.is_empty()) {
+        if array.values_are_flat() {
+            values.extend_from_slice(array.values().as_slice());
+        } else {
+            // Scalar values are the one element every element covers, which the result writes out
+            // once per element it stands for.
+            let element = array.values().as_slice();
+            for _ in 0..array.len() {
+                values.extend_from_slice(element);
+            }
+        }
+    }
+
+    let pass = values.len();
+    for _ in 1..iter.repeats() {
+        values.extend_from_within(..pass);
+    }
+
+    // SAFETY: every array contributed the width of each of its elements, so the values hold one
+    // width per element of the concatenation. The mask is the one `concatenate_validities_with`
+    // built for that many elements.
+    Ok(unsafe {
+        PlFixedSizeBinaryArray::new_unchecked(Buffer::from(values), width, length, validity)
+    })
 }
 
 /// Concatenates `arrays`, in order, into a single [`PlFixedSizeListArray`] over the concatenation
@@ -1531,6 +1648,104 @@ mod tests {
     }
 
     #[test]
+    fn fixed_size_binary_arrays_concatenate_their_bytes() {
+        let lhs = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2);
+        let rhs = PlFixedSizeBinaryArray::from_vec(vec![5u8, 6], 2)
+            .with_validity(Some(Bitmap::new_zeroed(1)));
+        let concatenated = concatenate_fixed_size_binary(&[&lhs, &rhs]).unwrap();
+
+        assert_eq!(concatenated.len(), 3);
+        assert_eq!(concatenated.width(), 2);
+        assert_eq!(concatenated.null_count(), 1);
+        assert!(concatenated.is_flat());
+        assert_eq!(concatenated.values().as_slice(), [1, 2, 3, 4, 5, 6]);
+        assert_eq!(
+            concatenated.iter().collect::<Vec<_>>(),
+            [Some([1, 2].as_slice()), Some([3, 4].as_slice()), None,]
+        );
+    }
+
+    #[test]
+    fn fixed_size_binary_arrays_of_the_same_repeated_element_stay_scalar() {
+        let scalar = PlFixedSizeBinaryArray::new_scalar(b"ab", 1_000_000_000);
+        // A flat array of length one stands for a single repeated element as well.
+        let single = PlFixedSizeBinaryArray::from_vec(b"ab".to_vec(), 2);
+        let concatenated = concatenate_fixed_size_binary(&[&scalar, &single, &scalar]).unwrap();
+
+        assert_eq!(concatenated.len(), 2_000_000_001);
+        assert!(concatenated.is_scalar());
+        assert_eq!(concatenated.width(), 2);
+        assert_eq!(concatenated.values().len(), 2);
+        assert_eq!(concatenated.value(2_000_000_000), b"ab");
+
+        // Elements that do not agree are written out one per element instead.
+        let other = PlFixedSizeBinaryArray::from_vec(b"cd".to_vec(), 2);
+        let concatenated =
+            concatenate_fixed_size_binary(&[&scalar.new_from_index(0, 2), &other]).unwrap();
+
+        assert_eq!(concatenated.len(), 3);
+        assert!(!concatenated.is_scalar());
+        assert!(concatenated.values_are_flat());
+        assert_eq!(concatenated.values().as_slice(), b"ababcd");
+    }
+
+    #[test]
+    fn fully_null_fixed_size_binary_arrays_concatenate_without_writing_out_their_values() {
+        let null = PlFixedSizeBinaryArray::new_full_null(2, 1_000_000_000);
+        let concatenated = concatenate_fixed_size_binary(&[&null, &null]).unwrap();
+
+        assert_eq!(concatenated.len(), 2_000_000_000);
+        assert_eq!(concatenated.null_count(), 2_000_000_000);
+        assert!(concatenated.is_scalar());
+        assert_eq!(concatenated.width(), 2);
+        assert_eq!(concatenated.values().len(), 2);
+        assert_eq!(concatenated.validity().unwrap().bitmap().len(), 1);
+    }
+
+    #[test]
+    fn copies_of_a_fixed_size_binary_array_are_appended_in_one_pass() {
+        let arr = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2);
+        let repeated = concatenate_repeated(&arr, 3).unwrap();
+
+        let repeated = repeated
+            .as_any()
+            .downcast_ref::<PlFixedSizeBinaryArray>()
+            .unwrap();
+        assert_eq!(repeated.len(), 6);
+        assert_eq!(
+            repeated.values().as_slice(),
+            [1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4]
+        );
+
+        // Copies of an array standing for one element stand for it as well, in `O(1)`.
+        let scalar = PlFixedSizeBinaryArray::new_scalar(b"ab", 1_000_000);
+        let repeated = concatenate_repeated(&scalar, 1_000).unwrap();
+
+        assert_eq!(repeated.len(), 1_000_000_000);
+        let repeated = repeated
+            .as_any()
+            .downcast_ref::<PlFixedSizeBinaryArray>()
+            .unwrap();
+        assert!(repeated.is_scalar());
+        assert_eq!(repeated.width(), 2);
+        assert_eq!(repeated.values().len(), 2);
+    }
+
+    #[test]
+    fn fixed_size_binary_arrays_have_to_agree_on_their_width() {
+        let two = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2);
+        let four = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 4);
+        let err = concatenate_fixed_size_binary(&[&two, &four])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("width"), "{err}");
+
+        // There is no width for the elements of the result to have.
+        let err = concatenate_fixed_size_binary(&[]).unwrap_err().to_string();
+        assert!(err.contains("width"), "{err}");
+    }
+
+    #[test]
     fn fixed_size_list_arrays_have_to_agree_on_their_width() {
         let two = PlFixedSizeListArray::from_values(
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4])),
@@ -1611,6 +1826,10 @@ mod tests {
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
             Box::new(PlBooleanArray::from_vec(vec![true, false, true])),
             Box::new(PlNullArray::new(3)),
+            Box::new(PlFixedSizeBinaryArray::from_vec(
+                vec![1u8, 2, 3, 4, 5, 6],
+                2,
+            )),
             Box::new(PlStructArray::from_fields(vec![Box::new(
                 PlPrimitiveArray::from_vec(vec![1i32, 2, 3]),
             )])),

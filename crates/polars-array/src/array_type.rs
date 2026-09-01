@@ -39,6 +39,14 @@ pub enum PlArrayType {
     /// reached. Nothing here says the bytes are a string either — that is a logical type, which
     /// the arrays in this crate do not carry.
     BinaryView,
+    /// A [`PlFixedSizeBinaryArray`](crate::PlFixedSizeBinaryArray): a sequence of bytes of a fixed
+    /// width, stored in one values buffer the elements cut into consecutive slices.
+    ///
+    /// The width is part of neither this type nor the array's identity: two fixed size binary
+    /// arrays are both [`PlArrayType::FixedSizeBinary`] no matter how wide their elements are.
+    /// Nothing here says the bytes are a decimal either — that is a logical type, which the arrays
+    /// in this crate do not carry.
+    FixedSizeBinary,
     /// A [`PlStructArray`](crate::PlStructArray): a row of one value per field array.
     ///
     /// The fields are part of neither this type nor the array's identity: two struct arrays are
@@ -83,6 +91,12 @@ impl PlArrayType {
     #[inline]
     pub fn is_binary_view(&self) -> bool {
         matches!(self, Self::BinaryView)
+    }
+
+    /// Whether this is [`PlArrayType::FixedSizeBinary`].
+    #[inline]
+    pub fn is_fixed_size_binary(&self) -> bool {
+        matches!(self, Self::FixedSizeBinary)
     }
 
     /// Whether this is [`PlArrayType::Struct`].

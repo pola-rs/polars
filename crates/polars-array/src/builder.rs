@@ -71,10 +71,10 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::static_array::StaticArray;
 use crate::{
-    PlBinaryViewArrayBuilder, PlBooleanArrayBuilder, PlFixedSizeListArray,
-    PlFixedSizeListArrayBuilder, PlListArray, PlListArrayBuilder, PlNullArrayBuilder,
-    PlPrimitiveArrayBuilder, PlStructArray, PlStructArrayBuilder,
-    with_match_pl_primitive_array_type,
+    PlBinaryViewArrayBuilder, PlBooleanArrayBuilder, PlFixedSizeBinaryArray,
+    PlFixedSizeBinaryArrayBuilder, PlFixedSizeListArray, PlFixedSizeListArrayBuilder, PlListArray,
+    PlListArrayBuilder, PlNullArrayBuilder, PlPrimitiveArrayBuilder, PlStructArray,
+    PlStructArrayBuilder, with_match_pl_primitive_array_type,
 };
 
 /// A builder of one concrete array type.
@@ -509,10 +509,10 @@ impl PlArrayBuilder for Box<dyn PlArrayBuilder> {
 /// This is the counterpart of [`make_builder`](arrow::array::builder::make_builder), which takes
 /// the dtype the built array is to have. The arrays in this crate carry no logical type, so what
 /// stands in for it is an array of the physical shape the result is to have: the element type of a
-/// [`PlPrimitiveArray`](crate::PlPrimitiveArray), the width of a [`PlFixedSizeListArray`], the
-/// field arrays of a [`PlStructArray`] — recursively, since the builder of a nested array is built
-/// out of the builders of its children. Nothing but the shape of `array` is read, so an empty array
-/// does as well as one holding elements.
+/// [`PlPrimitiveArray`](crate::PlPrimitiveArray), the width of a [`PlFixedSizeBinaryArray`] or a
+/// [`PlFixedSizeListArray`], the field arrays of a [`PlStructArray`] — recursively, since the
+/// builder of a nested array is built out of the builders of its children. Nothing but the shape
+/// of `array` is read, so an empty array does as well as one holding elements.
 ///
 /// # Example
 /// ```
@@ -536,6 +536,13 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
         .expect("a primitive array has a primitive element type"),
         PlArrayType::Boolean => Box::new(PlBooleanArrayBuilder::new()),
         PlArrayType::BinaryView => Box::new(PlBinaryViewArrayBuilder::new()),
+        PlArrayType::FixedSizeBinary => {
+            let array = array
+                .as_any()
+                .downcast_ref::<PlFixedSizeBinaryArray>()
+                .unwrap();
+            Box::new(PlFixedSizeBinaryArrayBuilder::new(array.width()))
+        },
         PlArrayType::Null => Box::new(PlNullArrayBuilder::new()),
         PlArrayType::List => {
             let array = array.as_any().downcast_ref::<PlListArray>().unwrap();
@@ -673,8 +680,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        PlBinaryViewArray, PlBooleanArray, PlNullArray, PlPrimitiveArray, PlStructArray,
-        with_match_pl_primitive_array_type,
+        PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlNullArray, PlPrimitiveArray,
+        PlStructArray, with_match_pl_primitive_array_type,
     };
 
     /// One array of every array type, all of three elements, with a null in the middle.
@@ -695,6 +702,10 @@ mod tests {
                     b"a value that is too long to inline",
                 ])
                 .with_validity(Some(validity.clone())),
+            ),
+            Box::new(
+                PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4, 5, 6], 2)
+                    .with_validity(Some(validity.clone())),
             ),
             Box::new(PlStructArray::new(
                 vec![Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]))],
