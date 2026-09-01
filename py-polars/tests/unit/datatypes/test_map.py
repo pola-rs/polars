@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import math
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -196,6 +197,7 @@ def test_map_map_elements_receives_dict() -> None:
         (pl.Boolean, True),
         (pl.Date, date(2020, 1, 1)),
         (pl.String, "a"),
+        (pl.Categorical, "a"),
     ],
 )
 def test_map_arbitrary_dict_key_types(key_dtype: pl.DataType, key: Any) -> None:
@@ -843,3 +845,126 @@ def test_map_dsl_on_nested_value_dtype() -> None:
         pl.Struct({"key": pl.String, "value": pl.Struct({"x": pl.Int64})})
     )
     assert_series_equal(entries.list.to_map(), s)
+
+
+def test_map_float_keys_are_canonicalized() -> None:
+    # Row encoding has a single zero and a single NaN, so these keys collapse.
+    entries = pl.List(pl.Struct({"key": pl.Float64, "value": pl.Int64}))
+    dtype = pl.Map(pl.Float64, pl.Int64)
+
+    signed_zeros = pl.Series(
+        "m", [[{"key": -0.0, "value": 1}, {"key": 0.0, "value": 2}]], dtype=entries
+    )
+    assert signed_zeros.list.to_map().to_list() == [{-0.0: 2}]
+
+    # A Python dict can hold two NaN keys, since NaN is not equal to itself.
+    nan = float("nan")
+    row = {nan: 1, float("nan"): 2}
+    assert len(row) == 2
+    (collapsed,) = pl.Series("m", [row], dtype=dtype).to_list()
+    (key,) = collapsed
+    assert math.isnan(key)
+    assert collapsed[key] == 2
+
+    # Grouping agrees with construction.
+    df = pl.DataFrame({"m": pl.Series([row, {nan: 2}], dtype=dtype)})
+    assert df.group_by("m").len()["len"].to_list() == [2]
+
+
+def test_map_equality_is_entry_order_sensitive() -> None:
+    ordered = pl.Series("m", [{"a": 1, "b": 2}], dtype=MAP)
+    swapped = pl.Series("m", [{"b": 2, "a": 1}], dtype=MAP)
+
+    assert not ordered.equals(swapped)
+    assert pl.select(eq=pl.lit(ordered) == pl.lit(swapped))["eq"].to_list() == [False]
+
+    df = pl.DataFrame({"m": pl.concat([ordered, swapped])})
+    assert df["m"].n_unique() == 2
+    assert df.group_by("m").len().height == 2
+
+
+def test_map_join_on_map_keys() -> None:
+    left = pl.DataFrame({"m": pl.Series([{"a": 1}, {"b": 2}], dtype=MAP), "l": [1, 2]})
+    right = pl.DataFrame(
+        {"m": pl.Series([{"b": 2}, {"a": 1}], dtype=MAP), "r": [10, 20]}
+    )
+
+    out = left.join(right, on="m", how="inner").sort("l")
+    assert out.to_dicts() == [
+        {"m": {"a": 1}, "l": 1, "r": 20},
+        {"m": {"b": 2}, "l": 2, "r": 10},
+    ]
+
+
+def test_map_join_on_map_keys_is_entry_order_sensitive() -> None:
+    left = pl.DataFrame({"m": pl.Series([{"a": 1, "b": 2}], dtype=MAP)})
+    right = pl.DataFrame({"m": pl.Series([{"b": 2, "a": 1}], dtype=MAP), "r": [9]})
+    assert left.join(right, on="m", how="inner").height == 0
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        pytest.param(lambda lf: lf, [{"a": 2}, {"b": 3}], id="plain"),
+        pytest.param(lambda lf: lf.select("m"), [{"a": 2}, {"b": 3}], id="projection"),
+        pytest.param(lambda lf: lf.filter(pl.col("i") == 1), [{"a": 2}], id="filter"),
+        pytest.param(
+            lambda lf: lf.filter(pl.col("i") == 2).select("m"),
+            [{"b": 3}],
+            id="filter-and-projection",
+        ),
+    ],
+)
+def test_map_parquet_duplicate_keys_recovered_in_every_read_path(
+    query: Callable[[pl.LazyFrame], pl.LazyFrame], expected: list[Any]
+) -> None:
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+
+    # pyarrow permits duplicate keys; we canonicalize on read.
+    tbl = pa.table(
+        {
+            "m": pa.array(
+                [[("a", 1), ("a", 2)], [("b", 3)]],
+                type=pa.map_(pa.string(), pa.int64()),
+            ),
+            "i": pa.array([1, 2]),
+        }
+    )
+    buf = io.BytesIO()
+    pq.write_table(tbl, buf)
+    buf.seek(0)
+
+    out = query(pl.scan_parquet(buf)).collect()["m"]
+    assert out.dtype == MAP
+    assert out.to_list() == expected
+
+
+def test_map_parquet_duplicate_keys_recovered_when_nested() -> None:
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+
+    tbl = pa.table(
+        {
+            "n": pa.array(
+                [[[("a", 7), ("a", 8)]], [[("c", 9)]]],
+                type=pa.list_(pa.map_(pa.string(), pa.int64())),
+            )
+        }
+    )
+    buf = io.BytesIO()
+    pq.write_table(tbl, buf)
+    buf.seek(0)
+
+    out = pl.scan_parquet(buf).collect()["n"]
+    assert out.dtype == pl.List(MAP)
+    assert out.to_list() == [[{"a": 8}], [{"c": 9}]]
+
+
+@pytest.mark.parametrize("first", [{"a": None}, {}, None])
+def test_map_construction_tolerates_uninformative_first_row(first: Any) -> None:
+    # A dict never *infers* as a Map, so the dtype is always known here; a first row
+    # that carries no value dtype must not narrow it.
+    s = pl.Series("m", [first, {"a": 1}], dtype=MAP)
+    assert s.dtype == MAP
+    assert s.to_list() == [first, {"a": 1}]
