@@ -7,6 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
@@ -212,7 +213,7 @@ def test_fill_null_subset() -> None:
     lazy_result = df.lazy().fill_null(strategy="zero", subset=["b"]).collect()
     assert_frame_equal(lazy_result, result)
 
-    selector_result = df.fill_null(strategy="zero", subset=pl.col("b"))
+    selector_result = df.fill_null(strategy="zero", subset=cs.by_name("b"))
     assert_frame_equal(selector_result, result)
 
     value_result = df.fill_null(0, subset=["b"])

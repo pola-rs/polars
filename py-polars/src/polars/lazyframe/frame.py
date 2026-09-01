@@ -7238,15 +7238,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             if dtypes:
                 if subset is not None:
+                    fill_expr = parse_list_into_selector(subset).as_expr()
                     return self.with_columns(
-                        F.col(subset).fill_null(value, strategy, limit)
+                        fill_expr.fill_null(value, strategy, limit)
                     )
                 return self.with_columns(
                     F.col([*dtypes, Null]).fill_null(value, strategy, limit)
                 )
 
         if subset is not None:
-            return self.select(F.col(subset).fill_null(value, strategy, limit))
+            fill_expr = parse_list_into_selector(subset).as_expr()
+            return self.with_columns(fill_expr.fill_null(value, strategy, limit))
         return self.select(F.all().fill_null(value, strategy, limit))
 
     def fill_nan(self, value: int | float | Expr | None) -> LazyFrame:
