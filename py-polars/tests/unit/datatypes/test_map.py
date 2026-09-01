@@ -727,3 +727,32 @@ def test_map_parquet_entries_satisfy_a_map_schema() -> None:
     assert pl.scan_parquet(buf).collect_schema() == {"m": pl.Map(pl.String, pl.Int64)}
     buf.seek(0)
     assert pl.read_parquet(buf)["m"].to_list() == [{"a": 1}, {"a": 2, "b": 3}]
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pytest.param(pl.Map(pl.Null, pl.Int64), id="null-key"),
+        pytest.param(pl.Map(pl.Object, pl.Int64), id="object-key"),
+    ],
+)
+def test_map_invalid_key_dtype_is_rejected_without_data(dtype: pl.Map) -> None:
+    for build in (
+        lambda: pl.Series("m", [], dtype=dtype),
+        lambda: pl.Series("m", [None], dtype=dtype),
+        lambda: pl.DataFrame(schema={"m": dtype}),
+        lambda: pl.select(pl.lit(None).cast(dtype)),
+    ):
+        with pytest.raises((InvalidOperationError, TypeError), match="Map key dtype"):
+            build()
+
+
+def test_map_valid_key_dtypes_still_construct_empty() -> None:
+    # A `Null` *behind a container* is fine: it can be materialized later.
+    for dtype in (
+        pl.Map(pl.String, pl.Int64),
+        pl.Map(pl.List(pl.Null), pl.Int64),
+        pl.Map(pl.Map(pl.String, pl.Int64), pl.Int64),
+    ):
+        assert pl.Series("m", [], dtype=dtype).dtype == dtype
+        assert pl.DataFrame(schema={"m": dtype}).schema == {"m": dtype}
