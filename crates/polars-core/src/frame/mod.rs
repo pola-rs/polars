@@ -2210,7 +2210,11 @@ impl DataFrame {
     /// * Max fill (replace None with the maximum of the whole array)
     ///
     /// See the method on [Series](crate::series::Series::fill_null) for more info on the `fill_null` operation.
-    pub fn fill_null<S>(&self, strategy: FillNullStrategy, subset: Option<&[S]>) -> PolarsResult<Self>
+    pub fn fill_null<S>(
+        &self,
+        strategy: FillNullStrategy,
+        subset: Option<&[S]>,
+    ) -> PolarsResult<Self>
     where
         for<'a> &'a S: AsRef<str>,
     {
