@@ -71,7 +71,7 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::static_array::StaticArray;
 use crate::{
-    PlBinaryViewArrayBuilder, PlBooleanArrayBuilder, PlFixedSizeBinaryArray,
+    PlBinaryArrayBuilder, PlBinaryViewArrayBuilder, PlBooleanArrayBuilder, PlFixedSizeBinaryArray,
     PlFixedSizeBinaryArrayBuilder, PlFixedSizeListArray, PlFixedSizeListArrayBuilder, PlListArray,
     PlListArrayBuilder, PlNullArrayBuilder, PlPrimitiveArrayBuilder, PlStructArray,
     PlStructArrayBuilder, with_match_pl_primitive_array_type,
@@ -535,6 +535,7 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
         })
         .expect("a primitive array has a primitive element type"),
         PlArrayType::Boolean => Box::new(PlBooleanArrayBuilder::new()),
+        PlArrayType::Binary => Box::new(PlBinaryArrayBuilder::new()),
         PlArrayType::BinaryView => Box::new(PlBinaryViewArrayBuilder::new()),
         PlArrayType::FixedSizeBinary => {
             let array = array
@@ -689,8 +690,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlNullArray, PlPrimitiveArray,
-        PlStructArray, with_match_pl_primitive_array_type,
+        PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlNullArray,
+        PlPrimitiveArray, PlStructArray, with_match_pl_primitive_array_type,
     };
 
     /// One array of every array type, all of three elements, with a null in the middle.
@@ -702,6 +703,10 @@ mod tests {
             ),
             Box::new(
                 PlBooleanArray::from_vec(vec![true, false, true])
+                    .with_validity(Some(validity.clone())),
+            ),
+            Box::new(
+                PlBinaryArray::from_values_iter([b"foo".as_slice(), b"", b"bar"])
                     .with_validity(Some(validity.clone())),
             ),
             Box::new(

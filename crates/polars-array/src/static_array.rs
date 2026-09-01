@@ -7,6 +7,7 @@ use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
 
 use crate::array::PlArray;
+use crate::binary::{PlBinaryIter, PlBinaryValuesIter};
 use crate::binview::{PlBinaryViewIter, PlBinaryViewValuesIter};
 use crate::bitmap::{PlBitmapIter, PlBitmapRef};
 use crate::boolean::PlBooleanIter;
@@ -17,10 +18,11 @@ use crate::fixed_size_list::{PlFixedSizeListIter, PlFixedSizeListValuesIter};
 use crate::list::{PlListIter, PlListValuesIter};
 use crate::primitive::{PlPrimitiveIter, PlPrimitiveValuesIter};
 use crate::{
-    PlBinaryViewArray, PlBinaryViewArrayBuilder, PlBooleanArray, PlBooleanArrayBuilder,
-    PlFixedSizeBinaryArray, PlFixedSizeBinaryArrayBuilder, PlFixedSizeListArray,
-    PlFixedSizeListArrayBuilder, PlListArray, PlListArrayBuilder, PlNullArray, PlNullArrayBuilder,
-    PlPrimitiveArray, PlPrimitiveArrayBuilder, PlStructArray, PlStructArrayBuilder,
+    PlBinaryArray, PlBinaryArrayBuilder, PlBinaryViewArray, PlBinaryViewArrayBuilder,
+    PlBooleanArray, PlBooleanArrayBuilder, PlFixedSizeBinaryArray, PlFixedSizeBinaryArrayBuilder,
+    PlFixedSizeListArray, PlFixedSizeListArrayBuilder, PlListArray, PlListArrayBuilder,
+    PlNullArray, PlNullArrayBuilder, PlPrimitiveArray, PlPrimitiveArrayBuilder, PlStructArray,
+    PlStructArrayBuilder,
 };
 
 /// An array whose element type is known statically.
@@ -240,6 +242,53 @@ impl StaticArray for PlBooleanArray {
 
     #[inline]
     unsafe fn get_unchecked(&self, i: usize) -> Option<bool> {
+        unsafe { self.get_unchecked(i) }
+    }
+
+    #[inline]
+    fn values_iter(&self) -> Self::ValueIterT<'_> {
+        self.values_iter()
+    }
+
+    #[inline]
+    fn iter(&self) -> Self::IterT<'_> {
+        self.iter()
+    }
+
+    #[inline]
+    fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
+        self.broadcast_values_iter(length)
+    }
+
+    #[inline]
+    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
+        self.broadcast_iter(length)
+    }
+
+    #[inline]
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity(validity)
+    }
+
+    #[inline]
+    fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
+        self.new_from_index(index, length)
+    }
+}
+
+impl StaticArray for PlBinaryArray {
+    type ValueT<'a> = &'a [u8];
+    type ValueIterT<'a> = PlBinaryValuesIter<'a>;
+    type IterT<'a> = PlBinaryIter<'a>;
+    type Builder = PlBinaryArrayBuilder;
+
+    #[inline]
+    unsafe fn value_unchecked(&self, i: usize) -> &[u8] {
+        unsafe { self.value_unchecked(i) }
+    }
+
+    #[inline]
+    unsafe fn get_unchecked(&self, i: usize) -> Option<&[u8]> {
         unsafe { self.get_unchecked(i) }
     }
 
@@ -672,6 +721,14 @@ mod tests {
         let array: PlBooleanArray = [Some(true), None].into_iter().collect();
 
         assert_eq!(elements(&array), ["Some(true)", "None"]);
+    }
+
+    #[test]
+    fn binary_elements() {
+        let array: PlBinaryArray = [Some(b"foo".as_slice()), None].into_iter().collect();
+
+        assert_eq!(elements(&array), ["Some([102, 111, 111])", "None"]);
+        assert_eq!(StaticArray::value(&array, 0), b"foo");
     }
 
     #[test]

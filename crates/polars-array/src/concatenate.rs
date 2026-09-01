@@ -48,8 +48,8 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::{
-    PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray,
-    PlNullArray, PlPrimitiveArray, PlStructArray, with_match_pl_primitive_array_type,
+    PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray,
+    PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray, with_match_pl_primitive_array_type,
 };
 
 /// The elements of a slice, in order, a number of times over, each as what it stands for.
@@ -309,6 +309,10 @@ fn concatenate_impl<S>(
                     )
                 })
         },
+        PlArrayType::Binary => {
+            let map = downcast_map::<PlBinaryArray, _>(&iter, array_type)?;
+            Ok(Box::new(concatenate_binary_impl(iter.mapped(&map))))
+        },
         PlArrayType::BinaryView => {
             let map = downcast_map::<PlBinaryViewArray, _>(&iter, array_type)?;
             Ok(Box::new(concatenate_binview_impl(iter.mapped(&map))))
@@ -505,6 +509,131 @@ fn concatenate_boolean_impl<S>(
     // SAFETY: the values hold one bit per element of the concatenation, and the mask is the one
     // `concatenate_validities_with` built for that many elements.
     unsafe { PlBooleanArray::new_unchecked(values.freeze(), length, validity) }
+}
+
+/// Concatenates `arrays`, in order, into a single [`PlBinaryArray`] over the bytes their elements
+/// cover.
+///
+/// The offsets are rebased onto the concatenated bytes, and the bytes an input holds outside its
+/// own offsets — which slicing leaves behind — are dropped. See the [module docs](self) for when
+/// the result keeps the scalar representation; outside those cases the offsets of the result are
+/// flat, so an input whose own offsets are scalar has its element written out once per element it
+/// stands for, since no two elements of a flat binary array can cover the same range.
+/// Concatenating no arrays yields an empty array.
+///
+/// # Example
+/// ```
+/// use polars_array::concatenate::concatenate_binary;
+/// use polars_array::PlBinaryArray;
+///
+/// let lhs = PlBinaryArray::from_values_iter([b"foo".as_slice()]);
+/// let rhs = PlBinaryArray::from_values_iter([b"bar".as_slice(), b"baz"]);
+/// let concatenated = concatenate_binary(&[&lhs, &rhs]);
+///
+/// assert_eq!(concatenated.len(), 3);
+/// assert_eq!(concatenated.value(2), b"baz");
+///
+/// // Two arrays standing for the same repeated element concatenate in `O(value.len())`.
+/// let arr = PlBinaryArray::new_scalar(b"ab", 1_000_000_000);
+/// let concatenated = concatenate_binary(&[&arr, &arr]);
+///
+/// assert_eq!(concatenated.len(), 2_000_000_000);
+/// assert_eq!(concatenated.scalar_offsets(), Some(0..2));
+/// assert!(concatenated.is_scalar());
+/// ```
+pub fn concatenate_binary(arrays: &[&PlBinaryArray]) -> PlBinaryArray {
+    concatenate_binary_impl(SliceBroadcastIter::new(arrays, 1, &pointee))
+}
+
+/// [`concatenate_binary`], over the arrays `iter` yields.
+fn concatenate_binary_impl<S>(iter: SliceBroadcastIter<'_, '_, PlBinaryArray, S>) -> PlBinaryArray {
+    if let Some(array) = only_non_empty(&iter) {
+        return array.clone();
+    }
+
+    let (length, null_count) = total_length_and_null_count(&iter);
+
+    // There is no element to concatenate, however many arrays there are, so there are no bytes to
+    // keep around for one either.
+    if length == 0 {
+        return PlBinaryArray::new_empty();
+    }
+
+    // Every element is null, so every value is undetermined and none of them has to be written out.
+    if null_count == length {
+        return PlBinaryArray::new_full_null(length);
+    }
+
+    // Every array stands for the same repeated element, which the result repeats over all of them.
+    if let Some(element) = shared_element(&iter, PlBinaryArray::scalar_value) {
+        return match element {
+            Some(value) => PlBinaryArray::new_scalar(value, length),
+            // An element shared as null makes every element of every array null, which the branch
+            // above has already returned.
+            None => PlBinaryArray::new_full_null(length),
+        };
+    }
+
+    let validity = concatenate_validities_with(iter.clone(), length, null_count);
+
+    // One pass over the distinct arrays is what the concatenation is made of: the copies of them
+    // cover the very same bytes over again, so the pass is repeated rather than built twice.
+    let mut values: Vec<u8> = Vec::new();
+    let mut offsets: Vec<u64> = Vec::with_capacity(length + 1);
+    offsets.push(0);
+
+    for array in iter.distinct().filter(|array| !array.is_empty()) {
+        let end = offsets[offsets.len() - 1];
+
+        if let Some(array_offsets) = array.flat_offsets() {
+            let (first, last) = (array_offsets[0], array_offsets[array.len()]);
+            // SAFETY: the offsets are ordered and bounded by the length of the values.
+            values.extend_from_slice(unsafe {
+                array.values().get_unchecked(first as usize..last as usize)
+            });
+            offsets.extend(
+                array_offsets[1..]
+                    .iter()
+                    .map(|offset| end + (offset - first)),
+            );
+        } else if let Some(element) = array.scalar_values() {
+            // Every element of the array covers the same bytes, which the result writes out once
+            // per element: no two elements of a flat binary array can share a range.
+            values.reserve(element.len() * array.len());
+            for _ in 0..array.len() {
+                values.extend_from_slice(element);
+            }
+
+            let value_length = element.len() as u64;
+            offsets.extend((1..=array.len() as u64).map(|i| end + i * value_length));
+        }
+    }
+
+    // Every copy of the distinct arrays holds the same elements over again, which is the pass that
+    // was just built, repeated — its offsets rebased onto the bytes the copies before it wrote.
+    let pass_bytes = values.len();
+    let pass_elements = offsets.len() - 1;
+    for copy in 1..iter.repeats() {
+        values.extend_from_within(..pass_bytes);
+
+        let base = pass_bytes as u64 * copy as u64;
+        for i in 1..=pass_elements {
+            offsets.push(base + offsets[i]);
+        }
+    }
+
+    // SAFETY: the offsets are the lengths of the byte strings of every array in order, so they are
+    // ordered, there is one per element plus the end of the last, and the last of them is the
+    // length of the bytes they were rebased onto. The mask is the one
+    // `concatenate_validities_with` built for that many elements.
+    unsafe {
+        PlBinaryArray::new_unchecked(
+            Buffer::from(values),
+            Buffer::from(offsets),
+            length,
+            validity,
+        )
+    }
 }
 
 /// Concatenates `arrays`, in order, into a single [`PlBinaryViewArray`] over the data buffers of
@@ -1833,6 +1962,11 @@ mod tests {
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
             Box::new(PlBooleanArray::from_vec(vec![true, false, true])),
             Box::new(PlNullArray::new(3)),
+            Box::new(PlBinaryArray::from_values_iter([
+                b"foo".as_slice(),
+                b"",
+                b"bar",
+            ])),
             Box::new(PlFixedSizeBinaryArray::from_vec(
                 vec![1u8, 2, 3, 4, 5, 6],
                 2,
@@ -2258,5 +2392,164 @@ mod tests {
         assert_eq!(repeated.len(), 1_000_000_000);
         assert!(repeated.is_scalar());
         assert_eq!(repeated.value(999_999_999), LONG);
+    }
+
+    /// The elements of a `PlBinaryArray`, whatever representation it is in.
+    fn binary_bytes(array: &dyn PlArray) -> Vec<Option<&[u8]>> {
+        array
+            .as_any()
+            .downcast_ref::<PlBinaryArray>()
+            .unwrap()
+            .iter()
+            .collect()
+    }
+
+    #[test]
+    fn binary_arrays_rebase_their_offsets() {
+        let lhs = PlBinaryArray::from_values_iter([b"foo".as_slice()]);
+        let rhs: PlBinaryArray = [Some(b"bar".as_slice()), None, Some(b"baz")]
+            .into_iter()
+            .collect();
+        let concatenated = concatenate_binary(&[&lhs, &rhs]);
+
+        assert_eq!(concatenated.len(), 4);
+        assert_eq!(concatenated.null_count(), 1);
+        assert!(concatenated.is_flat());
+        assert_eq!(concatenated.values().as_slice(), b"foobarbaz");
+        assert_eq!(
+            concatenated.flat_offsets().unwrap().as_slice(),
+            [0, 3, 6, 6, 9]
+        );
+        assert_eq!(
+            concatenated.iter().collect::<Vec<_>>(),
+            [Some(b"foo".as_slice()), Some(b"bar"), None, Some(b"baz")],
+        );
+
+        // The same arrays, reached through the trait object.
+        let concatenated = concatenate(&[&lhs as &dyn PlArray, &rhs]).unwrap();
+        assert_eq!(concatenated.array_type(), PlArrayType::Binary);
+        assert_eq!(
+            binary_bytes(&*concatenated),
+            [Some(b"foo".as_slice()), Some(b"bar"), None, Some(b"baz")],
+        );
+
+        // Concatenating no arrays at all yields an empty array.
+        assert!(concatenate_binary(&[]).is_empty());
+    }
+
+    #[test]
+    fn sliced_binary_arrays_keep_only_the_bytes_they_reach() {
+        // The bytes outside the offsets of a slice are dropped rather than carried over.
+        let arr = PlBinaryArray::from_values_iter([b"foo".as_slice(), b"bar", b"baz"]);
+        let concatenated = concatenate_binary(&[&arr.clone().sliced(1, 1), &arr.sliced(2, 1)]);
+
+        assert_eq!(concatenated.len(), 2);
+        assert_eq!(concatenated.values().as_slice(), b"barbaz");
+        assert_eq!(concatenated.flat_offsets().unwrap().as_slice(), [0, 3, 6]);
+    }
+
+    #[test]
+    fn binary_arrays_of_the_same_repeated_element_stay_scalar() {
+        let scalar = PlBinaryArray::new_scalar(b"ab", 1_000_000_000);
+        // A flat array of length one stands for a single repeated element as well.
+        let single = PlBinaryArray::from_values_iter([b"ab".as_slice()]);
+        let concatenated = concatenate_binary(&[&scalar, &single, &scalar]);
+
+        assert_eq!(concatenated.len(), 2_000_000_001);
+        assert!(concatenated.is_scalar());
+        assert_eq!(concatenated.scalar_values(), Some(b"ab".as_slice()));
+        assert_eq!(concatenated.value(2_000_000_000), b"ab");
+
+        // Elements that do not agree are written out one per element instead.
+        let other = PlBinaryArray::from_values_iter([b"cde".as_slice()]);
+        let concatenated = concatenate_binary(&[&scalar.new_from_index(0, 2), &other]);
+
+        assert_eq!(concatenated.len(), 3);
+        assert!(!concatenated.is_scalar());
+        assert!(concatenated.offsets_are_flat());
+        assert_eq!(concatenated.values().as_slice(), b"ababcde");
+        assert_eq!(
+            concatenated.iter().collect::<Vec<_>>(),
+            [Some(b"ab".as_slice()), Some(b"ab"), Some(b"cde")],
+        );
+    }
+
+    #[test]
+    fn fully_null_binary_arrays_concatenate_without_writing_out_their_values() {
+        let null = PlBinaryArray::new_full_null(1_000_000_000);
+        let concatenated = concatenate_binary(&[&null, &null]);
+
+        assert_eq!(concatenated.len(), 2_000_000_000);
+        assert_eq!(concatenated.null_count(), 2_000_000_000);
+        assert!(concatenated.is_scalar());
+        assert!(concatenated.values().is_empty());
+        assert!(concatenated.validity().unwrap().is_scalar());
+    }
+
+    #[test]
+    fn a_binary_array_of_scalar_offsets_is_written_out_once_per_element() {
+        // No two elements of a flat binary array can cover the same range, so the element a scalar
+        // array stands for is written out once per element as soon as the result has to be flat.
+        let scalar = PlBinaryArray::new_scalar(b"ab", 3);
+        let other = PlBinaryArray::from_values_iter([b"cde".as_slice()]);
+        let concatenated = concatenate_binary(&[&scalar, &other]);
+
+        assert_eq!(concatenated.len(), 4);
+        assert!(concatenated.is_flat());
+        assert_eq!(concatenated.values().as_slice(), b"abababcde");
+        assert_eq!(
+            concatenated.flat_offsets().unwrap().as_slice(),
+            [0, 2, 4, 6, 9],
+        );
+        assert_eq!(
+            concatenated.iter().collect::<Vec<_>>(),
+            [
+                Some(b"ab".as_slice()),
+                Some(b"ab"),
+                Some(b"ab"),
+                Some(b"cde"),
+            ],
+        );
+    }
+
+    #[test]
+    fn copies_of_a_binary_array_are_appended_in_one_pass() {
+        let arr = PlBinaryArray::from_values_iter([b"foo".as_slice(), b"", b"bar"]);
+        let repeated = concatenate_repeated(&arr, 3).unwrap();
+
+        let repeated = repeated.as_any().downcast_ref::<PlBinaryArray>().unwrap();
+        assert_eq!(repeated.len(), 9);
+        assert_eq!(repeated.values().as_slice(), b"foobarfoobarfoobar");
+        assert_eq!(
+            repeated.flat_offsets().unwrap().as_slice(),
+            [0, 3, 3, 6, 9, 9, 12, 15, 15, 18],
+        );
+        assert_eq!(&repeated.clone().sliced(3, 3), &arr);
+        assert_eq!(&repeated.clone().sliced(6, 3), &arr);
+
+        // Copies of an array standing for one element stand for it as well, in `O(1)`.
+        let scalar = PlBinaryArray::new_scalar(b"ab", 1_000_000);
+        let repeated = concatenate_repeated(&scalar, 1_000).unwrap();
+
+        assert_eq!(repeated.len(), 1_000_000_000);
+        let repeated = repeated.as_any().downcast_ref::<PlBinaryArray>().unwrap();
+        assert!(repeated.is_scalar());
+        assert_eq!(repeated.scalar_values(), Some(b"ab".as_slice()));
+    }
+
+    #[test]
+    fn binary_empty_arrays_contribute_nothing() {
+        let arr = PlBinaryArray::from_values_iter([b"foo".as_slice()]);
+        let empty = PlBinaryArray::new_empty();
+
+        // The only array with elements is handed back, bytes and all.
+        let concatenated = concatenate_binary(&[&empty, &arr, &empty]);
+        assert_eq!(concatenated, arr);
+
+        // No array holds any element, so there are no bytes to keep either.
+        let concatenated = concatenate_binary(&[&empty, &empty]);
+        assert!(concatenated.is_empty());
+        assert!(concatenated.values().is_empty());
+        assert_eq!(concatenated.flat_offsets().unwrap().as_slice(), [0]);
     }
 }

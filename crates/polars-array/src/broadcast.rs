@@ -30,12 +30,14 @@
 //! element holds a single slot in every backing buffer either way, so it is the *logical* lengths
 //! that [`is_broadcastable`] relates.
 //!
-//! # The offsets of a list array
+//! # The offsets of a list or binary array
 //!
-//! The offsets of a [`PlListArray`](crate::PlListArray) are the one backing buffer that does not
-//! hold one slot per element when it is flat: element `i` covers the range
-//! `offsets[i]..offsets[i + 1]`, so the buffer holds the start of every element plus the end of the
-//! last. It is the *starts* that are flat or scalar, and they are one slot shorter than the buffer:
+//! The offsets of a [`PlListArray`](crate::PlListArray) — and of a
+//! [`PlBinaryArray`](crate::PlBinaryArray), which are governed by the same rule — are the one
+//! backing buffer that does not hold one slot per element when it is flat: element `i` covers the
+//! range `offsets[i]..offsets[i + 1]`, so the buffer holds the start of every element plus the end
+//! of the last. It is the *starts* that are flat or scalar, and they are one slot shorter than the
+//! buffer:
 //!
 //! * *flat*: `offsets.len() == length + 1`, one range per element, laid end to end.
 //! * *scalar*: `offsets.len() == 2`, a single range shared by all `length` elements.
@@ -97,7 +99,8 @@ pub(crate) fn assert_broadcastable(length: usize, to_length: usize) {
     );
 }
 
-/// Whether an offsets buffer of length `offsets_len` is valid for a list array of length `length`.
+/// Whether an offsets buffer of length `offsets_len` is valid for a list or binary array of length
+/// `length`.
 ///
 /// The offsets hold one more slot than the starts they begin with — the end of the last element —
 /// so this is [`is_valid_buffer_len`] of one slot fewer. An empty buffer is never valid: the end of

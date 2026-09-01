@@ -242,14 +242,19 @@ mod tests {
 
     use super::*;
     use crate::{
-        PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray,
-        PlListArray, PlPrimitiveArray, PlStructArray,
+        PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray,
+        PlFixedSizeListArray, PlListArray, PlPrimitiveArray, PlStructArray,
     };
 
     fn arrays() -> Vec<Box<dyn PlArray>> {
         vec![
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
             Box::new(PlBooleanArray::from_vec(vec![true, false, true])),
+            Box::new(PlBinaryArray::from_values_iter([
+                b"foo".as_slice(),
+                b"",
+                b"bar",
+            ])),
             Box::new(PlBinaryViewArray::from_values_iter([
                 b"foo".as_slice(),
                 b"bar",
@@ -278,6 +283,7 @@ mod tests {
         vec![
             Box::new(PlPrimitiveArray::<i64>::new_scalar(7, length)),
             Box::new(PlBooleanArray::new_scalar(true, length)),
+            Box::new(PlBinaryArray::new_scalar(b"ab", length)),
             Box::new(PlBinaryViewArray::new_scalar(
                 b"a value that is too long to inline",
                 length,
@@ -373,6 +379,7 @@ mod tests {
         let arrs: Vec<Box<dyn PlArray>> = vec![
             Box::new(PlPrimitiveArray::<i32>::new_full_null(4)),
             Box::new(PlBooleanArray::new_full_null(4)),
+            Box::new(PlBinaryArray::new_full_null(4)),
             Box::new(PlBinaryViewArray::new_full_null(4)),
             Box::new(PlFixedSizeBinaryArray::new_full_null(2, 4)),
             Box::new(PlStructArray::new_full_null(

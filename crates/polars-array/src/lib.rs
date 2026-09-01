@@ -21,6 +21,7 @@
 
 pub mod array;
 pub mod array_type;
+pub mod binary;
 pub mod binview;
 pub mod bitmap;
 pub mod boolean;
@@ -40,6 +41,7 @@ pub mod struct_;
 
 pub use array::PlArray;
 pub use array_type::{PlArrayType, PrimitiveType};
+pub use binary::{PlBinaryArray, PlBinaryArrayBuilder};
 pub use binview::{PlBinaryViewArray, PlBinaryViewArrayBuilder};
 pub use bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 pub use boolean::{PlBooleanArray, PlBooleanArrayBuilder};

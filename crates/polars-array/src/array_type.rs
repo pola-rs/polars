@@ -31,6 +31,14 @@ pub enum PlArrayType {
     /// A [`PlPrimitiveArray<T>`](crate::PlPrimitiveArray) where `T::PRIMITIVE` is this
     /// [`PrimitiveType`]: a value with a known compile-time size.
     Primitive(PrimitiveType),
+    /// A [`PlBinaryArray`](crate::PlBinaryArray): a variable-length sequence of bytes, stored as
+    /// the offsets that cut one values buffer into consecutive slices.
+    ///
+    /// The offsets are part of neither this type nor the array's identity: two binary arrays are
+    /// both [`PlArrayType::Binary`] no matter how their bytes are cut into elements. Nothing here
+    /// says the bytes are a string either — that is a logical type, which the arrays in this crate
+    /// do not carry.
+    Binary,
     /// A [`PlBinaryViewArray`](crate::PlBinaryViewArray): a variable-length sequence of bytes,
     /// stored as a view that either inlines them or points at a data buffer.
     ///
@@ -85,6 +93,12 @@ impl PlArrayType {
     #[inline]
     pub fn is_boolean(&self) -> bool {
         matches!(self, Self::Boolean)
+    }
+
+    /// Whether this is [`PlArrayType::Binary`].
+    #[inline]
+    pub fn is_binary(&self) -> bool {
+        matches!(self, Self::Binary)
     }
 
     /// Whether this is [`PlArrayType::BinaryView`].

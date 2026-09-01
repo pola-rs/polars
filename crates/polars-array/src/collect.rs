@@ -1,12 +1,12 @@
 //! Collecting an iterator of elements into an array.
 //!
 //! [`FromIterator`] is what collects an iterator into one *named* array — [`PlPrimitiveArray`],
-//! [`PlBooleanArray`], [`PlBinaryViewArray`]. It is of no use to a kernel that is generic over the
-//! array it produces: the element type of such a kernel is an associated type of the array, so
-//! `A: FromIterator<A::ValueT<'_>>` is not a bound that can be written down. [`ArrayFromIter`] is
-//! that same collect with the array as the generic parameter and the element type as the trait's,
-//! which is a bound the caller can name, and [`ArrayCollectIterExt`] hangs it off the iterator so
-//! that it reads like [`Iterator::collect`].
+//! [`PlBooleanArray`], [`PlBinaryArray`], [`PlBinaryViewArray`]. It is of no use to a kernel that
+//! is generic over the array it produces: the element type of such a kernel is an associated type
+//! of the array, so `A: FromIterator<A::ValueT<'_>>` is not a bound that can be written down.
+//! [`ArrayFromIter`] is that same collect with the array as the generic parameter and the element
+//! type as the trait's, which is a bound the caller can name, and [`ArrayCollectIterExt`] hangs it
+//! off the iterator so that it reads like [`Iterator::collect`].
 //!
 //! The fallible variants collect an iterator of [`Result`]s, returning the first error instead of
 //! the array; the `_trusted` variants take an iterator whose length can be
@@ -31,9 +31,9 @@
 //! laid out already, by the constructors of the arrays themselves.
 //!
 //! A [`PlFixedSizeBinaryArray`](crate::PlFixedSizeBinaryArray) has none either, for the first of
-//! those reasons alone: its elements are byte strings like those of a [`PlBinaryViewArray`], but
-//! nothing about an iterator of them says how wide the elements of an empty one are. Its builder
-//! is the one that takes that width.
+//! those reasons alone: its elements are byte strings like those of a [`PlBinaryArray`] or a
+//! [`PlBinaryViewArray`], but nothing about an iterator of them says how wide the elements of an
+//! empty one are. Its builder is the one that takes that width.
 //!
 //! # Example
 //! ```
@@ -60,7 +60,7 @@ use arrow::types::NativeType;
 use polars_buffer::Buffer;
 
 use crate::static_array::StaticArray;
-use crate::{PlBinaryViewArray, PlBooleanArray, PlPrimitiveArray};
+use crate::{PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlPrimitiveArray};
 
 /// An array that can be collected from an iterator of `T`.
 ///
@@ -282,8 +282,8 @@ impl ArrayFromIter<Option<bool>> for PlBooleanArray {
     }
 }
 
-/// The values a [`PlBinaryViewArray`] can be collected from: the byte slices, and the strings,
-/// owned or borrowed.
+/// The values a [`PlBinaryArray`] or a [`PlBinaryViewArray`] can be collected from: the byte
+/// slices, and the strings, owned or borrowed.
 ///
 /// This is not [`AsRef<[u8]>`] because that would leave the implementation over the values and the
 /// one over the optional values overlapping: nothing stops a downstream crate from implementing
@@ -324,6 +324,82 @@ impl<'a> IntoBytes for Cow<'a, str> {
             Cow::Borrowed(s) => Cow::Borrowed(s.as_bytes()),
             Cow::Owned(s) => Cow::Owned(s.into_bytes()),
         }
+    }
+}
+
+impl<V: IntoBytes> ArrayFromIter<V> for PlBinaryArray {
+    #[inline]
+    fn arr_from_iter<I: IntoIterator<Item = V>>(iter: I) -> Self {
+        Self::from_values_iter(iter.into_iter().map(IntoBytes::into_bytes))
+    }
+
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<V, E>>>(iter: I) -> Result<Self, E> {
+        let iter = iter.into_iter();
+        let (lower, _) = iter.size_hint();
+
+        let mut bytes = Vec::new();
+        let mut offsets = Vec::with_capacity(lower + 1);
+        offsets.push(0);
+
+        for value in iter {
+            bytes.extend_from_slice(value?.into_bytes().as_ref());
+            offsets.push(bytes.len() as u64);
+        }
+
+        let length = offsets.len() - 1;
+        // SAFETY: the offsets are the ends of the values appended so far, so they are ordered,
+        // there is one per element plus the end of the last, and the last of them is the length of
+        // the bytes they were built over.
+        Ok(
+            unsafe {
+                Self::new_unchecked(Buffer::from(bytes), Buffer::from(offsets), length, None)
+            },
+        )
+    }
+}
+
+impl<V: IntoBytes> ArrayFromIter<Option<V>> for PlBinaryArray {
+    #[inline]
+    fn arr_from_iter<I: IntoIterator<Item = Option<V>>>(iter: I) -> Self {
+        iter.into_iter()
+            .map(|value| value.map(IntoBytes::into_bytes))
+            .collect()
+    }
+
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<V>, E>>>(
+        iter: I,
+    ) -> Result<Self, E> {
+        let iter = iter.into_iter();
+        let (lower, _) = iter.size_hint();
+
+        let mut bytes = Vec::new();
+        let mut offsets = Vec::with_capacity(lower + 1);
+        offsets.push(0);
+        let mut validity = BitmapBuilder::with_capacity(lower);
+
+        for value in iter {
+            let value = value?;
+            // The value of a null element is undetermined, so nothing is written out for it.
+            if let Some(value) = value {
+                bytes.extend_from_slice(value.into_bytes().as_ref());
+                offsets.push(bytes.len() as u64);
+                validity.push(true);
+            } else {
+                offsets.push(bytes.len() as u64);
+                validity.push(false);
+            }
+        }
+
+        let length = offsets.len() - 1;
+        // SAFETY: as above, and the mask holds one bit per element.
+        Ok(unsafe {
+            Self::new_unchecked(
+                Buffer::from(bytes),
+                Buffer::from(offsets),
+                length,
+                validity.into_opt_validity(),
+            )
+        })
     }
 }
 
@@ -396,6 +472,22 @@ mod tests {
     }
 
     #[test]
+    fn binary_collects_values_and_optional_values() {
+        let values: PlBinaryArray = [b"foo".as_slice(), b"bar"].into_iter().collect_arr();
+        assert_eq!(values.value(0), b"foo");
+        assert_eq!(values.values().as_slice(), b"foobar");
+        assert_eq!(values.null_count(), 0);
+
+        let options: PlBinaryArray = [Some(b"foo".as_slice()), None].into_iter().collect_arr();
+        assert_eq!(options.get(0), Some(b"foo".as_slice()));
+        assert_eq!(options.get(1), None);
+        // The bytes of the null element are never written out.
+        assert_eq!(options.values().as_slice(), b"foo");
+
+        assert!(values.is_flat() && options.is_flat());
+    }
+
+    #[test]
     fn binview_collects_values_and_optional_values() {
         let values: PlBinaryViewArray = [b"foo".as_slice(), b"bar"].into_iter().collect_arr();
         assert_eq!(values.value(0), b"foo");
@@ -406,6 +498,25 @@ mod tests {
         assert_eq!(options.get(1), None);
 
         assert!(values.is_flat() && options.is_flat());
+    }
+
+    /// Every value a [`PlBinaryViewArray`] can be collected from holds the same bytes, owned or
+    /// borrowed, string or not.
+    #[test]
+    fn binary_collects_every_kind_of_value() {
+        fn collected<V: IntoBytes>(value: V) -> PlBinaryArray {
+            std::iter::once(Some(value)).collect_arr()
+        }
+
+        let expected: PlBinaryArray = std::iter::once(b"foo".as_slice()).collect_arr();
+
+        assert_eq!(collected(b"foo".as_slice()), expected);
+        assert_eq!(collected(b"foo".to_vec()), expected);
+        assert_eq!(collected(Cow::Borrowed(b"foo".as_slice())), expected);
+        assert_eq!(collected("foo"), expected);
+        assert_eq!(collected(String::from("foo")), expected);
+        assert_eq!(collected(Cow::Borrowed("foo")), expected);
+        assert_eq!(collected(Cow::<str>::Owned(String::from("foo"))), expected);
     }
 
     /// Every value a [`PlBinaryViewArray`] can be collected from holds the same bytes, owned or
@@ -453,6 +564,21 @@ mod tests {
             .unwrap();
         assert_eq!(array.iter().collect::<Vec<_>>(), [Some(true), None]);
 
+        let array: PlBinaryArray = [Ok::<_, ()>(b"foo".as_slice()), Ok(b"bar")]
+            .into_iter()
+            .try_collect_arr()
+            .unwrap();
+        assert_eq!(array.value(1), b"bar");
+
+        let array: PlBinaryArray = [Ok::<_, ()>(Some(b"foo".as_slice())), Ok(None)]
+            .into_iter()
+            .try_collect_arr()
+            .unwrap();
+        assert_eq!(
+            array.iter().collect::<Vec<_>>(),
+            [Some(b"foo".as_slice()), None],
+        );
+
         let array: PlBinaryViewArray = [Ok::<_, ()>(b"foo".as_slice()), Ok(b"bar")]
             .into_iter()
             .try_collect_arr()
@@ -492,6 +618,11 @@ mod tests {
         assert_eq!(failed::<PlPrimitiveArray<i32>, _>(Some(1)), ("nope", 2));
         assert_eq!(failed::<PlBooleanArray, _>(true), ("nope", 2));
         assert_eq!(failed::<PlBooleanArray, _>(Some(true)), ("nope", 2));
+        assert_eq!(failed::<PlBinaryArray, _>(b"foo".as_slice()), ("nope", 2));
+        assert_eq!(
+            failed::<PlBinaryArray, _>(Some(b"foo".as_slice())),
+            ("nope", 2),
+        );
         assert_eq!(
             failed::<PlBinaryViewArray, _>(b"foo".as_slice()),
             ("nope", 2),
@@ -518,6 +649,10 @@ mod tests {
         let untrusted: PlBooleanArray = vec![true, false].into_iter().collect_arr();
         assert_eq!(trusted, untrusted);
 
+        let trusted: PlBinaryArray = vec![b"foo".as_slice()].into_iter().collect_arr_trusted();
+        let untrusted: PlBinaryArray = vec![b"foo".as_slice()].into_iter().collect_arr();
+        assert_eq!(trusted, untrusted);
+
         let trusted: PlBinaryViewArray = vec![b"foo".as_slice()].into_iter().collect_arr_trusted();
         let untrusted: PlBinaryViewArray = vec![b"foo".as_slice()].into_iter().collect_arr();
         assert_eq!(trusted, untrusted);
@@ -538,9 +673,11 @@ mod tests {
     fn an_empty_iterator_collects_an_empty_array() {
         let primitive: PlPrimitiveArray<i32> = std::iter::empty::<Option<i32>>().collect_arr();
         let boolean: PlBooleanArray = std::iter::empty::<bool>().collect_arr();
+        let binary: PlBinaryArray = std::iter::empty::<&[u8]>().collect_arr();
         let binview: PlBinaryViewArray = std::iter::empty::<&[u8]>().collect_arr();
 
         assert!(primitive.is_empty() && boolean.is_empty() && binview.is_empty());
+        assert!(binary.is_empty() && binary.is_flat());
     }
 
     /// What the traits are for: a kernel that names the array it builds as a type parameter, which
@@ -560,6 +697,9 @@ mod tests {
 
         let array: PlBooleanArray = [Some(true), None].into_iter().collect_arr();
         assert_eq!(compacted(&array).len(), 1);
+
+        let array: PlBinaryArray = [Some(b"foo".as_slice()), None].into_iter().collect_arr();
+        assert_eq!(compacted(&array).value(0), b"foo");
 
         let array: PlBinaryViewArray = [Some(b"foo".as_slice()), None].into_iter().collect_arr();
         assert_eq!(compacted(&array).value(0), b"foo");
