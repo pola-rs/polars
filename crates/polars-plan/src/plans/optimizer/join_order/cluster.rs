@@ -217,8 +217,13 @@ pub(super) fn extract(
         let renames = collision_renames(&schemas);
         restore = restore_exprs(&schemas, &renames, &output_schema, expr_arena)?;
         for (leaf, renames) in renames.iter().enumerate() {
-            let (node, schema) =
-                rename_leaf(nodes[leaf], schemas[leaf].clone(), renames, ir_arena, expr_arena)?;
+            let (node, schema) = rename_leaf(
+                nodes[leaf],
+                schemas[leaf].clone(),
+                renames,
+                ir_arena,
+                expr_arena,
+            )?;
             nodes[leaf] = node;
             schemas[leaf] = schema;
         }

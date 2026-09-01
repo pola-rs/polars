@@ -579,7 +579,9 @@ def self_join_frames(tmp_path: Path) -> dict[str, pl.LazyFrame]:
         {"d_key": list(range(400)), "d_val": [f"v{i}" for i in range(400)]}
     )
     # Selective: a filter leaves a single row.
-    other = pl.DataFrame({"o_key": list(range(4)), "o_flag": [i == 2 for i in range(4)]})
+    other = pl.DataFrame(
+        {"o_key": list(range(4)), "o_flag": [i == 2 for i in range(4)]}
+    )
     return write_scans(tmp_path, fact=fact, dim=dim, other=other)
 
 
@@ -633,3 +635,48 @@ def test_self_join_keeps_each_copy_of_a_shared_column(tmp_path: Path) -> None:
     assert on.get_column("d_val_right").to_list() == [
         f"v{b}" for b in on.get_column("f_b").to_list()
     ]
+
+
+def correlated_key_frames(tmp_path: Path) -> dict[str, pl.LazyFrame]:
+    """A fact table, its returns joined on three correlated keys, and a dimension."""
+    rows = 2000
+    fact = pl.DataFrame(
+        {
+            "f_customer": [i % 200 for i in range(rows)],
+            "f_item": [i % 100 for i in range(rows)],
+            "f_ticket": list(range(rows)),
+            "f_day": [i % 50 for i in range(rows)],
+        }
+    )
+    # The three keys together are a key of `fact`, so they do not vary independently.
+    ret = fact.select(
+        r_customer="f_customer", r_item="f_item", r_ticket="f_ticket"
+    ).head(rows // 2)
+    # Selective: a filter leaves a single day.
+    day = pl.DataFrame(
+        {"d_day": list(range(50)), "d_flag": [i == 3 for i in range(50)]}
+    )
+    return write_scans(tmp_path, fact=fact, ret=ret, day=day)
+
+
+def test_correlated_multi_key_join_does_not_look_free(tmp_path: Path) -> None:
+    # One domain per key multiplied puts the three-key join at the cardinality floor,
+    # which no dimension can beat, so it would always be joined first.
+    frames = correlated_key_frames(tmp_path)
+    lf = (
+        frames["fact"]
+        .join(
+            frames["ret"],
+            left_on=["f_customer", "f_item", "f_ticket"],
+            right_on=["r_customer", "r_item", "r_ticket"],
+            coalesce=False,
+        )
+        .join(
+            frames["day"].filter(pl.col("d_flag")),
+            left_on="f_day",
+            right_on="d_day",
+            coalesce=False,
+        )
+    )
+
+    assert_reordered(lf, ["fact", "ret", "day"], ["fact", "day", "ret"])
