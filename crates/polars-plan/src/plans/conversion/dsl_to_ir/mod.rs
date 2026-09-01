@@ -847,7 +847,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             };
             return run_conversion(lp, ctxt, "match_to_schema");
         },
-        DslPlan::SQL { query, relations } => {
+        DslPlan::SQL {
+            query,
+            relations,
+            cached_stmt,
+        } => {
             let resolver = crate::dsl::get_sql_resolver().ok_or_else(|| {
                 polars_err!(
                     ComputeError:
@@ -855,7 +859,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                      build polars with the 'sql' feature"
                 )
             })?;
-            let resolved = resolver.resolve(&query, relations, ctxt.lp_arena, ctxt.expr_arena)?;
+            let resolved = resolver.resolve(
+                &query,
+                relations,
+                cached_stmt.get(),
+                ctxt.lp_arena,
+                ctxt.expr_arena,
+            )?;
             return to_alp_impl(resolved, ctxt);
         },
         DslPlan::PipeWithSchema { input, callback } => {

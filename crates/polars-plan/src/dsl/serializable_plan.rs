@@ -370,7 +370,11 @@ fn convert_dsl_plan_to_serializable_plan(
             key: key.clone(),
             maintain_order: *maintain_order,
         },
-        DP::SQL { query, relations } => SP::SQL {
+        DP::SQL {
+            query,
+            relations,
+            cached_stmt: _,
+        } => SP::SQL {
             query: query.clone(),
             relations: relations
                 .iter()
@@ -635,6 +639,7 @@ fn try_convert_serializable_plan_to_dsl_plan(
                     Ok((name.clone(), Arc::unwrap_or_clone(plan)))
                 })
                 .collect::<PolarsResult<Vec<_>>>()?,
+            cached_stmt: Default::default(),
         }),
         SP::IR {
             dsl: dsl_key,

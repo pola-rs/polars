@@ -317,7 +317,7 @@ impl SQLContext {
         let mut stmt = parse_single_statement(query)?;
 
         if self.can_defer(&stmt) {
-            return Ok(LazyFrame::from(self.defer_query(query, &stmt)));
+            return Ok(LazyFrame::from(self.defer_query(query, stmt)));
         }
 
         desugar_quantified_subqueries(&mut stmt);
@@ -344,8 +344,10 @@ impl SQLContext {
     }
 
     /// Build a [`DslPlan::SQL`] holding `query` and a snapshot of the relations it references.
-    fn defer_query(&self, query: &str, stmt: &Statement) -> DslPlan {
-        let relations = statement_table_identifiers(stmt, false, true)
+    ///
+    /// `stmt` is kept alongside so that resolving does not parse `query` again.
+    fn defer_query(&self, query: &str, mut stmt: Statement) -> DslPlan {
+        let relations = statement_table_identifiers(&stmt, false, true)
             .into_iter()
             .filter_map(|name| {
                 let lf = self.get_table_from_current_scope(&name)?;
@@ -353,28 +355,40 @@ impl SQLContext {
             })
             .collect();
 
+        desugar_quantified_subqueries(&mut stmt);
         DslPlan::SQL {
             query: Arc::new(query.to_owned()),
             relations,
+            cached_stmt: CachedSqlStatement::new(Arc::new(stmt)),
         }
     }
 
     /// Execute `query` eagerly against the given arenas, returning the resulting DSL.
     ///
     /// Resolves a [`DslPlan::SQL`] node. The caller's arenas are used so that input schemas
-    /// resolve into the arenas of the ongoing conversion.
+    /// resolve into the arenas of the ongoing conversion. `cached` is the desugared statement
+    /// the node was built with, and `query` is only parsed when it is absent.
     pub(crate) fn execute_with_arenas(
         &mut self,
         query: &str,
+        cached: Option<&Statement>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<DslPlan> {
-        let mut stmt = parse_single_statement(query)?;
-        desugar_quantified_subqueries(&mut stmt);
+        let parsed;
+        let stmt = match cached {
+            Some(stmt) => stmt,
+            None => {
+                let mut stmt = parse_single_statement(query)?;
+                desugar_quantified_subqueries(&mut stmt);
+                parsed = stmt;
+                &parsed
+            },
+        };
 
         std::mem::swap(&mut self.lp_arena, lp_arena);
         std::mem::swap(&mut self.expr_arena, expr_arena);
-        let res = self.execute_statement(&stmt);
+        let res = self.execute_statement(stmt);
         std::mem::swap(&mut self.lp_arena, lp_arena);
         std::mem::swap(&mut self.expr_arena, expr_arena);
 

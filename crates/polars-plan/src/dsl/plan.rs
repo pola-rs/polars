@@ -174,6 +174,8 @@ pub enum DslPlan {
         query: Arc<String>,
         /// The named relations that the query may reference.
         relations: Vec<(PlSmallStr, DslPlan)>,
+        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+        cached_stmt: crate::dsl::CachedSqlStatement,
     },
     IR {
         // Keep the original Dsl around as we need that for serialization.
@@ -219,7 +221,7 @@ impl Clone for DslPlan {
             Self::Pivot { input, on, on_columns, index, values, agg, separator, maintain_order, column_naming }  => Self::Pivot { input: input.clone(), on: on.clone(), on_columns: on_columns.clone(), index: index.clone(), values: values.clone(), agg: agg.clone(), separator: separator.clone(), maintain_order: *maintain_order, column_naming: *column_naming },
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key, maintain_order } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone(), maintain_order: *maintain_order },
-            Self::SQL { query, relations } => Self::SQL { query: query.clone(), relations: relations.clone() },
+            Self::SQL { query, relations, cached_stmt } => Self::SQL { query: query.clone(), relations: relations.clone(), cached_stmt: cached_stmt.clone() },
             Self::IR {node, dsl, version, opt_flags} => Self::IR {node: *node, dsl: dsl.clone(), version: *version, opt_flags: *opt_flags},
         }
     }

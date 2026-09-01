@@ -77,7 +77,7 @@ use polars_core::series::ops::NullBehavior;
 #[cfg(feature = "is_close")]
 use polars_utils::total_ord::TotalOrdWrap;
 pub use selector::{DataTypeSelector, Selector, TimeUnitSet, TimeZoneSet};
-pub use sql::{SqlResolver, get_sql_resolver, set_sql_resolver};
+pub use sql::{CachedSqlStatement, SqlResolver, get_sql_resolver, set_sql_resolver};
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;

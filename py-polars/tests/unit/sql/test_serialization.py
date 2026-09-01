@@ -108,3 +108,29 @@ def test_table_function_stays_registered(tmp_path: Path) -> None:
     with pl.SQLContext(eager=True) as ctx:
         ctx.execute(f"SELECT a FROM read_csv('{path}')")
         assert ctx.tables() == [str(path)]
+
+
+def test_quantified_subquery_survives_roundtrip() -> None:
+    # the statement is desugared before being cached on the node, so the cached and the
+    # re-parsed path must agree
+    t1 = pl.LazyFrame({"a": [1, 5, 9], "b": [2, 5, 6]})
+
+    q = pl.sql(
+        "SELECT a FROM t1 o WHERE b = ANY (SELECT x.b FROM t1 AS x WHERE x.a = o.a) "
+        "ORDER BY a"
+    )
+    expected = [1, 5, 9]
+
+    assert q.collect().to_series().to_list() == expected
+    assert (
+        pl.LazyFrame.deserialize(q.serialize()).collect().to_series().to_list()
+        == expected
+    )
+
+
+def test_collect_schema_then_collect_agree() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    q = lf.sql("SELECT b, a * 2 AS d FROM self WHERE a > 1")
+
+    assert q.collect_schema().names() == ["b", "d"]
+    assert q.collect().to_dict(as_series=False) == {"b": ["y", "z"], "d": [4, 6]}
