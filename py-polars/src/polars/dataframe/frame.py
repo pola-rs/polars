@@ -9345,7 +9345,8 @@ class DataFrame:
         ----------
         value
             Value used to fill null values.
-        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean', 'median', 'zero', 'one'}
+        strategy : {None, 'forward', 'backward', 'min', 'max', 'mean',
+                    'median', 'zero', 'one'}
             Strategy used to fill null values.
         limit
             Number of consecutive null values to fill when using the 'forward' or
