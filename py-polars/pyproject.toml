@@ -283,6 +283,9 @@ addopts = [
   "--strict-markers",
   "--import-mode=importlib",
   "--dist=loadgroup",
+  # A hard worker crash (e.g. a segfault) hangs under `--dist=loadgroup` when
+  # xdist tries to restart the worker and re-run the crashed group.
+  "--max-worker-restart=0",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
   "-m not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only",
 ]
