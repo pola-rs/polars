@@ -28,7 +28,7 @@ import polars._reexport as pl
 from polars._utils.convert import to_py_date, to_py_datetime
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_s
-from polars.exceptions import ComputeError, ModuleUpgradeRequiredError
+from polars.exceptions import ComputeError
 from polars.io._utils import null_count_dtype
 
 if TYPE_CHECKING:
@@ -69,15 +69,7 @@ def _new_pyiceberg_scan(
             limit=limit,
         )
 
-    scan_factory = getattr(tbl, "incremental_append_scan", None)
-    if scan_factory is None:
-        msg = (
-            "incremental append scans require a newer PyIceberg version that "
-            "provides `Table.incremental_append_scan()`"
-        )
-        raise ModuleUpgradeRequiredError(msg)
-
-    return scan_factory(
+    return tbl.incremental_append_scan(
         from_snapshot_id_exclusive=from_snapshot_id_exclusive,
         to_snapshot_id_inclusive=to_snapshot_id_inclusive,
         selected_fields=selected_fields,

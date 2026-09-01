@@ -1789,7 +1789,6 @@ def test_new_pyiceberg_scan_forwards_incremental_range(
         pyiceberg.table.Table,
         "incremental_append_scan",
         incremental_append_scan,
-        raising=False,
     )
 
     result = _new_pyiceberg_scan(
@@ -1811,30 +1810,6 @@ def test_new_pyiceberg_scan_forwards_incremental_range(
 
 
 @pytest.mark.write_disk
-@pytest.mark.skipif(
-    hasattr(pyiceberg.table.Table, "incremental_append_scan"),
-    reason="installed PyIceberg supports incremental append scans",
-)
-def test_scan_iceberg_incremental_requires_pyiceberg_support(tmp_path: Path) -> None:
-    tbl, _ = new_iceberg_table(
-        tmp_path,
-        schema=IcebergSchema(NestedField(1, "a", LongType())),
-    )
-    resolver = new_iceberg_scan_resolver(tbl)
-    resolver.from_snapshot_id_exclusive = 1
-
-    with pytest.raises(
-        pl.exceptions.ModuleUpgradeRequiredError,
-        match="incremental append scans require a newer PyIceberg version",
-    ):
-        resolver._to_dataset_scan_impl()
-
-
-@pytest.mark.write_disk
-@pytest.mark.skipif(
-    not hasattr(pyiceberg.table.Table, "incremental_append_scan"),
-    reason="requires PyIceberg incremental append scan support",
-)
 @pytest.mark.parametrize("reader_override", ["native", "pyiceberg"])
 def test_scan_iceberg_incremental_append_range(
     tmp_path: Path,
@@ -1870,10 +1845,6 @@ def test_scan_iceberg_incremental_append_range(
 
 
 @pytest.mark.write_disk
-@pytest.mark.skipif(
-    not hasattr(pyiceberg.table.Table, "incremental_append_scan"),
-    reason="requires PyIceberg incremental append scan support",
-)
 def test_scan_iceberg_incremental_append_tracks_current_snapshot(
     tmp_path: Path,
 ) -> None:
@@ -2861,11 +2832,20 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         ),
     )
 
-    # Upstream issue - PyIceberg filter does not handle schema evolution
-    with pytest.raises(Exception, match="unpack requires a buffer of 8 bytes"):
-        pl.scan_iceberg(
-            tbl, reader_override="native", use_pyiceberg_filter=True
-        ).filter(pl.col("column_3") == 5).collect()
+    expect = pl.DataFrame(
+        {
+            "column_1": ["T"],
+            "column_3": pl.Series([5], dtype=pl.Int64),
+        }
+    )
+
+    # PyIceberg 0.12.0 handles schema evolution during filter evaluation.
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native", use_pyiceberg_filter=True)
+        .filter(pl.col("column_3") == 5)
+        .collect(),
+        expect,
+    )
 
     q = pl.scan_iceberg(
         tbl, reader_override="native", use_pyiceberg_filter=False
@@ -2878,15 +2858,7 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         out = q.collect()
         capture = capfd.readouterr().err
 
-    assert_frame_equal(
-        out,
-        pl.DataFrame(
-            {
-                "column_1": ["T"],
-                "column_3": pl.Series([5], dtype=pl.Int64),
-            }
-        ),
-    )
+    assert_frame_equal(out, expect)
 
     # First file
     assert "Source filter mask initialization via table statistics" in capture
