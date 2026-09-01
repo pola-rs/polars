@@ -35,24 +35,22 @@ def _normalize_horizontal_concat(
 ) -> ConcatMethod:
     """Normalize deprecated horizontal concat arguments."""
     if how == "horizontal":
-        if strict is None:
-            issue_deprecation_warning(
-                f"the default behavior of `how='horizontal'` for `{function_name}` "
-                "is deprecated and will require equal heights in the next breaking "
-                "release. "
-                "Use `how='horizontal_extend'` to keep the current behavior.",
-                version="1.42.1",
-            )
-            return "horizontal_extend"
-        elif strict is False:
-            issue_deprecation_warning(
-                f"the `strict` parameter for `{function_name}` is deprecated. "
-                "Use `how='horizontal_extend'` instead.",
-                version="1.42.1",
-            )
-            return "horizontal_extend"
-        else:
-            return "horizontal"
+        match strict:
+            case None:
+                return "horizontal"
+            case True:
+                issue_deprecation_warning(
+                    f"the `strict` parameter for `{function_name}` is deprecated. "
+                    "`how='horizontal'` already requires equal heights; omit `strict`.",
+                    version="2.0.0",
+                )
+                return "horizontal"
+            case False:
+                msg = (
+                    "`strict=False` is no longer supported for `how='horizontal'`. "
+                    "Use `how='horizontal_extend'` to pad shorter frames with `null`."
+                )
+                raise ValueError(msg)
 
     if how == "horizontal_extend" and strict is not None:
         msg = "`strict` cannot be used with `how='horizontal_extend'`"
@@ -106,9 +104,10 @@ def concat(
     strict
         When how=`horizontal`, require all DataFrames to be the same height, raising an error if not.
 
-        .. deprecated:: 1.42.1
-            Use `how='horizontal'` (equal heights) or
-            `how='horizontal_extend'` (pad with null) instead.
+        .. deprecated:: 2.0.0
+            `how='horizontal'` already requires equal heights, so `strict` is
+            redundant. Use `how='horizontal_extend'` to pad shorter frames with
+            `null` instead.
 
     Examples
     --------
@@ -274,7 +273,7 @@ def concat(
         lf = lf.sort(by=common_cols, maintain_order=True).select(*output_column_order)
 
         eager = isinstance(elems[0], pl.DataFrame)
-        return lf.collect() if eager else lf  # type: ignore[return-value]
+        return lf._collect_eager() if eager else lf  # type: ignore[return-value]
 
     out: Series | DataFrame | LazyFrame | Expr
 
@@ -294,7 +293,7 @@ def concat(
                     to_supertypes=True,
                     maintain_order=True,
                 )
-            ).collect(optimizations=QueryOptFlags._eager())
+            )._collect_eager(optimizations=QueryOptFlags._eager())
 
         elif how == "diagonal":
             out = wrap_df(plr.concat_df_diagonal(elems))
@@ -307,7 +306,7 @@ def concat(
                     to_supertypes=True,
                     maintain_order=True,
                 )
-            ).collect(optimizations=QueryOptFlags._eager())
+            )._collect_eager(optimizations=QueryOptFlags._eager())
         elif how == "horizontal":
             out = wrap_df(plr.concat_df_horizontal(elems, strict=True))
         elif how == "horizontal_extend":
@@ -421,9 +420,10 @@ def union(
     strict
         When how=`horizontal`, require all DataFrames to be the same height, raising an error if not.
 
-        .. deprecated:: 1.42.1
-            Use `how='horizontal'` (equal heights) or
-            `how='horizontal_extend'` (pad with null) instead.
+        .. deprecated:: 2.0.0
+            `how='horizontal'` already requires equal heights, so `strict` is
+            redundant. Use `how='horizontal_extend'` to pad shorter frames with
+            `null` instead.
 
     Examples
     --------
@@ -589,7 +589,7 @@ def union(
         lf = lf.sort(by=common_cols, maintain_order=False).select(*output_column_order)
 
         eager = isinstance(elems[0], pl.DataFrame)
-        return lf.collect() if eager else lf  # type: ignore[return-value]
+        return lf._collect_eager() if eager else lf  # type: ignore[return-value]
 
     out: Series | DataFrame | LazyFrame | Expr
 
@@ -607,7 +607,7 @@ def union(
                     to_supertypes=how.endswith("relaxed"),
                     maintain_order=False,
                 )
-            ).collect(optimizations=QueryOptFlags._eager())
+            )._collect_eager(optimizations=QueryOptFlags._eager())
         elif how in ("diagonal", "diagonal_relaxed"):
             out = wrap_ldf(
                 plr.concat_lf_diagonal(
@@ -617,7 +617,7 @@ def union(
                     to_supertypes=how.endswith("relaxed"),
                     maintain_order=False,
                 )
-            ).collect(optimizations=QueryOptFlags._eager())
+            )._collect_eager(optimizations=QueryOptFlags._eager())
         elif how == "horizontal":
             out = wrap_df(plr.concat_df_horizontal(elems, strict=True))
         elif how == "horizontal_extend":
@@ -777,7 +777,7 @@ def merge_sorted(
 
     lf = reduce_balanced(reduce_fn, frames)
     eager = isinstance(elems[0], pl.DataFrame)
-    return lf.collect() if eager else lf  # type: ignore[return-value]
+    return lf._collect_eager() if eager else lf  # type: ignore[return-value]
 
 
 def _alignment_join(
@@ -785,10 +785,11 @@ def _alignment_join(
     align_on: list[str],
     how: JoinStrategy = "full",
     descending: bool | Sequence[bool] = False,
+    eager: bool = False,
 ) -> LazyFrame:
     """Create a single master frame with all rows aligned on the common key values."""
-    # note: can stack overflow if the join becomes too large, so we
-    # collect eagerly when hitting a large enough number of frames
+    # Each output selects from the full join plan, multiplying optimizer work.
+    # Collapse large plans at a heuristic threshold.
     post_align_collect = len(idx_frames) >= 250
 
     def join_func(
@@ -812,7 +813,13 @@ def _alignment_join(
         by=align_on, descending=descending, maintain_order=True
     )
     if post_align_collect:
-        joined = joined.collect(optimizations=QueryOptFlags.none()).lazy()
+        # This simplifies the output plan without necessarily moving the data
+        opt_flags = QueryOptFlags.none()
+        joined = (
+            joined._collect_eager(optimizations=opt_flags).lazy()
+            if eager
+            else joined.execute(optimizations=opt_flags).lazy()
+        )
     return joined
 
 
@@ -978,7 +985,7 @@ def align_frames(
     # we just select out the columns representing the component frames)
     idx_frames = [(idx, frame.lazy()) for idx, frame in enumerate(frames)]  # type: ignore[union-attr]
     alignment_frame = _alignment_join(
-        *idx_frames, align_on=align_on, how=how, descending=descending
+        *idx_frames, align_on=align_on, how=how, descending=descending, eager=eager
     )
 
     # select-out aligned components from the master frame
@@ -995,4 +1002,9 @@ def align_frames(
             f = f.select(select)
         aligned_frames.append(f)
 
-    return F.collect_all(aligned_frames) if eager else aligned_frames  # type: ignore[return-value]
+    if not eager:
+        return aligned_frames  # type: ignore[return-value]
+
+    from polars.functions.lazy import _collect_all_eager
+
+    return _collect_all_eager(aligned_frames)  # type: ignore[return-value]

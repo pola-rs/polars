@@ -1,10 +1,9 @@
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::{Column, DataType, ExplodeOptions, IntoColumn, SortOptions};
 use polars_ops::prelude::array::ArrayNameSpace;
-#[cfg(feature = "array_to_struct")]
-use polars_plan::dsl::DslNameGenerator;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRArrayFunction;
+use polars_utils::broadcast::broadcast_len;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
@@ -17,6 +16,7 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
         Min => map!(min),
         Max => map!(max),
         Sum => map!(sum),
+        Dot => map_as_slice!(dot),
         ToList => map!(to_list),
         Std(ddof) => map!(std, ddof),
         Var(ddof) => map!(var, ddof),
@@ -35,7 +35,7 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
         Explode(options) => map_as_slice!(explode, options),
         Slice(offset, length) => map!(slice, offset, length),
         #[cfg(feature = "array_to_struct")]
-        ToStruct(ng) => map!(arr_to_struct, ng.clone()),
+        ToStruct { fields } => map!(arr_to_struct, &fields),
     }
 }
 
@@ -72,6 +72,12 @@ pub(super) fn min(s: &Column) -> PolarsResult<Column> {
 
 pub(super) fn sum(s: &Column) -> PolarsResult<Column> {
     s.array()?.array_sum().map(Column::from)
+}
+
+pub(super) fn dot(s: &[Column]) -> PolarsResult<Column> {
+    let lhs = s[0].array()?;
+    let rhs = s[1].array()?;
+    lhs.array_dot(rhs).map(Column::from)
 }
 
 pub(super) fn std(s: &Column, ddof: u8) -> PolarsResult<Column> {
@@ -130,13 +136,13 @@ pub(super) fn contains(s: &[Column], nulls_equal: bool) -> PolarsResult<Column> 
     polars_ensure!(matches!(array.dtype(), DataType::Array(_, _)),
         SchemaMismatch: "invalid series dtype: expected `Array`, got `{}`", array.dtype(),
     );
-    let mut ca = polars_ops::series::is_in(
-        item.as_materialized_series(),
-        array.as_materialized_series(),
-        nulls_equal,
-    )?;
+    // Don't blow up the haystack in case of scalar.
+    let haystack = array.as_materialized_series_maintain_scalar();
+    let mut ca = polars_ops::series::is_in(item.as_materialized_series(), &haystack, nulls_equal)?;
     ca.rename(array.name().clone());
-    Ok(ca.into_column())
+    // In case of scalar, broadcast back to original length
+    ca.into_column()
+        .broadcast_owned_to(broadcast_len([array, item])?)
 }
 
 #[cfg(feature = "array_count")]
@@ -215,12 +221,8 @@ fn concat_arr_output_dtype(
 }
 
 #[cfg(feature = "array_to_struct")]
-fn arr_to_struct(s: &Column, name_generator: Option<DslNameGenerator>) -> PolarsResult<Column> {
+fn arr_to_struct(s: &Column, fields: &[PlSmallStr]) -> PolarsResult<Column> {
     use polars_ops::prelude::array::ToStruct;
 
-    let name_generator =
-        name_generator.map(|f| Arc::new(move |i| f.call(i).map(PlSmallStr::from)) as Arc<_>);
-    s.array()?
-        .to_struct(name_generator)
-        .map(IntoColumn::into_column)
+    s.array()?.to_struct(fields).map(IntoColumn::into_column)
 }

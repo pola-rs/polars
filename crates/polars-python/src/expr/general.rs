@@ -251,9 +251,6 @@ impl PyExpr {
         self.inner.clone().rle_id().into()
     }
 
-    fn agg_groups(&self) -> Self {
-        self.inner.clone().agg_groups().into()
-    }
     fn count(&self) -> Self {
         self.inner.clone().count().into()
     }
@@ -503,10 +500,6 @@ impl PyExpr {
 
     fn append(&self, other: Self, upcast: bool) -> Self {
         self.inner.clone().append(other.inner, upcast).into()
-    }
-
-    fn rechunk(&self) -> Self {
-        self.inner.clone().rechunk().into()
     }
 
     fn round(&self, decimals: u32, mode: Wrap<RoundMode>) -> Self {
@@ -947,8 +940,8 @@ impl PyExpr {
     fn entropy(&self, base: f64, normalize: bool) -> Self {
         self.inner.clone().entropy(base, normalize).into()
     }
-    fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
-        self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
+    fn hash(&self, seed: u64) -> Self {
+        self.inner.clone().hash(seed).into()
     }
     fn set_sorted_flag(&self, descending: bool, nulls_last: bool) -> Self {
         let sortedness = AExprSorted::default()

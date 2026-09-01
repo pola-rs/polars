@@ -129,22 +129,6 @@ def test_shift_fill_value_group_logicals() -> None:
     assert result.dtypes == [pl.Date]
 
 
-def test_shift_n_null() -> None:
-    df = pl.DataFrame({"a": pl.Series([1, 2, 3], dtype=pl.Int32)})
-    out = df.shift(None)  # type: ignore[arg-type]
-    expected = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Int32)})
-    assert_frame_equal(out, expected)
-
-    out = df.shift(None, fill_value=1)  # type: ignore[arg-type]
-    assert_frame_equal(out, expected)
-
-    out = df.select(pl.col("a").shift(None))  # type: ignore[arg-type]
-    assert_frame_equal(out, expected)
-
-    out = df.select(pl.col("a").shift(None, fill_value=1))  # type: ignore[arg-type]
-    assert_frame_equal(out, expected)
-
-
 def test_shift_n_nonscalar() -> None:
     df = pl.DataFrame(
         {

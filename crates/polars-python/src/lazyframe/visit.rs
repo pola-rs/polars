@@ -58,7 +58,7 @@ impl NodeTraverser {
     // Increment major on breaking changes to the IR (e.g. renaming
     // fields, reordering tuples), minor on backwards compatible
     // changes (e.g. exposing a new expression node).
-    const VERSION: Version = (14, 6);
+    const VERSION: Version = (15, 0);
 
     pub fn new(root: Node, lp_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
         Self {
@@ -169,6 +169,8 @@ impl NodeTraverser {
                 n_rows: None,
                 validate_schema: false,
                 is_pure,
+                explain_name: None,
+                explain_detail: None,
             },
         };
         lp_arena.replace(self.root, ir);

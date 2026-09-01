@@ -254,22 +254,18 @@ impl WindowExpr {
     fn is_simple_column_expr(&self) -> bool {
         // col()
         // or col().alias()
-        let mut simple_col = false;
-        for e in &self.expr {
-            if let Expr::Over { function, .. } = e {
-                // or list().alias
-                for e in &**function {
-                    match e {
-                        Expr::Column(_) => {
-                            simple_col = true;
-                        },
-                        Expr::Alias(_, _) => {},
-                        _ => break,
-                    }
-                }
+        let Expr::Over { function, .. } = &self.expr else {
+            return false;
+        };
+
+        let mut function = function.as_ref();
+        loop {
+            match function {
+                Expr::Alias(inner, _) => function = inner.as_ref(),
+                Expr::Column(_) => return true,
+                _ => return false,
             }
         }
-        simple_col
     }
 
     fn is_aggregation(&self) -> bool {

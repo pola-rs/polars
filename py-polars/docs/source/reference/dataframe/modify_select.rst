@@ -41,7 +41,6 @@ Manipulation/selection
     DataFrame.join_where
     DataFrame.limit
     DataFrame.match_to_schema
-    DataFrame.melt
     DataFrame.merge_sorted
     DataFrame.partition_by
     DataFrame.pipe
@@ -78,5 +77,4 @@ Manipulation/selection
     DataFrame.vstack
     DataFrame.with_columns
     DataFrame.with_columns_seq
-    DataFrame.with_row_count
     DataFrame.with_row_index

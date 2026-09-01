@@ -10,7 +10,7 @@ from hypothesis.strategies import booleans
 import polars as pl
 import polars.selectors as cs
 from polars._plr import _expr_nodes  # type: ignore[attr-defined]
-from polars.exceptions import ComputeError
+from polars.exceptions import ArgumentRemovedError, ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
@@ -200,7 +200,7 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.group_by("c", maintain_order=True)
         .agg(pl.all().top_k_by("a", 2))
-        .explode(cs.all().exclude("c"), empty_as_null=False),
+        .explode(cs.all().exclude("c")),
         pl.DataFrame(
             {
                 "c": ["Apple", "Apple", "Orange", "Banana", "Banana"],
@@ -214,7 +214,7 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.group_by("c", maintain_order=True)
         .agg(pl.all().bottom_k_by("a", 2))
-        .explode(cs.all().exclude("c"), empty_as_null=False),
+        .explode(cs.all().exclude("c")),
         pl.DataFrame(
             {
                 "c": ["Apple", "Apple", "Orange", "Banana", "Banana"],
@@ -436,8 +436,8 @@ def test_bottom_k_nulls(s: pl.Series, should_sort: bool) -> None:
     assert_series_equal(result, s, check_order=False)
 
 
-def test_top_k_descending_deprecated() -> None:
-    with pytest.deprecated_call():
+def test_top_k_descending_removed() -> None:
+    with pytest.raises(ArgumentRemovedError):
         pl.col("a").top_k_by("b", descending=True)  # type: ignore[call-arg]
 
 

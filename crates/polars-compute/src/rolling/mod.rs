@@ -47,9 +47,6 @@ pub enum QuantileMethod {
     Equiprobable,
 }
 
-#[deprecated(note = "use QuantileMethod instead")]
-pub type QuantileInterpolOptions = QuantileMethod;
-
 #[derive(Clone, Copy, Debug, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]

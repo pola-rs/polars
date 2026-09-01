@@ -354,6 +354,8 @@ pub trait SeriesTrait:
             } else {
                 Series::full_null(self._field().name().clone(), self.len(), self._dtype())
             }
+        } else if self.len() == 1 && validity.len() != 1 {
+            self.new_from_index(0, validity.len()).mask(validity)
         } else {
             self.with_validity(combine_validities_and(
                 self.rechunk_validity().as_ref(),

@@ -22,11 +22,12 @@ use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    CastColumnsPolicy, ColumnsUdf, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
+    CastColumnsPolicy, ColumnsUdf, ExtraColumnsPolicy, FileSinkOptions, MissingColumnsPolicy,
     PartitionedSinkOptionsIR, PredicateFileSkip, ScanSources, TableStatistics,
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
+use polars_plan::plans::options::JoinTypeOptionsIR;
 use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
 mod fmt;
@@ -34,6 +35,7 @@ mod io;
 mod lower_expr;
 mod lower_group_by;
 mod lower_ir;
+mod to_description;
 mod to_graph;
 
 pub use fmt::{NodeStyle, visualize_plan};
@@ -46,6 +48,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
 use polars_utils::{UnitVec, unitvec};
 use slotmap::{SecondaryMap, SlotMap};
+pub use to_description::physical_plan_to_description;
 pub use to_graph::physical_plan_to_graph;
 
 pub use self::lower_ir::StreamingLowerIRContext;
@@ -282,6 +285,9 @@ pub enum PhysNodeKind {
         dtype: DataType,
         options: StrptimeOptions,
 
+        /// Name the input had before lowering aliased it; used in error messages.
+        input_name: PlSmallStr,
+
         /// Ambiguous can be `raise`, `earliest`, `latest` and `null`.
         ///
         /// If it is broadcast and it is `raise` or `null`, we can actually execute it in this
@@ -398,6 +404,7 @@ pub enum PhysNodeKind {
         hive_parts: Option<HivePartitionsDf>,
         include_file_paths: Option<PlSmallStr>,
         cast_columns_policy: CastColumnsPolicy,
+        extra_columns_policy: ExtraColumnsPolicy,
         missing_columns_policy: MissingColumnsPolicy,
         forbid_extra_columns: Option<ForbidExtraColumns>,
 
@@ -515,10 +522,9 @@ pub enum PhysNodeKind {
     InMemoryJoin {
         input_left: PhysStream,
         input_right: PhysStream,
-        left_on: Vec<ExprIR>,
-        right_on: Vec<ExprIR>,
         args: JoinArgs,
-        options: Option<JoinTypeOptionsIR>,
+        /// Holds the match condition, including the join keys.
+        options: JoinTypeOptionsIR,
     },
 
     #[cfg(feature = "merge_sorted")]

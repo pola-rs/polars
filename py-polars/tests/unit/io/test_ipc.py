@@ -367,11 +367,11 @@ def test_glob_ipc(df: pl.DataFrame, tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_binview_ipc_mmap(tmp_path: Path) -> None:
+def test_binview_ipc(tmp_path: Path) -> None:
     df = pl.DataFrame({"foo": ["aa" * 10, "bb", None, "small", "big" * 20]})
     file_path = tmp_path / "dump.ipc"
     df.write_ipc(file_path, compat_level=CompatLevel.newest())
-    read = pl.read_ipc(file_path, memory_map=True)
+    read = pl.read_ipc(file_path)
     assert_frame_equal(df, read)
 
 
@@ -440,10 +440,7 @@ def test_read_ipc_only_loads_selected_columns(
     memory_usage_without_pyarrow.reset_tracking()
 
     # Only load one column:
-    kwargs = {}
-    if not stream:
-        kwargs["memory_map"] = False
-    df = read_ipc(stream, str(file_path), columns=["b"], rechunk=False, **kwargs)
+    df = read_ipc(stream, str(file_path), columns=["b"])
     del df
     # Only one column's worth of memory should be used; 2 columns would be
     # 32_000_000 at least, but there's some overhead.

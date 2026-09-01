@@ -1,5 +1,13 @@
 use bitflags::bitflags;
 
+const DEFAULT_OPT_FLAGS: OptFlags = OptFlags::from_bits_truncate(
+    OptFlags::all().bits()
+        & !(OptFlags::STREAMING.bits()
+            | OptFlags::EAGER.bits()
+            | OptFlags::GPU.bits()
+            | OptFlags::QUERY_MONITORING.bits()),
+);
+
 bitflags! {
 #[derive(Copy, Clone, Debug)]
     /// Allowed optimizations.
@@ -30,7 +38,7 @@ bitflags! {
         const STREAMING = 1 << 11;
         /// Run every node eagerly. This turns off multi-node optimizations.
         const EAGER = 1 << 12;
-        /// Try to estimate the number of rows so that joins can determine which side to keep in memory.
+        /// Use row estimates in cost planning.
         const ROW_ESTIMATE = 1 << 13;
         /// Replace simple projections with a faster inlined projection that skips the expression engine.
         const FAST_PROJECTION = 1 << 14;
@@ -42,12 +50,20 @@ bitflags! {
         /// Pre-partition hive partitioned joins or group-by's
         /// Only works if PREDICATE_PUSHDOWN is set
         const PARTITION_HIVE = 1 << 17;
+        /// Observe this query with the registered observer.
+        const QUERY_MONITORING = 1 << 18;
+        /// Try to reorder joins.
+        const JOIN_ORDER = 1 << 19;
     }
 }
 
 impl OptFlags {
     pub fn cluster_with_columns(&self) -> bool {
         self.contains(OptFlags::CLUSTER_WITH_COLUMNS)
+    }
+
+    pub fn join_order(&self) -> bool {
+        self.contains(OptFlags::JOIN_ORDER)
     }
 
     pub fn cover_ir_conversion(&self, requested: OptFlags) -> bool {
@@ -92,14 +108,22 @@ impl OptFlags {
         self.contains(OptFlags::STREAMING)
     }
 
+    pub fn query_monitoring(&self) -> bool {
+        self.contains(OptFlags::QUERY_MONITORING)
+    }
+
     pub fn partition_hive(&self) -> bool {
         self.contains(OptFlags::PARTITION_HIVE)
+    }
+
+    pub fn row_estimate(&self) -> bool {
+        self.contains(OptFlags::ROW_ESTIMATE)
     }
 }
 
 impl Default for OptFlags {
     fn default() -> Self {
-        Self::from_bits_truncate(u32::MAX) & !Self::STREAMING & !Self::EAGER & !Self::GPU
+        DEFAULT_OPT_FLAGS
     }
 }
 

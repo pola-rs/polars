@@ -31,6 +31,18 @@ impl ArrayNameSpace {
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Sum))
     }
 
+    /// Compute the row-wise dot product with another equal-width array expression.
+    ///
+    /// Both arrays are cast to a common supertype, which must be an integer,
+    /// `Float32`, or `Float64`. `Int8`, `UInt8`, `Int16`, and `UInt16` produce
+    /// `Int64`; other supported types retain the common type. Integer multiplication
+    /// and accumulation use wrapping arithmetic. Pairs containing an inner null do
+    /// not contribute to the sum. An outer null row produces a null.
+    pub fn dot(self, other: Expr) -> Expr {
+        self.0
+            .map_binary(FunctionExpr::ArrayExpr(ArrayFunction::Dot), other)
+    }
+
     /// Compute the std of the items in every subarray.
     pub fn std(self, ddof: u8) -> Expr {
         self.0
@@ -119,8 +131,8 @@ impl ArrayNameSpace {
     }
 
     #[cfg(feature = "array_to_struct")]
-    pub fn to_struct(self, name_generator: Option<DslNameGenerator>) -> Expr {
-        self.0.map_unary(ArrayFunction::ToStruct(name_generator))
+    pub fn to_struct(self, fields: Option<polars_buffer::Buffer<PlSmallStr>>) -> Expr {
+        self.0.map_unary(ArrayFunction::ToStruct { fields })
     }
 
     /// Slice every subarray.

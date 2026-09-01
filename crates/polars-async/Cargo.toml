@@ -13,7 +13,7 @@ atomic-waker = { workspace = true }
 crossbeam-channel = { workspace = true }
 crossbeam-deque = { workspace = true }
 crossbeam-utils = { workspace = true }
-hwlocality-sys = { workspace = true }
+hwlocality-sys = { workspace = true, optional = true }
 parking_lot = { workspace = true }
 pin-project-lite = { workspace = true }
 rand = { workspace = true }
@@ -26,6 +26,7 @@ polars-utils = { workspace = true }
 
 [features]
 default = []
+numa = ["dep:hwlocality-sys"]
 
 [lints]
 workspace = true
