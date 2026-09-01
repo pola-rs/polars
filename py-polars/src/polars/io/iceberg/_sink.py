@@ -4,9 +4,9 @@ import contextlib
 import importlib
 import importlib.util
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import perf_counter
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from polars._utils.logging import eprint
 from polars._utils.wrap import wrap_ldf
@@ -22,14 +22,324 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import gen_uuid_v7
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     import pyarrow as pa
     import pyiceberg.catalog
     import pyiceberg.table
+    from pyiceberg.io import FileIO
+    from pyiceberg.io.pyarrow import (
+        DataFileStatistics,
+        MetricModeTypes,
+        StatisticsCollector,
+    )
+    from pyiceberg.manifest import DataFile
+    from pyiceberg.partitioning import PartitionSpec
+    from pyiceberg.schema import Schema
     from pyiceberg.table import Transaction
+    from pyiceberg.table.metadata import TableMetadata
+    from pyiceberg.typedef import Record
 
     import polars as pl
     from polars._plr import PyLazyFrame
-    from polars._typing import StorageOptionsDict
+    from polars._typing import ParquetCompression, StorageOptionsDict
+
+
+def _nested_partition_source_ids(schema: Schema, spec: PartitionSpec) -> set[int]:
+    return {
+        field.source_id
+        for field in spec.fields
+        if schema.accessor_for_field(field.source_id).inner is not None
+    }
+
+
+def _partition_source_expr(schema: Schema, source_id: int) -> pl.Expr:
+    from pyiceberg.types import StructType
+
+    import polars as pl
+
+    accessor = schema.accessor_for_field(source_id)
+    source_field = schema.fields[accessor.position]
+    expr = pl.col(source_field.name)
+
+    while accessor.inner is not None:
+        accessor = accessor.inner
+        source_type = source_field.field_type
+        if not isinstance(source_type, StructType):
+            msg = f"partition source field {source_id} has non-struct parent"
+            raise TypeError(msg)
+        source_field = source_type.fields[accessor.position]
+        expr = expr.struct.field(source_field.name)
+
+    return expr
+
+
+def _infer_partition_from_statistics(
+    statistics: DataFileStatistics, spec: PartitionSpec, schema: Schema
+) -> Record:
+    from pyiceberg.partitioning import partition_record_value
+    from pyiceberg.typedef import Record
+
+    partition_values: list[Any] = []
+    for field in spec.fields:
+        aggregate = statistics.column_aggregates.get(field.source_id)
+        if aggregate is None:
+            partition_values.append(None)
+            continue
+
+        source_type = schema.find_field(field.source_id).field_type
+        transform = field.transform.transform(source_type)
+        lower_value = transform(
+            partition_record_value(field, aggregate.current_min, schema)
+        )
+        upper_value = transform(
+            partition_record_value(field, aggregate.current_max, schema)
+        )
+        # A file can contain different source values in one transformed partition.
+        if lower_value != upper_value:
+            msg = (
+                "Cannot infer partition value from Parquet metadata for partition "
+                f"field '{field.name}': {lower_value=}, {upper_value=}"
+            )
+            raise ValueError(msg)
+        partition_values.append(lower_value)
+
+    return Record(*partition_values)
+
+
+def _data_files_with_nested_partitions(
+    table_metadata: TableMetadata,
+    file_paths: list[str],
+    file_io: FileIO,
+    nested_source_ids: set[int],
+) -> Iterable[DataFile]:
+    from pyiceberg.io.pyarrow import (
+        MetricModeTypes,
+        MetricsMode,
+        compute_statistics_plan,
+        parquet_path_to_id_mapping,
+    )
+    from pyiceberg.utils.concurrent import ExecutorFactory
+
+    schema = table_metadata.schema()
+    statistics_plan = compute_statistics_plan(schema, table_metadata.properties)
+    nested_metrics_modes = {}
+    for source_id in nested_source_ids:
+        nested_metrics_modes[source_id] = statistics_plan[source_id].mode.type
+        # Nested bounds are needed temporarily to infer the partition value.
+        statistics_plan[source_id] = replace(
+            statistics_plan[source_id],
+            mode=MetricsMode(MetricModeTypes.FULL),
+        )
+    parquet_column_mapping = parquet_path_to_id_mapping(schema)
+
+    executor = ExecutorFactory.get_or_create()
+    futures = [
+        executor.submit(
+            _data_file_with_nested_partitions,
+            table_metadata,
+            file_path,
+            file_io,
+            statistics_plan,
+            parquet_column_mapping,
+            nested_metrics_modes,
+        )
+        for file_path in file_paths
+    ]
+    return [future.result() for future in futures]
+
+
+def _data_file_with_nested_partitions(
+    table_metadata: TableMetadata,
+    file_path: str,
+    file_io: FileIO,
+    statistics_plan: dict[int, StatisticsCollector],
+    parquet_column_mapping: dict[str, int],
+    nested_metrics_modes: dict[int, MetricModeTypes],
+) -> DataFile:
+    import pyarrow.parquet as pq
+    from pyiceberg.io.pyarrow import (
+        MetricModeTypes,
+        _check_pyarrow_schema_compatible,
+        data_file_statistics_from_parquet_metadata,
+    )
+    from pyiceberg.manifest import DataFile, DataFileContent, FileFormat
+
+    schema = table_metadata.schema()
+    input_file = file_io.new_input(file_path)
+    with input_file.open() as input_stream:
+        parquet_metadata = pq.read_metadata(input_stream)
+
+    _check_pyarrow_schema_compatible(schema, parquet_metadata.schema.to_arrow_schema())
+    statistics = data_file_statistics_from_parquet_metadata(
+        parquet_metadata=parquet_metadata,
+        stats_columns=statistics_plan,
+        parquet_column_mapping=parquet_column_mapping,
+    )
+    partition = _infer_partition_from_statistics(
+        statistics, table_metadata.spec(), schema
+    )
+    serialized_statistics = statistics.to_serialized_dict()
+    for source_id, metrics_mode in nested_metrics_modes.items():
+        serialized_statistics["lower_bounds"].pop(source_id, None)
+        serialized_statistics["upper_bounds"].pop(source_id, None)
+        if metrics_mode is MetricModeTypes.NONE:
+            serialized_statistics["value_counts"].pop(source_id, None)
+            serialized_statistics["null_value_counts"].pop(source_id, None)
+            serialized_statistics["nan_value_counts"].pop(source_id, None)
+
+    data_file_args = {
+        "content": DataFileContent.DATA,
+        "file_path": file_path,
+        "file_format": FileFormat.PARQUET,
+        "partition": partition,
+        "file_size_in_bytes": len(input_file),
+        "sort_order_id": None,
+        "spec_id": table_metadata.default_spec_id,
+        "equality_ids": None,
+        "key_metadata": None,
+        **serialized_statistics,
+    }
+    factory = getattr(DataFile, "from_args", None)
+    if factory is None:
+        return DataFile(**data_file_args)
+    return factory(**data_file_args)
+
+
+def _add_files(
+    transaction: Transaction,
+    table: pyiceberg.table.Table,
+    file_paths: list[str],
+    snapshot_properties: dict[str, str],
+) -> None:
+    from pyiceberg.table import TableProperties
+
+    table_metadata = transaction.table_metadata
+    nested_source_ids = _nested_partition_source_ids(
+        table_metadata.schema(), table_metadata.spec()
+    )
+    if not nested_source_ids:
+        transaction.add_files(
+            file_paths,
+            snapshot_properties=snapshot_properties,
+            check_duplicate_files=False,
+        )
+        return
+
+    if table_metadata.name_mapping() is None:
+        transaction.set_properties(
+            {
+                TableProperties.DEFAULT_NAME_MAPPING: table_metadata.schema().name_mapping.model_dump_json()
+            }
+        )
+
+    with transaction.update_snapshot(
+        snapshot_properties=snapshot_properties
+    ).fast_append() as append_files:
+        for data_file in _data_files_with_nested_partitions(
+            table_metadata,
+            file_paths,
+            table.io,
+            nested_source_ids,
+        ):
+            append_files.append_data_file(data_file)
+
+
+def _partition_key_exprs(
+    table: pyiceberg.table.Table, source_schema: pa.Schema | None = None
+) -> list[pl.Expr] | None:
+    spec = table.spec()
+
+    if not spec.fields:
+        return None
+
+    from pyiceberg.io.pyarrow import MetricModeTypes, compute_statistics_plan
+    from pyiceberg.transforms import (
+        DayTransform,
+        HourTransform,
+        IdentityTransform,
+        MonthTransform,
+        TruncateTransform,
+        YearTransform,
+    )
+    from pyiceberg.types import BinaryType, IntegerType, LongType, StringType
+
+    import polars as pl
+
+    schema = table.schema()
+    nested_source_ids = _nested_partition_source_ids(schema, spec)
+    statistics_plan = compute_statistics_plan(schema, table.metadata.properties)
+    bounds_metrics_modes = {MetricModeTypes.TRUNCATE, MetricModeTypes.FULL}
+    reserved_names = {field.name for field in schema.fields}
+    if source_schema is not None:
+        reserved_names.update(source_schema.names)
+    exprs: list[pl.Expr] = []
+
+    for field in spec.fields:
+        source_field = schema.find_field(field.source_id)
+        statistics = statistics_plan.get(field.source_id)
+        if field.source_id not in nested_source_ids and (
+            statistics is None or statistics.mode.type not in bounds_metrics_modes
+        ):
+            source_name = schema.find_column_name(field.source_id)
+            metrics_mode = (
+                statistics.mode.type.value if statistics is not None else "unavailable"
+            )
+            msg = (
+                "sink to Iceberg table with partition field "
+                f"'{field.name}' on source column '{source_name}' with "
+                f"'{metrics_mode}' metrics; partition value inference requires "
+                "lower and upper bounds"
+            )
+            raise NotImplementedError(msg)
+
+        source_type = source_field.field_type
+        transform = field.transform
+        expr = _partition_source_expr(schema, field.source_id)
+
+        if isinstance(transform, IdentityTransform):
+            pass
+        elif isinstance(
+            transform, (YearTransform, MonthTransform, DayTransform, HourTransform)
+        ):
+            if type(source_type).__name__ in {
+                "TimestamptzType",
+                "TimestamptzNanoType",
+            }:
+                expr = expr.dt.convert_time_zone("UTC")
+
+            if isinstance(transform, YearTransform):
+                expr = expr.dt.year() - 1970
+            elif isinstance(transform, MonthTransform):
+                expr = (expr.dt.year() - 1970) * 12 + expr.dt.month() - 1
+            elif isinstance(transform, DayTransform):
+                expr = expr.cast(pl.Date).cast(pl.Int32)
+            else:
+                expr = expr.dt.epoch("us") // 3_600_000_000
+        elif isinstance(transform, TruncateTransform):
+            if isinstance(source_type, (IntegerType, LongType)):
+                expr = expr - expr % transform.width
+            elif isinstance(source_type, StringType):
+                expr = expr.str.slice(0, transform.width)
+            elif isinstance(source_type, BinaryType):
+                expr = expr.bin.slice(0, transform.width)
+            else:
+                msg = (
+                    "sink to Iceberg table with "
+                    f"'{transform}' partition transform on '{source_type}'"
+                )
+                raise NotImplementedError(msg)
+        else:
+            msg = f"sink to Iceberg table with '{transform}' partition transform"
+            raise NotImplementedError(msg)
+
+        key_name = f"__POLARS_ICEBERG_PARTITION_{field.field_id}"
+        while key_name in reserved_names:
+            key_name += "_"
+        reserved_names.add(key_name)
+        exprs.append(expr.alias(key_name))
+
+    return exprs
 
 
 @dataclass(kw_only=True)
@@ -45,6 +355,10 @@ class IcebergSinkState:
     schema_mode: Literal["merge", "overwrite"] | None
     snapshot_properties: dict[str, str]
     iceberg_storage_properties: StorageOptionsDict
+    compression: ParquetCompression
+    compression_level: int | None
+    row_group_size: int | None
+    maintain_order: bool
 
     sink_uuid_str: str
 
@@ -61,6 +375,10 @@ class IcebergSinkState:
         snapshot_properties: dict[str, str] | None = None,
         catalog: pyiceberg.catalog.Catalog | IcebergCatalogConfig | None = None,
         storage_options: StorageOptionsDict | None = None,
+        compression: ParquetCompression = "zstd",
+        compression_level: int | None = None,
+        row_group_size: int | None = None,
+        maintain_order: bool = True,
     ) -> IcebergSinkState:
         if schema_mode == "overwrite" and mode != "overwrite":
             msg = "schema_mode='overwrite' requires mode='overwrite'"
@@ -102,6 +420,10 @@ class IcebergSinkState:
             schema_mode=schema_mode,
             snapshot_properties=snapshot_properties or {},
             iceberg_storage_properties=storage_options or {},
+            compression=compression,
+            compression_level=compression_level,
+            row_group_size=row_group_size,
+            maintain_order=maintain_order,
             sink_uuid_str=gen_uuid_v7().hex(),
             table_=NoPickleOption(target if not isinstance(target, str) else None),
             source_schema=None,
@@ -176,9 +498,11 @@ class IcebergSinkState:
         table_metadata = table.metadata
         table_properties = table_metadata.properties
 
-        if table.spec().fields:
-            msg = "sink to partitioned Iceberg table"
+        if self.schema_mode == "overwrite" and table.spec().fields:
+            msg = "schema_mode='overwrite' is not supported for partitioned Iceberg tables"
             raise NotImplementedError(msg)
+
+        partition_key_exprs = _partition_key_exprs(table, self.source_schema)
 
         if table.sort_order().fields:
             msg = "sink to Iceberg table with sort order"
@@ -233,9 +557,15 @@ class IcebergSinkState:
                     file_path_provider=PlIcebergPathProviderConfig(
                         object_storage_partitioned_paths=object_storage_partitioned_paths
                     ),
+                    key=partition_key_exprs,
+                    include_key=False if partition_key_exprs is not None else None,
                     approximate_bytes_per_file=approximate_bytes_per_file,
                 ),
                 arrow_schema=arrow_schema,
+                compression=self.compression,
+                compression_level=self.compression_level,
+                row_group_size=self.row_group_size,
+                maintain_order=self.maintain_order,
                 storage_options=self._get_converted_storage_options(),
                 lazy=True,
             )
@@ -275,10 +605,11 @@ class IcebergSinkState:
 
             start_instant = perf_counter()
 
-            tx.add_files(
+            _add_files(
+                tx,
+                table,
                 data_file_paths,
-                snapshot_properties=self.snapshot_properties,
-                check_duplicate_files=False,
+                self.snapshot_properties,
             )
 
             if verbose:
