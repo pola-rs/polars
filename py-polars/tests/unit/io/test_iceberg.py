@@ -559,6 +559,33 @@ def test_sink_iceberg_all_types(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.write_disk
+def test_sink_iceberg_parquet_writer_options(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+
+    pl.LazyFrame({"a": [1, 2, 3, 4, 5]}).sink_iceberg(
+        tbl,
+        mode="append",
+        compression="gzip",
+        compression_level=1,
+        row_group_size=2,
+        maintain_order=False,
+    )
+
+    [task] = tbl.scan().plan_files()
+    with tbl.io.new_input(task.file.file_path).open() as input_file:
+        metadata = pq.read_metadata(input_file)
+
+    assert metadata.num_row_groups == 3
+    assert metadata.row_group(0).column(0).compression == "GZIP"
+    assert_frame_equal(
+        pl.scan_iceberg(tbl).collect().sort("a"),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5]}),
+    )
+
+
 @pytest.mark.parametrize(
     ("iceberg_type", "transform", "values"),
     [
