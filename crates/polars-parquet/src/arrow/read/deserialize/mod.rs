@@ -58,7 +58,8 @@ pub fn create_list(
             // The offsets are monotonic, so only the last one can overflow.
             if values.len() > i32::MAX as usize {
                 return Err(ParquetError::not_supported(format!(
-                    "list column with {} elements in a single chunk exceeds the i32 offset limit",
+                    "list column has {} elements in a single chunk, which exceeds the 32-bit \
+                     offset limit of the requested `List` type; decode into `LargeList` instead",
                     values.len(),
                 )));
             }
@@ -101,7 +102,10 @@ pub fn create_map(
     let (_, mut offsets, validity) = nested.pop().unwrap();
     match dtype.to_storage() {
         ArrowDataType::Map(_, _) => {
-            // The offsets are monotonic, so only the last one can overflow.
+            // Like in the list case, only the last offset can overflow.
+            // The Arrow spec guarantees that i32 offsets are enough, but Parquet does not.
+            // Since all of our Parquet reading goes through Arrow types (`MapArray`), we must
+            // bail here, even though the Polars `Map` type itself can store 64-bit offsets.
             if values.len() > i32::MAX as usize {
                 return Err(ParquetError::not_supported(format!(
                     "map column with {} entries in a single chunk exceeds the i32 offset limit",
