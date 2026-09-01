@@ -2,7 +2,7 @@ use std::ops::{Add, Sub};
 
 use polars_core::chunked_array::ops::{FillNullStrategy, SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
-    DataType, ExplodeOptions, PolarsResult, QuantileMethod, Schema, TimeUnit, polars_bail,
+    DataType, ExplodeOptions, PolarsResult, QuantileMethod, Scalar, Schema, TimeUnit, polars_bail,
     polars_err,
 };
 use polars_lazy::dsl::Expr;
@@ -27,7 +27,9 @@ use sqlparser::ast::{
 use sqlparser::tokenizer::Span;
 
 use crate::SQLContext;
-use crate::sql_expr::{adjust_one_indexed_param, parse_extract_date_part, parse_sql_expr};
+use crate::sql_expr::{
+    adjust_one_indexed_param, parse_extract_date_part, parse_sql_array, parse_sql_expr,
+};
 
 pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
@@ -730,6 +732,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT ARRAY_CONTAINS(col1, 'foo') FROM df;
     /// ```
     ArrayContains,
+    /// SQL 'array_inner_product' function (also known as `array_dot_product`).
+    /// Returns the inner product of two fixed-size arrays.
+    /// ```sql
+    /// SELECT ARRAY_INNER_PRODUCT(col1, col2) FROM df;
+    /// ```
+    ArrayInnerProduct,
     /// SQL 'unnest' function.
     /// Unnest/explodes an array column into multiple rows.
     /// ```sql
@@ -809,7 +817,9 @@ impl PolarsSQLFunctions {
             "acos",
             "acosd",
             "array_contains",
+            "array_dot_product",
             "array_get",
+            "array_inner_product",
             "array_length",
             "array_lower",
             "array_mean",
@@ -1057,6 +1067,7 @@ impl PolarsSQLFunctions {
             // ----
             "array_agg" => Self::ArrayAgg,
             "array_contains" => Self::ArrayContains,
+            "array_dot_product" | "array_inner_product" => Self::ArrayInnerProduct,
             "array_get" => Self::ArrayGet,
             "array_length" => Self::ArrayLength,
             "array_lower" => Self::ArrayMin,
@@ -1659,6 +1670,7 @@ impl SQLFunctionVisitor<'_> {
             // ----
             ArrayAgg => self.visit_arr_agg(),
             ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s, true)),
+            ArrayInnerProduct => self.visit_array_inner_product(),
             ArrayGet => {
                 // note: SQL is 1-indexed, not 0-indexed
                 self.visit_binary(|e, idx: Expr| {
@@ -1988,10 +2000,38 @@ impl SQLFunctionVisitor<'_> {
     /// active `FILTER (WHERE …)` clause from the surrounding call.
     fn parse_sql_arg(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
         let parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
-        Ok(match &self.filter {
-            Some(pred) => parsed.filter(pred.clone()),
-            None => parsed,
-        })
+        Ok(self.apply_filter(parsed))
+    }
+
+    fn apply_filter(&self, expr: Expr) -> Expr {
+        match &self.filter {
+            Some(pred) => expr.filter(pred.clone()),
+            None => expr,
+        }
+    }
+
+    fn parse_array_inner_product_arg(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        // Keep ordinary SQL arrays List-backed. Only direct literals in this
+        // function become scalar Arrays so native arr.dot can broadcast them.
+        let array_expr = match expr {
+            SQLExpr::Array(_) => expr,
+            SQLExpr::Nested(inner) => return self.parse_array_inner_product_arg(inner),
+            _ => return self.parse_sql_arg(expr),
+        };
+        let values = parse_sql_array(array_expr, self.ctx)?;
+        let width = values.len();
+        Ok(self.apply_filter(lit(Scalar::new_array(values, width))))
+    }
+
+    fn visit_array_inner_product(&mut self) -> PolarsResult<Expr> {
+        let args = extract_args(self.func)?;
+        match args.as_slice() {
+            [FunctionArgExpr::Expr(lhs), FunctionArgExpr::Expr(rhs)] => Ok(self
+                .parse_array_inner_product_arg(lhs)?
+                .arr()
+                .dot(self.parse_array_inner_product_arg(rhs)?)),
+            _ => self.not_supported_error(),
+        }
     }
 
     fn visit_unary(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
