@@ -76,3 +76,30 @@ fn test_fill_null_median_all_null() -> PolarsResult<()> {
     assert_eq!(filled.null_count(), 3);
     Ok(())
 }
+
+#[test]
+fn test_fill_null_subset() -> PolarsResult<()> {
+    let df = df! {
+        "a" => [Some(1), None, Some(3)],
+        "b" => [Some(10), None, Some(30)],
+    }?;
+    let out = df.fill_null(FillNullStrategy::Zero, Some(&["b"]))?;
+    let a = out.column("a")?;
+    let b = out.column("b")?;
+    assert_eq!(a.null_count(), 1);
+    assert_eq!(b.null_count(), 0);
+    assert_eq!(b.i32()?.get(1), Some(0));
+    Ok(())
+}
+
+#[test]
+fn test_fill_null_subset_all() -> PolarsResult<()> {
+    let df = df! {
+        "a" => [Some(1), None, Some(3)],
+        "b" => [Some(10), None, Some(30)],
+    }?;
+    let out = df.fill_null(FillNullStrategy::Zero, Option::<&[&str]>::None)?;
+    assert_eq!(out.column("a")?.null_count(), 0);
+    assert_eq!(out.column("b")?.null_count(), 0);
+    Ok(())
+}

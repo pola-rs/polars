@@ -2205,12 +2205,29 @@ impl DataFrame {
     /// * Forward fill (replace None with the previous value)
     /// * Backward fill (replace None with the next value)
     /// * Mean fill (replace None with the mean of the whole array)
+    /// * Median fill (replace None with the median of the whole array)
     /// * Min fill (replace None with the minimum of the whole array)
     /// * Max fill (replace None with the maximum of the whole array)
     ///
     /// See the method on [Series](crate::series::Series::fill_null) for more info on the `fill_null` operation.
-    pub fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self> {
-        let col = self.try_apply_columns_par(|s| s.fill_null(strategy))?;
+    pub fn fill_null<S>(&self, strategy: FillNullStrategy, subset: Option<&[S]>) -> PolarsResult<Self>
+    where
+        for<'a> &'a S: AsRef<str>,
+    {
+        let subset_columns: PlHashSet<PlSmallStr> = match subset {
+            Some(names) => {
+                let selected = self.select_to_vec(names)?;
+                selected.iter().map(|c| c.name().clone()).collect()
+            },
+            None => self.columns().iter().map(|c| c.name().clone()).collect(),
+        };
+        let col = self.try_apply_columns_par(|s| {
+            if subset_columns.contains(s.name()) {
+                s.fill_null(strategy)
+            } else {
+                Ok(s.clone())
+            }
+        })?;
 
         Ok(unsafe { DataFrame::new_unchecked(self.height(), col) })
     }

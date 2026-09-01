@@ -9336,6 +9336,7 @@ class DataFrame:
         limit: int | None = None,
         *,
         matches_supertype: bool = True,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
     ) -> DataFrame:
         """
         Fill null values using the specified value or strategy.
@@ -9351,6 +9352,9 @@ class DataFrame:
             'backward' strategy.
         matches_supertype
             Fill all matching supertype of the fill `value`.
+        subset
+            Column name(s) or selector(s) to fill. Only these columns will be
+            considered when filling null values.
 
         Returns
         -------
@@ -9429,7 +9433,13 @@ class DataFrame:
 
         return (
             self.lazy()
-            .fill_null(value, strategy, limit, matches_supertype=matches_supertype)
+            .fill_null(
+                value,
+                strategy,
+                limit,
+                matches_supertype=matches_supertype,
+                subset=subset,
+            )
             ._collect_eager(optimizations=QueryOptFlags._eager())
         )
 

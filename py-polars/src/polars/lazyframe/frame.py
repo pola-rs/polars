@@ -7103,6 +7103,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         limit: int | None = None,
         *,
         matches_supertype: bool = True,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
     ) -> LazyFrame:
         """
         Fill null values using the specified value or strategy.
@@ -7120,6 +7121,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             'backward' strategy.
         matches_supertype
             Fill all matching supertypes of the fill `value` literal.
+        subset
+            Column name(s) or selector(s) to fill. Only these columns will be
+            considered when filling null values.
 
         See Also
         --------
@@ -7232,10 +7236,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 dtypes = None
 
             if dtypes:
+                if subset is not None:
+                    return self.with_columns(
+                        F.col(subset).fill_null(value, strategy, limit)
+                    )
                 return self.with_columns(
                     F.col([*dtypes, Null]).fill_null(value, strategy, limit)
                 )
 
+        if subset is not None:
+            return self.select(F.col(subset).fill_null(value, strategy, limit))
         return self.select(F.all().fill_null(value, strategy, limit))
 
     def fill_nan(self, value: int | float | Expr | None) -> LazyFrame:

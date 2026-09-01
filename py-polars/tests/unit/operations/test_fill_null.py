@@ -198,3 +198,22 @@ def test_fill_null_median() -> None:
 
     s = pl.Series("a", [0.0, 1.0, None, 2.0, None, 3.0])
     assert s.fill_null(strategy="median").to_list() == [0.0, 1.0, 1.5, 2.0, 1.5, 3.0]
+
+
+def test_fill_null_subset() -> None:
+    df = pl.DataFrame({"a": [1, None, 3], "b": [10, None, 30]})
+
+    result = df.fill_null(strategy="zero", subset=["b"])
+    assert_frame_equal(
+        result,
+        pl.DataFrame({"a": [1, None, 3], "b": [10, 0, 30]}),
+    )
+
+    lazy_result = df.lazy().fill_null(strategy="zero", subset=["b"]).collect()
+    assert_frame_equal(lazy_result, result)
+
+    selector_result = df.fill_null(strategy="zero", subset=pl.col("b"))
+    assert_frame_equal(selector_result, result)
+
+    value_result = df.fill_null(0, subset=["b"])
+    assert_frame_equal(value_result, result)
