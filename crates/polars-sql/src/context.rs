@@ -3512,13 +3512,16 @@ fn expr_cols_all_in_schema(expr: &Expr, schema: &Schema) -> bool {
     found_cols && all_in_schema
 }
 
-/// Determine which parsed join expressions actually belong in `left_om` and which in `right_on`.
+/// Determine which parsed join expressions actually belong in `left_on` and which in `right_on`.
 ///
 /// This needs to be handled carefully because in SQL joins you can write "join on" constraints
 /// either way round, and in joins with more than two tables you can also join against an earlier
 /// table (e.g.: you could be joining `df1` to `df2` to `df3`, but the final join condition where
-/// we join `df2` to `df3` could refer to `df1.a = df3.b`; this takes a little more work to
+/// we join `df2` to `df3` could refer to `df1.a = df3.b`); this takes a little more work to
 /// resolve as our native `join` function operates on only two tables at a time.
+///
+/// An operand can also be constant (`ON df1.x = df2.x AND df2.flag = 'y'`), in which case it has
+/// no table of its own and takes whichever side the other operand does not.
 fn determine_left_right_join_on(
     ctx: &mut SQLContext,
     expr_left: &SQLExpr,
@@ -3531,6 +3534,13 @@ fn determine_left_right_join_on(
     // (called inside `parse_sql_expr`) as we need the actual/underlying col
     let left_on = strip_join_aliases(parse_sql_expr(expr_left, ctx, Some(join_schema))?);
     let right_on = strip_join_aliases(parse_sql_expr(expr_right, ctx, Some(join_schema))?);
+
+    // a constant operand is a literal, or any other expression referencing no column (such as
+    // `UPPER('it')`); it can be evaluated against either input, so it has no table affinity
+    let (left_is_const, right_is_const) = (
+        !expr_references_any_column(expr_left),
+        !expr_references_any_column(expr_right),
+    );
 
     // ------------------------------------------------------------------
     // simple/typical case: can fully resolve SQL-level table references
@@ -3549,6 +3559,13 @@ fn determine_left_right_join_on(
         ((true, false), (false, true)) => return Ok((vec![left_on], vec![right_on])),
         // reversed: left expr → right table, right expr → left table
         ((false, true), (true, false)) => return Ok((vec![right_on], vec![left_on])),
+        // qualified column vs constant: the qualifier alone settles it (note that this also
+        // covers a column name that is present in *both* schemas, which schema-based
+        // resolution below cannot disambiguate)
+        ((true, false), _) if right_is_const => return Ok((vec![left_on], vec![right_on])),
+        ((false, true), _) if right_is_const => return Ok((vec![right_on], vec![left_on])),
+        (_, (false, true)) if left_is_const => return Ok((vec![left_on], vec![right_on])),
+        (_, (true, false)) if left_is_const => return Ok((vec![right_on], vec![left_on])),
         // unsupported: one side references *both* tables
         ((true, true), _) | (_, (true, true)) if tbl_left.name != tbl_right.name => {
             polars_bail!(
@@ -3568,19 +3585,27 @@ fn determine_left_right_join_on(
     // more involved: additionally employ schema-based column resolution
     // (applies to unqualified columns and/or chained joins)
     // ------------------------------------------------------------------
-    let left_on_cols_in = (
-        expr_cols_all_in_schema(&left_on, &tbl_left.schema),
-        expr_cols_all_in_schema(&left_on, &tbl_right.schema),
-    );
-    let right_on_cols_in = (
-        expr_cols_all_in_schema(&right_on, &tbl_left.schema),
-        expr_cols_all_in_schema(&right_on, &tbl_right.schema),
-    );
+    // a constant resolves against either schema, so we report it as belonging to both and let
+    // the arms below take the side that the other (schema-unique) operand leaves free
+    let cols_in_schemas = |expr: &Expr, is_const: bool| {
+        if is_const {
+            (true, true)
+        } else {
+            (
+                expr_cols_all_in_schema(expr, &tbl_left.schema),
+                expr_cols_all_in_schema(expr, &tbl_right.schema),
+            )
+        }
+    };
+    let left_on_cols_in = cols_in_schemas(&left_on, left_is_const);
+    let right_on_cols_in = cols_in_schemas(&right_on, right_is_const);
+
     match (left_on_cols_in, right_on_cols_in) {
         // each expression's columns exist in exactly one schema
         ((true, false), (false, true)) => Ok((vec![left_on], vec![right_on])),
         ((false, true), (true, false)) => Ok((vec![right_on], vec![left_on])),
-        // one expression in both, other only in one; prefer the unique one
+        // one expression is in both schemas (or is constant) and the other in only one;
+        // the unique one decides, and the ambiguous one takes the remaining side
         ((true, true), (true, false)) => Ok((vec![right_on], vec![left_on])),
         ((true, true), (false, true)) => Ok((vec![left_on], vec![right_on])),
         ((true, false), (true, true)) => Ok((vec![left_on], vec![right_on])),

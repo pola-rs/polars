@@ -1468,7 +1468,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if plan_stage == "ir":
             dot = _ldf.to_dot(optimized)
         elif plan_stage == "physical":
-            if engine_.plan_engine == "streaming":
+            if engine_.plan_engine == "streaming" or engine_.plan_engine == "auto":
                 dot = _ldf.to_dot_streaming_phys(optimized)
             else:
                 dot = _ldf.to_dot(optimized)
