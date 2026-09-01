@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
     from typing import IO
 
+MAP = pl.Map(pl.String, pl.Int64)
 ENTRIES = pl.List(pl.Struct({"key": pl.String, "value": pl.Int64}))
 
 
@@ -116,10 +117,14 @@ def test_map_cast_value_dtype() -> None:
 
 def test_map_cast_to_entries_list_and_back() -> None:
     dtype = pl.Map(pl.String, pl.Int64)
-    s = pl.Series("m", [{"a": 1, "b": 2}], dtype=dtype)
+    s = pl.Series("m", [{"a": 1, "b": 2}, {}, None], dtype=dtype)
 
     entries = s.cast(ENTRIES)
-    assert entries.to_list() == [[{"key": "a", "value": 1}, {"key": "b", "value": 2}]]
+    assert entries.to_list() == [
+        [{"key": "a", "value": 1}, {"key": "b", "value": 2}],
+        [],
+        None,
+    ]
     assert_series_equal(entries.cast(dtype), s)
 
 
@@ -261,6 +266,18 @@ def test_map_entries_matched_by_name_on_cast(
     else:
         with pytest.raises(InvalidOperationError, match="named `key`"):
             s.cast(dtype)
+
+
+@pytest.mark.parametrize(("entries", "ok"), ENTRY_CASES)
+def test_map_entries_matched_by_name_on_list_to_map(
+    entries: list[dict[str, Any]], ok: bool
+) -> None:
+    s = pl.Series("m", [entries])
+    if ok:
+        assert s.list.to_map().to_list() == [{"a": 1}]
+    else:
+        with pytest.raises(InvalidOperationError, match="named `key`"):
+            s.list.to_map()
 
 
 @pytest.mark.parametrize("values", [[[]], [[], None]])
@@ -756,3 +773,73 @@ def test_map_valid_key_dtypes_still_construct_empty() -> None:
     ):
         assert pl.Series("m", [], dtype=dtype).dtype == dtype
         assert pl.DataFrame(schema={"m": dtype}).schema == {"m": dtype}
+
+
+def test_map_entries_expr_and_series() -> None:
+    # Deliberately unsorted: entry order is preserved, not normalized.
+    s = pl.Series("m", [{"b": 1, "a": 2}, {}, None], dtype=MAP)
+
+    expected = pl.Series(
+        "m",
+        [[{"key": "b", "value": 1}, {"key": "a", "value": 2}], [], None],
+        dtype=ENTRIES,
+    )
+    assert_series_equal(s.map.entries(), expected)
+
+    df = pl.DataFrame({"m": s})
+    assert_series_equal(df.select(pl.col("m").map.entries())["m"], expected)
+
+
+def test_map_dsl_round_trip() -> None:
+    s = pl.Series("m", [{"b": 1, "a": 2}, {}, None], dtype=MAP)
+    df = pl.DataFrame({"m": s})
+    round_tripped = df.select(pl.col("m").map.entries().list.to_map())
+    assert_series_equal(round_tripped["m"], s)
+
+
+def test_list_to_map_rejects_null_keys() -> None:
+    s = pl.Series("m", [[{"key": None, "value": 1}]], dtype=ENTRIES)
+    with pytest.raises(InvalidOperationError, match="null"):
+        s.list.to_map()
+
+
+def test_map_entries_requires_map_dtype() -> None:
+    df = pl.DataFrame({"m": [[1, 2]]})
+    with pytest.raises(InvalidOperationError, match=r"`map\.entries` requires a Map"):
+        df.select(pl.col("m").map.entries())
+
+
+# Entry field names are covered by `ENTRY_CASES`; these two shapes are only
+# reachable through the DSL, where the target dtype is derived rather than given.
+@pytest.mark.parametrize(
+    ("data", "dtype", "match"),
+    [
+        pytest.param([1], pl.Int64, "requires a List dtype", id="not-a-list"),
+        pytest.param([[1]], pl.List(pl.Int64), "must be `Struct", id="not-a-struct"),
+    ],
+)
+def test_list_to_map_invalid_input(
+    data: list[Any], dtype: pl.DataType, match: str
+) -> None:
+    df = pl.DataFrame({"m": pl.Series(data, dtype=dtype)})
+    with pytest.raises(InvalidOperationError, match=match):
+        df.select(pl.col("m").list.to_map())
+
+
+def test_map_dsl_resolves_schema_without_data() -> None:
+    lf = pl.LazyFrame(schema={"m": MAP})
+    assert lf.select(pl.col("m").map.entries()).collect_schema() == {"m": ENTRIES}
+
+    lf = pl.LazyFrame(schema={"m": ENTRIES})
+    assert lf.select(pl.col("m").list.to_map()).collect_schema() == {"m": MAP}
+
+
+def test_map_dsl_on_nested_value_dtype() -> None:
+    dtype = pl.Map(pl.String, pl.Struct({"x": pl.Int64}))
+    s = pl.Series("m", [{"a": {"x": 1}}], dtype=dtype)
+
+    entries = s.map.entries()
+    assert entries.dtype == pl.List(
+        pl.Struct({"key": pl.String, "value": pl.Struct({"x": pl.Int64})})
+    )
+    assert_series_equal(entries.list.to_map(), s)
