@@ -32,7 +32,7 @@ use crate::sql_expr::{
 use crate::sql_visitors::{
     QualifyExpression, TableIdentifierCollector, check_for_ambiguous_column_refs,
     expr_contains_subquery, expr_has_window_functions, expr_references_any_column,
-    expr_refers_to_table, sql_expr_cols_all_in_schema,
+    expr_refers_to_table, sql_expr_cols_all_in_schema, statement_registers_table,
 };
 use crate::subquery::{LowerScope, SubqueryBindings, desugar_quantified_subqueries};
 use crate::table_functions::PolarsTableFunctions;
@@ -219,6 +219,9 @@ pub(crate) enum FilterMode {
 pub struct SQLContext {
     pub(crate) table_map: Arc<RwLock<PlHashMap<String, LazyFrame>>>,
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
+    /// Set once a caller installs their own registry; user-defined functions cannot be
+    /// carried in the DSL, so such a context resolves its queries eagerly.
+    custom_function_registry: bool,
     pub(crate) lp_arena: Arena<IR>,
     pub(crate) expr_arena: Arena<AExpr>,
 
@@ -233,8 +236,10 @@ pub struct SQLContext {
 
 impl Default for SQLContext {
     fn default() -> Self {
+        crate::register_sql_resolver();
         Self {
             function_registry: Arc::new(DefaultFunctionRegistry {}),
+            custom_function_registry: false,
             table_map: Default::default(),
             cte_map: Default::default(),
             table_aliases: Default::default(),
@@ -309,22 +314,14 @@ impl SQLContext {
     /// # }
     ///```
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
-        let mut parser = Parser::new(&GenericDialect);
-        parser = parser.with_options(ParserOptions {
-            trailing_commas: true,
-            ..Default::default()
-        });
+        let mut stmt = parse_single_statement(query)?;
 
-        let mut ast = parser
-            .try_with_sql(query)
-            .map_err(to_sql_interface_err)?
-            .parse_statements()
-            .map_err(to_sql_interface_err)?;
+        if self.can_defer(&stmt) {
+            return Ok(LazyFrame::from(self.defer_query(query, stmt)));
+        }
 
-        polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
-        let stmt = ast.first_mut().unwrap();
-        desugar_quantified_subqueries(stmt);
-        let res = self.execute_statement(stmt)?;
+        desugar_quantified_subqueries(&mut stmt);
+        let res = self.execute_statement(&stmt)?;
 
         // Ensure the result uses the proper arenas.
         // This will instantiate new arenas with a new version.
@@ -332,19 +329,85 @@ impl SQLContext {
         let expr_arena = std::mem::take(&mut self.expr_arena);
         res.set_cached_arena(lp_arena, expr_arena);
 
-        // Every execution should clear the statement-level maps.
+        self.clear_statement_state();
+        Ok(res)
+    }
+
+    /// Whether resolving `stmt` can be deferred to the DSL -> IR conversion.
+    ///
+    /// Neither a registered relation nor a user-defined function survives the round trip
+    /// through the DSL, so a statement that needs either runs eagerly.
+    fn can_defer(&self, stmt: &Statement) -> bool {
+        !self.custom_function_registry
+            && is_read_only_query(stmt)
+            && !statement_registers_table(stmt)
+    }
+
+    /// Build a [`DslPlan::SQL`] holding `query` and a snapshot of the relations it references.
+    ///
+    /// `stmt` is kept alongside so that resolving does not parse `query` again.
+    fn defer_query(&self, query: &str, mut stmt: Statement) -> DslPlan {
+        let relations = statement_table_identifiers(&stmt, false, true)
+            .into_iter()
+            .filter_map(|name| {
+                let lf = self.get_table_from_current_scope(&name)?;
+                Some((PlSmallStr::from_string(name), lf.logical_plan))
+            })
+            .collect();
+
+        desugar_quantified_subqueries(&mut stmt);
+        DslPlan::SQL {
+            query: Arc::new(query.to_owned()),
+            relations,
+            cached_stmt: CachedSqlStatement::new(Arc::new(stmt)),
+        }
+    }
+
+    /// Execute `query` eagerly against the given arenas, returning the resulting DSL.
+    ///
+    /// Resolves a [`DslPlan::SQL`] node. The caller's arenas are used so that input schemas
+    /// resolve into the arenas of the ongoing conversion. `cached` is the desugared statement
+    /// the node was built with, and `query` is only parsed when it is absent.
+    pub(crate) fn execute_with_arenas(
+        &mut self,
+        query: &str,
+        cached: Option<&Statement>,
+        lp_arena: &mut Arena<IR>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> PolarsResult<DslPlan> {
+        let parsed;
+        let stmt = match cached {
+            Some(stmt) => stmt,
+            None => {
+                let mut stmt = parse_single_statement(query)?;
+                desugar_quantified_subqueries(&mut stmt);
+                parsed = stmt;
+                &parsed
+            },
+        };
+
+        std::mem::swap(&mut self.lp_arena, lp_arena);
+        std::mem::swap(&mut self.expr_arena, expr_arena);
+        let res = self.execute_statement(stmt);
+        std::mem::swap(&mut self.lp_arena, lp_arena);
+        std::mem::swap(&mut self.expr_arena, expr_arena);
+
+        self.clear_statement_state();
+        Ok(res?.logical_plan)
+    }
+
+    fn clear_statement_state(&mut self) {
         self.cte_map.clear();
         self.table_aliases.clear();
         self.joined_aliases.clear();
         self.named_windows.clear();
-
-        Ok(res)
     }
 
     /// Add a function registry to the SQLContext.
     /// The registry provides the ability to add custom functions to the SQLContext.
     pub fn with_function_registry(mut self, function_registry: Arc<dyn FunctionRegistry>) -> Self {
         self.function_registry = function_registry;
+        self.custom_function_registry = true;
         self
     }
 
@@ -355,6 +418,7 @@ impl SQLContext {
 
     /// Get a mutable reference to the function registry of the SQLContext
     pub fn registry_mut(&mut self) -> &mut dyn FunctionRegistry {
+        self.custom_function_registry = true;
         Arc::get_mut(&mut self.function_registry).unwrap()
     }
 }
@@ -370,6 +434,7 @@ impl SQLContext {
             // Context-level; needs to remain visible in nested scopes.
             // (Note: shared by Arc, no need to deep-copy)
             function_registry: self.function_registry.clone(),
+            custom_function_registry: self.custom_function_registry,
 
             ..Default::default()
         }
@@ -4025,25 +4090,34 @@ pub fn extract_table_identifiers(
     include_schema: bool,
     unique: bool,
 ) -> PolarsResult<Vec<String>> {
-    let mut parser = Parser::new(&GenericDialect);
-    parser = parser.with_options(ParserOptions {
-        trailing_commas: true,
-        ..Default::default()
-    });
-    let ast = parser
-        .try_with_sql(query)
-        .map_err(to_sql_interface_err)?
-        .parse_statements()
-        .map_err(to_sql_interface_err)?;
+    let ast = parse_sql(query)?;
+    let mut tables = Vec::new();
+    for stmt in &ast {
+        tables.extend(statement_table_identifiers(stmt, include_schema, false));
+    }
+    Ok(if unique {
+        tables
+            .into_iter()
+            .collect::<PlIndexSet<_>>()
+            .into_iter()
+            .collect()
+    } else {
+        tables
+    })
+}
 
+/// Table identifiers referenced by a single parsed statement.
+fn statement_table_identifiers(
+    stmt: &Statement,
+    include_schema: bool,
+    unique: bool,
+) -> Vec<String> {
     let mut collector = TableIdentifierCollector {
         include_schema,
         ..Default::default()
     };
-    for stmt in &ast {
-        let _ = stmt.visit(&mut collector);
-    }
-    Ok(if unique {
+    let _ = stmt.visit(&mut collector);
+    if unique {
         collector
             .tables
             .into_iter()
@@ -4052,7 +4126,36 @@ pub fn extract_table_identifiers(
             .collect()
     } else {
         collector.tables
-    })
+    }
+}
+
+/// Whether `stmt` is a query that only reads; `INSERT`/`UPDATE` bodies write to the context.
+fn is_read_only_query(stmt: &Statement) -> bool {
+    match stmt {
+        Statement::Query(query) => {
+            !matches!(query.body.as_ref(), SetExpr::Insert(_) | SetExpr::Update(_))
+        },
+        _ => false,
+    }
+}
+
+fn parse_single_statement(query: &str) -> PolarsResult<Statement> {
+    let ast = parse_sql(query)?;
+    polars_ensure!(ast.len() == 1, SQLInterface: "one (and only one) statement can be parsed at a time");
+    Ok(ast.into_iter().next().unwrap())
+}
+
+fn parse_sql(query: &str) -> PolarsResult<Vec<Statement>> {
+    let mut parser = Parser::new(&GenericDialect);
+    parser = parser.with_options(ParserOptions {
+        trailing_commas: true,
+        ..Default::default()
+    });
+    parser
+        .try_with_sql(query)
+        .map_err(to_sql_interface_err)?
+        .parse_statements()
+        .map_err(to_sql_interface_err)
 }
 
 bitflags::bitflags! {
