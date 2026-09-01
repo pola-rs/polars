@@ -22,6 +22,10 @@ impl MapChunked {
     /// and unique, non-null keys in every row.
     pub unsafe fn from_storage_unchecked(dtype: DataType, storage: Series) -> Self {
         debug_assert_eq!(dtype.map_storage_dtype().as_ref(), Some(storage.dtype()));
+        debug_assert!(
+            matches!(&dtype, DataType::Map(key, _) if key.is_valid_map_key()),
+            "invalid Map key dtype: {dtype}"
+        );
         Self { dtype, storage }
     }
 

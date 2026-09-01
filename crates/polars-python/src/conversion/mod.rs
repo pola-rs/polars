@@ -534,6 +534,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                 let value = ob.getattr(intern!(py, "value"))?;
                 let key = key.extract::<Wrap<DataType>>()?;
                 let value = value.extract::<Wrap<DataType>>()?;
+                key.0.ensure_valid_map_key().map_err(PyPolarsErr::from)?;
                 DataType::Map(Box::new(key.0), Box::new(value.0))
             },
             "Struct" => {
