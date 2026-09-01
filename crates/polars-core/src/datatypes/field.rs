@@ -299,7 +299,7 @@ impl DataType {
             ArrowDataType::Map(inner, _keys_sorted) => {
                 let entries = Self::from_arrow_field(inner);
                 #[cfg(feature = "dtype-map")]
-                let map = entries.map_from_entries_dtype();
+                let map = entries.map_from_positional_entries_dtype();
                 #[cfg(not(feature = "dtype-map"))]
                 let map: Option<DataType> = None;
                 map.unwrap_or_else(|| DataType::List(entries.boxed()))

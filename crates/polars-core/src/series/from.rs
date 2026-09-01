@@ -534,7 +534,7 @@ impl Series {
                     to_physical_and_dtype(struct_arrays, field.metadata.as_deref());
 
                 #[cfg(feature = "dtype-map")]
-                let map_dtype = entries_dtype.map_from_entries_dtype();
+                let map_dtype = entries_dtype.map_from_positional_entries_dtype();
                 #[cfg(not(feature = "dtype-map"))]
                 let map_dtype: Option<DataType> = None;
 

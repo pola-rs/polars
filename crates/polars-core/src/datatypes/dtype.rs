@@ -956,17 +956,6 @@ impl DataType {
         }
     }
 
-    pub fn is_map(&self) -> bool {
-        #[cfg(feature = "dtype-map")]
-        {
-            matches!(self, DataType::Map(_, _))
-        }
-        #[cfg(not(feature = "dtype-map"))]
-        {
-            false
-        }
-    }
-
     /// Return the key and value dtypes of a `Map`, or `None` for any other dtype.
     #[cfg(feature = "dtype-map")]
     pub fn as_map(&self) -> Option<(&DataType, &DataType)> {
@@ -978,7 +967,7 @@ impl DataType {
 
     /// The canonical struct dtype of a `Map` entry.
     #[cfg(feature = "dtype-map")]
-    pub fn map_entries(key: DataType, value: DataType) -> DataType {
+    fn map_entries(key: DataType, value: DataType) -> DataType {
         DataType::Struct(vec![
             Field::new(MAP_KEY_NAME, key),
             Field::new(MAP_VALUE_NAME, value),
@@ -1006,23 +995,45 @@ impl DataType {
             .map(|entries| DataType::List(Box::new(entries)))
     }
 
+    #[cfg(feature = "dtype-map")]
+    fn map_from_key_value(key: &DataType, value: &DataType) -> PolarsResult<DataType> {
+        key.ensure_valid_map_key()?;
+        Ok(DataType::Map(
+            Box::new(key.clone()),
+            Box::new(value.clone()),
+        ))
+    }
+
     /// The `Map` dtype whose entries are `self`, or `None` if `self` cannot be Map entries.
     ///
     /// Positional, should only be called by Arrow/Parquet readers.
     #[cfg(feature = "dtype-map")]
-    pub(crate) fn map_from_entries_dtype(&self) -> Option<DataType> {
+    pub(crate) fn map_from_positional_entries_dtype(&self) -> Option<DataType> {
         let DataType::Struct(fields) = self else {
             return None;
         };
         let [key, value] = fields.as_slice() else {
             return None;
         };
-        key.dtype().is_valid_map_key().then(|| {
-            DataType::Map(
-                Box::new(key.dtype().clone()),
-                Box::new(value.dtype().clone()),
-            )
-        })
+        DataType::map_from_key_value(key.dtype(), value.dtype()).ok()
+    }
+
+    /// The `Map` dtype whose entries are `self`, matching the `key` and `value` fields by name.
+    #[cfg(feature = "dtype-map")]
+    pub fn map_from_named_entries_dtype(&self) -> PolarsResult<DataType> {
+        crate::chunked_array::logical::ensure_map_entries_dtype(self)?;
+        let DataType::Struct(fields) = self else {
+            unreachable!("map entries are a struct")
+        };
+        let dtype_of = |name: &PlSmallStr| {
+            fields
+                .iter()
+                .find(|f| f.name() == name)
+                .expect("entry fields checked above")
+                .dtype()
+        };
+
+        DataType::map_from_key_value(dtype_of(&MAP_KEY_NAME), dtype_of(&MAP_VALUE_NAME))
     }
 
     /// Whether this dtype may be used as the key dtype of a `Map`.
