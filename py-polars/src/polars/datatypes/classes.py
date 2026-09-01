@@ -1146,6 +1146,9 @@ class Map(NestedType):
     Keys are unique within a row and never null. Entry order is preserved and
     participates in equality and hashing.
 
+    Duplicate keys are resolved when a map is built, keeping the first position and the
+    last value.
+
     Parameters
     ----------
     key
