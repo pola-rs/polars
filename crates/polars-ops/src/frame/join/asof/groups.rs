@@ -17,12 +17,6 @@ use rayon::prelude::*;
 use super::*;
 use crate::frame::join::{prepare_binary, prepare_keys_multiple};
 
-/// Reduces monomorphization: the rayon plumbing is instantiated once per `R`
-/// rather than once per closure.
-fn par_map_collect<R: Send>(n: usize, f: &(dyn Fn(usize) -> R + Sync)) -> Vec<R> {
-    RAYON.install(|| (0..n).into_par_iter().map(f).collect())
-}
-
 fn compute_len_offsets<I: IntoIterator<Item = usize>>(iter: I) -> Vec<usize> {
     let mut cumlen = 0;
     iter.into_iter()

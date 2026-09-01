@@ -50,10 +50,9 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    RAYON.install(|| {
-        (0..n_partitions)
-            .into_par_iter()
-            .map(|partition_no| {
+    par_map_collect(n_partitions, &|partition_no| {
+        {
+            {
                 let hashes_and_keys = &hashes_and_keys;
                 let mut hash_tbl: PlHashMap<T::TotalOrdItem, (bool, IdxVec)> =
                     PlHashMap::with_hasher(build_hasher.clone());
@@ -91,8 +90,8 @@ where
                     offset += len as IdxSize;
                 }
                 hash_tbl
-            })
-            .collect()
+            }
+        }
     })
 }
 
