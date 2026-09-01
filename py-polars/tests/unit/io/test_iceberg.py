@@ -7,6 +7,7 @@ import itertools
 import json
 import os
 import pickle
+import subprocess
 import sys
 import uuid
 import warnings
@@ -23,6 +24,7 @@ import pyarrow.parquet as pq
 import pydantic
 import pyiceberg
 import pyiceberg.exceptions
+import pyiceberg.manifest
 import pyiceberg.table
 import pytest
 from pyiceberg.expressions import literal
@@ -3530,27 +3532,28 @@ def test_scan_iceberg_streams_native_file_tasks(
     for value in range(3):
         pl.DataFrame({"a": [value]}).write_iceberg(tbl, mode="append")
 
+    expected = pl.scan_iceberg(tbl).collect()
+
     import polars.io.iceberg._dataset
 
     monkeypatch.setattr(polars.io.iceberg._dataset, "_ICEBERG_FILE_TASK_BATCH_SIZE", 2)
 
     scan_type = type(tbl.scan())
-    original_scan_plan_helper = scan_type.scan_plan_helper
-    num_scan_plan_helper_calls = 0
 
-    def scan_plan_helper(scan: Any) -> Any:
-        nonlocal num_scan_plan_helper_calls
-        num_scan_plan_helper_calls += 1
-        return original_scan_plan_helper(scan)
-
-    def plan_files(scan: Any) -> Any:
-        msg = "plan_files() should not be called"
+    def eager_planning(*_args: Any, **_kwargs: Any) -> Any:
+        msg = "eager file planning should not be called"
         raise AssertionError(msg)
 
-    monkeypatch.setattr(scan_type, "scan_plan_helper", scan_plan_helper)
-    monkeypatch.setattr(scan_type, "plan_files", plan_files)
+    if hasattr(scan_type, "scan_plan_helper"):
+        monkeypatch.setattr(scan_type, "scan_plan_helper", eager_planning)
+    monkeypatch.setattr(scan_type, "plan_files", eager_planning)
+    monkeypatch.setattr(
+        pyiceberg.manifest.ManifestFile,
+        "fetch_manifest_entry",
+        eager_planning,
+    )
 
-    batch_sizes = []
+    batch_sizes: list[int] = []
     original_to_lazyframe = _NativeIcebergScanData.to_lazyframe
 
     def to_lazyframe(scan_data: _NativeIcebergScanData) -> pl.LazyFrame:
@@ -3561,20 +3564,79 @@ def test_scan_iceberg_streams_native_file_tasks(
 
     q = pl.scan_iceberg(tbl, reader_override="native")
     assert q.collect_schema() == pl.Schema({"a": pl.Int64})
-    assert num_scan_plan_helper_calls == 0
+    assert "ESTIMATED ROWS: 3" in q.explain()
 
-    assert_frame_equal(q.collect().sort("a"), pl.DataFrame({"a": [0, 1, 2]}))
-    assert num_scan_plan_helper_calls == 1
+    assert_frame_equal(q.collect(), expected)
     assert batch_sizes == [2, 1]
 
     q = pickle.loads(pickle.dumps(q))
-    assert_frame_equal(q.collect().sort("a"), pl.DataFrame({"a": [0, 1, 2]}))
-    assert num_scan_plan_helper_calls == 2
+    assert_frame_equal(q.collect(), expected)
     assert batch_sizes == [2, 1, 2, 1]
+
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native").head(1).collect(),
+        expected.head(1),
+    )
+    assert batch_sizes == [2, 1, 2, 1, 1]
+    assert max(batch_sizes) == 2
 
     resolver = new_iceberg_scan_resolver(tbl)
     resolver.reader_override = "native"
-    assert isinstance(resolver._to_dataset_scan_impl(), _StreamingNativeIcebergScanData)
+    scan_data = resolver._to_dataset_scan_impl()
+    assert isinstance(scan_data, _StreamingNativeIcebergScanData)
+    assert scan_data.row_count == (3, 0)
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_streams_native_file_tasks_single_thread(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", LongType())),
+    )
+    pl.DataFrame({"a": [1, 2, 3]}).write_iceberg(tbl, mode="append")
+
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            """\
+import os
+import sys
+
+os.environ["POLARS_MAX_THREADS"] = "1"
+
+import polars as pl
+
+assert pl.thread_pool_size() == 1
+assert pl.scan_iceberg(sys.argv[1], reader_override="native").collect().to_dict(as_series=False) == {"a": [1, 2, 3]}
+""",
+            tbl.metadata_location,
+        ],
+        timeout=30,
+    )
+    assert out == b""
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_partition_evolution_does_not_stream(tmp_path: Path) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path,
+        schema=IcebergSchema(NestedField(1, "a", StringType())),
+        partition_spec=PartitionSpec(PartitionField(1, 1000, IdentityTransform(), "a")),
+    )
+    expected = pl.DataFrame({"a": ["a/b=c%20"]})
+    expected.write_iceberg(tbl, mode="append")
+
+    with tbl.update_spec() as update:
+        update.remove_field("a")
+
+    resolver = new_iceberg_scan_resolver(tbl)
+    resolver.reader_override = "native"
+    assert isinstance(resolver._to_dataset_scan_impl(), _NativeIcebergScanData)
+    assert_frame_equal(
+        pl.scan_iceberg(tbl, reader_override="native").collect(),
+        expected,
+    )
 
 
 def test_scan_iceberg_idxsize_limit() -> None:

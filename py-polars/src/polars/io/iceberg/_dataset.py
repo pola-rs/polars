@@ -237,7 +237,7 @@ class IcebergScanResolver:
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
         pyarrow_predicate: str | None = None,
-    ) -> tuple[LazyFrame, str] | None:
+    ) -> tuple[LazyFrame, str] | tuple[LazyFrame, str, tuple[int, int] | None] | None:
         """Construct a LazyFrame scan."""
         if (
             scan_data := self._to_dataset_scan_impl(
@@ -250,7 +250,12 @@ class IcebergScanResolver:
         ) is None:
             return None
 
-        return scan_data.to_lazyframe(), scan_data.snapshot_id_key
+        out = scan_data.to_lazyframe(), scan_data.snapshot_id_key
+
+        if isinstance(scan_data, _StreamingNativeIcebergScanData):
+            return out[0], out[1], scan_data.row_count
+
+        return out
 
     def _to_dataset_scan_impl(
         self,
@@ -433,6 +438,10 @@ class IcebergScanResolver:
                     use_metadata_statistics=self.use_metadata_statistics,
                     fast_deletion_count=self.fast_deletion_count,
                     task_batch_size=_ICEBERG_FILE_TASK_BATCH_SIZE,
+                    row_count=_streaming_iceberg_row_count(
+                        scan.snapshot(),
+                        use_metadata_statistics=self.use_metadata_statistics,
+                    ),
                 )
 
             if verbose:
@@ -707,6 +716,7 @@ class _StreamingNativeIcebergScanData(_ResolvedScanDataBase):
     use_metadata_statistics: bool
     fast_deletion_count: bool
     task_batch_size: int
+    row_count: tuple[int, int] | None
 
     def to_lazyframe(self) -> pl.LazyFrame:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
@@ -755,13 +765,117 @@ def _can_stream_iceberg_file_tasks(tbl: pyiceberg.table.Table, scan: Any) -> boo
         return False
 
     snapshot = scan.snapshot()
+    if snapshot is None or snapshot.summary is None:
+        return False
+
+    manifests = snapshot.manifests(tbl.io)
+    planner = getattr(scan, "_manifest_planner", scan)
+
     return (
-        tbl.spec().is_unpartitioned()
-        and snapshot is not None
-        and snapshot.summary is not None
+        all(
+            tbl.specs()[manifest.partition_spec_id].is_unpartitioned()
+            for manifest in manifests
+        )
         and str(snapshot.summary.get("total-delete-files")) == "0"
-        and callable(getattr(scan, "scan_plan_helper", None))
+        and all(
+            callable(getattr(planner, name, None))
+            for name in (
+                "_build_manifest_evaluator",
+                "_build_partition_evaluator",
+                "_build_metrics_evaluator",
+                "_check_sequence_number",
+            )
+        )
     )
+
+
+def _streaming_iceberg_row_count(
+    snapshot: Any, *, use_metadata_statistics: bool
+) -> tuple[int, int] | None:
+    if (
+        not use_metadata_statistics
+        or snapshot is None
+        or snapshot.summary is None
+        or (total_records := snapshot.summary.get("total-records")) is None
+    ):
+        return None
+
+    return int(total_records), 0
+
+
+def _iter_iceberg_data_files(scan: Any) -> Iterator[pyiceberg.manifest.DataFile]:
+    from pyiceberg.avro.file import AvroFile
+    from pyiceberg.manifest import (
+        DEFAULT_READ_VERSION,
+        INITIAL_SEQUENCE_NUMBER,
+        MANIFEST_ENTRY_SCHEMAS,
+        DataFile,
+        DataFileContent,
+        FileFormat,
+        ManifestContent,
+        ManifestEntry,
+        ManifestEntryStatus,
+        _inherit_from_manifest,
+    )
+
+    snapshot = scan.snapshot()
+    if snapshot is None:
+        return
+
+    planner = getattr(scan, "_manifest_planner", scan)
+    manifest_evaluators: dict[int, Any] = {}
+    manifests: list[Any] = []
+
+    for manifest in snapshot.manifests(scan.io):
+        spec_id = manifest.partition_spec_id
+        manifest_evaluator = manifest_evaluators.get(spec_id)
+        if manifest_evaluator is None:
+            manifest_evaluator = planner._build_manifest_evaluator(spec_id)
+            manifest_evaluators[spec_id] = manifest_evaluator
+
+        if manifest_evaluator(manifest):
+            manifests.append(manifest)
+
+    min_sequence_number = min(
+        (
+            manifest.min_sequence_number or INITIAL_SEQUENCE_NUMBER
+            for manifest in manifests
+            if manifest.content == ManifestContent.DATA
+        ),
+        default=INITIAL_SEQUENCE_NUMBER,
+    )
+    partition_evaluators: dict[int, Any] = {}
+    metrics_evaluator = planner._build_metrics_evaluator()
+
+    for manifest in manifests:
+        if not planner._check_sequence_number(min_sequence_number, manifest):
+            continue
+
+        spec_id = manifest.partition_spec_id
+        partition_evaluator = partition_evaluators.get(spec_id)
+        if partition_evaluator is None:
+            partition_evaluator = planner._build_partition_evaluator(spec_id)
+            partition_evaluators[spec_id] = partition_evaluator
+
+        input_file = scan.io.new_input(manifest.manifest_path)
+        with AvroFile[ManifestEntry](
+            input_file,
+            MANIFEST_ENTRY_SCHEMAS[DEFAULT_READ_VERSION],
+            read_types={-1: ManifestEntry, 2: DataFile},
+            read_enums={
+                0: ManifestEntryStatus,
+                101: FileFormat,
+                134: DataFileContent,
+            },
+        ) as reader:
+            for entry in reader:
+                if entry.status == ManifestEntryStatus.DELETED:
+                    continue
+
+                entry = _inherit_from_manifest(entry, manifest)
+                data_file = entry.data_file
+                if partition_evaluator(data_file) and metrics_evaluator(data_file):
+                    yield data_file
 
 
 def _scan_native_iceberg_file_tasks(
@@ -828,16 +942,23 @@ def _iter_native_iceberg_file_tasks(
     )
 
     def data_files() -> Iterator[pyiceberg.manifest.DataFile]:
-        for manifest_entries in scan.scan_plan_helper():
-            for manifest_entry in manifest_entries:
-                if manifest_entry.data_file.content != DataFileContent.DATA:
-                    msg = (
-                        "iceberg reader_override='native' failed: snapshot summary "
-                        "reported no delete files but scan planning encountered one"
-                    )
-                    raise ComputeError(msg)
+        remaining = limit
+        if remaining == 0:
+            return
 
-                yield manifest_entry.data_file
+        for data_file in _iter_iceberg_data_files(scan):
+            if data_file.content != DataFileContent.DATA:
+                msg = (
+                    "iceberg reader_override='native' failed: snapshot summary "
+                    "reported no delete files but scan planning encountered one"
+                )
+                raise ComputeError(msg)
+
+            yield data_file
+            if remaining is not None:
+                remaining -= data_file.record_count
+                if remaining <= 0:
+                    return
 
     file_iter = data_files()
     while file_batch := list(islice(file_iter, task_batch_size)):
