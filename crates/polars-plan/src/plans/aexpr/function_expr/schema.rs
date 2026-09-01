@@ -640,7 +640,7 @@ impl<'a> FieldsMapper<'a> {
             .map(|fld| fld.dtype())
             .collect::<Vec<_>>();
         let new_type = func(&dtypes)?;
-        fld.coerce(new_type);
+        fld.set_dtype(new_type);
         Ok(fld)
     }
 
@@ -648,7 +648,7 @@ impl<'a> FieldsMapper<'a> {
     pub fn map_to_supertype(&self) -> PolarsResult<Field> {
         let st = args_to_supertype(self.fields)?;
         let mut first = self.fields[0].clone();
-        first.coerce(st);
+        first.set_dtype(st);
         Ok(first)
     }
 
@@ -660,7 +660,7 @@ impl<'a> FieldsMapper<'a> {
             .inner_dtype()
             .cloned()
             .unwrap_or_else(|| DataType::Unknown(Default::default()));
-        first.coerce(dt);
+        first.set_dtype(dt);
         Ok(first)
     }
 
@@ -737,7 +737,7 @@ impl<'a> FieldsMapper<'a> {
             )
         })?;
 
-        first.coerce(function_sum_output_dtype(&dt));
+        first.set_dtype(function_sum_output_dtype(&dt));
         Ok(first)
     }
 
@@ -760,7 +760,7 @@ impl<'a> FieldsMapper<'a> {
             Float32 => Float32,
             _ => Float64,
         };
-        first.coerce(new_dt);
+        first.set_dtype(new_dt);
         Ok(first)
     }
 
