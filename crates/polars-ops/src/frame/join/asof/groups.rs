@@ -12,7 +12,6 @@ use polars_utils::abs_diff::AbsDiff;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
-use rayon::prelude::*;
 
 use super::*;
 use crate::frame::join::{prepare_binary, prepare_keys_multiple};
