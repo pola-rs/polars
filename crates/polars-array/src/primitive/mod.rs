@@ -9,9 +9,11 @@ use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{assert_broadcastable, broadcast_index, is_valid_buffer_len};
 use crate::flat::Flat;
 
+mod builder;
 mod flat;
 mod iterator;
 
+pub use builder::PlPrimitiveArrayBuilder;
 pub use iterator::{PlPrimitiveIter, PlPrimitiveValuesIter};
 
 /// An immutable, cheaply cloneable sequence of `length` optional [`NativeType`] values.

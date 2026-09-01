@@ -13,7 +13,10 @@
 //! representation. Logical typing lives at a higher level.
 //!
 //! Every array implements the trait object [`PlArray`] and can be downcast to a concrete struct
-//! based on the [`PlArrayType`] available from [`PlArray::array_type`].
+//! based on the [`PlArrayType`] available from [`PlArray::array_type`]. Code that is generic over
+//! the array rather than over its element type is written against [`StaticArray`], the typed
+//! counterpart of that trait, and an array that is not laid out already is built by a
+//! [`StaticArrayBuilder`] — see [`builder`].
 
 pub mod array;
 pub mod array_type;
@@ -21,6 +24,7 @@ pub mod binview;
 pub mod bitmap;
 pub mod boolean;
 pub mod broadcast;
+pub mod builder;
 pub mod concatenate;
 pub mod fixed_size_list;
 pub mod flat;
@@ -28,16 +32,19 @@ pub mod list;
 mod macros;
 pub mod null;
 pub mod primitive;
+pub mod static_array;
 pub mod struct_;
 
 pub use array::PlArray;
 pub use array_type::{PlArrayType, PrimitiveType};
-pub use binview::PlBinaryViewArray;
+pub use binview::{PlBinaryViewArray, PlBinaryViewArrayBuilder};
 pub use bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
-pub use boolean::PlBooleanArray;
-pub use fixed_size_list::PlFixedSizeListArray;
+pub use boolean::{PlBooleanArray, PlBooleanArrayBuilder};
+pub use builder::{PlArrayBuilder, StaticArrayBuilder};
+pub use fixed_size_list::{PlFixedSizeListArray, PlFixedSizeListArrayBuilder};
 pub use flat::Flat;
-pub use list::PlListArray;
-pub use null::PlNullArray;
-pub use primitive::PlPrimitiveArray;
-pub use struct_::PlStructArray;
+pub use list::{PlListArray, PlListArrayBuilder};
+pub use null::{PlNullArray, PlNullArrayBuilder};
+pub use primitive::{PlPrimitiveArray, PlPrimitiveArrayBuilder};
+pub use static_array::StaticArray;
+pub use struct_::{PlStructArray, PlStructArrayBuilder};

@@ -13,8 +13,10 @@ use crate::broadcast::{
 use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
 
+mod builder;
 mod iterator;
 
+pub use builder::PlListArrayBuilder;
 pub use iterator::{PlListIter, PlListValuesIter};
 
 /// An immutable, cheaply cloneable sequence of `length` optional lists over one values array.

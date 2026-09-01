@@ -6,6 +6,10 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::is_valid_buffer_len;
 
+mod builder;
+
+pub use builder::PlStructArrayBuilder;
+
 /// An immutable, cheaply cloneable sequence of `length` optional rows, one value per field array.
 ///
 /// This is the nested array of this crate: it holds no values of its own, only a validity mask

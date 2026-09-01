@@ -10,8 +10,10 @@ use crate::broadcast::{assert_broadcastable, is_valid_buffer_len, is_valid_fixed
 use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
 
+mod builder;
 mod iterator;
 
+pub use builder::PlFixedSizeListArrayBuilder;
 pub use iterator::{PlFixedSizeListIter, PlFixedSizeListValuesIter};
 
 /// An immutable, cheaply cloneable sequence of `length` optional lists of `width` values each,

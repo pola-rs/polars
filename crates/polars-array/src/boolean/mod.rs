@@ -7,9 +7,11 @@ use crate::bitmap::{PlBitmapIter, PlBitmapRef};
 use crate::broadcast::{assert_broadcastable, is_valid_buffer_len};
 use crate::flat::Flat;
 
+mod builder;
 mod flat;
 mod iterator;
 
+pub use builder::PlBooleanArrayBuilder;
 pub use iterator::PlBooleanIter;
 
 /// An immutable, cheaply cloneable sequence of `length` optional [`bool`] values.

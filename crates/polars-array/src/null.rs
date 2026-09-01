@@ -1,10 +1,12 @@
 use std::sync::LazyLock;
 
 use arrow::bitmap::Bitmap;
+use polars_utils::IdxSize;
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
+use crate::builder::{ShareStrategy, StaticArrayBuilder, assert_subslice};
 
 /// An immutable, cheaply cloneable sequence of `length` nulls.
 ///
@@ -295,6 +297,121 @@ impl PlArray for PlNullArray {
             .as_any()
             .downcast_ref::<Self>()
             .is_some_and(|other| self == other)
+    }
+}
+
+/// A builder of a [`PlNullArray`].
+///
+/// A null array is nothing but a length, so this builder is nothing but a length either: every
+/// element it appends is a null, whatever it was appended from, and the array it freezes costs
+/// `O(1)` memory however many elements it holds.
+///
+/// # Example
+/// ```
+/// use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
+/// use polars_array::{PlNullArray, PlNullArrayBuilder};
+///
+/// let mut builder = PlNullArrayBuilder::new();
+/// builder.extend_nulls(1_000_000_000);
+/// builder.extend(&PlNullArray::new(1), ShareStrategy::Always);
+///
+/// let array = builder.freeze();
+/// assert_eq!(array.len(), 1_000_000_001);
+/// assert_eq!(array.null_count(), 1_000_000_001);
+/// ```
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PlNullArrayBuilder {
+    length: usize,
+}
+
+impl PlNullArrayBuilder {
+    /// Creates an empty builder.
+    #[inline]
+    pub const fn new() -> Self {
+        Self { length: 0 }
+    }
+}
+
+impl StaticArrayBuilder for PlNullArrayBuilder {
+    type Array = PlNullArray;
+
+    /// Does nothing: there is nothing to hold a null in but the length.
+    #[inline]
+    fn reserve(&mut self, _additional: usize) {}
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.length
+    }
+
+    #[inline]
+    fn freeze(self) -> PlNullArray {
+        PlNullArray::new(self.length)
+    }
+
+    #[inline]
+    fn freeze_reset(&mut self) -> PlNullArray {
+        PlNullArray::new(std::mem::take(&mut self.length))
+    }
+
+    #[inline]
+    fn extend_nulls(&mut self, length: usize) {
+        self.length += length;
+    }
+
+    #[inline]
+    fn subslice_extend(
+        &mut self,
+        other: &PlNullArray,
+        start: usize,
+        length: usize,
+        _share: ShareStrategy,
+    ) {
+        assert_subslice(other.len(), start, length);
+        self.length += length;
+    }
+
+    #[inline]
+    fn subslice_extend_repeated(
+        &mut self,
+        other: &PlNullArray,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        assert_subslice(other.len(), start, length);
+        self.length += length * repeats;
+    }
+
+    #[inline]
+    fn subslice_extend_each_repeated(
+        &mut self,
+        other: &PlNullArray,
+        start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        assert_subslice(other.len(), start, length);
+        self.length += length * repeats;
+    }
+
+    #[inline]
+    unsafe fn gather_extend(
+        &mut self,
+        _other: &PlNullArray,
+        idxs: &[IdxSize],
+        _share: ShareStrategy,
+    ) {
+        self.length += idxs.len();
+    }
+
+    /// Appends one null per index: an out-of-bounds index stands for a null, which is what every
+    /// element of a null array is anyway.
+    #[inline]
+    fn opt_gather_extend(&mut self, _other: &PlNullArray, idxs: &[IdxSize], _share: ShareStrategy) {
+        self.length += idxs.len();
     }
 }
 
