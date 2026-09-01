@@ -4,6 +4,7 @@ use arrow::trusted_len::TrustedLen;
 
 use super::PlListArray;
 use crate::array::PlArray;
+use crate::broadcast::{broadcast_index, is_broadcastable};
 
 /// Iterator over the elements of a [`PlListArray`], ignoring validity.
 ///
@@ -17,16 +18,29 @@ pub struct PlListValuesIter<'a> {
 impl<'a> PlListValuesIter<'a> {
     #[inline]
     pub(super) fn new(array: &'a PlListArray) -> Self {
+        Self::new_broadcast(array, array.len())
+    }
+
+    /// # Safety
+    /// `array` must broadcast to `length`, per [`crate::broadcast`].
+    #[inline]
+    pub(super) fn new_broadcast(array: &'a PlListArray, length: usize) -> Self {
+        debug_assert!(is_broadcastable(array.len(), length));
+
         Self {
-            range: 0..array.len(),
+            range: 0..length,
             array,
         }
     }
 
     #[inline(always)]
     fn get(&self, i: usize) -> Box<dyn PlArray> {
-        // SAFETY: `i` comes from `self.range`, so it is in bounds of the array.
-        unsafe { self.array.value_unchecked(i) }
+        // SAFETY: `i` comes from `self.range`, so it is in bounds of the array unless the array
+        // is being broadcast, in which case it holds the one element every position reads.
+        unsafe {
+            self.array
+                .value_unchecked(broadcast_index(i, self.array.len()))
+        }
     }
 }
 
@@ -71,16 +85,29 @@ pub struct PlListIter<'a> {
 impl<'a> PlListIter<'a> {
     #[inline]
     pub(super) fn new(array: &'a PlListArray) -> Self {
+        Self::new_broadcast(array, array.len())
+    }
+
+    /// # Safety
+    /// `array` must broadcast to `length`, per [`crate::broadcast`].
+    #[inline]
+    pub(super) fn new_broadcast(array: &'a PlListArray, length: usize) -> Self {
+        debug_assert!(is_broadcastable(array.len(), length));
+
         Self {
-            range: 0..array.len(),
+            range: 0..length,
             array,
         }
     }
 
     #[inline(always)]
     fn get(&self, i: usize) -> Option<Box<dyn PlArray>> {
-        // SAFETY: `i` comes from `self.range`, so it is in bounds of the array.
-        unsafe { self.array.get_unchecked(i) }
+        // SAFETY: `i` comes from `self.range`, so it is in bounds of the array unless the array
+        // is being broadcast, in which case it holds the one element every position reads.
+        unsafe {
+            self.array
+                .get_unchecked(broadcast_index(i, self.array.len()))
+        }
     }
 }
 

@@ -2,7 +2,7 @@ use arrow::bitmap::Bitmap;
 use polars_error::{PolarsResult, polars_ensure};
 
 use crate::bitmap::PlBitmapIter;
-use crate::broadcast::{broadcast_index, is_valid_buffer_len};
+use crate::broadcast::{assert_broadcastable, broadcast_index, is_valid_buffer_len};
 
 /// A borrowed validity mask of `length` bits, in either the flat or the scalar representation.
 ///
@@ -181,6 +181,22 @@ impl<'a> PlBitmapRef<'a> {
         }
     }
 
+    /// Returns this mask over `length` bits, repeating its single bit if that is all it holds.
+    ///
+    /// This mask either has `length` bits, in which case this returns it unchanged, or a single
+    /// bit, which the `length` bits of the result then all read. Either way this is `O(1)`: the
+    /// backing bitmap is the one this mask already has.
+    ///
+    /// # Panics
+    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
+    #[inline]
+    pub fn broadcast(&self, length: usize) -> PlBitmapRef<'a> {
+        assert_broadcastable(self.length, length);
+        // SAFETY: a mask of one bit is backed by a single bit, which is scalar for any length;
+        // otherwise `length` is the length the backing bitmap is already valid for.
+        unsafe { PlBitmapRef::new_unchecked(self.bitmap, length) }
+    }
+
     /// Returns an iterator over the bits.
     #[inline]
     pub fn iter(&self) -> PlBitmapIter<'a> {
@@ -334,6 +350,30 @@ mod tests {
 
         assert_eq!(mask.iter().collect::<Vec<_>>(), [false; 4]);
         assert_eq!(mask.iter().len(), 4);
+    }
+
+    #[test]
+    fn broadcasting_a_single_bit() {
+        let bitmap = Bitmap::new_with_value(true, 1);
+        let mask = PlBitmapRef::new(&bitmap, 1);
+
+        let broadcast = mask.broadcast(1_000_000_000);
+        assert_eq!(broadcast.len(), 1_000_000_000);
+        assert_eq!(broadcast.bitmap().len(), 1);
+        assert_eq!(broadcast.set_bits(), 1_000_000_000);
+        assert_eq!(broadcast.iter().take(3).collect::<Vec<_>>(), [true; 3]);
+
+        // A mask of the length asked for is handed back as it is, whatever it is backed by.
+        let flat = Bitmap::from_iter([true, false, true]);
+        let mask = PlBitmapRef::new(&flat, 3);
+        assert_eq!(mask.broadcast(3), mask);
+    }
+
+    #[test]
+    #[should_panic(expected = "does not broadcast")]
+    fn broadcasting_more_than_one_bit_panics() {
+        let bitmap = Bitmap::from_iter([true, false]);
+        let _ = PlBitmapRef::new(&bitmap, 2).broadcast(4);
     }
 
     #[test]

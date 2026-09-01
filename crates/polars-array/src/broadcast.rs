@@ -19,6 +19,17 @@
 //! Intermediate buffer lengths (`1 < buffer.len() < length`) are *not* valid, even though
 //! [`broadcast_index`] would happily map them: an array is either flat or scalar.
 //!
+//! # Broadcasting an array
+//!
+//! The same rule applies one level up, to the arrays themselves: an array of a single element
+//! stands for that element repeated any number of times, exactly as a scalar buffer stands for
+//! the value in its one slot. That is what
+//! [`broadcast_iter`](crate::PlPrimitiveArray::broadcast_iter) exploits: an array of one element
+//! iterates as `length` copies of that element, which is `O(1)` because the copies are never
+//! materialized. Whether the array is flat or scalar does not come into it — an array of one
+//! element holds a single slot in every backing buffer either way, so it is the *logical* lengths
+//! that [`is_broadcastable`] relates.
+//!
 //! # The offsets of a list array
 //!
 //! The offsets of a [`PlListArray`](crate::PlListArray) are the one backing buffer that does not
@@ -62,6 +73,27 @@ pub const fn broadcast_index(i: usize, buffer_len: usize) -> usize {
 #[inline]
 pub const fn is_valid_buffer_len(buffer_len: usize, length: usize) -> bool {
     buffer_len == length || buffer_len == 1
+}
+
+/// Whether an array of `length` elements broadcasts to an array of `to_length` elements.
+///
+/// Broadcasting repeats the single element of an array of length one to any length; an array of
+/// any other length only broadcasts to the length it already has. This is
+/// [`is_valid_buffer_len`] of the logical lengths — an array broadcasts to `to_length` exactly
+/// when its elements would be a valid backing buffer of `to_length` elements. See the [module
+/// docs](self).
+#[inline]
+pub const fn is_broadcastable(length: usize, to_length: usize) -> bool {
+    is_valid_buffer_len(length, to_length)
+}
+
+/// Panics unless an array of `length` elements broadcasts to `to_length` elements.
+#[inline]
+pub(crate) fn assert_broadcastable(length: usize, to_length: usize) {
+    assert!(
+        is_broadcastable(length, to_length),
+        "an array of length {length} does not broadcast to length {to_length}",
+    );
 }
 
 /// Whether an offsets buffer of length `offsets_len` is valid for a list array of length `length`.

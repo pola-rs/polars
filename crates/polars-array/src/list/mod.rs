@@ -7,7 +7,9 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
-use crate::broadcast::{broadcast_index, is_valid_buffer_len, is_valid_offsets_len};
+use crate::broadcast::{
+    assert_broadcastable, broadcast_index, is_valid_buffer_len, is_valid_offsets_len,
+};
 use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
 
@@ -552,6 +554,39 @@ impl PlListArray {
     #[inline]
     pub fn iter(&self) -> PlListIter<'_> {
         PlListIter::new(self)
+    }
+
+    /// Returns an iterator over `length` elements, repeating the single element of this array if
+    /// that is all it holds, and ignoring validity.
+    ///
+    /// This is [`Self::broadcast_iter`] without the validity check, exactly as
+    /// [`Self::values_iter`] is [`Self::iter`] without it. The values of null elements are
+    /// undetermined (they can be any list).
+    ///
+    /// # Panics
+    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
+    #[inline]
+    pub fn broadcast_values_iter(&self, length: usize) -> PlListValuesIter<'_> {
+        assert_broadcastable(self.length, length);
+        // SAFETY: this array broadcasts to `length`, which is what was just asserted.
+        PlListValuesIter::new_broadcast(self, length)
+    }
+
+    /// Returns an iterator over `length` optional elements, repeating the single element of this
+    /// array if that is all it holds.
+    ///
+    /// This array either has `length` elements — in which case this is [`Self::iter`] — or a
+    /// single element, which the `length` elements this yields then all read. Broadcasting is
+    /// `O(1)`, and allocates nothing: the element is repeated as it is read, rather than
+    /// materialized into an array to iterate the way [`Self::new_from_index`] would have to.
+    ///
+    /// # Panics
+    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
+    #[inline]
+    pub fn broadcast_iter(&self, length: usize) -> PlListIter<'_> {
+        assert_broadcastable(self.length, length);
+        // SAFETY: this array broadcasts to `length`, which is what was just asserted.
+        PlListIter::new_broadcast(self, length)
     }
 
     /// Replaces the validity mask.
@@ -1716,6 +1751,69 @@ mod tests {
                 .as_flat()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn broadcasting_one_list() {
+        // The single list `[1, 2]`, over values a billion elements long.
+        let single = PlListArray::from_offsets(
+            Box::new(PlPrimitiveArray::<i32>::new_scalar(7, 1_000_000_000)),
+            Buffer::from(vec![0u64, 2]),
+        );
+
+        // A billion copies of that list are iterated without the list ever being materialized:
+        // every element is the same `O(1)` slice of the same values array.
+        let mut iter = single.broadcast_iter(1_000_000_000);
+        assert_eq!(iter.len(), 1_000_000_000);
+        assert_eq!(elements(&*iter.next().unwrap().unwrap()), [Some(7); 2]);
+        assert_eq!(
+            elements(&*iter.nth(999_999_997).unwrap().unwrap()),
+            [Some(7); 2]
+        );
+        assert_eq!(elements(&*iter.next_back().unwrap().unwrap()), [Some(7); 2]);
+        assert!(iter.next().is_none());
+        assert_eq!(
+            single
+                .broadcast_values_iter(1_000_000_000)
+                .nth(999_999_999)
+                .unwrap()
+                .len(),
+            2,
+        );
+
+        // A null element broadcasts as nulls.
+        let nulls = PlListArray::new_full_null(values(), 1);
+        assert!(nulls.broadcast_iter(3).all(|element| element.is_none()));
+        assert_eq!(nulls.broadcast_iter(3).count(), 3);
+
+        // An array of the length asked for iterates as it is, whatever it is backed by.
+        let arr = arr().with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let lengths = |iter: PlListIter<'_>| {
+            iter.map(|element| element.map(|list| list.len()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(lengths(arr.broadcast_iter(3)), lengths(arr.iter()));
+        assert_eq!(
+            arr.broadcast_values_iter(3)
+                .map(|list| list.len())
+                .collect::<Vec<_>>(),
+            [2, 0, 3],
+        );
+
+        // A scalar array broadcasts to the length it has like any other.
+        let scalar = PlListArray::new_scalar(values(), 3);
+        assert_eq!(lengths(scalar.broadcast_iter(3)), [Some(5); 3]);
+
+        // Broadcasting to nothing yields nothing, and an empty array broadcasts to nothing
+        // else: it has no element to repeat.
+        assert_eq!(single.broadcast_iter(0).len(), 0);
+        assert_eq!(PlListArray::new_empty(values()).broadcast_iter(0).len(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "an array of length 3 does not broadcast to length 4")]
+    fn broadcasting_more_than_one_list_panics() {
+        let _ = arr().broadcast_iter(4);
     }
 
     #[test]

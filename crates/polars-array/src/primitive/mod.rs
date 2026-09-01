@@ -6,7 +6,7 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
-use crate::broadcast::{broadcast_index, is_valid_buffer_len};
+use crate::broadcast::{assert_broadcastable, broadcast_index, is_valid_buffer_len};
 use crate::flat::Flat;
 
 mod flat;
@@ -378,6 +378,45 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     #[inline]
     pub fn iter(&self) -> PlPrimitiveIter<'_, T> {
         PlPrimitiveIter::new(&self.values, self.validity(), self.length)
+    }
+
+    /// Returns an iterator over `length` values, repeating the single value of this array if
+    /// that is all it holds, and ignoring validity.
+    ///
+    /// This is [`Self::broadcast_iter`] without the validity check, exactly as
+    /// [`Self::values_iter`] is [`Self::iter`] without it. The values of null elements are
+    /// undetermined (they can be anything).
+    ///
+    /// # Panics
+    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
+    #[inline]
+    pub fn broadcast_values_iter(&self, length: usize) -> PlPrimitiveValuesIter<'_, T> {
+        assert_broadcastable(self.length, length);
+        // SAFETY: an array of one element holds a single slot, which is scalar for any length;
+        // otherwise `length` is the length the values are already valid for.
+        PlPrimitiveValuesIter::new(&self.values, length)
+    }
+
+    /// Returns an iterator over `length` optional elements, repeating the single element of this
+    /// array if that is all it holds.
+    ///
+    /// This array either has `length` elements — in which case this is [`Self::iter`] — or a
+    /// single element, which the `length` elements this yields then all read. Broadcasting is
+    /// `O(1)`, and allocates nothing: the element is repeated as it is read, rather than
+    /// materialized into an array to iterate the way [`Self::new_from_index`] would have to.
+    ///
+    /// # Panics
+    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
+    #[inline]
+    pub fn broadcast_iter(&self, length: usize) -> PlPrimitiveIter<'_, T> {
+        assert_broadcastable(self.length, length);
+        // SAFETY: an array of one element holds a single slot in every buffer, which is scalar
+        // for any length; otherwise `length` is the length they are already valid for.
+        PlPrimitiveIter::new(
+            &self.values,
+            self.validity().map(|validity| validity.broadcast(length)),
+            length,
+        )
     }
 
     /// Replaces the validity mask.
@@ -1024,6 +1063,55 @@ mod tests {
             unsafe { arr.new_from_index_unchecked(0, 2) },
             PlPrimitiveArray::new_scalar(1i32, 2),
         );
+    }
+
+    #[test]
+    fn broadcasting_one_element() {
+        let arr = PlPrimitiveArray::from_iter([Some(1i32)]);
+
+        // A billion copies of the element are iterated without ever being materialized.
+        let mut iter = arr.broadcast_iter(1_000_000_000);
+        assert_eq!(iter.len(), 1_000_000_000);
+        assert_eq!(iter.next(), Some(Some(1)));
+        assert_eq!(iter.nth(999_999_997), Some(Some(1)));
+        assert_eq!(iter.next_back(), Some(Some(1)));
+        assert_eq!(iter.next(), None);
+        assert_eq!(
+            arr.broadcast_values_iter(1_000_000_000).nth(999_999_999),
+            Some(1)
+        );
+
+        // A null element broadcasts as nulls.
+        let arr = PlPrimitiveArray::from_iter([None::<i32>]);
+        assert_eq!(arr.broadcast_iter(3).collect::<Vec<_>>(), [None; 3]);
+
+        // An array of the length asked for iterates as it is, whatever it is backed by.
+        let arr = PlPrimitiveArray::from_iter([Some(1i32), None, Some(3)]);
+        assert!(arr.broadcast_iter(3).eq(arr.iter()));
+        assert!(arr.broadcast_values_iter(3).eq(arr.values_iter()));
+        assert!(arr.broadcast_iter(3).rev().eq(arr.iter().rev()));
+
+        let scalar = PlPrimitiveArray::new_scalar(7i32, 3);
+        assert!(scalar.broadcast_iter(3).eq(scalar.iter()));
+
+        // Broadcasting to nothing yields nothing, and an empty array broadcasts to nothing
+        // else: it has no element to repeat.
+        assert_eq!(
+            PlPrimitiveArray::new_scalar(1i32, 1)
+                .broadcast_iter(0)
+                .len(),
+            0,
+        );
+        assert_eq!(
+            PlPrimitiveArray::<i32>::new_empty().broadcast_iter(0).len(),
+            0,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "an array of length 3 does not broadcast to length 4")]
+    fn broadcasting_more_than_one_element_panics() {
+        let _ = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).broadcast_iter(4);
     }
 
     #[test]

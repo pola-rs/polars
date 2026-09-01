@@ -6,7 +6,7 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
-use crate::broadcast::{broadcast_index, is_valid_buffer_len};
+use crate::broadcast::{assert_broadcastable, broadcast_index, is_valid_buffer_len};
 use crate::flat::Flat;
 
 mod flat;
@@ -540,6 +540,47 @@ impl PlBinaryViewArray {
     #[inline]
     pub fn iter(&self) -> PlBinaryViewIter<'_> {
         PlBinaryViewIter::new(&self.views, &self.buffers, self.validity(), self.length)
+    }
+
+    /// Returns an iterator over `length` values, repeating the single value of this array if
+    /// that is all it holds, and ignoring validity.
+    ///
+    /// This is [`Self::broadcast_iter`] without the validity check, exactly as
+    /// [`Self::values_iter`] is [`Self::iter`] without it. The values of null elements are
+    /// undetermined (they can be anything).
+    ///
+    /// # Panics
+    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
+    #[inline]
+    pub fn broadcast_values_iter(&self, length: usize) -> PlBinaryViewValuesIter<'_> {
+        assert_broadcastable(self.length, length);
+        // SAFETY: an array of one element holds a single view, which is scalar for any length;
+        // otherwise `length` is the length the views are already valid for. Either way every view
+        // reads bytes the buffers hold.
+        PlBinaryViewValuesIter::new(&self.views, &self.buffers, length)
+    }
+
+    /// Returns an iterator over `length` optional elements, repeating the single element of this
+    /// array if that is all it holds.
+    ///
+    /// This array either has `length` elements — in which case this is [`Self::iter`] — or a
+    /// single element, which the `length` elements this yields then all read. Broadcasting is
+    /// `O(1)`, and allocates nothing: the element is repeated as it is read, rather than
+    /// materialized into an array to iterate the way [`Self::new_from_index`] would have to.
+    ///
+    /// # Panics
+    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
+    #[inline]
+    pub fn broadcast_iter(&self, length: usize) -> PlBinaryViewIter<'_> {
+        assert_broadcastable(self.length, length);
+        // SAFETY: an array of one element holds a single slot in every buffer, which is scalar
+        // for any length; otherwise `length` is the length they are already valid for.
+        PlBinaryViewIter::new(
+            &self.views,
+            &self.buffers,
+            self.validity().map(|validity| validity.broadcast(length)),
+            length,
+        )
     }
 
     /// Replaces the validity mask.
@@ -1369,6 +1410,51 @@ mod tests {
             unsafe { arr.new_from_index_unchecked(0, 2) },
             PlBinaryViewArray::new_scalar(b"foo", 2),
         );
+    }
+
+    #[test]
+    fn broadcasting_one_element() {
+        let arr = PlBinaryViewArray::from_values_iter([LONG]);
+
+        // A billion copies of the element are iterated without ever being materialized.
+        let mut iter = arr.broadcast_iter(1_000_000_000);
+        assert_eq!(iter.len(), 1_000_000_000);
+        assert_eq!(iter.next(), Some(Some(LONG)));
+        assert_eq!(iter.nth(999_999_997), Some(Some(LONG)));
+        assert_eq!(iter.next_back(), Some(Some(LONG)));
+        assert_eq!(iter.next(), None);
+        assert_eq!(
+            arr.broadcast_values_iter(1_000_000_000).nth(999_999_999),
+            Some(LONG),
+        );
+
+        // A null element broadcasts as nulls.
+        let arr: PlBinaryViewArray = [None::<&[u8]>].into_iter().collect();
+        assert_eq!(arr.broadcast_iter(3).collect::<Vec<_>>(), [None; 3]);
+
+        // An array of the length asked for iterates as it is, whatever it is backed by.
+        let arr: PlBinaryViewArray = [Some(b"foo".as_slice()), None, Some(LONG)]
+            .into_iter()
+            .collect();
+        assert!(arr.broadcast_iter(3).eq(arr.iter()));
+        assert!(arr.broadcast_values_iter(3).eq(arr.values_iter()));
+        assert!(arr.broadcast_iter(3).rev().eq(arr.iter().rev()));
+
+        let scalar = PlBinaryViewArray::new_scalar(LONG, 3);
+        assert!(scalar.broadcast_iter(3).eq(scalar.iter()));
+
+        // Broadcasting to nothing yields nothing, and an empty array broadcasts to nothing
+        // else: it has no element to repeat.
+        let one = PlBinaryViewArray::from_values_iter([b"foo".as_slice()]);
+        assert_eq!(one.broadcast_iter(0).len(), 0);
+        assert_eq!(PlBinaryViewArray::new_empty().broadcast_iter(0).len(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "an array of length 3 does not broadcast to length 4")]
+    fn broadcasting_more_than_one_element_panics() {
+        let arr = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"bar", b"baz"]);
+        let _ = arr.broadcast_iter(4);
     }
 
     #[test]
