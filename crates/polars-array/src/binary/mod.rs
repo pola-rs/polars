@@ -8,7 +8,8 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{
-    assert_broadcastable, broadcast_index, is_valid_buffer_len, is_valid_offsets_len,
+    assert_broadcastable, broadcast_index, is_flat_buffer_len, is_flat_offsets_len,
+    is_scalar_buffer_len, is_scalar_offsets_len, is_valid_buffer_len,
 };
 use crate::flat::Flat;
 
@@ -84,16 +85,18 @@ pub struct PlBinaryArray {
 }
 
 impl PlBinaryArray {
-    /// Creates a [`PlBinaryArray`] out of its internal components.
+    /// Creates a flat [`PlBinaryArray`] out of its internal components.
     ///
-    /// This function walks the offsets to check that they are ordered, so it is `O(len)` for flat
-    /// offsets and `O(1)` for scalar ones.
+    /// The offsets have to hold the range of every element — one per element, plus the end of the
+    /// last — and the validity mask one bit per element. [`Self::try_new_broadcast`] is what builds
+    /// the scalar representation; this function never infers it from offsets that happen to hold a
+    /// single range. This function walks the offsets to check that they are ordered, so it is
+    /// `O(len)`.
     ///
     /// # Errors
-    /// This function errors if `offsets` is neither flat (`length + 1` offsets) nor scalar (two
-    /// offsets), if the offsets are not monotonically non-decreasing, if the last offset exceeds
-    /// the length of `values`, or if `validity` is neither flat (length equal to `length`) nor
-    /// scalar (length one).
+    /// This function errors if `offsets` does not hold exactly `length + 1` offsets, if the offsets
+    /// are not monotonically non-decreasing, if the last offset exceeds the length of `values`, or
+    /// if `validity` does not hold exactly `length` bits.
     pub fn try_new(
         values: Buffer<u8>,
         offsets: Buffer<u64>,
@@ -101,38 +104,20 @@ impl PlBinaryArray {
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
         polars_ensure!(
-            is_valid_offsets_len(offsets.len(), length),
+            is_flat_offsets_len(offsets.len(), length),
             ComputeError:
-            "offsets buffer of length {} is neither flat nor scalar for a binary array of length \
-             {}: it needs one offset per element plus the end of the last, or two offsets \
-             standing for the range every element shares",
+            "offsets buffer of length {} is not flat for a binary array of length {}: it needs one \
+             offset per element plus the end of the last",
             offsets.len(), length,
         );
 
-        // The offsets are ordered, so checking the last one against the values covers them all —
-        // including that every one of them fits in a `usize`.
-        for (i, window) in offsets.windows(2).enumerate() {
-            polars_ensure!(
-                window[0] <= window[1],
-                ComputeError:
-                "offset {} of the binary array is {}, which is smaller than the offset {} before \
-                 it",
-                i + 1, window[1], window[0],
-            );
-        }
-        let last = offsets[offsets.len() - 1];
-        polars_ensure!(
-            last <= values.len() as u64,
-            ComputeError:
-            "the last offset of the binary array is {}, which exceeds the length {} of its values",
-            last, values.len(),
-        );
+        validate_offsets(&values, &offsets)?;
 
         if let Some(validity) = validity.as_ref() {
             polars_ensure!(
-                is_valid_buffer_len(validity.len(), length),
+                is_flat_buffer_len(validity.len(), length),
                 ComputeError:
-                "validity mask of length {} is neither flat nor scalar for an array of length {}",
+                "validity mask of length {} is not flat for an array of length {}",
                 validity.len(), length,
             );
         }
@@ -145,7 +130,7 @@ impl PlBinaryArray {
         })
     }
 
-    /// Creates a [`PlBinaryArray`] out of its internal components.
+    /// Creates a flat [`PlBinaryArray`] out of its internal components.
     ///
     /// # Panics
     /// Panics under the conditions [`Self::try_new`] errors.
@@ -159,14 +144,14 @@ impl PlBinaryArray {
         Self::try_new(values, offsets, length, validity).unwrap()
     }
 
-    /// Creates a [`PlBinaryArray`] out of its internal components without validating them.
+    /// Creates a flat [`PlBinaryArray`] out of its internal components without validating them.
     ///
     /// This function is `O(1)`.
     ///
     /// # Safety
-    /// `offsets` must be monotonically non-decreasing, either flat (`length + 1` offsets) or
-    /// scalar (two offsets), and its last offset must not exceed the length of `values`;
-    /// `validity` must be either flat (length equal to `length`) or scalar (length one).
+    /// `offsets` must be monotonically non-decreasing, hold exactly `length + 1` offsets, and end
+    /// at an offset that does not exceed the length of `values`; `validity` must hold exactly
+    /// `length` bits.
     #[inline]
     pub unsafe fn new_unchecked(
         values: Buffer<u8>,
@@ -175,13 +160,108 @@ impl PlBinaryArray {
         validity: Option<Bitmap>,
     ) -> Self {
         if cfg!(debug_assertions) {
-            assert!(is_valid_offsets_len(offsets.len(), length));
+            assert!(is_flat_offsets_len(offsets.len(), length));
             assert!(offsets.windows(2).all(|window| window[0] <= window[1]));
             assert!(offsets[offsets.len() - 1] <= values.len() as u64);
             assert!(
                 validity
                     .as_ref()
-                    .is_none_or(|v| is_valid_buffer_len(v.len(), length))
+                    .is_none_or(|v| is_flat_buffer_len(v.len(), length))
+            );
+        }
+
+        Self {
+            values,
+            offsets,
+            length,
+            validity,
+        }
+    }
+
+    /// Creates a scalar [`PlBinaryArray`] of `length` elements out of its internal components.
+    ///
+    /// The offsets have to hold the single range every element covers, and the validity mask the
+    /// single bit they share, which makes this `O(1)` in `length`. [`Self::try_new`] is what builds
+    /// the flat representation.
+    ///
+    /// # Errors
+    /// This function errors if `offsets` does not hold exactly two offsets, if they are not
+    /// monotonically non-decreasing, if the last of them exceeds the length of `values`, or if
+    /// `validity` does not hold exactly one bit. An array of no elements covers no range, so it
+    /// additionally admits the single offset that begins no element and an empty mask.
+    pub fn try_new_broadcast(
+        values: Buffer<u8>,
+        offsets: Buffer<u64>,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> PolarsResult<Self> {
+        polars_ensure!(
+            is_scalar_offsets_len(offsets.len(), length),
+            ComputeError:
+            "offsets buffer of length {} is not the single range the {} elements of a broadcast \
+             binary array share: it needs the two offsets standing for that range",
+            offsets.len(), length,
+        );
+
+        validate_offsets(&values, &offsets)?;
+
+        if let Some(validity) = validity.as_ref() {
+            polars_ensure!(
+                is_scalar_buffer_len(validity.len(), length),
+                ComputeError:
+                "validity mask of length {} is not the single bit the {} elements of a broadcast \
+                 array share",
+                validity.len(), length,
+            );
+        }
+
+        Ok(Self {
+            values,
+            offsets,
+            length,
+            validity,
+        })
+    }
+
+    /// Creates a scalar [`PlBinaryArray`] of `length` elements out of its internal components.
+    ///
+    /// # Panics
+    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
+    #[inline]
+    pub fn new_broadcast(
+        values: Buffer<u8>,
+        offsets: Buffer<u64>,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        Self::try_new_broadcast(values, offsets, length, validity).unwrap()
+    }
+
+    /// Creates a scalar [`PlBinaryArray`] of `length` elements out of its internal components
+    /// without validating them.
+    ///
+    /// This function is `O(1)`.
+    ///
+    /// # Safety
+    /// `offsets` must be monotonically non-decreasing, hold exactly two offsets — or the single one
+    /// that begins no element, if `length` is zero — and end at an offset that does not exceed the
+    /// length of `values`; `validity` must hold exactly one bit, or none at all if `length` is
+    /// zero.
+    #[inline]
+    pub unsafe fn new_broadcast_unchecked(
+        values: Buffer<u8>,
+        offsets: Buffer<u64>,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        if cfg!(debug_assertions) {
+            assert!(is_scalar_offsets_len(offsets.len(), length));
+            assert!(offsets.windows(2).all(|window| window[0] <= window[1]));
+            assert!(offsets[offsets.len() - 1] <= values.len() as u64);
+            assert!(
+                validity
+                    .as_ref()
+                    .is_none_or(|v| is_scalar_buffer_len(v.len(), length))
             );
         }
 
@@ -1065,6 +1145,33 @@ impl PlArray for PlBinaryArray {
     }
 }
 
+/// Checks that `offsets` are monotonically non-decreasing and stay within `values`.
+///
+/// This is the half of the validation that both families of constructors share; how many offsets
+/// there are is what tells the flat representation from the scalar one, and is checked separately.
+fn validate_offsets(values: &Buffer<u8>, offsets: &Buffer<u64>) -> PolarsResult<()> {
+    // The offsets are ordered, so checking the last one against the values covers them all —
+    // including that every one of them fits in a `usize`.
+    for (i, window) in offsets.windows(2).enumerate() {
+        polars_ensure!(
+            window[0] <= window[1],
+            ComputeError:
+            "offset {} of the binary array is {}, which is smaller than the offset {} before it",
+            i + 1, window[1], window[0],
+        );
+    }
+
+    let last = offsets[offsets.len() - 1];
+    polars_ensure!(
+        last <= values.len() as u64,
+        ComputeError:
+        "the last offset of the binary array is {}, which exceeds the length {} of its values",
+        last, values.len(),
+    );
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1224,12 +1331,15 @@ mod tests {
     fn try_new_rejects_invalid_components() {
         let values = || Buffer::from(b"foobar".to_vec());
 
-        // The offsets must hold one slot per element plus the end of the last, or be the two of a
-        // scalar array — see `scalar_offsets_stand_for_the_range_every_element_covers`.
+        // The offsets must hold one slot per element plus the end of the last.
         assert!(PlBinaryArray::try_new(values(), Buffer::from(vec![0u64, 3, 6]), 3, None).is_err());
         assert!(
             PlBinaryArray::try_new(values(), Buffer::from(vec![0u64, 3, 3, 6]), 3, None).is_ok()
         );
+
+        // Two offsets are a scalar array rather than a flat one, and are never inferred to be
+        // either — see `scalar_offsets_stand_for_the_range_every_element_covers`.
+        assert!(PlBinaryArray::try_new(values(), Buffer::from(vec![0u64, 3]), 3, None).is_err());
 
         // They must be monotonically non-decreasing.
         assert!(
@@ -1240,7 +1350,7 @@ mod tests {
         assert!(PlBinaryArray::try_new(values(), Buffer::from(vec![0u64, 7]), 1, None).is_err());
         assert!(PlBinaryArray::try_new(values(), Buffer::from(vec![0u64, 6]), 1, None).is_ok());
 
-        // The validity mask must be flat or scalar.
+        // The validity mask has to be flat as well.
         let offsets = Buffer::from(vec![0u64, 3, 3, 6]);
         assert!(
             PlBinaryArray::try_new(values(), offsets.clone(), 3, Some(Bitmap::new_zeroed(2)))
@@ -1248,9 +1358,50 @@ mod tests {
         );
         assert!(
             PlBinaryArray::try_new(values(), offsets.clone(), 3, Some(Bitmap::new_zeroed(1)))
-                .is_ok()
+                .is_err()
         );
         assert!(PlBinaryArray::try_new(values(), offsets, 3, Some(Bitmap::new_zeroed(3))).is_ok());
+    }
+
+    #[test]
+    fn try_new_broadcast_requires_scalar_offsets() {
+        let values = || Buffer::from(b"foobar".to_vec());
+        let scalar = || Buffer::from(vec![0u64, 3]);
+
+        // The offsets must hold the one range every element covers.
+        assert!(PlBinaryArray::try_new_broadcast(values(), scalar(), 1_000_000, None).is_ok());
+        assert!(
+            PlBinaryArray::try_new_broadcast(values(), Buffer::from(vec![0u64, 3, 3, 6]), 3, None)
+                .is_err()
+        );
+
+        // They are checked exactly as the flat ones are.
+        assert!(
+            PlBinaryArray::try_new_broadcast(values(), Buffer::from(vec![6u64, 3]), 3, None)
+                .is_err()
+        );
+        assert!(
+            PlBinaryArray::try_new_broadcast(values(), Buffer::from(vec![0u64, 7]), 3, None)
+                .is_err()
+        );
+
+        // The validity mask has to be scalar as well.
+        assert!(
+            PlBinaryArray::try_new_broadcast(values(), scalar(), 3, Some(Bitmap::new_zeroed(3)))
+                .is_err()
+        );
+        assert!(
+            PlBinaryArray::try_new_broadcast(values(), scalar(), 3, Some(Bitmap::new_zeroed(1)))
+                .is_ok()
+        );
+
+        // An array of no elements covers no range, so the single offset that begins no element
+        // stands for it as well.
+        assert!(
+            PlBinaryArray::try_new_broadcast(values(), Buffer::from(vec![0u64]), 0, None).is_ok()
+        );
+        assert!(PlBinaryArray::try_new_broadcast(values(), scalar(), 0, None).is_ok());
+        assert!(PlBinaryArray::try_new_broadcast(values(), Buffer::new(), 0, None).is_err());
     }
 
     #[test]
@@ -1613,7 +1764,7 @@ mod tests {
     #[test]
     fn scalar_offsets_stand_for_the_range_every_element_covers() {
         // Two offsets are valid for any length, and are the range every element covers.
-        let arr = PlBinaryArray::new(
+        let arr = PlBinaryArray::new_broadcast(
             Buffer::from(b"foobar".to_vec()),
             Buffer::from(vec![3u64, 6]),
             3,
@@ -1673,7 +1824,7 @@ mod tests {
     #[test]
     fn to_flat_lays_the_values_end_to_end() {
         // Three copies of `bar`, which share the one range they cover.
-        let arr = PlBinaryArray::new(
+        let arr = PlBinaryArray::new_broadcast(
             Buffer::from(b"foobar".to_vec()),
             Buffer::from(vec![3u64, 6]),
             3,
@@ -1757,7 +1908,7 @@ mod tests {
         assert_eq!(flat, all_null);
 
         // And for a scalar array of empty values, which are the same value wherever they point.
-        let empty = PlBinaryArray::new(
+        let empty = PlBinaryArray::new_broadcast(
             Buffer::from(b"foobar".to_vec()),
             Buffer::from(vec![3u64, 3]),
             3,

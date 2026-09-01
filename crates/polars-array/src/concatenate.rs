@@ -1006,11 +1006,18 @@ fn concatenate_struct_impl<S>(
         .map(|i| concatenate_impl(iter.mapped(&|array| iter.get(array).field(i))))
         .collect::<PolarsResult<Vec<_>>>()?;
 
+    // Every row is null, so a single shared bit is the whole mask. The fields are kept as they
+    // are: their values are undetermined, and it is the mask that makes every row null.
+    if length > 0 && null_count == length {
+        return Ok(PlStructArray::new_full_null(fields, length));
+    }
+
     let validity = concatenate_validities_with(iter, length, null_count);
 
     // SAFETY: every field is the concatenation of the fields at that position, so it holds as many
-    // elements as the arrays together, and the mask is the one `concatenate_validities_with` built
-    // for that many elements.
+    // elements as the arrays together, and the mask is the flat one `concatenate_validities_with`
+    // built for that many elements — the scalar one it builds for an all-null concatenation is
+    // handled above.
     Ok(unsafe { PlStructArray::new_unchecked(fields, length, validity) })
 }
 
@@ -1449,6 +1456,25 @@ mod tests {
         for field in concatenated.fields() {
             assert_eq!(field.len(), 2_000_000_000);
         }
+    }
+
+    #[test]
+    fn struct_arrays_of_nothing_but_nulls_keep_a_scalar_mask() {
+        let nulls = || {
+            PlStructArray::new_full_null(
+                vec![Box::new(PlPrimitiveArray::<i32>::new_scalar(
+                    1,
+                    1_000_000_000,
+                ))],
+                1_000_000_000,
+            )
+        };
+        let concatenated = concatenate_struct(&[&nulls(), &nulls()]).unwrap();
+
+        assert_eq!(concatenated.len(), 2_000_000_000);
+        assert_eq!(concatenated.null_count(), 2_000_000_000);
+        assert!(concatenated.validity_is_scalar());
+        assert_eq!(concatenated.field(0).len(), 2_000_000_000);
     }
 
     #[test]
@@ -2210,13 +2236,15 @@ mod tests {
 
     #[test]
     fn a_repeated_list_array_of_scalar_offsets_is_written_out_once_per_element() {
-        // The list `[7]` and a null one, sharing the offsets they cover.
-        let arr = PlListArray::new(
+        // The list `[7]` and a null one, sharing the offsets they cover. The mask is flat while
+        // the offsets are scalar, which is a mixed array no single constructor builds.
+        let arr = PlListArray::new_broadcast(
             Box::new(PlPrimitiveArray::new_scalar(7i32, 1)),
             Buffer::from(vec![0u64, 1]),
             2,
-            Some(Bitmap::from_iter([true, false])),
-        );
+            None,
+        )
+        .with_validity(Some(Bitmap::from_iter([true, false])));
         let repeated = concatenate_repeated(&arr, 2).unwrap();
         let repeated = repeated.as_any().downcast_ref::<PlListArray>().unwrap();
 

@@ -19,6 +19,30 @@
 //! Intermediate buffer lengths (`1 < buffer.len() < length`) are *not* valid, even though
 //! [`broadcast_index`] would happily map them: an array is either flat or scalar.
 //!
+//! # Constructing one representation or the other
+//!
+//! Which of the two an array is in is never inferred from the buffers it is handed: every array
+//! has two families of constructors, and the caller picks the representation by name.
+//!
+//! * `try_new`, `new` and `new_unchecked` build a *flat* array. Every backing buffer has to hold
+//!   one slot per element — [`is_flat_buffer_len`], or [`is_flat_offsets_len`] and
+//!   [`is_flat_fixed_size_values_len`] for the buffers that hold more than one slot per element.
+//! * `try_new_broadcast`, `new_broadcast` and `new_broadcast_unchecked` build a *scalar* array of
+//!   any `length`. Every backing buffer has to hold the single value every element shares —
+//!   [`is_scalar_buffer_len`], [`is_scalar_offsets_len`] and
+//!   [`is_scalar_fixed_size_values_len`].
+//!
+//! Neither family accepts a buffer of a length that merely happens to be admissible: a values
+//! buffer of one element passed to `new` is an error rather than a silently broadcast array, and
+//! `new_broadcast` refuses a buffer holding one slot per element of an array longer than one. The
+//! two therefore accept the same buffers exactly where the representations themselves coincide: an
+//! array of one element, and the empty buffer of an array of none. An array of no elements reads
+//! no slot at all, so the scalar family additionally lets it keep the one slot nothing reads.
+//!
+//! An array that mixes the two — a single shared value under a flat validity mask, say — is a
+//! valid array that neither family builds in one step. Build it in the representation its values
+//! are in and replace the mask with `with_validity`, which validates the mask on its own.
+//!
 //! # Broadcasting an array
 //!
 //! The same rule applies one level up, to the arrays themselves: an array of a single element
@@ -72,10 +96,35 @@ pub const fn broadcast_index(i: usize, buffer_len: usize) -> usize {
     if i < buffer_len { i } else { 0 }
 }
 
+/// Whether a backing buffer of length `buffer_len` is *flat* for an array of length `length`.
+///
+/// A flat buffer holds one slot per element, so [`broadcast_index`] is the identity on it. This is
+/// what the non-broadcasting constructors — `try_new` and its companions — require of every
+/// backing buffer. See the [module docs](self).
+#[inline]
+pub const fn is_flat_buffer_len(buffer_len: usize, length: usize) -> bool {
+    buffer_len == length
+}
+
+/// Whether a backing buffer of length `buffer_len` is *scalar* for an array of length `length`.
+///
+/// A scalar buffer holds the single value every element shares, so [`broadcast_index`] maps every
+/// element onto slot `0`. This is what the broadcasting constructors — `try_new_broadcast` and its
+/// companions — require of every backing buffer. An array of no elements reads no slot at all, so
+/// it additionally admits an empty buffer. See the [module docs](self).
+#[inline]
+pub const fn is_scalar_buffer_len(buffer_len: usize, length: usize) -> bool {
+    buffer_len == 1 || (length == 0 && buffer_len == 0)
+}
+
 /// Whether a backing buffer of length `buffer_len` is valid for an array of length `length`.
+///
+/// A buffer is valid exactly when it is [flat](is_flat_buffer_len) or
+/// [scalar](is_scalar_buffer_len); the two coincide for an array of one element, and both admit
+/// the empty buffer of an array of none.
 #[inline]
 pub const fn is_valid_buffer_len(buffer_len: usize, length: usize) -> bool {
-    buffer_len == length || buffer_len == 1
+    is_flat_buffer_len(buffer_len, length) || is_scalar_buffer_len(buffer_len, length)
 }
 
 /// Whether an array of `length` elements broadcasts to an array of `to_length` elements.
@@ -99,37 +148,92 @@ pub(crate) fn assert_broadcastable(length: usize, to_length: usize) {
     );
 }
 
+/// Whether an offsets buffer of length `offsets_len` is *flat* for a list or binary array of
+/// length `length`.
+///
+/// The offsets hold one more slot than the starts they begin with — the end of the last element —
+/// so this is [`is_flat_buffer_len`] of one slot fewer. An empty buffer is never flat: the end of
+/// the last element is needed even when there are no elements. See the [module docs](self).
+#[inline]
+pub const fn is_flat_offsets_len(offsets_len: usize, length: usize) -> bool {
+    match offsets_len.checked_sub(1) {
+        Some(starts_len) => is_flat_buffer_len(starts_len, length),
+        None => false,
+    }
+}
+
+/// Whether an offsets buffer of length `offsets_len` is *scalar* for a list or binary array of
+/// length `length`.
+///
+/// This is [`is_scalar_buffer_len`] of the starts, which are one slot fewer than the offsets: two
+/// offsets stand for the one range every element shares. An array of no elements covers no range,
+/// so it additionally admits the single offset that holds no starts at all. See the [module
+/// docs](self).
+#[inline]
+pub const fn is_scalar_offsets_len(offsets_len: usize, length: usize) -> bool {
+    match offsets_len.checked_sub(1) {
+        Some(starts_len) => is_scalar_buffer_len(starts_len, length),
+        None => false,
+    }
+}
+
 /// Whether an offsets buffer of length `offsets_len` is valid for a list or binary array of length
 /// `length`.
 ///
-/// The offsets hold one more slot than the starts they begin with — the end of the last element —
-/// so this is [`is_valid_buffer_len`] of one slot fewer. An empty buffer is never valid: the end of
-/// the last element is needed even when there are no elements. See the [module docs](self).
+/// The offsets are valid exactly when they are [flat](is_flat_offsets_len) or
+/// [scalar](is_scalar_offsets_len). An empty buffer is never valid: the end of the last element is
+/// needed even when there are no elements. See the [module docs](self).
 #[inline]
 pub const fn is_valid_offsets_len(offsets_len: usize, length: usize) -> bool {
-    match offsets_len.checked_sub(1) {
-        Some(starts_len) => is_valid_buffer_len(starts_len, length),
+    is_flat_offsets_len(offsets_len, length) || is_scalar_offsets_len(offsets_len, length)
+}
+
+/// Whether a values array of `values_len` values is *flat* for a fixed size list array of `length`
+/// elements that are `width` values wide.
+///
+/// The values hold `width` slots per element rather than one, so this is
+/// [`is_flat_buffer_len`] scaled by the width: the values of every element, laid end to end. See
+/// the [module docs](self).
+#[inline]
+pub const fn is_flat_fixed_size_values_len(values_len: usize, width: usize, length: usize) -> bool {
+    match length.checked_mul(width) {
+        Some(flat_len) => values_len == flat_len,
+        // A flat values array that overflows a `usize` is longer than any buffer can be.
         None => false,
+    }
+}
+
+/// Whether a values array of `values_len` values is *scalar* for a fixed size list array of
+/// `length` elements that are `width` values wide.
+///
+/// A scalar values array holds the one element every element covers, which is `width` values wide.
+/// Being empty leaves no element for it to stand for, so a `length` of zero admits only empty
+/// values — unlike the buffers above, which an empty array lets stand either way. See the [module
+/// docs](self).
+#[inline]
+pub const fn is_scalar_fixed_size_values_len(
+    values_len: usize,
+    width: usize,
+    length: usize,
+) -> bool {
+    if length == 0 {
+        values_len == 0
+    } else {
+        values_len == width
     }
 }
 
 /// Whether a values array of `values_len` values is valid for a fixed size list array of `length`
 /// elements that are `width` values wide.
 ///
-/// The values hold `width` slots per element rather than one, so this is [`is_valid_buffer_len`]
-/// scaled by the width: `length * width` values when the array is flat, and the `width` of the one
-/// element every element shares when it is scalar. An empty array has no element for a scalar
-/// values array to stand for, so it admits only empty values. See the [module docs](self).
+/// The values are valid exactly when they are [flat](is_flat_fixed_size_values_len) or
+/// [scalar](is_scalar_fixed_size_values_len). See the [module docs](self).
 #[inline]
 pub const fn is_valid_fixed_size_values_len(
     values_len: usize,
     width: usize,
     length: usize,
 ) -> bool {
-    match length.checked_mul(width) {
-        Some(flat_len) if values_len == flat_len => true,
-        // A flat values array that overflows a `usize` is longer than any buffer can be, so the
-        // scalar representation is all that is left.
-        _ => length >= 1 && values_len == width,
-    }
+    is_flat_fixed_size_values_len(values_len, width, length)
+        || is_scalar_fixed_size_values_len(values_len, width, length)
 }

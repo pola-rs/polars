@@ -4,7 +4,9 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapIter, PlBitmapRef};
-use crate::broadcast::{assert_broadcastable, is_valid_buffer_len};
+use crate::broadcast::{
+    assert_broadcastable, is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len,
+};
 use crate::flat::Flat;
 
 mod builder;
@@ -51,26 +53,27 @@ pub struct PlBooleanArray {
 }
 
 impl PlBooleanArray {
-    /// Creates a [`PlBooleanArray`] out of its internal components.
+    /// Creates a flat [`PlBooleanArray`] out of its internal components.
     ///
-    /// This function is `O(1)`.
+    /// Every backing bitmap has to hold one bit per element. [`Self::try_new_broadcast`] is what
+    /// builds the scalar representation; this function never infers it from a bitmap that happens
+    /// to hold a single bit. This function is `O(1)`.
     ///
     /// # Errors
-    /// This function errors if `values` or `validity` is neither flat (length equal to `length`)
-    /// nor scalar (length one).
+    /// This function errors if `values` or `validity` does not hold exactly `length` bits.
     pub fn try_new(values: Bitmap, length: usize, validity: Option<Bitmap>) -> PolarsResult<Self> {
         polars_ensure!(
-            is_valid_buffer_len(values.len(), length),
+            is_flat_buffer_len(values.len(), length),
             ComputeError:
-            "values bitmap of length {} is neither flat nor scalar for an array of length {}",
+            "values bitmap of length {} is not flat for an array of length {}",
             values.len(), length,
         );
 
         if let Some(validity) = validity.as_ref() {
             polars_ensure!(
-                is_valid_buffer_len(validity.len(), length),
+                is_flat_buffer_len(validity.len(), length),
                 ComputeError:
-                "validity mask of length {} is neither flat nor scalar for an array of length {}",
+                "validity mask of length {} is not flat for an array of length {}",
                 validity.len(), length,
             );
         }
@@ -82,7 +85,7 @@ impl PlBooleanArray {
         })
     }
 
-    /// Creates a [`PlBooleanArray`] out of its internal components.
+    /// Creates a flat [`PlBooleanArray`] out of its internal components.
     ///
     /// # Panics
     /// Panics under the conditions [`Self::try_new`] errors.
@@ -91,19 +94,93 @@ impl PlBooleanArray {
         Self::try_new(values, length, validity).unwrap()
     }
 
-    /// Creates a [`PlBooleanArray`] out of its internal components without validating them.
+    /// Creates a flat [`PlBooleanArray`] out of its internal components without validating them.
     ///
     /// # Safety
-    /// `values` and `validity` must each be either flat (length equal to `length`) or scalar
-    /// (length one).
+    /// `values` and `validity` must each hold exactly `length` bits.
     #[inline]
     pub unsafe fn new_unchecked(values: Bitmap, length: usize, validity: Option<Bitmap>) -> Self {
         if cfg!(debug_assertions) {
-            assert!(is_valid_buffer_len(values.len(), length));
+            assert!(is_flat_buffer_len(values.len(), length));
             assert!(
                 validity
                     .as_ref()
-                    .is_none_or(|v| is_valid_buffer_len(v.len(), length))
+                    .is_none_or(|v| is_flat_buffer_len(v.len(), length))
+            );
+        }
+
+        Self {
+            values,
+            length,
+            validity,
+        }
+    }
+
+    /// Creates a scalar [`PlBooleanArray`] of `length` elements out of its internal components.
+    ///
+    /// Every backing bitmap has to hold the single bit every element shares, which makes this
+    /// `O(1)` in `length` as well as in time. [`Self::try_new`] is what builds the flat
+    /// representation.
+    ///
+    /// # Errors
+    /// This function errors if `values` or `validity` does not hold exactly one bit. An array of
+    /// no elements reads no bit at all, so it additionally admits an empty bitmap.
+    pub fn try_new_broadcast(
+        values: Bitmap,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> PolarsResult<Self> {
+        polars_ensure!(
+            is_scalar_buffer_len(values.len(), length),
+            ComputeError:
+            "values bitmap of length {} is not the single bit the {} elements of a broadcast \
+             array share",
+            values.len(), length,
+        );
+
+        if let Some(validity) = validity.as_ref() {
+            polars_ensure!(
+                is_scalar_buffer_len(validity.len(), length),
+                ComputeError:
+                "validity mask of length {} is not the single bit the {} elements of a broadcast \
+                 array share",
+                validity.len(), length,
+            );
+        }
+
+        Ok(Self {
+            values,
+            length,
+            validity,
+        })
+    }
+
+    /// Creates a scalar [`PlBooleanArray`] of `length` elements out of its internal components.
+    ///
+    /// # Panics
+    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
+    #[inline]
+    pub fn new_broadcast(values: Bitmap, length: usize, validity: Option<Bitmap>) -> Self {
+        Self::try_new_broadcast(values, length, validity).unwrap()
+    }
+
+    /// Creates a scalar [`PlBooleanArray`] of `length` elements out of its internal components
+    /// without validating them.
+    ///
+    /// # Safety
+    /// `values` and `validity` must each hold exactly one bit, or none at all if `length` is zero.
+    #[inline]
+    pub unsafe fn new_broadcast_unchecked(
+        values: Bitmap,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        if cfg!(debug_assertions) {
+            assert!(is_scalar_buffer_len(values.len(), length));
+            assert!(
+                validity
+                    .as_ref()
+                    .is_none_or(|v| is_scalar_buffer_len(v.len(), length))
             );
         }
 
@@ -1056,14 +1133,37 @@ mod tests {
     }
 
     #[test]
-    fn try_new_rejects_mismatched_bitmaps() {
+    fn try_new_requires_flat_bitmaps() {
         assert!(PlBooleanArray::try_new(Bitmap::new_zeroed(2), 3, None).is_err());
+        assert!(PlBooleanArray::try_new(Bitmap::new_zeroed(3), 3, None).is_ok());
+
+        // A single bit is a scalar array rather than a flat one, and is never inferred to be
+        // either.
+        assert!(PlBooleanArray::try_new(Bitmap::new_zeroed(1), 3, None).is_err());
+
+        // The mask has to be flat as well.
+        let values = || Bitmap::new_zeroed(3);
+        assert!(PlBooleanArray::try_new(values(), 3, Some(Bitmap::new_zeroed(1))).is_err());
+        assert!(PlBooleanArray::try_new(values(), 3, Some(Bitmap::new_zeroed(3))).is_ok());
+    }
+
+    #[test]
+    fn try_new_broadcast_requires_scalar_bitmaps() {
+        let scalar = || Bitmap::new_zeroed(1);
+
+        assert!(PlBooleanArray::try_new_broadcast(scalar(), 1_000_000_000, None).is_ok());
+        assert!(PlBooleanArray::try_new_broadcast(Bitmap::new_zeroed(2), 2, None).is_err());
+
+        // The mask has to be scalar as well.
         assert!(
-            PlBooleanArray::try_new(Bitmap::new_zeroed(1), 3, Some(Bitmap::new_zeroed(2))).is_err()
+            PlBooleanArray::try_new_broadcast(scalar(), 3, Some(Bitmap::new_zeroed(3))).is_err()
         );
-        assert!(
-            PlBooleanArray::try_new(Bitmap::new_zeroed(1), 3, Some(Bitmap::new_zeroed(3))).is_ok()
-        );
+        assert!(PlBooleanArray::try_new_broadcast(scalar(), 3, Some(scalar())).is_ok());
+
+        // An array of no elements reads no bit at all, so both the empty and the single-bit bitmap
+        // stand for it.
+        assert!(PlBooleanArray::try_new_broadcast(Bitmap::new(), 0, None).is_ok());
+        assert!(PlBooleanArray::try_new_broadcast(scalar(), 0, None).is_ok());
     }
 
     #[test]

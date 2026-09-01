@@ -6,7 +6,10 @@ use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
-use crate::broadcast::{assert_broadcastable, broadcast_index, is_valid_buffer_len};
+use crate::broadcast::{
+    assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
+    is_valid_buffer_len,
+};
 use crate::flat::Flat;
 
 mod builder;
@@ -63,14 +66,16 @@ pub struct PlBinaryViewArray {
 }
 
 impl PlBinaryViewArray {
-    /// Creates a [`PlBinaryViewArray`] out of its internal components.
+    /// Creates a flat [`PlBinaryViewArray`] out of its internal components.
     ///
-    /// Unlike the `try_new` of the other arrays, this is `O(views)` rather than `O(1)`: every view
-    /// is checked against the buffers it reads.
+    /// Every backing buffer has to hold one slot per element. [`Self::try_new_broadcast`] is what
+    /// builds the scalar representation; this function never infers it from a buffer that happens
+    /// to hold a single slot. Unlike the `try_new` of the other arrays, this is `O(views)` rather
+    /// than `O(1)`: every view is checked against the buffers it reads.
     ///
     /// # Errors
-    /// This function errors if `views` or `validity` is neither flat (length equal to `length`)
-    /// nor scalar (length one), or if a view does not read bytes that `buffers` holds.
+    /// This function errors if `views` or `validity` does not hold exactly `length` slots, or if a
+    /// view does not read bytes that `buffers` holds.
     pub fn try_new(
         views: Buffer<View>,
         buffers: Buffer<Buffer<u8>>,
@@ -78,17 +83,17 @@ impl PlBinaryViewArray {
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
         polars_ensure!(
-            is_valid_buffer_len(views.len(), length),
+            is_flat_buffer_len(views.len(), length),
             ComputeError:
-            "views buffer of length {} is neither flat nor scalar for an array of length {}",
+            "views buffer of length {} is not flat for an array of length {}",
             views.len(), length,
         );
 
         if let Some(validity) = validity.as_ref() {
             polars_ensure!(
-                is_valid_buffer_len(validity.len(), length),
+                is_flat_buffer_len(validity.len(), length),
                 ComputeError:
-                "validity mask of length {} is neither flat nor scalar for an array of length {}",
+                "validity mask of length {} is not flat for an array of length {}",
                 validity.len(), length,
             );
         }
@@ -103,7 +108,7 @@ impl PlBinaryViewArray {
         })
     }
 
-    /// Creates a [`PlBinaryViewArray`] out of its internal components.
+    /// Creates a flat [`PlBinaryViewArray`] out of its internal components.
     ///
     /// # Panics
     /// Panics under the conditions [`Self::try_new`] errors.
@@ -117,13 +122,14 @@ impl PlBinaryViewArray {
         Self::try_new(views, buffers, length, validity).unwrap()
     }
 
-    /// Creates a [`PlBinaryViewArray`] out of its internal components without validating them.
+    /// Creates a flat [`PlBinaryViewArray`] out of its internal components without validating
+    /// them.
     ///
     /// This is the `O(1)` counterpart of [`Self::try_new`], which walks every view.
     ///
     /// # Safety
-    /// `views` and `validity` must each be either flat (length equal to `length`) or scalar
-    /// (length one), and every view must read bytes that `buffers` holds.
+    /// `views` and `validity` must each hold exactly `length` slots, and every view must read
+    /// bytes that `buffers` holds.
     #[inline]
     pub unsafe fn new_unchecked(
         views: Buffer<View>,
@@ -132,11 +138,99 @@ impl PlBinaryViewArray {
         validity: Option<Bitmap>,
     ) -> Self {
         if cfg!(debug_assertions) {
-            assert!(is_valid_buffer_len(views.len(), length));
+            assert!(is_flat_buffer_len(views.len(), length));
             assert!(
                 validity
                     .as_ref()
-                    .is_none_or(|v| is_valid_buffer_len(v.len(), length))
+                    .is_none_or(|v| is_flat_buffer_len(v.len(), length))
+            );
+            validate_views(&views, &buffers).unwrap();
+        }
+
+        Self {
+            views,
+            buffers,
+            length,
+            validity,
+        }
+    }
+
+    /// Creates a scalar [`PlBinaryViewArray`] of `length` elements out of its internal components.
+    ///
+    /// Every backing buffer has to hold the single value every element shares, which makes this
+    /// `O(1)` in `length`. [`Self::try_new`] is what builds the flat representation.
+    ///
+    /// # Errors
+    /// This function errors if `views` or `validity` does not hold exactly one slot, or if the
+    /// view does not read bytes that `buffers` holds. An array of no elements reads no slot at
+    /// all, so it additionally admits an empty buffer.
+    pub fn try_new_broadcast(
+        views: Buffer<View>,
+        buffers: Buffer<Buffer<u8>>,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> PolarsResult<Self> {
+        polars_ensure!(
+            is_scalar_buffer_len(views.len(), length),
+            ComputeError:
+            "views buffer of length {} is not the single view the {} elements of a broadcast \
+             array share",
+            views.len(), length,
+        );
+
+        if let Some(validity) = validity.as_ref() {
+            polars_ensure!(
+                is_scalar_buffer_len(validity.len(), length),
+                ComputeError:
+                "validity mask of length {} is not the single bit the {} elements of a broadcast \
+                 array share",
+                validity.len(), length,
+            );
+        }
+
+        validate_views(&views, &buffers)?;
+
+        Ok(Self {
+            views,
+            buffers,
+            length,
+            validity,
+        })
+    }
+
+    /// Creates a scalar [`PlBinaryViewArray`] of `length` elements out of its internal components.
+    ///
+    /// # Panics
+    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
+    #[inline]
+    pub fn new_broadcast(
+        views: Buffer<View>,
+        buffers: Buffer<Buffer<u8>>,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        Self::try_new_broadcast(views, buffers, length, validity).unwrap()
+    }
+
+    /// Creates a scalar [`PlBinaryViewArray`] of `length` elements out of its internal components
+    /// without validating them.
+    ///
+    /// # Safety
+    /// `views` and `validity` must each hold exactly one slot, or none at all if `length` is zero,
+    /// and every view must read bytes that `buffers` holds.
+    #[inline]
+    pub unsafe fn new_broadcast_unchecked(
+        views: Buffer<View>,
+        buffers: Buffer<Buffer<u8>>,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        if cfg!(debug_assertions) {
+            assert!(is_scalar_buffer_len(views.len(), length));
+            assert!(
+                validity
+                    .as_ref()
+                    .is_none_or(|v| is_scalar_buffer_len(v.len(), length))
             );
             validate_views(&views, &buffers).unwrap();
         }
@@ -1328,26 +1422,54 @@ mod tests {
     fn try_new_rejects_mismatched_buffers() {
         let views = Buffer::from(vec![View::new_inline(b"foo"), View::new_inline(b"bar")]);
 
+        let scalar = || Buffer::from(vec![View::new_inline(b"foo")]);
+
         assert!(PlBinaryViewArray::try_new(views.clone(), Buffer::new(), 3, None).is_err());
+        assert!(PlBinaryViewArray::try_new(views.clone(), Buffer::new(), 2, None).is_ok());
+
+        // A single view is a scalar array rather than a flat one, and is never inferred to be
+        // either.
+        assert!(PlBinaryViewArray::try_new(scalar(), Buffer::new(), 3, None).is_err());
+        assert!(PlBinaryViewArray::try_new_broadcast(scalar(), Buffer::new(), 3, None).is_ok());
+        assert!(PlBinaryViewArray::try_new_broadcast(views, Buffer::new(), 2, None).is_err());
+
+        // The mask follows the views.
         assert!(
             PlBinaryViewArray::try_new(
-                Buffer::from(vec![View::new_inline(b"foo")]),
+                Buffer::from(vec![View::new_inline(b"foo"); 3]),
                 Buffer::new(),
                 3,
-                Some(Bitmap::new_zeroed(2)),
+                Some(Bitmap::new_zeroed(1)),
             )
             .is_err()
         );
         assert!(
             PlBinaryViewArray::try_new(
-                Buffer::from(vec![View::new_inline(b"foo")]),
+                Buffer::from(vec![View::new_inline(b"foo"); 3]),
                 Buffer::new(),
                 3,
                 Some(Bitmap::new_zeroed(3)),
             )
             .is_ok()
         );
-        assert!(PlBinaryViewArray::try_new(views, Buffer::new(), 2, None).is_ok());
+        assert!(
+            PlBinaryViewArray::try_new_broadcast(
+                scalar(),
+                Buffer::new(),
+                3,
+                Some(Bitmap::new_zeroed(3)),
+            )
+            .is_err()
+        );
+        assert!(
+            PlBinaryViewArray::try_new_broadcast(
+                scalar(),
+                Buffer::new(),
+                3,
+                Some(Bitmap::new_zeroed(1)),
+            )
+            .is_ok()
+        );
     }
 
     #[test]

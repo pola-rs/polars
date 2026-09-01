@@ -4,7 +4,7 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
-use crate::broadcast::is_valid_buffer_len;
+use crate::broadcast::{is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len};
 
 mod builder;
 
@@ -55,32 +55,29 @@ pub struct PlStructArray {
 }
 
 impl PlStructArray {
-    /// Creates a [`PlStructArray`] out of its internal components.
+    /// Creates a flat [`PlStructArray`] out of its internal components.
     ///
-    /// This function is `O(num_fields)`.
+    /// The validity mask has to hold one bit per element. [`Self::try_new_broadcast`] is what
+    /// builds the scalar one; this function never infers it from a mask that happens to hold a
+    /// single bit. The fields are the same either way — a struct array never broadcasts them, and
+    /// a field that stands for one repeated value is a scalar array of `length` elements in its
+    /// own right. This function is `O(num_fields)`.
     ///
     /// # Errors
     /// This function errors if any field does not have exactly `length` elements, or if `validity`
-    /// is neither flat (length equal to `length`) nor scalar (length one).
+    /// does not hold exactly `length` bits.
     pub fn try_new(
         fields: Vec<Box<dyn PlArray>>,
         length: usize,
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
-        for (i, field) in fields.iter().enumerate() {
-            polars_ensure!(
-                field.len() == length,
-                ComputeError:
-                "field {} has {} elements, but the struct array has length {}",
-                i, field.len(), length,
-            );
-        }
+        validate_fields(&fields, length)?;
 
         if let Some(validity) = validity.as_ref() {
             polars_ensure!(
-                is_valid_buffer_len(validity.len(), length),
+                is_flat_buffer_len(validity.len(), length),
                 ComputeError:
-                "validity mask of length {} is neither flat nor scalar for an array of length {}",
+                "validity mask of length {} is not flat for an array of length {}",
                 validity.len(), length,
             );
         }
@@ -92,7 +89,7 @@ impl PlStructArray {
         })
     }
 
-    /// Creates a [`PlStructArray`] out of its internal components.
+    /// Creates a flat [`PlStructArray`] out of its internal components.
     ///
     /// # Panics
     /// Panics under the conditions [`Self::try_new`] errors.
@@ -101,11 +98,11 @@ impl PlStructArray {
         Self::try_new(fields, length, validity).unwrap()
     }
 
-    /// Creates a [`PlStructArray`] out of its internal components without validating them.
+    /// Creates a flat [`PlStructArray`] out of its internal components without validating them.
     ///
     /// # Safety
-    /// Every field must have exactly `length` elements, and `validity` must be either flat
-    /// (length equal to `length`) or scalar (length one).
+    /// Every field must have exactly `length` elements, and `validity` must hold exactly `length`
+    /// bits.
     #[inline]
     pub unsafe fn new_unchecked(
         fields: Vec<Box<dyn PlArray>>,
@@ -117,7 +114,83 @@ impl PlStructArray {
             assert!(
                 validity
                     .as_ref()
-                    .is_none_or(|v| is_valid_buffer_len(v.len(), length))
+                    .is_none_or(|v| is_flat_buffer_len(v.len(), length))
+            );
+        }
+
+        Self {
+            fields,
+            length,
+            validity,
+        }
+    }
+
+    /// Creates a [`PlStructArray`] out of its internal components and a scalar validity mask.
+    ///
+    /// The mask has to hold the single bit every element shares, which is what makes a struct
+    /// array of nothing but nulls `O(1)`. The fields are the same as [`Self::try_new`] asks for:
+    /// a struct array never broadcasts them, so this is the only backing buffer the two families
+    /// differ over. This function is `O(num_fields)`.
+    ///
+    /// # Errors
+    /// This function errors if any field does not have exactly `length` elements, or if `validity`
+    /// does not hold exactly one bit. An array of no elements reads no bit at all, so it
+    /// additionally admits an empty mask.
+    pub fn try_new_broadcast(
+        fields: Vec<Box<dyn PlArray>>,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> PolarsResult<Self> {
+        validate_fields(&fields, length)?;
+
+        if let Some(validity) = validity.as_ref() {
+            polars_ensure!(
+                is_scalar_buffer_len(validity.len(), length),
+                ComputeError:
+                "validity mask of length {} is not the single bit the {} elements of a broadcast \
+                 array share",
+                validity.len(), length,
+            );
+        }
+
+        Ok(Self {
+            fields,
+            length,
+            validity,
+        })
+    }
+
+    /// Creates a [`PlStructArray`] out of its internal components and a scalar validity mask.
+    ///
+    /// # Panics
+    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
+    #[inline]
+    pub fn new_broadcast(
+        fields: Vec<Box<dyn PlArray>>,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        Self::try_new_broadcast(fields, length, validity).unwrap()
+    }
+
+    /// Creates a [`PlStructArray`] out of its internal components and a scalar validity mask,
+    /// without validating them.
+    ///
+    /// # Safety
+    /// Every field must have exactly `length` elements, and `validity` must hold exactly one bit,
+    /// or none at all if `length` is zero.
+    #[inline]
+    pub unsafe fn new_broadcast_unchecked(
+        fields: Vec<Box<dyn PlArray>>,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        if cfg!(debug_assertions) {
+            assert!(fields.iter().all(|field| field.len() == length));
+            assert!(
+                validity
+                    .as_ref()
+                    .is_none_or(|v| is_scalar_buffer_len(v.len(), length))
             );
         }
 
@@ -163,7 +236,7 @@ impl PlStructArray {
     /// Panics if any field does not have exactly `length` elements.
     #[inline]
     pub fn new_full_null(fields: Vec<Box<dyn PlArray>>, length: usize) -> Self {
-        Self::new(fields, length, Some(Bitmap::new_zeroed(1)))
+        Self::new_broadcast(fields, length, Some(Bitmap::new_zeroed(1)))
     }
 
     /// The number of elements in this array.
@@ -424,7 +497,7 @@ impl PlStructArray {
 
         // SAFETY: every field repeated one element `length` times, so it holds `length` elements,
         // and the mask is a single bit and therefore scalar.
-        unsafe { Self::new_unchecked(fields, length, validity) }
+        unsafe { Self::new_broadcast_unchecked(fields, length, validity) }
     }
 }
 
@@ -550,6 +623,23 @@ impl PlArray for PlStructArray {
     }
 }
 
+/// Checks that every field of a struct array of `length` elements has that many elements itself.
+///
+/// This is the half of the validation that both families of constructors share: a struct array
+/// never broadcasts its fields, so only its validity mask tells the representations apart.
+fn validate_fields(fields: &[Box<dyn PlArray>], length: usize) -> PolarsResult<()> {
+    for (i, field) in fields.iter().enumerate() {
+        polars_ensure!(
+            field.len() == length,
+            ComputeError:
+            "field {} has {} elements, but the struct array has length {}",
+            i, field.len(), length,
+        );
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -653,9 +743,22 @@ mod tests {
     fn try_new_rejects_mismatched_lengths() {
         assert!(PlStructArray::try_new(flat_fields(), 2, None).is_err());
         assert!(PlStructArray::try_new(flat_fields(), 3, None).is_ok());
+
+        // The fields are the same either way: a struct array never broadcasts them.
+        assert!(PlStructArray::try_new_broadcast(flat_fields(), 2, None).is_err());
+        assert!(PlStructArray::try_new_broadcast(flat_fields(), 3, None).is_ok());
+
+        // Only the mask tells the two families apart.
         assert!(PlStructArray::try_new(flat_fields(), 3, Some(Bitmap::new_zeroed(2))).is_err());
-        assert!(PlStructArray::try_new(flat_fields(), 3, Some(Bitmap::new_zeroed(1))).is_ok());
+        assert!(PlStructArray::try_new(flat_fields(), 3, Some(Bitmap::new_zeroed(1))).is_err());
         assert!(PlStructArray::try_new(flat_fields(), 3, Some(Bitmap::new_zeroed(3))).is_ok());
+        assert!(
+            PlStructArray::try_new_broadcast(flat_fields(), 3, Some(Bitmap::new_zeroed(3)))
+                .is_err()
+        );
+        assert!(
+            PlStructArray::try_new_broadcast(flat_fields(), 3, Some(Bitmap::new_zeroed(1))).is_ok()
+        );
 
         let ragged = vec![
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])) as Box<dyn PlArray>,

@@ -7,7 +7,10 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
-use crate::broadcast::{assert_broadcastable, is_valid_buffer_len, is_valid_fixed_size_values_len};
+use crate::broadcast::{
+    assert_broadcastable, is_flat_buffer_len, is_flat_fixed_size_values_len, is_scalar_buffer_len,
+    is_scalar_fixed_size_values_len, is_valid_buffer_len,
+};
 use crate::flat::Flat;
 
 mod builder;
@@ -75,15 +78,16 @@ pub struct PlFixedSizeBinaryArray {
 }
 
 impl PlFixedSizeBinaryArray {
-    /// Creates a [`PlFixedSizeBinaryArray`] out of its internal components.
+    /// Creates a flat [`PlFixedSizeBinaryArray`] out of its internal components.
     ///
-    /// This function is `O(1)`: there is only the length of `values` to check against the width.
+    /// The values have to hold the bytes of every element, laid end to end, and the validity mask
+    /// one bit per element. [`Self::try_new_broadcast`] is what builds the scalar representation;
+    /// this function never infers it from a buffer that happens to be one element wide. This
+    /// function is `O(1)`: there is only the length of `values` to check against the width.
     ///
     /// # Errors
-    /// This function errors if `values` is neither flat (`length * width` bytes) nor scalar (the
-    /// `width` bytes of the one element every element covers, which an empty array has no element
-    /// to share), or if `validity` is neither flat (length equal to `length`) nor scalar (length
-    /// one).
+    /// This function errors if `values` does not hold exactly `length * width` bytes, or if
+    /// `validity` does not hold exactly `length` bits.
     pub fn try_new(
         values: Buffer<u8>,
         width: usize,
@@ -91,19 +95,18 @@ impl PlFixedSizeBinaryArray {
         validity: Option<Bitmap>,
     ) -> PolarsResult<Self> {
         polars_ensure!(
-            is_valid_fixed_size_values_len(values.len(), width, length),
+            is_flat_fixed_size_values_len(values.len(), width, length),
             ComputeError:
-            "values buffer of length {} is neither flat nor scalar for a fixed size binary array \
-             of length {} and width {}: it needs the width of every element laid end to end, or \
-             the width of the one element every element covers",
+            "values buffer of length {} is not flat for a fixed size binary array of length {} \
+             and width {}: it needs the width of every element laid end to end",
             values.len(), length, width,
         );
 
         if let Some(validity) = validity.as_ref() {
             polars_ensure!(
-                is_valid_buffer_len(validity.len(), length),
+                is_flat_buffer_len(validity.len(), length),
                 ComputeError:
-                "validity mask of length {} is neither flat nor scalar for an array of length {}",
+                "validity mask of length {} is not flat for an array of length {}",
                 validity.len(), length,
             );
         }
@@ -116,7 +119,7 @@ impl PlFixedSizeBinaryArray {
         })
     }
 
-    /// Creates a [`PlFixedSizeBinaryArray`] out of its internal components.
+    /// Creates a flat [`PlFixedSizeBinaryArray`] out of its internal components.
     ///
     /// # Panics
     /// Panics under the conditions [`Self::try_new`] errors.
@@ -125,15 +128,13 @@ impl PlFixedSizeBinaryArray {
         Self::try_new(values, width, length, validity).unwrap()
     }
 
-    /// Creates a [`PlFixedSizeBinaryArray`] out of its internal components without validating
+    /// Creates a flat [`PlFixedSizeBinaryArray`] out of its internal components without validating
     /// them.
     ///
     /// This function is `O(1)`.
     ///
     /// # Safety
-    /// `values` must be either flat (`length * width` bytes) or scalar (`width` bytes, of which
-    /// there is only an element to make sense when `length` is not zero); `validity` must be
-    /// either flat (length equal to `length`) or scalar (length one).
+    /// `values` must hold exactly `length * width` bytes, and `validity` exactly `length` bits.
     #[inline]
     pub unsafe fn new_unchecked(
         values: Buffer<u8>,
@@ -142,11 +143,101 @@ impl PlFixedSizeBinaryArray {
         validity: Option<Bitmap>,
     ) -> Self {
         if cfg!(debug_assertions) {
-            assert!(is_valid_fixed_size_values_len(values.len(), width, length));
+            assert!(is_flat_fixed_size_values_len(values.len(), width, length));
             assert!(
                 validity
                     .as_ref()
-                    .is_none_or(|v| is_valid_buffer_len(v.len(), length))
+                    .is_none_or(|v| is_flat_buffer_len(v.len(), length))
+            );
+        }
+
+        Self {
+            values,
+            width,
+            length,
+            validity,
+        }
+    }
+
+    /// Creates a scalar [`PlFixedSizeBinaryArray`] of `length` elements out of its internal
+    /// components.
+    ///
+    /// The values have to hold the `width` bytes of the one element every element covers, and the
+    /// validity mask the single bit they share, which makes this `O(1)` in `length` as well as in
+    /// time. [`Self::try_new`] is what builds the flat representation.
+    ///
+    /// # Errors
+    /// This function errors if `values` does not hold exactly `width` bytes, or if `validity` does
+    /// not hold exactly one bit. An empty array has no element for the values to stand for, so it
+    /// admits only empty values, and an empty mask alongside the single bit.
+    pub fn try_new_broadcast(
+        values: Buffer<u8>,
+        width: usize,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> PolarsResult<Self> {
+        polars_ensure!(
+            is_scalar_fixed_size_values_len(values.len(), width, length),
+            ComputeError:
+            "values buffer of length {} is not the one element the {} elements of a broadcast \
+             fixed size binary array of width {} cover",
+            values.len(), length, width,
+        );
+
+        if let Some(validity) = validity.as_ref() {
+            polars_ensure!(
+                is_scalar_buffer_len(validity.len(), length),
+                ComputeError:
+                "validity mask of length {} is not the single bit the {} elements of a broadcast \
+                 array share",
+                validity.len(), length,
+            );
+        }
+
+        Ok(Self {
+            values,
+            width,
+            length,
+            validity,
+        })
+    }
+
+    /// Creates a scalar [`PlFixedSizeBinaryArray`] of `length` elements out of its internal
+    /// components.
+    ///
+    /// # Panics
+    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
+    #[inline]
+    pub fn new_broadcast(
+        values: Buffer<u8>,
+        width: usize,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        Self::try_new_broadcast(values, width, length, validity).unwrap()
+    }
+
+    /// Creates a scalar [`PlFixedSizeBinaryArray`] of `length` elements out of its internal
+    /// components without validating them.
+    ///
+    /// This function is `O(1)`.
+    ///
+    /// # Safety
+    /// `values` must hold exactly `width` bytes — or none at all, if `length` is zero — and
+    /// `validity` exactly one bit, or none at all if `length` is zero.
+    #[inline]
+    pub unsafe fn new_broadcast_unchecked(
+        values: Buffer<u8>,
+        width: usize,
+        length: usize,
+        validity: Option<Bitmap>,
+    ) -> Self {
+        if cfg!(debug_assertions) {
+            assert!(is_scalar_fixed_size_values_len(values.len(), width, length));
+            assert!(
+                validity
+                    .as_ref()
+                    .is_none_or(|v| is_scalar_buffer_len(v.len(), length))
             );
         }
 
@@ -1094,30 +1185,50 @@ mod tests {
     }
 
     #[test]
-    fn try_new_rejects_invalid_components() {
-        // The values must hold the width of every element, or the width of the one element they
-        // all cover.
+    fn try_new_requires_flat_values() {
+        // The values must hold the width of every element, laid end to end.
         assert!(PlFixedSizeBinaryArray::try_new(values(), 2, 4, None).is_err());
         assert!(PlFixedSizeBinaryArray::try_new(values(), 2, 3, None).is_ok());
         assert!(PlFixedSizeBinaryArray::try_new(values(), 6, 1, None).is_ok());
-        assert!(PlFixedSizeBinaryArray::try_new(values(), 6, 1_000_000, None).is_ok());
-
-        // An empty array has no element for scalar values to stand for.
-        assert!(PlFixedSizeBinaryArray::try_new(values(), 6, 0, None).is_err());
         assert!(PlFixedSizeBinaryArray::try_new(Buffer::new(), 6, 0, None).is_ok());
+
+        // The width of one element is a scalar array rather than a flat one, and is never inferred
+        // to be either.
+        assert!(PlFixedSizeBinaryArray::try_new(values(), 6, 1_000_000, None).is_err());
 
         // A width that does not divide the values is one no number of elements adds up to.
         assert!(PlFixedSizeBinaryArray::try_new(values(), 4, 1, None).is_err());
 
-        // The validity mask must be flat or scalar.
+        // The validity mask has to be flat as well.
         assert!(
             PlFixedSizeBinaryArray::try_new(values(), 2, 3, Some(Bitmap::new_zeroed(2))).is_err()
         );
         assert!(
-            PlFixedSizeBinaryArray::try_new(values(), 2, 3, Some(Bitmap::new_zeroed(1))).is_ok()
+            PlFixedSizeBinaryArray::try_new(values(), 2, 3, Some(Bitmap::new_zeroed(1))).is_err()
         );
         assert!(
             PlFixedSizeBinaryArray::try_new(values(), 2, 3, Some(Bitmap::new_zeroed(3))).is_ok()
+        );
+    }
+
+    #[test]
+    fn try_new_broadcast_requires_scalar_values() {
+        // The values must hold the one element every element covers.
+        assert!(PlFixedSizeBinaryArray::try_new_broadcast(values(), 6, 1_000_000, None).is_ok());
+        assert!(PlFixedSizeBinaryArray::try_new_broadcast(values(), 2, 3, None).is_err());
+
+        // An empty array has no element for scalar values to stand for.
+        assert!(PlFixedSizeBinaryArray::try_new_broadcast(values(), 6, 0, None).is_err());
+        assert!(PlFixedSizeBinaryArray::try_new_broadcast(Buffer::new(), 6, 0, None).is_ok());
+
+        // The validity mask has to be scalar as well.
+        assert!(
+            PlFixedSizeBinaryArray::try_new_broadcast(values(), 6, 3, Some(Bitmap::new_zeroed(3)))
+                .is_err()
+        );
+        assert!(
+            PlFixedSizeBinaryArray::try_new_broadcast(values(), 6, 3, Some(Bitmap::new_zeroed(1)))
+                .is_ok()
         );
     }
 
