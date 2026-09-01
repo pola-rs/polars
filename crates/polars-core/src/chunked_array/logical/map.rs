@@ -171,12 +171,19 @@ impl MapChunked {
 
         let dtype = DataType::Map(Box::new(to_key.clone()), Box::new(to_value.clone()));
         let storage = try_apply_map_entries(self.storage.list().unwrap(), |key, value| {
+            // `Series::cast_with_options` only short-circuits an identity cast for
+            // primitives, so a nested key or value would be rebuilt for nothing.
             let key = if cast_key {
                 key.cast_with_options(to_key, options)?
             } else {
                 key.clone()
             };
-            Ok((key, value.cast_with_options(to_value, options)?))
+            let value = if value.dtype() == to_value {
+                value.clone()
+            } else {
+                value.cast_with_options(to_value, options)?
+            };
+            Ok((key, value))
         })?
         .into_series();
 
