@@ -682,6 +682,18 @@ impl DataType {
         }
     }
 
+    /// Check if this [`DataType`] is a map
+    pub fn is_map(&self) -> bool {
+        #[cfg(feature = "dtype-map")]
+        {
+            matches!(self, DataType::Map(_, _))
+        }
+        #[cfg(not(feature = "dtype-map"))]
+        {
+            false
+        }
+    }
+
     pub fn is_binary(&self) -> bool {
         matches!(self, DataType::Binary)
     }
@@ -998,6 +1010,7 @@ impl DataType {
     #[cfg(feature = "dtype-map")]
     fn map_from_key_value(key: &DataType, value: &DataType) -> PolarsResult<DataType> {
         key.ensure_valid_map_key()?;
+        value.ensure_valid_map_value()?;
         Ok(DataType::Map(
             Box::new(key.clone()),
             Box::new(value.clone()),
@@ -1060,6 +1073,33 @@ impl DataType {
         );
 
         Ok(())
+    }
+
+    /// Whether this dtype may be used as the value dtype of a `Map`.
+    #[cfg(feature = "dtype-map")]
+    pub fn is_valid_map_value(&self) -> bool {
+        self.ensure_valid_map_value().is_ok()
+    }
+
+    #[cfg(feature = "dtype-map")]
+    pub fn ensure_valid_map_value(&self) -> PolarsResult<()> {
+        // Map values are a `Struct` field, and a struct cannot hold objects.
+        polars_ensure!(
+            !self.contains_objects(),
+            InvalidOperation: "`{self}` cannot be used as a Map value dtype: objects cannot be nested"
+        );
+
+        Ok(())
+    }
+
+    /// Validate the key and value dtypes of a `Map`. Errors for any other dtype.
+    #[cfg(feature = "dtype-map")]
+    pub fn ensure_valid_map_dtype(&self) -> PolarsResult<()> {
+        let DataType::Map(key, value) = self else {
+            polars_bail!(InvalidOperation: "`{self}` is not a Map dtype");
+        };
+        key.ensure_valid_map_key()?;
+        value.ensure_valid_map_value()
     }
 
     pub fn is_extension(&self) -> bool {

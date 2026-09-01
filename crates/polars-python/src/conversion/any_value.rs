@@ -13,12 +13,12 @@ use polars::chunked_array::object::PolarsObjectSafe;
 use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, TimeUnit};
 use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
-#[cfg(feature = "dtype-map")]
 use polars_compute::decimal::{DEC128_MAX_PREC, DecimalFmtBuffer, dec128_fits};
-#[cfg(feature = "dtype-map")]
 use polars_core::prelude::try_unpack_map_entries;
+#[cfg(feature = "dtype-map")]
 use polars_core::scalar::Scalar;
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
+#[cfg(feature = "dtype-map")]
 use polars_core::utils::arrow::array::{MAP_KEY_NAME, MAP_VALUE_NAME};
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use polars_utils::aliases::PlFixedStateQuality;
@@ -282,6 +282,7 @@ fn map_dict<'py>(py: Python<'py>, entries: &Series) -> PyResult<Bound<'py, PyDic
 /// Convert a Python object to an [`AnyValue`].
 ///
 /// When known, `dtype` disambiguates Map dictionaries and containers holding nested Maps.
+#[cfg_attr(not(feature = "dtype-map"), expect(unused_variables))]
 pub(crate) fn py_object_to_any_value(
     ob: &Bound<'_, PyAny>,
     strict: bool,

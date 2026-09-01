@@ -1125,7 +1125,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Extension(_) => {
                     return Err(PyNotImplementedError::new_err("extension expr"));
                 },
-                #[cfg(feature = "dtype-map")]
                 IRFunctionExpr::MapExpr(f) => {
                     return Err(PyNotImplementedError::new_err(format!("{f}")));
                 },
@@ -1205,7 +1204,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         names.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     )
                         .into_py_any(py),
-                    #[cfg(feature = "dtype-map")]
                     IRListFunction::ToMap => {
                         return Err(PyNotImplementedError::new_err(format!("{listfun}")));
                     },

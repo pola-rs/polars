@@ -23,18 +23,15 @@ impl MapChunked {
     pub unsafe fn from_storage_unchecked(dtype: DataType, storage: Series) -> Self {
         debug_assert_eq!(dtype.map_storage_dtype().as_ref(), Some(storage.dtype()));
         debug_assert!(
-            matches!(&dtype, DataType::Map(key, _) if key.is_valid_map_key()),
-            "invalid Map key dtype: {dtype}"
+            dtype.ensure_valid_map_dtype().is_ok(),
+            "invalid Map dtype: {dtype}"
         );
         Self { dtype, storage }
     }
 
     /// Validate map storage and canonicalize duplicate keys.
     pub fn try_from_storage(dtype: DataType, storage: Series) -> PolarsResult<Self> {
-        let DataType::Map(key, _) = &dtype else {
-            polars_bail!(InvalidOperation: "`{dtype}` is not a Map dtype");
-        };
-        key.ensure_valid_map_key()?;
+        dtype.ensure_valid_map_dtype()?;
 
         let storage_dtype = dtype.map_storage_dtype().unwrap();
         polars_ensure!(
@@ -174,6 +171,7 @@ impl MapChunked {
             })?;
 
         let dtype = DataType::Map(Box::new(to_key.clone()), Box::new(to_value.clone()));
+        dtype.ensure_valid_map_dtype()?;
         let storage = try_apply_map_entries(self.storage.list().unwrap(), |key, value| {
             // `Series::cast_with_options` only short-circuits an identity cast for
             // primitives, so a nested key or value would be rebuilt for nothing.

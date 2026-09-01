@@ -171,6 +171,7 @@ class Expr(metaclass=_Meta):
         "dt",
         "ext",
         "list",
+        "map",
         "meta",
         "name",
         "str",

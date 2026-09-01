@@ -1391,7 +1391,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
 
         The input must be a `List` of `Struct` with exactly two fields named `key`
         and `value`. Keys must not be null; duplicate keys within a row are resolved
-        in favour of the last entry.
+        by keeping the first position and the last value.
 
         The inverse of :meth:`Expr.map.entries`.
 

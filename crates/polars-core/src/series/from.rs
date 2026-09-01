@@ -651,8 +651,6 @@ fn convert<F: Fn(&dyn Array) -> ArrayRef>(arr: &[ArrayRef], f: F) -> Vec<ArrayRe
     arr.iter().map(|arr| f(&**arr)).collect()
 }
 
-/// Converts to physical types and bubbles up the correct [`DataType`].
-#[allow(clippy::only_used_in_recursion)]
 /// Normalize the field names of one chunk of map entries. Only the names change, so the
 /// buffers stay valid.
 #[cfg(feature = "dtype-map")]
@@ -667,6 +665,8 @@ fn rename_map_entries(entries: &mut ArrayRef) {
     value.name = MAP_VALUE_NAME;
 }
 
+/// Converts to physical types and bubbles up the correct [`DataType`].
+#[allow(clippy::only_used_in_recursion)]
 unsafe fn to_physical_and_dtype(
     arrays: Vec<ArrayRef>,
     md: Option<&Metadata>,

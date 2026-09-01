@@ -94,9 +94,7 @@ impl Series {
                 builder.to_series()
             },
             #[cfg(feature = "dtype-map")]
-            DataType::Map(key, _) => {
-                // No other way to return an error, so we panic
-                key.ensure_valid_map_key().unwrap_or_else(|e| panic!("{e}"));
+            DataType::Map(_, _) => {
                 let storage = Series::full_null(name, size, &dtype.map_storage_dtype().unwrap());
                 unsafe { MapChunked::from_storage_unchecked(dtype.clone(), storage) }.into_series()
             },

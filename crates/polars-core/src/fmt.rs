@@ -1271,7 +1271,6 @@ impl Display for PlTzAware<'_> {
     }
 }
 
-#[cfg(feature = "dtype-struct")]
 /// Renders a map row as `{"a": 1, "b": 2}`
 #[cfg(feature = "dtype-map")]
 fn fmt_map(f: &mut Formatter<'_>, entries: &Series) -> fmt::Result {
@@ -1299,6 +1298,7 @@ fn fmt_map(f: &mut Formatter<'_>, entries: &Series) -> fmt::Result {
     write!(f, "}}")
 }
 
+#[cfg(feature = "dtype-struct")]
 fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
     write!(f, "{{")?;
     if !vals.is_empty() {

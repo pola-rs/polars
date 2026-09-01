@@ -444,7 +444,13 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                     "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "Struct" => DataType::Struct(vec![]),
                     #[cfg(feature = "dtype-map")]
-                    "Map" => DataType::Map(Box::new(DataType::Null), Box::new(DataType::Null)),
+                    "Map" => {
+                        // `Map(Null, _)` is not a valid dtype, so there is no bare
+                        // stand-in the way `List` has `List(Null)`.
+                        return Err(PyTypeError::new_err(
+                            "Map requires a key and a value type, e.g. `pl.Map(pl.String, pl.Int64)`",
+                        ));
+                    },
                     "Null" => DataType::Null,
                     #[cfg(feature = "object")]
                     "Object" => DataType::Object(OBJECT_NAME),
@@ -534,8 +540,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
                 let value = ob.getattr(intern!(py, "value"))?;
                 let key = key.extract::<Wrap<DataType>>()?;
                 let value = value.extract::<Wrap<DataType>>()?;
-                key.0.ensure_valid_map_key().map_err(PyPolarsErr::from)?;
-                DataType::Map(Box::new(key.0), Box::new(value.0))
+                let dtype = DataType::Map(Box::new(key.0), Box::new(value.0));
+                dtype.ensure_valid_map_dtype().map_err(PyPolarsErr::from)?;
+                dtype
             },
             "Struct" => {
                 let fields = ob.getattr(intern!(py, "fields"))?;

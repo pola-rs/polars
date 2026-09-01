@@ -284,6 +284,7 @@ class Series(metaclass=_Meta):
         "dt",
         "ext",
         "list",
+        "map",
         "plot",
         "str",
         "struct",
