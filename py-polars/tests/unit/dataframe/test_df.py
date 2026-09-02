@@ -3331,6 +3331,28 @@ def test_with_columns_dict_unpacking() -> None:
     assert df.equals(expected)
 
 
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda df: df.select([pl.col("a")], [pl.col("a") * 2]),
+        lambda df: df.select(pl.col("a"), [pl.col("a") * 2]),
+        lambda df: df.with_columns([pl.col("a")], [pl.col("a") * 2]),
+        lambda df: df.group_by("a").agg([pl.len()], [pl.col("a").sum()]),
+    ],
+)
+def test_iterable_positional_argument_must_be_sole(
+    call: Any,
+) -> None:
+    # An iterable of expressions may only be passed as the single positional
+    # argument; combining it with other positional arguments is ambiguous and
+    # used to raise a confusing engine error. Refs: #28807
+    df = pl.DataFrame({"a": [1, 2]})
+    with pytest.raises(
+        TypeError, match="Only a single iterable can be passed as a positional argument"
+    ):
+        call(df)
+
+
 def test_with_columns_generator_alias() -> None:
     data = {"a": pl.col("a") * 2}
     df = pl.select(a=1).with_columns(expr.alias(name) for name, expr in data.items())
