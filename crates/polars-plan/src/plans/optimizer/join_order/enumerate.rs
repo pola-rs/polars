@@ -6,7 +6,7 @@
 use polars_utils::pl_str::PlSmallStr;
 
 use super::cluster::Cluster;
-use crate::plans::{join_cardinality, key_domain};
+use crate::plans::{composite_key_domain, join_cardinality, key_domain};
 
 /// Greedy left-deep ordering of a cluster's leaves.
 ///
@@ -93,7 +93,14 @@ fn key_domain_product(cluster: &Cluster, is_placed: &[bool], candidate: usize) -
         }
     }
 
-    (!per_key.is_empty()).then(|| per_key.iter().map(|(_, domain)| domain).product())
+    // The largest relation the composite key is read from, which bounds the product.
+    let max_rows = cluster
+        .bridging(is_placed, candidate)
+        .map(|bridge| cluster.leaves[bridge.placed_leaf].stats.unfiltered)
+        .fold(cluster.leaves[candidate].stats.unfiltered, f64::max);
+
+    (!per_key.is_empty())
+        .then(|| composite_key_domain(per_key.iter().map(|(_, domain)| *domain), max_rows))
 }
 
 #[cfg(test)]
@@ -160,6 +167,7 @@ mod tests {
             leaves,
             edges,
             output_schema: Schema::default().into(),
+            restore: Vec::new(),
             options: dummy_options(),
         };
 
