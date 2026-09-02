@@ -21,6 +21,7 @@
 
 pub mod array;
 pub mod array_type;
+pub mod arrow;
 pub mod binary;
 pub mod binview;
 pub mod bitmap;

@@ -1,0 +1,9 @@
+//! Conversion between the arrays of this crate and the Arrow arrays of `polars-arrow`.
+//!
+//! The two lay their elements out the same way and are built on the same
+//! [`Buffer`](polars_buffer::Buffer) and [`Bitmap`](arrow::bitmap::Bitmap), so a conversion is a
+//! matter of handing the backing buffers over rather than of copying the elements. What does not
+//! carry over is the logical type: an Arrow array names one and the arrays of this crate do not,
+//! so importing drops it — see [`import`].
+
+pub mod import;
