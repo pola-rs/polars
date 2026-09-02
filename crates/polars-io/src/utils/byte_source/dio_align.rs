@@ -10,18 +10,30 @@
 //!  2. `/sys/dev/block/<major>:<minor>/queue/logical_block_size` - the device
 //!     sector size. Right for most filesystems, but misses cases where the
 //!     filesystem imposes something stricter.
-//!  3. `FALLBACK_ALIGN` - a safe over-alignment when nothing else is known.
+//!
+//! When neither can answer, the alignment stays unknown and the caller reads
+//! through the page cache.
 
+#[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
 
-/// Used only when the alignment is *unknown*.
+/// Substituted for a reported value that cannot be an alignment.
+#[cfg(target_os = "linux")]
 const FALLBACK_ALIGN: usize = 4096;
+
+/// Floor for the buffer alignment, applied even when the kernel reports less.
+///
+/// `statx` can report a memory alignment below the sector size (ext4 reports 4),
+/// and the other two probes infer the alignment rather than being told it.
+#[cfg(target_os = "linux")]
+const MIN_MEM_ALIGN: usize = 512;
 
 #[derive(Debug, Clone, Copy)]
 pub struct DioAlign {
     /// Alignment required for the file offset and the transfer length.
     pub offset: usize,
     /// Alignment required for the buffer address.
+    /// Invariant: no less than `MIN_MEM_ALIGN`.
     pub memory: usize,
 }
 
@@ -62,22 +74,10 @@ impl DioAlign {
     pub fn probe(file: &std::fs::File) -> Option<Self> {
         match statx_dioalign(file) {
             StatxAlign::Unsupported => None,
-            StatxAlign::Known(a) => Some(Self {
-                offset: normalize(a.offset),
-                memory: normalize(a.memory),
-            }),
-            // statx could not tell us; fall back to the device sector size,
-            // then to a safe over-alignment.
-            StatxAlign::Unknown => Some(match sysfs_logical_block_size(file) {
-                Some(a) => Self {
-                    offset: normalize(a.offset),
-                    memory: normalize(a.memory),
-                },
-                None => Self {
-                    offset: FALLBACK_ALIGN,
-                    memory: FALLBACK_ALIGN,
-                },
-            }),
+            StatxAlign::Known(a) => Some(Self::new(a.offset, a.memory)),
+            StatxAlign::Unknown => {
+                sysfs_logical_block_size(file).map(|a| Self::new(a.offset, a.memory))
+            },
         }
     }
 
@@ -85,8 +85,18 @@ impl DioAlign {
     pub fn probe(_file: &std::fs::File) -> Option<Self> {
         None
     }
+
+    /// Satisfy type invariants.
+    #[cfg(target_os = "linux")]
+    fn new(offset: usize, memory: usize) -> Self {
+        Self {
+            offset: normalize(offset),
+            memory: normalize(memory).max(MIN_MEM_ALIGN),
+        }
+    }
 }
 
+#[cfg(target_os = "linux")]
 fn normalize(v: usize) -> usize {
     if v == 0 || !v.is_power_of_two() {
         FALLBACK_ALIGN

@@ -143,8 +143,11 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                 DynByteSourceBuilder::Mmap
             } else {
                 let read_context = self.file_read_context.get_or_init(|| {
-                    let enable_o_direct = polars_config::config().direct_io();
-                    let concurrency = polars_config::config().file_read_concurrency() as usize;
+                    let cfg = polars_config::config();
+                    let enable_o_direct = cfg.direct_io();
+                    // Zero leaves the semaphore permanently empty and makes
+                    // `buffer_unordered` unbounded, hanging the scan.
+                    let concurrency = cfg.file_read_concurrency().max(1) as usize;
 
                     if config::verbose() {
                         eprintln!(

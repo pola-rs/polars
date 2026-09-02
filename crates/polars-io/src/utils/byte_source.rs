@@ -9,6 +9,7 @@ use dio_align::DioAlign;
 use futures::{StreamExt, TryStreamExt};
 use polars_buffer::Buffer;
 use polars_core::prelude::PlHashMap;
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, feature_gated, polars_err};
 use polars_utils::aliases::InitHashMaps;
 use polars_utils::io::_limit_path_len_io_err;
@@ -24,7 +25,6 @@ use crate::cloud::{
 };
 use crate::metrics::{IOMetrics, OptIOMetrics};
 
-#[cfg(target_os = "linux")]
 pub mod dio_align;
 #[cfg(target_os = "linux")]
 mod direct_io;
@@ -187,8 +187,53 @@ fn pread_exact(file: &std::fs::File, buf: &mut [u8], offset: u64) -> std::io::Re
     Ok(())
 }
 
+fn read_buffered(file: &std::fs::File, offset: u64, len: usize) -> PolarsResult<Buffer<u8>> {
+    let mut buf = vec![0u8; len];
+    pread_exact(file, &mut buf, offset)?;
+    Ok(Buffer::from(buf))
+}
+
+/// Read `len` bytes at `offset`, through direct I/O when `align` says the file
+/// supports it and through the page cache otherwise.
+#[cfg(target_os = "linux")]
+fn read_at(
+    file: &std::fs::File,
+    align: Option<DioAlign>,
+    offset: u64,
+    len: usize,
+    size: u64,
+) -> PolarsResult<Buffer<u8>> {
+    match align {
+        Some(align) => direct_io::read_aligned(file, align, offset, len, size),
+        None => read_buffered(file, offset, len),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn read_at(
+    file: &std::fs::File,
+    _align: Option<DioAlign>,
+    offset: u64,
+    len: usize,
+    _size: u64,
+) -> PolarsResult<Buffer<u8>> {
+    read_buffered(file, offset, len)
+}
+
 impl FileByteSource {
     async fn try_new_from_path(
+        path: PlRefPath,
+        read_context: FileReadContext,
+        io_metrics: Option<Arc<IOMetrics>>,
+    ) -> PolarsResult<Self> {
+        // The open path is `open`, `fcntl`, `statx` and `fstat` - all blocking.
+        ASYNC
+            .spawn_blocking(move || Self::open_blocking(path, read_context, io_metrics))
+            .await
+            .expect("blocking task panicked")
+    }
+
+    fn open_blocking(
         path: PlRefPath,
         read_context: FileReadContext,
         io_metrics: Option<Arc<IOMetrics>>,
@@ -199,7 +244,11 @@ impl FileByteSource {
         let file = {
             #[cfg(target_os = "linux")]
             let f = if enable_o_direct {
-                direct_io::open_o_direct(path)
+                direct_io::open_o_direct(path).or_else(|e| match e.raw_os_error() {
+                    // The filesystem does not support O_DIRECT.
+                    Some(libc::EINVAL) => std::fs::File::open(path),
+                    _ => Err(e),
+                })
             } else {
                 std::fs::File::open(path)
             };
@@ -212,11 +261,8 @@ impl FileByteSource {
         let file = Arc::new(file);
 
         #[cfg(target_os = "linux")]
-        let o_direct_align = if enable_o_direct {
-            direct_io::probe_fd(&file)
-        } else {
-            None
-        };
+        let o_direct_align =
+            direct_io::probe_or_disable(&file).map_err(|e| _limit_path_len_io_err(path, e))?;
 
         #[cfg(not(target_os = "linux"))]
         let o_direct_align = None;
@@ -273,13 +319,7 @@ impl FileByteSource {
         let size = file.metadata()?.len();
 
         #[cfg(target_os = "linux")]
-        let o_direct_align = {
-            let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
-            // Explicitly check it is enabled.
-            (flags >= 0 && (flags & libc::O_DIRECT) != 0)
-                .then(|| DioAlign::probe(&file))
-                .flatten()
-        };
+        let o_direct_align = direct_io::probe_or_disable(&file)?;
 
         #[cfg(not(target_os = "linux"))]
         let o_direct_align = None;
@@ -342,16 +382,9 @@ impl ByteSource for FileByteSource {
 
         self.io_metrics()
             .record_io_read(len as u64, async move {
-                tokio::task::spawn_blocking(move || -> PolarsResult<Buffer<u8>> {
-                    #[cfg(target_os = "linux")]
-                    if let Some(align) = o_direct {
-                        return direct_io::read_aligned(&file, align, offset, len, size);
-                    }
-                    let mut buf = vec![0u8; len];
-                    pread_exact(&file, &mut buf, offset)?;
-                    Ok(Buffer::from(buf))
-                })
-                .await
+                ASYNC
+                    .spawn_blocking(move || read_at(&file, o_direct, offset, len, size))
+                    .await
             })
             .await
             .expect("blocking task panicked")
@@ -372,8 +405,9 @@ impl ByteSource for FileByteSource {
 
         let mut spans: Vec<Range<usize>> = Vec::with_capacity(ranges.len());
 
-        // Note: threshold for coalescing; individual ranges may exceed MAX_SPAN.
+        // Threshold for coalescing. Note, individual ranges may exceed MAX_SPAN.
         const MAX_SPAN: usize = 8 << 20;
+        // Tolerate small gaps.
         let max_gap = self.o_direct_align.map_or(4096, |a| a.offset);
 
         for r in ranges.iter() {
@@ -403,6 +437,13 @@ impl ByteSource for FileByteSource {
 
         let mut out = PlHashMap::with_capacity(ranges.len());
         for r in ranges.iter() {
+            // A column chunk may declare a zero length, and an empty range at
+            // the end of its span matches no span in the search below.
+            if r.is_empty() {
+                out.insert(r.start, Buffer::new());
+                continue;
+            }
+
             let idx = fetched
                 .binary_search_by(|(s, _)| {
                     if s.end <= r.start {
