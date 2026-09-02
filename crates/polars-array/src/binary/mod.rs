@@ -462,7 +462,7 @@ impl PlBinaryArray {
         // SAFETY: the mask is flat or scalar for `self.length`, upheld by every constructor.
         self.validity
             .as_ref()
-            .map(|validity| unsafe { PlBitmapRef::new_unchecked(validity, self.length) })
+            .map(|validity| unsafe { PlBitmapRef::new_broadcast_unchecked(validity, self.length) })
     }
 
     /// Whether the offsets hold the single range every element covers, so that every element is

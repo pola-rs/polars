@@ -73,7 +73,7 @@ impl PlNullArray {
     /// The validity mask, which masks out every element.
     #[inline]
     pub fn validity(&self) -> PlBitmapRef<'static> {
-        return unsafe { PlBitmapRef::new_unchecked(&SCALAR, self.length) };
+        return unsafe { PlBitmapRef::new_broadcast_unchecked(&SCALAR, self.length) };
         static SCALAR: LazyLock<Bitmap> = LazyLock::new(|| Bitmap::new_zeroed(1));
     }
 

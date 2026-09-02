@@ -1,7 +1,7 @@
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_ensure};
 
-use crate::broadcast::is_valid_buffer_len;
+use crate::broadcast::{is_flat_buffer_len, is_valid_buffer_len};
 
 mod iterator;
 mod reference;
@@ -48,14 +48,57 @@ pub struct PlBitmap {
 }
 
 impl PlBitmap {
-    /// Creates a [`PlBitmap`] of `length` bits backed by `bitmap`.
+    /// Creates a flat [`PlBitmap`] of `length` bits backed by `bitmap`.
+    ///
+    /// This function is `O(1)`.
+    ///
+    /// # Errors
+    /// This function errors unless `bitmap` holds one bit per element.
+    /// [`Self::try_new_broadcast`] is what wraps the single bit every element shares; this
+    /// function never infers that from a bitmap that happens to hold one bit.
+    pub fn try_new(bitmap: Bitmap, length: usize) -> PolarsResult<Self> {
+        polars_ensure!(
+            is_flat_buffer_len(bitmap.len(), length),
+            ComputeError:
+            "bitmap of length {} is not flat for a mask of length {}",
+            bitmap.len(), length,
+        );
+
+        Ok(Self { bitmap, length })
+    }
+
+    /// Creates a flat [`PlBitmap`] of `length` bits backed by `bitmap`.
+    ///
+    /// # Panics
+    /// Panics under the conditions [`Self::try_new`] errors.
+    #[inline]
+    pub fn new(bitmap: Bitmap, length: usize) -> Self {
+        Self::try_new(bitmap, length).unwrap()
+    }
+
+    /// Creates a flat [`PlBitmap`] of `length` bits backed by `bitmap`, without validating it.
+    ///
+    /// # Safety
+    /// `bitmap` must hold one bit per element, i.e. have `length` bits. [`Self::new_broadcast`]
+    /// and its companions are what admit the single bit every element shares.
+    #[inline]
+    pub unsafe fn new_unchecked(bitmap: Bitmap, length: usize) -> Self {
+        debug_assert!(is_flat_buffer_len(bitmap.len(), length));
+        Self { bitmap, length }
+    }
+
+    /// Creates a [`PlBitmap`] of `length` bits backed by a `bitmap` that broadcasts over them.
+    ///
+    /// This is [`Self::try_new`] widened to the scalar representation: `bitmap` is either flat —
+    /// one bit per element — or the single bit every element shares, which is what
+    /// [`Self::into_flat_or_scalar`] hands back. See [`crate::broadcast`].
     ///
     /// This function is `O(1)`.
     ///
     /// # Errors
     /// This function errors if `bitmap` is neither flat (length equal to `length`) nor scalar
     /// (length one).
-    pub fn try_new(bitmap: Bitmap, length: usize) -> PolarsResult<Self> {
+    pub fn try_new_broadcast(bitmap: Bitmap, length: usize) -> PolarsResult<Self> {
         polars_ensure!(
             is_valid_buffer_len(bitmap.len(), length),
             ComputeError:
@@ -66,21 +109,22 @@ impl PlBitmap {
         Ok(Self { bitmap, length })
     }
 
-    /// Creates a [`PlBitmap`] of `length` bits backed by `bitmap`.
+    /// Creates a [`PlBitmap`] of `length` bits backed by a `bitmap` that broadcasts over them.
     ///
     /// # Panics
-    /// Panics under the conditions [`Self::try_new`] errors.
+    /// Panics under the conditions [`Self::try_new_broadcast`] errors.
     #[inline]
-    pub fn new(bitmap: Bitmap, length: usize) -> Self {
-        Self::try_new(bitmap, length).unwrap()
+    pub fn new_broadcast(bitmap: Bitmap, length: usize) -> Self {
+        Self::try_new_broadcast(bitmap, length).unwrap()
     }
 
-    /// Creates a [`PlBitmap`] of `length` bits backed by `bitmap`, without validating it.
+    /// Creates a [`PlBitmap`] of `length` bits backed by a `bitmap` that broadcasts over them,
+    /// without validating it.
     ///
     /// # Safety
     /// `bitmap` must be either flat (length equal to `length`) or scalar (length one).
     #[inline]
-    pub unsafe fn new_unchecked(bitmap: Bitmap, length: usize) -> Self {
+    pub unsafe fn new_broadcast_unchecked(bitmap: Bitmap, length: usize) -> Self {
         debug_assert!(is_valid_buffer_len(bitmap.len(), length));
         Self { bitmap, length }
     }
@@ -137,7 +181,7 @@ impl PlBitmap {
     #[inline]
     pub fn as_ref(&self) -> PlBitmapRef<'_> {
         // SAFETY: the bitmap is flat or scalar for `self.length`, upheld by every constructor.
-        unsafe { PlBitmapRef::new_unchecked(&self.bitmap, self.length) }
+        unsafe { PlBitmapRef::new_broadcast_unchecked(&self.bitmap, self.length) }
     }
 
     /// Returns the backing bitmap and the logical length of this mask.
@@ -334,7 +378,7 @@ impl From<PlBitmapRef<'_>> for PlBitmap {
     fn from(mask: PlBitmapRef<'_>) -> Self {
         let (bitmap, length) = mask.into_inner();
         // SAFETY: a `PlBitmapRef` upholds the same invariant.
-        unsafe { Self::new_unchecked(bitmap.clone(), length) }
+        unsafe { Self::new_broadcast_unchecked(bitmap.clone(), length) }
     }
 }
 
@@ -541,7 +585,7 @@ mod tests {
 
         // Taking ownership of a scalar mask keeps it scalar.
         let bitmap = Bitmap::new_zeroed(1);
-        let mask = PlBitmap::from(PlBitmapRef::new(&bitmap, 1_000));
+        let mask = PlBitmap::from(PlBitmapRef::new_broadcast(&bitmap, 1_000));
 
         assert!(mask.is_scalar());
         assert_eq!(mask.len(), 1_000);
@@ -592,10 +636,27 @@ mod tests {
     }
 
     #[test]
-    fn try_new_rejects_mismatched_bitmaps() {
+    fn try_new_takes_flat_bitmaps_only() {
         assert!(PlBitmap::try_new(Bitmap::new_zeroed(2), 3).is_err());
         assert!(PlBitmap::try_new(Bitmap::new_zeroed(2), 2).is_ok());
-        assert!(PlBitmap::try_new(Bitmap::new_zeroed(1), 3).is_ok());
+
+        // A single bit is not silently broadcast: that is what `try_new_broadcast` is for.
+        assert!(PlBitmap::try_new(Bitmap::new_zeroed(1), 3).is_err());
+        assert!(PlBitmap::try_new(Bitmap::new_zeroed(1), 1).is_ok());
+    }
+
+    #[test]
+    fn try_new_broadcast_takes_flat_and_scalar_bitmaps() {
+        let mask = PlBitmap::try_new_broadcast(Bitmap::new_zeroed(1), 1_000).unwrap();
+        assert!(mask.is_scalar());
+        assert_eq!(mask, PlBitmap::new_scalar(false, 1_000));
+
+        let mask = PlBitmap::new_broadcast(Bitmap::from_iter([true, false]), 2);
+        assert!(mask.is_flat());
+        assert_eq!(mask, PlBitmap::from_iter([true, false]));
+
+        // Anything in between is neither representation, and no broadcast either.
+        assert!(PlBitmap::try_new_broadcast(Bitmap::new_zeroed(2), 3).is_err());
     }
 
     #[test]

@@ -59,6 +59,13 @@
 //! whichever the mask it was handed happened to be — installs it in one call, exactly as it
 //! would iterate one with [`broadcast_iter`](crate::PlPrimitiveArray::broadcast_iter).
 //!
+//! The constructors of the mask types themselves — [`PlBitmap`](crate::PlBitmap) and
+//! [`PlBitmapRef`](crate::PlBitmapRef) — split the same way as those setters, for the same
+//! reason: `try_new` and its companions wrap a *flat* bitmap, and `try_new_broadcast` and its
+//! companions wrap one that is flat *or* scalar. It is
+//! [`PlBitmap::new_scalar`](crate::PlBitmap::new_scalar) that builds a mask of the single bit
+//! every element shares out of that bit.
+//!
 //! # Broadcasting an array
 //!
 //! The same rule applies one level up, to the arrays themselves: an array of a single element

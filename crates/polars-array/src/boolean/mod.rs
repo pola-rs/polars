@@ -266,7 +266,7 @@ impl PlBooleanArray {
     #[inline]
     pub fn values(&self) -> PlBitmapRef<'_> {
         // SAFETY: the bitmap is flat or scalar for `self.length`, upheld by every constructor.
-        unsafe { PlBitmapRef::new_unchecked(&self.values, self.length) }
+        unsafe { PlBitmapRef::new_broadcast_unchecked(&self.values, self.length) }
     }
 
     /// The backing values bitmap, if it holds one bit per element.
@@ -304,7 +304,7 @@ impl PlBooleanArray {
         // SAFETY: the mask is flat or scalar for `self.length`, upheld by every constructor.
         self.validity
             .as_ref()
-            .map(|validity| unsafe { PlBitmapRef::new_unchecked(validity, self.length) })
+            .map(|validity| unsafe { PlBitmapRef::new_broadcast_unchecked(validity, self.length) })
     }
 
     /// Whether the values bitmap holds a single bit shared by every element.
