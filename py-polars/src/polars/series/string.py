@@ -55,8 +55,8 @@ class StringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         format
-            Format to use for conversion. Refer to the `chrono crate documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Format to use for conversion. Refer to the `jiff crate documentation
+            <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d"`.
             If set to None (default), the format is inferred from the data.
         strict
@@ -101,8 +101,8 @@ class StringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         format
-            Format to use for conversion. Refer to the `chrono crate documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Format to use for conversion. Refer to the `jiff crate documentation
+            <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         time_unit : {None, 'us', 'ns', 'ms'}
@@ -198,8 +198,8 @@ class StringNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         format
-            Format to use for conversion. Refer to the `chrono crate documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Format to use for conversion. Refer to the `jiff crate documentation
+            <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             for the full specification. Example: `"%H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         strict
@@ -238,8 +238,8 @@ class StringNameSpace(_NamespaceSuggestMixin):
         dtype
             The data type to convert to. Can be either Date, Datetime, or Time.
         format
-            Format to use for conversion. Refer to the `chrono crate documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Format to use for conversion. Refer to the `jiff crate documentation
+            <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
         strict
@@ -296,7 +296,9 @@ class StringNameSpace(_NamespaceSuggestMixin):
         ...         pl.col("date").str.strptime(pl.Date, "%F", strict=False),
         ...         pl.col("date").str.strptime(pl.Date, "%F %T", strict=False),
         ...         pl.col("date").str.strptime(pl.Date, "%D", strict=False),
-        ...         pl.col("date").str.strptime(pl.Date, "%c", strict=False),
+        ...         pl.col("date").str.strptime(
+        ...             pl.Date, "%a %b %e %H:%M:%S %Y", strict=False
+        ...         ),
         ...     )
         ... ).to_series()
         shape: (4,)

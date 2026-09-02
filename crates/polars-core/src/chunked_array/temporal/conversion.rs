@@ -1,5 +1,5 @@
 use arrow::temporal_conversions::*;
-use chrono::*;
+use jiff::civil::{DateTime, Time};
 
 use crate::prelude::*;
 
@@ -8,7 +8,7 @@ pub(crate) const US_IN_DAY: i64 = 86_400_000_000;
 pub(crate) const MS_IN_DAY: i64 = 86_400_000;
 pub(crate) const SECONDS_IN_DAY: i64 = 86_400;
 
-impl From<&AnyValue<'_>> for NaiveDateTime {
+impl From<&AnyValue<'_>> for DateTime {
     fn from(v: &AnyValue) -> Self {
         match v {
             #[cfg(feature = "dtype-date")]
@@ -19,37 +19,38 @@ impl From<&AnyValue<'_>> for NaiveDateTime {
                 TimeUnit::Microseconds => timestamp_us_to_datetime(*v),
                 TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
             },
-            _ => panic!("can only convert date/datetime to NaiveDateTime"),
+            _ => panic!("can only convert date/datetime to DateTime"),
         }
     }
 }
 
-impl From<&AnyValue<'_>> for NaiveTime {
+impl From<&AnyValue<'_>> for Time {
     fn from(v: &AnyValue) -> Self {
         match v {
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(v) => time64ns_to_time(*v),
-            _ => panic!("can only convert date/datetime to NaiveTime"),
+            _ => panic!("can only convert date/datetime to Time"),
         }
     }
 }
 
 // Used by lazy for literal conversion
-pub fn datetime_to_timestamp_ns(v: NaiveDateTime) -> i64 {
-    let us = v.and_utc().timestamp() * 1_000_000_000; //nanos
-    us + v.and_utc().timestamp_subsec_nanos() as i64
+pub fn datetime_to_timestamp_ns(v: DateTime) -> i64 {
+    let ns = datetime_to_epoch_nanos_opt(v).expect("datetime out-of-range");
+    i64::try_from(ns).expect("timestamp out-of-range for i64 nanoseconds")
 }
 
-pub fn datetime_to_timestamp_ms(v: NaiveDateTime) -> i64 {
-    v.and_utc().timestamp_millis()
+pub fn datetime_to_timestamp_ms(v: DateTime) -> i64 {
+    let ns = datetime_to_epoch_nanos_opt(v).expect("datetime out-of-range");
+    i64::try_from(ns.div_euclid(1_000_000)).expect("timestamp out-of-range for i64 milliseconds")
 }
 
-pub fn datetime_to_timestamp_us(v: NaiveDateTime) -> i64 {
-    let us = v.and_utc().timestamp() * 1_000_000;
-    us + v.and_utc().timestamp_subsec_micros() as i64
+pub fn datetime_to_timestamp_us(v: DateTime) -> i64 {
+    let ns = datetime_to_epoch_nanos_opt(v).expect("datetime out-of-range");
+    i64::try_from(ns.div_euclid(1_000)).expect("timestamp out-of-range for i64 microseconds")
 }
 
-pub(crate) fn naive_datetime_to_date(v: NaiveDateTime) -> i32 {
+pub(crate) fn naive_datetime_to_date(v: DateTime) -> i32 {
     (datetime_to_timestamp_ms(v) / (MILLISECONDS * SECONDS_IN_DAY)) as i32
 }
 
@@ -84,6 +85,17 @@ pub fn get_strftime_format(fmt: &str, dtype: &DataType) -> PolarsResult<String> 
                 },
             }
         };
-        Ok(format_string)
+        // jiff's default `%c` locale is not the POSIX "C" locale chrono used
+        // (e.g. it formats as "2024 M07 14, Sun 17:31:59" instead of
+        // "Sun Jul 14 17:31:59 2024"), so expand it ourselves to the
+        // directives it stood for under chrono/POSIX.
+        let format_string = format_string.replace("%c", "%a %b %e %H:%M:%S %Y");
+        // A bare (unqualified) `%f` under jiff emits a variable-width
+        // fraction with no fixed padding, whereas chrono's `%f` was always
+        // a fixed 9-digit, zero-padded nanosecond count. Pin it to `%9f` to
+        // keep that fixed-width output (this doesn't affect `%.f`, `%3f`,
+        // `%6f`, or `%9f`, which already have explicit width/precision and
+        // don't contain the bare "%f" substring).
+        Ok(format_string.replace("%f", "%9f"))
     }
 }

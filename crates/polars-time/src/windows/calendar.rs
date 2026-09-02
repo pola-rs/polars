@@ -8,6 +8,16 @@ pub(crate) const fn is_leap_year(year: i32) -> bool {
     year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 }
 
+/// Returns the given civil datetime's week, truncated to Monday 00:00:00.
+pub(crate) fn beginning_of_week(dt: jiff::civil::DateTime) -> jiff::civil::DateTime {
+    let days_since_monday = dt.date().weekday().to_monday_zero_offset();
+    let date = dt
+        .date()
+        .checked_sub(jiff::Span::new().days(i64::from(days_since_monday)))
+        .expect("date out-of-range");
+    date.to_datetime(jiff::civil::Time::midnight())
+}
+
 /// Get the number of days in the given month of the given year
 pub(crate) const fn days_in_month(year: i32, month: u8) -> u8 {
     DAYS_PER_MONTH[is_leap_year(year) as usize][(month - 1) as usize] as u8

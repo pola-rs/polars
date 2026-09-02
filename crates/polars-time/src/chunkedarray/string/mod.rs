@@ -1,5 +1,5 @@
 pub mod infer;
-use chrono::DateTime;
+use jiff::fmt::strtime::BrokenDownTime;
 mod patterns;
 mod strptime;
 pub use patterns::Pattern;
@@ -17,7 +17,7 @@ use crate::prelude::string::strptime::StrpTimeState;
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 // (string, fmt) -> PolarsResult
 where
-    F: Fn(&str, &str) -> chrono::ParseResult<K>,
+    F: Fn(&str, &str) -> Result<K, jiff::Error>,
 {
     patterns::TIME_H_M_S
         .iter()
@@ -29,7 +29,7 @@ where
 fn datetime_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 // (string, fmt) -> PolarsResult
 where
-    F: Fn(&str, &str) -> chrono::ParseResult<K>,
+    F: Fn(&str, &str) -> Result<K, jiff::Error>,
 {
     patterns::DATETIME_Y_M_D
         .iter()
@@ -41,13 +41,67 @@ where
 fn date_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 // (string, fmt) -> PolarsResult
 where
-    F: Fn(&str, &str) -> chrono::ParseResult<K>,
+    F: Fn(&str, &str) -> Result<K, jiff::Error>,
 {
     patterns::DATE_Y_M_D
         .iter()
         .chain(patterns::DATE_D_M_Y)
         .find(|fmt| convert(val, fmt).is_ok())
         .copied()
+}
+
+polars_utils::regex_cache::cached_regex! {
+    // A trailing numeric UTC offset (any colon style) or a literal "Z".
+    static TRAILING_OFFSET_RE = r#"(?x)
+        (?: [+-]\d{2} (?: :?\d{2} (?: :?\d{2} )? )? | Z )
+        ['"]?
+        $
+        "#;
+}
+
+/// Strips a trailing `%z`-family directive from `fmt`, if present.
+///
+/// jiff's `%z`/`%:z`/`%::z`/`%:::z`/`%#z` directives are strictly numeric
+/// (`[+-]HH:MM[:SS]`-style) and, unlike chrono's, never accept a literal
+/// `Z`. This is used to retry parsing a "Zulu time" value (one ending in a
+/// literal `Z` instead of a numeric offset) by matching everything but the
+/// offset, then checking for a literal `Z` where the offset would be.
+#[cfg(feature = "dtype-datetime")]
+fn strip_trailing_tz_directive(fmt: &str) -> Option<&str> {
+    const TZ_DIRECTIVES: [&str; 5] = ["%:::z", "%::z", "%:z", "%#z", "%z"];
+    TZ_DIRECTIVES.iter().find_map(|d| fmt.strip_suffix(d))
+}
+
+#[cfg(feature = "dtype-datetime")]
+fn sniff_fmt_datetime(val: &str) -> PolarsResult<&'static str> {
+    datetime_pattern(val, |val, fmt| NaiveDateTime::strptime(fmt, val))
+        .or_else(|| datetime_pattern(val, |val, fmt| NaiveDate::strptime(fmt, val)))
+        .ok_or_else(|| {
+            if TRAILING_OFFSET_RE.is_match(val) {
+                polars_err!(
+                    ComputeError:
+                    "could not find an appropriate format to parse datetimes, please define a format\n\n\
+                    hint: this value appears to contain a UTC offset (e.g. '+01:00', '+0100', or 'Z'). \
+                    Polars' format directives (%z, %:z, %::z, %:::z) each require an exact colon style, \
+                    so an explicit format matching your data's offset style may be required, e.g. `%:z` \
+                    for a colon-separated offset like '+01:00'.",
+                )
+            } else {
+                polars_err!(parse_fmt_idk = "datetime")
+            }
+        })
+}
+
+#[cfg(feature = "dtype-date")]
+fn sniff_fmt_date(val: &str) -> PolarsResult<&'static str> {
+    date_pattern(val, |val, fmt| NaiveDate::strptime(fmt, val))
+        .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))
+}
+
+#[cfg(feature = "dtype-time")]
+fn sniff_fmt_time(val: &str) -> PolarsResult<&'static str> {
+    time_pattern(val, |val, fmt| NaiveTime::strptime(fmt, val))
+        .ok_or_else(|| polars_err!(parse_fmt_idk = "time"))
 }
 
 pub trait StringMethods: AsString {
@@ -58,23 +112,28 @@ pub trait StringMethods: AsString {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => {
-                if string_ca.null_count() == string_ca.len() {
+                let Some(idx) = string_ca.first_non_null() else {
                     return Ok(
                         Int64Chunked::full_null(string_ca.name().clone(), string_ca.len())
                             .into_time(),
                     );
-                }
-                infer::infer_from_values(string_ca, |val| {
-                    time_pattern(val, NaiveTime::parse_from_str)
-                })
-                .ok_or_else(|| polars_err!(parse_fmt_idk = "time"))?
+                };
+                // Like `infer::to_date`/`infer::to_datetime`, scan forward from
+                // the first non-null value rather than sniffing only that one -
+                // an early value that happens not to match a known pattern
+                // shouldn't prevent inference from a later, well-formed one.
+                string_ca
+                    .slice(idx as i64, string_ca.len())
+                    .iter()
+                    .find_map(|opt_val| opt_val.and_then(|val| sniff_fmt_time(val).ok()))
+                    .ok_or_else(|| polars_err!(parse_fmt_idk = "time"))?
             },
         };
         let use_cache = use_cache && string_ca.len() > 50;
 
         let mut convert = LruCachedFunc::new(
             |s| {
-                let naive_time = NaiveTime::parse_from_str(s, fmt).ok()?;
+                let naive_time = NaiveTime::strptime(fmt, s).ok()?;
                 Some(time_to_time64ns(&naive_time))
             },
             (string_ca.len() as f64).sqrt() as usize,
@@ -92,23 +151,21 @@ pub trait StringMethods: AsString {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => {
-                if string_ca.null_count() == string_ca.len() {
+                let Some(idx) = string_ca.first_non_null() else {
                     return Ok(
                         Int32Chunked::full_null(string_ca.name().clone(), string_ca.len())
                             .into_date(),
                     );
-                }
-                infer::infer_from_values(string_ca, |val| {
-                    date_pattern(val, NaiveDate::parse_from_str)
-                })
-                .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?
+                };
+                let val = string_ca.get(idx).expect("should not be null");
+                sniff_fmt_date(val)?
             },
         };
         let ca = unary_elementwise(string_ca, |opt_s| {
             let mut s = opt_s?;
             while !s.is_empty() {
-                match NaiveDate::parse_and_remainder(s, fmt) {
-                    Ok((nd, _)) => return Some(naive_date_to_date(nd)),
+                match BrokenDownTime::parse_prefix(fmt, s).and_then(|(tm, _)| tm.to_date()) {
+                    Ok(nd) => return Some(naive_date_to_date(nd)),
                     Err(_) => {
                         let mut it = s.chars();
                         it.next();
@@ -139,19 +196,23 @@ pub trait StringMethods: AsString {
         let string_ca = self.as_string();
         let had_format = fmt.is_some();
         let fmt = match fmt {
+            Some("%+") => {
+                polars_bail!(
+                    ComputeError:
+                    "the '%+' format specifier is not supported as an explicit `format`; \
+                    use e.g. '%Y-%m-%dT%H:%M:%S%.f%:z' instead"
+                )
+            },
             Some(fmt) => fmt,
             None => {
-                if string_ca.null_count() == string_ca.len() {
+                let Some(idx) = string_ca.first_non_null() else {
                     return Ok(
                         Int64Chunked::full_null(string_ca.name().clone(), string_ca.len())
                             .into_datetime(tu, tz.cloned()),
                     );
-                }
-                infer::infer_from_values(string_ca, |val| {
-                    datetime_pattern(val, NaiveDateTime::parse_from_str)
-                        .or_else(|| datetime_pattern(val, NaiveDate::parse_from_str))
-                })
-                .ok_or_else(|| polars_err!(parse_fmt_idk = "datetime"))?
+                };
+                let val = string_ca.get(idx).expect("should not be null");
+                sniff_fmt_datetime(val)?
             },
         };
 
@@ -165,9 +226,25 @@ pub trait StringMethods: AsString {
             let mut s = opt_s?;
             while !s.is_empty() {
                 let timestamp = if tz_aware {
-                    DateTime::parse_and_remainder(s, fmt)
+                    jiff::fmt::strtime::BrokenDownTime::parse_prefix(fmt, s)
                         .ok()
-                        .map(|(dt, _r)| func(dt.naive_utc()))
+                        .and_then(|(tm, _r)| tm.to_timestamp().ok())
+                        .or_else(|| {
+                            // jiff's `%z`-family directives never accept a
+                            // literal "Z" (unlike chrono's). If the format
+                            // ends in one of them, retry matching everything
+                            // but the offset, and treat a literal "Z"
+                            // immediately following as an explicit +00:00
+                            // offset.
+                            let fmt_prefix = strip_trailing_tz_directive(fmt)?;
+                            let (tm, len) =
+                                jiff::fmt::strtime::BrokenDownTime::parse_prefix(fmt_prefix, s)
+                                    .ok()?;
+                            s[len..].strip_prefix('Z')?;
+                            let dt = tm.to_datetime().ok()?;
+                            jiff::tz::TimeZone::UTC.to_timestamp(dt).ok()
+                        })
+                        .map(|ts| func(jiff::tz::TimeZone::UTC.to_datetime(ts)))
                 } else {
                     infer::parse_datetime_and_remainder(s, fmt).map(|(nd, _r)| func(nd))
                 };
@@ -220,8 +297,8 @@ pub trait StringMethods: AsString {
             let mut convert = LruCachedFunc::new(
                 |s: &str| {
                     match strptime_cache.parse(s.as_bytes(), fmt.as_bytes()) {
-                        // Fallback to chrono.
-                        None => NaiveDate::parse_from_str(s, &fmt).ok(),
+                        // Fallback to jiff's strtime engine.
+                        None => NaiveDate::strptime(&fmt, s).ok(),
                         Some(ndt) => Some(ndt.date()),
                     }
                     .map(naive_date_to_date)
@@ -232,7 +309,7 @@ pub trait StringMethods: AsString {
         } else {
             let mut convert = LruCachedFunc::new(
                 |s| {
-                    let naive_date = NaiveDate::parse_from_str(s, &fmt).ok()?;
+                    let naive_date = NaiveDate::strptime(&fmt, s).ok()?;
                     Some(naive_date_to_date(naive_date))
                 },
                 (string_ca.len() as f64).sqrt() as usize,
@@ -256,6 +333,13 @@ pub trait StringMethods: AsString {
     ) -> PolarsResult<DatetimeChunked> {
         let string_ca = self.as_string();
         let fmt = match fmt {
+            Some("%+") => {
+                polars_bail!(
+                    ComputeError:
+                    "the '%+' format specifier is not supported as an explicit `format`; \
+                    use e.g. '%Y-%m-%dT%H:%M:%S%.f%:z' instead"
+                )
+            },
             Some(fmt) => fmt,
             None => return infer::to_datetime(string_ca, tu, tz, ambiguous, true),
         };
@@ -273,8 +357,26 @@ pub trait StringMethods: AsString {
             {
                 let mut convert = LruCachedFunc::new(
                     |s: &str| {
-                        let dt = DateTime::parse_from_str(s, &fmt).ok()?;
-                        Some(func(dt.naive_utc()))
+                        let ts = if let Ok(tm) = jiff::fmt::strtime::BrokenDownTime::parse(&fmt, s)
+                        {
+                            tm.to_timestamp().ok()?
+                        } else {
+                            // jiff's `%z`-family directives never accept a
+                            // literal "Z" (unlike chrono's). If the format
+                            // ends in one of them, retry matching everything
+                            // but the offset, and treat a literal "Z" left
+                            // over as an explicit +00:00 offset.
+                            let fmt_prefix = strip_trailing_tz_directive(&fmt)?;
+                            let (tm, len) =
+                                jiff::fmt::strtime::BrokenDownTime::parse_prefix(fmt_prefix, s)
+                                    .ok()?;
+                            if &s[len..] != "Z" {
+                                return None;
+                            }
+                            let dt = tm.to_datetime().ok()?;
+                            jiff::tz::TimeZone::UTC.to_timestamp(dt).ok()?
+                        };
+                        Some(func(jiff::tz::TimeZone::UTC.to_datetime(ts)))
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );

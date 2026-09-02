@@ -75,34 +75,88 @@ pub(super) static DATETIME_Y_M_D: &[&str] = &[
     "%Y-%m-%dT%H:%M:%S%.f", // ISO 8601 with dynamic precision and without timezone
 ];
 
+// Each entry below is listed once per offset colon-style that's actually common
+// in practice (`%#z`/no-colon, `%:z`, `%:::z`) to keep inference working for
+// them - `%::z` (an offset with a nonzero seconds component) is left out, as
+// it's vanishingly rare in real-world data.
 pub(super) static DATETIME_Y_M_D_Z: &[&str] = &[
     "%Y-%m-%dT%H:%M:%S%.f%#z",
+    "%Y-%m-%dT%H:%M:%S%.f%:z",
+    "%Y-%m-%dT%H:%M:%S%.f%:::z",
     "%Y-%m-%dT%H%M%S%.f%#z",
+    "%Y-%m-%dT%H%M%S%.f%:z",
+    "%Y-%m-%dT%H%M%S%.f%:::z",
     "%Y-%m-%dT%H:%M%#z",
+    "%Y-%m-%dT%H:%M%:z",
+    "%Y-%m-%dT%H:%M%:::z",
     "%Y-%m-%dT%H%M%#z",
+    "%Y-%m-%dT%H%M%:z",
+    "%Y-%m-%dT%H%M%:::z",
     "%Y-%m-%d %H:%M:%S%.f%#z",
+    "%Y-%m-%d %H:%M:%S%.f%:z",
+    "%Y-%m-%d %H:%M:%S%.f%:::z",
     "%Y-%m-%d %H%M%S%.f%#z",
+    "%Y-%m-%d %H%M%S%.f%:z",
+    "%Y-%m-%d %H%M%S%.f%:::z",
     "%Y-%m-%d %H:%M%#z",
+    "%Y-%m-%d %H:%M%:z",
+    "%Y-%m-%d %H:%M%:::z",
     "%Y-%m-%d %H%M%#z",
+    "%Y-%m-%d %H%M%:z",
+    "%Y-%m-%d %H%M%:::z",
     "%Y/%m/%dT%H:%M:%S%.f%#z",
+    "%Y/%m/%dT%H:%M:%S%.f%:z",
+    "%Y/%m/%dT%H:%M:%S%.f%:::z",
     "%Y/%m/%dT%H%M%S%.f%#z",
+    "%Y/%m/%dT%H%M%S%.f%:z",
+    "%Y/%m/%dT%H%M%S%.f%:::z",
     "%Y/%m/%dT%H:%M%#z",
+    "%Y/%m/%dT%H:%M%:z",
+    "%Y/%m/%dT%H:%M%:::z",
     "%Y/%m/%dT%H%M%#z",
+    "%Y/%m/%dT%H%M%:z",
+    "%Y/%m/%dT%H%M%:::z",
     "%Y/%m/%d %H:%M:%S%.f%#z",
+    "%Y/%m/%d %H:%M:%S%.f%:z",
+    "%Y/%m/%d %H:%M:%S%.f%:::z",
     "%Y/%m/%d %H%M%S%.f%#z",
+    "%Y/%m/%d %H%M%S%.f%:z",
+    "%Y/%m/%d %H%M%S%.f%:::z",
     "%Y/%m/%d %H:%M%#z",
+    "%Y/%m/%d %H:%M%:z",
+    "%Y/%m/%d %H:%M%:::z",
     "%Y/%m/%d %H%M%#z",
+    "%Y/%m/%d %H%M%:z",
+    "%Y/%m/%d %H%M%:::z",
     "%Y.%m.%dT%H:%M:%S%.f%#z",
+    "%Y.%m.%dT%H:%M:%S%.f%:z",
+    "%Y.%m.%dT%H:%M:%S%.f%:::z",
     "%Y.%m.%dT%H%M%S%.f%#z",
+    "%Y.%m.%dT%H%M%S%.f%:z",
+    "%Y.%m.%dT%H%M%S%.f%:::z",
     "%Y.%m.%dT%H:%M%#z",
+    "%Y.%m.%dT%H:%M%:z",
+    "%Y.%m.%dT%H:%M%:::z",
     "%Y.%m.%dT%H%M%#z",
+    "%Y.%m.%dT%H%M%:z",
+    "%Y.%m.%dT%H%M%:::z",
     "%Y.%m.%d %H:%M:%S%.f%#z",
+    "%Y.%m.%d %H:%M:%S%.f%:z",
+    "%Y.%m.%d %H:%M:%S%.f%:::z",
     "%Y.%m.%d %H%M%S%.f%#z",
+    "%Y.%m.%d %H%M%S%.f%:z",
+    "%Y.%m.%d %H%M%S%.f%:::z",
     "%Y.%m.%d %H:%M%#z",
+    "%Y.%m.%d %H:%M%:z",
+    "%Y.%m.%d %H:%M%:::z",
     "%Y.%m.%d %H%M%#z",
-    "%Y%m%dT%H%M%S%.f%#z", // Compact ISO 8601.
-    "%Y%m%dT%H%M%S%.fZ",   // Compact ISO 8601.
-    "%+",                  // ISO 8601; Same as %Y-%m-%dT%H:%M:%S%.f%:z; supports Z or UTC
+    "%Y.%m.%d %H%M%:z",
+    "%Y.%m.%d %H%M%:::z",
+    "%Y%m%dT%H%M%S%.f%#z",   // Compact ISO 8601.
+    "%Y%m%dT%H%M%S%.f%:z",   // Compact ISO 8601.
+    "%Y%m%dT%H%M%S%.f%:::z", // Compact ISO 8601.
+    "%Y%m%dT%H%M%S%.fZ",     // Compact ISO 8601.
+    "%+",                    // ISO 8601; Same as %Y-%m-%dT%H:%M:%S%.f%:z; supports Z or UTC
 ];
 
 pub(super) static TIME_H_M_S: &[&str] = &["%T%.f", "%R"];

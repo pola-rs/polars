@@ -20,8 +20,5 @@ pub fn _get_dtype_min(dt: Wrap<DataType>) -> PyResult<PyExpr> {
 #[pyfunction]
 pub fn _known_timezones() -> PyResult<Vec<String>> {
     use polars_time::prelude::known_timezones;
-    Ok(known_timezones()
-        .iter()
-        .map(|tz| tz.to_string())
-        .collect::<Vec<_>>())
+    Ok(known_timezones())
 }

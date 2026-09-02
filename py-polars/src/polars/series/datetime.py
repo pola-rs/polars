@@ -175,8 +175,8 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         format
-            * Format to use, refer to the `chrono strftime documentation
-              <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            * Format to use, refer to the `jiff strftime documentation
+              <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
               for specification. Example: `"%y-%m-%d"`.
 
             * If no format is provided, the appropriate ISO format for the underlying
@@ -282,8 +282,8 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         format
-            Format to use, refer to the `chrono strftime documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Format to use, refer to the `jiff strftime documentation
+            <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             for specification. Example: `"%y-%m-%d"`.
 
         See Also
