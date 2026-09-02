@@ -2168,14 +2168,12 @@ fn small_dummy_column(name: PlSmallStr, height: usize) -> Column {
     // Prefer 0-field struct if possible, as it doesn't need validity allocation.
     #[cfg(feature = "dtype-struct")]
     {
-        use arrow::array::StructArray;
-        use arrow::datatypes::ArrowDataType;
-        use polars_core::prelude::{IntoColumn, StructChunked};
+        use polars_core::prelude::{IntoColumn, PlStructArray, StructChunked};
 
         unsafe {
             StructChunked::from_chunks(
                 name,
-                vec![StructArray::new(ArrowDataType::Struct(vec![]), height, vec![], None).boxed()],
+                vec![Box::new(PlStructArray::new(vec![], height, None))],
             )
         }
         .into_column()
