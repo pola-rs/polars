@@ -300,7 +300,10 @@ fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
     let result = LazyFrame::scan_parquet(output_path.into(), Default::default())?.collect()?;
 
     assert_eq!(result.shape(), (3, 2));
-    assert_eq!(result.column("a")?.i32()?.cont_slice()?, &[1, 2, 3]);
+    assert_eq!(
+        result.column("a")?.i32()?.to_flat().cont_slice()?,
+        &[1, 2, 3]
+    );
     assert_eq!(
         result.column("b")?.str()?.iter().collect::<Vec<_>>(),
         vec![Some("x"), Some("y"), Some("z")]
