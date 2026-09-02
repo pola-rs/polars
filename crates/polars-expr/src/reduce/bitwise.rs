@@ -1,6 +1,6 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
-use arrow::array::BooleanArray;
+use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::types::NativeType;
 use num_traits::Zero;
 use polars_compute::bitwise::BitwiseKernel;

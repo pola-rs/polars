@@ -30,7 +30,6 @@ use std::fmt::{Display, Formatter};
 pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
-use arrow::array::ArrayRef;
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::utils::CustomIterTools;
 pub(crate) use binary::*;
@@ -299,18 +298,11 @@ impl<'a> AggregationContext<'a> {
         match list.chunks().len() {
             1 => {
                 let arr = list.downcast_iter().next().unwrap();
-                let offsets = arr.offsets().as_slice();
-
-                let mut previous = 0i64;
-                let groups = offsets[1..]
-                    .iter()
-                    .map(|&o| {
-                        let len = (o - previous) as IdxSize;
-                        let new_offset = offset + len;
-
-                        previous = o;
+                let groups = (0..arr.len())
+                    .map(|i| {
+                        let len = arr.value_length(i) as IdxSize;
                         let out = [offset, len];
-                        offset = new_offset;
+                        offset += len;
                         out
                     })
                     .collect_trusted();

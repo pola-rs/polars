@@ -147,7 +147,7 @@ struct LitIter {
 impl LitIter {
     /// # Safety
     /// Caller must ensure the given `logical` dtype belongs to `array`.
-    unsafe fn new(array: ArrayRef, len: usize, logical: &DataType, name: PlSmallStr) -> Self {
+    unsafe fn new(array: PlArrayRef, len: usize, logical: &DataType, name: PlSmallStr) -> Self {
         let series_container = Rc::new(Series::from_chunks_and_dtype_unchecked(
             name,
             vec![array],
@@ -182,8 +182,8 @@ impl Iterator for LitIter {
 }
 
 struct FlatIter {
-    current_array: ArrayRef,
-    chunks: Vec<ArrayRef>,
+    current_array: PlArrayRef,
+    chunks: Vec<PlArrayRef>,
     offset: usize,
     chunk_offset: usize,
     len: usize,
@@ -196,7 +196,7 @@ struct FlatIter {
 impl FlatIter {
     /// # Safety
     /// Caller must ensure the given `logical` dtype belongs to `array`.
-    unsafe fn new(chunks: &[ArrayRef], len: usize, logical: &DataType, name: PlSmallStr) -> Self {
+    unsafe fn new(chunks: &[PlArrayRef], len: usize, logical: &DataType, name: PlSmallStr) -> Self {
         let mut stack = Vec::with_capacity(chunks.len());
         for chunk in chunks.iter().rev() {
             stack.push(chunk.clone())

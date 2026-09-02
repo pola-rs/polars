@@ -2,6 +2,7 @@ use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_buffer::Buffer;
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
+use polars_core::chunked_array::from::import_arrow_chunks;
 
 use super::*;
 use crate::hash_keys::HashKeys;
@@ -80,8 +81,11 @@ impl BinviewHashGrouper {
                 validity,
                 None,
             );
-            let s =
-                Series::from_chunks_and_dtype_unchecked(name.clone(), vec![Box::new(keys)], dtype);
+            let s = Series::from_chunks_and_dtype_unchecked(
+                name.clone(),
+                import_arrow_chunks(vec![Box::new(keys)]),
+                dtype,
+            );
             DataFrame::new_unchecked(s.len(), vec![Column::from(s)])
         }
     }

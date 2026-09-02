@@ -1,8 +1,7 @@
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::prelude::{
-    AnyValue, ChunkShiftFill, ChunkedArray, Column, DataType, FromData, IntoColumn,
-    PolarsNumericType,
+    AnyValue, ChunkShiftFill, ChunkedArray, Column, DataType, IntoColumn, PolarsNumericType,
 };
 
 fn shift_and_fill_numeric<T>(ca: &ChunkedArray<T>, n: i64, fill_value: AnyValue) -> ChunkedArray<T>
@@ -20,16 +19,15 @@ where
     feature = "dtype-categorical"
 ))]
 fn shift_and_fill_with_mask(s: &Column, n: i64, fill_value: &Column) -> PolarsResult<Column> {
-    use arrow::array::BooleanArray;
     use arrow::bitmap::BitmapBuilder;
-    use polars_core::prelude::BooleanChunked;
+    use polars_core::prelude::{BooleanChunked, PlBooleanArray};
 
     let mask: BooleanChunked = if n > 0 {
         let len = s.len();
         let mut bits = BitmapBuilder::with_capacity(s.len());
         bits.extend_constant(n as usize, false);
         bits.extend_constant(len.saturating_sub(n as usize), true);
-        let mask = BooleanArray::from_data_default(bits.freeze(), None);
+        let mask = PlBooleanArray::from_values(bits.freeze());
         mask.into()
     } else {
         let length = s.len() as i64;
@@ -38,7 +36,7 @@ fn shift_and_fill_with_mask(s: &Column, n: i64, fill_value: &Column) -> PolarsRe
         let mut bits = BitmapBuilder::with_capacity(s.len());
         bits.extend_constant(tipping_point as usize, true);
         bits.extend_constant(-n as usize, false);
-        let mask = BooleanArray::from_data_default(bits.freeze(), None);
+        let mask = PlBooleanArray::from_values(bits.freeze());
         mask.into()
     };
     s.shift(n).zip_with_same_type(&mask, fill_value)

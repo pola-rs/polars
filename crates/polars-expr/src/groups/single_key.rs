@@ -1,4 +1,3 @@
-use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
 use polars_utils::idx_map::total_idx_map::{Entry, TotalIndexMap};
 use polars_utils::total_ord::{TotalEq, TotalHash};
@@ -17,6 +16,7 @@ impl<K, T: PolarsDataType> SingleKeyHashGrouper<T>
 where
     for<'a> T: PolarsDataType<Physical<'a> = K>,
     K: Default + TotalHash + TotalEq,
+    T::Array: ArrayFromIter<K>,
 {
     pub fn new() -> Self {
         Self {
@@ -57,8 +57,7 @@ where
 
     fn finalize_keys(&self, schema: &Schema, keys: Vec<T::Physical<'static>>) -> DataFrame {
         let (name, dtype) = schema.get_at_index(0).unwrap();
-        let mut keys =
-            T::Array::from_vec(keys, dtype.to_physical().to_arrow(CompatLevel::newest()));
+        let mut keys = T::Array::arr_from_iter_trusted(keys);
         if self.null_idx < IdxSize::MAX {
             let mut validity = MutableBitmap::new();
             validity.extend_constant(keys.len(), true);
@@ -77,6 +76,7 @@ impl<K, T: PolarsDataType> Grouper for SingleKeyHashGrouper<T>
 where
     for<'a> T: PolarsDataType<Physical<'a> = K>,
     K: Default + TotalHash + TotalEq + Clone + Send + Sync + 'static,
+    T::Array: ArrayFromIter<K>,
 {
     fn new_empty(&self) -> Box<dyn Grouper> {
         Box::new(Self::new())

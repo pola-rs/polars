@@ -1,6 +1,5 @@
 use std::hash::BuildHasher;
 
-use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
 use polars_utils::total_ord::{BuildHasherTotalExt, TotalEq, TotalHash};
 use polars_utils::vec::PushUnchecked;
@@ -21,6 +20,7 @@ impl<K, T: PolarsDataType> SingleKeyHashHotGrouper<T>
 where
     for<'a> T: PolarsDataType<Physical<'a> = K>,
     K: Default + TotalHash + TotalEq + Send + Sync + 'static,
+    T::Array: ArrayFromIter<K>,
 {
     pub fn new(dtype: DataType, max_groups: usize) -> Self {
         Self {
@@ -59,10 +59,7 @@ where
     }
 
     fn finalize_keys(&self, keys: Vec<T::Physical<'static>>, add_mask: bool) -> HashKeys {
-        let mut keys = T::Array::from_vec(
-            keys,
-            self.dtype.to_physical().to_arrow(CompatLevel::newest()),
-        );
+        let mut keys = T::Array::arr_from_iter_trusted(keys);
         if add_mask && self.null_idx < IdxSize::MAX {
             let mut validity = MutableBitmap::new();
             validity.extend_constant(keys.len(), true);
@@ -89,6 +86,7 @@ impl<K, T> HotGrouper for SingleKeyHashHotGrouper<T>
 where
     for<'a> T: PolarsPhysicalType<Physical<'a> = K>,
     K: Default + TotalHash + TotalEq + Clone + Send + Sync + 'static,
+    T::Array: ArrayFromIter<K>,
 {
     fn new_empty(&self, max_groups: usize) -> Box<dyn HotGrouper> {
         Box::new(Self::new(self.dtype.clone(), max_groups))

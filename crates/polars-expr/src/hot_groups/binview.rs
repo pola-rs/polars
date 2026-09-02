@@ -174,7 +174,7 @@ impl HotGrouper for BinviewHashHotGrouper {
                 let mut validity = MutableBitmap::new();
                 validity.extend_constant(keys.len(), true);
                 validity.set(self.null_idx as usize, false);
-                keys = keys.with_validity_typed(Some(validity.freeze()));
+                keys = keys.with_validity(Some(validity.freeze()));
             }
             HashKeys::Binview(BinviewKeys {
                 hashes,

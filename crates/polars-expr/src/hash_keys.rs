@@ -1,9 +1,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::hash::BuildHasher;
 
-use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, StaticArray, UInt64Array};
+use arrow::array::{Array, BinaryArray, BinaryViewArray, PrimitiveArray, UInt64Array};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and_many;
+use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::{ChunkedArray, DataType, PlRandomState, PolarsDataType, *};
@@ -145,7 +146,9 @@ impl HashKeys {
             } else {
                 df[0].binary().unwrap().clone()
             };
-            let keys = keys.rechunk().downcast_as_array().clone();
+            // The hash tables over these keys read Arrow views and buffers, so the chunk
+            // crosses the bridge once here rather than per lookup.
+            let keys = chunk_to_arrow(keys.rechunk().downcast_as_array());
 
             let hashes = if keys.has_nulls() {
                 keys.iter()
@@ -183,11 +186,11 @@ impl HashKeys {
         self.len() == 0
     }
 
-    pub fn validity(&self) -> Option<&Bitmap> {
+    pub fn validity(&self) -> Option<Bitmap> {
         match self {
-            HashKeys::RowEncoded(s) => s.keys.validity(),
-            HashKeys::Single(s) => s.keys.chunks()[0].validity(),
-            HashKeys::Binview(s) => s.keys.validity(),
+            HashKeys::RowEncoded(s) => s.keys.validity().cloned(),
+            HashKeys::Single(s) => s.keys.chunks()[0].validity().map(|v| v.to_flat()),
+            HashKeys::Binview(s) => s.keys.validity().cloned(),
         }
     }
 

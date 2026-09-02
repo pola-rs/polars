@@ -25,7 +25,6 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use arrow::array::{Array, PrimitiveArray, StaticArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 pub use convert::into_reduction;
 pub use min_max::{new_max_reduction, new_min_reduction};
@@ -219,7 +218,7 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
         m: Option<Bitmap>,
         dtype: &DataType,
     ) -> PolarsResult<Series> {
-        let arr = Box::new(PrimitiveArray::<Self::Value>::from_vec(v).with_validity(m));
+        let arr = Box::new(PlPrimitiveArray::<Self::Value>::from_vec(v).with_validity(m));
         Ok(unsafe { Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr], dtype) })
     }
 }

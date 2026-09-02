@@ -56,7 +56,7 @@ impl GroupedReduction for HasNullsReduce {
         if arr.has_nulls() {
             let valid = arr.validity().unwrap();
             for (i, g) in subset.iter().zip(group_idxs) {
-                let is_null = !valid.get_bit_unchecked(*i as usize);
+                let is_null = !valid.get_unchecked(*i as usize);
                 if g.should_evict() {
                     self.evicted_has_nulls
                         .push(self.has_nulls.get_unchecked(g.idx()));

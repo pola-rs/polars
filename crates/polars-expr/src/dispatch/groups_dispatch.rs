@@ -7,6 +7,9 @@ use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
+#[cfg(feature = "moment")]
+use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
+use polars_core::chunked_array::validity::PlBitmapRefExt;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
@@ -477,7 +480,7 @@ pub fn drop_nans<'a>(
         let values = ac.flat_naive();
         let mut values = values.is_nan().unwrap();
         values.rechunk_mut();
-        values.downcast_as_array().values().clone()
+        values.downcast_as_array().values().to_flat_or_scalar()
     } else {
         Bitmap::new_with_value(false, 1)
     };
@@ -589,7 +592,9 @@ pub fn moment_agg<'a, S: Default>(
     let ca = ac.flat_naive();
     let ca = ca.f64()?;
     let ca = ca.rechunk();
-    let arr = ca.downcast_as_array();
+    // The moment kernels below are Arrow ones and read the values as a slice, so the chunk
+    // crosses the bridge once here rather than per group.
+    let arr = chunk_to_arrow(ca.downcast_as_array());
 
     let ca = RAYON.install(|| match &**ac.groups.as_ref() {
         GroupsType::Idx(idx) => {
@@ -623,7 +628,9 @@ pub fn moment_agg<'a, S: Default>(
             monotonic: _,
         } => groups
             .into_par_iter()
-            .map(|[start, length]| finalize(new_from_slice(arr, *start as usize, *length as usize)))
+            .map(|[start, length]| {
+                finalize(new_from_slice(&arr, *start as usize, *length as usize))
+            })
             .collect::<Float64Chunked>(),
     });
 

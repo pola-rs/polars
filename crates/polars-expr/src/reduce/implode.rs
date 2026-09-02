@@ -73,10 +73,8 @@ impl<T: PolarsNumericType> Reducer for NumUnorderedImplodeReducer<T> {
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
-        v.values.extend(
-            ca.downcast_iter()
-                .flat_map(|arr| arr.non_null_values_iter()),
-        );
+        v.values
+            .extend(ca.downcast_iter().flat_map(|arr| arr.iter().flatten()));
         v.null_count += ca.null_count();
     }
 
@@ -107,7 +105,10 @@ impl<T: PolarsNumericType> Reducer for NumUnorderedImplodeReducer<T> {
             values.boxed(),
             None,
         );
-        let ca = ListChunked::with_chunk(PlSmallStr::EMPTY, arr);
+        let ca = ListChunked::with_chunk(
+            PlSmallStr::EMPTY,
+            <PlListArray as ToArrow>::from_arrow(&arr),
+        );
         let s = ca.into_series();
         unsafe { s.from_physical_unchecked(&list_dtype) }
     }
@@ -144,7 +145,7 @@ impl Reducer for BinaryUnorderedImplodeReducer {
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         v.values.extend(
             ca.downcast_iter()
-                .flat_map(|arr| arr.non_null_values_iter())
+                .flat_map(|arr| arr.iter().flatten())
                 .map(|x| x.to_vec()),
         );
         v.null_count += ca.null_count();
@@ -175,7 +176,10 @@ impl Reducer for BinaryUnorderedImplodeReducer {
             true,
         )));
         let arr = ListArray::new(arrow_dtype, offsets.freeze(), values.boxed(), None);
-        let ca = ListChunked::with_chunk(PlSmallStr::EMPTY, arr);
+        let ca = ListChunked::with_chunk(
+            PlSmallStr::EMPTY,
+            <PlListArray as ToArrow>::from_arrow(&arr),
+        );
         let list_dtype = DataType::List(Box::new(dtype.clone()));
         ca.into_series().cast(&list_dtype)
     }
@@ -250,7 +254,10 @@ impl Reducer for BoolUnorderedImplodeReducer {
             values.boxed(),
             None,
         );
-        let ca = ListChunked::with_chunk(PlSmallStr::EMPTY, arr);
+        let ca = ListChunked::with_chunk(
+            PlSmallStr::EMPTY,
+            <PlListArray as ToArrow>::from_arrow(&arr),
+        );
         Ok(ca.into_series())
     }
 }

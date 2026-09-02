@@ -1,4 +1,4 @@
-use arrow::array::Array;
+use arrow::array::{Array, StaticArray as ArrowStaticArray};
 use polars_row::RowEncodingOptions;
 use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
 use polars_utils::itertools::Itertools;

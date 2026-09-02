@@ -1,7 +1,7 @@
 #![allow(clippy::unnecessary_cast)] // Clippy doesn't recognize that IdxSize and u64 can be different.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use arrow::array::Array;
+use arrow::array::{Array, StaticArray as ArrowStaticArray};
 use polars_compute::binview_index_map::{BinaryViewIndexMap, Entry};
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::itertools::Itertools;

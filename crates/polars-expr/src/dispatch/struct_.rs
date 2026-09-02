@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use polars_core::error::{PolarsResult, polars_err};
 use polars_core::prelude::{
-    Column, InitHashMaps, IntoColumn, PlIndexMap, StringChunked, StructChunked,
+    Column, InitHashMaps, IntoColumn, PlIndexMap, PlUtf8ViewArray, StringChunked, StructChunked,
+    ToArrow,
 };
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRStructFunction;
@@ -112,8 +113,11 @@ pub(super) fn to_json(col: &Column) -> PolarsResult<Column> {
     use polars_core::prelude::CompatLevel;
 
     let s = col.as_materialized_series();
+    // The JSON writer is an Arrow one, so what it hands back crosses the bridge into a chunk.
     let iter = (0..s.n_chunks()).map(|i| {
-        polars_json::json::write::serialize_to_utf8(&*s.to_arrow(i, CompatLevel::newest()))
+        let arr =
+            polars_json::json::write::serialize_to_utf8(&*s.to_arrow(i, CompatLevel::newest()));
+        <PlUtf8ViewArray as ToArrow>::from_arrow(&arr)
     });
 
     Ok(StringChunked::from_chunk_iter(s.name().clone(), iter).into_column())

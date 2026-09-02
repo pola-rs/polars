@@ -155,7 +155,7 @@ fn dt_ranges_start_end_interval(
                 *tu,
                 tz.as_ref(),
             )?;
-            builder.append_slice(rng.physical().cont_slice().unwrap());
+            builder.append_slice(rng.physical().to_flat().cont_slice().unwrap());
             Ok(())
         };
 

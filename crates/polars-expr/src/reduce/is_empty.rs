@@ -68,7 +68,7 @@ impl GroupedReduction for IsEmptyReduce {
                     self.evicted_is_empty.push(is_empty);
                     is_empty = true;
                 }
-                is_empty &= !valid.get_bit_unchecked(*i as usize);
+                is_empty &= !valid.get_unchecked(*i as usize);
                 self.is_empty.set_unchecked(g.idx(), is_empty);
             }
         } else {
@@ -111,14 +111,8 @@ impl GroupedReduction for IsEmptyReduce {
 
     fn finalize(&mut self) -> PolarsResult<Series> {
         let is_empty = core::mem::take(&mut self.is_empty);
-        let arr = BooleanArray::from(is_empty.freeze()).boxed();
-        Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                PlSmallStr::EMPTY,
-                vec![arr],
-                &DataType::Boolean,
-            )
-        })
+        let arr = BooleanArray::from(is_empty.freeze());
+        Ok(Series::from_array(PlSmallStr::EMPTY, arr))
     }
 
     fn as_any(&self) -> &dyn Any {
