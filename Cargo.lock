@@ -3103,6 +3103,7 @@ dependencies = [
 name = "polars-array"
 version = "0.55.1"
 dependencies = [
+ "bytemuck",
  "polars-arrow",
  "polars-buffer",
  "polars-error",

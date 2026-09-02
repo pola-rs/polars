@@ -341,6 +341,9 @@ fn concatenate_impl<S>(
             let map = downcast_map::<PlNullArray, _>(&iter, array_type)?;
             Ok(Box::new(concatenate_null_impl(iter.mapped(&map))))
         },
+        x @ PlArrayType::Object { .. } => {
+            panic!("polars-array: no concatenate impl for {x:?}")
+        },
     }
 }
 

@@ -574,6 +574,9 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
                 .collect();
             Box::new(PlStructArrayBuilder::new(fields))
         },
+        x @ PlArrayType::Object { .. } => {
+            panic!("polars-array: no PlArrayBuilder for {x:?}")
+        },
     }
 }
 
