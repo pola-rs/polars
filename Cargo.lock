@@ -3874,6 +3874,7 @@ dependencies = [
  "chrono-tz",
  "now",
  "num-traits",
+ "polars-array",
  "polars-arrow",
  "polars-compute",
  "polars-core",

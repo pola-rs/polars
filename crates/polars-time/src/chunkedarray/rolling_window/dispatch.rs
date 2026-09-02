@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use arrow::types::NativeType;
 #[cfg(feature = "dtype-f16")]
 use num_traits::real::Real;
+use polars_array::arrow::export;
 use polars_compute::rolling::no_nulls::RollingAggWindowNoNulls;
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_compute::rolling::{MeanWindow, SumWindow, no_nulls, nulls};
@@ -44,11 +45,14 @@ where
         return Ok(Series::new_empty(ca.name().clone(), ca.dtype()));
     }
     let ca = ca.rechunk();
+    // TODO(polars-array-scalar): the rolling kernels read the values as a slice, so a scalar chunk
+    // is written out here rather than the single value it stands for being read once.
+    let ca = ca.to_flat();
 
-    let arr = ca.downcast_iter().next().unwrap();
+    let arr = ca.flat_as_array();
     let arr = match ca.null_count() {
         0 => rolling_agg_fn(
-            arr.values().as_slice(),
+            arr.as_slice(),
             options.window_size,
             options.min_periods,
             options.center,
@@ -56,7 +60,7 @@ where
             options.fn_params,
         )?,
         _ => rolling_agg_fn_nulls(
-            arr,
+            &export::primitive_to_arrow_primitive(arr),
             options.window_size,
             options.min_periods,
             options.center,
@@ -123,7 +127,7 @@ where
         let computed =
             rolling_agg_by::<T, Out, NoNullsAgg, NullsAgg>(&ca_filtered, &by_filtered, options)?;
 
-        let gather_arr = IdxArr::from_vec(ranks).with_validity_typed(Some(validity));
+        let gather_arr = PlPrimitiveArray::from_vec(ranks).with_validity(Some(validity));
         let gather_ca = IdxCa::with_chunk(PlSmallStr::EMPTY, gather_arr);
         return Ok(unsafe { computed.take_unchecked(&gather_ca) });
     }
@@ -167,9 +171,15 @@ where
         by_physical = Cow::Owned(unsafe { by_physical.take_unchecked(sorting_indices) });
     }
 
-    let by_values = by_physical.cont_slice().unwrap();
-    let arr = ca_rechunked.downcast_iter().next().unwrap();
-    let values = arr.values().as_slice();
+    // TODO(polars-array-scalar): the rolling kernels read `by`, the values and the sorting indices
+    // as slices, so scalar chunks are written out here rather than the single value they stand for
+    // being read once.
+    let by_flat = by_physical.to_flat();
+    let by_values = by_flat.cont_slice().unwrap();
+    let ca_flat = ca_rechunked.to_flat();
+    let arr = ca_flat.flat_as_array();
+    let values = arr.as_slice();
+    let sorting_indices_flat = sorting_indices_opt.as_ref().map(|s| s.to_flat());
 
     // We explicitly branch here because we want to compile different versions based on the no_nulls
     // or nulls kernel.
@@ -185,7 +195,7 @@ where
             options.min_periods,
             tu,
             tz.as_ref(),
-            sorting_indices_opt
+            sorting_indices_flat
                 .as_ref()
                 .map(|s| s.cont_slice().unwrap()),
         )?
@@ -208,7 +218,7 @@ where
             options.min_periods,
             tu,
             tz.as_ref(),
-            sorting_indices_opt
+            sorting_indices_flat
                 .as_ref()
                 .map(|s| s.cont_slice().unwrap()),
         )?
