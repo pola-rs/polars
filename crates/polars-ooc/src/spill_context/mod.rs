@@ -435,6 +435,7 @@ impl Clone for StrongSpillContext {
 impl Drop for StrongSpillContext {
     fn drop(&mut self) {
         if self.0.refcount.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.0.stats().on_drop();
             SPILL_CONTEXT_REUSE_ARENA.lock().unwrap().push(self.0);
         }
     }

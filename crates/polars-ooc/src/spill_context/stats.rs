@@ -45,6 +45,12 @@ impl SpillContextStatistics {
         }
     }
 
+    pub(crate) fn on_drop(&self) {
+        if polars_config::config().ooc_log_metrics() {
+            self.stats.lock().unwrap().print_metrics();
+        }
+    }
+
     pub(crate) fn reset(&self, name: PlSmallStr) {
         let mut stats = self.stats.lock().unwrap();
         self.recent_spilled_drain_events.store(0);
@@ -55,35 +61,6 @@ impl SpillContextStatistics {
             name,
             ..Default::default()
         };
-    }
-}
-
-impl Drop for SpillContextStatistics {
-    fn drop(&mut self) {
-        if polars_config::config().ooc_log_metrics() {
-            let stats = self.stats.get_mut().unwrap();
-            let name = &stats.name;
-            let relief = stats.spilled_byte_seconds / (1000.0 * 1000.0);
-            let spill_io = Duration::from_secs_f64(stats.spill_time);
-            let unspill_io = Duration::from_secs_f64(stats.unspill_time);
-            let spills_tot = stats.successful_spills + stats.failed_spills;
-            let spills_succ = 100.0 * stats.successful_spills as f64 / spills_tot as f64;
-            let spill_explore_tot = stats.total_spill_explorations;
-            let spill_explore_succ =
-                100.0 * stats.successful_spill_explorations as f64 / spill_explore_tot as f64;
-            let prefetch_explore_tot = stats.total_prefetch_explorations;
-            let prefetch_explore_succ =
-                100.0 * stats.successful_prefetch_explorations as f64 / prefetch_explore_tot as f64;
-
-            eprintln!(
-                "spill_stats({name}): \
-                relief_mb_s({relief:.2}), \
-                io(spill={spill_io:.2?}, unspill={unspill_io:.2?}), \
-                spill(succ={spills_succ:.1}%, n={spills_tot}), \
-                spill_explore(succ={spill_explore_succ:.1}%, n={spill_explore_tot}), \
-                prefetch_explore(succ={prefetch_explore_succ:.1}%, n={prefetch_explore_tot})"
-            )
-        }
     }
 }
 
@@ -526,6 +503,30 @@ impl Statistics {
 
         // Efraimidis-Spirakis weighted random sampling.
         rng.random::<f64>().powf(1.0 / (1.0 + weight))
+    }
+
+    fn print_metrics(&self) {
+        let name = &self.name;
+        let relief = self.spilled_byte_seconds / (1000.0 * 1000.0);
+        let spill_io = Duration::from_secs_f64(self.spill_time);
+        let unspill_io = Duration::from_secs_f64(self.unspill_time);
+        let spills_tot = self.successful_spills + self.failed_spills;
+        let spills_succ = 100.0 * self.successful_spills as f64 / spills_tot as f64;
+        let spill_explore_tot = self.total_spill_explorations;
+        let spill_explore_succ =
+            100.0 * self.successful_spill_explorations as f64 / spill_explore_tot as f64;
+        let prefetch_explore_tot = self.total_prefetch_explorations;
+        let prefetch_explore_succ =
+            100.0 * self.successful_prefetch_explorations as f64 / prefetch_explore_tot as f64;
+
+        eprintln!(
+            "spill_stats({name}): \
+            relief_mb_s({relief:.2}), \
+            io(spill={spill_io:.2?}, unspill={unspill_io:.2?}), \
+            spill(succ={spills_succ:.1}%, n={spills_tot}), \
+            spill_explore(succ={spill_explore_succ:.1}%, n={spill_explore_tot}), \
+            prefetch_explore(succ={prefetch_explore_succ:.1}%, n={prefetch_explore_tot})"
+        )
     }
 }
 
