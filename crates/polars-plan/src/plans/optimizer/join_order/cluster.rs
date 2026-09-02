@@ -13,6 +13,7 @@ use polars_core::prelude::{PlIndexMap, PlIndexSet};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_ops::frame::JoinValidation;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 use recursive::recursive;
 
@@ -64,6 +65,9 @@ pub(super) struct Cluster {
     /// Schema of the cluster root before reordering. The rebuilt plan is projected
     /// back to it.
     pub(super) output_schema: SchemaRef,
+    /// Reads of [`output_schema`](Self::output_schema)'s columns under the names the
+    /// leaves carry, aliased back. Empty unless a leaf was renamed.
+    pub(super) restore: Vec<ExprIR>,
     /// Options used for every rebuilt join. [`same_settings`] guarantees all joins
     /// in the cluster agree on everything but their keys.
     pub(super) options: Arc<JoinOptionsIR>,
@@ -170,26 +174,21 @@ pub(super) fn extract(
         return None;
     }
 
-    // Every leaf needs an estimate. Ordering on partial information would order by
-    // which leaves happened to be measurable.
-    let mut leaves = Vec::with_capacity(raw_leaves.len());
+    let mut nodes = Vec::with_capacity(raw_leaves.len());
+    let mut schemas = Vec::with_capacity(raw_leaves.len());
     for raw in raw_leaves {
-        let stats = node_stats(raw.node, ir_arena, expr_arena)?;
         let schema = ir_arena.get(raw.node).schema(ir_arena).into_owned();
         let (node, schema) = rename_leaf(raw.node, schema, &raw.renames, ir_arena, expr_arena)?;
-        leaves.push(Leaf {
-            node,
-            schema,
-            stats,
-        });
+        nodes.push(node);
+        schemas.push(schema);
     }
 
     let mut edges = Vec::with_capacity(raw_keys.len());
     for raw in raw_keys {
         let left_key = normalize_key(&raw.left_key, &raw.renames, expr_arena);
         let right_key = normalize_key(&raw.right_key, &raw.renames, expr_arena);
-        let left_leaf = owning_leaf(&left_key, &leaves, raw.left_leaves, expr_arena)?;
-        let right_leaf = owning_leaf(&right_key, &leaves, raw.right_leaves, expr_arena)?;
+        let left_leaf = owning_leaf(&left_key, &schemas, raw.left_leaves, expr_arena)?;
+        let right_leaf = owning_leaf(&right_key, &schemas, raw.right_leaves, expr_arena)?;
         edges.push(Edge {
             left_leaf,
             right_leaf,
@@ -199,25 +198,138 @@ pub(super) fn extract(
     }
 
     let coalesced = if options.args.should_coalesce() {
-        let (names, closed) = coalesce_keys(&leaves, &edges, expr_arena)?;
+        let (names, closed) = coalesce_keys(&schemas, &edges, expr_arena)?;
         edges = closed;
         names
     } else {
         PlIndexSet::default()
     };
 
-    if !column_names_are_unambiguous(&leaves, &coalesced) {
-        return None;
+    let output_schema = ir_arena.get(root).schema(ir_arena).into_owned();
+
+    // A coalescing cluster folds its key columns away, which `restore_exprs` does not
+    // model, so only a non-coalescing one can be renamed apart.
+    let mut restore = Vec::new();
+    if !column_names_are_unambiguous(&schemas, &coalesced) {
+        if !coalesced.is_empty() {
+            return None;
+        }
+        let renames = collision_renames(&schemas);
+        restore = restore_exprs(&schemas, &renames, &output_schema, expr_arena)?;
+        for (leaf, renames) in renames.iter().enumerate() {
+            let (node, schema) = rename_leaf(
+                nodes[leaf],
+                schemas[leaf].clone(),
+                renames,
+                ir_arena,
+                expr_arena,
+            )?;
+            nodes[leaf] = node;
+            schemas[leaf] = schema;
+        }
+        for edge in &mut edges {
+            edge.left_key = normalize_key(&edge.left_key, &renames[edge.left_leaf], expr_arena);
+            edge.right_key = normalize_key(&edge.right_key, &renames[edge.right_leaf], expr_arena);
+        }
+        // A leaf column already named like a renamed one is still shared afterwards.
+        if !column_names_are_unambiguous(&schemas, &coalesced) {
+            return None;
+        }
     }
 
-    let output_schema = ir_arena.get(root).schema(ir_arena).into_owned();
+    // Every leaf needs an estimate. Ordering on partial information would order by
+    // which leaves happened to be measurable. Taken after renaming so that the
+    // per-column statistics are keyed on the names the rebuilt joins use.
+    let mut leaves = Vec::with_capacity(nodes.len());
+    for (node, schema) in nodes.into_iter().zip(schemas) {
+        let stats = node_stats(node, ir_arena, expr_arena)?;
+        leaves.push(Leaf {
+            node,
+            schema,
+            stats,
+        });
+    }
 
     Some(Cluster {
         leaves,
         edges,
         output_schema,
+        restore,
         options,
     })
+}
+
+/// A name for a column held by more than one leaf, unique across the cluster.
+fn disambiguated(leaf: usize, name: &PlSmallStr) -> PlSmallStr {
+    format_pl_smallstr!("__POLARS_JOIN_ORDER_{leaf}_{name}")
+}
+
+/// Per leaf, the renames pulling its share of a name held by several leaves apart.
+///
+/// A leaf holding no shared name gets an empty map, which is a no-op to apply.
+fn collision_renames(schemas: &[SchemaRef]) -> Vec<Renames> {
+    let mut holders: PlIndexMap<&PlSmallStr, usize> = PlIndexMap::default();
+    for schema in schemas {
+        for name in schema.iter_names() {
+            *holders.entry(name).or_default() += 1;
+        }
+    }
+
+    schemas
+        .iter()
+        .enumerate()
+        .map(|(leaf, schema)| {
+            schema
+                .iter_names()
+                .filter(|name| holders[name] > 1)
+                .map(|name| (name.clone(), disambiguated(leaf, name)))
+                .collect()
+        })
+        .collect()
+}
+
+/// Reads of the cluster's output columns under the names [`collision_renames`] gives
+/// them, aliased back to the names the plan above expects.
+///
+/// A join emits its left input's columns followed by its right input's, so whatever
+/// the shape of the cluster, its root schema is the leaf schemas concatenated in the
+/// order [`collect`] found them. A column is therefore identified by its position,
+/// which renaming leaves alone.
+///
+/// `None` if the root holds anything but that concatenation, as it does when a peeled
+/// projection dropped a column.
+fn restore_exprs(
+    schemas: &[SchemaRef],
+    renames: &[Renames],
+    output_schema: &Schema,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<Vec<ExprIR>> {
+    let concatenated = schemas
+        .iter()
+        .enumerate()
+        .flat_map(|(leaf, schema)| schema.iter().map(move |field| (leaf, field)));
+
+    if schemas.iter().map(|s| s.len()).sum::<usize>() != output_schema.len() {
+        return None;
+    }
+
+    let mut expr = Vec::with_capacity(output_schema.len());
+    for ((leaf, (name, dtype)), (output_name, output_dtype)) in
+        concatenated.zip(output_schema.iter())
+    {
+        // In a plain concatenation each output column keeps its dtype and is named
+        // after the leaf column, plain or suffixed.
+        if dtype != output_dtype || !output_name.starts_with(name.as_str()) {
+            return None;
+        }
+        let read = renames[leaf].get(name).unwrap_or(name);
+        let mut e = ExprIR::from_column_name(read.clone(), expr_arena);
+        if read != output_name {
+            e.set_alias(output_name.clone());
+        }
+        expr.push(e);
+    }
+    Some(expr)
 }
 
 /// Walk the contiguous run of reorderable joins, collecting leaves and raw key pairs.
@@ -468,12 +580,14 @@ fn same_settings(a: &JoinOptionsIR, b: &JoinOptionsIR) -> bool {
 /// A name held by two leaves is suffixed on collision, and which side gets the suffix
 /// depends on which ends up left, so reordering could rename columns. Coalesced key
 /// names are the exception: they are folded into one column rather than suffixed.
-fn column_names_are_unambiguous(leaves: &[Leaf], coalesced: &PlIndexSet<PlSmallStr>) -> bool {
-    let total: usize = leaves.iter().map(|l| l.schema.len()).sum();
+///
+/// [`collision_renames`] pulls the holders apart so that this holds.
+fn column_names_are_unambiguous(schemas: &[SchemaRef], coalesced: &PlIndexSet<PlSmallStr>) -> bool {
+    let total: usize = schemas.iter().map(|s| s.len()).sum();
     let mut seen = PlIndexSet::with_capacity_and_hasher(total, Default::default());
-    leaves
+    schemas
         .iter()
-        .flat_map(|l| l.schema.iter_names())
+        .flat_map(|s| s.iter_names())
         .all(|name| coalesced.contains(name.as_str()) || seen.insert(name.as_str()))
 }
 
@@ -488,7 +602,7 @@ fn column_names_are_unambiguous(leaves: &[Leaf], coalesced: &PlIndexSet<PlSmallS
 /// replaced by the clique over every leaf holding it. Without those implied edges an
 /// order could join two holders over some other key and leave both columns behind.
 fn coalesce_keys(
-    leaves: &[Leaf],
+    schemas: &[SchemaRef],
     edges: &[Edge],
     expr_arena: &Arena<AExpr>,
 ) -> Option<(PlIndexSet<PlSmallStr>, Vec<Edge>)> {
@@ -503,10 +617,10 @@ fn coalesce_keys(
 
     let mut closed = Vec::with_capacity(edges.len());
     for (name, on_name) in &by_name {
-        let holders: Vec<usize> = (0..leaves.len())
-            .filter(|&i| leaves[i].schema.contains(name.as_str()))
+        let holders: Vec<usize> = (0..schemas.len())
+            .filter(|&i| schemas[i].contains(name.as_str()))
             .collect();
-        if !folds_into_one_column(name, &holders, on_name, leaves) {
+        if !folds_into_one_column(name, &holders, on_name, schemas) {
             return None;
         }
 
@@ -538,9 +652,9 @@ fn folds_into_one_column(
     name: &PlSmallStr,
     holders: &[usize],
     edges: &[&Edge],
-    leaves: &[Leaf],
+    schemas: &[SchemaRef],
 ) -> bool {
-    let mut parent: Vec<usize> = (0..leaves.len()).collect();
+    let mut parent: Vec<usize> = (0..schemas.len()).collect();
     for edge in edges {
         let (left, right) = (
             find(&mut parent, edge.left_leaf),
@@ -553,10 +667,10 @@ fn folds_into_one_column(
         return false;
     };
     let root = find(&mut parent, first);
-    let dtype = leaves[first].schema.get(name.as_str());
+    let dtype = schemas[first].get(name.as_str());
 
     rest.iter()
-        .all(|&i| find(&mut parent, i) == root && leaves[i].schema.get(name.as_str()) == dtype)
+        .all(|&i| find(&mut parent, i) == root && schemas[i].get(name.as_str()) == dtype)
 }
 
 fn find(parent: &mut [usize], mut i: usize) -> usize {
@@ -571,15 +685,15 @@ fn find(parent: &mut [usize], mut i: usize) -> usize {
 /// exactly one leaf.
 fn owning_leaf(
     key: &ExprIR,
-    leaves: &[Leaf],
+    schemas: &[SchemaRef],
     range: Range<usize>,
     expr_arena: &Arena<AExpr>,
 ) -> Option<usize> {
     let mut owner = None;
     for name in aexpr_to_leaf_names_iter(key.node(), expr_arena) {
-        let found = leaves[range.clone()]
+        let found = schemas[range.clone()]
             .iter()
-            .position(|leaf| leaf.schema.contains(name.as_str()))?
+            .position(|schema| schema.contains(name.as_str()))?
             + range.start;
         match owner {
             None => owner = Some(found),

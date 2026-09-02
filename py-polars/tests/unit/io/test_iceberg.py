@@ -2643,10 +2643,12 @@ def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize("use_pyiceberg_filter", [True, False])
 def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
+    use_pyiceberg_filter: bool,
 ) -> None:
     catalog = SqlCatalog(
         "default",
@@ -2719,14 +2721,8 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         ),
     )
 
-    # Upstream issue - PyIceberg filter does not handle schema evolution
-    with pytest.raises(Exception, match="unpack requires a buffer of 8 bytes"):
-        pl.scan_iceberg(
-            tbl, reader_override="native", use_pyiceberg_filter=True
-        ).filter(pl.col("column_3") == 5).collect()
-
     q = pl.scan_iceberg(
-        tbl, reader_override="native", use_pyiceberg_filter=False
+        tbl, reader_override="native", use_pyiceberg_filter=use_pyiceberg_filter
     ).filter(pl.col("column_3") == 5)
 
     with plmonkeypatch.context() as cx:
@@ -2745,6 +2741,11 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
             }
         ),
     )
+
+    if use_pyiceberg_filter:
+        # Skipped from pyiceberg, we don't see the file at all.
+        assert "[MultiScanTaskInit]: 1 source" in capture
+        return
 
     # First file
     assert "Source filter mask initialization via table statistics" in capture

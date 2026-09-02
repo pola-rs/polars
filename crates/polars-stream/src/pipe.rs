@@ -4,7 +4,6 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::connector::{ReceiverExt, RecvError, SenderExt, connector_with};
-use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::linearizer::Linearizer;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_error::PolarsResult;
@@ -14,6 +13,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use crate::graph::LogicalPipeKey;
 use crate::metrics::GraphMetrics;
 use crate::morsel::{Morsel, MorselSeq};
+use crate::utils::morsel_distributor::morsel_distributor;
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
 pub fn port_channel(metrics: Option<Arc<PipeMetrics>>) -> (PortSender, PortReceiver) {
@@ -304,33 +304,18 @@ impl PhysicalPipe {
 
             State::NeedsDistributor { mut recv, senders } => {
                 let num_pipelines = senders.len();
-                let (mut distributor, distr_receivers) =
-                    distributor_channel(num_pipelines, *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+                let (mut distributor, distr_receivers) = morsel_distributor(
+                    num_pipelines,
+                    *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
+                    self.seq_offset.clone(),
+                );
 
-                let arc_seq_offset = self.seq_offset.clone();
                 handles.push(scope.spawn_task(TaskPriority::High, async move {
-                    let mut seq_offset = arc_seq_offset.load();
-                    let mut prev_orig_seq = None;
-
-                    while let Ok(mut morsel) = recv.0.recv().await {
-                        // We have to relabel sequence ids to be unique before distributing.
-                        // Normally within a single pipeline consecutive ids may repeat but
-                        // when distributing this would destroy the order.
-                        if Some(morsel.seq()) == prev_orig_seq {
-                            seq_offset += 1;
-                        }
-                        prev_orig_seq = Some(morsel.seq());
-                        morsel.set_seq(morsel.seq().offset_by_u64(seq_offset));
-
-                        // Important: we have to drop the consume token before
-                        // going into the buffered distributor.
-                        drop(morsel.take_consume_token());
-                        if distributor.send(morsel).await.is_err() {
+                    while let Ok(morsel) = recv.0.recv().await {
+                        if distributor.send((morsel, ())).await.is_err() {
                             break;
                         }
                     }
-
-                    arc_seq_offset.store(seq_offset);
 
                     Ok(())
                 }));
@@ -338,7 +323,7 @@ impl PhysicalPipe {
                 for (mut send, mut recv) in senders.into_iter().zip(distr_receivers) {
                     handles.push(scope.spawn_task(TaskPriority::High, async move {
                         let wait_group = WaitGroup::default();
-                        while let Ok(mut morsel) = recv.recv().await {
+                        while let Ok((mut morsel, ())) = recv.recv().await {
                             morsel.set_consume_token(wait_group.token());
                             if send.0.send(morsel).await.is_err() {
                                 break;
