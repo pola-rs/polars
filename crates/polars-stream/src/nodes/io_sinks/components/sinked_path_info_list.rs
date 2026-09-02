@@ -72,4 +72,9 @@ impl SinkedPathInfoEntry {
     pub fn set_num_bytes(&self, num_bytes: u64) {
         self.path_info_list.path_info_list.lock()[self.entry_idx].num_bytes = num_bytes;
     }
+
+    pub fn set_parquet_metadata(&self, parquet_metadata: Vec<u8>) {
+        self.path_info_list.path_info_list.lock()[self.entry_idx].parquet_metadata =
+            Some(parquet_metadata);
+    }
 }

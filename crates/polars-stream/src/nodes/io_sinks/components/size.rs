@@ -259,10 +259,7 @@ impl TargetSinkMorselSize {
         }
 
         let n_parts_by_num_rows = if self.target_num_rows_mode == SplitMode::Exact {
-            u64::max(
-                1,
-                idxsize_to_u64(size.num_rows / self.target_num_rows.get()),
-            )
+            u64::max(1, idxsize_to_u64(size.num_rows / self.target_num_rows))
         } else {
             calc_n_parts(
                 idxsize_to_u64(size.num_rows),
@@ -274,8 +271,7 @@ impl TargetSinkMorselSize {
         let mut n_parts_by_num_bytes = 0;
 
         if self.target_num_bytes.get() != u64::MAX {
-            max_parts_by_num_bytes =
-                idxsize_to_u64(size.num_rows / self.target_num_bytes_min_rows.get());
+            max_parts_by_num_bytes = idxsize_to_u64(size.num_rows / self.target_num_bytes_min_rows);
             n_parts_by_num_bytes = calc_n_parts(size.num_bytes, self.target_num_bytes);
         };
 

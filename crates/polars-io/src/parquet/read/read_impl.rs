@@ -210,9 +210,7 @@ fn rg_to_dfs_optionally_par_over_columns(
         .sum();
     let slice_end = slice.0 + slice.1;
 
-    for rg_idx in row_group_start..row_group_end {
-        let md = &file_metadata.row_groups[rg_idx];
-
+    for md in &file_metadata.row_groups[row_group_start..row_group_end] {
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, md.num_rows(), slice.0, slice_end);
         let current_row_count = md.num_rows() as IdxSize;
@@ -324,9 +322,8 @@ fn rg_to_dfs_par_over_rg(
         rows_scanned = 0;
     }
 
-    for i in row_group_start..row_group_end {
+    for rg_md in &file_metadata.row_groups[row_group_start..row_group_end] {
         let row_count_start = rows_scanned;
-        let rg_md = &file_metadata.row_groups[i];
         let n_rows_this_file = rg_md.num_rows();
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, n_rows_this_file, slice.0, slice_end);
