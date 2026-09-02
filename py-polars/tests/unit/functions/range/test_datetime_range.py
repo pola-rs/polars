@@ -261,7 +261,7 @@ def test_tzaware_datetime_range_crossing_dst_monthly() -> None:
 def test_datetime_range_with_unsupported_datetimes() -> None:
     with pytest.raises(
         ComputeError,
-        match=r"datetime '2021-11-07 01:00:00' is ambiguous in time zone 'America/Chicago'",
+        match=r"datetime '2021-11-07T01:00:00' is ambiguous in time zone 'America/Chicago'",
     ):
         pl.datetime_range(
             datetime(2021, 11, 7, 1),
@@ -272,7 +272,7 @@ def test_datetime_range_with_unsupported_datetimes() -> None:
         )
     with pytest.raises(
         ComputeError,
-        match=r"datetime '2021-03-28 02:30:00' is non-existent in time zone 'Europe/Vienna'",
+        match=r"datetime '2021-03-28T02:30:00' is non-existent in time zone 'Europe/Vienna'",
     ):
         pl.datetime_range(
             datetime(2021, 3, 28, 2, 30),

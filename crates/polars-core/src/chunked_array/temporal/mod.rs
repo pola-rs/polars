@@ -10,12 +10,12 @@ mod duration;
 mod time;
 
 #[cfg(feature = "dtype-date")]
-use chrono::NaiveDate;
-use chrono::NaiveDateTime;
+use jiff::civil::Date as NaiveDate;
+use jiff::civil::DateTime as NaiveDateTime;
 #[cfg(any(feature = "dtype-time", feature = "dtype-date"))]
-use chrono::NaiveTime;
+use jiff::civil::Time as NaiveTime;
 #[cfg(feature = "timezones")]
-use chrono_tz::Tz;
+use jiff::tz::TimeZone as Tz;
 #[cfg(feature = "timezones")]
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "dtype-time")]
