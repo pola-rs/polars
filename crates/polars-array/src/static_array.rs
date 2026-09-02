@@ -5,6 +5,7 @@ use std::ops::Range;
 use arrow::bitmap::Bitmap;
 use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
+use bytemuck::Zeroable;
 
 use crate::array::PlArray;
 use crate::binary::{PlBinaryIter, PlBinaryValuesIter};
@@ -69,6 +70,26 @@ pub trait StaticArray: PlArray + Clone {
     /// [`PlStructArray`], whose values live in its field arrays, and a [`PlNullArray`], which has
     /// no values at all.
     type ValueT<'a>: Clone
+    where
+        Self: 'a;
+
+    /// One element of this array, in a type whose all-zero bit pattern is a value of its own.
+    ///
+    /// A kernel that fills a [`Vec`] with one slot per element needs something to leave in the
+    /// slots it has no value for — the elements it is about to mask off as null. That is what
+    /// this type is: a stand-in for [`Self::ValueT`] that every value converts into, and which
+    /// has something to leave a slot at when there is no value, [`Zeroable::zeroed`].
+    ///
+    /// For an element that is already zeroable — a number, a `bool` — this is the element type
+    /// unchanged, and the zero is zero or `false`. For one that is a reference, which has no
+    /// zero, it is [`Option`] of it, and the zero is [`None`]. Either way what a zeroed slot
+    /// holds is not a value the kernel meant to write: it is the validity mask, put on afterwards
+    /// with [`Self::with_validity_typed`], that says which slots those were.
+    ///
+    /// The vector is turned into the array by collecting it — see
+    /// [`ZeroableArrayFromIter`](crate::collect::ZeroableArrayFromIter), which is this crate's
+    /// [`from_zeroable_vec`](arrow::array::StaticArray::from_zeroable_vec).
+    type ZeroableValueT<'a>: Zeroable + From<Self::ValueT<'a>>
     where
         Self: 'a;
 
@@ -184,6 +205,7 @@ pub trait StaticArray: PlArray + Clone {
 
 impl<T: NativeType> StaticArray for PlPrimitiveArray<T> {
     type ValueT<'a> = T;
+    type ZeroableValueT<'a> = T;
     type ValueIterT<'a> = PlPrimitiveValuesIter<'a, T>;
     type IterT<'a> = PlPrimitiveIter<'a, T>;
     type Builder = PlPrimitiveArrayBuilder<T>;
@@ -231,6 +253,7 @@ impl<T: NativeType> StaticArray for PlPrimitiveArray<T> {
 
 impl StaticArray for PlBooleanArray {
     type ValueT<'a> = bool;
+    type ZeroableValueT<'a> = bool;
     type ValueIterT<'a> = PlBitmapIter<'a>;
     type IterT<'a> = PlBooleanIter<'a>;
     type Builder = PlBooleanArrayBuilder;
@@ -278,6 +301,7 @@ impl StaticArray for PlBooleanArray {
 
 impl StaticArray for PlBinaryArray {
     type ValueT<'a> = &'a [u8];
+    type ZeroableValueT<'a> = Option<&'a [u8]>;
     type ValueIterT<'a> = PlBinaryValuesIter<'a>;
     type IterT<'a> = PlBinaryIter<'a>;
     type Builder = PlBinaryArrayBuilder;
@@ -325,6 +349,7 @@ impl StaticArray for PlBinaryArray {
 
 impl StaticArray for PlBinaryViewArray {
     type ValueT<'a> = &'a [u8];
+    type ZeroableValueT<'a> = Option<&'a [u8]>;
     type ValueIterT<'a> = PlBinaryViewValuesIter<'a>;
     type IterT<'a> = PlBinaryViewIter<'a>;
     type Builder = PlBinaryViewArrayBuilder;
@@ -372,6 +397,7 @@ impl StaticArray for PlBinaryViewArray {
 
 impl StaticArray for PlFixedSizeBinaryArray {
     type ValueT<'a> = &'a [u8];
+    type ZeroableValueT<'a> = Option<&'a [u8]>;
     type ValueIterT<'a> = PlFixedSizeBinaryValuesIter<'a>;
     type IterT<'a> = PlFixedSizeBinaryIter<'a>;
     type Builder = PlFixedSizeBinaryArrayBuilder;
@@ -419,6 +445,7 @@ impl StaticArray for PlFixedSizeBinaryArray {
 
 impl StaticArray for PlListArray {
     type ValueT<'a> = Box<dyn PlArray>;
+    type ZeroableValueT<'a> = Option<Box<dyn PlArray>>;
     type ValueIterT<'a> = PlListValuesIter<'a>;
     type IterT<'a> = PlListIter<'a>;
     type Builder = PlListArrayBuilder;
@@ -466,6 +493,7 @@ impl StaticArray for PlListArray {
 
 impl StaticArray for PlFixedSizeListArray {
     type ValueT<'a> = Box<dyn PlArray>;
+    type ZeroableValueT<'a> = Option<Box<dyn PlArray>>;
     type ValueIterT<'a> = PlFixedSizeListValuesIter<'a>;
     type IterT<'a> = PlFixedSizeListIter<'a>;
     type Builder = PlFixedSizeListArrayBuilder;
@@ -516,6 +544,7 @@ impl StaticArray for PlFixedSizeListArray {
 /// left of an element is whether it is null, so the value of one is `()`.
 impl StaticArray for PlStructArray {
     type ValueT<'a> = ();
+    type ZeroableValueT<'a> = ();
     type ValueIterT<'a> = std::iter::RepeatN<()>;
     type IterT<'a> = PlUnitIter<'a>;
     type Builder = PlStructArrayBuilder;
@@ -560,6 +589,7 @@ impl StaticArray for PlStructArray {
 /// the mask, so the value of an element is `()` and [`StaticArray::get`] is always `None`.
 impl StaticArray for PlNullArray {
     type ValueT<'a> = ();
+    type ZeroableValueT<'a> = ();
     type ValueIterT<'a> = std::iter::RepeatN<()>;
     type IterT<'a> = PlUnitIter<'a>;
     type Builder = PlNullArrayBuilder;
@@ -854,5 +884,61 @@ mod tests {
 
         let repeated: PlPrimitiveArray<i32> = array.new_from_index_typed(2, 4);
         assert_eq!(repeated, PlPrimitiveArray::new_scalar(3, 4));
+    }
+
+    /// Every array names a zeroable stand-in for its elements, including the ones that cannot be
+    /// collected back from it: the stand-in is what a kernel keeps its slots in, and the slot of
+    /// an element it has no value for is left at the zero.
+    #[test]
+    fn every_array_has_a_zeroable_stand_in_for_its_elements() {
+        use bytemuck::Zeroable;
+
+        /// The elements of `array`, with the slot of each null left zeroed.
+        fn zeroable_values<A: StaticArray>(array: &A) -> Vec<A::ZeroableValueT<'_>> {
+            array
+                .iter()
+                .map(|value| value.map_or_else(Zeroable::zeroed, Into::into))
+                .collect()
+        }
+
+        let validity = Some(Bitmap::from_iter([true, false]));
+
+        let array = PlPrimitiveArray::from_vec(vec![1i32, 2]).with_validity(validity.clone());
+        assert_eq!(zeroable_values(&array), [1, 0]);
+
+        let array = PlBooleanArray::new_scalar(true, 2).with_validity(validity.clone());
+        assert_eq!(zeroable_values(&array), [true, false]);
+
+        let array =
+            PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2).with_validity(validity.clone());
+        assert_eq!(zeroable_values(&array), [Some([1, 2].as_slice()), None]);
+
+        let array = PlListArray::from_offsets(
+            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
+            Buffer::from(vec![0u64, 2, 3]),
+        )
+        .with_validity(validity.clone());
+        let values = zeroable_values(&array);
+        assert_eq!(values[0].as_ref().map(|list| list.len()), Some(2));
+        assert!(values[1].is_none());
+
+        let array = PlFixedSizeListArray::from_values(
+            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
+            1,
+        )
+        .with_validity(validity.clone());
+        let values = zeroable_values(&array);
+        assert_eq!(values[0].as_ref().map(|list| list.len()), Some(1));
+        assert!(values[1].is_none());
+
+        // The elements of these two carry no value, so there is nothing for the zero to stand in
+        // for either.
+        let array = PlStructArray::new(
+            vec![Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2]))],
+            2,
+            validity,
+        );
+        assert_eq!(zeroable_values(&array), [(), ()]);
+        assert_eq!(zeroable_values(&PlNullArray::new(2)), [(), ()]);
     }
 }

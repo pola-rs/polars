@@ -46,7 +46,7 @@ pub use binview::{PlBinaryViewArray, PlBinaryViewArrayBuilder};
 pub use bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 pub use boolean::{PlBooleanArray, PlBooleanArrayBuilder};
 pub use builder::{PlArrayBuilder, StaticArrayBuilder};
-pub use collect::{ArrayCollectIterExt, ArrayFromIter};
+pub use collect::{ArrayCollectIterExt, ArrayFromIter, ZeroableArrayFromIter};
 pub use fixed_size_binary::{PlFixedSizeBinaryArray, PlFixedSizeBinaryArrayBuilder};
 pub use fixed_size_list::{PlFixedSizeListArray, PlFixedSizeListArrayBuilder};
 pub use flat::Flat;

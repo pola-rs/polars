@@ -13,6 +13,10 @@
 //! [trusted](arrow::trusted_len::TrustedLen), which lets an implementation that can do better
 //! knowing the exact length do so.
 //!
+//! [`ZeroableArrayFromIter`] is the same collect over the [zeroable
+//! values](StaticArray::ZeroableValueT) of the array rather than its elements, which is what a
+//! kernel that leaves a slot zeroed where it has no value to write collects.
+//!
 //! # What can be collected
 //!
 //! Every array whose elements carry their own value has an implementation over the values and one
@@ -179,6 +183,84 @@ pub trait ArrayCollectIterExt<A: StaticArray>: Iterator + Sized {
 }
 
 impl<A: StaticArray, I: Iterator> ArrayCollectIterExt<A> for I {}
+
+/// An array that can be collected from the [zeroable stand-ins](StaticArray::ZeroableValueT) for
+/// its elements.
+///
+/// This is [`ArrayFromIter`] over [`StaticArray::ZeroableValueT`], which is a bound a caller
+/// cannot name without writing out the higher-ranked projection. Every array that can be
+/// collected at all implements it — the zeroable stand-in for an element is the element type
+/// itself or an [`Option`] of it, and those are what such an array is collected from already — so
+/// it is [`from_zeroable_vec`](arrow::array::StaticArray::from_zeroable_vec) of the Arrow arrays,
+/// minus the dtype the arrays of this crate do not carry.
+///
+/// This is what a kernel that walks an array element by element collects: it fills one slot per
+/// element, leaves the slots it has no value for zeroed, and puts the mask that says which those
+/// were on the array afterwards with
+/// [`with_validity_typed`](StaticArray::with_validity_typed). Which is to say that the values a
+/// zeroed slot collects as are unspecified — [`None`] collects as a null, a zeroed number as a
+/// zero — and it is the mask, not the value, that makes the element null.
+///
+/// # Example
+/// ```
+/// use arrow::bitmap::BitmapBuilder;
+/// use bytemuck::Zeroable;
+/// use polars_array::collect::ZeroableArrayFromIter;
+/// use polars_array::{PlBinaryViewArray, PlPrimitiveArray, StaticArray};
+///
+/// /// The elements of `array` at `indices`, with an out-of-bounds index standing for a null.
+/// fn opt_gather<A: ZeroableArrayFromIter>(array: &A, indices: &[usize]) -> A {
+///     let mut validity = BitmapBuilder::with_capacity(indices.len());
+///
+///     let values: Vec<A::ZeroableValueT<'_>> = indices
+///         .iter()
+///         .map(|&i| {
+///             let value = (i < array.len()).then(|| array.get(i)).flatten();
+///             validity.push(value.is_some());
+///             // The slot of an element there is no value for is left zeroed.
+///             value.map_or_else(Zeroable::zeroed, Into::into)
+///         })
+///         .collect();
+///
+///     A::arr_from_zeroable_iter(values).with_validity_typed(validity.into_opt_validity())
+/// }
+///
+/// let array: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
+/// let gathered = opt_gather(&array, &[2, 9, 0, 1]);
+/// assert_eq!(gathered.iter().collect::<Vec<_>>(), [Some(3), None, Some(1), None]);
+///
+/// // An element that is null is one there is no value for either, so its slot is zeroed too.
+/// let array: PlBinaryViewArray = [Some(b"foo".as_slice()), None].into_iter().collect();
+/// let gathered = opt_gather(&array, &[0, 9, 1]);
+/// assert_eq!(gathered.iter().collect::<Vec<_>>(), [Some(b"foo".as_slice()), None, None]);
+/// ```
+pub trait ZeroableArrayFromIter:
+    StaticArray + for<'a> ArrayFromIter<Self::ZeroableValueT<'a>>
+{
+    /// Collects `iter` into an array of its elements, in order.
+    ///
+    /// This is [`ArrayFromIter::arr_from_iter`] over the zeroable values, named so that it can be
+    /// reached without the projection spelled out.
+    #[inline(always)]
+    fn arr_from_zeroable_iter<'a, I>(iter: I) -> Self
+    where
+        Self: 'a,
+        I: IntoIterator<Item = Self::ZeroableValueT<'a>>,
+    {
+        Self::arr_from_iter(iter)
+    }
+
+    /// Collects an iterator whose length can be trusted into an array of its elements, in order.
+    #[inline(always)]
+    fn arr_from_zeroable_iter_trusted<'a, I>(iter: I) -> Self
+    where
+        Self: 'a,
+        I: IntoIterator<Item = Self::ZeroableValueT<'a>>,
+        I::IntoIter: TrustedLen,
+    {
+        Self::arr_from_iter_trusted(iter)
+    }
+}
 
 // ---------------
 // Implementations
@@ -442,6 +524,14 @@ impl<V: IntoBytes> ArrayFromIter<Option<V>> for PlBinaryViewArray {
     }
 }
 
+// The collects above under another name: the zeroable stand-in for an element of one of these
+// four is the element type itself or an `Option` of it, so there is nothing left for the marker
+// to do.
+impl<T: NativeType> ZeroableArrayFromIter for PlPrimitiveArray<T> {}
+impl ZeroableArrayFromIter for PlBooleanArray {}
+impl ZeroableArrayFromIter for PlBinaryArray {}
+impl ZeroableArrayFromIter for PlBinaryViewArray {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -703,5 +793,81 @@ mod tests {
 
         let array: PlBinaryViewArray = [Some(b"foo".as_slice()), None].into_iter().collect_arr();
         assert_eq!(compacted(&array).value(0), b"foo");
+    }
+
+    /// The zeroable collect, over every array that has one: a pass that leaves a slot zeroed
+    /// where it has no value to write, and a mask that says which those were.
+    #[test]
+    fn collecting_zeroable_values_is_generic_over_the_array() {
+        use arrow::bitmap::BitmapBuilder;
+        use bytemuck::Zeroable;
+
+        /// Every element of `array`, with each null filled with the last value before it.
+        fn fill_forward<A: ZeroableArrayFromIter>(array: &A) -> A
+        where
+            for<'a> A::ZeroableValueT<'a>: Copy,
+        {
+            let mut last = A::ZeroableValueT::zeroed();
+            let mut validity = BitmapBuilder::with_capacity(array.len());
+            let mut seen = false;
+
+            let values: Vec<A::ZeroableValueT<'_>> = array
+                .iter()
+                .map(|value| {
+                    // Until the first value there is nothing to fill with, so the slot stays
+                    // zeroed and the mask keeps the element null.
+                    seen |= value.is_some();
+                    last = value.map_or(last, Into::into);
+                    validity.push(seen);
+                    last
+                })
+                .collect();
+
+            A::arr_from_zeroable_iter(values).with_validity_typed(validity.into_opt_validity())
+        }
+
+        let array: PlPrimitiveArray<i32> =
+            [None, Some(1), None, Some(3), None].into_iter().collect();
+        assert_eq!(
+            fill_forward(&array).iter().collect::<Vec<_>>(),
+            [None, Some(1), Some(1), Some(3), Some(3)],
+        );
+
+        let array: PlBooleanArray = [Some(true), None].into_iter().collect();
+        assert_eq!(
+            fill_forward(&array).iter().collect::<Vec<_>>(),
+            [Some(true), Some(true)],
+        );
+
+        let array: PlBinaryArray = [None, Some(b"foo".as_slice()), None].into_iter().collect();
+        assert_eq!(
+            fill_forward(&array).iter().collect::<Vec<_>>(),
+            [None, Some(b"foo".as_slice()), Some(b"foo".as_slice())],
+        );
+
+        let array: PlBinaryViewArray = [None, Some(b"foo".as_slice()), None].into_iter().collect();
+        assert_eq!(
+            fill_forward(&array).iter().collect::<Vec<_>>(),
+            [None, Some(b"foo".as_slice()), Some(b"foo".as_slice())],
+        );
+    }
+
+    /// A zeroed slot is not a value the caller wrote: what it collects as is whatever the zero of
+    /// the stand-in is, and it is the mask that is put on afterwards that makes it a null.
+    #[test]
+    fn a_zeroed_slot_collects_as_the_zero_of_the_stand_in() {
+        use bytemuck::Zeroable;
+
+        let zeroed = <PlPrimitiveArray<i32> as StaticArray>::ZeroableValueT::zeroed();
+        let array = PlPrimitiveArray::<i32>::arr_from_zeroable_iter([zeroed, 7]);
+        assert_eq!(array.iter().collect::<Vec<_>>(), [Some(0), Some(7)]);
+
+        // The stand-in of a byte string is an `Option` of it, whose zero collects as a null.
+        let zeroed = <PlBinaryArray as StaticArray>::ZeroableValueT::zeroed();
+        let array = PlBinaryArray::arr_from_zeroable_iter([zeroed, b"foo".as_slice().into()]);
+        assert_eq!(
+            array.iter().collect::<Vec<_>>(),
+            [None, Some(b"foo".as_slice())]
+        );
     }
 }
