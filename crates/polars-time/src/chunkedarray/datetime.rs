@@ -1,6 +1,7 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::temporal;
 use polars_compute::cast::{CastOptionsImpl, cast};
+use polars_core::chunked_array::arrow_bridge::{chunk_from_arrow, chunk_to_arrow};
 use polars_core::prelude::*;
 #[cfg(feature = "timezones")]
 use polars_ops::chunked_array::datetime::replace_time_zone;
@@ -15,9 +16,11 @@ fn cast_and_apply<
     func: F,
 ) -> ChunkedArray<T> {
     let dtype = ca.dtype().to_arrow(CompatLevel::newest());
+    // TODO(polars-array-scalar): `cast` and the `temporal` kernels are Arrow ones, so a scalar
+    // chunk is written out here rather than the single value it stands for being converted once.
     let chunks = ca.physical().downcast_iter().map(|arr| {
         let arr = cast(
-            arr,
+            &chunk_to_arrow(arr),
             &dtype,
             CastOptionsImpl {
                 wrapped: true,
@@ -25,7 +28,7 @@ fn cast_and_apply<
             },
         )
         .unwrap();
-        func(&*arr).unwrap()
+        chunk_from_arrow(&func(&*arr).unwrap())
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), chunks)
 }

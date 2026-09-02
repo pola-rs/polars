@@ -1,7 +1,10 @@
 mod serializer;
 
-use arrow::array::NullArray;
+use arrow::array::{Array, NullArray};
 use arrow::legacy::time_zone::Tz;
+use polars_array::PlUtf8ViewArray;
+use polars_array::arrow::export;
+use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_error::polars_ensure;
@@ -153,8 +156,17 @@ impl CsvSerializer {
         let options = Arc::clone(&self.options);
         let options = options.as_ref();
 
+        // The serializers borrow their Arrow array, so the converted chunks are held here for as
+        // long as the serializers live. Declared before `serializers_vec` so that it outlives it.
+        //
+        // TODO(polars-array-scalar): the serializers walk their array slot by slot, so a scalar
+        // chunk is written out here rather than the single value it stands for being formatted
+        // once and repeated.
+        let arrow_chunks = Self::to_arrow_chunks(df.columns());
+
         let mut serializers_vec = reuse_vec(std::mem::take(&mut self.serializers));
-        let serializers = self.build_serializers(df.columns(), &mut serializers_vec)?;
+        let serializers =
+            self.build_serializers(df.columns(), &arrow_chunks, &mut serializers_vec)?;
 
         for _ in 0..df.height() {
             serializers[0].serialize(buffer, options);
@@ -171,21 +183,46 @@ impl CsvSerializer {
         Ok(())
     }
 
+    /// Hands each column's single chunk to the Arrow array the serializers are written against.
+    ///
+    /// The serializers downcast to the Arrow array of the column's *physical* representation,
+    /// which is what [`export::to_arrow`] hands over — with one exception: a string chunk is a
+    /// [`PlUtf8ViewArray`], whose physical export is a `BinaryViewArray`, while the serializer
+    /// downcasts to `Utf8ViewArray`. That one crosses through the typed bridge instead, which
+    /// keeps the UTF-8 promise the Arrow type carries.
+    ///
     /// # Panics
     /// Panics if a column has >1 chunk.
+    fn to_arrow_chunks(columns: &[Column]) -> Vec<Box<dyn Array>> {
+        columns
+            .iter()
+            .map(|c| {
+                assert_eq!(c.n_chunks(), 1);
+                let series = c.as_materialized_series();
+
+                match c.dtype() {
+                    DataType::String => {
+                        let chunk = series.str().unwrap().downcast_get(0).unwrap();
+                        Box::new(chunk_to_arrow::<PlUtf8ViewArray>(chunk)) as Box<dyn Array>
+                    },
+                    _ => export::to_arrow(series.chunks()[0].as_ref()),
+                }
+            })
+            .collect()
+    }
+
     fn build_serializers<'a, 'b>(
         &'a mut self,
         columns: &'a [Column],
+        arrow_chunks: &'a [Box<dyn Array>],
         serializers: &'b mut Vec<Box<ColumnSerializer<'a>>>,
     ) -> PolarsResult<&'b mut [Box<ColumnSerializer<'a>>]> {
         serializers.clear();
         serializers.reserve(columns.len());
 
         for (i, c) in columns.iter().enumerate() {
-            assert_eq!(c.n_chunks(), 1);
-
             serializers.push(serializer_for(
-                c.as_materialized_series().chunks()[0].as_ref(),
+                arrow_chunks[i].as_ref(),
                 Arc::as_ref(&self.options),
                 c.dtype(),
                 self.datetime_formats[i].as_str(),

@@ -315,7 +315,10 @@ impl Wrap<&DataFrame> {
         };
 
         let groups = if let Some(groups) = group_by.as_ref() {
-            let vals = dt.physical().downcast_iter().next().unwrap();
+            // TODO(polars-array-scalar): the windowing kernels read the timestamps as a slice,
+            // so a scalar chunk is written out here rather than the single value it stands for
+            // being read once.
+            let vals = dt.physical().downcast_iter().next().unwrap().to_flat();
             let ts = vals.values().as_slice();
 
             let iter = groups.par_iter().map(|[start, len]| {
@@ -361,7 +364,10 @@ impl Wrap<&DataFrame> {
             update_bounds(lower, upper);
             PolarsResult::Ok(GroupsType::new_slice(groups, overlapping, true))
         } else {
-            let vals = dt.physical().downcast_iter().next().unwrap();
+            // TODO(polars-array-scalar): the windowing kernels read the timestamps as a slice,
+            // so a scalar chunk is written out here rather than the single value it stands for
+            // being read once.
+            let vals = dt.physical().downcast_iter().next().unwrap().to_flat();
             let ts = vals.values().as_slice();
             let (groups, lower, upper) = group_by_windows(
                 w,
@@ -432,7 +438,10 @@ impl Wrap<&DataFrame> {
 
         let groups = if let Some(groups) = group_by {
             let dt = dt.datetime().unwrap();
-            let vals = dt.physical().downcast_iter().next().unwrap();
+            // TODO(polars-array-scalar): the windowing kernels read the timestamps as a slice,
+            // so a scalar chunk is written out here rather than the single value it stands for
+            // being read once.
+            let vals = dt.physical().downcast_iter().next().unwrap().to_flat();
             let ts = vals.values().as_slice();
 
             let iter = groups.into_par_iter().map(|[start, len]| {
@@ -467,7 +476,10 @@ impl Wrap<&DataFrame> {
             // so we can set this such that downstream code has this info
             dt.set_sorted_flag(IsSorted::Ascending);
             let dt = dt.datetime().unwrap();
-            let vals = dt.physical().downcast_iter().next().unwrap();
+            // TODO(polars-array-scalar): the windowing kernels read the timestamps as a slice,
+            // so a scalar chunk is written out here rather than the single value it stands for
+            // being read once.
+            let vals = dt.physical().downcast_iter().next().unwrap().to_flat();
             let ts = vals.values().as_slice();
             let groups = group_by_values(
                 options.period,

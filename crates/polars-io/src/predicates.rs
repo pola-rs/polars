@@ -102,6 +102,9 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
 
         bm.reserve(true_mask.len());
         for chunk in true_mask.downcast_iter() {
+            // TODO(polars-array-scalar): the mask is appended bit by bit, so a scalar chunk is
+            // written out here rather than its single bit being extended over `len` bits.
+            let chunk = chunk.to_flat();
             match chunk.validity() {
                 None => bm.extend_from_bitmap(chunk.values()),
                 Some(v) => bm.extend_from_bitmap(&(chunk.values() & v)),
