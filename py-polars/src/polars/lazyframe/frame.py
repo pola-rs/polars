@@ -382,54 +382,25 @@ class LazyFrame:
         return self
 
     def _with_height_column(self) -> LazyFrame:
-        """
-        Attach a placeholder column that carries the height of this frame.
-
-        Operations that derive their output height from the columns they see
-        return a 0-height result for a 0-width input, as there is no column left
-        to take the height from. A 0-field struct column holds a height without
-        holding any data, so attaching one keeps the height observable; pair this
-        with `_drop_height_column()` to remove it again afterwards.
-        """
+        """Add a private dummy column that preserves the input height."""
         return self.with_columns(F.lit({}, dtype=Struct({})).alias(_HEIGHT_COLUMN))
 
     def _drop_height_column(self) -> LazyFrame:
-        """Drop the placeholder column added by `_with_height_column()`."""
+        """Drop the dummy column added by `_with_height_column()`."""
         return self.drop(_HEIGHT_COLUMN)
 
     def _height_preserving(self, op: Callable[[LazyFrame], LazyFrame]) -> LazyFrame:
-        """
-        Apply `op` with a height-carrying placeholder column attached.
-
-        `op` sees the placeholder as an ordinary column, so it must accept a
-        0-field struct and treat it like any other column - only then does the
-        placeholder end up with the height that `op` gives its output.
-        """
+        """Apply `op` with a height-carrying dummy column attached."""
         return op(self._with_height_column())._drop_height_column()
 
     def _aggregate_select(self, exprs: Sequence[Expr]) -> LazyFrame:
-        """
-        `select()` of aggregation expressions, returning a single row.
-
-        `exprs` is empty when the frame has no columns to aggregate, which would
-        otherwise collapse the result to 0 rows; a placeholder literal keeps it
-        1 row high, as it is for any other input.
-        """
+        """`select()` of aggregation expressions, ensures result is height 1."""
         return self.select(
             F.lit({}, dtype=Struct({})).alias(_HEIGHT_COLUMN), *exprs
         ).drop(_HEIGHT_COLUMN)
 
     def _height_preserving_select(self, into_expr: Callable[[Expr], Expr]) -> LazyFrame:
-        """
-        `select()` over all columns, retaining the height of a 0-width input.
-
-        `into_expr` receives a wildcard expression matching the columns of this
-        frame; unlike a plain `col("*")` it does not match the height-carrying
-        placeholder column, so it is safe for operations that only accept
-        specific dtypes. The placeholder is passed through untouched, so
-        `into_expr` must not change the number of rows - use
-        `_height_preserving()` for operations that do.
-        """
+        """`select()` over all columns, retaining the height of a 0-width input."""
         return self._height_preserving(
             lambda lf: lf.select(
                 F.col(_HEIGHT_COLUMN), into_expr(F.exclude(_HEIGHT_COLUMN))
