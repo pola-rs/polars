@@ -12,7 +12,6 @@ import io
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import normalize_filepath, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_ldf
@@ -56,17 +55,6 @@ def _to_sink_target(
         raise TypeError(msg)
 
 
-def _apply_retries_deprecation(
-    retries: int | None, storage_options: StorageOptionsDict | None
-) -> StorageOptionsDict | None:
-    if retries is not None:
-        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-        issue_deprecation_warning(msg)
-        storage_options = storage_options or {}
-        storage_options["max_retries"] = retries
-    return storage_options
-
-
 def _sink_parquet_plan(
     lf: LazyFrame,
     path: str | Path | IO[bytes] | PartitionBy,
@@ -79,7 +67,6 @@ def _sink_parquet_plan(
     maintain_order: bool,
     storage_options: StorageOptionsDict | None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-    retries: int | None,
     sync_on_close: SyncOnCloseMethod | None,
     metadata: ParquetMetadata | None,
     arrow_schema: ArrowSchemaExportable | None,
@@ -117,8 +104,6 @@ def _sink_parquet_plan(
             "distinct_count": True,
             "null_count": True,
         }
-
-    storage_options = _apply_retries_deprecation(retries, storage_options)
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, path, storage_options, "sink_parquet"
@@ -168,7 +153,6 @@ def _sink_ipc_plan(
     maintain_order: bool,
     storage_options: StorageOptionsDict | None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-    retries: int | None,
     sync_on_close: SyncOnCloseMethod | None,
     mkdir: bool,
     _record_batch_statistics: bool,
@@ -180,8 +164,6 @@ def _sink_ipc_plan(
         _init_credential_provider_builder,
     )
     from polars.io.partition import _SinkOptions
-
-    storage_options = _apply_retries_deprecation(retries, storage_options)
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, path, storage_options, "sink_ipc"
@@ -245,7 +227,6 @@ def _sink_csv_plan(
     maintain_order: bool,
     storage_options: StorageOptionsDict | None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-    retries: int | None,
     sync_on_close: SyncOnCloseMethod | None,
     mkdir: bool,
 ) -> LazyFrame:
@@ -266,8 +247,6 @@ def _sink_csv_plan(
     )
 
     target = _to_sink_target(path)
-
-    storage_options = _apply_retries_deprecation(retries, storage_options)
 
     sink_options = _SinkOptions(
         mkdir=mkdir,
@@ -311,7 +290,6 @@ def _sink_ndjson_plan(
     maintain_order: bool,
     storage_options: StorageOptionsDict | None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-    retries: int | None,
     sync_on_close: SyncOnCloseMethod | None,
     mkdir: bool,
 ) -> LazyFrame:
@@ -320,8 +298,6 @@ def _sink_ndjson_plan(
         _init_credential_provider_builder,
     )
     from polars.io.partition import _SinkOptions
-
-    storage_options = _apply_retries_deprecation(retries, storage_options)
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, path, storage_options, "sink_ndjson"

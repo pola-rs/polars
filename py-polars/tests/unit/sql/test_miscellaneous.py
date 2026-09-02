@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -7,7 +8,12 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import ColumnNotFoundError, SQLInterfaceError, SQLSyntaxError
+from polars.exceptions import (
+    ArgumentRemovedError,
+    ColumnNotFoundError,
+    SQLInterfaceError,
+    SQLSyntaxError,
+)
 from polars.testing import assert_frame_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
@@ -274,7 +280,7 @@ def test_nested_subquery_table_leakage() -> None:
         SQLInterfaceError,
         match="relation 'derived' was not found",
     ):
-        ctx.execute("SELECT * FROM derived")
+        ctx.execute("SELECT * FROM derived").collect()
 
 
 def test_register_context() -> None:
@@ -338,7 +344,7 @@ def test_sql_on_compatible_frame_types() -> None:
 
     # don't register all compatible objects
     with pytest.raises(SQLInterfaceError, match="relation 'dfp' was not found"):
-        pl.SQLContext(register_globals=True).execute("SELECT * FROM dfp")
+        pl.SQLContext(register_globals=True).execute("SELECT * FROM dfp").collect()
 
 
 def test_nested_cte_column_aliasing() -> None:
@@ -412,7 +418,7 @@ def test_read_csv(tmp_path: Path) -> None:
         SQLSyntaxError,
         match="`read_csv` expects a single file path; found 3 arguments",
     ):
-        pl.sql("SELECT * FROM read_csv('a','b','c')")
+        pl.sql("SELECT * FROM read_csv('a','b','c')").collect()
 
 
 def test_global_variable_inference_17398() -> None:
@@ -642,4 +648,10 @@ def test_unsupported_select_clauses(query: str) -> None:
             match=r"not.*supported",
         ),
     ):
-        ctx.execute(query)
+        ctx.execute(query).collect()
+
+
+def test_sql_context_eager_execution_removed() -> None:
+    msg = "It was renamed to 'eager'."
+    with pytest.raises(ArgumentRemovedError, match=re.escape(msg)):
+        pl.SQLContext(eager_execution=True)  # type: ignore[call-arg]

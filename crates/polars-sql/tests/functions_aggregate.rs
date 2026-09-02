@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_plan::dsl::Expr;
 use polars_sql::*;
+use polars_testing::asserts::assert_dataframe_equal;
 
 fn create_df() -> LazyFrame {
     df! {
@@ -81,7 +82,7 @@ fn test_quantile_out_of_range() {
             let query = format!("SELECT {func}(Data, {q})");
             let mut ctx = SQLContext::new();
             ctx.register("df", create_df());
-            let actual = ctx.execute(&query);
+            let actual = ctx.execute(&query).and_then(|lf| lf.collect());
             assert!(actual.is_err())
         }
     }
@@ -148,12 +149,12 @@ fn test_corr() {
     let sql = r#"
     SELECT
         CORR(a, b) as corr,
-        COVAR(a, b) as covar,
-        COVAR_POP(a, b) as covar_pop
+        COVAR(a, b) as cov,
+        COVAR_POP(a, b) as cov_pop
     FROM df"#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
-    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+    assert_dataframe_equal(&actual, &expected, Default::default()).unwrap();
 }
 
 #[test]
@@ -177,11 +178,11 @@ fn test_corr_group_by() {
     SELECT
         c,
         CORR(a, b) AS corr,
-        COVAR(a, b) AS covar
+        COVAR(a, b) AS cov
     FROM df
     GROUP BY c
     ORDER BY c"#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
-    assert_eq!(expected, actual, "expected {expected:?}, got {actual:?}");
+    assert_dataframe_equal(&actual, &expected, Default::default()).unwrap();
 }

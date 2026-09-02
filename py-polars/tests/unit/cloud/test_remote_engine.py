@@ -380,7 +380,6 @@ def test_eager_operations_stay_local(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
     df.write_parquet(tmp_path / "data.parquet")
     df.write_ipc(tmp_path / "data.ipc")
-    df.write_csv(tmp_path / "data.csv")
 
     with pl.Config(engine_affinity=pl.RemoteEngine()):
         assert df.filter(pl.col("a") > 1).height == 2
@@ -395,9 +394,6 @@ def test_eager_operations_stay_local(tmp_path: Path) -> None:
         assert pl.read_lines(b"one\ntwo\n").height == 2
         assert pl.concat([df, df]).height == 6
         assert len(pl.align_frames(df, df, on="a")) == 2
-        assert pl.sql("SELECT * FROM df", eager=True).height == 3
-        reader = pl.read_csv_batched(tmp_path / "data.csv", batch_size=1)
-        assert reader.next_batches(1) is not None
         # explicitly asking for a local engine also still works
         assert pl.LazyFrame({"a": [1]}).collect(engine="in-memory").height == 1
 

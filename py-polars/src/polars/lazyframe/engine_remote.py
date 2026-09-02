@@ -15,7 +15,7 @@ from polars._utils.various import qualified_type_name
 from polars.lazyframe.engine import Engine
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Mapping
     from pathlib import Path
 
     import polars_cloud as pc
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from polars.interchange.protocol import CompatLevel
     from polars.io.cloud import CredentialProviderFunction
     from polars.io.partition import PartitionBy, SinkedPathsCallback
+    from polars.lazyframe.engine import _CollectBatches
     from polars.lazyframe.frame import LazyFrame
     from polars.lazyframe.opt_flags import QueryOptFlags
     from polars.lazyframe.query_result import QueryResult
@@ -191,10 +192,7 @@ class RemoteEngine(Engine):
     ) -> DataFrame:
         """Collect `lf` remotely, streaming the result back to this machine."""
         self._reject_if_set(background=background, post_opt_callback=post_opt_callback)
-        # `collect` postdates the released `polars_cloud`, so its stubs may lack it
-        return self._target(lf).collect(  # type: ignore[union-attr, no-any-return]
-            optimizations=optimizations
-        )
+        return self._target(lf).collect(optimizations=optimizations)
 
     def collect_batches(
         self,
@@ -204,10 +202,12 @@ class RemoteEngine(Engine):
         maintain_order: bool = True,
         chunk_size: int | None = None,
         lazy: bool = False,
-    ) -> Iterator[DataFrame]:
+    ) -> _CollectBatches:
         """See :meth:`polars.LazyFrame.collect_batches`."""
         self._reject_if_set(chunk_size=chunk_size, lazy=lazy)
-        return self._target(lf).collect_batches(  # type: ignore[union-attr, no-any-return]
+        # Polars Cloud streams the result back through `scan_arrow_c_stream`, so this
+        # really is a `_CollectBatches`; its stubs just type it as a plain iterator.
+        return self._target(lf).collect_batches(  # type: ignore[return-value]
             maintain_order=maintain_order, optimizations=optimizations
         )
 
@@ -247,7 +247,6 @@ class RemoteEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
@@ -259,7 +258,6 @@ class RemoteEngine(Engine):
         self._reject_if_set(
             mkdir=mkdir,
             sync_on_close=sync_on_close,
-            retries=retries,
             sinked_paths_callback=sinked_paths_callback,
         )
         self._target(lf).sink_parquet(
@@ -289,7 +287,6 @@ class RemoteEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
@@ -300,7 +297,6 @@ class RemoteEngine(Engine):
         self._reject_if_set(
             mkdir=mkdir,
             sync_on_close=sync_on_close,
-            retries=retries,
             record_batch_size=record_batch_size,
             _record_batch_statistics=_record_batch_statistics,
             sinked_paths_callback=sinked_paths_callback,
@@ -342,7 +338,6 @@ class RemoteEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
@@ -351,7 +346,6 @@ class RemoteEngine(Engine):
         self._reject_if_set(
             mkdir=mkdir,
             sync_on_close=sync_on_close,
-            retries=retries,
             compression=compression != "uncompressed",
             compression_level=compression_level,
             check_extension=not check_extension,

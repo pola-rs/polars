@@ -38,7 +38,6 @@ class BatchedCsvReader:
         n_rows: int | None = None,
         encoding: CsvEncoding = "utf8",
         low_memory: bool = False,
-        rechunk: bool | None = None,
         skip_rows_after_header: int = 0,
         row_index_name: str | None = None,
         row_index_offset: int = 0,
@@ -56,7 +55,6 @@ class BatchedCsvReader:
             skip_rows=skip_rows,
             skip_lines=skip_lines,
             separator=separator,
-            rechunk=rechunk,
             encoding=encoding,
             source=source,
             schema_overrides=schema_overrides,
@@ -82,8 +80,7 @@ class BatchedCsvReader:
         # Trigger empty data.
         if raise_if_empty:
             q.collect_schema()
-        # reading a local file is local work, so never resolve the engine affinity
-        self._reader = q.collect_batches(chunk_size=batch_size, engine="streaming")
+        self._reader = q.collect_batches(chunk_size=batch_size)
 
     def next_batches(self, n: int) -> list[DataFrame] | None:
         """

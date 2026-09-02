@@ -156,3 +156,14 @@ def test_sample_no_shuffle_preserves_order_23557() -> None:
     for seed in range(10):
         result = df.sample(n=3, shuffle=False, seed=seed).get_column("a").to_list()
         assert result == sorted(result)
+
+
+def test_sample_no_shuffle_with_replacement_preserves_order_23557() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4]})
+    for seed in range(10):
+        result = (
+            df.sample(n=3, shuffle=False, with_replacement=True, seed=seed)
+            .get_column("a")
+            .to_list()
+        )
+        assert result == sorted(result)

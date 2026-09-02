@@ -22,7 +22,7 @@ from polars.lazyframe.sink_plan import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Mapping
+    from collections.abc import Callable, Iterable, Mapping
     from pathlib import Path
 
     from rmm.mr import DeviceMemoryResource  # type: ignore[import-not-found]
@@ -158,7 +158,7 @@ class Engine(ABC):
         maintain_order: bool = True,
         chunk_size: int | None = None,
         lazy: bool = False,
-    ) -> Iterator[DataFrame]:
+    ) -> _CollectBatches:
         """Execute `lf`, yielding its result in batches."""
         msg = f"`collect_batches` is not supported by {type(self).__name__}"
         raise NotImplementedError(msg)
@@ -194,7 +194,6 @@ class Engine(ABC):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
@@ -217,7 +216,6 @@ class Engine(ABC):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
@@ -253,7 +251,6 @@ class Engine(ABC):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
@@ -273,7 +270,6 @@ class Engine(ABC):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
@@ -429,7 +425,7 @@ class _LocalEngine(Engine):
         maintain_order: bool = True,
         chunk_size: int | None = None,
         lazy: bool = False,
-    ) -> Iterator[DataFrame]:
+    ) -> _CollectBatches:
         optimizations = self._with_monitoring(optimizations)
         ldf = lf._ldf.with_optimizations(optimizations._pyoptflags)
         return _CollectBatches(
@@ -486,7 +482,6 @@ class _LocalEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         metadata: ParquetMetadata | None,
         arrow_schema: ArrowSchemaExportable | None,
@@ -507,7 +502,6 @@ class _LocalEngine(Engine):
                 maintain_order=maintain_order,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
-                retries=retries,
                 sync_on_close=sync_on_close,
                 metadata=metadata,
                 arrow_schema=arrow_schema,
@@ -529,7 +523,6 @@ class _LocalEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
@@ -547,7 +540,6 @@ class _LocalEngine(Engine):
                 maintain_order=maintain_order,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
-                retries=retries,
                 sync_on_close=sync_on_close,
                 mkdir=mkdir,
                 _record_batch_statistics=_record_batch_statistics,
@@ -582,7 +574,6 @@ class _LocalEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
@@ -612,7 +603,6 @@ class _LocalEngine(Engine):
                 maintain_order=maintain_order,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
-                retries=retries,
                 sync_on_close=sync_on_close,
                 mkdir=mkdir,
             ),
@@ -631,7 +621,6 @@ class _LocalEngine(Engine):
         maintain_order: bool,
         storage_options: StorageOptionsDict | None,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-        retries: int | None,
         sync_on_close: SyncOnCloseMethod | None,
         mkdir: bool,
         optimizations: QueryOptFlags,
@@ -647,7 +636,6 @@ class _LocalEngine(Engine):
                 maintain_order=maintain_order,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
-                retries=retries,
                 sync_on_close=sync_on_close,
                 mkdir=mkdir,
             ),
@@ -811,12 +799,11 @@ class GPUEngine(_LocalEngine):
         cudf_polars = import_optional(
             "cudf_polars",
             err_prefix="GPU engine requested, but required package",
+            err_suffix="could not be imported",
             install_message=(
-                "Please install using the command "
-                "`pip install cudf-polars-cu12` "
-                "(CUDA 12 is required for RAPIDS cuDF v25.08 and later). "
-                "If your system has a CUDA 11 driver, install with "
-                "`pip install cudf-polars-cu11==25.06` "
+                "Please install the cuDF Polars distribution matching your CUDA "
+                "version. See the GPU support documentation for installation "
+                "instructions: https://docs.pola.rs/user-guide/gpu-support/."
             ),
         )
         return partial(cudf_polars.execute_with_cudf, config=self)

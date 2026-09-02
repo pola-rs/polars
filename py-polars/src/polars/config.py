@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict, get_args
 
 from polars._dependencies import json
-from polars._utils.deprecation import deprecated
+from polars._typing import EngineType
+from polars._utils.expired import getattr_fallback, raise_for_removed_attributes
 from polars._utils.monitoring import MONITORING_ENV_VAR, activate_monitoring
 from polars._utils.unstable import unstable
 from polars._utils.various import normalize_filepath
@@ -33,10 +34,6 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Self, Unpack
 
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 __all__ = ["Config"]
 
@@ -147,7 +144,6 @@ class ConfigParameters(TypedDict, total=False):
     """Parameters supported by the polars Config."""
 
     ascii_tables: bool | None
-    auto_structify: bool | None
     decimal_separator: str | None
     thousands_separator: str | bool | None
     float_precision: int | None
@@ -175,7 +171,6 @@ class ConfigParameters(TypedDict, total=False):
     enable_monitoring: bool | None
 
     set_ascii_tables: bool | None
-    set_auto_structify: bool | None
     set_decimal_separator: str | None
     set_thousands_separator: str | bool | None
     set_float_precision: int | None
@@ -201,7 +196,20 @@ class ConfigParameters(TypedDict, total=False):
     set_engine_affinity: EngineType | None
 
 
-class Config(contextlib.ContextDecorator):
+class _Meta(type):
+    if not TYPE_CHECKING:
+
+        def __getattr__(cls, name: str) -> Any:
+            raise_for_removed_attributes(
+                cls,
+                name,
+                {"set_auto_structify": None},
+                version="2.0",
+            )
+            return getattr_fallback(cls, super(), name, meta=True)
+
+
+class Config(contextlib.ContextDecorator, metaclass=_Meta):
     """
     Configure polars; offers options for table formatting and more.
 
@@ -593,39 +601,6 @@ class Config(contextlib.ContextDecorator):
             fmt = "ASCII_FULL_CONDENSED" if active else "UTF8_FULL_CONDENSED"
             os.environ["POLARS_FMT_TABLE_FORMATTING"] = fmt
         plr.config_reload_env_var("POLARS_FMT_TABLE_FORMATTING")
-        return cls
-
-    @classmethod
-    @deprecated("deprecated since version 1.32.0")
-    def set_auto_structify(cls, active: bool | None = False) -> type[Config]:
-        """
-        Allow multi-output expressions to be automatically turned into Structs.
-
-        .. note::
-            Deprecated since 1.32.0.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
-        >>> with pl.Config(set_auto_structify=True):  # doctest: +SKIP
-        ...     out = df.select(pl.all())
-        >>> out  # doctest: +SKIP
-        shape: (3, 1)
-        ┌───────────┐
-        │ v         │
-        │ ---       │
-        │ struct[2] │
-        ╞═══════════╡
-        │ {1,4}     │
-        │ {2,5}     │
-        │ {3,6}     │
-        └───────────┘
-        """
-        if active is None:
-            os.environ.pop("POLARS_AUTO_STRUCTIFY", None)
-        else:
-            os.environ["POLARS_AUTO_STRUCTIFY"] = str(int(active))
-        plr.config_reload_env_var("POLARS_AUTO_STRUCTIFY")
         return cls
 
     @classmethod

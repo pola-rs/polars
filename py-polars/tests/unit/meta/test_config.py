@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from textwrap import dedent
 from typing import TYPE_CHECKING, Any
@@ -11,6 +12,7 @@ import polars as pl
 import polars._plr as plr
 from polars._utils.unstable import issue_unstable_warning
 from polars.config import _POLARS_CFG_ENV_VARS
+from polars.exceptions import AttributeRemovedError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -1012,3 +1014,19 @@ def test_unset_config_env_vars(
 
     with pl.Config(**{config_setting: None}):  # type: ignore[arg-type]
         assert environment_variable not in os.environ
+
+
+def test_removed_set_auto_structify() -> None:
+    msg = "`set_auto_structify` was removed in version 2.0"
+    with pytest.raises(AttributeRemovedError, match=re.escape(msg)):
+        pl.Config.set_auto_structify(True)  # type: ignore[attr-defined]
+
+
+def test_auto_structify_env_var_removed_28776(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `POLARS_AUTO_STRUCTIFY` used to be the mechanism behind the now-removed
+    # `Config.set_auto_structify`. Setting it directly must no longer have any effect.
+    monkeypatch.setenv("POLARS_AUTO_STRUCTIFY", "1")
+    df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
+    result = df.select(pl.all())
+
+    assert result.schema == pl.Schema({"v": pl.Int64, "v2": pl.Int64})

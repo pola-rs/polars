@@ -79,6 +79,7 @@ json = [
 scan_lines = []
 serde = [
   "dep:serde",
+  "serde_json",
   "polars-buffer/serde",
   "polars-config/serde",
   "polars-core/serde-lazy",

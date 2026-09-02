@@ -119,6 +119,10 @@ def test_collect_batches_accepts_gpu_engine_object(lf: pl.LazyFrame) -> None:
     ],
 )
 def test_select_engine(spelling: EngineType, expected: str) -> None:
+    if os.environ.get("POLARS_ENGINE_AFFINITY") is not None:
+        pytest.skip(
+            "POLARS_ENGINE_AFFINITY is set; this may override the test's expectations"
+        )
     selected = _select_engine(spelling)
     assert isinstance(selected, pl.Engine)
     assert selected.name == expected

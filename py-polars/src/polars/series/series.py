@@ -48,10 +48,12 @@ from polars._utils.convert import (
     time_to_int,
     timedelta_to_int,
 )
-from polars._utils.deprecation import (
-    deprecate_renamed_parameter,
-    deprecated,
-    issue_deprecation_warning,
+from polars._utils.expired import (
+    RemovedParameter,
+    RenamedParameter,
+    getattr_fallback,
+    raise_for_removed_attributes,
+    removed_parameters,
 )
 from polars._utils.getitem import get_series_item_by_key
 from polars._utils.unstable import issue_unstable_warning, unstable
@@ -96,7 +98,12 @@ from polars.datatypes import (
     supported_numpy_char_code,
 )
 from polars.datatypes._utils import dtype_to_init_repr
-from polars.exceptions import ComputeError, ModuleUpgradeRequiredError, ShapeError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    ModuleUpgradeRequiredError,
+    ShapeError,
+)
 from polars.interchange.protocol import CompatLevel
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
@@ -117,19 +124,13 @@ if TYPE_CHECKING:
     from builtins import list as list_
     from builtins import set as set_
     from builtins import str as str_
-    from collections.abc import Callable
-
-    with contextlib.suppress(ImportError):  # Module not available when building docs
-        import polars._plr as plr
-
-    from collections.abc import Collection, Generator, Mapping
+    from collections.abc import Callable, Collection, Generator, Mapping
 
     import jax
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
         ArrayLike,
-        BufferInfo,
         ClosedInterval,
         ComparisonOperator,
         FillNullStrategy,
@@ -146,7 +147,6 @@ if TYPE_CHECKING:
         RankMethod,
         RoundMode,
         SearchSortedSide,
-        SeriesBuffers,
         SingleIndexSelector,
         SizeUnit,
         TemporalLiteral,
@@ -158,10 +158,6 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import Self
 
-    if sys.version_info >= (3, 13):
-        from warnings import deprecated
-    else:
-        from typing_extensions import deprecated  # noqa: TC004
 
 elif BUILDING_SPHINX_DOCS:
     # note: we assign this way to work around an autocomplete issue in ipython/jedi
@@ -170,8 +166,37 @@ elif BUILDING_SPHINX_DOCS:
     current_module.property = sphinx_accessor
 
 
+class _Meta(type):
+    if not TYPE_CHECKING:
+
+        def __getattr__(cls, name: str) -> Any:
+            raise_for_removed_attributes(
+                cls,
+                name,
+                {
+                    "_import_from_c": "use `_import_arrow_from_c` instead. "
+                    "If you are using an extension, please compile it with the latest 'pyo3-polars'",
+                },
+                version="2.0",
+            )
+            return getattr_fallback(
+                cls,
+                super(),
+                name,
+                meta=True,
+            )
+
+
+_REMOVED_MIN_PERIODS = RenamedParameter(
+    name="min_periods",
+    new_name="min_samples",
+    deprecated_in="1.21.0",
+    removed_in="2.0",
+)
+
+
 @expr_dispatch
-class Series:
+class Series(metaclass=_Meta):
     """
     A Series represents a single column in a Polars DataFrame.
 
@@ -473,15 +498,6 @@ class Series:
         return series
 
     @classmethod
-    @deprecated(
-        "`_import_from_c` is deprecated; use `_import_arrow_from_c` instead. If "
-        "you are using an extension, please compile it with the latest 'pyo3-polars'"
-    )
-    def _import_from_c(cls, name: str_, pointers: list_[tuple[int, int]]) -> Self:
-        # `_import_from_c` was deprecated in 1.3
-        return cls._from_pyseries(PySeries._import_arrow_from_c(name, pointers))
-
-    @classmethod
     def _import_arrow_from_c(cls, name: str_, pointers: list_[tuple[int, int]]) -> Self:
         """
         Construct a Series from Arrows C interface.
@@ -531,146 +547,6 @@ class Series:
           expert users.
         """
         self._s._export_arrow_to_c(out_ptr, out_schema_ptr)
-
-    def _get_buffer_info(self) -> BufferInfo:
-        """
-        Return pointer, offset, and length information about the underlying buffer.
-
-        Returns
-        -------
-        tuple of ints
-            Tuple of the form (pointer, offset, length)
-
-        Raises
-        ------
-        TypeError
-            If the `Series` data type is not physical.
-        ComputeError
-            If the `Series` contains multiple chunks.
-
-        Notes
-        -----
-        This method is mainly intended for use with the dataframe interchange protocol.
-        """
-        return self._s._get_buffer_info()
-
-    def _get_buffers(self) -> SeriesBuffers:
-        """
-        Return the underlying values, validity, and offsets buffers as Series.
-
-        The values buffer always exists.
-        The validity buffer may not exist if the column contains no null values.
-        The offsets buffer only exists for Series of data type `String` and `List`.
-
-        Returns
-        -------
-        dict
-            Dictionary with `"values"`, `"validity"`, and `"offsets"` keys mapping
-            to the corresponding buffer or `None` if the buffer doesn't exist.
-
-        Warnings
-        --------
-        The underlying buffers for `String` Series cannot be represented in this
-        format. Instead, the buffers are converted to a values and offsets buffer.
-
-        Notes
-        -----
-        This method is mainly intended for use with the dataframe interchange protocol.
-        """
-        buffers = self._s._get_buffers()
-        keys = ("values", "validity", "offsets")
-        return {  # type: ignore[return-value]
-            k: self._from_pyseries(b) if b is not None else b
-            for k, b in zip(keys, buffers, strict=True)
-        }
-
-    @classmethod
-    def _from_buffer(
-        cls, dtype: PolarsDataType, buffer_info: BufferInfo, owner: Any
-    ) -> Self:
-        """
-        Construct a Series from information about its underlying buffer.
-
-        Parameters
-        ----------
-        dtype
-            The data type of the buffer.
-            Must be a physical type (integer, float, or boolean).
-        buffer_info
-            Tuple containing buffer information in the form `(pointer, offset, length)`.
-        owner
-            The object owning the buffer.
-
-        Returns
-        -------
-        Series
-
-        Raises
-        ------
-        TypeError
-            When the given `dtype` is not supported.
-
-        Notes
-        -----
-        This method is mainly intended for use with the dataframe interchange protocol.
-        """
-        return cls._from_pyseries(PySeries._from_buffer(dtype, buffer_info, owner))
-
-    @classmethod
-    def _from_buffers(
-        cls,
-        dtype: PolarsDataType,
-        data: Series | Sequence[Series],
-        validity: Series | None = None,
-    ) -> Self:
-        """
-        Construct a Series from information about its underlying buffers.
-
-        Parameters
-        ----------
-        dtype
-            The data type of the resulting Series.
-        data
-            Buffers describing the data. For most data types, this is a single Series of
-            the physical data type of `dtype`. Some data types require multiple buffers:
-
-            - `String`: A data buffer of type `UInt8` and an offsets buffer
-              of type `Int64`. Note that this does not match how the data
-              is represented internally and data copy is required to construct
-              the Series.
-        validity
-            Validity buffer. If specified, must be a Series of data type `Boolean`.
-
-        Returns
-        -------
-        Series
-
-        Raises
-        ------
-        TypeError
-            When the given `dtype` is not supported or the other inputs do not match
-            the requirements for constructing a Series of the given `dtype`.
-
-        Warnings
-        --------
-        Constructing a `String` Series requires specifying a values and offsets buffer,
-        which does not match the actual underlying buffers. The values and offsets
-        buffer are converted into the actual buffers, which copies data.
-
-        Notes
-        -----
-        This method is mainly intended for use with the dataframe interchange protocol.
-        """
-        if isinstance(data, Series):
-            data_lst = [data._s]
-        else:
-            data_lst = [s._s for s in data]
-        validity_series: plr.PySeries | None = None
-        if validity is not None:
-            validity_series = validity._s
-        return cls._from_pyseries(
-            PySeries._from_buffers(dtype, data_lst, validity_series)
-        )
 
     @staticmethod
     def _newest_compat_level() -> int:
@@ -2984,7 +2860,7 @@ class Series:
         )
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def cumulative_eval(
         self, expr: Expr, *, min_samples: int = 1, parallel: bool = False
     ) -> Series:
@@ -2994,9 +2870,6 @@ class Series:
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -3961,7 +3834,7 @@ class Series:
     @overload
     def search_sorted(
         self,
-        element: list_[Any] | np.ndarray[Any, Any] | Expr | Series,
+        element: np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
         *,
         descending: bool = ...,
@@ -4000,7 +3873,7 @@ class Series:
         3
         >>> s.search_sorted(4, "right")
         5
-        >>> s.search_sorted([1, 4, 5])
+        >>> s.search_sorted(pl.Series([1, 4, 5]))
         shape: (3,)
         Series: 'set' [u32]
         [
@@ -4008,7 +3881,7 @@ class Series:
             3
             5
         ]
-        >>> s.search_sorted([1, 4, 5], "left")
+        >>> s.search_sorted(pl.Series([1, 4, 5]), "left")
         shape: (3,)
         Series: 'set' [u32]
         [
@@ -4016,17 +3889,20 @@ class Series:
             3
             5
         ]
-        >>> s.search_sorted([1, 4, 5], "right")
-        shape: (3,)
-        Series: 'set' [u32]
+        >>> # To search for a list of values in a series, of lists, use pl.lit():
+        >>> list_s = pl.Series("lists", [[0, 1], [0, 2], [1, 4]])
+        >>> list_s.search_sorted(pl.lit([0, 2]), "left")
+        shape: (1,)
+        Series: 'lists' [u32]
         [
             1
-            5
-            6
         ]
         """
         df = F.select(F.lit(self).search_sorted(element, side, descending=descending))
-        if isinstance(element, (list, Series, pl.Expr)):
+        if isinstance(element, list):
+            msg = "passing a list to `search_sorted` is ambiguous; use `Series.search_sorted(pl.Series([...]), ...)` or `Series.search_sorted(pl.lit(...), ...)`"
+            raise InvalidOperationError(msg)
+        elif isinstance(element, (Series, pl.Expr)):
             return df.to_series()
         elif _check_for_numpy(element) and isinstance(element, np.ndarray):
             return df.to_series()
@@ -4121,19 +3997,6 @@ class Series:
         True
         >>> s[:2].has_nulls()
         False
-        """
-        return self._s.has_nulls()
-
-    @deprecated(
-        "`has_validity` is deprecated; use `has_nulls` "
-        "instead to check for the presence of null values."
-    )
-    def has_validity(self) -> bool:
-        """
-        Check whether the Series contains one or more null values.
-
-        .. deprecated:: 0.20.30
-            Use the :meth:`has_nulls` method instead.
         """
         return self._s.has_nulls()
 
@@ -4587,7 +4450,14 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("strict", "check_dtypes", version="0.20.31")
+    @removed_parameters(
+        RenamedParameter(
+            name="strict",
+            new_name="check_dtypes",
+            deprecated_in="0.20.31",
+            removed_in="2.0",
+        ),
+    )
     def equals(
         self,
         other: Series,
@@ -4598,9 +4468,6 @@ class Series:
     ) -> bool:
         """
         Check whether the Series is equal to another Series.
-
-        .. versionchanged:: 0.20.31
-            The `strict` parameter was renamed `check_dtypes`.
 
         Parameters
         ----------
@@ -4929,13 +4796,27 @@ class Series:
             )
         ).to_series()
 
+    @removed_parameters(
+        RemovedParameter(
+            name="use_pyarrow",
+            deprecated_in="0.20.28",
+            removed_in="2.0",
+            hint="Polars now uses its native engine for conversion to NumPy by default."
+            " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
+        ),
+        RemovedParameter(
+            name="zero_copy_only",
+            deprecated_in="0.20.10",
+            removed_in="2.0",
+            hint="Use the `allow_copy` parameter instead, which is the inverse of"
+            " `zero_copy_only`.",
+        ),
+    )
     def to_numpy(
         self,
         *,
         writable: bool = False,
         allow_copy: bool = True,
-        use_pyarrow: bool | None = None,
-        zero_copy_only: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
         Convert this Series to a NumPy ndarray.
@@ -4957,25 +4838,6 @@ class Series:
         allow_copy
             Allow memory to be copied to perform the conversion. If set to `False`,
             causes conversions that are not zero-copy to fail.
-
-        use_pyarrow
-            First convert to PyArrow, then call `pyarrow.Array.to_numpy
-            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-            to convert to NumPy. If set to `False`, Polars' own conversion logic is
-            used.
-
-            .. deprecated:: 0.20.28
-                Polars now uses its native engine by default for conversion to NumPy.
-                To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.
-
-        zero_copy_only
-            Raise an exception if the conversion to a NumPy would require copying
-            the underlying data. Data copy occurs, for example, when the Series contains
-            nulls or non-numeric types.
-
-            .. deprecated:: 0.20.10
-                Use the `allow_copy` parameter instead, which is the inverse of this
-                one.
 
         Examples
         --------
@@ -5016,37 +4878,6 @@ class Series:
         array([[1, 2, 3],
                [4, 5, 6]])
         """  # noqa: W505
-        if zero_copy_only is not None:
-            issue_deprecation_warning(
-                "the `zero_copy_only` parameter for `Series.to_numpy` is deprecated."
-                " Use the `allow_copy` parameter instead, which is the inverse of `zero_copy_only`.",
-                version="0.20.10",
-            )
-            allow_copy = not zero_copy_only
-
-        if use_pyarrow is not None:
-            issue_deprecation_warning(
-                "the `use_pyarrow` parameter for `Series.to_numpy` is deprecated."
-                " Polars now uses its native engine for conversion to NumPy by default."
-                " To use PyArrow's engine, call `.to_arrow().to_numpy()` instead.",
-                version="0.20.28",
-            )
-        else:
-            use_pyarrow = False
-
-        if (
-            use_pyarrow
-            and _PYARROW_AVAILABLE
-            and self.dtype not in (Date, Datetime, Duration, Array, Object)
-        ):
-            if not allow_copy and self.n_chunks() > 1 and not self.is_empty():
-                msg = "cannot return a zero-copy array"
-                raise ValueError(msg)
-
-            return self.to_arrow().to_numpy(
-                zero_copy_only=not allow_copy, writable=writable
-            )
-
         return self._s.to_numpy(writable=writable, allow_copy=allow_copy)
 
     @unstable()
@@ -5148,15 +4979,19 @@ class Series:
         # tensor.rename(self.name)
         return tensor
 
-    @deprecate_renamed_parameter("future", "compat_level", version="1.1")
+    @removed_parameters(
+        RenamedParameter(
+            name="future",
+            new_name="compat_level",
+            deprecated_in="1.1",
+            removed_in="2.0",
+        ),
+    )
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Array:
         """
         Return the underlying Arrow array.
 
         If the Series contains only a single chunk this operation is zero copy.
-
-        .. versionchanged:: 1.24
-            The `future` parameter was renamed `compat_level`.
 
         Parameters
         ----------
@@ -6536,7 +6371,7 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_min(
         self,
         window_size: int,
@@ -6554,9 +6389,6 @@ class Series:
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6717,7 +6549,7 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_max(
         self,
         window_size: int,
@@ -6735,9 +6567,6 @@ class Series:
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -6898,7 +6727,7 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_mean(
         self,
         window_size: int,
@@ -6916,9 +6745,6 @@ class Series:
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7079,7 +6905,7 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_sum(
         self,
         window_size: int,
@@ -7097,9 +6923,6 @@ class Series:
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7263,7 +7086,7 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_std(
         self,
         window_size: int,
@@ -7282,9 +7105,6 @@ class Series:
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7451,7 +7271,7 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_var(
         self,
         window_size: int,
@@ -7470,9 +7290,6 @@ class Series:
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7506,7 +7323,7 @@ class Series:
         """
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_map(
         self,
         function: Callable[[Series], Any],
@@ -7522,9 +7339,6 @@ class Series:
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7694,7 +7508,7 @@ class Series:
         """
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_median(
         self,
         window_size: int,
@@ -7712,9 +7526,6 @@ class Series:
 
         The window at a given row will include the row itself and the `window_size - 1`
         elements before it.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -7882,7 +7693,7 @@ class Series:
         """  # noqa: W505
 
     @unstable()
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def rolling_quantile(
         self,
         quantile: float,
@@ -7902,9 +7713,6 @@ class Series:
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -8325,9 +8133,6 @@ class Series:
     def hash(
         self,
         seed: int = 0,
-        seed_1: int | None = None,
-        seed_2: int | None = None,
-        seed_3: int | None = None,
     ) -> Series:
         """
         Hash the Series.
@@ -8338,12 +8143,6 @@ class Series:
         ----------
         seed
             Random seed parameter. Defaults to 0.
-        seed_1
-            Random seed parameter. Defaults to `seed` if not set.
-        seed_2
-            Random seed parameter. Defaults to `seed` if not set.
-        seed_3
-            Random seed parameter. Defaults to `seed` if not set.
 
         Notes
         -----
@@ -8376,8 +8175,7 @@ class Series:
         This operation is only allowed for numeric types of the same size.
         For lower bits numbers, you can safely use the cast operation.
 
-        Either `signed` or `dtype` can be specified.
-        Defaults to `signed=True` otherwise.
+        Exactly one of `signed` or `dtype` must be specified.
 
         Parameters
         ----------
@@ -8848,13 +8646,25 @@ class Series:
         ]
         """
 
+    @removed_parameters(
+        RemovedParameter(
+            name="default",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+            hint="Use `replace_strict` instead to set a default while replacing values.",
+        ),
+        RemovedParameter(
+            name="return_dtype",
+            deprecated_in="1.0.0",
+            removed_in="2.0",
+            hint="Use `replace_strict` instead to set a return data type while"
+            " replacing values, or explicitly call `cast` on the output.",
+        ),
+    )
     def replace(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
         new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
-        *,
-        default: IntoExpr | NoDefault = NO_DEFAULT,
-        return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
         Replace values by different values of the same data type.
@@ -8868,24 +8678,6 @@ class Series:
         new
             Value or sequence of values to replace by.
             Length must match the length of `old` or have length 1.
-
-        default
-            Set values that were not replaced to this value.
-            Defaults to keeping the original value.
-            Accepts expression input. Non-expression inputs are parsed as literals.
-
-            .. deprecated:: 0.20.31
-                Use :meth:`replace_strict` instead to set a default while
-                replacing values.
-
-        return_dtype
-            The data type of the resulting expression. If set to `None` (default),
-            the data type is determined automatically based on the other inputs.
-
-            .. deprecated:: 0.20.31
-                Use :meth:`replace_strict` instead to set a return data type while
-                replacing values.
-
 
         See Also
         --------
@@ -9202,7 +8994,7 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def ewm_mean(
         self,
         *,
@@ -9216,9 +9008,6 @@ class Series:
     ) -> Series:
         r"""
         Compute exponentially-weighted moving average.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -9484,7 +9273,7 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def ewm_std(
         self,
         *,
@@ -9499,9 +9288,6 @@ class Series:
     ) -> Series:
         r"""
         Compute exponentially-weighted moving standard deviation.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -9572,7 +9358,7 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @removed_parameters(_REMOVED_MIN_PERIODS)
     def ewm_var(
         self,
         *,
@@ -9587,9 +9373,6 @@ class Series:
     ) -> Series:
         r"""
         Compute exponentially-weighted moving variance.
-
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
 
         Parameters
         ----------
@@ -9936,6 +9719,19 @@ class Series:
             Expression of data type List, where the inner data type is equal to the
             original data type.
         """
+
+    if not TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            raise_for_removed_attributes(
+                self,
+                name,
+                {
+                    "has_validity": "use `has_nulls` instead to check for the presence of null values."
+                },
+                version="2.0",
+            )
+            return getattr_fallback(self, super(), name)
 
 
 def _resolve_temporal_dtype(
