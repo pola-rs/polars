@@ -10369,7 +10369,9 @@ class DataFrame:
         """
         if self.width == 0:
             # With no columns every row is identical to every other row.
-            return pl.Series("", [self.height > 1] * self.height, dtype=Boolean)
+            return pl.Series("", [self.height > 1], dtype=Boolean).new_from_index(
+                0, self.height
+            )
 
         return wrap_s(self._df.is_duplicated())
 
@@ -10410,7 +10412,9 @@ class DataFrame:
         """
         if self.width == 0:
             # With no columns every row is identical to every other row.
-            return pl.Series("", [self.height <= 1] * self.height, dtype=Boolean)
+            return pl.Series("", [self.height <= 1], dtype=Boolean).new_from_index(
+                0, self.height
+            )
 
         return wrap_s(self._df.is_unique())
 
