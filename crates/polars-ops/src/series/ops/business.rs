@@ -1,7 +1,8 @@
-use arrow::array::PrimitiveArray;
+use arrow::array::{PrimitiveArray, StaticArray as _};
 use arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-date")]
 use chrono::DateTime;
+use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-date")]
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
@@ -70,12 +71,13 @@ pub fn business_day_count(
     let start_dates = start_dates.physical().rechunk();
     let end_dates = end_dates.physical().rechunk();
 
-    let start_dates: &PrimitiveArray<i32> =
-        start_dates.chunks()[0].as_any().downcast_ref().unwrap();
-    let end_dates: &PrimitiveArray<i32> = end_dates.chunks()[0].as_any().downcast_ref().unwrap();
+    // TODO(polars-array-scalar): the dates and the holidays are read through Arrow arrays, so a
+    // scalar chunk is written out here rather than the one date it stands for being counted once.
+    let start_dates: PrimitiveArray<i32> = chunk_to_arrow(start_dates.downcast_as_array());
+    let end_dates: PrimitiveArray<i32> = chunk_to_arrow(end_dates.downcast_as_array());
     let holidays = holidays.rechunk();
-    let holidays_list: &LargeListArray = holidays.chunks()[0].as_any().downcast_ref().unwrap();
-    let mut holidays_getter = HolidayListsGetter::new(holidays_list, week_mask);
+    let holidays_list: LargeListArray = chunk_to_arrow(holidays.list()?.downcast_as_array());
+    let mut holidays_getter = HolidayListsGetter::new(&holidays_list, week_mask);
 
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
 
@@ -238,13 +240,12 @@ pub fn add_business_days(
     }
 
     let holidays = holidays.rechunk();
-    let holidays_list: &LargeListArray = holidays.chunks()[0].as_any().downcast_ref().unwrap();
-    let mut holidays_getter = HolidayListsGetter::new(holidays_list, week_mask);
+    // TODO(polars-array-scalar): as above, scalar chunks are written out here.
+    let holidays_list: LargeListArray = chunk_to_arrow(holidays.list()?.downcast_as_array());
+    let mut holidays_getter = HolidayListsGetter::new(&holidays_list, week_mask);
 
     let start_dates = start_dates.physical().rechunk();
-
-    let start_dates: &PrimitiveArray<i32> =
-        start_dates.chunks()[0].as_any().downcast_ref().unwrap();
+    let start_dates: PrimitiveArray<i32> = chunk_to_arrow(start_dates.downcast_as_array());
 
     let n_business_days_in_week_mask = week_mask.iter().filter(|&x| *x).count() as i32;
 
@@ -269,7 +270,7 @@ pub fn add_business_days(
         })
     } else {
         let n = n.rechunk();
-        let n: &PrimitiveArray<i32> = n.chunks()[0].as_any().downcast_ref().unwrap();
+        let n: PrimitiveArray<i32> = chunk_to_arrow(n.downcast_as_array());
 
         assert!(start_dates.len() >= 1 && n.len() >= 1 && holidays_list.len() >= 1);
 
@@ -406,12 +407,14 @@ pub fn is_business_day(
     }
 
     let holidays = holidays.rechunk();
-    let holidays_list: &LargeListArray = holidays.chunks()[0].as_any().downcast_ref().unwrap();
-    let mut holidays_getter = HolidayListsGetter::new(holidays_list, week_mask);
+    // TODO(polars-array-scalar): as above, a scalar chunk is written out here.
+    let holidays_list: LargeListArray = chunk_to_arrow(holidays.list()?.downcast_as_array());
+    let mut holidays_getter = HolidayListsGetter::new(&holidays_list, week_mask);
 
     let dates = dates.date()?;
     let dates = dates.physical().rechunk();
-    let dates: &PrimitiveArray<i32> = dates.chunks()[0].as_any().downcast_ref().unwrap();
+    // TODO(polars-array-scalar): as above, a scalar chunk is written out here.
+    let dates: PrimitiveArray<i32> = chunk_to_arrow(dates.downcast_as_array());
 
     assert!(dates.len() >= 1 && !holidays.is_empty());
 

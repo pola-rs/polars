@@ -1,4 +1,3 @@
-use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::NativeType;
@@ -8,13 +7,16 @@ use polars_utils::float16::pf16;
 
 use crate::chunked_array::sum::sum_slice;
 
-fn dispatch_sum<T, S>(arr: &dyn Array, width: usize, validity: Option<&Bitmap>) -> ArrayRef
+fn dispatch_sum<T, S>(arr: &dyn PlArray, width: usize, validity: Option<&Bitmap>) -> PlArrayRef
 where
     T: NativeType + ToPrimitive,
     S: NativeType + NumCast + std::iter::Sum,
 {
-    let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
-    let values = values.values().as_slice();
+    let values = arr.as_any().downcast_ref::<PlPrimitiveArray<T>>().unwrap();
+    // TODO(polars-array-scalar): the sum reads the values as a slice, so a scalar values buffer is
+    // written out here rather than the one value it stands for being multiplied by the width.
+    let values = values.to_flat();
+    let values = values.as_slice();
 
     let summed: Vec<_> = (0..values.len())
         .step_by(width)
@@ -24,40 +26,52 @@ where
         })
         .collect_trusted();
 
-    Box::new(PrimitiveArray::from_data_default(
-        summed.into(),
-        validity.cloned(),
-    )) as ArrayRef
+    // One sum per element, and `validity` holds one bit per element as well.
+    PlPrimitiveArray::from_vec(summed)
+        .with_validity(validity.cloned())
+        .into_boxed()
 }
 
 pub(super) fn sum_array_numerical(ca: &ArrayChunked, inner_type: &DataType) -> Series {
     let width = ca.width();
     use DataType::*;
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| {
-            let values = arr.values().as_ref();
 
-            match inner_type {
-                Int8 => dispatch_sum::<i8, i64>(values, width, arr.validity()),
-                Int16 => dispatch_sum::<i16, i64>(values, width, arr.validity()),
-                Int32 => dispatch_sum::<i32, i32>(values, width, arr.validity()),
-                Int64 => dispatch_sum::<i64, i64>(values, width, arr.validity()),
-                Int128 => dispatch_sum::<i128, i128>(values, width, arr.validity()),
-                UInt8 => dispatch_sum::<u8, i64>(values, width, arr.validity()),
-                UInt16 => dispatch_sum::<u16, i64>(values, width, arr.validity()),
-                UInt32 => dispatch_sum::<u32, u32>(values, width, arr.validity()),
-                UInt64 => dispatch_sum::<u64, u64>(values, width, arr.validity()),
-                UInt128 => dispatch_sum::<u128, u128>(values, width, arr.validity()),
-                Float16 => dispatch_sum::<pf16, pf16>(values, width, arr.validity()),
-                Float32 => dispatch_sum::<f32, f32>(values, width, arr.validity()),
-                Float64 => dispatch_sum::<f64, f64>(values, width, arr.validity()),
-                _ => unimplemented!(),
+    macro_rules! dispatch {
+        ($T:ty, $S:ty, $out_dtype:expr) => {{
+            let chunks = ca
+                .downcast_iter()
+                .map(|arr| {
+                    // TODO(polars-array-scalar): the values are read as a slice, so a scalar
+                    // chunk is written out here rather than the one element it stands for being
+                    // summed once.
+                    let arr = arr.to_flat();
+                    dispatch_sum::<$T, $S>(arr.values(), width, arr.validity())
+                })
+                .collect::<Vec<_>>();
+
+            // SAFETY: `dispatch_sum` builds an array of `$S`, the physical type of `$out_dtype`.
+            unsafe {
+                Series::from_chunks_and_dtype_unchecked(ca.name().clone(), chunks, &$out_dtype)
             }
-        })
-        .collect::<Vec<_>>();
+        }};
+    }
 
-    Series::try_from((ca.name().clone(), chunks)).unwrap()
+    match inner_type {
+        Int8 => dispatch!(i8, i64, Int64),
+        Int16 => dispatch!(i16, i64, Int64),
+        Int32 => dispatch!(i32, i32, Int32),
+        Int64 => dispatch!(i64, i64, Int64),
+        Int128 => dispatch!(i128, i128, Int128),
+        UInt8 => dispatch!(u8, i64, Int64),
+        UInt16 => dispatch!(u16, i64, Int64),
+        UInt32 => dispatch!(u32, u32, UInt32),
+        UInt64 => dispatch!(u64, u64, UInt64),
+        UInt128 => dispatch!(u128, u128, UInt128),
+        Float16 => dispatch!(pf16, pf16, Float16),
+        Float32 => dispatch!(f32, f32, Float32),
+        Float64 => dispatch!(f64, f64, Float64),
+        _ => unimplemented!(),
+    }
 }
 
 pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> PolarsResult<Series> {

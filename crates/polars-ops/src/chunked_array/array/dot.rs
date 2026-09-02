@@ -33,21 +33,25 @@ where
 {
     let lhs = lhs.rechunk();
     let rhs = rhs.rechunk();
-    let lhs_array = lhs.downcast_get(0).unwrap();
-    let rhs_array = rhs.downcast_get(0).unwrap();
+    // TODO(polars-array-scalar): both sides are read as slices, so a scalar chunk is written out
+    // here rather than the single row it stands for being multiplied out once.
+    let lhs_array = lhs.downcast_get(0).unwrap().to_flat();
+    let rhs_array = rhs.downcast_get(0).unwrap().to_flat();
     let lhs_values = lhs_array
         .values()
         .as_any()
-        .downcast_ref::<PrimitiveArray<T>>()
-        .unwrap();
+        .downcast_ref::<PlPrimitiveArray<T>>()
+        .unwrap()
+        .to_flat();
     let rhs_values = rhs_array
         .values()
         .as_any()
-        .downcast_ref::<PrimitiveArray<T>>()
-        .unwrap();
+        .downcast_ref::<PlPrimitiveArray<T>>()
+        .unwrap()
+        .to_flat();
 
-    let lhs_slice = lhs_values.values().as_slice();
-    let rhs_slice = rhs_values.values().as_slice();
+    let lhs_slice = lhs_values.as_slice();
+    let rhs_slice = rhs_values.as_slice();
     let lhs_inner_validity = lhs_values.validity();
     let rhs_inner_validity = rhs_values.validity();
     let width = lhs.width();

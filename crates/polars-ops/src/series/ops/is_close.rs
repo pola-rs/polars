@@ -1,6 +1,5 @@
 use std::cmp::max_by;
 
-use arrow::array::BooleanArray;
 use arrow::compute::utils::combine_validities_and;
 use num_traits::AsPrimitive;
 use polars_core::prelude::arity::apply_binary_kernel_broadcast;
@@ -70,31 +69,32 @@ fn validate_numeric(dtype: &DataType) -> PolarsResult<()> {
 /* ------------------------------------------- KERNEL ------------------------------------------ */
 
 fn is_close_kernel<T>(
-    lhs_arr: &T::Array,
-    rhs_arr: &T::Array,
+    lhs_arr: &Flat<T::Array>,
+    rhs_arr: &Flat<T::Array>,
     abs_tol: f64,
     rel_tol: f64,
     nans_equal: bool,
-) -> BooleanArray
+) -> PlBooleanArray
 where
     T: PolarsNumericType,
 {
+    // Both arrays are flat, so both masks hold one bit per element, as does the result.
     let validity = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
     let element_iter = lhs_arr
         .values_iter()
         .zip(rhs_arr.values_iter())
         .map(|(x, y)| is_close_scalar(x.as_(), y.as_(), abs_tol, rel_tol, nans_equal));
-    let result: BooleanArray = element_iter.collect_arr();
+    let result: PlBooleanArray = element_iter.collect_arr();
     result.with_validity_typed(validity)
 }
 
 fn is_close_kernel_unary<T>(
-    arr: &T::Array,
+    arr: &Flat<T::Array>,
     value: f64,
     abs_tol: f64,
     rel_tol: f64,
     nans_equal: bool,
-) -> BooleanArray
+) -> PlBooleanArray
 where
     T: PolarsNumericType,
 {
@@ -102,7 +102,7 @@ where
     let element_iter = arr
         .values_iter()
         .map(|x| is_close_scalar(x.as_(), value, abs_tol, rel_tol, nans_equal));
-    let result: BooleanArray = element_iter.collect_arr();
+    let result: PlBooleanArray = element_iter.collect_arr();
     result.with_validity_typed(validity)
 }
 

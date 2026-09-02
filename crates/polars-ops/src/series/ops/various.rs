@@ -417,7 +417,10 @@ fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
 }
 
 fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOptions) -> bool {
-    if let Ok(vals) = ca.cont_slice() {
+    // TODO(polars-array-scalar): the values are read as slices, so a scalar chunk is written out
+    // here rather than being reported sorted outright.
+    let flat = ca.to_flat();
+    if let Ok(vals) = flat.cont_slice() {
         let mut previous = vals[0];
         return if options.descending {
             check_cmp(vals, |prev, c| prev.tot_ge(c), &mut previous)
@@ -432,7 +435,7 @@ fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOpt
         } else {
             T::Native::min_value()
         };
-        for arr in ca.downcast_iter() {
+        for arr in flat.flat_chunks() {
             let vals = arr.values();
             let sorted = if options.descending {
                 check_cmp(vals, |prev, c| prev.tot_ge(c), &mut previous)

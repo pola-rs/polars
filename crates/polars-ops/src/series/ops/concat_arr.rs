@@ -1,7 +1,9 @@
-use arrow::array::FixedSizeListArray;
 use arrow::compute::utils::combine_validities_and;
+use polars_array::PlFixedSizeListArray;
+use polars_array::arrow::{export, import};
 use polars_compute::horizontal_flatten::horizontal_flatten_unchecked;
-use polars_core::prelude::{ArrayChunked, Column, CompatLevel, DataType, IntoColumn};
+use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
+use polars_core::prelude::{ArrayChunked, Column, DataType, IntoColumn, StaticArray};
 use polars_core::series::Series;
 use polars_error::{PolarsContext, PolarsResult};
 use polars_utils::broadcast::broadcast_len;
@@ -52,13 +54,19 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
                         validities.push(v)
                     }
 
-                    (arr.downcast_as_array().values().clone(), *width)
+                    // TODO(polars-array-scalar): the flatten kernel is an Arrow one, so a scalar
+                    // chunk is written out here rather than the one row it stands for being
+                    // concatenated once.
+                    (
+                        chunk_to_arrow(arr.downcast_as_array()).values().clone(),
+                        *width,
+                    )
                 },
                 dtype => {
                     debug_assert_eq!(dtype, inner_dtype);
                     // Note: We ignore the validity of non-array input columns, their outer is always valid after
                     // being reshaped to (-1, 1).
-                    (s.rechunk().into_chunks()[0].clone(), 1)
+                    (export::to_arrow(&*s.rechunk().into_chunks()[0]), 1)
                 },
             }
         })
@@ -73,9 +81,13 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
     assert_eq!(calculated_width, width);
 
     if return_all_null || output_height == 0 {
-        let arr =
-            FixedSizeListArray::new_null(dtype.to_arrow(CompatLevel::newest()), output_height);
-        return Ok(ArrayChunked::with_chunk(args[0].name().clone(), arr).into_column());
+        return Ok(ArrayChunked::full_null_with_dtype(
+            args[0].name().clone(),
+            output_height,
+            inner_dtype,
+            width,
+        )
+        .into_column());
     }
 
     // Combine validities
@@ -89,12 +101,8 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
         // Fast-path for all scalars
         let inner_arr = unsafe { horizontal_flatten_unchecked(&arrays, &widths, 1) };
 
-        let arr = FixedSizeListArray::new(
-            FixedSizeListArray::default_datatype(inner_arr.dtype().clone(), width),
-            1,
-            inner_arr,
-            outer_validity,
-        );
+        let arr =
+            PlFixedSizeListArray::new(import::from_arrow(&*inner_arr), width, 1, outer_validity);
 
         let mut out = ArrayChunked::with_chunk(args[0].name().clone(), arr);
         unsafe { out.to_logical(inner_dtype.clone()) };
@@ -102,19 +110,21 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
         return Ok(out.into_column().new_from_index(0, output_height));
     } else {
         let inner_arr = if width == 0 {
-            Series::new_empty(PlSmallStr::EMPTY, inner_dtype)
-                .into_chunks()
-                .into_iter()
-                .next()
-                .unwrap()
+            export::to_arrow(
+                &*Series::new_empty(PlSmallStr::EMPTY, inner_dtype)
+                    .into_chunks()
+                    .into_iter()
+                    .next()
+                    .unwrap(),
+            )
         } else {
             unsafe { horizontal_flatten_unchecked(&arrays, &widths, output_height) }
         };
 
-        let arr = FixedSizeListArray::new(
-            FixedSizeListArray::default_datatype(inner_arr.dtype().clone(), width),
+        let arr = PlFixedSizeListArray::new(
+            import::from_arrow(&*inner_arr),
+            width,
             output_height,
-            inner_arr,
             outer_validity,
         );
 

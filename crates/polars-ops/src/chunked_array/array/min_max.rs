@@ -1,5 +1,6 @@
 use arrow::array::{Array, PrimitiveArray};
 use polars_compute::min_max::MinMaxKernel;
+use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -8,7 +9,7 @@ fn array_agg<T, S, F1, F2>(
     width: usize,
     slice_agg: F1,
     arr_agg: F2,
-) -> PrimitiveArray<S>
+) -> PlPrimitiveArray<S>
 where
     T: NumericNative,
     S: NumericNative,
@@ -39,7 +40,7 @@ pub(super) enum AggType {
     Max,
 }
 
-fn agg_min<T>(values: &PrimitiveArray<T>, width: usize) -> PrimitiveArray<T>
+fn agg_min<T>(values: &PrimitiveArray<T>, width: usize) -> PlPrimitiveArray<T>
 where
     T: NumericNative,
     PrimitiveArray<T>: for<'a> MinMaxKernel<Scalar<'a> = T>,
@@ -53,7 +54,7 @@ where
     )
 }
 
-fn agg_max<T>(values: &PrimitiveArray<T>, width: usize) -> PrimitiveArray<T>
+fn agg_max<T>(values: &PrimitiveArray<T>, width: usize) -> PlPrimitiveArray<T>
 where
     T: NumericNative,
     PrimitiveArray<T>: for<'a> MinMaxKernel<Scalar<'a> = T>,
@@ -73,14 +74,18 @@ pub(super) fn array_dispatch(
     width: usize,
     agg_type: AggType,
 ) -> Series {
-    let chunks: Vec<ArrayRef> = with_match_physical_numeric_polars_type!(values.dtype(), |$T| {
+    with_match_physical_numeric_polars_type!(values.dtype(), |$T| {
         let ca: &ChunkedArray<$T> = values.as_ref().as_ref().as_ref();
-        ca.downcast_iter().map(|arr| {
+        let chunks = ca.downcast_iter().map(|arr| {
+            // TODO(polars-array-scalar): the min/max kernels are Arrow ones that read the values
+            // as a slice, so a scalar chunk is written out here rather than reduced once.
+            let arr = chunk_to_arrow(arr);
             match agg_type {
-                AggType::Min => Box::new(agg_min(arr, width)) as ArrayRef,
-                AggType::Max => Box::new(agg_max(arr, width)) as ArrayRef,
+                AggType::Min => agg_min(&arr, width),
+                AggType::Max => agg_max(&arr, width),
             }
-        }).collect()
-    });
-    Series::try_from((name, chunks)).unwrap()
+        });
+
+        ChunkedArray::<$T>::from_chunk_iter(name, chunks).into_series()
+    })
 }

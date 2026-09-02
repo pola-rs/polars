@@ -1,4 +1,5 @@
 use polars_compute::arithmetic::ArithmeticKernel;
+use polars_core::chunked_array::arrow_bridge::{chunk_from_arrow, flat_to_arrow};
 use polars_core::chunked_array::ops::arity::apply_binary_kernel_broadcast;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-struct")]
@@ -13,9 +14,26 @@ fn floor_div_ca<T: PolarsNumericType>(
     apply_binary_kernel_broadcast(
         lhs,
         rhs,
-        |l, r| ArithmeticKernel::wrapping_floor_div(l.clone(), r.clone()),
-        |l, r| ArithmeticKernel::wrapping_floor_div_scalar_lhs(l, r.clone()),
-        |l, r| ArithmeticKernel::wrapping_floor_div_scalar(l.clone(), r),
+        // TODO(polars-array-scalar): the arithmetic kernels are Arrow ones, so a chunk crosses
+        // over as a flat Arrow array rather than a repeated value being divided once.
+        |l, r| {
+            chunk_from_arrow(&ArithmeticKernel::wrapping_floor_div(
+                flat_to_arrow(l),
+                flat_to_arrow(r),
+            ))
+        },
+        |l, r| {
+            chunk_from_arrow(&ArithmeticKernel::wrapping_floor_div_scalar_lhs(
+                l,
+                flat_to_arrow(r),
+            ))
+        },
+        |l, r| {
+            chunk_from_arrow(&ArithmeticKernel::wrapping_floor_div_scalar(
+                flat_to_arrow(l),
+                r,
+            ))
+        },
     )
 }
 

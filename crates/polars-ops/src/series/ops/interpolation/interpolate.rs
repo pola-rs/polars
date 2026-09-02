@@ -95,11 +95,9 @@ where
             out.push(Zero::zero())
         }
 
-        let array = PrimitiveArray::new(
-            T::get_static_dtype().to_arrow(CompatLevel::newest()),
-            out.into(),
-            Some(validity.into()),
-        );
+        // One value was pushed per element, and the mask holds one bit per element as well.
+        let length = out.len();
+        let array = PlPrimitiveArray::new(out.into(), length, Some(validity.into()));
         ChunkedArray::with_chunk(chunked_arr.name().clone(), array)
     } else {
         ChunkedArray::from_vec(chunked_arr.name().clone(), out)

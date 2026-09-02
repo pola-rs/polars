@@ -95,7 +95,7 @@ where
     let max_idx = num_bins - 1;
 
     for chunk in ca.downcast_iter() {
-        for item in chunk.non_null_values_iter() {
+        for item in chunk.iter().flatten() {
             let item = item.to_f64().unwrap();
             if item > min_break && item <= max_break {
                 // idx > (num_bins - 1) may happen due to floating point representation imprecision
@@ -133,7 +133,7 @@ where
     let chunk = sorted.downcast_as_array();
     let mut count: Vec<IdxSize> = Vec::with_capacity(num_bins);
 
-    'item: for item in chunk.non_null_values_iter() {
+    'item: for item in chunk.iter().flatten() {
         let item = item.to_f64().unwrap();
 
         // Cycle through items until we hit the first bucket.
@@ -242,14 +242,16 @@ pub fn hist_series(
     let mut bins_arg = None;
 
     let owned_bins;
+    let flat_bins;
     if let Some(bins) = bins {
         polars_ensure!(bins.null_count() == 0, InvalidOperation: "nulls not supported in 'bins' argument");
         let bins = bins.cast(&DataType::Float64)?;
         let bins_s = bins.rechunk();
         owned_bins = bins_s;
-        let bins = owned_bins.f64().unwrap();
-        let bins = bins.cont_slice().unwrap();
-        bins_arg = Some(bins);
+        // TODO(polars-array-scalar): the bin edges are read as a slice, so a scalar chunk is
+        // written out here rather than the single edge it stands for being read once.
+        flat_bins = owned_bins.f64().unwrap().to_flat();
+        bins_arg = Some(flat_bins.cont_slice().unwrap());
     };
     polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "'hist' is only supported for numeric data");
 

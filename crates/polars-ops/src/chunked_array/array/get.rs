@@ -1,6 +1,7 @@
 use polars_compute::gather::sublist::fixed_size_list::{
     sub_fixed_size_list_get, sub_fixed_size_list_get_literal,
 };
+use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::prelude::arity::{try_binary_to_series, try_unary_to_series};
 
 use super::*;
@@ -70,7 +71,10 @@ fn array_get_impl(
         1 => {
             if let Some(index) = index.get(0) {
                 let out = try_unary_to_series(ca, |arr| {
-                    sub_fixed_size_list_get_literal(arr, index, null_on_oob)
+                    // TODO(polars-array-scalar): the gather kernel is an Arrow one, so a scalar
+                    // chunk is written out here rather than the one element it stands for being
+                    // taken once.
+                    sub_fixed_size_list_get_literal(&chunk_to_arrow(arr), index, null_on_oob)
                 })?;
                 unsafe { out.from_physical_unchecked(ca.inner_dtype()) }
             } else {
@@ -84,7 +88,8 @@ fn array_get_impl(
 
         len if len == ca.len() => {
             let out = try_binary_to_series(ca, index, |arr, idx_arr| {
-                sub_fixed_size_list_get(arr, idx_arr, null_on_oob)
+                // TODO(polars-array-scalar): as above, a scalar chunk is written out here.
+                sub_fixed_size_list_get(&chunk_to_arrow(arr), &chunk_to_arrow(idx_arr), null_on_oob)
             })?;
             unsafe { out.from_physical_unchecked(ca.inner_dtype()) }
         },
@@ -92,7 +97,15 @@ fn array_get_impl(
         _len if ca.len() == 1 => {
             if let Some(arr) = ca.get(0) {
                 let idx = convert_and_bound_idx_ca(index, arr.len(), null_on_oob)?;
-                let s = Series::try_from((ca.name().clone(), vec![arr])).unwrap();
+                // The values of one element carry no logical type; the physical inner one is
+                // what `from_physical_unchecked` below turns back into the logical one.
+                let s = unsafe {
+                    Series::from_chunks_and_dtype_unchecked(
+                        ca.name().clone(),
+                        vec![arr],
+                        &ca.inner_dtype().to_physical(),
+                    )
+                };
                 unsafe {
                     s.take_unchecked(&idx)
                         .from_physical_unchecked(ca.inner_dtype())

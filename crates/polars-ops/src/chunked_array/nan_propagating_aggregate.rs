@@ -1,10 +1,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::Array;
 use arrow::legacy::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
 use polars_compute::rolling;
 use polars_compute::rolling::no_nulls::{MaxWindow, MinWindow};
+use polars_core::chunked_array::arrow_bridge::{chunk_from_arrow, chunk_to_arrow};
 use polars_core::frame::group_by::aggregations::{
     _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
@@ -20,12 +20,9 @@ where
     ca.downcast_iter()
         .filter_map(|arr| {
             if arr.null_count() == 0 {
-                arr.values().iter().copied().reduce(min_or_max_fn)
+                arr.values_iter().reduce(min_or_max_fn)
             } else {
-                arr.iter()
-                    .unwrap_optional()
-                    .filter_map(|opt| opt.copied())
-                    .reduce(min_or_max_fn)
+                arr.iter().flatten().reduce(min_or_max_fn)
             }
         })
         .reduce(min_or_max_fn)
@@ -79,13 +76,16 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                 ca.get(first as usize)
             } else {
                 match (ca.has_nulls(), ca.chunks().len()) {
+                    // TODO(polars-array-scalar): the take kernels are Arrow ones, so a scalar
+                    // chunk is written out here rather than the one value it stands for being
+                    // taken however many times the group asks for it.
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
-                        ca.downcast_iter().next().unwrap(),
+                        &chunk_to_arrow(ca.downcast_iter().next().unwrap()),
                         idx.iter().map(|i| *i as usize),
                     )
                     .reduce(MinMax::max_propagate_nan),
                     (_, 1) => take_agg_primitive_iter_unchecked(
-                        ca.downcast_iter().next().unwrap(),
+                        &chunk_to_arrow(ca.downcast_iter().next().unwrap()),
                         idx.iter().map(|i| *i as usize),
                     )
                     .reduce(MinMax::max_propagate_nan),
@@ -102,8 +102,13 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
             monotonic,
         } => {
             if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
-                let arr = ca.downcast_iter().next().unwrap();
-                let values = arr.values().as_slice();
+                // TODO(polars-array-scalar): the rolling kernels read the values as a slice, so
+                // a scalar chunk is written out here rather than aggregated once.
+                let flat = ca.to_flat();
+                let arr = flat
+                    .flat_chunk(0)
+                    .expect("the rolling kernels need one chunk");
+                let values = arr.as_slice();
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
                     None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _, _>(
@@ -118,7 +123,8 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::<T>::from(arr).into_series()
+                ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, chunk_from_arrow(&arr))
+                    .into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);
@@ -146,13 +152,16 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                 ca.get(first as usize)
             } else {
                 match (ca.has_nulls(), ca.chunks().len()) {
+                    // TODO(polars-array-scalar): the take kernels are Arrow ones, so a scalar
+                    // chunk is written out here rather than the one value it stands for being
+                    // taken however many times the group asks for it.
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
-                        ca.downcast_iter().next().unwrap(),
+                        &chunk_to_arrow(ca.downcast_iter().next().unwrap()),
                         idx.iter().map(|i| *i as usize),
                     )
                     .reduce(MinMax::min_propagate_nan),
                     (_, 1) => take_agg_primitive_iter_unchecked(
-                        ca.downcast_iter().next().unwrap(),
+                        &chunk_to_arrow(ca.downcast_iter().next().unwrap()),
                         idx.iter().map(|i| *i as usize),
                     )
                     .reduce(MinMax::min_propagate_nan),
@@ -169,8 +178,13 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
             monotonic,
         } => {
             if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
-                let arr = ca.downcast_iter().next().unwrap();
-                let values = arr.values().as_slice();
+                // TODO(polars-array-scalar): the rolling kernels read the values as a slice, so
+                // a scalar chunk is written out here rather than aggregated once.
+                let flat = ca.to_flat();
+                let arr = flat
+                    .flat_chunk(0)
+                    .expect("the rolling kernels need one chunk");
+                let values = arr.as_slice();
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
                     None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _, _>(
@@ -185,7 +199,8 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::<T>::from(arr).into_series()
+                ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, chunk_from_arrow(&arr))
+                    .into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);

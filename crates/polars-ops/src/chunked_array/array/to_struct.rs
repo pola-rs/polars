@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::{Array, StructArray};
-use arrow::datatypes::ArrowDataType;
+use polars_array::{PlArray, PlStructArray};
 use polars_core::chunked_array::StructChunked;
 use polars_core::chunked_array::builder::NewChunkedArray as _;
 use polars_core::datatypes::{ArrayChunked, CompatLevel, DataType, Field, Int64Chunked};
@@ -16,7 +15,7 @@ pub trait ToStruct: AsArray {
     fn to_struct(&self, fields: &[PlSmallStr]) -> PolarsResult<StructChunked> {
         let ca = self.as_array();
 
-        let field_arrays: Vec<Box<dyn Array>> = RAYON.install(|| {
+        let field_arrays: Vec<Box<dyn PlArray>> = RAYON.install(|| {
             (0..fields.len())
                 .into_par_iter()
                 .map(|i| {
@@ -44,17 +43,11 @@ pub trait ToStruct: AsArray {
                             .collect(),
                     ),
                 )),
-                vec![Box::new(StructArray::new(
-                    ArrowDataType::Struct(
-                        fields
-                            .iter()
-                            .map(|name| {
-                                field_phys_dtype.to_arrow_field(name.clone(), CompatLevel::newest())
-                            })
-                            .collect(),
-                    ),
-                    ca.len(),
+                // `rechunk_validity` hands back a flat mask, one bit per element, which is what
+                // a struct array takes; its field names live in the `DataType` above.
+                vec![Box::new(PlStructArray::new(
                     field_arrays,
+                    ca.len(),
                     ca.rechunk_validity(),
                 ))],
                 ca.len(),

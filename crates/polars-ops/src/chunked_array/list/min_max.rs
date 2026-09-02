@@ -1,15 +1,13 @@
-use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 use arrow::types::NativeType;
 use polars_compute::min_max::MinMaxKernel;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
-use polars_utils::float16::pf16;
 
 use crate::chunked_array::list::namespace::has_inner_nulls;
 
-fn min_between_offsets<T>(values: &[T], offset: &[i64]) -> PrimitiveArray<T>
+fn min_between_offsets<T>(values: &[T], offset: &[u64]) -> PlPrimitiveArray<T>
 where
     T: NativeType,
     [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
@@ -31,46 +29,40 @@ where
         .collect()
 }
 
-fn dispatch_min<T>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef
+fn dispatch_min<T>(
+    arr: &dyn PlArray,
+    offsets: &[u64],
+    validity: Option<&Bitmap>,
+) -> PlPrimitiveArray<T>
 where
     T: NativeType,
     [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
-    let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
-    let values = values.values().as_slice();
-    let out = min_between_offsets(values, offsets);
-    let new_validity = combine_validities_and(out.validity(), validity);
-    out.with_validity(new_validity).to_boxed()
+    let values = arr.as_any().downcast_ref::<PlPrimitiveArray<T>>().unwrap();
+    // TODO(polars-array-scalar): the kernel reads the values as a slice, so a scalar values
+    // buffer is written out here instead of the one value it stands for being reduced once.
+    let values = values.to_flat();
+    let out = min_between_offsets(values.as_slice(), offsets);
+    // Collecting leaves `out` flat, so its mask holds one bit per element like the other one.
+    let new_validity = combine_validities_and(out.as_flat().unwrap().validity(), validity);
+    out.with_validity(new_validity)
 }
 
 fn min_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
-    use DataType::*;
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| {
-            let offsets = arr.offsets().as_slice();
-            let values = arr.values().as_ref();
+    with_match_physical_numeric_polars_type!(inner_type, |$T| {
+        let chunks = ca.downcast_iter().map(|arr| {
+            // TODO(polars-array-scalar): the offsets are read as a slice, so scalar offsets are
+            // written out here rather than the single range every element shares being used.
+            let arr = arr.to_flat();
+            dispatch_min::<<$T as PolarsNumericType>::Native>(
+                arr.values(),
+                arr.offsets().as_slice(),
+                arr.validity(),
+            )
+        });
 
-            match inner_type {
-                Int8 => dispatch_min::<i8>(values, offsets, arr.validity()),
-                Int16 => dispatch_min::<i16>(values, offsets, arr.validity()),
-                Int32 => dispatch_min::<i32>(values, offsets, arr.validity()),
-                Int64 => dispatch_min::<i64>(values, offsets, arr.validity()),
-                Int128 => dispatch_min::<i128>(values, offsets, arr.validity()),
-                UInt8 => dispatch_min::<u8>(values, offsets, arr.validity()),
-                UInt16 => dispatch_min::<u16>(values, offsets, arr.validity()),
-                UInt32 => dispatch_min::<u32>(values, offsets, arr.validity()),
-                UInt64 => dispatch_min::<u64>(values, offsets, arr.validity()),
-                UInt128 => dispatch_min::<u128>(values, offsets, arr.validity()),
-                Float16 => dispatch_min::<pf16>(values, offsets, arr.validity()),
-                Float32 => dispatch_min::<f32>(values, offsets, arr.validity()),
-                Float64 => dispatch_min::<f64>(values, offsets, arr.validity()),
-                _ => unimplemented!(),
-            }
-        })
-        .collect::<Vec<_>>();
-
-    Series::try_from((ca.name().clone(), chunks)).unwrap()
+        ChunkedArray::<$T>::from_chunk_iter(ca.name().clone(), chunks).into_series()
+    })
 }
 
 pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
@@ -120,7 +112,7 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
     }
 }
 
-fn max_between_offsets<T>(values: &[T], offset: &[i64]) -> PrimitiveArray<T>
+fn max_between_offsets<T>(values: &[T], offset: &[u64]) -> PlPrimitiveArray<T>
 where
     T: NativeType,
     [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
@@ -142,53 +134,39 @@ where
         .collect()
 }
 
-fn dispatch_max<T>(arr: &dyn Array, offsets: &[i64], validity: Option<&Bitmap>) -> ArrayRef
+fn dispatch_max<T>(
+    arr: &dyn PlArray,
+    offsets: &[u64],
+    validity: Option<&Bitmap>,
+) -> PlPrimitiveArray<T>
 where
     T: NativeType,
     [T]: for<'a> MinMaxKernel<Scalar<'a> = T>,
 {
-    let values = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
-    let values = values.values().as_slice();
-    let mut out = max_between_offsets(values, offsets);
-
-    if let Some(validity) = validity {
-        if out.null_count() > 0 {
-            out.apply_validity(|other_validity| validity & &other_validity)
-        } else {
-            out = out.with_validity(Some(validity.clone()));
-        }
-    }
-    Box::new(out)
+    let values = arr.as_any().downcast_ref::<PlPrimitiveArray<T>>().unwrap();
+    // TODO(polars-array-scalar): as in `dispatch_min`, a scalar values buffer is written out here.
+    let values = values.to_flat();
+    let out = max_between_offsets(values.as_slice(), offsets);
+    // Collecting leaves `out` flat, so its mask holds one bit per element like the other one.
+    let new_validity = combine_validities_and(out.as_flat().unwrap().validity(), validity);
+    out.with_validity(new_validity)
 }
 
 fn max_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
-    use DataType::*;
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| {
-            let offsets = arr.offsets().as_slice();
-            let values = arr.values().as_ref();
+    with_match_physical_numeric_polars_type!(inner_type, |$T| {
+        let chunks = ca.downcast_iter().map(|arr| {
+            // TODO(polars-array-scalar): the offsets are read as a slice, so scalar offsets are
+            // written out here rather than the single range every element shares being used.
+            let arr = arr.to_flat();
+            dispatch_max::<<$T as PolarsNumericType>::Native>(
+                arr.values(),
+                arr.offsets().as_slice(),
+                arr.validity(),
+            )
+        });
 
-            match inner_type {
-                Int8 => dispatch_max::<i8>(values, offsets, arr.validity()),
-                Int16 => dispatch_max::<i16>(values, offsets, arr.validity()),
-                Int32 => dispatch_max::<i32>(values, offsets, arr.validity()),
-                Int64 => dispatch_max::<i64>(values, offsets, arr.validity()),
-                Int128 => dispatch_max::<i128>(values, offsets, arr.validity()),
-                UInt8 => dispatch_max::<u8>(values, offsets, arr.validity()),
-                UInt16 => dispatch_max::<u16>(values, offsets, arr.validity()),
-                UInt32 => dispatch_max::<u32>(values, offsets, arr.validity()),
-                UInt64 => dispatch_max::<u64>(values, offsets, arr.validity()),
-                UInt128 => dispatch_max::<u128>(values, offsets, arr.validity()),
-                Float16 => dispatch_max::<pf16>(values, offsets, arr.validity()),
-                Float32 => dispatch_max::<f32>(values, offsets, arr.validity()),
-                Float64 => dispatch_max::<f64>(values, offsets, arr.validity()),
-                _ => unimplemented!(),
-            }
-        })
-        .collect::<Vec<_>>();
-
-    Series::try_from((ca.name().clone(), chunks)).unwrap()
+        ChunkedArray::<$T>::from_chunk_iter(ca.name().clone(), chunks).into_series()
+    })
 }
 
 pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {

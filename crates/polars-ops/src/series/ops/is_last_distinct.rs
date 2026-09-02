@@ -106,8 +106,7 @@ fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
             });
     }
 
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    BooleanChunked::with_chunk(ca.name().clone(), arr)
+    BooleanChunked::from_bitmap(ca.name().clone(), out.into())
 }
 
 fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
@@ -152,8 +151,7 @@ fn is_last_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
         unsafe { out.set_unchecked(idx as usize, true) }
     }
 
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(s.name().clone(), arr))
+    Ok(BooleanChunked::from_bitmap(s.name().clone(), out.into()))
 }
 
 fn is_last_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
@@ -168,6 +166,5 @@ fn is_last_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
         unsafe { out.set_unchecked(idx as usize, true) }
     }
 
-    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
-    Ok(BooleanChunked::with_chunk(ca.name().clone(), arr))
+    Ok(BooleanChunked::from_bitmap(ca.name().clone(), out.into()))
 }

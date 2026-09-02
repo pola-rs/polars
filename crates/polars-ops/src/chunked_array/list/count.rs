@@ -1,11 +1,10 @@
-use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::utils::count_zeros;
 use arrow::legacy::utils::CustomIterTools;
 
 use super::*;
 
-fn count_bits_set_by_offsets(values: &Bitmap, offset: &[i64]) -> Vec<IdxSize> {
+fn count_bits_set_by_offsets(values: &Bitmap, offset: &[u64]) -> Vec<IdxSize> {
     // Fast path where all bits are either set or unset.
     if values.unset_bits() == values.len() {
         return vec![0 as IdxSize; offset.len() - 1];
@@ -53,11 +52,19 @@ pub fn list_count_matches(ca: &ListChunked, value: AnyValue) -> PolarsResult<Ser
 
 pub(super) fn count_boolean_bits(ca: &ListChunked) -> IdxCa {
     let chunks = ca.downcast_iter().map(|arr| {
-        let inner_arr = arr.values();
-        let mask = inner_arr.as_any().downcast_ref::<BooleanArray>().unwrap();
+        // TODO(polars-array-scalar): the bits are counted between flat offsets, so a scalar chunk
+        // is written out here rather than the one list it stands for being counted once.
+        let arr = arr.to_flat();
+        let mask = arr
+            .values()
+            .as_any()
+            .downcast_ref::<PlBooleanArray>()
+            .unwrap();
         assert_eq!(mask.null_count(), 0);
+        let mask = mask.to_flat();
         let out = count_bits_set_by_offsets(mask.values(), arr.offsets().as_slice());
-        IdxArr::from_data_default(out.into(), arr.validity().cloned())
+        // One count per element, and the mask of the array holds one bit per element as well.
+        PlPrimitiveArray::from_vec(out).with_validity(arr.validity().cloned())
     });
     IdxCa::from_chunk_iter(ca.name().clone(), chunks)
 }

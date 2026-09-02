@@ -1,8 +1,7 @@
 use std::ops::{AddAssign, Mul};
 
 use arity::unary_elementwise_values;
-use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::bitmap::BitmapBuilder;
 use num_traits::{AsPrimitive, Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -122,8 +121,11 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
                 ca.name().clone(),
                 ca.downcast_iter()
                     .map(|arr| {
-                        arr.with_values(Bitmap::new_with_value(true, arr.len()))
-                            .to_boxed()
+                        // Every element is true, which one shared bit stands for; the mask is
+                        // the one the chunk already carried.
+                        PlBooleanArray::new_scalar(true, arr.len())
+                            .with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
+                            .into_boxed()
                     })
                     .collect(),
             )
@@ -149,8 +151,11 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
         out.extend_constant(ca.len() - 1 - last_true_idx, false);
     }
 
-    let arr: BooleanArray = out.freeze().into();
-    BooleanChunked::with_chunk_like(ca, arr.with_validity(ca.rechunk_validity()))
+    // One bit was pushed per element, and `rechunk_validity` hands back one bit per element too.
+    let values = out.freeze();
+    let length = values.len();
+    let arr = PlBooleanArray::new(values, length, ca.rechunk_validity());
+    BooleanChunked::with_chunk_like(ca, arr)
 }
 
 fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> BooleanChunked {
@@ -164,8 +169,11 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
                 ca.name().clone(),
                 ca.downcast_iter()
                     .map(|arr| {
-                        arr.with_values(Bitmap::new_with_value(false, arr.len()))
-                            .to_boxed()
+                        // Every element is false, which one shared bit stands for; the mask is
+                        // the one the chunk already carried.
+                        PlBooleanArray::new_scalar(false, arr.len())
+                            .with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
+                            .into_boxed()
                     })
                     .collect(),
             )
@@ -191,8 +199,11 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool, init: Option<bool>) -> Boole
         out.extend_constant(ca.len() - 1 - last_false_idx, true);
     }
 
-    let arr: BooleanArray = out.freeze().into();
-    BooleanChunked::with_chunk_like(ca, arr.with_validity(ca.rechunk_validity()))
+    // One bit was pushed per element, and `rechunk_validity` hands back one bit per element too.
+    let values = out.freeze();
+    let length = values.len();
+    let arr = PlBooleanArray::new(values, length, ca.rechunk_validity());
+    BooleanChunked::with_chunk_like(ca, arr)
 }
 
 fn cum_sum_numeric<T>(

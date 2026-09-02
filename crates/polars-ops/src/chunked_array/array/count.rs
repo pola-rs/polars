@@ -1,8 +1,7 @@
-use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::utils::count_zeros;
 use arrow::legacy::utils::CustomIterTools;
-use polars_core::prelude::arity::unary_mut_with_options;
+use polars_core::prelude::arity::unary_mut_with_options_flat;
 
 use super::*;
 
@@ -18,12 +17,19 @@ pub fn array_count_matches(ca: &ArrayChunked, value: AnyValue) -> PolarsResult<S
 }
 
 pub(super) fn count_boolean_bits(ca: &ArrayChunked) -> IdxCa {
-    unary_mut_with_options(ca, |arr| {
-        let inner_arr = arr.values();
-        let mask = inner_arr.as_any().downcast_ref::<BooleanArray>().unwrap();
+    unary_mut_with_options_flat(ca, |arr| {
+        let mask = arr
+            .values()
+            .as_any()
+            .downcast_ref::<PlBooleanArray>()
+            .unwrap();
         assert_eq!(mask.null_count(), 0);
-        let out = count_bits_set(mask.values(), arr.len(), arr.size());
-        IdxArr::from_data_default(out.into(), arr.validity().cloned())
+        // TODO(polars-array-scalar): the bits are counted over a flat bitmap, so a scalar values
+        // buffer is written out here rather than the one bit it stands for being counted once.
+        let mask = mask.to_flat();
+        let out = count_bits_set(mask.values(), arr.len(), arr.width());
+        // One count per element, and the mask of the array holds one bit per element as well.
+        PlPrimitiveArray::from_vec(out).with_validity(arr.validity().cloned())
     })
 }
 

@@ -1,20 +1,22 @@
-use arrow::array::PrimitiveArray;
 use arrow::compute::utils::combine_validities_and3;
+use polars_core::chunked_array::arrow_bridge::as_flat;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_ternary;
 use polars_core::with_match_physical_numeric_polars_type;
 
 // (a * b) + c
 fn fma_arr<T: NumericNative>(
-    a: &PrimitiveArray<T>,
-    b: &PrimitiveArray<T>,
-    c: &PrimitiveArray<T>,
-) -> PrimitiveArray<T> {
+    a: &Flat<PlPrimitiveArray<T>>,
+    b: &Flat<PlPrimitiveArray<T>>,
+    c: &Flat<PlPrimitiveArray<T>>,
+) -> PlPrimitiveArray<T> {
     assert_eq!(a.len(), b.len());
     let validity = combine_validities_and3(a.validity(), b.validity(), c.validity());
-    let a = a.values().as_slice();
-    let b = b.values().as_slice();
-    let c = c.values().as_slice();
+    // TODO(polars-array-scalar): the three sides are read as slices, so a scalar chunk is
+    // written out before it gets here rather than the value it stands for being fused once.
+    let a = a.as_slice();
+    let b = b.as_slice();
+    let c = c.as_slice();
 
     assert_eq!(a.len(), b.len());
     assert_eq!(b.len(), c.len());
@@ -24,7 +26,7 @@ fn fma_arr<T: NumericNative>(
         .zip(c.iter())
         .map(|((a, b), c)| *a * *b + *c)
         .collect::<Vec<_>>();
-    PrimitiveArray::from_data_default(out.into(), validity)
+    PlPrimitiveArray::from_vec(out).with_validity(validity)
 }
 
 fn fma_ca<T: PolarsNumericType>(
@@ -37,7 +39,7 @@ fn fma_ca<T: PolarsNumericType>(
         .downcast_iter()
         .zip(b.downcast_iter())
         .zip(c.downcast_iter())
-        .map(|((a, b), c)| fma_arr(a, b, c));
+        .map(|((a, b), c)| fma_arr(&as_flat(a), &as_flat(b), &as_flat(c)));
     ChunkedArray::from_chunk_iter(a.name().clone(), chunks)
 }
 
@@ -57,15 +59,17 @@ pub fn fma_columns(a: &Column, b: &Column, c: &Column) -> Column {
 
 // a - (b * c)
 fn fsm_arr<T: NumericNative>(
-    a: &PrimitiveArray<T>,
-    b: &PrimitiveArray<T>,
-    c: &PrimitiveArray<T>,
-) -> PrimitiveArray<T> {
+    a: &Flat<PlPrimitiveArray<T>>,
+    b: &Flat<PlPrimitiveArray<T>>,
+    c: &Flat<PlPrimitiveArray<T>>,
+) -> PlPrimitiveArray<T> {
     assert_eq!(a.len(), b.len());
     let validity = combine_validities_and3(a.validity(), b.validity(), c.validity());
-    let a = a.values().as_slice();
-    let b = b.values().as_slice();
-    let c = c.values().as_slice();
+    // TODO(polars-array-scalar): the three sides are read as slices, so a scalar chunk is
+    // written out before it gets here rather than the value it stands for being fused once.
+    let a = a.as_slice();
+    let b = b.as_slice();
+    let c = c.as_slice();
 
     assert_eq!(a.len(), b.len());
     assert_eq!(b.len(), c.len());
@@ -75,7 +79,7 @@ fn fsm_arr<T: NumericNative>(
         .zip(c.iter())
         .map(|((a, b), c)| *a - (*b * *c))
         .collect::<Vec<_>>();
-    PrimitiveArray::from_data_default(out.into(), validity)
+    PlPrimitiveArray::from_vec(out).with_validity(validity)
 }
 
 fn fsm_ca<T: PolarsNumericType>(
@@ -88,7 +92,7 @@ fn fsm_ca<T: PolarsNumericType>(
         .downcast_iter()
         .zip(b.downcast_iter())
         .zip(c.downcast_iter())
-        .map(|((a, b), c)| fsm_arr(a, b, c));
+        .map(|((a, b), c)| fsm_arr(&as_flat(a), &as_flat(b), &as_flat(c)));
     ChunkedArray::from_chunk_iter(a.name().clone(), chunks)
 }
 
@@ -107,15 +111,17 @@ pub fn fsm_columns(a: &Column, b: &Column, c: &Column) -> Column {
 }
 
 fn fms_arr<T: NumericNative>(
-    a: &PrimitiveArray<T>,
-    b: &PrimitiveArray<T>,
-    c: &PrimitiveArray<T>,
-) -> PrimitiveArray<T> {
+    a: &Flat<PlPrimitiveArray<T>>,
+    b: &Flat<PlPrimitiveArray<T>>,
+    c: &Flat<PlPrimitiveArray<T>>,
+) -> PlPrimitiveArray<T> {
     assert_eq!(a.len(), b.len());
     let validity = combine_validities_and3(a.validity(), b.validity(), c.validity());
-    let a = a.values().as_slice();
-    let b = b.values().as_slice();
-    let c = c.values().as_slice();
+    // TODO(polars-array-scalar): the three sides are read as slices, so a scalar chunk is
+    // written out before it gets here rather than the value it stands for being fused once.
+    let a = a.as_slice();
+    let b = b.as_slice();
+    let c = c.as_slice();
 
     assert_eq!(a.len(), b.len());
     assert_eq!(b.len(), c.len());
@@ -125,7 +131,7 @@ fn fms_arr<T: NumericNative>(
         .zip(c.iter())
         .map(|((a, b), c)| (*a * *b) - *c)
         .collect::<Vec<_>>();
-    PrimitiveArray::from_data_default(out.into(), validity)
+    PlPrimitiveArray::from_vec(out).with_validity(validity)
 }
 
 fn fms_ca<T: PolarsNumericType>(
@@ -138,7 +144,7 @@ fn fms_ca<T: PolarsNumericType>(
         .downcast_iter()
         .zip(b.downcast_iter())
         .zip(c.downcast_iter())
-        .map(|((a, b), c)| fms_arr(a, b, c));
+        .map(|((a, b), c)| fms_arr(&as_flat(a), &as_flat(b), &as_flat(c)));
     ChunkedArray::from_chunk_iter(a.name().clone(), chunks)
 }
 

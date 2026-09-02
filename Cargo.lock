@@ -3554,6 +3554,7 @@ dependencies = [
  "libm",
  "memchr",
  "num-traits",
+ "polars-array",
  "polars-arrow",
  "polars-buffer",
  "polars-compute",

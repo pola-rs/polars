@@ -8,6 +8,8 @@ use base64::Engine as _;
 #[cfg(feature = "binary_encoding")]
 use base64::engine::general_purpose;
 use memchr::memmem::find;
+#[cfg(feature = "binary_encoding")]
+use polars_array::arrow::{export, import};
 use polars_compute::cast::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use polars_compute::size::binary_size_bytes;
 use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
@@ -204,7 +206,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         &self,
         dtype: &DataType,
         is_little_endian: bool,
-    ) -> PolarsResult<Vec<Box<dyn Array>>> {
+    ) -> PolarsResult<Vec<PlArrayRef>> {
         use polars_core::with_match_physical_numeric_polars_type;
 
         let ca = self.as_binary();
@@ -218,11 +220,16 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 with_match_physical_numeric_polars_type!(dtype, |$T| {
                     unsafe {
                         ca.chunks().iter().map(|chunk| {
+                            // TODO(polars-array-scalar): the reinterpret kernels are Arrow ones,
+                            // so a scalar chunk is written out here rather than the one value it
+                            // stands for being reinterpreted once.
+                            let chunk = export::to_arrow(&**chunk);
                             binview_to_primitive_dyn::<<$T as PolarsNumericType>::Native>(
-                                &**chunk,
+                                &*chunk,
                                 &arrow_data_type,
                                 is_little_endian,
                             )
+                            .map(|arr| import::from_arrow(&*arr))
                         }).collect()
                     }
                 })
@@ -232,15 +239,18 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 if inner_dtype.is_primitive_numeric() || inner_dtype.is_temporal() =>
             {
                 let inner_dtype = inner_dtype.to_physical();
-                let result: Vec<ArrayRef> = with_match_physical_numeric_polars_type!(inner_dtype, |$T| {
+                let result: Vec<PlArrayRef> = with_match_physical_numeric_polars_type!(inner_dtype, |$T| {
                     unsafe {
                         ca.chunks().iter().map(|chunk| {
+                            // TODO(polars-array-scalar): as above, a scalar chunk is written out.
+                            let chunk = export::to_arrow(&**chunk);
                             binview_to_fixed_size_list_dyn::<<$T as PolarsNumericType>::Native>(
-                                &**chunk,
+                                &*chunk,
                                 *array_width,
                                 is_little_endian
                             )
-                        }).collect::<Result<Vec<ArrayRef>, _>>()
+                            .map(|arr| import::from_arrow(&*arr))
+                        }).collect::<Result<Vec<PlArrayRef>, _>>()
                     }
                 })?;
                 Ok(result)

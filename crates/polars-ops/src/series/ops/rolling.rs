@@ -1,3 +1,6 @@
+#[cfg(feature = "moment")]
+use polars_array::arrow::import;
+use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::prelude::*;
 #[cfg(feature = "moment")]
 use {
@@ -20,20 +23,21 @@ where
     use arrow::array::Array;
 
     let ca = ca.rechunk();
-    let arr = ca.downcast_get(0).unwrap();
+    // TODO(polars-array-scalar): the rolling kernels are Arrow ones, so a scalar chunk is written
+    // out here rather than one window being computed and repeated.
+    let arr = chunk_to_arrow(ca.downcast_get(0).unwrap());
     let arr = if arr.has_nulls() {
-        polars_compute::rolling::nulls::rolling_skew(arr, window_size, min_periods, center, params)
+        polars_compute::rolling::nulls::rolling_skew(&arr, window_size, min_periods, center, params)
     } else {
-        let values = arr.values();
         polars_compute::rolling::no_nulls::rolling_skew(
-            values,
+            arr.values(),
             window_size,
             min_periods,
             center,
             params,
         )?
     };
-    Ok(unsafe { ca.with_chunks(vec![arr]) })
+    Ok(unsafe { ca.with_chunks(vec![import::from_arrow(&*arr)]) })
 }
 
 #[cfg(feature = "moment")]
@@ -80,26 +84,27 @@ where
     use arrow::array::Array;
 
     let ca = ca.rechunk();
-    let arr = ca.downcast_get(0).unwrap();
+    // TODO(polars-array-scalar): the rolling kernels are Arrow ones, so a scalar chunk is written
+    // out here rather than one window being computed and repeated.
+    let arr = chunk_to_arrow(ca.downcast_get(0).unwrap());
     let arr = if arr.has_nulls() {
         polars_compute::rolling::nulls::rolling_kurtosis(
-            arr,
+            &arr,
             window_size,
             min_periods,
             center,
             params,
         )
     } else {
-        let values = arr.values();
         polars_compute::rolling::no_nulls::rolling_kurtosis(
-            values,
+            arr.values(),
             window_size,
             min_periods,
             center,
             params,
         )?
     };
-    Ok(unsafe { ca.with_chunks(vec![arr]) })
+    Ok(unsafe { ca.with_chunks(vec![import::from_arrow(&*arr)]) })
 }
 
 #[cfg(feature = "moment")]

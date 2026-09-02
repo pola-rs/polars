@@ -178,14 +178,12 @@ where
 
 #[cfg(test)]
 mod test {
-    use arrow::array::PrimitiveArray;
-
     use super::*;
 
     #[test]
     fn test_asof_backward() {
-        let a = PrimitiveArray::from_slice([-1, 2, 3, 3, 3, 4]);
-        let b = PrimitiveArray::from_slice([1, 2, 3, 3]);
+        let a = PlPrimitiveArray::from_slice(&[-1, 2, 3, 3, 3, 4]);
+        let b = PlPrimitiveArray::from_slice(&[1, 2, 3, 3]);
 
         let tuples = join_asof_backward::<Int32Type, _>(&a, &b, |_, _| true, true);
         assert_eq!(tuples.len(), a.len());
@@ -194,23 +192,23 @@ mod test {
             &[None, Some(1), Some(3), Some(3), Some(3), Some(3)]
         );
 
-        let b = PrimitiveArray::from_slice([1, 2, 4, 5]);
+        let b = PlPrimitiveArray::from_slice(&[1, 2, 4, 5]);
         let tuples = join_asof_backward::<Int32Type, _>(&a, &b, |_, _| true, true);
         assert_eq!(
             tuples.to_vec(),
             &[None, Some(1), Some(1), Some(1), Some(1), Some(2)]
         );
 
-        let a = PrimitiveArray::from_slice([2, 4, 4, 4]);
-        let b = PrimitiveArray::from_slice([1, 2, 3, 3]);
+        let a = PlPrimitiveArray::from_slice(&[2, 4, 4, 4]);
+        let b = PlPrimitiveArray::from_slice(&[1, 2, 3, 3]);
         let tuples = join_asof_backward::<Int32Type, _>(&a, &b, |_, _| true, true);
         assert_eq!(tuples.to_vec(), &[Some(1), Some(3), Some(3), Some(3)]);
     }
 
     #[test]
     fn test_asof_backward_tolerance() {
-        let a = PrimitiveArray::from_slice([-1, 20, 25, 30, 30, 40]);
-        let b = PrimitiveArray::from_slice([10, 20, 30, 30]);
+        let a = PlPrimitiveArray::from_slice(&[-1, 20, 25, 30, 30, 40]);
+        let b = PlPrimitiveArray::from_slice(&[10, 20, 30, 30]);
         let tuples = join_asof_backward::<Int32Type, _>(&a, &b, |l, r| l.abs_diff(r) <= 4u32, true);
         assert_eq!(
             tuples.to_vec(),
@@ -220,8 +218,8 @@ mod test {
 
     #[test]
     fn test_asof_forward_tolerance() {
-        let a = PrimitiveArray::from_slice([-1, 20, 25, 30, 30, 40, 52]);
-        let b = PrimitiveArray::from_slice([10, 20, 33, 55]);
+        let a = PlPrimitiveArray::from_slice(&[-1, 20, 25, 30, 30, 40, 52]);
+        let b = PlPrimitiveArray::from_slice(&[10, 20, 33, 55]);
         let tuples = join_asof_forward::<Int32Type, _>(&a, &b, |l, r| l.abs_diff(r) <= 4u32, true);
         assert_eq!(
             tuples.to_vec(),
@@ -231,8 +229,8 @@ mod test {
 
     #[test]
     fn test_asof_forward() {
-        let a = PrimitiveArray::from_slice([-1, 1, 2, 4, 6]);
-        let b = PrimitiveArray::from_slice([1, 2, 4, 5]);
+        let a = PlPrimitiveArray::from_slice(&[-1, 1, 2, 4, 6]);
+        let b = PlPrimitiveArray::from_slice(&[1, 2, 4, 5]);
 
         let tuples = join_asof_forward::<Int32Type, _>(&a, &b, |_, _| true, true);
         assert_eq!(tuples.len(), a.len());

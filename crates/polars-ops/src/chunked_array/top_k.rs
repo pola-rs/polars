@@ -1,4 +1,4 @@
-use arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
+use arrow::array::View;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
 use polars_core::downcast_as_macro_arg_physical;
@@ -59,7 +59,10 @@ fn top_k_bool_impl(
         out_len -= extra;
     }
 
-    let arr = BooleanArray::from_data_default(bm.freeze(), validity);
+    let values = bm.freeze();
+    // One bit was pushed per element, and `first_n_valid_mask` holds one per element as well.
+    let length = values.len();
+    let arr = PlBooleanArray::new(values, length, validity);
     ChunkedArray::with_chunk_like(ca, arr)
 }
 
@@ -74,8 +77,10 @@ where
     // Get rid of all the nulls and transform into Vec<T::Native>.
     let mut nnca = ca.drop_nulls();
     nnca.rechunk_mut();
-    let chunk = nnca.downcast_into_iter().next().unwrap();
-    let (_, buffer, _) = chunk.into_inner();
+    // TODO(polars-array-scalar): the values are partitioned in place, so a scalar chunk is
+    // written out here rather than the one value it stands for being repeated `k` times.
+    let chunk = nnca.downcast_into_iter().next().unwrap().to_flat();
+    let (buffer, _) = chunk.into_inner();
     let mut vec = buffer.to_vec();
 
     // Partition.
@@ -93,7 +98,7 @@ where
     vec.resize(out_len, T::Native::default());
     let validity = first_n_valid_mask(non_null_count, out_len);
 
-    let arr = PrimitiveArray::from_vec(vec).with_validity_typed(validity);
+    let arr = PlPrimitiveArray::from_vec(vec).with_validity(validity);
     ChunkedArray::with_chunk_like(ca, arr)
 }
 
@@ -109,9 +114,10 @@ fn top_k_binary_impl(
     // Get rid of all the nulls and transform into mutable views.
     let mut nnca = ca.drop_nulls();
     nnca.rechunk_mut();
-    let chunk = nnca.downcast_into_iter().next().unwrap();
-    let buffers = chunk.data_buffers().clone();
-    let mut views = chunk.into_views();
+    // TODO(polars-array-scalar): as in `top_k_num_impl`, a scalar chunk is written out here.
+    let chunk = nnca.downcast_into_iter().next().unwrap().to_flat();
+    let (views, buffers, _) = chunk.into_inner();
+    let mut views = views.to_vec();
 
     // Partition.
     if k < views.len() {
@@ -136,15 +142,9 @@ fn top_k_binary_impl(
     views.resize(out_len, View::default());
     let validity = first_n_valid_mask(non_null_count, out_len);
 
-    let arr = unsafe {
-        BinaryViewArray::new_unchecked_unknown_md(
-            ArrowDataType::BinaryView,
-            views.into(),
-            buffers,
-            validity,
-            None,
-        )
-    };
+    // SAFETY: the views were taken from `buffers` and only reordered, and there is one per
+    // element, as there is one validity bit per element.
+    let arr = unsafe { PlBinaryViewArray::new_unchecked(views.into(), buffers, out_len, validity) };
     ChunkedArray::with_chunk_like(ca, arr)
 }
 

@@ -9,6 +9,8 @@ use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
+use polars_array::arrow::import;
+use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash, TotalOrdWrap};
@@ -410,7 +412,12 @@ pub fn list_set_operation(
         arity::try_binary_unchecked_same_type(
             &a,
             &b,
-            |a, b| array_set_operation(a, b, set_op).map(|arr| arr.boxed()),
+            |a, b| {
+                // TODO(polars-array-scalar): the set kernels are Arrow ones, so a scalar chunk is
+                // written out here rather than the one list it stands for being reduced once.
+                array_set_operation(&chunk_to_arrow(a), &chunk_to_arrow(b), set_op)
+                    .map(|arr| import::from_arrow(&arr))
+            },
             false,
             false,
         )

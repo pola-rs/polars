@@ -2,6 +2,7 @@ use std::fmt::Write;
 
 use arrow::array::ValueSize;
 use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
+use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
@@ -106,7 +107,7 @@ pub trait ListNameSpaceImpl: AsList {
                 }
 
                 for arr in ca.downcast_iter() {
-                    for val in arr.non_null_values_iter() {
+                    for val in arr.iter().flatten() {
                         buf.write_str(val).unwrap();
                         buf.write_str(separator).unwrap();
                     }
@@ -145,7 +146,7 @@ pub trait ListNameSpaceImpl: AsList {
                             }
 
                             for arr in ca.downcast_iter() {
-                                for val in arr.non_null_values_iter() {
+                                for val in arr.iter().flatten() {
                                     buf.write_str(val).unwrap();
                                     buf.write_str(separator).unwrap();
                                 }
@@ -311,6 +312,10 @@ pub trait ListNameSpaceImpl: AsList {
 
         let mut lengths = Vec::with_capacity(ca.len());
         ca.downcast_iter().for_each(|arr| {
+            // TODO(polars-array-scalar): the lengths are read off the offsets as a slice, so
+            // scalar offsets are written out here rather than the single length every element
+            // shares being repeated.
+            let arr = arr.to_flat();
             let offsets = arr.offsets().as_slice();
             let mut last = offsets[0];
             for o in &offsets[1..] {
@@ -319,7 +324,8 @@ pub trait ListNameSpaceImpl: AsList {
             }
         });
 
-        let arr = IdxArr::from_vec(lengths).with_validity(ca_validity);
+        // `rechunk_validity` hands back a flat mask, one bit per element, like the lengths.
+        let arr = PlPrimitiveArray::from_vec(lengths).with_validity(ca_validity);
         IdxCa::with_chunk(ca.name().clone(), arr)
     }
 
@@ -329,13 +335,19 @@ pub trait ListNameSpaceImpl: AsList {
     /// if an index is out of bounds, it will return a `None`.
     fn lst_get(&self, idx: i64, null_on_oob: bool) -> PolarsResult<Series> {
         let ca = self.as_list();
-        if !null_on_oob && ca.downcast_iter().any(|arr| index_is_oob(arr, idx)) {
+        // TODO(polars-array-scalar): both kernels are Arrow ones, so a scalar chunk is written
+        // out here rather than the one list it stands for being indexed once.
+        if !null_on_oob
+            && ca
+                .downcast_iter()
+                .any(|arr| index_is_oob(&chunk_to_arrow(arr), idx))
+        {
             polars_bail!(ComputeError: "get index is out of bounds");
         }
 
         let chunks = ca
             .downcast_iter()
-            .map(|arr| sublist_get(arr, idx))
+            .map(|arr| sublist_get(&chunk_to_arrow(arr), idx))
             .collect::<Vec<_>>();
 
         let s = Series::try_from((ca.name().clone(), chunks)).unwrap();

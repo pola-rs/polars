@@ -1,8 +1,10 @@
 use std::borrow::Cow;
 
+use arrow::array::Utf8ViewArrayBuilder;
 use arrow::array::builder::StaticArrayBuilder;
-use arrow::array::{Array, Utf8ViewArrayBuilder};
 use arrow::datatypes::ArrowDataType;
+use polars_array::PlArray as _;
+use polars_array::arrow::import;
 use polars_core::prelude::{Column, DataType, IntoColumn, StringChunked};
 use polars_core::scalar::Scalar;
 use polars_error::{PolarsContext, PolarsResult};
@@ -141,6 +143,8 @@ pub fn str_format(cs: &mut [Column], format: &str, insertions: &[usize]) -> Pola
         builder.push_value_ignore_validity(&s);
     }
 
-    let array = builder.freeze().with_validity(validity).to_boxed();
+    // TODO(polars-array-scalar): the rows are formatted one by one into an Arrow builder, so the
+    // result crosses back here rather than a repeated row being formatted once.
+    let array = import::from_arrow(&builder.freeze().with_validity(validity));
     Ok(unsafe { StringChunked::from_chunks(output_name, vec![array]) }.into_column())
 }

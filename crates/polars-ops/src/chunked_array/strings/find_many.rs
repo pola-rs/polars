@@ -1,5 +1,4 @@
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use arrow::array::Utf8ViewArray;
 use polars_core::prelude::arity::unary_elementwise;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_binary;
@@ -20,8 +19,9 @@ fn build_ac(
         .map_err(|e| polars_err!(ComputeError: "could not build aho corasick automaton {}", e))
 }
 
+/// The automaton over the patterns of one element, which are bytes to it.
 fn build_ac_arr(
-    patterns: &Utf8ViewArray,
+    patterns: &PlBinaryViewArray,
     ascii_case_insensitive: bool,
     leftmost: bool,
 ) -> PolarsResult<AhoCorasick> {
@@ -180,7 +180,7 @@ pub fn extract_many(
                             let pat = pat.as_ref();
                             let pat = pat.str()?;
                             let pat = pat.rechunk();
-                            let pat = pat.downcast_as_array();
+                            let pat = pat.downcast_as_array().as_binview();
                             let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
                             push_str(val, &mut builder, &ac, overlapping);
                         },
@@ -220,7 +220,9 @@ pub fn extract_many(
                     match z {
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {
-                            let pat = pat.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+                            // The values of a list of strings are bytes that carry the UTF-8
+                            // promise, which is the array the element downcasts to.
+                            let pat = pat.as_any().downcast_ref::<PlBinaryViewArray>().unwrap();
                             let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
                             push_str(val, &mut builder, &ac, overlapping);
                         },
@@ -276,7 +278,7 @@ pub fn find_many(
                             let pat = pat.as_ref();
                             let pat = pat.str()?;
                             let pat = pat.rechunk();
-                            let pat = pat.downcast_as_array();
+                            let pat = pat.downcast_as_array().as_binview();
                             let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
                             push_idx(val, &mut builder, &ac, overlapping);
                         },
@@ -312,7 +314,9 @@ pub fn find_many(
                     match z {
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {
-                            let pat = pat.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+                            // The values of a list of strings are bytes that carry the UTF-8
+                            // promise, which is the array the element downcasts to.
+                            let pat = pat.as_any().downcast_ref::<PlBinaryViewArray>().unwrap();
                             let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
                             push_idx(val, &mut builder, &ac, overlapping);
                         },

@@ -1,11 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::fmt::Debug;
 
-use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use arrow::bitmap::BitmapBuilder;
-use arrow::legacy::trusted_len::TrustedLenPush;
-use hashbrown::hash_map::Entry;
-use polars_buffer::Buffer;
+use polars_array::builder::{PlArrayBuilder, ShareStrategy, builder_like};
 use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -155,11 +152,13 @@ impl TakeChunked for Series {
             },
             Binary => {
                 let ca = self.binary().unwrap();
-                take_chunked_unchecked_binview(ca, by, sorted, avoid_sharing).into_series()
+                ca.take_chunked_unchecked(by, sorted, avoid_sharing)
+                    .into_series()
             },
             String => {
                 let ca = self.str().unwrap();
-                take_chunked_unchecked_binview(ca, by, sorted, avoid_sharing).into_series()
+                ca.take_chunked_unchecked(by, sorted, avoid_sharing)
+                    .into_series()
             },
             List(_) => {
                 let ca = self.list().unwrap();
@@ -255,11 +254,13 @@ impl TakeChunked for Series {
             },
             Binary => {
                 let ca = self.binary().unwrap();
-                take_opt_chunked_unchecked_binview(ca, by, avoid_sharing).into_series()
+                ca.take_opt_chunked_unchecked(by, avoid_sharing)
+                    .into_series()
             },
             String => {
                 let ca = self.str().unwrap();
-                take_opt_chunked_unchecked_binview(ca, by, avoid_sharing).into_series()
+                ca.take_opt_chunked_unchecked(by, avoid_sharing)
+                    .into_series()
             },
             List(_) => {
                 let ca = self.list().unwrap();
@@ -335,6 +336,29 @@ impl TakeChunked for Series {
     }
 }
 
+/// The builder of the chunks of `ca`, with room for `by.len()` elements.
+///
+/// A `ChunkedArray` always has a chunk, which is the array the built one is shaped like: the
+/// chunks carry no logical type, so there is nothing else to take the shape from.
+fn gather_builder<T: PolarsDataType, const B: u64>(
+    ca: &ChunkedArray<T>,
+    by: &[ChunkId<B>],
+) -> Box<dyn PlArrayBuilder> {
+    let prototype = ca.chunks().first().expect("a ChunkedArray has a chunk");
+    let mut builder = builder_like(&**prototype);
+    builder.reserve(by.len());
+    builder
+}
+
+/// Whether the gathered elements may keep pointing into the buffers they came from.
+fn share_strategy(avoid_sharing: bool) -> ShareStrategy {
+    if avoid_sharing {
+        ShareStrategy::Never
+    } else {
+        ShareStrategy::Always
+    }
+}
+
 impl<T> TakeChunked for ChunkedArray<T>
 where
     T: PolarsDataType,
@@ -344,37 +368,24 @@ where
         &self,
         by: &[ChunkId<B>],
         sorted: IsSorted,
-        _allow_sharing: bool,
+        avoid_sharing: bool,
     ) -> Self {
-        let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
+        let mut builder = gather_builder(self, by);
+        let share = share_strategy(avoid_sharing);
 
-        let mut out = if !self.has_nulls() {
-            let iter = by.iter().map(|chunk_id| {
-                debug_assert!(
-                    !chunk_id.is_null(),
-                    "null chunks should not hit this branch"
-                );
-                let (chunk_idx, array_idx) = chunk_id.extract();
-                let arr = self.downcast_get_unchecked(chunk_idx as usize);
-                arr.value_unchecked(array_idx as usize)
-            });
+        for chunk_id in by {
+            debug_assert!(
+                !chunk_id.is_null(),
+                "null chunks should not hit this branch"
+            );
+            let (chunk_idx, array_idx) = chunk_id.extract();
+            let arr = self.downcast_get_unchecked(chunk_idx as usize);
+            builder.subslice_extend(arr, array_idx as usize, 1, share);
+        }
 
-            let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
-            ChunkedArray::with_chunk_like(self, arr)
-        } else {
-            let iter = by.iter().map(|chunk_id| {
-                debug_assert!(
-                    !chunk_id.is_null(),
-                    "null chunks should not hit this branch"
-                );
-                let (chunk_idx, array_idx) = chunk_id.extract();
-                let arr = self.downcast_get_unchecked(chunk_idx as usize);
-                arr.get_unchecked(array_idx as usize)
-            });
-
-            let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
-            ChunkedArray::with_chunk_like(self, arr)
-        };
+        // SAFETY: the builder was shaped like the chunks of this array, so what it froze is of
+        // the same physical type.
+        let mut out = self.with_chunks(vec![PlArrayBuilder::freeze(builder)]);
         let sorted_flag = _update_gather_sorted_flag(self.is_sorted_flag(), sorted);
         out.set_sorted_flag(sorted_flag);
         out
@@ -384,40 +395,24 @@ where
     unsafe fn take_opt_chunked_unchecked<const B: u64>(
         &self,
         by: &[ChunkId<B>],
-        _allow_sharing: bool,
+        avoid_sharing: bool,
     ) -> Self {
-        let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
+        let mut builder = gather_builder(self, by);
+        let share = share_strategy(avoid_sharing);
 
-        if !self.has_nulls() {
-            let arr = by
-                .iter()
-                .map(|chunk_id| {
-                    if chunk_id.is_null() {
-                        None
-                    } else {
-                        let (chunk_idx, array_idx) = chunk_id.extract();
-                        let arr = self.downcast_get_unchecked(chunk_idx as usize);
-                        Some(arr.value_unchecked(array_idx as usize).clone())
-                    }
-                })
-                .collect_arr_trusted_with_dtype(arrow_dtype);
-            ChunkedArray::with_chunk_like(self, arr)
-        } else {
-            let arr = by
-                .iter()
-                .map(|chunk_id| {
-                    if chunk_id.is_null() {
-                        None
-                    } else {
-                        let (chunk_idx, array_idx) = chunk_id.extract();
-                        let arr = self.downcast_get_unchecked(chunk_idx as usize);
-                        arr.get_unchecked(array_idx as usize)
-                    }
-                })
-                .collect_arr_trusted_with_dtype(arrow_dtype);
+        for chunk_id in by {
+            if chunk_id.is_null() {
+                builder.extend_nulls(1);
+                continue;
+            }
 
-            ChunkedArray::with_chunk_like(self, arr)
+            let (chunk_idx, array_idx) = chunk_id.extract();
+            let arr = self.downcast_get_unchecked(chunk_idx as usize);
+            builder.subslice_extend(arr, array_idx as usize, 1, share);
         }
+
+        // SAFETY: as in `take_chunked_unchecked`.
+        self.with_chunks(vec![PlArrayBuilder::freeze(builder)])
     }
 }
 
@@ -461,369 +456,6 @@ unsafe fn take_opt_unchecked_object<const B: u64>(
     builder.to_series()
 }
 
-unsafe fn take_chunked_unchecked_binview<const B: u64, T, V>(
-    ca: &ChunkedArray<T>,
-    by: &[ChunkId<B>],
-    sorted: IsSorted,
-    avoid_sharing: bool,
-) -> ChunkedArray<T>
-where
-    T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
-    T::Array: Debug,
-    V: ViewType + ?Sized,
-{
-    if avoid_sharing {
-        return ca.take_chunked_unchecked(by, sorted, avoid_sharing);
-    }
-
-    let mut views = Vec::with_capacity(by.len());
-    let (validity, arc_data_buffers);
-
-    // If we can cheaply clone the list of buffers from the ChunkedArray we will,
-    // otherwise we will only clone those buffers we need.
-    if ca.n_chunks() == 1 {
-        let arr = ca.downcast_iter().next().unwrap();
-        let arr_views = arr.views();
-
-        validity = if arr.has_nulls() {
-            let mut validity = BitmapBuilder::with_capacity(by.len());
-            for id in by.iter() {
-                let (chunk_idx, array_idx) = id.extract();
-                debug_assert!(chunk_idx == 0);
-                if arr.is_null_unchecked(array_idx as usize) {
-                    views.push_unchecked(View::default());
-                    validity.push_unchecked(false);
-                } else {
-                    views.push_unchecked(*arr_views.get_unchecked(array_idx as usize));
-                    validity.push_unchecked(true);
-                }
-            }
-            Some(validity.freeze())
-        } else {
-            for id in by.iter() {
-                let (chunk_idx, array_idx) = id.extract();
-                debug_assert!(chunk_idx == 0);
-                views.push_unchecked(*arr_views.get_unchecked(array_idx as usize));
-            }
-            None
-        };
-
-        arc_data_buffers = arr.data_buffers().clone();
-    }
-    // Dedup the buffers while creating the views.
-    else if by.len() < ca.n_chunks() {
-        let mut buffer_idxs = PlHashMap::with_capacity(8);
-        let mut buffers = Vec::with_capacity(8);
-
-        validity = if ca.has_nulls() {
-            let mut validity = BitmapBuilder::with_capacity(by.len());
-            for id in by.iter() {
-                let (chunk_idx, array_idx) = id.extract();
-
-                let arr = ca.downcast_get_unchecked(chunk_idx as usize);
-                if arr.is_null_unchecked(array_idx as usize) {
-                    views.push_unchecked(View::default());
-                    validity.push_unchecked(false);
-                } else {
-                    let view = *arr.views().get_unchecked(array_idx as usize);
-                    views.push_unchecked(update_view_and_dedup(
-                        view,
-                        arr.data_buffers(),
-                        &mut buffer_idxs,
-                        &mut buffers,
-                    ));
-                    validity.push_unchecked(true);
-                }
-            }
-            Some(validity.freeze())
-        } else {
-            for id in by.iter() {
-                let (chunk_idx, array_idx) = id.extract();
-
-                let arr = ca.downcast_get_unchecked(chunk_idx as usize);
-                let view = *arr.views().get_unchecked(array_idx as usize);
-                views.push_unchecked(update_view_and_dedup(
-                    view,
-                    arr.data_buffers(),
-                    &mut buffer_idxs,
-                    &mut buffers,
-                ));
-            }
-            None
-        };
-
-        arc_data_buffers = buffers.into();
-    }
-    // Dedup the buffers up front
-    else {
-        let (buffers, buffer_offsets) = dedup_buffers_by_arc(ca);
-
-        validity = if ca.has_nulls() {
-            let mut validity = BitmapBuilder::with_capacity(by.len());
-            for id in by.iter() {
-                let (chunk_idx, array_idx) = id.extract();
-
-                let arr = ca.downcast_get_unchecked(chunk_idx as usize);
-                if arr.is_null_unchecked(array_idx as usize) {
-                    views.push_unchecked(View::default());
-                    validity.push_unchecked(false);
-                } else {
-                    let view = *arr.views().get_unchecked(array_idx as usize);
-                    let view = rewrite_view(view, chunk_idx, &buffer_offsets);
-                    views.push_unchecked(view);
-                    validity.push_unchecked(true);
-                }
-            }
-            Some(validity.freeze())
-        } else {
-            for id in by.iter() {
-                let (chunk_idx, array_idx) = id.extract();
-
-                let arr = ca.downcast_get_unchecked(chunk_idx as usize);
-                let view = *arr.views().get_unchecked(array_idx as usize);
-                let view = rewrite_view(view, chunk_idx, &buffer_offsets);
-                views.push_unchecked(view);
-            }
-            None
-        };
-
-        arc_data_buffers = buffers.into();
-    };
-
-    let arr = BinaryViewArrayGeneric::<V>::new_unchecked_unknown_md(
-        V::DATA_TYPE,
-        views.into(),
-        arc_data_buffers,
-        validity,
-        None,
-    );
-
-    let mut out = ChunkedArray::with_chunk(ca.name().clone(), arr.maybe_gc());
-    let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), sorted);
-    out.set_sorted_flag(sorted_flag);
-    out
-}
-
-#[allow(clippy::unnecessary_cast)]
-#[inline(always)]
-unsafe fn rewrite_view(mut view: View, chunk_idx: IdxSize, buffer_offsets: &[u32]) -> View {
-    if view.length > 12 {
-        let base_offset = *buffer_offsets.get_unchecked(chunk_idx as usize);
-        view.buffer_idx += base_offset;
-    }
-    view
-}
-
-unsafe fn update_view_and_dedup(
-    mut view: View,
-    orig_buffers: &[Buffer<u8>],
-    buffer_idxs: &mut PlHashMap<(*const u8, usize), u32>,
-    buffers: &mut Vec<Buffer<u8>>,
-) -> View {
-    if view.length > 12 {
-        // Dedup on pointer + length.
-        let orig_buffer = orig_buffers.get_unchecked(view.buffer_idx as usize);
-        view.buffer_idx =
-            match buffer_idxs.entry((orig_buffer.as_slice().as_ptr(), orig_buffer.len())) {
-                Entry::Occupied(o) => *o.get(),
-                Entry::Vacant(v) => {
-                    let buffer_idx = buffers.len() as u32;
-                    buffers.push(orig_buffer.clone());
-                    v.insert(buffer_idx);
-                    buffer_idx
-                },
-            };
-    }
-    view
-}
-
-fn dedup_buffers_by_arc<T, V>(ca: &ChunkedArray<T>) -> (Vec<Buffer<u8>>, Vec<u32>)
-where
-    T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
-    V: ViewType + ?Sized,
-{
-    // Dedup buffers up front. Note: don't do this during view update, as this is often is much
-    // more costly.
-    let mut buffers = Vec::with_capacity(ca.chunks().len());
-    // Dont need to include the length, as we look at the arc pointers, which are immutable.
-    let mut buffers_dedup = PlHashMap::with_capacity(ca.chunks().len());
-    let mut buffer_offsets = Vec::with_capacity(ca.chunks().len() + 1);
-
-    for arr in ca.downcast_iter() {
-        let data_buffers = arr.data_buffers();
-        let arc_ptr = data_buffers.as_ptr();
-        let offset = match buffers_dedup.entry(arc_ptr) {
-            Entry::Occupied(o) => *o.get(),
-            Entry::Vacant(v) => {
-                let offset = buffers.len() as u32;
-                buffers.extend(data_buffers.iter().cloned());
-                v.insert(offset);
-                offset
-            },
-        };
-        buffer_offsets.push(offset);
-    }
-    (buffers, buffer_offsets)
-}
-
-unsafe fn take_opt_chunked_unchecked_binview<const B: u64, T, V>(
-    ca: &ChunkedArray<T>,
-    by: &[ChunkId<B>],
-    avoid_sharing: bool,
-) -> ChunkedArray<T>
-where
-    T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
-    T::Array: Debug,
-    V: ViewType + ?Sized,
-{
-    if avoid_sharing {
-        return ca.take_opt_chunked_unchecked(by, avoid_sharing);
-    }
-
-    let mut views = Vec::with_capacity(by.len());
-    let mut validity = BitmapBuilder::with_capacity(by.len());
-
-    // If we can cheaply clone the list of buffers from the ChunkedArray we will,
-    // otherwise we will only clone those buffers we need.
-    let arc_data_buffers = if ca.n_chunks() == 1 {
-        let arr = ca.downcast_iter().next().unwrap();
-        let arr_views = arr.views();
-
-        if arr.has_nulls() {
-            for id in by.iter() {
-                let (chunk_idx, array_idx) = id.extract();
-                debug_assert!(id.is_null() || chunk_idx == 0);
-                if id.is_null() || arr.is_null_unchecked(array_idx as usize) {
-                    views.push_unchecked(View::default());
-                    validity.push_unchecked(false);
-                } else {
-                    views.push_unchecked(*arr_views.get_unchecked(array_idx as usize));
-                    validity.push_unchecked(true);
-                }
-            }
-        } else {
-            for id in by.iter() {
-                let (chunk_idx, array_idx) = id.extract();
-                debug_assert!(id.is_null() || chunk_idx == 0);
-                if id.is_null() {
-                    views.push_unchecked(View::default());
-                    validity.push_unchecked(false);
-                } else {
-                    views.push_unchecked(*arr_views.get_unchecked(array_idx as usize));
-                    validity.push_unchecked(true);
-                }
-            }
-        }
-
-        arr.data_buffers().clone()
-    }
-    // Dedup the buffers while creating the views.
-    else if by.len() < ca.n_chunks() {
-        let mut buffer_idxs = PlHashMap::with_capacity(8);
-        let mut buffers = Vec::with_capacity(8);
-
-        if ca.has_nulls() {
-            for id in by.iter() {
-                let (chunk_idx, array_idx) = id.extract();
-
-                if id.is_null() {
-                    views.push_unchecked(View::default());
-                    validity.push_unchecked(false);
-                } else {
-                    let arr = ca.downcast_get_unchecked(chunk_idx as usize);
-                    if arr.is_null_unchecked(array_idx as usize) {
-                        views.push_unchecked(View::default());
-                        validity.push_unchecked(false);
-                    } else {
-                        let view = *arr.views().get_unchecked(array_idx as usize);
-                        views.push_unchecked(update_view_and_dedup(
-                            view,
-                            arr.data_buffers(),
-                            &mut buffer_idxs,
-                            &mut buffers,
-                        ));
-                        validity.push_unchecked(true);
-                    }
-                }
-            }
-        } else {
-            for id in by.iter() {
-                let (chunk_idx, array_idx) = id.extract();
-
-                if id.is_null() {
-                    views.push_unchecked(View::default());
-                    validity.push_unchecked(false);
-                } else {
-                    let arr = ca.downcast_get_unchecked(chunk_idx as usize);
-                    let view = *arr.views().get_unchecked(array_idx as usize);
-                    views.push_unchecked(update_view_and_dedup(
-                        view,
-                        arr.data_buffers(),
-                        &mut buffer_idxs,
-                        &mut buffers,
-                    ));
-                    validity.push_unchecked(true);
-                }
-            }
-        };
-
-        buffers.into()
-    }
-    // Dedup the buffers up front
-    else {
-        let (buffers, buffer_offsets) = dedup_buffers_by_arc(ca);
-
-        if ca.has_nulls() {
-            for id in by.iter() {
-                let (chunk_idx, array_idx) = id.extract();
-
-                if id.is_null() {
-                    views.push_unchecked(View::default());
-                    validity.push_unchecked(false);
-                } else {
-                    let arr = ca.downcast_get_unchecked(chunk_idx as usize);
-                    if arr.is_null_unchecked(array_idx as usize) {
-                        views.push_unchecked(View::default());
-                        validity.push_unchecked(false);
-                    } else {
-                        let view = *arr.views().get_unchecked(array_idx as usize);
-                        let view = rewrite_view(view, chunk_idx, &buffer_offsets);
-                        views.push_unchecked(view);
-                        validity.push_unchecked(true);
-                    }
-                }
-            }
-        } else {
-            for id in by.iter() {
-                let (chunk_idx, array_idx) = id.extract();
-
-                if id.is_null() {
-                    views.push_unchecked(View::default());
-                    validity.push_unchecked(false);
-                } else {
-                    let arr = ca.downcast_get_unchecked(chunk_idx as usize);
-                    let view = *arr.views().get_unchecked(array_idx as usize);
-                    let view = rewrite_view(view, chunk_idx, &buffer_offsets);
-                    views.push_unchecked(view);
-                    validity.push_unchecked(true);
-                }
-            }
-        };
-
-        buffers.into()
-    };
-
-    let arr = BinaryViewArrayGeneric::<V>::new_unchecked_unknown_md(
-        V::DATA_TYPE,
-        views.into(),
-        arc_data_buffers,
-        Some(validity.freeze()),
-        None,
-    );
-
-    ChunkedArray::with_chunk(ca.name().clone(), arr.maybe_gc())
-}
-
 #[cfg(feature = "dtype-struct")]
 unsafe fn take_chunked_unchecked_struct<const B: u64>(
     ca: &StructChunked,
@@ -849,14 +481,14 @@ unsafe fn take_chunked_unchecked_struct<const B: u64>(
         for id in by.iter() {
             let (chunk_idx, array_idx) = id.extract();
             debug_assert!(chunk_idx == 0);
-            validity.push_unchecked(bitmap.get_bit_unchecked(array_idx as usize));
+            validity.push_unchecked(bitmap.get_unchecked(array_idx as usize));
         }
     } else {
         for id in by.iter() {
             let (chunk_idx, array_idx) = id.extract();
             let arr = ca.downcast_get_unchecked(chunk_idx as usize);
             if let Some(bitmap) = arr.validity() {
-                validity.push_unchecked(bitmap.get_bit_unchecked(array_idx as usize));
+                validity.push_unchecked(bitmap.get_unchecked(array_idx as usize));
             } else {
                 validity.push_unchecked(true);
             }
@@ -894,7 +526,7 @@ unsafe fn take_opt_chunked_unchecked_struct<const B: u64>(
                 } else {
                     let (chunk_idx, array_idx) = id.extract();
                     debug_assert!(chunk_idx == 0);
-                    validity.push_unchecked(bitmap.get_bit_unchecked(array_idx as usize));
+                    validity.push_unchecked(bitmap.get_unchecked(array_idx as usize));
                 }
             }
         } else {
@@ -910,7 +542,7 @@ unsafe fn take_opt_chunked_unchecked_struct<const B: u64>(
                 let (chunk_idx, array_idx) = id.extract();
                 let arr = ca.downcast_get_unchecked(chunk_idx as usize);
                 if let Some(bitmap) = arr.validity() {
-                    validity.push_unchecked(bitmap.get_bit_unchecked(array_idx as usize));
+                    validity.push_unchecked(bitmap.get_unchecked(array_idx as usize));
                 } else {
                     validity.push_unchecked(true);
                 }

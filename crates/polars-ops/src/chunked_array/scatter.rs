@@ -1,8 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::{Array, BinaryViewArrayGeneric, BooleanArray, PrimitiveArray, View, ViewType};
 use polars_buffer::Buffer;
+use polars_core::chunked_array::arrow_bridge::{chunk_from_arrow, chunk_to_arrow};
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_core::utils::arrow::types::NativeType;
 use polars_utils::index::check_bounds;
@@ -190,19 +190,22 @@ impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T> {
     {
         check_bounds(idx, self.len() as IdxSize)?;
         let mut ca = std::mem::take(self);
+        ca.rechunk_mut();
+        let name = ca.name().clone();
 
-        // SAFETY: we will not modify the length and we unset the sorted flag,
-        // making sure to update the null count as well.
-        unsafe {
-            ca.rechunk_mut();
-            let arr = ca.downcast_iter_mut().next().unwrap();
-            scatter_primitive_impl(values, arr, idx);
-            let null_count = arr.null_count();
-            ca.set_sorted_flag(IsSorted::Not);
-            ca.set_null_count(null_count);
-        }
+        // TODO(polars-array-scalar): the scatter kernels are Arrow ones that write into the
+        // backing buffers, so the chunk crosses over to Arrow and back here, and a scalar chunk
+        // is written out on the way.
+        let chunk = ca.downcast_into_iter().next().unwrap();
+        let mut arr = chunk_to_arrow(&chunk);
+        // The chunk held the only other handle on those buffers; dropping it lets the kernel
+        // write into them rather than copy them out.
+        drop(chunk);
 
-        Ok(ca.into_series())
+        unsafe { scatter_primitive_impl(values, &mut arr, idx) };
+
+        let out = ChunkedArray::<T>::with_chunk(name, chunk_from_arrow(&arr));
+        Ok(out.into_series())
     }
 }
 
@@ -213,17 +216,22 @@ impl<'a> ChunkedSet<&'a [u8]> for &mut BinaryChunked {
     {
         check_bounds(idx, self.len() as IdxSize)?;
         let mut ca = std::mem::take(self);
+        ca.rechunk_mut();
+        let name = ca.name().clone();
 
-        unsafe {
-            ca.rechunk_mut();
-            let arr = ca.downcast_iter_mut().next().unwrap();
-            scatter_binview_impl(values, arr, idx);
-            let null_count = arr.null_count();
-            ca.set_sorted_flag(IsSorted::Not);
-            ca.set_null_count(null_count);
-        }
+        // TODO(polars-array-scalar): the scatter kernels are Arrow ones that write into the
+        // backing buffers, so the chunk crosses over to Arrow and back here, and a scalar chunk
+        // is written out on the way.
+        let chunk = ca.downcast_into_iter().next().unwrap();
+        let mut arr = chunk_to_arrow(&chunk);
+        // The chunk held the only other handle on those buffers; dropping it lets the kernel
+        // write into them rather than copy them out.
+        drop(chunk);
 
-        Ok(ca.into_series())
+        unsafe { scatter_binview_impl(values, &mut arr, idx) };
+
+        let out = BinaryChunked::with_chunk(name, chunk_from_arrow(&arr));
+        Ok(out.into_series())
     }
 }
 
@@ -234,17 +242,22 @@ impl<'a> ChunkedSet<&'a str> for &mut StringChunked {
     {
         check_bounds(idx, self.len() as IdxSize)?;
         let mut ca = std::mem::take(self);
+        ca.rechunk_mut();
+        let name = ca.name().clone();
 
-        unsafe {
-            ca.rechunk_mut();
-            let arr = ca.downcast_iter_mut().next().unwrap();
-            scatter_binview_impl(values, arr, idx);
-            let null_count = arr.null_count();
-            ca.set_sorted_flag(IsSorted::Not);
-            ca.set_null_count(null_count);
-        }
+        // TODO(polars-array-scalar): the scatter kernels are Arrow ones that write into the
+        // backing buffers, so the chunk crosses over to Arrow and back here, and a scalar chunk
+        // is written out on the way.
+        let chunk = ca.downcast_into_iter().next().unwrap();
+        let mut arr = chunk_to_arrow(&chunk);
+        // The chunk held the only other handle on those buffers; dropping it lets the kernel
+        // write into them rather than copy them out.
+        drop(chunk);
 
-        Ok(ca.into_series())
+        unsafe { scatter_binview_impl(values, &mut arr, idx) };
+
+        let out = StringChunked::with_chunk(name, chunk_from_arrow(&arr));
+        Ok(out.into_series())
     }
 }
 impl ChunkedSet<bool> for &mut BooleanChunked {
@@ -254,16 +267,21 @@ impl ChunkedSet<bool> for &mut BooleanChunked {
     {
         check_bounds(idx, self.len() as IdxSize)?;
         let mut ca = std::mem::take(self);
+        ca.rechunk_mut();
+        let name = ca.name().clone();
 
-        unsafe {
-            ca.rechunk_mut();
-            let arr = ca.downcast_iter_mut().next().unwrap();
-            scatter_bool_impl(values, arr, idx);
-            let null_count = arr.null_count();
-            ca.set_sorted_flag(IsSorted::Not);
-            ca.set_null_count(null_count);
-        }
+        // TODO(polars-array-scalar): the scatter kernels are Arrow ones that write into the
+        // backing buffers, so the chunk crosses over to Arrow and back here, and a scalar chunk
+        // is written out on the way.
+        let chunk = ca.downcast_into_iter().next().unwrap();
+        let mut arr = chunk_to_arrow(&chunk);
+        // The chunk held the only other handle on those buffers; dropping it lets the kernel
+        // write into them rather than copy them out.
+        drop(chunk);
 
-        Ok(ca.into_series())
+        unsafe { scatter_bool_impl(values, &mut arr, idx) };
+
+        let out = BooleanChunked::with_chunk(name, chunk_from_arrow(&arr));
+        Ok(out.into_series())
     }
 }

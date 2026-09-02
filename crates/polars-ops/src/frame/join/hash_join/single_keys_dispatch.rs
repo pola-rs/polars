@@ -449,14 +449,35 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
 impl SeriesJoin for Series {}
 
+/// The values of every chunk of every array, as the slices they are.
+///
+/// Every array must have been written out flat with [`ChunkedArray::flatten_mut`]: a scalar chunk
+/// holds one value where a slice needs one per element, so there is nothing in it to borrow.
 fn chunks_as_slices<T>(splitted: &[ChunkedArray<T>]) -> Vec<&[T::Native]>
 where
     T: PolarsNumericType,
 {
     splitted
         .iter()
-        .flat_map(|ca| ca.downcast_iter().map(|arr| arr.values().as_slice()))
+        .flat_map(|ca| {
+            ca.as_flat()
+                .expect("the chunks were written out flat first")
+                .flat_chunks()
+                .map(|arr| arr.as_slice())
+        })
         .collect()
+}
+
+/// Splits `ca` for `n_threads`, writing out every chunk that is scalar.
+///
+/// TODO(polars-array-scalar): the hash join reads the keys as slices, so a scalar chunk — one key
+/// standing for every row — is written out here rather than hashed once.
+fn split_flat<T: PolarsDataType>(ca: &ChunkedArray<T>, n_threads: usize) -> Vec<ChunkedArray<T>> {
+    let mut splitted = split(ca, n_threads);
+    for ca in &mut splitted {
+        ca.flatten_mut();
+    }
+    splitted
 }
 
 fn encode_join_nested_key(s: Series, nulls_equal: bool) -> PolarsResult<Series> {
@@ -480,58 +501,34 @@ fn group_join_inner<T>(
     nulls_equal: bool,
 ) -> PolarsResult<(InnerJoinIds, bool)>
 where
-    T: PolarsDataType,
-    for<'a> &'a T::Array: IntoIterator<Item = Option<&'a T::Physical<'a>>>,
-    for<'a> T::Physical<'a>:
-        Send + Sync + Copy + TotalHash + TotalEq + DirtyHash + IsNull + ToTotalOrd,
-    for<'a> <T::Physical<'a> as ToTotalOrd>::TotalOrdItem:
-        Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
+    T: PolarsNumericType,
+    for<'a> &'a T::Array: IntoIterator<Item = Option<T::Physical<'a>>>,
+    T::Native: Send + Sync + Copy + TotalHash + TotalEq + DirtyHash + IsNull + ToTotalOrd,
+    <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
 {
     let n_threads = RAYON.current_num_threads();
     let (a, b, swapped) = det_hash_prone_order!(left, right);
-    let splitted_a = split(a, n_threads);
-    let splitted_b = split(b, n_threads);
-    let splitted_a = get_arrays(&splitted_a);
-    let splitted_b = get_arrays(&splitted_b);
 
     match (left.null_count(), right.null_count()) {
         (0, 0) => {
-            let first = &splitted_a[0];
-            if first.as_slice().is_some() {
-                let splitted_a = splitted_a
-                    .iter()
-                    .map(|arr| arr.as_slice().unwrap())
-                    .collect::<Vec<_>>();
-                let splitted_b = splitted_b
-                    .iter()
-                    .map(|arr| arr.as_slice().unwrap())
-                    .collect::<Vec<_>>();
-                Ok((
-                    hash_join_tuples_inner(
-                        splitted_a,
-                        splitted_b,
-                        swapped,
-                        validate,
-                        nulls_equal,
-                        0,
-                    )?,
-                    !swapped,
-                ))
-            } else {
-                Ok((
-                    hash_join_tuples_inner(
-                        splitted_a,
-                        splitted_b,
-                        swapped,
-                        validate,
-                        nulls_equal,
-                        0,
-                    )?,
-                    !swapped,
-                ))
-            }
+            // Neither side has a null, so the keys are the values themselves.
+            let splitted_a = split_flat(a, n_threads);
+            let splitted_b = split_flat(b, n_threads);
+            Ok((
+                hash_join_tuples_inner(
+                    chunks_as_slices(&splitted_a),
+                    chunks_as_slices(&splitted_b),
+                    swapped,
+                    validate,
+                    nulls_equal,
+                    0,
+                )?,
+                !swapped,
+            ))
         },
         _ => {
+            let splitted_a = split(a, n_threads);
+            let splitted_b = split(b, n_threads);
             let build_null_count = if swapped {
                 left.null_count()
             } else {
@@ -539,8 +536,8 @@ where
             };
             Ok((
                 hash_join_tuples_inner(
-                    splitted_a,
-                    splitted_b,
+                    get_arrays(&splitted_a),
+                    get_arrays(&splitted_b),
                     swapped,
                     validate,
                     nulls_equal,
@@ -554,8 +551,8 @@ where
 
 #[cfg(feature = "chunked_ids")]
 fn create_mappings(
-    chunks_left: &[ArrayRef],
-    chunks_right: &[ArrayRef],
+    chunks_left: &[PlArrayRef],
+    chunks_right: &[PlArrayRef],
     left_len: usize,
     right_len: usize,
 ) -> (Option<Vec<ChunkId>>, Option<Vec<ChunkId>>) {
@@ -580,8 +577,8 @@ fn create_mappings(
 
 #[cfg(not(feature = "chunked_ids"))]
 fn create_mappings(
-    _chunks_left: &[ArrayRef],
-    _chunks_right: &[ArrayRef],
+    _chunks_left: &[PlArrayRef],
+    _chunks_right: &[PlArrayRef],
     _left_len: usize,
     _right_len: usize,
 ) -> (Option<Vec<ChunkId>>, Option<Vec<ChunkId>>) {
@@ -602,8 +599,6 @@ where
     <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash,
 {
     let n_threads = RAYON.current_num_threads();
-    let splitted_a = split(left, n_threads);
-    let splitted_b = split(right, n_threads);
     match (
         left.null_count(),
         right.null_count(),
@@ -611,11 +606,15 @@ where
         right.chunks().len(),
     ) {
         (0, 0, 1, 1) => {
+            let splitted_a = split_flat(left, n_threads);
+            let splitted_b = split_flat(right, n_threads);
             let keys_a = chunks_as_slices(&splitted_a);
             let keys_b = chunks_as_slices(&splitted_b);
             hash_join_tuples_left(keys_a, keys_b, None, None, validate, nulls_equal, 0)
         },
         (0, 0, _, _) => {
+            let splitted_a = split_flat(left, n_threads);
+            let splitted_b = split_flat(right, n_threads);
             let keys_a = chunks_as_slices(&splitted_a);
             let keys_b = chunks_as_slices(&splitted_b);
 
@@ -632,6 +631,8 @@ where
             )
         },
         _ => {
+            let splitted_a = split(left, n_threads);
+            let splitted_b = split(right, n_threads);
             let keys_a = get_arrays(&splitted_a);
             let keys_b = get_arrays(&splitted_b);
             let (mapping_left, mapping_right) =
@@ -664,22 +665,18 @@ where
     let (a, b, swapped) = det_hash_prone_order!(ca_in, other);
 
     let n_partitions = _set_partition_size();
-    let splitted_a = split(a, n_partitions);
-    let splitted_b = split(b, n_partitions);
 
     match (a.null_count(), b.null_count()) {
         (0, 0) => {
-            let iters_a = splitted_a
-                .iter()
-                .flat_map(|ca| ca.downcast_iter().map(|arr| arr.values().as_slice()))
-                .collect::<Vec<_>>();
-            let iters_b = splitted_b
-                .iter()
-                .flat_map(|ca| ca.downcast_iter().map(|arr| arr.values().as_slice()))
-                .collect::<Vec<_>>();
+            let splitted_a = split_flat(a, n_partitions);
+            let splitted_b = split_flat(b, n_partitions);
+            let iters_a = chunks_as_slices(&splitted_a);
+            let iters_b = chunks_as_slices(&splitted_b);
             hash_join_tuples_outer(iters_a, iters_b, swapped, validate, nulls_equal)
         },
         _ => {
+            let splitted_a = split(a, n_partitions);
+            let splitted_b = split(b, n_partitions);
             let iters_a = splitted_a
                 .iter()
                 .flat_map(|ca| ca.downcast_iter().map(|arr| arr.iter()))

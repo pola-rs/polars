@@ -78,6 +78,9 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
 
     assert!(!s_neq.has_nulls());
     for arr in s_neq.downcast_iter() {
+        // TODO(polars-array-scalar): the runs are found by scanning the bits, so a scalar chunk is
+        // written out here rather than standing for a single run outright.
+        let arr = arr.to_flat();
         let mut values = arr.values().clone();
         while !values.is_empty() {
             // @NOTE: This `as IdxSize` is safe because it is less than or equal to the a ChunkedArray

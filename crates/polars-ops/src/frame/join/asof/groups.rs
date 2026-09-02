@@ -1,6 +1,7 @@
 use std::hash::Hash;
 
 use num_traits::Zero;
+use polars_core::chunked_array::arrow_bridge::chunk_from_arrow;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
@@ -105,11 +106,7 @@ where
         .iter()
         .map(|ca| {
             assert_eq!(ca.chunks().len(), 1);
-            ca.downcast_iter()
-                .next()
-                .unwrap()
-                .iter()
-                .map(|v| v.copied())
+            ca.downcast_iter().next().unwrap().iter()
         })
         .collect();
     let hash_tbls = build_tables(right_slices, false);
@@ -131,7 +128,7 @@ where
                     results.push(NullableIdxSize::null());
                     continue;
                 };
-                let by_left_k = Some(*by_left_k).to_total_ord();
+                let by_left_k = Some(by_left_k).to_total_ord();
                 let idx_left = (rel_idx_left + offset) as IdxSize;
                 let Some(left_val) = left_val_arr.get(idx_left as usize) else {
                     results.push(NullableIdxSize::null());
@@ -594,7 +591,10 @@ pub trait AsofJoinBy: IntoDf {
 
         // SAFETY: join tuples are in bounds.
         let right_df = unsafe {
-            proj_other_df.take_unchecked(&IdxCa::with_chunk(PlSmallStr::EMPTY, right_join_tuples))
+            proj_other_df.take_unchecked(&IdxCa::with_chunk(
+                PlSmallStr::EMPTY,
+                chunk_from_arrow(&right_join_tuples),
+            ))
         };
 
         _finish_join(left, right_df, suffix)

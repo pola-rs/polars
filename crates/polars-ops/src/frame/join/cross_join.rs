@@ -198,8 +198,10 @@ pub(super) fn fused_cross_filter(
 
                     // Combine values and validity into one bitmap so a null bit reads as "no
                     // match" (this is what filter has filtered)
+                    // TODO(polars-array-scalar): the bits are sliced per left row, so a scalar
+                    // chunk is written out here rather than its single bit being read once.
                     let mask_arr = mask.rechunk();
-                    let mask_arr = mask_arr.downcast_get(0).unwrap();
+                    let mask_arr = mask_arr.downcast_get(0).unwrap().to_flat();
                     let match_bits = match mask_arr.validity() {
                         Some(validity) => mask_arr.values() & validity,
                         None => mask_arr.values().clone(),
