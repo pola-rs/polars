@@ -1,8 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::marker::PhantomData;
 
-use arrow::compute::utils::combine_validities_and;
-
+use crate::chunked_array::validity::combine_validities_and;
 use crate::prelude::*;
 use crate::utils::{index_to_chunked_index, index_to_chunked_index_rev};
 
@@ -145,10 +144,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         assert_eq!(chunks.len(), self.chunks.len());
         unsafe {
             for (arr, other) in self.chunks_mut().iter_mut().zip(chunks) {
-                let validity = combine_validities_and(
-                    arr.validity().map(|v| v.to_flat()).as_ref(),
-                    other.validity().map(|v| v.to_flat()).as_ref(),
-                );
+                let validity = combine_validities_and(arr.validity(), other.validity());
                 *arr = arr.with_validity(validity);
             }
         }

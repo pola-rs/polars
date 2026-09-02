@@ -512,6 +512,18 @@ impl PlStructArray {
         !self.validity_is_scalar()
     }
 
+    /// Whether this array is a single row repeated over its length, in `O(1)` memory.
+    ///
+    /// A struct array has no buffer of its own but the validity mask, so this asks that the mask
+    /// be scalar or absent *and* that every field be scalar in turn: a row is the values its
+    /// fields hold at that index, and it only repeats if each of them does. An array of no fields
+    /// is a length and a mask, and is scalar whenever that mask is.
+    #[inline]
+    pub fn is_scalar(&self) -> bool {
+        self.validity().is_none_or(|validity| validity.is_scalar())
+            && self.fields.iter().all(|field| field.is_scalar())
+    }
+
     /// Returns this array in the flat representation, writing out a scalar validity mask.
     ///
     /// This is `O(1)` for an array that is already flat and `O(len)` for one whose mask is
@@ -624,6 +636,11 @@ impl PlArray for PlStructArray {
     #[inline]
     fn len(&self) -> usize {
         self.len()
+    }
+
+    #[inline]
+    fn is_scalar(&self) -> bool {
+        self.is_scalar()
     }
 
     #[inline]

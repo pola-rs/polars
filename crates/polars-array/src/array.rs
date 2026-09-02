@@ -54,6 +54,14 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
         self.len() == 0
     }
 
+    /// Whether this array is entirely stored in the scalar representation, and therefore is a
+    /// single logical value repeated [`PlArray::len`] times in `O(1)` memory.
+    ///
+    /// This is what lets an operation hand a repeated value to the kernel that takes one value
+    /// rather than write [`PlArray::len`] copies of it out first. An array of one element is
+    /// scalar and flat at once: the two representations coincide. See [`crate::broadcast`].
+    fn is_scalar(&self) -> bool;
+
     /// The validity mask, if any element may be null.
     ///
     /// The returned [`PlBitmapRef`] has [`PlArray::len`] bits regardless of whether the backing
@@ -243,7 +251,7 @@ mod tests {
     use super::*;
     use crate::{
         PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray,
-        PlFixedSizeListArray, PlListArray, PlPrimitiveArray, PlStructArray,
+        PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray,
     };
 
     fn arrays() -> Vec<Box<dyn PlArray>> {
@@ -357,6 +365,51 @@ mod tests {
             assert!(arr.is_valid(2));
             assert!(!arr.is_null(2));
         }
+    }
+
+    #[test]
+    fn is_scalar_behind_the_trait_object() {
+        // The arrays of `arrays()` hold three elements each, none of them repeated.
+        for arr in arrays() {
+            assert!(!arr.is_scalar(), "{arr:?}");
+        }
+
+        // A billion elements would not be walked in reasonable time; that this test finishes is
+        // what shows the answer is read off the buffers rather than from the elements.
+        for arr in scalars(1_000_000_000) {
+            assert!(arr.is_scalar(), "{arr:?}");
+        }
+
+        // An array of one element is scalar and flat at once, whichever way it was built.
+        for arr in scalars(1) {
+            assert!(arr.is_scalar(), "{arr:?}");
+        }
+        for arr in arrays() {
+            assert!(arr.sliced(1, 1).is_scalar(), "{arr:?}");
+        }
+
+        // An array of no elements repeats nothing, and a null array repeats its null.
+        for arr in arrays() {
+            assert!(!arr.sliced(0, 0).is_scalar(), "{arr:?}");
+        }
+        assert!(PlNullArray::new(1_000_000_000).is_scalar());
+    }
+
+    #[test]
+    fn a_struct_is_scalar_only_when_every_field_is() {
+        let scalar_field =
+            || Box::new(PlPrimitiveArray::<i64>::new_scalar(7, 3)) as Box<dyn PlArray>;
+        let flat_field =
+            || Box::new(PlPrimitiveArray::from_vec(vec![1i64, 2, 3])) as Box<dyn PlArray>;
+
+        assert!(PlStructArray::from_fields(vec![scalar_field(), scalar_field()]).is_scalar());
+        assert!(!PlStructArray::from_fields(vec![scalar_field(), flat_field()]).is_scalar());
+        assert!(!PlStructArray::from_fields(vec![flat_field(), scalar_field()]).is_scalar());
+
+        // A mask that is one bit per element is a buffer of the struct's own that does not repeat.
+        let masked = PlStructArray::from_fields(vec![scalar_field()])
+            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+        assert!(!masked.is_scalar());
     }
 
     #[test]

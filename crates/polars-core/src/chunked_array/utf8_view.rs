@@ -151,6 +151,13 @@ impl PlUtf8ViewArray {
         }
     }
 
+    /// Whether this array is entirely stored in the scalar representation — see
+    /// [`PlBinaryViewArray::is_scalar`].
+    #[inline]
+    pub fn is_scalar(&self) -> bool {
+        self.0.is_scalar()
+    }
+
     /// The single value every element of a scalar array is, or `None` if this array is not scalar.
     #[inline]
     pub fn scalar_value(&self) -> Option<Option<&str>> {
@@ -321,6 +328,11 @@ impl PlArray for PlUtf8ViewArray {
     #[inline]
     fn len(&self) -> usize {
         self.0.len()
+    }
+
+    #[inline]
+    fn is_scalar(&self) -> bool {
+        self.0.is_scalar()
     }
 
     #[inline]

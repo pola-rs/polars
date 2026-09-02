@@ -213,6 +213,16 @@ impl PlNullArray {
         true
     }
 
+    /// Whether this array is a single element repeated over its length, which a [`PlNullArray`]
+    /// always is: every element is the same null, held in `O(1)` memory.
+    ///
+    /// A null array is therefore scalar and [`flat`](Self::is_flat) at once — it has no buffer
+    /// that could be one and not the other.
+    #[inline]
+    pub const fn is_scalar(&self) -> bool {
+        true
+    }
+
     /// Returns this array in the flat representation, which is this array — see
     /// [`PlNullArray::is_flat`]. This function is `O(1)`.
     #[inline]
@@ -278,6 +288,11 @@ impl PlArray for PlNullArray {
     #[inline]
     fn len(&self) -> usize {
         self.len()
+    }
+
+    #[inline]
+    fn is_scalar(&self) -> bool {
+        self.is_scalar()
     }
 
     #[inline]

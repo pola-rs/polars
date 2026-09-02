@@ -209,6 +209,24 @@ pub trait StaticArray: PlArray + Clone {
     /// [`crate::broadcast`] for the rules.
     fn is_flat(&self) -> bool;
 
+    /// The element every element of this array equals, if it is entirely stored in the scalar
+    /// representation.
+    ///
+    /// The inner [`Option`] is that element, so an array of nothing but nulls yields
+    /// `Some(None)`. Returns `None` for an empty array, which has no element to share, and
+    /// whenever a backing buffer is flat over more than one element.
+    ///
+    /// This is what an elementwise kernel dispatches on to hand a repeated value to the
+    /// single-value kernel rather than materialize [`PlArray::len`] copies of it with
+    /// [`StaticArray::to_flat`] — it is the `O(1)` shortcut past a scalar array of unbounded
+    /// length. It is the trait's view of the inherent `scalar_value` of the concrete arrays,
+    /// which is the one to call when the concrete type is known.
+    #[inline]
+    fn scalar_value(&self) -> Option<Option<Self::ValueT<'_>>> {
+        // SAFETY: the array is not empty, so element 0 is in bounds.
+        (PlArray::is_scalar(self) && !self.is_empty()).then(|| unsafe { self.get_unchecked(0) })
+    }
+
     /// Returns this array in the flat representation, writing out every buffer that is scalar.
     ///
     /// This is `O(1)` for an array that is already flat and `O(len)` for one that is not — see
@@ -1013,6 +1031,36 @@ mod tests {
 
         let nulls = PlNullArray::new(1);
         assert_eq!(nulls.broadcast_iter(1_000_000_000).last(), Some(None));
+    }
+
+    #[test]
+    fn the_scalar_value_is_read_without_walking_the_array() {
+        // A billion elements would not be walked in reasonable time; that this test finishes is
+        // what shows the repeated element is read off the buffers.
+        let array = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
+        assert_eq!(StaticArray::scalar_value(&array), Some(Some(7)));
+
+        // An array of nothing but nulls repeats its null, whatever is under the mask.
+        let nulls = PlBooleanArray::new_full_null(1_000_000_000);
+        assert_eq!(StaticArray::scalar_value(&nulls), Some(None));
+        assert_eq!(
+            StaticArray::scalar_value(&PlNullArray::new(1_000_000_000)),
+            Some(None)
+        );
+
+        // An array of one element repeats it; one that is flat over more elements repeats
+        // nothing, and an empty one has no element to repeat.
+        let one = PlPrimitiveArray::from_vec(vec![7i32]);
+        assert_eq!(StaticArray::scalar_value(&one), Some(Some(7)));
+
+        let flat = PlPrimitiveArray::from_vec(vec![7i32, 7]);
+        assert_eq!(StaticArray::scalar_value(&flat), None);
+        assert_eq!(StaticArray::scalar_value(&flat.sliced(0, 0)), None);
+
+        // A flat mask over a scalar values buffer is still a buffer that is not shared.
+        let masked = PlPrimitiveArray::new_scalar(7i32, 3)
+            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+        assert_eq!(StaticArray::scalar_value(&masked), None);
     }
 
     #[test]

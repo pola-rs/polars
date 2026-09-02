@@ -601,6 +601,37 @@ where
         }
     }
 
+    /// The single element this column repeats, if it stands for one.
+    ///
+    /// This is `Some` for a column of one element — which broadcasts to any height — and for a
+    /// single chunk in the [`scalar`](polars_array::broadcast) representation, which is one value
+    /// repeated over its full height in `O(1)` memory. The inner [`Option`] is that element, so a
+    /// column of nothing but nulls yields `Some(None)`.
+    ///
+    /// `None` means the column has to be read element by element. It is what an empty column
+    /// yields, having no element to repeat, and what a column of several chunks yields even when
+    /// each of them is scalar: the chunks need not agree on the value.
+    ///
+    /// This is what an elementwise operation dispatches on to reach the kernel that takes a
+    /// single value, rather than materialize [`ChunkedArray::len`] copies of it to meet the other
+    /// side. Because a column that repeats a value does not have to be one element long, this
+    /// subsumes — and is not implied by — a length of one.
+    #[inline]
+    pub fn scalar_value(&self) -> Option<Option<T::Physical<'_>>> {
+        // A column of one element repeats that element by definition, however its chunks are laid
+        // out — an empty chunk on either side of the one that holds it changes nothing.
+        if self.len() == 1 {
+            // SAFETY: the column has an element 0.
+            return Some(unsafe { self.get_unchecked(0) });
+        }
+
+        match self.chunks.as_slice() {
+            // SAFETY: the column has a chunk 0.
+            [_] => StaticArray::scalar_value(unsafe { self.downcast_get_unchecked(0) }),
+            _ => None,
+        }
+    }
+
     /// # Panics
     /// Panics if the [`ChunkedArray`] is empty.
     #[inline]
@@ -772,8 +803,14 @@ impl ListChunked {
                 continue;
             }
 
+            // A scalar mask stands for the same bit at every element, and the one that is unset
+            // everywhere returned above: there is no element left for it to mask out.
+            let Some(validity) = validity.flat_bitmap() else {
+                continue;
+            };
+
             // @Performance: false_idx_iter
-            for i in (!&validity.to_flat()).true_idx_iter() {
+            for i in (!validity).true_idx_iter() {
                 if arr.value_length(i) > 0 {
                     return true;
                 }
@@ -1075,9 +1112,10 @@ impl ValueSize for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl ValueSize for ArrayChunked {
     fn get_values_size(&self) -> usize {
-        self.downcast_iter().fold(0usize, |acc, arr| {
-            acc + arr.to_flat().into_array().into_inner().0.len()
-        })
+        // Every element covers the same number of values, so this is the height times the width
+        // — there is no values array to write out to count it, scalar or otherwise.
+        self.downcast_iter()
+            .fold(0usize, |acc, arr| acc + arr.len() * arr.width())
     }
 }
 impl ValueSize for StringChunked {

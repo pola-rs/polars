@@ -2,11 +2,11 @@
 use std::borrow::Cow;
 use std::error::Error;
 
-use arrow::bitmap::Bitmap;
 use polars_array::builder::StaticArrayBuilder;
-use polars_array::{Flat, PlArray, StaticArray};
+use polars_array::{Flat, PlArray, PlBitmapRef, StaticArray};
 
 use crate::chunked_array::utf8_view::PlUtf8ViewArrayBuilder;
+use crate::chunked_array::validity::{PlBitmapRefExt, combine_validities_and};
 use crate::prelude::PlArrayRef;
 
 /// An Arrow array, which is what the kernels that hand a [`Series`] back produce: the [`DataType`]
@@ -36,16 +36,41 @@ pub fn flat_chunk<A: StaticArray>(array: &A) -> Cow<'_, Flat<A>> {
     }
 }
 
-/// Combines two validity masks, either of which may be scalar, into the flat mask of their `and`.
+/// Returns `ret` masked off wherever either input has a null, on top of its own mask.
+///
+/// The three masks all cover the same elements. A scalar one among them is combined as the single
+/// bit it stands for rather than written out first, so a kernel over two chunks that are fully
+/// null hands back a result that is still `O(1)` in memory.
 #[inline]
-fn combine_validities_and(
-    lhs: Option<polars_array::PlBitmapRef<'_>>,
-    rhs: Option<polars_array::PlBitmapRef<'_>>,
-) -> Option<Bitmap> {
-    arrow::compute::utils::combine_validities_and(
-        lhs.map(|v| v.to_flat()).as_ref(),
-        rhs.map(|v| v.to_flat()).as_ref(),
-    )
+fn mask_with_inputs<A: StaticArray>(
+    ret: A,
+    lhs: Option<PlBitmapRef<'_>>,
+    rhs: Option<PlBitmapRef<'_>>,
+) -> A {
+    let inputs = combine_validities_and(lhs, rhs);
+    // Panics if the kernel handed back a result of a different height than its inputs.
+    let inputs = inputs
+        .as_ref()
+        .map(|inputs| PlBitmapRef::new(inputs, ret.len()));
+
+    let validity = combine_validities_and(inputs, ret.validity());
+    ret.with_validity_typed(validity)
+}
+
+/// The height of the output of an elementwise operation over two columns of these lengths, or
+/// `None` if the two do not broadcast.
+///
+/// A column either has the height of the output or is a single element repeated to meet it. This
+/// is [`binary_output_height`](crate::binary_output_height) without the error, leaving the caller
+/// to say what a length mismatch is — the operations here answer it with a panic, as they always
+/// have.
+#[inline]
+pub fn broadcast_height(lhs: usize, rhs: usize) -> Option<usize> {
+    match (lhs, rhs) {
+        (lhs, rhs) if lhs == rhs => Some(lhs),
+        (length, 1) | (1, length) => Some(length),
+        _ => None,
+    }
 }
 
 #[macro_export]
@@ -230,7 +255,7 @@ where
     }
 
     let iter = ca.downcast_iter().map(|arr| {
-        let validity = arr.validity().map(|v| v.to_flat());
+        let validity = arr.validity().map(|v| v.to_flat_or_scalar());
         let arr: V::Array = arr.values_iter().map(&mut op).collect_arr();
         arr.with_validity_typed(validity)
     });
@@ -256,7 +281,7 @@ where
     }
 
     let iter = ca.downcast_iter().map(|arr| {
-        let validity = arr.validity().map(|v| v.to_flat());
+        let validity = arr.validity().map(|v| v.to_flat_or_scalar());
         let arr: V::Array = arr.values_iter().map(&mut op).try_collect_arr()?;
         Ok(arr.with_validity_typed(validity))
     });
@@ -277,7 +302,7 @@ where
 {
     let iter = ca
         .downcast_iter()
-        .map(|arr| op(arr).with_validity_typed(arr.validity().map(|v| v.to_flat())));
+        .map(|arr| op(arr).with_validity_typed(arr.validity().map(|v| v.to_flat_or_scalar())));
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
@@ -294,7 +319,7 @@ where
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
     let iter = ca.downcast_iter().map(|arr| {
-        op(&flat_chunk(arr)).with_validity_typed(arr.validity().map(|v| v.to_flat()))
+        op(&flat_chunk(arr)).with_validity_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
@@ -547,12 +572,7 @@ where
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| {
             let ret = op(lhs_arr, rhs_arr);
-            let inp_val = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
-            let val = arrow::compute::utils::combine_validities_and(
-                inp_val.as_ref(),
-                ret.validity().map(|v| v.to_flat()).as_ref(),
-            );
-            ret.with_validity_typed(val)
+            mask_with_inputs(ret, lhs_arr.validity(), rhs_arr.validity())
         });
     ChunkedArray::from_chunk_iter(name, iter)
 }
@@ -582,12 +602,7 @@ where
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| {
             let ret = op(&flat_chunk(lhs_arr), &flat_chunk(rhs_arr));
-            let inp_val = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
-            let val = arrow::compute::utils::combine_validities_and(
-                inp_val.as_ref(),
-                ret.validity().map(|v| v.to_flat()).as_ref(),
-            );
-            ret.with_validity_typed(val)
+            mask_with_inputs(ret, lhs_arr.validity(), rhs_arr.validity())
         });
     ChunkedArray::from_chunk_iter(name, iter)
 }
@@ -934,15 +949,17 @@ where
         <F as BinaryFnMut<Option<T::Physical<'a>>, Option<U::Physical<'a>>>>::Ret,
     >,
 {
-    match (lhs.len(), rhs.len()) {
-        (1, _) => {
-            let a = unsafe { lhs.get_unchecked(0) };
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // A side that repeats one element is read once and handed to the unary walk over the other,
+    // which is what keeps a column that stands for a single value from being read `length` times.
+    // A column of one element repeats it by definition, so this subsumes the length-one case.
+    match (lhs.scalar_value(), rhs.scalar_value()) {
+        (Some(a), _) if rhs.len() == length => {
             unary_elementwise(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
         },
-        (_, 1) => {
-            let b = unsafe { rhs.get_unchecked(0) };
-            unary_elementwise(lhs, |a| op(a, b.clone()))
-        },
+        (_, Some(b)) => unary_elementwise(lhs, |a| op(a, b.clone())),
         _ => binary_elementwise(lhs, rhs, op),
     }
 }
@@ -959,15 +976,15 @@ where
     F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Result<Option<K>, E>,
     V::Array: ArrayFromIter<Option<K>>,
 {
-    match (lhs.len(), rhs.len()) {
-        (1, _) => {
-            let a = unsafe { lhs.get_unchecked(0) };
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // See [`broadcast_binary_elementwise`] for what the two scalar arms are.
+    match (lhs.scalar_value(), rhs.scalar_value()) {
+        (Some(a), _) if rhs.len() == length => {
             Ok(try_unary_elementwise(rhs, |b| op(a.clone(), b))?.with_name(lhs.name().clone()))
         },
-        (_, 1) => {
-            let b = unsafe { rhs.get_unchecked(0) };
-            try_unary_elementwise(lhs, |a| op(a, b.clone()))
-        },
+        (_, Some(b)) => try_unary_elementwise(lhs, |a| op(a, b.clone())),
         _ => try_binary_elementwise(lhs, rhs, op),
     }
 }
@@ -984,22 +1001,20 @@ where
     F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> K,
     V::Array: ArrayFromIter<K>,
 {
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
     if lhs.null_count() == lhs.len() || rhs.null_count() == rhs.len() {
-        let min = lhs.len().min(rhs.len());
-        let max = lhs.len().max(rhs.len());
-        let len = if min == 1 { max } else { min };
-        return ChunkedArray::with_chunk(lhs.name().clone(), V::full_null_array(len));
+        return ChunkedArray::with_chunk(lhs.name().clone(), V::full_null_array(length));
     }
 
-    match (lhs.len(), rhs.len()) {
-        (1, _) => {
-            let a = unsafe { lhs.value_unchecked(0) };
+    // See [`broadcast_binary_elementwise`] for what the two scalar arms are. Neither side is
+    // fully null here, so a side that repeats one element repeats a value rather than a null.
+    match (lhs.scalar_value(), rhs.scalar_value()) {
+        (Some(Some(a)), _) if rhs.len() == length => {
             unary_elementwise_values(rhs, |b| op(a.clone(), b)).with_name(lhs.name().clone())
         },
-        (_, 1) => {
-            let b = unsafe { rhs.value_unchecked(0) };
-            unary_elementwise_values(lhs, |a| op(a, b.clone()))
-        },
+        (_, Some(Some(b))) => unary_elementwise_values(lhs, |a| op(a, b.clone())),
         _ => binary_elementwise_values(lhs, rhs, op),
     }
 }
@@ -1020,36 +1035,29 @@ where
     RK: Fn(&Flat<L::Array>, R::Physical<'r>) -> O::Array,
 {
     let name = lhs.name();
-    // The `(flat, flat)` path comes first: it is what an operation on two columns of the same
-    // height takes, and the one the specialized kernels are written for. The broadcast paths hand
-    // the side that is one element long to the kernel as the value it is, so that too reaches a
-    // kernel whose other argument is flat.
-    let out = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => {
-            binary_kernel_flat(lhs, rhs, |lhs, rhs| kernel(lhs, rhs), lhs.name().clone())
-        },
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // The broadcast paths come first: a side that repeats a single value is handed to the kernel
+    // as the value it is, so that the other side reaches a kernel whose second argument is flat
+    // without that repeated value ever being written out. A column of one element repeats it by
+    // definition, and one whose only chunk is in the [`scalar`](polars_array::broadcast)
+    // representation repeats it over its whole height — so this subsumes the length-one case
+    // rather than sitting beside it, and `flat_chunk` no longer has a scalar chunk to expand.
+    //
+    // The `(flat, flat)` path is what is left: two columns of the same height, neither of which
+    // stands for a single value, which is what the specialized kernels are written for.
+    let out = match (lhs.scalar_value(), rhs.scalar_value()) {
         // broadcast right path
-        (_, 1) => {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => ChunkedArray::<O>::with_chunk(
-                    lhs.name().clone(),
-                    O::full_null_array(lhs.len()),
-                ),
-                Some(rhs) => unary_kernel_flat(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
-            }
+        (_, Some(rhs)) if lhs.len() == length => match rhs {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(rhs) => unary_kernel_flat(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
         },
-        (1, _) => {
-            let opt_lhs = lhs.get(0);
-            match opt_lhs {
-                None => ChunkedArray::<O>::with_chunk(
-                    lhs.name().clone(),
-                    O::full_null_array(rhs.len()),
-                ),
-                Some(lhs) => unary_kernel_flat(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
-            }
+        (Some(lhs), _) => match lhs {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(lhs) => unary_kernel_flat(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
         },
-        _ => panic!("Cannot apply operation on arrays of different lengths"),
+        _ => binary_kernel_flat(lhs, rhs, |lhs, rhs| kernel(lhs, rhs), name.clone()),
     };
     out.with_name(name.clone())
 }
@@ -1070,36 +1078,33 @@ where
     for<'a> RK: Fn(Flat<L::Array>, R::Physical<'a>) -> O::Array,
 {
     let name = lhs.name().to_owned();
-    let out = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => binary_owned(lhs, rhs, |lhs, rhs| {
+    let length = broadcast_height(lhs.len(), rhs.len())
+        .expect("cannot apply operation on arrays of different lengths");
+
+    // See [`apply_binary_kernel_broadcast`] for what the two broadcast paths are. The scalar
+    // check is a borrow, so it is taken before either side is moved into a kernel.
+    let lhs_repeats = lhs.scalar_value().is_some();
+    let rhs_repeats = rhs.scalar_value().is_some();
+
+    // broadcast right path
+    let out = if rhs_repeats && lhs.len() == length {
+        match rhs.scalar_value().unwrap() {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(rhs) => unary_kernel_owned(lhs, |arr| {
+                rhs_broadcast_kernel(StaticArray::to_flat(&arr), rhs.clone())
+            }),
+        }
+    } else if lhs_repeats {
+        match lhs.scalar_value().unwrap() {
+            None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
+            Some(lhs) => unary_kernel_owned(rhs, |arr| {
+                lhs_broadcast_kernel(lhs.clone(), StaticArray::to_flat(&arr))
+            }),
+        }
+    } else {
+        binary_owned(lhs, rhs, |lhs, rhs| {
             kernel(StaticArray::to_flat(&lhs), StaticArray::to_flat(&rhs))
-        }),
-        // broadcast right path
-        (_, 1) => {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => ChunkedArray::<O>::with_chunk(
-                    lhs.name().clone(),
-                    O::full_null_array(lhs.len()),
-                ),
-                Some(rhs) => unary_kernel_owned(lhs, |arr| {
-                    rhs_broadcast_kernel(StaticArray::to_flat(&arr), rhs.clone())
-                }),
-            }
-        },
-        (1, _) => {
-            let opt_lhs = lhs.get(0);
-            match opt_lhs {
-                None => ChunkedArray::<O>::with_chunk(
-                    lhs.name().clone(),
-                    O::full_null_array(rhs.len()),
-                ),
-                Some(lhs) => unary_kernel_owned(rhs, |arr| {
-                    lhs_broadcast_kernel(lhs.clone(), StaticArray::to_flat(&arr))
-                }),
-            }
-        },
-        _ => panic!("Cannot apply operation on arrays of different lengths"),
+        })
     };
     out.with_name(name)
 }

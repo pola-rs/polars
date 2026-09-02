@@ -1087,6 +1087,11 @@ impl PlArray for PlBinaryViewArray {
     }
 
     #[inline]
+    fn is_scalar(&self) -> bool {
+        self.is_scalar()
+    }
+
+    #[inline]
     fn validity(&self) -> Option<PlBitmapRef<'_>> {
         self.validity()
     }

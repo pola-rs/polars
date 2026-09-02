@@ -232,6 +232,14 @@ impl<T: PolarsObject> PlArray for ObjectArray<T> {
         self.values.len()
     }
 
+    /// Whether this array is one value repeated over its length, which an object array only is
+    /// when it holds a single element: the two representations coincide there, and above one
+    /// element it always holds one `T` per element.
+    #[inline]
+    fn is_scalar(&self) -> bool {
+        self.values.len() == 1
+    }
+
     #[inline]
     fn validity(&self) -> Option<PlBitmapRef<'_>> {
         self.validity

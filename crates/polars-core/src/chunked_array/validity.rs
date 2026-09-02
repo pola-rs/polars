@@ -11,8 +11,10 @@ use polars_array::PlBitmapRef;
 
 /// The `and` of two masks over the same elements, or `None` if neither has a null.
 ///
-/// The result is scalar exactly when both inputs are, so it is `O(1)` for two masks that are; a
-/// flat mask on either side makes it `O(len)`, the other being written out to meet it.
+/// A scalar mask on either side is a shortcut rather than something to write out: two of them
+/// `and` to a single bit, one that is unset everywhere makes the whole result a single unset bit,
+/// and one that is set everywhere hands the other side back in whatever representation it is in.
+/// Only two flat masks cost `O(len)`.
 ///
 /// # Panics
 /// Panics if the masks are over a different number of elements.
@@ -26,7 +28,13 @@ pub fn combine_validities_and(
             match (lhs.scalar_value(), rhs.scalar_value()) {
                 // Two single bits `and` to a single bit, which covers every element in turn.
                 (Some(lhs), Some(rhs)) => Some(Bitmap::new_with_value(lhs && rhs, 1)),
-                _ => arrow::compute::utils::combine_validities_and(
+                // A scalar mask that is set everywhere leaves the other one as it is, in whatever
+                // representation that one is in; one that is unset everywhere makes the result a
+                // single unset bit, whatever the other one holds.
+                (Some(true), None) => Some(rhs.to_flat_or_scalar()),
+                (None, Some(true)) => Some(lhs.to_flat_or_scalar()),
+                (Some(false), None) | (None, Some(false)) => Some(Bitmap::new_with_value(false, 1)),
+                (None, None) => arrow::compute::utils::combine_validities_and(
                     Some(&lhs.to_flat()),
                     Some(&rhs.to_flat()),
                 ),
@@ -39,12 +47,12 @@ pub fn combine_validities_and(
 
 /// The bits of `mask`, inverted: set where an element is null.
 ///
-/// A scalar mask inverts to a single bit, so this is `O(1)` for one and `O(len)` for a flat one.
+/// The result is in the same representation as `mask`, so this is `O(1)` for a scalar mask —
+/// whose single bit inverts to a single bit — and `O(len)` for a flat one.
 pub fn invert(mask: PlBitmapRef<'_>) -> Bitmap {
-    match mask.scalar_value() {
-        Some(value) => Bitmap::new_with_value(!value, 1),
-        None => !mask.flat_bitmap().unwrap(),
-    }
+    // The backing bitmap is flat or scalar for the mask's length, and inverting it bit for bit
+    // leaves it that way; there is nothing to expand first.
+    !mask.into_inner().0
 }
 
 /// An extension of [`PlBitmapRef`] with the conversion the helpers here need.
@@ -59,9 +67,8 @@ pub trait PlBitmapRefExt {
 impl PlBitmapRefExt for PlBitmapRef<'_> {
     #[inline]
     fn to_flat_or_scalar(&self) -> Bitmap {
-        match self.scalar_value() {
-            Some(value) => Bitmap::new_with_value(value, 1),
-            None => self.flat_bitmap().unwrap().clone(),
-        }
+        // The backing bitmap is already flat or scalar for the mask's length, which is exactly
+        // what an array accepts as its own mask: hand it over as it is.
+        self.into_inner().0.clone()
     }
 }
