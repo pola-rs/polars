@@ -42,5 +42,5 @@ pub use utils::materialize_empty_df;
 pub mod _internal {
     pub use super::mmap::to_deserializer;
     pub use super::read_impl::{PrefilterMaskSetting, calc_prefilter_cost};
-    pub use super::utils::ensure_matching_dtypes_if_found;
+    pub use super::utils::{canonicalize_parquet_maps, ensure_matching_dtypes_if_found};
 }

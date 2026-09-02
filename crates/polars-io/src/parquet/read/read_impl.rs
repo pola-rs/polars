@@ -13,7 +13,7 @@ use polars_parquet::read::{self, ColumnChunkMetadata, FileMetadata, Filter, RowG
 use rayon::prelude::*;
 
 use super::mmap::mmap_columns;
-use super::utils::materialize_empty_df;
+use super::utils::{canonicalize_parquet_maps, materialize_empty_df};
 use super::{ParallelStrategy, mmap};
 use crate::RowIndex;
 use crate::hive::materialize_hive_partitions;
@@ -114,11 +114,7 @@ fn column_idx_to_series(
     let columns = mmap_columns(store, field_md);
     let (arrays, pred_true_mask) = mmap::to_deserializer(columns, field.clone(), filter)?;
     let mut series = Series::try_from((field, arrays))?;
-
-    // Parquet allows duplicate map keys; `Map` does not.
-    if let Some(canonical) = series.canonicalize_maps()? {
-        series = canonical;
-    }
+    canonicalize_parquet_maps(&mut series)?;
 
     Ok((series, pred_true_mask))
 }
