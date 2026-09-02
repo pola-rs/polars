@@ -174,6 +174,9 @@ if TYPE_CHECKING:
 
 _COLLECT_BATCHES_POOL = ThreadPoolExecutor(thread_name_prefix="pl_col_batch_")
 
+# Name of the placeholder column used by `LazyFrame._with_height_column()`.
+_HEIGHT_COLUMN = "__POLARS_INTERNAL_HEIGHT_COLUMN"
+
 
 class LazyFrame:
     """
@@ -377,6 +380,61 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = ldf
         return self
+
+    def _with_height_column(self) -> LazyFrame:
+        """
+        Attach a placeholder column that carries the height of this frame.
+
+        Operations that derive their output height from the columns they see
+        return a 0-height result for a 0-width input, as there is no column left
+        to take the height from. A 0-field struct column holds a height without
+        holding any data, so attaching one keeps the height observable; pair this
+        with `_drop_height_column()` to remove it again afterwards.
+        """
+        return self.with_columns(F.lit({}, dtype=Struct({})).alias(_HEIGHT_COLUMN))
+
+    def _drop_height_column(self) -> LazyFrame:
+        """Drop the placeholder column added by `_with_height_column()`."""
+        return self.drop(_HEIGHT_COLUMN)
+
+    def _height_preserving(self, op: Callable[[LazyFrame], LazyFrame]) -> LazyFrame:
+        """
+        Apply `op` with a height-carrying placeholder column attached.
+
+        `op` sees the placeholder as an ordinary column, so it must accept a
+        0-field struct and treat it like any other column - only then does the
+        placeholder end up with the height that `op` gives its output.
+        """
+        return op(self._with_height_column())._drop_height_column()
+
+    def _aggregate_select(self, exprs: Sequence[Expr]) -> LazyFrame:
+        """
+        `select()` of aggregation expressions, returning a single row.
+
+        `exprs` is empty when the frame has no columns to aggregate, which would
+        otherwise collapse the result to 0 rows; a placeholder literal keeps it
+        1 row high, as it is for any other input.
+        """
+        return self.select(
+            F.lit({}, dtype=Struct({})).alias(_HEIGHT_COLUMN), *exprs
+        ).drop(_HEIGHT_COLUMN)
+
+    def _height_preserving_select(self, into_expr: Callable[[Expr], Expr]) -> LazyFrame:
+        """
+        `select()` over all columns, retaining the height of a 0-width input.
+
+        `into_expr` receives a wildcard expression matching the columns of this
+        frame; unlike a plain `col("*")` it does not match the height-carrying
+        placeholder column, so it is safe for operations that only accept
+        specific dtypes. The placeholder is passed through untouched, so
+        `into_expr` must not change the number of rows - use
+        `_height_preserving()` for operations that do.
+        """
+        return self._height_preserving(
+            lambda lf: lf.select(
+                F.col(_HEIGHT_COLUMN), into_expr(F.exclude(_HEIGHT_COLUMN))
+            )
+        )
 
     def __getstate__(self) -> bytes:
         return self.serialize()
@@ -6673,7 +6731,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ a   ┆ 1   │
         └─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.reverse())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.reverse()))
 
     def shift(
         self, n: int | IntoExprColumn = 1, *, fill_value: IntoExpr | None = None
@@ -6750,12 +6808,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 100 ┆ 100 │
         └─────┴─────┘
         """
-        if fill_value is not None:
-            fill_value_py = parse_into_expression(fill_value, str_as_lit=True)
-        else:
-            fill_value_py = None
-        n_py = parse_into_expression(n)
-        return self._from_pyldf(self._ldf.shift(n_py, fill_value_py))
+        # Equivalent to `LazyFrame::shift()` in Rust, which is itself a
+        # `select()` of shifted columns - built here so that the height-carrying
+        # placeholder column is left out of `fill_value`, which need not have a
+        # dtype the placeholder can hold.
+        return self._height_preserving_select(
+            lambda expr: expr.shift(n, fill_value=fill_value)
+        )
 
     def slice(self, offset: int, length: int | None = None) -> LazyFrame:
         """
@@ -7106,12 +7165,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 8   │
         └─────┴─────┘
         """
-        return (
-            self.with_columns(
-                F.lit({}, dtype=Struct({})).alias("__POLARS_INTERNAL_HEIGHT_COLUMN")
-            )
-            .select(F.col("*").gather_every(n, offset))
-            .drop("__POLARS_INTERNAL_HEIGHT_COLUMN")
+        return self._height_preserving(
+            lambda lf: lf.select(F.col("*").gather_every(n, offset))
         )
 
     def fill_null(
@@ -7254,7 +7309,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     F.col([*dtypes, Null]).fill_null(value, strategy, limit)
                 )
 
-        return self.select(F.all().fill_null(value, strategy, limit))
+        return self._height_preserving_select(
+            lambda expr: expr.fill_null(value, strategy, limit)
+        )
 
     def fill_nan(self, value: int | float | Expr | None) -> LazyFrame:
         """
@@ -7341,7 +7398,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1.118034 ┆ 0.433013 │
         └──────────┴──────────┘
         """
-        return self._from_pyldf(self._ldf.std(ddof))
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.std(ddof)))
 
     def var(self, ddof: int = 1) -> LazyFrame:
         """
@@ -7383,7 +7440,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1.25 ┆ 0.1875 │
         └──────┴────────┘
         """
-        return self._from_pyldf(self._ldf.var(ddof))
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.var(ddof)))
 
     def max(self) -> LazyFrame:
         """
@@ -7409,7 +7466,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 2   │
         └─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.max())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.max()))
 
     def min(self) -> LazyFrame:
         """
@@ -7435,7 +7492,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 1   │
         └─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.min())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.min()))
 
     def sum(self) -> LazyFrame:
         """
@@ -7461,7 +7518,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 10  ┆ 5   │
         └─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.sum())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.sum()))
 
     def mean(self) -> LazyFrame:
         """
@@ -7487,7 +7544,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2.5 ┆ 1.25 │
         └─────┴──────┘
         """
-        return self._from_pyldf(self._ldf.mean())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.mean()))
 
     def median(self) -> LazyFrame:
         """
@@ -7513,7 +7570,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2.5 ┆ 1.0 │
         └─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.median())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.median()))
 
     def null_count(self) -> LazyFrame:
         """
@@ -7540,7 +7597,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 1   ┆ 0   │
         └─────┴─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.null_count())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.null_count()))
 
     def quantile(
         self,
@@ -7578,7 +7635,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
         """  # noqa: W505
         quantile_py = parse_into_expression(quantile)
-        return self._from_pyldf(self._ldf.quantile(quantile_py, interpolation))
+        return self._height_preserving(
+            lambda lf: lf._from_pyldf(lf._ldf.quantile(quantile_py, interpolation))
+        )
 
     def explode(
         self,
@@ -8434,7 +8493,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 10.0 ┆ null ┆ 9.0      │
         └──────┴──────┴──────────┘
         """
-        return self.select(F.col("*").interpolate())
+        return self._height_preserving_select(lambda expr: expr.interpolate())
 
     def unnest(
         self,
@@ -8966,7 +9025,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 3   ┆ 0   │
         └─────┴─────┴─────┘
         """
-        return self._from_pyldf(self._ldf.count())
+        return self._height_preserving(lambda lf: lf._from_pyldf(lf._ldf.count()))
 
     @unstable()
     def remote(
