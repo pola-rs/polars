@@ -799,3 +799,33 @@ def test_correlated_scalar_subquery_rejects_foreign_qualifier() -> None:
         ctx.execute(
             "SELECT k, (SELECT SUM(foo.a) FROM t2 x WHERE x.b = t1.k) AS s FROM t1"
         ).collect()
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "cost > (SELECT avg(cost) FROM sales s2)",
+        "state = 'GA' AND order_no IN (SELECT order_no FROM sales s2 WHERE s2.cost > 6)",
+        "state = 'GA' AND EXISTS ("
+        " SELECT * FROM sales s2"
+        " WHERE sales.order_no = s2.order_no AND sales.warehouse <> s2.warehouse)",
+    ],
+)
+def test_delete_with_subquery_preserves_schema(predicate: str) -> None:
+    # the flag and placeholder columns a subquery predicate binds are internal;
+    # DELETE returns whole rows, so they must not survive the filter
+    frames = {
+        "sales": pl.DataFrame(
+            {
+                "order_no": [1, 1, 2, 2, 3, 4],
+                "warehouse": [10, 20, 10, 10, 30, 40],
+                "state": ["GA", "GA", "GA", "GA", "CA", "GA"],
+                "cost": [5, 6, 7, 8, 9, 10],
+            }
+        ),
+    }
+    with pl.SQLContext(frames=frames) as ctx:
+        remaining = ctx.execute(f"DELETE FROM sales WHERE {predicate}").collect()
+
+    assert remaining.columns == ["order_no", "warehouse", "state", "cost"]
+    assert remaining.schema == frames["sales"].schema
