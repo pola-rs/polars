@@ -1,6 +1,7 @@
 use std::ptr::NonNull;
 
 use super::*;
+use crate::chunked_array::array::{array_values, collect_array_chunk};
 use crate::chunked_array::list::iterator::AmortizedListIter;
 use crate::series::amortized_iter::{AmortSeries, ArrayBox, unstable_series_container_and_ptr};
 
@@ -51,7 +52,7 @@ impl ArrayChunked {
         // we create the series container from the inner array
         // so that the container has the proper dtype.
         let arr = self.downcast_iter().next().unwrap();
-        let inner_values = arr.values();
+        let inner_values = array_values(arr);
 
         let inner_dtype = self.inner_dtype();
         let iter_dtype = match inner_dtype {
@@ -66,7 +67,7 @@ impl ArrayChunked {
         // SAFETY:
         // inner type passed as physical type
         let (s, ptr) =
-            unsafe { unstable_series_container_and_ptr(name, inner_values.clone(), &iter_dtype) };
+            unsafe { unstable_series_container_and_ptr(name, inner_values, &iter_dtype) };
 
         // SAFETY: `ptr` belongs to the `Series`.
         unsafe {
@@ -130,14 +131,17 @@ impl ArrayChunked {
         if self.is_empty() {
             return self.clone();
         }
-        self.amortized_iter()
+        let elements = self
+            .amortized_iter()
             .map(|opt_v| {
                 opt_v.map(|v| {
                     let out = f(v);
                     to_arr(&out)
                 })
             })
-            .collect_ca_with_dtype(self.name().clone(), self.dtype().clone())
+            .collect::<Vec<_>>();
+        let chunk = collect_array_chunk(elements, self.width(), self.inner_dtype());
+        ChunkedArray::from_chunk_iter_and_field(self.field.clone(), [chunk])
     }
 
     /// Try apply a closure `F` to each array.
@@ -151,16 +155,22 @@ impl ArrayChunked {
         if self.is_empty() {
             return Ok(self.clone());
         }
-        self.amortized_iter()
+        let elements = self
+            .amortized_iter()
             .map(|opt_v| {
                 opt_v
                     .map(|v| {
                         let out = f(v)?;
-                        Ok(to_arr(&out))
+                        PolarsResult::Ok(to_arr(&out))
                     })
                     .transpose()
             })
-            .try_collect_ca_with_dtype(self.name().clone(), self.dtype().clone())
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let chunk = collect_array_chunk(elements, self.width(), self.inner_dtype());
+        Ok(ChunkedArray::from_chunk_iter_and_field(
+            self.field.clone(),
+            [chunk],
+        ))
     }
 
     /// Zip with a `ChunkedArray` then apply a binary function `F` elementwise.
@@ -180,13 +190,16 @@ impl ArrayChunked {
         if self.is_empty() {
             return self.clone();
         }
-        self.amortized_iter()
+        let elements = self
+            .amortized_iter()
             .zip(ca.iter())
             .map(|(opt_s, opt_v)| {
                 let out = f(opt_s, opt_v);
                 out.map(|s| to_arr(&s))
             })
-            .collect_ca_with_dtype(self.name().clone(), self.dtype().clone())
+            .collect::<Vec<_>>();
+        let chunk = collect_array_chunk(elements, self.width(), self.inner_dtype());
+        ChunkedArray::from_chunk_iter_and_field(self.field.clone(), [chunk])
     }
 
     /// Apply a closure `F` elementwise.
@@ -222,7 +235,7 @@ impl ArrayChunked {
     }
 }
 
-fn to_arr(s: &Series) -> ArrayRef {
+fn to_arr(s: &Series) -> PlArrayRef {
     if s.chunks().len() > 1 {
         let s = s.rechunk();
         s.chunks()[0].clone()

@@ -155,7 +155,7 @@ impl Series {
 }
 
 pub struct SeriesIter<'a> {
-    arrays: &'a [Box<dyn Array>],
+    arrays: &'a [PlArrayRef],
     dtype: &'a DataType,
     idx_in_cur_arr: usize,
     cur_arr_len: usize,

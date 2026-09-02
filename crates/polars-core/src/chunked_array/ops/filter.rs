@@ -1,5 +1,7 @@
+use polars_array::arrow::{export, import};
 use polars_compute::filter::filter as filter_fn;
 
+use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::prelude::*;
@@ -31,7 +33,11 @@ where
             arity::binary_unchecked_same_type(
                 self,
                 filter,
-                |left, mask| filter_fn(left, mask),
+                // The kernel is the Arrow one, so both chunks cross over and the result crosses
+                // back — see `arrow_bridge`.
+                |left, mask| {
+                    import::from_arrow(&*filter_fn(&*export::to_arrow(left), &chunk_to_arrow(mask)))
+                },
                 true,
                 true,
             )

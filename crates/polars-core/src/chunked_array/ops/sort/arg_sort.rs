@@ -108,10 +108,7 @@ where
             .map_or(len, |limit| std::cmp::min(limit.try_into().unwrap(), len));
         return ChunkedArray::with_chunk(
             name,
-            IdxArr::from_data_default(
-                Buffer::from((0..(len as IdxSize)).collect::<Vec<IdxSize>>()),
-                None,
-            ),
+            PlPrimitiveArray::from_vec((0..(len as IdxSize)).collect::<Vec<IdxSize>>()),
         );
     }
 
@@ -182,7 +179,7 @@ where
         nulls_idx
     };
 
-    ChunkedArray::with_chunk(name, IdxArr::from_data_default(Buffer::from(idx), None))
+    ChunkedArray::with_chunk(name, PlPrimitiveArray::from_vec(idx))
 }
 
 pub(super) fn arg_sort_no_nulls<I, J, T>(
@@ -209,17 +206,14 @@ where
         {
             return ChunkedArray::with_chunk(
                 name,
-                IdxArr::from_data_default(
-                    Buffer::from((0..(len_final as IdxSize)).collect::<Vec<IdxSize>>()),
-                    None,
-                ),
+                PlPrimitiveArray::from_vec((0..(len_final as IdxSize)).collect::<Vec<IdxSize>>()),
             );
         } else if (options.descending && is_sorted_flag == IsSorted::Ascending)
             || (!options.descending && is_sorted_flag == IsSorted::Descending)
         {
             let idx = reverse_stable_no_nulls(iters, len);
             let idx = Buffer::from(idx).sliced(..len_final);
-            return ChunkedArray::with_chunk(name, IdxArr::from_data_default(idx, None));
+            return ChunkedArray::with_chunk(name, PlPrimitiveArray::from_values(idx));
         }
     }
 
@@ -258,7 +252,7 @@ where
     let iter = vals.iter().map(|(idx, _v)| idx).copied();
     let idx: Vec<_> = iter.collect_trusted();
 
-    ChunkedArray::with_chunk(name, IdxArr::from_data_default(Buffer::from(idx), None))
+    ChunkedArray::with_chunk(name, PlPrimitiveArray::from_vec(idx))
 }
 
 pub(crate) fn arg_sort_row_fmt(

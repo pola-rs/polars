@@ -172,7 +172,7 @@ macro_rules! arg_sort_fast_path {
                 (! $options.nulls_last && $ca.get(0).is_none())
                 {
                    return ChunkedArray::with_chunk($ca.name().clone(),
-                    IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize)).collect::<Vec<IdxSize>>()), None));
+                    PlPrimitiveArray::from_vec((0..($ca.len() as IdxSize)).collect::<Vec<IdxSize>>()));
                 }
                 // nulls are not at the right place
                 // continue w/ sorting
@@ -180,7 +180,7 @@ macro_rules! arg_sort_fast_path {
             } else {
                 // no nulls
                 return ChunkedArray::with_chunk($ca.name().clone(),
-                IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize )).collect::<Vec<IdxSize>>()), None));
+                PlPrimitiveArray::from_vec((0..($ca.len() as IdxSize )).collect::<Vec<IdxSize>>()));
             }
         }
     }}
@@ -216,7 +216,7 @@ where
         }
 
         ca.downcast_iter().for_each(|arr| {
-            let iter = arr.iter().filter_map(|v| v.copied());
+            let iter = arr.iter().flatten();
             vals.extend(iter);
         });
         let mut_slice = if options.nulls_last {
@@ -231,9 +231,9 @@ where
             vals.extend(std::iter::repeat_n(T::Native::default(), ca.null_count()));
         }
 
-        let arr = PrimitiveArray::new(
-            T::get_static_dtype().to_arrow(CompatLevel::newest()),
+        let arr = PlPrimitiveArray::new(
             vals.into(),
+            len,
             Some(create_validity(len, null_count, options.nulls_last)),
         );
         let mut new_ca = ChunkedArray::with_chunk(ca.name().clone(), arr);
@@ -254,9 +254,10 @@ where
     options.multithreaded &= RAYON.current_num_threads() > 1;
     arg_sort_fast_path!(ca, options);
     if ca.null_count() == 0 {
-        let iter = ca
-            .downcast_iter()
-            .map(|arr| arr.values().as_slice().iter().copied());
+        // The kernel reads the values as a slice, so a chunk that is not laid out flat is
+        // written out first — see `arrow_bridge::as_flat`.
+        let flat = ca.to_flat();
+        let iter = flat.data_views().map(|values| values.iter().copied());
         arg_sort::arg_sort_no_nulls(
             ca.name().clone(),
             iter,
@@ -265,9 +266,7 @@ where
             ca.is_sorted_flag(),
         )
     } else {
-        let iter = ca
-            .downcast_iter()
-            .map(|arr| arr.iter().map(|opt| opt.copied()));
+        let iter = ca.downcast_iter().map(|arr| arr.iter());
         arg_sort::arg_sort(
             ca.name().clone(),
             iter,
@@ -293,8 +292,11 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
 
     if no_nulls {
         let mut vals = Vec::with_capacity(ca.len());
-        for arr in ca.downcast_iter() {
-            vals.extend_trusted_len(arr.values().as_slice().iter().map(|v| {
+        // The values are read as a slice, so a chunk that is not laid out flat is written out
+        // first — see `arrow_bridge::as_flat`.
+        let flat = ca.to_flat();
+        for values in flat.data_views() {
+            vals.extend_trusted_len(values.iter().map(|v| {
                 let i = count;
                 count += 1;
                 (i, NonNull(*v))
@@ -304,10 +306,10 @@ fn arg_sort_multiple_numeric<T: PolarsNumericType>(
     } else {
         let mut vals = Vec::with_capacity(ca.len());
         for arr in ca.downcast_iter() {
-            vals.extend_trusted_len(arr.into_iter().map(|v| {
+            vals.extend_trusted_len(arr.iter().map(|v| {
                 let i = count;
                 count += 1;
-                (i, v.copied())
+                (i, v)
             }));
         }
         arg_sort_multiple_impl(vals, by, options)
@@ -409,9 +411,12 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         // We will sort by the views and reconstruct with sorted views. We leave the buffers as is.
         // We must rechunk to ensure that all views point into the proper buffers.
         let ca = self.rechunk();
-        let arr = ca.downcast_as_array().clone();
+        // The views are sorted and put back one per element, so a chunk that is not laid out flat
+        // is written out first — see `arrow_bridge`.
+        let arr = ca.downcast_as_array().to_flat();
+        let length = arr.len();
 
-        let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
+        let (views, buffers, validity) = arr.into_inner();
         let mut views = views.to_vec();
 
         let (partitioned_part, validity) = partition_nulls(&mut views, validity, options);
@@ -421,16 +426,9 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                 .tot_cmp(&b.get_slice_unchecked(&buffers))
         });
 
-        let array = unsafe {
-            BinaryViewArray::new_unchecked(
-                ArrowDataType::BinaryView,
-                views.into(),
-                buffers,
-                validity,
-                total_bytes_len,
-                total_buffer_len,
-            )
-        };
+        // SAFETY: the views are the ones this array was taken apart into, reordered.
+        let array =
+            unsafe { PlBinaryViewArray::new_unchecked(views.into(), buffers, length, validity) };
 
         let mut out = Self::with_chunk_like(self, array);
 
@@ -505,14 +503,14 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 
         let mut v: Vec<&[u8]> = Vec::with_capacity(self.len());
         for arr in self.downcast_iter() {
-            v.extend(arr.non_null_values_iter());
+            v.extend(arr.iter().flatten());
         }
 
         sort_impl_unstable(v.as_mut_slice(), options);
 
         let mut values = Vec::<u8>::with_capacity(self.get_values_size());
-        let mut offsets = Vec::<i64>::with_capacity(self.len() + 1);
-        let mut length_so_far = 0i64;
+        let mut offsets = Vec::<u64>::with_capacity(self.len() + 1);
+        let mut length_so_far = 0u64;
         offsets.push(length_so_far);
 
         let len = self.len();
@@ -521,28 +519,29 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
             (0, _) => {
                 for val in v {
                     values.extend_from_slice(val);
-                    length_so_far = values.len() as i64;
+                    length_so_far = values.len() as u64;
                     offsets.push(length_so_far);
                 }
                 // SAFETY: offsets are correctly created.
                 let arr = unsafe {
-                    BinaryArray::from_data_unchecked_default(offsets.into(), values.into(), None)
+                    PlBinaryArray::new_unchecked(values.into(), offsets.into(), len, None)
                 };
                 ChunkedArray::with_chunk(self.name().clone(), arr)
             },
             (_, true) => {
                 for val in v {
                     values.extend_from_slice(val);
-                    length_so_far = values.len() as i64;
+                    length_so_far = values.len() as u64;
                     offsets.push(length_so_far);
                 }
                 offsets.extend(std::iter::repeat_n(length_so_far, null_count));
 
                 // SAFETY: offsets are correctly created.
                 let arr = unsafe {
-                    BinaryArray::from_data_unchecked_default(
-                        offsets.into(),
+                    PlBinaryArray::new_unchecked(
                         values.into(),
+                        offsets.into(),
+                        len,
                         Some(create_validity(len, null_count, true)),
                     )
                 };
@@ -553,15 +552,16 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 
                 for val in v {
                     values.extend_from_slice(val);
-                    length_so_far = values.len() as i64;
+                    length_so_far = values.len() as u64;
                     offsets.push(length_so_far);
                 }
 
-                // SAFETY: we pass valid UTF-8.
+                // SAFETY: offsets are correctly created.
                 let arr = unsafe {
-                    BinaryArray::from_data_unchecked_default(
-                        offsets.into(),
+                    PlBinaryArray::new_unchecked(
                         values.into(),
+                        offsets.into(),
+                        len,
                         Some(create_validity(len, null_count, false)),
                     )
                 };
@@ -620,12 +620,16 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
             IdxCa::from_vec(self.name().clone(), idx)
         } else {
             // This branch (almost?) never gets called as the row-encoding also encodes nulls.
-            let (partitioned_part, validity) =
-                partition_nulls(&mut idx, arr.validity().cloned(), options);
+            let length = idx.len();
+            let (partitioned_part, validity) = partition_nulls(
+                &mut idx,
+                arr.validity().map(|v| v.to_flat_or_scalar()),
+                options,
+            );
             argsort(partitioned_part);
             IdxCa::with_chunk(
                 self.name().clone(),
-                IdxArr::from_data_default(idx.into(), validity),
+                PlPrimitiveArray::new(idx.into(), length, validity),
             )
         }
     }
@@ -760,10 +764,12 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             }
         }
 
+        let length = self.len();
         let mut ca = Self::from_chunk_iter(
             self.name().clone(),
-            Some(BooleanArray::from_data_default(
+            Some(PlBooleanArray::new(
                 bitmap.freeze(),
+                length,
                 validity.map(|v| v.freeze()),
             )),
         );

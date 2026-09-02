@@ -550,7 +550,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                             // SAFETY: Function contract.
                             unsafe { unreachable_unchecked() }
                         };
-                        let arrays = arr.values();
+                        let arrays = arr.fields();
                         debug_assert_eq!(builders.len(), arrays.len());
                         debug_assert_eq!(fields.len(), arrays.len());
                         for ((field, array), (builder, _)) in

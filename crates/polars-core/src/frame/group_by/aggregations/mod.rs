@@ -33,10 +33,9 @@ use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::MinMax;
 use rayon::prelude::*;
 
+use crate::chunked_array::arrow_bridge::{as_flat, chunk_to_arrow};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::from_iterator_par::collect_primitive_opt_par;
-#[cfg(feature = "object")]
-use crate::chunked_array::object::extension::create_extension;
 use crate::chunked_array::{arg_max_numeric, arg_min_numeric};
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
@@ -60,7 +59,7 @@ pub fn _use_rolling_kernels(
     groups: &GroupsSlice,
     overlapping: bool,
     monotonic: bool,
-    chunks: &[ArrayRef],
+    chunks: &[PlArrayRef],
 ) -> bool {
     match groups.len() {
         0 | 1 => false,
@@ -88,8 +87,10 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
 
     let arr = with_match_physical_numeric_polars_type!(phys_dtype, |$T| {
         let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
-        let arr = ca.downcast_as_array();
-        let values = arr.values().as_slice();
+        // The kernel reads the values as a slice, so a chunk that is not laid out flat is
+        // written out first — see `arrow_bridge::as_flat`.
+        let arr = as_flat(ca.downcast_as_array());
+        let values = arr.as_slice();
         let validity = arr.validity();
 
         if is_max_by {
@@ -99,7 +100,7 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
         }
     });
 
-    IdxCa::with_chunk(PlSmallStr::EMPTY, arr)
+    IdxCa::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr))
 }
 
 // Use an aggregation window that maintains the state
@@ -346,8 +347,8 @@ where
                     .cast_with_options(&K::get_static_dtype(), CastOptions::Overflowing)
                     .unwrap();
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
-                let arr = ca.downcast_iter().next().unwrap();
-                let values = arr.values().as_slice();
+                let arr = as_flat(ca.downcast_iter().next().unwrap());
+                let values = arr.as_slice();
                 let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
                     None => _rolling_apply_agg_window_no_nulls::<QuantileWindow<_>, _, _, _>(
@@ -372,7 +373,8 @@ where
                 };
                 // The rolling kernels works on the dtype, this is not yet the
                 // float output type we need.
-                ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, arr).into_series()
+                ChunkedArray::<K>::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr))
+                    .into_series()
             } else {
                 _agg_helper_slice::<K, _>(groups, |[first, len]| {
                     debug_assert!(first + len <= ca.len() as IdxSize);
@@ -512,19 +514,24 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
-                let arr = ca.downcast_iter().next().unwrap();
+                // The kernels below are the Arrow ones, so the chunk crosses over — see
+                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // the crossing, where the kernel only ever reads one repeated value.
+                let chunk = ca.downcast_iter().next().unwrap();
+                let arr = chunk_to_arrow(chunk);
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx::<T, _>(groups, |(first, idx)| {
                     debug_assert!(idx.len() <= arr.len());
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        arr.get(first as usize)
+                        // SAFETY: the group's index is in bounds of this array.
+                        chunk.get_unchecked(first as usize)
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                        take_agg_no_null_primitive_iter_unchecked(&arr, idx2usize(idx))
                             .reduce(|a, b| a.min_ignore_nan(b))
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                        take_agg_primitive_iter_unchecked(&arr, idx2usize(idx))
                             .reduce(|a, b| a.min_ignore_nan(b))
                     }
                 })
@@ -535,8 +542,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
+                    let arr = as_flat(self.downcast_iter().next().unwrap());
+                    let values = arr.as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
                         None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _, _>(
@@ -553,7 +560,7 @@ where
                             )
                         },
                     };
-                    Self::from(arr).into_series()
+                    Self::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr)).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -638,8 +645,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_as_array();
-                    let values = arr.values().as_slice();
+                    let arr = as_flat(self.downcast_as_array());
+                    let values = arr.as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let idx_arr = match arr.validity() {
                         None => {
@@ -659,7 +666,8 @@ where
                         },
                     };
 
-                    IdxCa::from(idx_arr).into_series()
+                    IdxCa::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&idx_arr))
+                        .into_series()
                 } else {
                     _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -697,19 +705,24 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
-                let arr = ca.downcast_iter().next().unwrap();
+                // The kernels below are the Arrow ones, so the chunk crosses over — see
+                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // the crossing, where the kernel only ever reads one repeated value.
+                let chunk = ca.downcast_iter().next().unwrap();
+                let arr = chunk_to_arrow(chunk);
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx::<T, _>(groups, |(first, idx)| {
                     debug_assert!(idx.len() <= arr.len());
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        arr.get(first as usize)
+                        // SAFETY: the group's index is in bounds of this array.
+                        chunk.get_unchecked(first as usize)
                     } else if no_nulls {
-                        take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                        take_agg_no_null_primitive_iter_unchecked(&arr, idx2usize(idx))
                             .reduce(|a, b| a.max_ignore_nan(b))
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                        take_agg_primitive_iter_unchecked(&arr, idx2usize(idx))
                             .reduce(|a, b| a.max_ignore_nan(b))
                     }
                 })
@@ -720,8 +733,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
+                    let arr = as_flat(self.downcast_iter().next().unwrap());
+                    let values = arr.as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
                         None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _, _>(
@@ -738,7 +751,7 @@ where
                             )
                         },
                     };
-                    Self::from(arr).into_series()
+                    Self::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr)).into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -825,8 +838,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
+                    let arr = as_flat(self.downcast_iter().next().unwrap());
+                    let values = arr.as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let idx_arr = match arr.validity() {
                         None => {
@@ -845,7 +858,8 @@ where
                             )
                         },
                     };
-                    IdxCa::from(idx_arr).into_series()
+                    IdxCa::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&idx_arr))
+                        .into_series()
                 } else {
                     _agg_helper_slice::<IdxType, _>(groups_slice, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -867,29 +881,36 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
-                let arr = ca.downcast_iter().next().unwrap();
+                // The kernels below are the Arrow ones, so the chunk crosses over — see
+                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // the crossing, where the kernel only ever reads one repeated value.
+                let chunk = ca.downcast_iter().next().unwrap();
+                let arr = chunk_to_arrow(chunk);
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx_no_null::<T, _>(groups, |(first, idx)| {
                     debug_assert!(idx.len() <= self.len());
                     if idx.is_empty() {
                         T::Native::zero()
                     } else if idx.len() == 1 {
-                        arr.get(first as usize).unwrap_or(T::Native::zero())
+                        // SAFETY: the group's index is in bounds of this array.
+                        chunk
+                            .get_unchecked(first as usize)
+                            .unwrap_or(T::Native::zero())
                     } else if no_nulls {
                         if T::Native::is_float() {
-                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                            take_agg_no_null_primitive_iter_unchecked(&arr, idx2usize(idx))
                                 .fold(KahanSum::default(), |k, x| k + x)
                                 .sum()
                         } else {
-                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                            take_agg_no_null_primitive_iter_unchecked(&arr, idx2usize(idx))
                                 .fold(T::Native::zero(), |a, b| a + b)
                         }
                     } else if T::Native::is_float() {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                        take_agg_primitive_iter_unchecked(&arr, idx2usize(idx))
                             .fold(KahanSum::default(), |k, x| k + x)
                             .sum()
                     } else {
-                        take_agg_primitive_iter_unchecked(arr, idx2usize(idx))
+                        take_agg_primitive_iter_unchecked(&arr, idx2usize(idx))
                             .fold(T::Native::zero(), |a, b| a + b)
                     }
                 })
@@ -900,8 +921,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
+                    let arr = as_flat(self.downcast_iter().next().unwrap());
+                    let values = arr.as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
                         None => _rolling_apply_agg_window_no_nulls::<
@@ -919,7 +940,7 @@ where
                             >(values, validity, offset_iter, None)
                         },
                     };
-                    Self::from(arr).into_series()
+                    Self::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr)).into_series()
                 } else {
                     _agg_helper_slice_no_null::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -952,7 +973,11 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
-                let arr = ca.downcast_iter().next().unwrap();
+                // The kernels below are the Arrow ones, so the chunk crosses over — see
+                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // the crossing, where the kernel only ever reads one repeated value.
+                let chunk = ca.downcast_iter().next().unwrap();
+                let arr = chunk_to_arrow(chunk);
                 let no_nulls = arr.null_count() == 0;
                 _agg_helper_idx::<T, _>(groups, |(first, idx)| {
                     // this can fail due to a bug in lazy code.
@@ -964,10 +989,13 @@ where
                     let out = if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        arr.get(first as usize).map(|sum| sum.to_f64().unwrap())
+                        // SAFETY: the group's index is in bounds of this array.
+                        chunk
+                            .get_unchecked(first as usize)
+                            .map(|sum| sum.to_f64().unwrap())
                     } else if no_nulls {
                         Some(
-                            take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                            take_agg_no_null_primitive_iter_unchecked(&arr, idx2usize(idx))
                                 .fold(KahanSum::default(), |a, b| {
                                     a + b.to_f64().unwrap_unchecked()
                                 })
@@ -976,7 +1004,7 @@ where
                         )
                     } else {
                         take_agg_primitive_iter_unchecked_count_nulls(
-                            arr,
+                            &arr,
                             idx2usize(idx),
                             KahanSum::default(),
                             |a, b| a + b.to_f64().unwrap_unchecked(),
@@ -993,8 +1021,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
+                    let arr = as_flat(self.downcast_iter().next().unwrap());
+                    let values = arr.as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
                         None => _rolling_apply_agg_window_no_nulls::<MeanWindow<_>, _, _, _>(
@@ -1011,7 +1039,8 @@ where
                             )
                         },
                     };
-                    ChunkedArray::<T>::from(arr).into_series()
+                    ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr))
+                        .into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -1037,7 +1066,11 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = ca.rechunk();
-                let arr = ca.downcast_iter().next().unwrap();
+                // The kernels below are the Arrow ones, so the chunk crosses over — see
+                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // the crossing, where the kernel only ever reads one repeated value.
+                let chunk = ca.downcast_iter().next().unwrap();
+                let arr = chunk_to_arrow(chunk);
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
                     debug_assert!(idx.len() <= ca.len());
@@ -1045,9 +1078,9 @@ where
                         return None;
                     }
                     let out = if no_nulls {
-                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                        take_var_no_null_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
                     } else {
-                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                        take_var_nulls_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
                     };
                     out.map(|flt| NumCast::from(flt).unwrap())
                 })
@@ -1058,8 +1091,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
+                    let arr = as_flat(self.downcast_iter().next().unwrap());
+                    let values = arr.as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
                         None => _rolling_apply_agg_window_no_nulls::<
@@ -1084,7 +1117,8 @@ where
                             Some(RollingFnParams::Var(RollingVarParams { ddof })),
                         ),
                     };
-                    ChunkedArray::<T>::from(arr).into_series()
+                    ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr))
+                        .into_series()
                 } else {
                     _agg_helper_slice::<T, _>(groups, |[first, len]| {
                         debug_assert!(len <= self.len() as IdxSize);
@@ -1114,7 +1148,11 @@ where
         let ca = &self.0.rechunk();
         match groups {
             GroupsType::Idx(groups) => {
-                let arr = ca.downcast_iter().next().unwrap();
+                // The kernels below are the Arrow ones, so the chunk crosses over — see
+                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // the crossing, where the kernel only ever reads one repeated value.
+                let chunk = ca.downcast_iter().next().unwrap();
+                let arr = chunk_to_arrow(chunk);
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
                     debug_assert!(idx.len() <= ca.len());
@@ -1122,9 +1160,9 @@ where
                         return None;
                     }
                     let out = if no_nulls {
-                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                        take_var_no_null_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
                     } else {
-                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                        take_var_nulls_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
                     };
                     out.map(|flt| NumCast::from(flt.sqrt()).unwrap())
                 })
@@ -1135,8 +1173,8 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = ca.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
+                    let arr = as_flat(ca.downcast_iter().next().unwrap());
+                    let values = arr.as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
                         None => _rolling_apply_agg_window_no_nulls::<
@@ -1162,7 +1200,8 @@ where
                         ),
                     };
 
-                    let mut ca = ChunkedArray::<T>::from(arr);
+                    let mut ca =
+                        ChunkedArray::<T>::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr));
                     ca.apply_mut(|v| v.powf(NumCast::from(0.5).unwrap()));
                     ca.into_series()
                 } else {
@@ -1240,7 +1279,11 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
-                let arr = ca.downcast_get(0).unwrap();
+                // The kernels below are the Arrow ones, so the chunk crosses over — see
+                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // the crossing, where the kernel only ever reads one repeated value.
+                let chunk = ca.downcast_get(0).unwrap();
+                let arr = chunk_to_arrow(chunk);
                 _agg_helper_idx::<Float64Type, _>(groups, |(first, idx)| {
                     // this can fail due to a bug in lazy code.
                     // here users can create filters in aggregations
@@ -1255,14 +1298,14 @@ where
                     } else {
                         match (self.has_nulls(), self.chunks.len()) {
                             (false, 1) => Some(
-                                take_agg_no_null_primitive_iter_unchecked(arr, idx2usize(idx))
+                                take_agg_no_null_primitive_iter_unchecked(&arr, idx2usize(idx))
                                     .fold(KahanSum::default(), |a, b| a + b.to_f64().unwrap())
                                     .sum()
                                     / idx.len() as f64,
                             ),
                             (_, 1) => {
                                 take_agg_primitive_iter_unchecked_count_nulls(
-                                    arr,
+                                    &arr,
                                     idx2usize(idx),
                                     KahanSum::default(),
                                     |a, b| a + b.to_f64().unwrap(),
@@ -1311,7 +1354,11 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
-                let arr = ca_self.downcast_iter().next().unwrap();
+                // The kernels below are the Arrow ones, so the chunk crosses over — see
+                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // the crossing, where the kernel only ever reads one repeated value.
+                let chunk = ca_self.downcast_iter().next().unwrap();
+                let arr = chunk_to_arrow(chunk);
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
                     debug_assert!(idx.len() <= arr.len());
@@ -1319,9 +1366,9 @@ where
                         return None;
                     }
                     if no_nulls {
-                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                        take_var_no_null_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
                     } else {
-                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                        take_var_nulls_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
                     }
                 })
             },
@@ -1361,7 +1408,11 @@ where
         match groups {
             GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
-                let arr = ca_self.downcast_iter().next().unwrap();
+                // The kernels below are the Arrow ones, so the chunk crosses over — see
+                // `arrow_bridge`. TODO(polars-array-scalar): a scalar chunk is written out by
+                // the crossing, where the kernel only ever reads one repeated value.
+                let chunk = ca_self.downcast_iter().next().unwrap();
+                let arr = chunk_to_arrow(chunk);
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
                     debug_assert!(idx.len() <= self.len());
@@ -1369,9 +1420,9 @@ where
                         return None;
                     }
                     let out = if no_nulls {
-                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                        take_var_no_null_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
                     } else {
-                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                        take_var_nulls_primitive_iter_unchecked(&arr, idx2usize(idx), ddof)
                     };
                     out.map(|v| v.sqrt())
                 })

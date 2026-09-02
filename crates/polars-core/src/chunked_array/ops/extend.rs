@@ -1,11 +1,16 @@
 use arrow::Either;
-use arrow::compute::concatenate::concatenate;
+use polars_array::concatenate::concatenate;
 
+use crate::chunked_array::arrow_bridge::{as_flat, chunk_to_arrow};
 use crate::prelude::append::update_sorted_flag_before_append;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
-fn extend_immutable(immutable: &dyn Array, chunks: &mut Vec<ArrayRef>, other_chunks: &[ArrayRef]) {
+fn extend_immutable(
+    immutable: &dyn PlArray,
+    chunks: &mut Vec<PlArrayRef>,
+    other_chunks: &[PlArrayRef],
+) {
     let out = if chunks.len() == 1 {
         concatenate(&[immutable, &*other_chunks[0]]).unwrap()
     } else {
@@ -50,11 +55,10 @@ where
         // This is only possible if the reference count of the array and its buffers are 1
         // So the logic below is needed to keep the reference count 1 if it is
 
-        // First we must obtain an owned version of the array
-        let arr = self.downcast_iter().next().unwrap();
-
-        // increments 1
-        let arr = arr.clone();
+        // First we must obtain an owned version of the array. The values are written into in
+        // place where this is the only reference to them, which asks for the Arrow array that
+        // shares them — see `arrow_bridge`.
+        let arr = chunk_to_arrow(self.downcast_iter().next().unwrap());
 
         // now we drop our owned ArrayRefs so that
         // decrements 1
@@ -65,21 +69,27 @@ where
         use Either::*;
 
         if arr.values().is_sliced() {
-            extend_immutable(&arr, &mut self.chunks, &other.chunks);
+            let immutable: T::Array = ToArrow::from_arrow(&arr);
+            extend_immutable(&immutable, &mut self.chunks, &other.chunks);
         } else {
             match arr.into_mut() {
                 Left(immutable) => {
+                    let immutable: T::Array = ToArrow::from_arrow(&immutable);
                     extend_immutable(&immutable, &mut self.chunks, &other.chunks);
                 },
                 Right(mut mutable) => {
                     for arr in other.downcast_iter() {
                         match arr.null_count() {
-                            0 => mutable.extend_from_slice(arr.values()),
-                            _ => mutable.extend_trusted_len(arr.into_iter()),
+                            0 => {
+                                let flat = as_flat(arr);
+                                mutable.extend_from_slice(flat.as_slice())
+                            },
+                            _ => mutable.extend_trusted_len(arr.iter()),
                         }
                     }
                     let arr: PrimitiveArray<T::Native> = mutable.into();
-                    self.chunks.push(Box::new(arr) as ArrayRef)
+                    self.chunks
+                        .push(<T::Array as ToArrow>::from_arrow(&arr).into_boxed())
                 },
             }
         }
@@ -122,10 +132,9 @@ impl BooleanChunked {
             self.rechunk_mut();
             return Ok(());
         }
-        let arr = self.downcast_iter().next().unwrap();
-
-        // increments 1
-        let arr = arr.clone();
+        // The bits are written into in place where this is the only reference to them, which
+        // asks for the Arrow array that shares them — see `arrow_bridge`.
+        let arr = chunk_to_arrow(self.downcast_iter().next().unwrap());
 
         // now we drop our owned ArrayRefs so that
         // decrements 1
@@ -137,14 +146,16 @@ impl BooleanChunked {
 
         match arr.into_mut() {
             Left(immutable) => {
+                let immutable: PlBooleanArray = ToArrow::from_arrow(&immutable);
                 extend_immutable(&immutable, &mut self.chunks, &other.chunks);
             },
             Right(mut mutable) => {
                 for arr in other.downcast_iter() {
-                    mutable.extend_trusted_len(arr.into_iter())
+                    mutable.extend_trusted_len(arr.iter())
                 }
                 let arr: BooleanArray = mutable.into();
-                self.chunks.push(Box::new(arr) as ArrayRef)
+                self.chunks
+                    .push(<PlBooleanArray as ToArrow>::from_arrow(&arr).into_boxed())
             },
         }
         self.compute_len();
@@ -220,7 +231,10 @@ mod test {
         ca.extend(&to_append)?;
         let location2 = ca.to_flat().cont_slice().unwrap().as_ptr() as usize;
         assert_ne!(location, location2);
-        assert_eq!(ca.to_flat().cont_slice().unwrap(), [1, 2, 3, 4, 5, 6, 4, 5, 6]);
+        assert_eq!(
+            ca.to_flat().cont_slice().unwrap(),
+            [1, 2, 3, 4, 5, 6, 4, 5, 6]
+        );
 
         Ok(())
     }

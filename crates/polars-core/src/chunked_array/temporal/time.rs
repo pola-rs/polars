@@ -62,10 +62,7 @@ impl TimeChunked {
         unsafe {
             self.physical()
                 .downcast_iter()
-                .flat_map(|iter| {
-                    iter.into_iter()
-                        .map(|opt_v| opt_v.copied().map(time64ns_to_time))
-                })
+                .flat_map(|iter| iter.into_iter().map(|opt_v| opt_v.map(time64ns_to_time)))
                 .trust_my_length(self.len())
         }
     }

@@ -8,6 +8,7 @@ use arrow::offset::OffsetsBuffer;
 ))]
 use arrow::temporal_conversions::*;
 use arrow::types::months_days_ns;
+use polars_array::arrow::{export, import};
 use polars_compute::cast::cast_unchecked as cast;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::dec128_fits;
@@ -189,17 +190,23 @@ impl Series {
         md: Option<&Metadata>,
     ) -> PolarsResult<Self> {
         match dtype {
-            ArrowDataType::Utf8View => Ok(StringChunked::from_arrow_chunks(name, chunks).into_series()),
+            ArrowDataType::Utf8View => {
+                Ok(StringChunked::from_arrow_chunks(name, chunks).into_series())
+            },
             ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => {
                 let chunks =
                     cast_chunks(&chunks, &DataType::String, CastOptions::NonStrict).unwrap();
                 Ok(StringChunked::from_arrow_chunks(name, chunks).into_series())
             },
-            ArrowDataType::BinaryView => Ok(BinaryChunked::from_arrow_chunks(name, chunks).into_series()),
+            ArrowDataType::BinaryView => {
+                Ok(BinaryChunked::from_arrow_chunks(name, chunks).into_series())
+            },
             ArrowDataType::LargeBinary => {
                 if let Some(md) = md {
                     if md.maintain_type() {
-                        return Ok(BinaryOffsetChunked::from_arrow_chunks(name, chunks).into_series());
+                        return Ok(
+                            BinaryOffsetChunked::from_arrow_chunks(name, chunks).into_series()
+                        );
                     }
                 }
                 let chunks =
@@ -230,13 +237,21 @@ impl Series {
                     )
                 }
             },
-            ArrowDataType::Boolean => Ok(BooleanChunked::from_arrow_chunks(name, chunks).into_series()),
+            ArrowDataType::Boolean => {
+                Ok(BooleanChunked::from_arrow_chunks(name, chunks).into_series())
+            },
             #[cfg(feature = "dtype-u8")]
             ArrowDataType::UInt8 => Ok(UInt8Chunked::from_arrow_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-u16")]
-            ArrowDataType::UInt16 => Ok(UInt16Chunked::from_arrow_chunks(name, chunks).into_series()),
-            ArrowDataType::UInt32 => Ok(UInt32Chunked::from_arrow_chunks(name, chunks).into_series()),
-            ArrowDataType::UInt64 => Ok(UInt64Chunked::from_arrow_chunks(name, chunks).into_series()),
+            ArrowDataType::UInt16 => {
+                Ok(UInt16Chunked::from_arrow_chunks(name, chunks).into_series())
+            },
+            ArrowDataType::UInt32 => {
+                Ok(UInt32Chunked::from_arrow_chunks(name, chunks).into_series())
+            },
+            ArrowDataType::UInt64 => {
+                Ok(UInt64Chunked::from_arrow_chunks(name, chunks).into_series())
+            },
             ArrowDataType::UInt128 => feature_gated!(
                 "dtype-u128",
                 Ok(UInt128Chunked::from_arrow_chunks(name, chunks).into_series())
@@ -257,8 +272,12 @@ impl Series {
                     cast_chunks(&chunks, &DataType::Float16, CastOptions::NonStrict).unwrap();
                 Ok(Float16Chunked::from_arrow_chunks(name, chunks).into_series())
             },
-            ArrowDataType::Float32 => Ok(Float32Chunked::from_arrow_chunks(name, chunks).into_series()),
-            ArrowDataType::Float64 => Ok(Float64Chunked::from_arrow_chunks(name, chunks).into_series()),
+            ArrowDataType::Float32 => {
+                Ok(Float32Chunked::from_arrow_chunks(name, chunks).into_series())
+            },
+            ArrowDataType::Float64 => {
+                Ok(Float64Chunked::from_arrow_chunks(name, chunks).into_series())
+            },
             #[cfg(feature = "dtype-date")]
             ArrowDataType::Date32 => {
                 let chunks =
@@ -412,7 +431,11 @@ impl Series {
                                 .downcast_mut::<PrimitiveArray<i256>>()
                                 .unwrap(),
                         );
-                        let arr_128: PrimitiveArray<i128> = arr.iter().map(|opt_v| {
+                        // The Arrow arrays' own collect, the trait of `polars-array` being the
+                        // one that is in scope.
+                        let arr_128: PrimitiveArray<i128> =
+                            arrow::array::ArrayCollectIterExt::try_collect_arr_trusted(
+                                arr.iter().map(|opt_v| {
                             if let Some(v) = opt_v {
                                 let smaller: Option<i128> = (*v).try_into().ok();
                                 let smaller = smaller.filter(|v| dec128_fits(*v, *precision));
@@ -422,7 +445,8 @@ impl Series {
                             } else {
                                 Ok(None)
                             }
-                        }).try_collect_arr_trusted()?;
+                        }),
+                            )?;
 
                         *chunk = arr_128.to(ArrowDataType::Int128).to_boxed();
                     }
@@ -648,7 +672,14 @@ unsafe fn to_physical_and_dtype(
                     Series::_try_from_arrow_unchecked_with_md(PlSmallStr::EMPTY, arrays, &dt, md)
                 }
                 .unwrap();
-                (s.chunks().clone(), s.dtype().clone())
+                // The chunks cross back into the Arrow arrays this function works with — see
+                // `arrow_bridge`.
+                let chunks = s
+                    .chunks()
+                    .iter()
+                    .map(|arr| export::to_arrow(&**arr))
+                    .collect();
+                (chunks, s.dtype().clone())
             })
         },
         dt @ ArrowDataType::Extension(_) => {
@@ -658,7 +689,14 @@ unsafe fn to_physical_and_dtype(
                     Series::_try_from_arrow_unchecked_with_md(PlSmallStr::EMPTY, arrays, &dt, md)
                 }
                 .unwrap();
-                (s.chunks().clone(), s.dtype().clone())
+                // The chunks cross back into the Arrow arrays this function works with — see
+                // `arrow_bridge`.
+                let chunks = s
+                    .chunks()
+                    .iter()
+                    .map(|arr| export::to_arrow(&**arr))
+                    .collect();
+                (chunks, s.dtype().clone())
             })
         },
         ArrowDataType::List(field) => {
@@ -787,9 +825,14 @@ unsafe fn to_physical_and_dtype(
         | ArrowDataType::Date64
         | ArrowDataType::Map(_, _)) => {
             let dt = dt.clone();
-            let mut s = Series::_try_from_arrow_unchecked(PlSmallStr::EMPTY, arrays, &dt).unwrap();
+            let s = Series::_try_from_arrow_unchecked(PlSmallStr::EMPTY, arrays, &dt).unwrap();
             let dtype = s.dtype().clone();
-            (std::mem::take(s.chunks_mut()), dtype)
+            let chunks = s
+                .chunks()
+                .iter()
+                .map(|arr| export::to_arrow(&**arr))
+                .collect();
+            (chunks, dtype)
         },
         dt => {
             let dtype = DataType::from_arrow(dt, md);
@@ -881,7 +924,7 @@ unsafe fn import_arrow_dictionary_array(
 
         values.take(&IdxCa::from_chunks_and_dtype(
             PlSmallStr::EMPTY,
-            vec![keys.to_boxed()],
+            vec![import::from_arrow(&keys)],
             IDX_DTYPE,
         ))
     }
@@ -1077,4 +1120,3 @@ unsafe impl IntoSeries for Series {
         self
     }
 }
-

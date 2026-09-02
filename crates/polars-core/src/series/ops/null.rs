@@ -1,5 +1,4 @@
 use arrow::bitmap::Bitmap;
-use arrow::offset::OffsetsBuffer;
 use polars_buffer::Buffer;
 
 #[cfg(feature = "object")]
@@ -62,13 +61,16 @@ impl Series {
             DataType::BinaryOffset => {
                 let length = size;
 
-                let offsets = vec![0; size + 1];
-                let array = BinaryArray::<i64>::new(
-                    dtype.to_arrow(CompatLevel::oldest()),
-                    unsafe { OffsetsBuffer::new_unchecked(Buffer::from(offsets)) },
-                    Buffer::default(),
-                    Some(Bitmap::new_zeroed(size)),
-                );
+                let offsets = vec![0u64; size + 1];
+                // SAFETY: the offsets are all zero, so every element is the empty byte string.
+                let array = unsafe {
+                    PlBinaryArray::new_unchecked(
+                        Buffer::default(),
+                        Buffer::from(offsets),
+                        size,
+                        Some(Bitmap::new_zeroed(size)),
+                    )
+                };
 
                 unsafe {
                     BinaryOffsetChunked::new_with_dims(

@@ -1,8 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use arrow::bitmap::utils::set_bit_unchecked;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::array::SlicedArray;
 
+use crate::chunked_array::arrow_bridge::as_flat;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
@@ -35,7 +35,9 @@ where
 {
     fn explode_by_offsets(&self, offsets: &[i64], options: ExplodeOptions) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);
-        let arr = self.downcast_iter().next().unwrap();
+        // The values are read as one run, so a chunk that is not laid out flat is written out
+        // first — see `arrow_bridge::as_flat`.
+        let arr = as_flat(self.downcast_iter().next().unwrap());
 
         // make sure that we don't look beyond the sliced array
         let values = &arr.values().as_slice()[..offsets[offsets.len() - 1] as usize];
@@ -204,7 +206,7 @@ impl ExplodeByOffsets for BooleanChunked {
             let o = o as usize;
             if options.empty_as_null && o == last {
                 if start != last {
-                    let vals = arr.slice_typed(start, last - start);
+                    let vals = arr.clone().sliced(start, last - start);
 
                     if vals.null_count() == 0 {
                         builder
@@ -219,7 +221,7 @@ impl ExplodeByOffsets for BooleanChunked {
             }
             last = o;
         }
-        let vals = arr.slice_typed(start, last - start);
+        let vals = arr.clone().sliced(start, last - start);
         if vals.null_count() == 0 {
             builder
                 .array_builder

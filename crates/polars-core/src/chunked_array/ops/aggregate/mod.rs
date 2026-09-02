@@ -19,6 +19,7 @@ pub use var::*;
 use super::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
+use crate::chunked_array::arrow_bridge::{as_flat, chunk_to_arrow};
 use crate::chunked_array::{ChunkedArray, arg_max_binary, arg_min_binary};
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
@@ -126,14 +127,19 @@ where
 {
     fn sum(&self) -> Option<T::Native> {
         Some(
+            // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
+            // TODO(polars-array-scalar): the sum of a scalar chunk is its value times its length.
             self.downcast_iter()
-                .map(sum)
+                .map(|arr| sum(&chunk_to_arrow(arr)))
                 .fold(T::Native::zero(), |acc, v| acc + v),
         )
     }
 
     fn _sum_as_f64(&self) -> f64 {
-        self.downcast_iter().map(float_sum::sum_arr_as_f64).sum()
+        // TODO(polars-array-scalar): the sum of a scalar chunk is its value times its length.
+        self.downcast_iter()
+            .map(|arr| float_sum::sum_arr_as_f64(&chunk_to_arrow(arr)))
+            .sum()
     }
 
     fn min(&self) -> Option<T::Native> {
@@ -154,7 +160,8 @@ where
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(MinMaxKernel::min_ignore_nan_kernel)
+                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
+                .filter_map(|arr| MinMaxKernel::min_ignore_nan_kernel(&chunk_to_arrow(arr)))
                 .reduce(MinMax::min_ignore_nan),
         }
     }
@@ -186,7 +193,8 @@ where
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(MinMaxKernel::max_ignore_nan_kernel)
+                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
+                .filter_map(|arr| MinMaxKernel::max_ignore_nan_kernel(&chunk_to_arrow(arr)))
                 .reduce(MinMax::max_ignore_nan),
         }
     }
@@ -227,7 +235,8 @@ where
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(MinMaxKernel::min_max_ignore_nan_kernel)
+                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
+                .filter_map(|arr| MinMaxKernel::min_max_ignore_nan_kernel(&chunk_to_arrow(arr)))
                 .reduce(|(min1, max1), (min2, max2)| {
                     (
                         MinMax::min_ignore_nan(min1, min2),
@@ -252,12 +261,16 @@ impl BooleanChunked {
         Some(if self.is_empty() {
             0
         } else {
+            // TODO(polars-array-scalar): the sum of a scalar chunk is its value times its length.
             self.downcast_iter()
-                .map(|arr| match arr.validity() {
-                    Some(validity) => {
-                        (arr.len() - (validity & arr.values()).unset_bits()) as IdxSize
-                    },
-                    None => (arr.len() - arr.values().unset_bits()) as IdxSize,
+                .map(|arr| {
+                    let arr = as_flat(arr);
+                    match arr.validity() {
+                        Some(validity) => {
+                            (arr.len() - (validity & arr.values()).unset_bits()) as IdxSize
+                        },
+                        None => (arr.len() - arr.values().unset_bits()) as IdxSize,
+                    }
                 })
                 .sum()
         })
@@ -309,7 +322,7 @@ where
             self.sum().map(Into::into).unwrap_or_else(Zero::zero)
         } else {
             self.downcast_iter()
-                .map(wrapping_sum_arr_upcast)
+                .map(|arr| wrapping_sum_arr_upcast(&chunk_to_arrow(arr)))
                 .fold(Zero::zero(), |a, b| a.wrapping_add(&b))
         };
         Scalar::new(sum_output_dtype(&T::get_static_dtype()), v.into())
@@ -329,8 +342,8 @@ where
         let mut prod = T::Native::one();
 
         for arr in self.downcast_iter() {
-            for v in arr.into_iter().flatten() {
-                prod = prod * *v
+            for v in arr.iter().flatten() {
+                prod = prod * v
             }
         }
         Scalar::new(T::get_static_dtype(), prod.into())
@@ -514,7 +527,8 @@ impl StringChunked {
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(MinMaxKernel::max_ignore_nan_kernel)
+                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
+                .filter_map(|arr| arr.iter().flatten().reduce(MinMax::max_ignore_nan))
                 .reduce(MinMax::max_ignore_nan),
         }
     }
@@ -537,7 +551,8 @@ impl StringChunked {
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(MinMaxKernel::min_ignore_nan_kernel)
+                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
+                .filter_map(|arr| arr.iter().flatten().reduce(MinMax::min_ignore_nan))
                 .reduce(MinMax::min_ignore_nan),
         }
     }
@@ -648,7 +663,8 @@ impl BinaryChunked {
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(MinMaxKernel::max_ignore_nan_kernel)
+                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
+                .filter_map(|arr| arr.iter().flatten().reduce(MinMax::max_ignore_nan))
                 .reduce(MinMax::max_ignore_nan),
         }
     }
@@ -672,7 +688,8 @@ impl BinaryChunked {
             },
             IsSorted::Not => self
                 .downcast_iter()
-                .filter_map(MinMaxKernel::min_ignore_nan_kernel)
+                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
+                .filter_map(|arr| arr.iter().flatten().reduce(MinMax::min_ignore_nan))
                 .reduce(MinMax::min_ignore_nan),
         }
     }

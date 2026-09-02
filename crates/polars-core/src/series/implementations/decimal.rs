@@ -62,22 +62,14 @@ impl SeriesWrap<DecimalChunked> {
                 let s = unsafe {
                     Series::from_chunks_and_dtype_unchecked(
                         PlSmallStr::EMPTY,
-                        vec![arr.values().clone()],
+                        vec![arr.values().to_boxed()],
                         dtype,
                     )
                 }
                 .into_decimal(precision, scale)
                 .unwrap();
                 let new_values = s.array_ref(0).clone();
-                let dtype = DataType::Int128;
-                let arrow_dtype =
-                    ListArray::<i64>::default_datatype(dtype.to_arrow(CompatLevel::newest()));
-                let new_arr = ListArray::<i64>::new(
-                    arrow_dtype,
-                    arr.offsets().clone(),
-                    new_values,
-                    arr.validity().cloned(),
-                );
+                let new_arr = crate::chunked_array::list::list_with_values(arr, new_values);
                 unsafe {
                     ListChunked::from_chunks_and_dtype_unchecked(
                         agg_s.name().clone(),

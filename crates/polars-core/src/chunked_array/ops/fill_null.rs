@@ -153,6 +153,7 @@ impl Series {
 fn fill_forward_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsDataType,
+    T::Array: ZeroableArrayFromIter,
     T::ZeroablePhysical<'a>: Copy,
 {
     // Compute values.
@@ -172,16 +173,14 @@ where
     bm.extend_constant(ca.len() - num_start_nulls, true);
     ChunkedArray::from_chunk_iter_like(
         ca,
-        [
-            T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(CompatLevel::newest()))
-                .with_validity_typed(bm.into_opt_validity()),
-        ],
+        [T::Array::arr_from_zeroable_iter(values).with_validity_typed(bm.into_opt_validity())],
     )
 }
 
 fn fill_backward_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsDataType,
+    T::Array: ZeroableArrayFromIter,
     T::ZeroablePhysical<'a>: Copy,
 {
     // Compute values.
@@ -205,10 +204,7 @@ where
     bm.extend_constant(num_end_nulls, false);
     ChunkedArray::from_chunk_iter_like(
         ca,
-        [
-            T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(CompatLevel::newest()))
-                .with_validity_typed(bm.into_opt_validity()),
-        ],
+        [T::Array::arr_from_zeroable_iter(values).with_validity_typed(bm.into_opt_validity())],
     )
 }
 
@@ -251,9 +247,9 @@ fn fill_with_gather<F: Fn(&Bitmap) -> Vec<IdxSize>>(
 ) -> PolarsResult<Series> {
     let s = s.rechunk();
     let arr = s.chunks()[0].clone();
-    let validity = arr.validity().expect("nulls");
+    let validity = arr.validity().expect("nulls").to_flat();
 
-    let idx = bits_to_idx(validity);
+    let idx = bits_to_idx(&validity);
 
     Ok(unsafe { s.take_slice_unchecked(&idx) })
 }

@@ -42,7 +42,9 @@ impl ListBuilderTrait for ListNullChunkedBuilder {
         unsafe {
             ListChunked::from_chunks_and_dtype_unchecked(
                 self.name.clone(),
-                vec![self.builder.as_box()],
+                vec![polars_array::arrow::import::from_arrow(
+                    &*self.builder.as_box(),
+                )],
                 DataType::List(Box::new(DataType::Null)),
             )
         }

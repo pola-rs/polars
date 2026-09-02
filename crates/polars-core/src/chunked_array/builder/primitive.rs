@@ -26,7 +26,8 @@ where
     }
 
     fn finish(mut self) -> ChunkedArray<T> {
-        let arr = self.array_builder.as_box();
+        // The builder is the Arrow one, so the array crosses over — see `arrow_bridge`.
+        let arr = polars_array::arrow::import::from_arrow(&*self.array_builder.as_box());
         ChunkedArray::new_with_compute_len(Arc::new(self.field), vec![arr])
     }
 

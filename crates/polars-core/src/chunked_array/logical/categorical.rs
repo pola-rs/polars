@@ -213,7 +213,9 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             values_dtype,
             self.is_enum(),
         );
-        unsafe { DictionaryArray::try_new_unchecked(dtype, keys.clone(), values).unwrap() }
+        // The dictionary is an Arrow array, which the keys cross into — see `arrow_bridge`.
+        let keys = crate::chunked_array::arrow_bridge::chunk_to_arrow(keys);
+        unsafe { DictionaryArray::try_new_unchecked(dtype, keys, values).unwrap() }
     }
 }
 

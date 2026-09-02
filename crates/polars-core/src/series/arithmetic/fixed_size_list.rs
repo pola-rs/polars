@@ -79,6 +79,8 @@ mod inner {
 
     use super::super::list_utils::{BinaryOpApplyType, Broadcast, NumericOp};
     use super::super::*;
+    use crate::chunked_array::array::array_values;
+    use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 
     /// Utility to perform a binary operation between the primitive values of
     /// 2 columns, where at least one of the columns is a `ArrayChunked` type.
@@ -186,16 +188,23 @@ mod inner {
             //
 
             fn push_array_validities_recursive(s: &Series, out: &mut Vec<Option<Bitmap>>) {
-                let mut opt_arr = s.array().ok().map(|x| {
+                let mut opt_arr: Option<PlArrayRef> = s.array().ok().map(|x| {
                     assert_eq!(x.chunks().len(), 1);
-                    x.downcast_get(0).unwrap()
+                    x.chunks()[0].clone()
                 });
 
                 while let Some(arr) = opt_arr {
+                    let arr = arr.as_any().downcast_ref::<PlFixedSizeListArray>().unwrap();
                     // Push none if all-valid, this can potentially save some `repeat_bitmap()`
                     // materializations on broadcasting paths.
-                    out.push(arr.validity().filter(|x| x.unset_bits() > 0).cloned());
-                    opt_arr = arr.values().as_any().downcast_ref::<FixedSizeListArray>();
+                    out.push(
+                        arr.validity()
+                            .filter(|x| x.unset_bits() > 0)
+                            .map(|x| x.to_flat()),
+                    );
+                    let values = array_values(arr);
+                    opt_arr =
+                        matches!(values.array_type(), PlArrayType::FixedSizeList).then_some(values);
                 }
             }
 
@@ -255,6 +264,7 @@ mod inner {
 
                         return Ok(finish_array_to_array_no_broadcast(
                             lhs.name().clone(),
+                            dtype_lhs.cast_leaf(output_primitive_dtype.clone()),
                             &output_widths,
                             output_len,
                             &array_validities_lhs,
@@ -444,13 +454,13 @@ mod inner {
             let mut arr_lhs = {
                 let ca: &ChunkedArray<T> = prim_s_lhs.as_ref().as_ref();
                 assert_eq!(ca.chunks().len(), 1);
-                ca.downcast_get(0).unwrap().clone()
+                chunk_to_arrow(ca.downcast_get(0).unwrap())
             };
 
             let mut arr_rhs = {
                 let ca: &ChunkedArray<T> = prim_s_rhs.as_ref().as_ref();
                 assert_eq!(ca.chunks().len(), 1);
-                ca.downcast_get(0).unwrap().clone()
+                chunk_to_arrow(ca.downcast_get(0).unwrap())
             };
 
             self.op.0.prepare_numeric_op_side_validities::<T>(
@@ -503,11 +513,12 @@ mod inner {
 
                     finish_array_to_array_no_broadcast(
                         std::mem::take(&mut self.output_name),
+                        self.output_dtype.clone(),
                         &self.output_widths,
                         self.output_len,
                         &validities_lhs,
                         &validities_rhs,
-                        Box::new(arr),
+                        <T::Array as ToArrow>::from_arrow(&arr).into_boxed(),
                     )
                 },
                 (BinaryOpApplyType::ListToPrimitive, Broadcast::Left) => {
@@ -554,10 +565,11 @@ mod inner {
 
                     finish_with_level_validities(
                         std::mem::take(&mut self.output_name),
+                        self.output_dtype.clone(),
                         &self.output_widths,
                         self.output_len,
                         &validities,
-                        Box::new(arr),
+                        <T::Array as ToArrow>::from_arrow(&arr).into_boxed(),
                     )
                 },
                 (BinaryOpApplyType::ListToPrimitive, Broadcast::NoBroadcast) => {
@@ -596,29 +608,34 @@ mod inner {
 
                     finish_with_level_validities(
                         std::mem::take(&mut self.output_name),
+                        self.output_dtype.clone(),
                         &self.output_widths,
                         self.output_len,
                         &validities,
-                        Box::new(arr),
+                        <T::Array as ToArrow>::from_arrow(&arr).into_boxed(),
                     )
                 },
                 (BinaryOpApplyType::ListToPrimitive, Broadcast::Right) => {
                     assert_eq!(arr_rhs.len(), 1);
 
-                    let Some(r) = (unsafe { arr_rhs.get_unchecked(0) }) else {
+                    let Some(r) =
+                        (unsafe { (!arr_rhs.is_null(0)).then(|| arr_rhs.value_unchecked(0)) })
+                    else {
                         // RHS is single primitive NULL, create the result by setting the leaf validity to all-NULL.
                         let (_, validities) = std::mem::take(&mut self.data_lhs);
                         return finish_with_level_validities(
                             std::mem::take(&mut self.output_name),
+                            self.output_dtype.clone(),
                             &self.output_widths,
                             self.output_len,
                             &validities,
-                            Box::new(
-                                arr_lhs.clone().with_validity(Some(Bitmap::new_with_value(
+                            <T::Array as ToArrow>::from_arrow(
+                                &arr_lhs.clone().with_validity(Some(Bitmap::new_with_value(
                                     false,
                                     arr_lhs.len(),
                                 ))),
-                            ),
+                            )
+                            .into_boxed(),
                         );
                     };
 
@@ -631,10 +648,11 @@ mod inner {
 
                     finish_with_level_validities(
                         std::mem::take(&mut self.output_name),
+                        self.output_dtype.clone(),
                         &self.output_widths,
                         self.output_len,
                         &validities,
-                        Box::new(arr),
+                        <T::Array as ToArrow>::from_arrow(&arr).into_boxed(),
                     )
                 },
                 v @ (BinaryOpApplyType::ListToList, Broadcast::NoBroadcast)
@@ -656,11 +674,12 @@ mod inner {
     #[inline(never)]
     fn finish_array_to_array_no_broadcast(
         output_name: PlSmallStr,
+        output_dtype: DataType,
         widths: &[usize],
         outer_len: usize,
         validities_lhs: &[Option<Bitmap>],
         validities_rhs: &[Option<Bitmap>],
-        output_leaf_array: Box<dyn Array>,
+        output_leaf_array: PlArrayRef,
     ) -> ArrayChunked {
         assert_eq!(
             [widths.len(), validities_lhs.len(), validities_rhs.len()],
@@ -682,10 +701,18 @@ mod inner {
         };
 
         for (width, opt_validity) in iter {
-            out = builder.build_level(*width, opt_validity, Box::new(out))
+            out = builder.build_level(*width, opt_validity, out.into_boxed())
         }
 
-        ArrayChunked::with_chunk(output_name, out)
+        // The chunk carries no data type of its own — the output dtype is what the
+        // `ChunkedArray` gets.
+        unsafe {
+            ArrayChunked::from_chunks_and_dtype_unchecked(
+                output_name,
+                vec![out.into_boxed()],
+                output_dtype,
+            )
+        }
     }
 
     /// Used when we are operating between array<->primitive, as in that case we only need the
@@ -693,10 +720,11 @@ mod inner {
     #[inline(never)]
     fn finish_with_level_validities(
         output_name: PlSmallStr,
+        output_dtype: DataType,
         widths: &[usize],
         outer_len: usize,
         validities: &[Option<Bitmap>],
-        output_leaf_array: Box<dyn Array>,
+        output_leaf_array: PlArrayRef,
     ) -> ArrayChunked {
         assert_eq!(widths.len(), validities.len());
 
@@ -712,10 +740,18 @@ mod inner {
         };
 
         for (width, opt_validity) in iter {
-            out = builder.build_level(*width, opt_validity, Box::new(out))
+            out = builder.build_level(*width, opt_validity, out.into_boxed())
         }
 
-        ArrayChunked::with_chunk(output_name, out)
+        // The chunk carries no data type of its own — the output dtype is what the
+        // `ChunkedArray` gets.
+        unsafe {
+            ArrayChunked::from_chunks_and_dtype_unchecked(
+                output_name,
+                vec![out.into_boxed()],
+                output_dtype,
+            )
+        }
     }
 
     /// ```text
@@ -800,26 +836,14 @@ mod inner {
             &mut self,
             width: usize,
             opt_validity: Option<Bitmap>,
-            inner_array: Box<dyn Array>,
-        ) -> FixedSizeListArray {
+            inner_array: PlArrayRef,
+        ) -> PlFixedSizeListArray {
             let level_height = self.heights.next_back().unwrap();
             assert_eq!(inner_array.len(), level_height * width);
 
-            FixedSizeListArray::new(
-                ArrowDataType::FixedSizeList(
-                    Box::new(ArrowField::new(
-                        LIST_VALUES_NAME,
-                        inner_array.dtype().clone(),
-                        // is_nullable, we always set true otherwise the Eq kernels would panic
-                        // when they assert == on the arrow `Field`
-                        true,
-                    )),
-                    width,
-                ),
-                level_height,
-                inner_array,
-                opt_validity,
-            )
+            // SAFETY: the values hold `width` values for every element, just asserted.
+            unsafe { PlFixedSizeListArray::new_unchecked(inner_array, width, level_height, None) }
+                .with_validity(opt_validity)
         }
     }
 }

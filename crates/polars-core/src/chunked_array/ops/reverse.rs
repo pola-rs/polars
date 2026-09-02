@@ -1,3 +1,8 @@
+use arrow::bitmap::Bitmap;
+use polars_array::arrow::export;
+
+#[cfg(feature = "dtype-array")]
+use crate::chunked_array::array::array_values;
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::prelude::*;
@@ -58,19 +63,23 @@ impl ChunkReverse for ListChunked {
 impl ChunkReverse for BinaryChunked {
     fn reverse(&self) -> Self {
         if self.chunks.len() == 1 {
-            let arr = self.downcast_iter().next().unwrap();
+            // The views are reversed one per element, so a chunk that is not laid out flat is
+            // written out first.
+            let arr = self.downcast_iter().next().unwrap().to_flat();
+            let length = arr.len();
             let views = arr.views().iter().copied().rev().collect::<Vec<_>>();
+            let validity = arr
+                .validity()
+                .map(|bitmap| bitmap.iter().rev().collect::<Bitmap>());
 
             unsafe {
-                let arr = BinaryViewArray::new_unchecked(
-                    arr.dtype().clone(),
+                let arr = PlBinaryViewArray::new_unchecked(
                     views.into(),
                     arr.data_buffers().clone(),
-                    arr.validity().map(|bitmap| bitmap.iter().rev().collect()),
-                    arr.try_total_bytes_len(),
-                    arr.total_buffer_len(),
+                    length,
+                    validity,
                 )
-                .boxed();
+                .into_boxed();
                 BinaryChunked::from_chunks_and_dtype_unchecked(
                     self.name().clone(),
                     vec![arr],
@@ -101,7 +110,9 @@ impl ChunkReverse for ArrayChunked {
         }
         let ca = self.rechunk();
         let arr = ca.downcast_as_array();
-        let values = arr.values().as_ref();
+        // The builder is the Arrow one, so the values cross over — see `arrow_bridge`.
+        let values = export::to_arrow(&*array_values(arr));
+        let values = &*values;
 
         let mut builder =
             get_fixed_size_list_builder(ca.inner_dtype(), ca.len(), ca.width(), ca.name().clone())
@@ -114,7 +125,7 @@ impl ChunkReverse for ArrayChunked {
                     builder.push_unchecked(values, i)
                 }
             } else {
-                let validity = arr.validity().unwrap();
+                let validity = arr.validity().unwrap().to_flat();
                 for i in (0..arr.len()).rev() {
                     if validity.get_bit_unchecked(i) {
                         builder.push_unchecked(values, i)

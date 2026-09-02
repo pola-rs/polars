@@ -134,6 +134,7 @@ mod inner {
 
     use super::super::list_utils::{BinaryOpApplyType, Broadcast, NumericOp};
     use super::super::*;
+    use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 
     /// Utility to perform a binary operation between the primitive values of
     /// 2 columns, where at least one of the columns is a `ListChunked` type.
@@ -151,7 +152,7 @@ mod inner {
         // The series are stored as they are used for list broadcasting.
         data_lhs: (Vec<OffsetsBuffer<i64>>, Vec<Option<Bitmap>>, Series),
         data_rhs: (Vec<OffsetsBuffer<i64>>, Vec<Option<Bitmap>>, Series),
-        list_to_prim_lhs: Option<(Box<dyn Array>, usize)>,
+        list_to_prim_lhs: Option<(PlArrayRef, usize)>,
         swapped: bool,
     }
 
@@ -481,13 +482,13 @@ mod inner {
             let mut arr_lhs = {
                 let ca: &ChunkedArray<T> = prim_s_lhs.as_ref().as_ref();
                 assert_eq!(ca.chunks().len(), 1);
-                ca.downcast_get(0).unwrap().clone()
+                chunk_to_arrow(ca.downcast_get(0).unwrap())
             };
 
             let mut arr_rhs = {
                 let ca: &ChunkedArray<T> = prim_s_rhs.as_ref().as_ref();
                 assert_eq!(ca.chunks().len(), 1);
-                ca.downcast_get(0).unwrap().clone()
+                chunk_to_arrow(ca.downcast_get(0).unwrap())
             };
 
             match (&self.op_apply_type, &self.broadcast) {
@@ -772,12 +773,16 @@ mod inner {
                 (BinaryOpApplyType::ListToPrimitive, Broadcast::NoBroadcast) => {
                     let offsets_lhs = self.data_lhs.0.as_slice();
 
-                    let (mut arr, n_values) = Option::take(&mut self.list_to_prim_lhs).unwrap();
-                    let arr = arr
-                        .as_any_mut()
-                        .downcast_mut::<PrimitiveArray<T::Native>>()
-                        .unwrap();
-                    let mut arr_lhs = std::mem::take(arr);
+                    let (arr, n_values) = Option::take(&mut self.list_to_prim_lhs).unwrap();
+                    // The kernel writes the results back into the values, which asks for the
+                    // Arrow array that shares them — see `arrow_bridge`. Dropping the chunk
+                    // leaves this the only reference to them.
+                    let mut arr_lhs = chunk_to_arrow(
+                        arr.as_any()
+                            .downcast_ref::<PlPrimitiveArray<T::Native>>()
+                            .unwrap(),
+                    );
+                    drop(arr);
 
                     self.op.0.prepare_numeric_op_side_validities::<T>(
                         &mut arr_lhs,
@@ -816,7 +821,9 @@ mod inner {
                 (BinaryOpApplyType::ListToPrimitive, Broadcast::Right) => {
                     assert_eq!(arr_rhs.len(), 1);
 
-                    let Some(r) = (unsafe { arr_rhs.get_unchecked(0) }) else {
+                    let Some(r) =
+                        (unsafe { (!arr_rhs.is_null(0)).then(|| arr_rhs.value_unchecked(0)) })
+                    else {
                         // RHS is single primitive NULL, create the result by setting the leaf validity to all-NULL.
                         let (offsets, validities, _) = std::mem::take(&mut self.data_lhs);
                         return Ok(self.finish_offsets_and_validities(
@@ -881,14 +888,22 @@ mod inner {
             let dtype = LargeListArray::default_datatype(results.dtype().clone());
             let results = LargeListArray::new(dtype, offsets, results, Some(validity));
 
-            ListChunked::with_chunk(std::mem::take(&mut self.output_name), results)
+            // The result crosses back into the array a chunk is, which carries no data type of its
+            // own — the output dtype is what the `ChunkedArray` gets.
+            unsafe {
+                ListChunked::from_chunks_and_dtype_unchecked(
+                    std::mem::take(&mut self.output_name),
+                    vec![<PlListArray as ToArrow>::from_arrow(&results).into_boxed()],
+                    self.output_dtype.clone(),
+                )
+            }
         }
 
         fn materialize_broadcasted_list(
             side_data: &mut (Vec<OffsetsBuffer<i64>>, Vec<Option<Bitmap>>, Series),
             output_len: usize,
             output_primitive_dtype: &DataType,
-        ) -> (Box<dyn Array>, usize) {
+        ) -> (PlArrayRef, usize) {
             let s = &side_data.2;
             assert_eq!(s.len(), 1);
 

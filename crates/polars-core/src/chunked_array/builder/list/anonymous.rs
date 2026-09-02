@@ -4,6 +4,9 @@ pub struct AnonymousOwnedListBuilder {
     name: PlSmallStr,
     builder: AnonymousBuilder<'static>,
     owned: Vec<Series>,
+    /// The chunks handed to the builder, which is written against the Arrow arrays; they are kept
+    /// here so that the references it holds stay alive until it is finished.
+    owned_arrow: Vec<ArrayRef>,
     inner_dtype: Option<DataType>,
     fast_explode: bool,
 }
@@ -30,10 +33,15 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
         if s.is_empty() {
             self.append_empty();
         } else {
-            unsafe {
-                self.builder
-                    .push_multiple(&*(s.chunks().as_ref() as *const [ArrayRef]));
-            }
+            // The builder is the Arrow one, so the chunk crosses over — see `arrow_bridge`. It
+            // takes one array per element, so a series of several chunks is rechunked first.
+            let s = if s.n_chunks() > 1 { s.rechunk() } else { s };
+            let arrow = polars_array::arrow::export::to_arrow(&*s.chunks()[0]);
+            // SAFETY: the array is kept alive in `owned_arrow` until the builder is finished, and
+            // it lives on the heap, so growing that vector does not move it.
+            let arrow_ref: &'static dyn Array = unsafe { &*(&*arrow as *const dyn Array) };
+            self.owned_arrow.push(arrow);
+            self.builder.push(arrow_ref);
             // This ensures that the underlying ArrayRef's are not dropped.
             self.owned.push(s);
         }
@@ -60,7 +68,10 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             Some(dt) => DataType::List(Box::new(dt)),
         };
 
-        let mut ca = ListChunked::with_chunk(PlSmallStr::EMPTY, arr);
+        let mut ca = ListChunked::with_chunk(
+            PlSmallStr::EMPTY,
+            <PlListArray as ToArrow>::from_arrow(&arr),
+        );
         if slf.fast_explode {
             ca.set_fast_explode();
         }
@@ -75,6 +86,7 @@ impl AnonymousOwnedListBuilder {
             name,
             builder: AnonymousBuilder::new(capacity),
             owned: Vec::with_capacity(capacity),
+            owned_arrow: Vec::with_capacity(capacity),
             inner_dtype,
             fast_explode: true,
         }

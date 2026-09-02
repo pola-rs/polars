@@ -146,7 +146,7 @@ impl From<&DataType> for SerializableDataType {
             Enum(fcats, _) => Self::Enum {
                 strings: StringChunked::with_chunk(
                     PlSmallStr::from_static("categories"),
-                    fcats.categories().clone(),
+                    <PlUtf8ViewArray as ToArrow>::from_arrow(fcats.categories()),
                 )
                 .into_series(),
             },

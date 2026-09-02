@@ -248,11 +248,8 @@ pub(super) fn numeric_transpose<T: PolarsNumericType>(
                 None
             };
 
-            let arr = PrimitiveArray::<T::Native>::new(
-                T::get_static_dtype().to_arrow(CompatLevel::newest()),
-                values.into(),
-                validity,
-            );
+            let length = values.len();
+            let arr = PlPrimitiveArray::<T::Native>::new(values.into(), length, validity);
             ChunkedArray::<T>::with_chunk(name.clone(), arr).into_column()
         });
     RAYON.install(|| cols_t.par_extend(par_iter));

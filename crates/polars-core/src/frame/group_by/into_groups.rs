@@ -5,6 +5,7 @@ use polars_error::abort::try_raise_polars_abort;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
+use crate::chunked_array::arrow_bridge::as_flat;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca_unordered;
 use crate::config::verbose;
@@ -38,16 +39,13 @@ where
 
         // use the arrays as iterators
         if ca.null_count() == 0 {
-            let keys = ca
-                .downcast_iter()
-                .map(|arr| arr.values().as_slice())
-                .collect::<Vec<_>>();
+            // The values are read as slices, so chunks that are not laid out flat are written out
+            // first — see `arrow_bridge`.
+            let flat = ca.to_flat();
+            let keys = flat.data_views().collect::<Vec<_>>();
             group_by_threaded_slice(keys, n_partitions, sorted)
         } else {
-            let keys = ca
-                .downcast_iter()
-                .map(|arr| arr.iter().map(|o| o.copied()))
-                .collect::<Vec<_>>();
+            let keys = ca.downcast_iter().map(|arr| arr.iter()).collect::<Vec<_>>();
             group_by_threaded_iter(&keys, n_partitions, sorted)
         }
     } else if !ca.has_nulls() {
@@ -70,7 +68,8 @@ where
         if arr.is_empty() {
             return GroupsSlice::default();
         }
-        let mut values = arr.values().as_slice();
+        let arr = as_flat(arr);
+        let mut values = arr.as_slice();
         let null_count = arr.null_count();
         let length = values.len();
 

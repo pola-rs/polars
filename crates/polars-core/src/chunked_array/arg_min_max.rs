@@ -1,8 +1,8 @@
-use arrow::array::Array;
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMaxPolicy};
 
 use crate::chunked_array::ChunkedArray;
+use crate::chunked_array::arrow_bridge::as_flat;
 use crate::chunked_array::flat::FlatNumericChunkedArray;
 use crate::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
@@ -182,7 +182,7 @@ where
                 let chunk_min: Option<(usize, T::Native)> = if arr.null_count() > 0 {
                     arr.into_iter()
                         .enumerate()
-                        .flat_map(|(idx, val)| Some((idx, *(val?))))
+                        .flat_map(|(idx, val)| Some((idx, val?)))
                         .reduce(|acc, (idx, val)| {
                             if MinIgnoreNan::is_better(&val, &acc.1) {
                                 (idx, val)
@@ -192,7 +192,8 @@ where
                         })
                 } else {
                     // When no nulls & array not empty => we can use fast argmin.
-                    let min_idx: usize = arr.values().as_slice().argmin();
+                    let arr = as_flat(arr);
+                    let min_idx: usize = arr.as_slice().argmin();
                     Some((min_idx, arr.value(min_idx)))
                 };
 
@@ -232,7 +233,7 @@ where
                 let chunk_max: Option<(usize, T::Native)> = if arr.null_count() > 0 {
                     arr.into_iter()
                         .enumerate()
-                        .flat_map(|(idx, val)| Some((idx, *(val?))))
+                        .flat_map(|(idx, val)| Some((idx, val?)))
                         .reduce(|acc, (idx, val)| {
                             if MaxIgnoreNan::is_better(&val, &acc.1) {
                                 (idx, val)
@@ -242,7 +243,8 @@ where
                         })
                 } else {
                     // When no nulls & array not empty => we can use fast argmax.
-                    let max_idx: usize = arr.values().as_slice().argmax();
+                    let arr = as_flat(arr);
+                    let max_idx: usize = arr.as_slice().argmax();
                     Some((max_idx, arr.value(max_idx)))
                 };
 

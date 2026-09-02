@@ -1,8 +1,16 @@
-use std::ops::Not;
-
 use arrow::bitmap::Bitmap;
 
 use super::*;
+
+/// A boolean array of `length` elements over `bits`, which has to be flat or scalar for it.
+fn boolean_from_bits(bits: Bitmap, length: usize) -> PlBooleanArray {
+    if bits.len() == length {
+        PlBooleanArray::new(bits, length, None)
+    } else {
+        PlBooleanArray::new_broadcast(bits, length, None)
+    }
+}
+
 use crate::chunked_array::StructChunked;
 use crate::prelude::row_encode::{
     _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_unordered,
@@ -87,13 +95,11 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         if self.struct_fields().is_empty() {
             if self.has_nulls() {
+                let validity = self.rechunk_validity().unwrap();
+                let length = validity.len();
                 BooleanChunked::with_chunk(
                     self.name().clone(),
-                    BooleanArray::new(
-                        ArrowDataType::Boolean,
-                        self.rechunk_validity().unwrap(),
-                        None,
-                    ),
+                    PlBooleanArray::new(validity, length, None),
                 )
                 .group_tuples(multithreaded, sorted)
             } else {
@@ -296,11 +302,13 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     fn is_null(&self) -> BooleanChunked {
         let iter = self.downcast_iter().map(|arr| {
+            // The mask is inverted in whatever representation it is in — a scalar one is a
+            // single bit — so this is `O(1)` for a chunk that is fully null or fully valid.
             let bitmap = match arr.validity() {
-                Some(valid) => valid.not(),
-                None => Bitmap::new_with_value(false, arr.len()),
+                Some(valid) => crate::chunked_array::validity::invert(valid),
+                None => Bitmap::new_with_value(false, 1),
             };
-            BooleanArray::from_data_default(bitmap, None)
+            boolean_from_bits(bitmap, arr.len())
         });
         BooleanChunked::from_chunk_iter(self.name().clone(), iter)
     }
@@ -308,10 +316,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     fn is_not_null(&self) -> BooleanChunked {
         let iter = self.downcast_iter().map(|arr| {
             let bitmap = match arr.validity() {
-                Some(valid) => valid.clone(),
-                None => Bitmap::new_with_value(true, arr.len()),
+                Some(valid) => valid.to_flat_or_scalar(),
+                None => Bitmap::new_with_value(true, 1),
             };
-            BooleanArray::from_data_default(bitmap, None)
+            boolean_from_bits(bitmap, arr.len())
         });
         BooleanChunked::from_chunk_iter(self.name().clone(), iter)
     }

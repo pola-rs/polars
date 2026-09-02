@@ -72,9 +72,7 @@ where
     T: PolarsNumericType,
 {
     fn from_slice(name: PlSmallStr, v: &[T::Native]) -> Self {
-        let arr =
-            PrimitiveArray::from_slice(v).to(T::get_static_dtype().to_arrow(CompatLevel::newest()));
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, PlPrimitiveArray::from_slice(v))
     }
 
     fn from_slice_options(name: PlSmallStr, opt_v: &[Option<T::Native>]) -> Self {
@@ -134,23 +132,23 @@ where
 {
     fn from_slice(name: PlSmallStr, v: &[S]) -> Self {
         let arr = Utf8ViewArray::from_slice_values(v);
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, ToArrow::from_arrow(&arr))
     }
 
     fn from_slice_options(name: PlSmallStr, opt_v: &[Option<S>]) -> Self {
         let arr = Utf8ViewArray::from_slice(opt_v);
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, ToArrow::from_arrow(&arr))
     }
 
     fn from_iter_options(name: PlSmallStr, it: impl Iterator<Item = Option<S>>) -> Self {
         let arr = MutableBinaryViewArray::from_iterator(it).freeze();
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, ToArrow::from_arrow(&arr))
     }
 
     /// Create a new ChunkedArray from an iterator.
     fn from_iter_values(name: PlSmallStr, it: impl Iterator<Item = S>) -> Self {
         let arr = MutableBinaryViewArray::from_values_iter(it).freeze();
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, ToArrow::from_arrow(&arr))
     }
 }
 
@@ -160,23 +158,23 @@ where
 {
     fn from_slice(name: PlSmallStr, v: &[B]) -> Self {
         let arr = BinaryViewArray::from_slice_values(v);
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, ToArrow::from_arrow(&arr))
     }
 
     fn from_slice_options(name: PlSmallStr, opt_v: &[Option<B>]) -> Self {
         let arr = BinaryViewArray::from_slice(opt_v);
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, ToArrow::from_arrow(&arr))
     }
 
     fn from_iter_options(name: PlSmallStr, it: impl Iterator<Item = Option<B>>) -> Self {
         let arr = MutableBinaryViewArray::from_iterator(it).freeze();
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, ToArrow::from_arrow(&arr))
     }
 
     /// Create a new ChunkedArray from an iterator.
     fn from_iter_values(name: PlSmallStr, it: impl Iterator<Item = B>) -> Self {
         let arr = MutableBinaryViewArray::from_values_iter(it).freeze();
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, ToArrow::from_arrow(&arr))
     }
 }
 

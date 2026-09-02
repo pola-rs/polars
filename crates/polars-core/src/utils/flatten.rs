@@ -18,7 +18,9 @@ pub fn flatten_df_iter(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
                     let mut out = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
                             s.name().clone(),
-                            vec![arr],
+                            // The chunk of a record batch is an Arrow array, which crosses into
+                            // the array a chunk is — see `arrow_bridge`.
+                            vec![polars_array::arrow::import::from_arrow(&*arr)],
                             s.dtype(),
                         )
                     };

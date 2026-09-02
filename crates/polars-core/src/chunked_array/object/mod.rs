@@ -19,7 +19,6 @@ use crate::prelude::*;
 pub mod builder;
 #[cfg(feature = "object")]
 pub(crate) mod extension;
-mod is_valid;
 pub mod iterator;
 pub mod registry;
 
@@ -127,7 +126,10 @@ where
     /// array.
     #[inline]
     pub unsafe fn get_unchecked_opt(&self, index: usize) -> Option<&T> {
-        unsafe { self.is_valid_unchecked(index).then(|| self.value_unchecked(index)) }
+        unsafe {
+            self.is_valid_unchecked(index)
+                .then(|| self.value_unchecked(index))
+        }
     }
 
     /// Check validity

@@ -583,19 +583,28 @@ impl ChunkExpandAtIndex<StructType> for StructChunked {
         let (chunk_idx, idx) = self.index_to_chunked_index(index);
         let chunk = self.downcast_chunks().get(chunk_idx).unwrap();
         let chunk = if chunk.is_null(idx) {
-            new_null_array(chunk.dtype().clone(), length)
+            // The fields keep the shape they have; every element of the result is null.
+            PlStructArray::new_full_null(chunk.fields().to_vec(), length).into_boxed()
         } else {
             let values = chunk
-                .values()
+                .fields()
                 .iter()
-                .map(|arr| {
-                    let s = Series::try_from((PlSmallStr::EMPTY, arr.clone())).unwrap();
+                .zip(self.struct_fields())
+                .map(|(arr, field)| {
+                    // SAFETY: the field arrays are laid out the way the struct's fields say.
+                    let s = unsafe {
+                        Series::from_chunks_and_dtype_unchecked(
+                            PlSmallStr::EMPTY,
+                            vec![arr.clone()],
+                            &field.dtype,
+                        )
+                    };
                     let s = s.new_from_index(idx, length);
                     s.chunks()[0].clone()
                 })
                 .collect::<Vec<_>>();
 
-            StructArray::new(chunk.dtype().clone(), length, values, None).boxed()
+            PlStructArray::new(values, length, None).into_boxed()
         };
 
         // SAFETY: chunks are from self.

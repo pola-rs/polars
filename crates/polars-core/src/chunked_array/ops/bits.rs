@@ -1,4 +1,5 @@
 use super::BooleanChunked;
+use crate::chunked_array::arrow_bridge::as_flat;
 
 fn first_true_idx_impl(ca: &BooleanChunked, invert: bool) -> Option<usize> {
     let null_count = ca.null_count();
@@ -13,6 +14,9 @@ fn first_true_idx_impl(ca: &BooleanChunked, invert: bool) -> Option<usize> {
     let invert_mask = if invert { u64::MAX } else { 0 };
     let mut offset = 0;
     for arr in ca.downcast_iter() {
+        // The bits are walked as one run, so a chunk that is not laid out flat is written out
+        // first — see `arrow_bridge::as_flat`.
+        let arr = as_flat(arr);
         let values = arr.values();
         if let Some(validity) = arr.validity() {
             let mut x_it = values.fast_iter_u56();
@@ -51,18 +55,24 @@ fn first_true_idx_impl(ca: &BooleanChunked, invert: bool) -> Option<usize> {
 impl BooleanChunked {
     pub fn num_trues(&self) -> usize {
         self.downcast_iter()
-            .map(|arr| match arr.validity() {
-                None => arr.values().set_bits(),
-                Some(validity) => arr.values().num_intersections_with(validity),
+            .map(|arr| {
+                let arr = as_flat(arr);
+                match arr.validity() {
+                    None => arr.values().set_bits(),
+                    Some(validity) => arr.values().num_intersections_with(validity),
+                }
             })
             .sum()
     }
 
     pub fn num_falses(&self) -> usize {
         self.downcast_iter()
-            .map(|arr| match arr.validity() {
-                None => arr.values().unset_bits(),
-                Some(validity) => (!arr.values()).num_intersections_with(validity),
+            .map(|arr| {
+                let arr = as_flat(arr);
+                match arr.validity() {
+                    None => arr.values().unset_bits(),
+                    Some(validity) => (!arr.values()).num_intersections_with(validity),
+                }
             })
             .sum()
     }

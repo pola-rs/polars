@@ -16,17 +16,17 @@ pub mod ops;
 pub mod arithmetic;
 pub mod arrow_bridge;
 pub mod builder;
-pub mod flat;
-pub mod utf8_view;
-pub mod validity;
 pub mod cast;
 pub mod collect;
 pub mod comparison;
 pub mod flags;
+pub mod flat;
 pub mod float;
 pub mod iterator;
 #[cfg(feature = "ndarray")]
 pub(crate) mod ndarray;
+pub mod utf8_view;
+pub mod validity;
 
 pub mod arg_min_max;
 #[cfg(feature = "dtype-array")]
@@ -34,8 +34,6 @@ pub(crate) mod array;
 mod binary;
 mod binary_offset;
 mod bitwise;
-#[cfg(feature = "object")]
-mod drop;
 pub mod from;
 mod from_iterator;
 pub mod from_iterator_par;
@@ -1332,13 +1330,21 @@ pub(crate) mod test {
         let before = arr
             .chunks()
             .iter()
-            .map(|arr| arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
+            .map(|arr| {
+                arrow::compute::aggregate::estimated_bytes_size(
+                    &*polars_array::arrow::export::to_arrow(&**arr),
+                )
+            })
             .sum::<usize>();
         arr.shrink_to_fit();
         let after = arr
             .chunks()
             .iter()
-            .map(|arr| arrow::compute::aggregate::estimated_bytes_size(arr.as_ref()))
+            .map(|arr| {
+                arrow::compute::aggregate::estimated_bytes_size(
+                    &*polars_array::arrow::export::to_arrow(&**arr),
+                )
+            })
             .sum::<usize>();
         assert!(before > after);
     }

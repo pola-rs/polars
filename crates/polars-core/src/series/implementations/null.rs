@@ -21,7 +21,7 @@ pub struct NullChunked {
     length: usize,
     // we still need chunks as many series consumers expect
     // chunks to be there
-    chunks: Vec<ArrayRef>,
+    chunks: Vec<PlArrayRef>,
 }
 
 impl NullChunked {
@@ -33,10 +33,7 @@ impl NullChunked {
         Self {
             name,
             length: len,
-            chunks: vec![Box::new(arrow::array::NullArray::new(
-                ArrowDataType::Null,
-                len,
-            ))],
+            chunks: vec![Box::new(PlNullArray::new(len))],
         }
     }
 
@@ -59,7 +56,7 @@ impl PrivateSeriesNumeric for NullChunked {
 
 impl PrivateSeries for NullChunked {
     fn compute_len(&mut self) {
-        fn inner(chunks: &[ArrayRef]) -> usize {
+        fn inner(chunks: &[PlArrayRef]) -> usize {
             match chunks.len() {
                 // fast path
                 1 => chunks[0].len(),

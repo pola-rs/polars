@@ -254,13 +254,42 @@ impl PlUtf8ViewArray {
         unsafe { Flat::new(Self(self.0.to_flat().into_array())) }
     }
 
+    /// Returns this array with every view replaced by what `update_view` makes of it.
+    ///
+    /// # Safety
+    /// The views the closure hands back must uphold every invariant of a view: each must read
+    /// bytes this array's data buffers hold, and those bytes must be valid UTF-8.
+    pub unsafe fn apply_views<F: FnMut(View, &str) -> View>(&self, mut update_view: F) -> Self {
+        // TODO(polars-array-scalar): a scalar array holds one view standing for every element, so
+        // the views could be mapped in `O(1)` rather than written out flat first.
+        let flat = self.to_flat().into_array();
+        let length = flat.len();
+        let (views, buffers, validity) = flat.0.to_flat().into_inner();
+
+        let views: Vec<View> = views
+            .as_slice()
+            .iter()
+            .enumerate()
+            // SAFETY: `i` is in bounds of the array the views came from.
+            .map(|(i, &view)| update_view(view, unsafe { self.value_unchecked(i) }))
+            .collect();
+
+        // SAFETY: the caller keeps every view reading bytes the buffers hold, and valid UTF-8.
+        unsafe {
+            Self::from_binview_unchecked(PlBinaryViewArray::new_unchecked(
+                views.into(),
+                buffers,
+                length,
+                validity,
+            ))
+        }
+    }
+
     /// Borrows this array as a flat one, or `None` if any backing buffer is scalar.
     #[inline]
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: the inner array is flat, and the wrapper is transparent over it.
-        self.0
-            .as_flat()
-            .map(|_| unsafe { Flat::new_ref(self) })
+        self.0.as_flat().map(|_| unsafe { Flat::new_ref(self) })
     }
 }
 
@@ -268,10 +297,14 @@ impl PlUtf8ViewArray {
 fn validate_utf8(array: &PlBinaryViewArray) -> PolarsResult<()> {
     // The validity mask is dropped rather than honoured: a null element still holds bytes, and
     // replacing the mask must not be able to expose bytes that were never checked.
-    for value in array.to_flat().into_array().without_validity().values_iter() {
-        std::str::from_utf8(value).map_err(|e| {
-            polars_error::polars_err!(ComputeError: "invalid utf8: {}", e)
-        })?;
+    for value in array
+        .to_flat()
+        .into_array()
+        .without_validity()
+        .values_iter()
+    {
+        std::str::from_utf8(value)
+            .map_err(|e| polars_error::polars_err!(ComputeError: "invalid utf8: {}", e))?;
     }
     Ok(())
 }
@@ -552,6 +585,24 @@ impl PlUtf8ViewArrayBuilder {
     pub unsafe fn inner_mut(&mut self) -> &mut PlBinaryViewArrayBuilder {
         &mut self.0
     }
+
+    /// Appends a value.
+    #[inline]
+    pub fn push_value(&mut self, value: &str) {
+        self.0.push_value(value.as_bytes());
+    }
+
+    /// Appends a null.
+    #[inline]
+    pub fn push_null(&mut self) {
+        self.0.push_null();
+    }
+
+    /// Appends a value, or a null if there is none.
+    #[inline]
+    pub fn push(&mut self, value: Option<&str>) {
+        self.0.push(value.map(str::as_bytes));
+    }
 }
 
 /// Borrows an array of strings as the bytes under them.
@@ -598,7 +649,8 @@ impl StaticArrayBuilder for PlUtf8ViewArrayBuilder {
         length: usize,
         share: ShareStrategy,
     ) {
-        self.0.subslice_extend(as_binview(other), start, length, share);
+        self.0
+            .subslice_extend(as_binview(other), start, length, share);
     }
 
     #[inline]

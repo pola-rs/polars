@@ -10,6 +10,7 @@ use arrow::compute::utils::combine_validities_and;
 use num_traits::{Num, NumCast, ToPrimitive};
 pub use numeric::ArithmeticChunked;
 
+use crate::chunked_array::arrow_bridge::{chunk_from_arrow, flat_to_arrow};
 use crate::prelude::arity::unary_elementwise_values;
 use crate::prelude::*;
 
@@ -96,7 +97,14 @@ impl Add for &BinaryChunked {
             };
         }
 
-        arity::binary(self, rhs, concat_binview)
+        // The kernel is the Arrow one, so both chunks cross over and the result crosses back —
+        // see `arrow_bridge`.
+        arity::binary_kernel_flat(
+            self,
+            rhs,
+            |l, r| chunk_from_arrow(&concat_binview(&flat_to_arrow(l), &flat_to_arrow(r))),
+            self.name().clone(),
+        )
     }
 }
 
@@ -112,21 +120,23 @@ impl Add<&[u8]> for &BinaryChunked {
     type Output = BinaryChunked;
 
     fn add(self, rhs: &[u8]) -> Self::Output {
-        let arr = BinaryViewArray::from_slice_values([rhs]);
+        let arr = PlBinaryViewArray::from_values_iter([rhs]);
         let rhs: BinaryChunked = arr.into();
         self.add(&rhs)
     }
 }
 
-fn add_boolean(a: &BooleanArray, b: &BooleanArray) -> PrimitiveArray<IdxSize> {
-    let validity = combine_validities_and(a.validity(), b.validity());
+fn add_boolean(a: &PlBooleanArray, b: &PlBooleanArray) -> PlPrimitiveArray<IdxSize> {
+    let validity =
+        crate::chunked_array::validity::combine_validities_and(a.validity(), b.validity());
 
     let values = a
         .values_iter()
         .zip(b.values_iter())
         .map(|(a, b)| a as IdxSize + b as IdxSize)
         .collect::<Vec<_>>();
-    PrimitiveArray::from_data_default(values.into(), validity)
+    let length = values.len();
+    PlPrimitiveArray::new(values.into(), length, validity)
 }
 
 impl Add for &BooleanChunked {

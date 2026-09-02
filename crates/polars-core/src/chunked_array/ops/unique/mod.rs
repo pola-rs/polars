@@ -5,6 +5,7 @@ use arrow::bitmap::MutableBitmap;
 use polars_compute::unique::BooleanUniqueKernelState;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash, TotalOrdWrap};
 
+use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -21,7 +22,7 @@ fn finish_is_unique_helper(
     for idx in unique_idx {
         unsafe { values.set_unchecked(idx as usize, setter) }
     }
-    let arr = BooleanArray::from_data_default(values.into(), None);
+    let arr = PlBooleanArray::new(values.into(), len as usize, None);
     arr.into()
 }
 
@@ -119,7 +120,10 @@ where
                     }
 
                     let arr: PrimitiveArray<T::Native> = arr.into();
-                    Ok(ChunkedArray::with_chunk(self.name().clone(), arr))
+                    Ok(ChunkedArray::with_chunk(
+                        self.name().clone(),
+                        ToArrow::from_arrow(&arr),
+                    ))
                 } else {
                     let mask = self.not_equal_missing(&self.shift(1));
                     self.filter(&mask)
@@ -343,8 +347,9 @@ impl ChunkUnique for BooleanChunked {
 
         let mut state = BooleanUniqueKernelState::new();
 
+        // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
         for arr in self.downcast_iter() {
-            state.append(arr);
+            state.append(&chunk_to_arrow(arr));
 
             if state.has_seen_all() {
                 break;
@@ -353,7 +358,10 @@ impl ChunkUnique for BooleanChunked {
 
         let unique = state.finalize_unique();
 
-        Ok(Self::with_chunk(self.name().clone(), unique))
+        Ok(Self::with_chunk(
+            self.name().clone(),
+            ToArrow::from_arrow(&unique),
+        ))
     }
 
     fn arg_unique(&self) -> PolarsResult<IdxCa> {

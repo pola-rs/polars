@@ -5,7 +5,8 @@ use polars_compute::nan::{is_nan, is_not_nan};
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
 
-use crate::prelude::arity::{unary_elementwise_values, unary_kernel};
+use crate::chunked_array::arrow_bridge::chunk_to_arrow;
+use crate::prelude::arity::{unary_elementwise_values, unary_kernel_flat};
 use crate::prelude::*;
 
 impl<T> ChunkedArray<T>
@@ -14,16 +15,18 @@ where
     T::Native: Float,
 {
     pub fn is_nan(&self) -> BooleanChunked {
-        unary_kernel(self, |arr| {
+        // TODO(polars-array-scalar): whether the single value of a scalar chunk is NaN answers it
+        // for every element, which this writes out to ask element by element.
+        unary_kernel_flat(self, |arr| {
             let out = is_nan(arr.values()).unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
-            BooleanArray::from(out).with_validity(arr.validity().cloned())
+            PlBooleanArray::new(out, arr.len(), arr.validity().cloned())
         })
     }
     pub fn is_not_nan(&self) -> BooleanChunked {
-        unary_kernel(self, |arr| {
+        unary_kernel_flat(self, |arr| {
             let out =
                 is_not_nan(arr.values()).unwrap_or_else(|| Bitmap::new_with_value(true, arr.len()));
-            BooleanArray::from(out).with_validity(arr.validity().cloned())
+            PlBooleanArray::new(out, arr.len(), arr.validity().cloned())
         })
     }
     pub fn is_finite(&self) -> BooleanChunked {
@@ -36,9 +39,10 @@ where
     #[must_use]
     /// Convert missing values to `NaN` values.
     pub fn none_to_nan(&self) -> Self {
+        // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
         let chunks = self
             .downcast_iter()
-            .map(|arr| set_at_nulls(arr, T::Native::nan()));
+            .map(|arr| ToArrow::from_arrow(&set_at_nulls(&chunk_to_arrow(arr), T::Native::nan())));
         ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }
 }

@@ -7,7 +7,8 @@ use polars_compute::decimal::{
 };
 
 use super::*;
-use crate::chunked_array::cast::cast_chunks;
+use crate::chunked_array::arrow_bridge::chunk_to_arrow;
+use crate::chunked_array::cast::cast_arrow_chunks;
 use crate::prelude::arity::{unary_elementwise, unary_kernel};
 use crate::prelude::*;
 
@@ -80,20 +81,22 @@ impl LogicalType for DecimalChunked {
                 // Normally we don't set the Arrow logical type, but now we temporarily set it so
                 // we can re-use the compute cast kernels.
                 let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
+                // The kernels are the Arrow ones, so the chunks cross over — see `arrow_bridge`.
                 let chunks = self
                     .physical()
                     .chunks
                     .iter()
                     .map(|arr| {
-                        arr.as_any()
-                            .downcast_ref::<PrimitiveArray<i128>>()
-                            .unwrap()
-                            .clone()
-                            .to(arrow_dtype.clone())
-                            .to_boxed()
+                        chunk_to_arrow(
+                            arr.as_any()
+                                .downcast_ref::<PlPrimitiveArray<i128>>()
+                                .unwrap(),
+                        )
+                        .to(arrow_dtype.clone())
+                        .to_boxed()
                     })
                     .collect::<Vec<_>>();
-                let chunks = cast_chunks(&chunks, dtype, cast_options)?;
+                let chunks = cast_arrow_chunks(&chunks, dtype, cast_options)?;
                 Series::try_from((self.name().clone(), chunks))
             },
 
@@ -155,7 +158,7 @@ impl DecimalChunked {
                         .iter()
                         .map(|opt_x| {
                             if let Some(x) = opt_x {
-                                dec128_fits(*x, prec)
+                                dec128_fits(x, prec)
                             } else {
                                 false
                             }
@@ -198,7 +201,7 @@ impl DecimalChunked {
 
         let mut prod = i128_to_dec128(1, prec, scale).unwrap();
         for arr in self.phys.downcast_iter() {
-            for v in arr.non_null_values_iter() {
+            for v in arr.iter().flatten() {
                 if let Some(p) = dec128_mul(prod, v, prec, scale) {
                     prod = p;
                 } else {

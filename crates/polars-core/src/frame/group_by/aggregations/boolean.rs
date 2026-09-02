@@ -1,6 +1,7 @@
 use arrow::bitmap::bitmask::BitMask;
 
 use super::*;
+use crate::chunked_array::arrow_bridge::{as_flat, chunk_to_arrow};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::from_iterator_par::{collect_bool_opt_par, collect_bool_par};
 use crate::chunked_array::{arg_max_bool, arg_min_bool};
@@ -94,7 +95,9 @@ impl BooleanChunked {
             }
         }
         let ca_self = self.rechunk();
-        let arr = ca_self.downcast_iter().next().unwrap();
+        // The kernels below are the Arrow ones, so the chunk crosses over — see `arrow_bridge`.
+        let arr = chunk_to_arrow(ca_self.downcast_iter().next().unwrap());
+        let arr = &arr;
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
@@ -140,7 +143,9 @@ impl BooleanChunked {
         }
 
         let ca_self = self.rechunk();
-        let arr = ca_self.downcast_iter().next().unwrap();
+        // The kernels below are the Arrow ones, so the chunk crosses over — see `arrow_bridge`.
+        let arr = chunk_to_arrow(ca_self.downcast_iter().next().unwrap());
+        let arr = &arr;
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
@@ -189,7 +194,9 @@ impl BooleanChunked {
         }
 
         let ca_self = self.rechunk();
-        let arr = ca_self.downcast_iter().next().unwrap();
+        // The kernels below are the Arrow ones, so the chunk crosses over — see `arrow_bridge`.
+        let arr = chunk_to_arrow(ca_self.downcast_iter().next().unwrap());
+        let arr = &arr;
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
@@ -238,7 +245,9 @@ impl BooleanChunked {
         }
 
         let ca_self = self.rechunk();
-        let arr = ca_self.downcast_iter().next().unwrap();
+        // The kernels below are the Arrow ones, so the chunk crosses over — see `arrow_bridge`.
+        let arr = chunk_to_arrow(ca_self.downcast_iter().next().unwrap());
+        let arr = &arr;
         let no_nulls = arr.null_count() == 0;
         match groups {
             GroupsType::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
@@ -302,6 +311,9 @@ impl BooleanChunked {
         let groups_len = groups.len();
 
         let ca = RAYON.install(|| {
+            // The masks are read as one run, so a chunk that is not laid out flat is written out
+            // first — see `arrow_bridge::as_flat`.
+            let values = as_flat(values);
             let validity = values
                 .validity()
                 .filter(|v| v.unset_bits() > 0)

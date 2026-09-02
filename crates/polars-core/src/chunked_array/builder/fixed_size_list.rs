@@ -80,11 +80,13 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
 
     fn finish(&mut self) -> ArrayChunked {
         let arr: FixedSizeListArray = self.inner.take().unwrap().into();
+        // The builder is the Arrow one, so the result crosses back — see `arrow_bridge`.
+        let arr = <PlFixedSizeListArray as ToArrow>::from_arrow(&arr);
         // SAFETY: physical type matches the logical
         unsafe {
             ChunkedArray::from_chunks_and_dtype(
                 self.name.clone(),
-                vec![Box::new(arr)],
+                vec![arr.into_boxed()],
                 DataType::Array(Box::new(self.logical_dtype.clone()), self.width),
             )
         }
@@ -134,7 +136,17 @@ impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
                     .as_ref(),
             )
             .unwrap();
-        ChunkedArray::with_chunk(self.name.clone(), arr)
+        // The builder is the Arrow one, so the result crosses back, and the dtype it carried
+        // becomes the one the `ChunkedArray` gets — a chunk has none of its own.
+        let dtype = DataType::from_arrow_dtype(arr.dtype());
+        let arr = <PlFixedSizeListArray as ToArrow>::from_arrow(&arr);
+        unsafe {
+            ChunkedArray::from_chunks_and_dtype_unchecked(
+                self.name.clone(),
+                vec![arr.into_boxed()],
+                dtype,
+            )
+        }
     }
 }
 

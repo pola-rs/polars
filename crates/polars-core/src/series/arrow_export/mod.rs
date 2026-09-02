@@ -92,7 +92,9 @@ impl Series {
             },
         }
         .array_to_arrow(
-            self.chunks().get(chunk_idx).unwrap().as_ref(),
+            // The export is written against the Arrow arrays, so the chunk crosses over — see
+            // `arrow_bridge`.
+            &*polars_array::arrow::export::to_arrow(&**self.chunks().get(chunk_idx).unwrap()),
             self.dtype(),
             output_arrow_field,
         )
@@ -322,7 +324,7 @@ impl ToArrowConverter {
                 let out = object_series_to_arrow_array(&unsafe {
                     Series::from_chunks_and_dtype_unchecked(
                         PlSmallStr::EMPTY,
-                        vec![array.to_boxed()],
+                        vec![polars_array::arrow::import::from_arrow(array)],
                         polars_dtype,
                     )
                 });

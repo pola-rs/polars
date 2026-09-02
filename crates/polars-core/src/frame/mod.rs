@@ -2721,7 +2721,7 @@ impl Iterator for RecordBatchIter<'_> {
 
 pub struct PhysRecordBatchIter<'a> {
     schema: ArrowSchemaRef,
-    arr_iters: Vec<std::slice::Iter<'a, ArrayRef>>,
+    arr_iters: Vec<std::slice::Iter<'a, PlArrayRef>>,
 }
 
 impl Iterator for PhysRecordBatchIter<'_> {
@@ -2731,7 +2731,13 @@ impl Iterator for PhysRecordBatchIter<'_> {
         let arrs = self
             .arr_iters
             .iter_mut()
-            .map(|phys_iter| phys_iter.next().cloned())
+            // A record batch is made of Arrow arrays, which the chunks cross into — see
+            // `arrow_bridge`.
+            .map(|phys_iter| {
+                phys_iter
+                    .next()
+                    .map(|arr| polars_array::arrow::export::to_arrow(&**arr))
+            })
             .collect::<Option<Vec<_>>>()?;
 
         let length = arrs.first().map_or(0, |arr| arr.len());

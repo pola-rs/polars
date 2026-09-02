@@ -1,10 +1,12 @@
-use arrow::array::{Array, IntoBoxedArray};
+use polars_array::arrow::export;
+use polars_array::{PlArray, PlFixedSizeListArray, PlListArray, PlStructArray, StaticArray};
 use polars_compute::find_validity_mismatch::find_validity_mismatch;
 use polars_utils::IdxSize;
 
 use super::ListChunked;
+use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 use crate::chunked_array::flags::StatisticsFlags;
-use crate::prelude::{ChunkedArray, FalseT, PolarsDataType};
+use crate::prelude::{ChunkedArray, FalseT, PolarsDataType, ToArrow};
 use crate::series::Series;
 use crate::series::implementations::null::NullChunked;
 use crate::utils::align_chunks_binary_ca_series;
@@ -41,10 +43,10 @@ impl ChunkNestingUtils for ListChunked {
 
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(propagated_chunk) = propagate_nulls_list(chunk) {
+            if let Some(propagated_chunk) = propagate_nulls_list(&chunk_to_arrow(chunk)) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
-                chunks.push(propagated_chunk.into_boxed());
+                chunks.push(PlListArray::from_arrow(&propagated_chunk).into_boxed());
                 break;
             }
         }
@@ -52,9 +54,9 @@ impl ChunkNestingUtils for ListChunked {
         // If we found a chunk that needs propagating, create a new ListChunked
         if !chunks.is_empty() {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
-                match propagate_nulls_list(chunk) {
+                match propagate_nulls_list(&chunk_to_arrow(chunk)) {
                     None => chunk.to_boxed(),
-                    Some(chunk) => chunk.into_boxed(),
+                    Some(chunk) => PlListArray::from_arrow(&chunk).into_boxed(),
                 }
             }));
 
@@ -82,10 +84,10 @@ impl ChunkNestingUtils for ListChunked {
 
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(trimmed) = trim_lists_to_normalized_offsets_list(chunk) {
+            if let Some(trimmed) = trim_lists_to_normalized_offsets_list(&chunk_to_arrow(chunk)) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
-                chunks.push(trimmed.into_boxed());
+                chunks.push(PlListArray::from_arrow(&trimmed).into_boxed());
                 break;
             }
         }
@@ -93,8 +95,8 @@ impl ChunkNestingUtils for ListChunked {
         // If we found a chunk that needs compacting, create a new ArrayChunked
         if !chunks.is_empty() {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
-                match trim_lists_to_normalized_offsets_list(chunk) {
-                    Some(chunk) => chunk.into_boxed(),
+                match trim_lists_to_normalized_offsets_list(&chunk_to_arrow(chunk)) {
+                    Some(chunk) => PlListArray::from_arrow(&chunk).into_boxed(),
                     None => chunk.to_boxed(),
                 }
             }));
@@ -118,7 +120,8 @@ impl ChunkNestingUtils for ListChunked {
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            find_validity_mismatch(l, r.as_ref(), idxs);
+            // The kernel is the Arrow one, so both chunks cross over — see `arrow_bridge`.
+            find_validity_mismatch(&*export::to_arrow(l), &*export::to_arrow(&**r), idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
             }
@@ -146,10 +149,10 @@ impl ChunkNestingUtils for super::ArrayChunked {
 
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(propagated_chunk) = propagate_nulls_fsl(chunk) {
+            if let Some(propagated_chunk) = propagate_nulls_fsl(&chunk_to_arrow(chunk)) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
-                chunks.push(propagated_chunk.into_boxed());
+                chunks.push(PlFixedSizeListArray::from_arrow(&propagated_chunk).into_boxed());
                 break;
             }
         }
@@ -157,9 +160,9 @@ impl ChunkNestingUtils for super::ArrayChunked {
         // If we found a chunk that needs propagating, create a new ListChunked
         if !chunks.is_empty() {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
-                match propagate_nulls_fsl(chunk) {
+                match propagate_nulls_fsl(&chunk_to_arrow(chunk)) {
                     None => chunk.to_boxed(),
-                    Some(chunk) => chunk.into_boxed(),
+                    Some(chunk) => PlFixedSizeListArray::from_arrow(&chunk).into_boxed(),
                 }
             }));
 
@@ -189,10 +192,10 @@ impl ChunkNestingUtils for super::ArrayChunked {
 
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(trimmed) = trim_lists_to_normalized_offsets_fsl(chunk) {
+            if let Some(trimmed) = trim_lists_to_normalized_offsets_fsl(&chunk_to_arrow(chunk)) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
-                chunks.push(trimmed.into_boxed());
+                chunks.push(PlFixedSizeListArray::from_arrow(&trimmed).into_boxed());
                 break;
             }
         }
@@ -200,8 +203,8 @@ impl ChunkNestingUtils for super::ArrayChunked {
         // If we found a chunk that needs compacting, create a new ArrayChunked
         if !chunks.is_empty() {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
-                match trim_lists_to_normalized_offsets_fsl(chunk) {
-                    Some(chunk) => chunk.into_boxed(),
+                match trim_lists_to_normalized_offsets_fsl(&chunk_to_arrow(chunk)) {
+                    Some(chunk) => PlFixedSizeListArray::from_arrow(&chunk).into_boxed(),
                     None => chunk.to_boxed(),
                 }
             }));
@@ -224,7 +227,8 @@ impl ChunkNestingUtils for super::ArrayChunked {
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            find_validity_mismatch(l, r.as_ref(), idxs);
+            // The kernel is the Arrow one, so both chunks cross over — see `arrow_bridge`.
+            find_validity_mismatch(&*export::to_arrow(l), &*export::to_arrow(&**r), idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
             }
@@ -252,10 +256,10 @@ impl ChunkNestingUtils for super::StructChunked {
 
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(propagated_chunk) = propagate_nulls_struct(chunk) {
+            if let Some(propagated_chunk) = propagate_nulls_struct(&chunk_to_arrow(chunk)) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
-                chunks.push(propagated_chunk.into_boxed());
+                chunks.push(PlStructArray::from_arrow(&propagated_chunk).into_boxed());
                 break;
             }
         }
@@ -263,9 +267,9 @@ impl ChunkNestingUtils for super::StructChunked {
         // If we found a chunk that needs propagating, create a new ListChunked
         if !chunks.is_empty() {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
-                match propagate_nulls_struct(chunk) {
+                match propagate_nulls_struct(&chunk_to_arrow(chunk)) {
                     None => chunk.to_boxed(),
-                    Some(chunk) => chunk.into_boxed(),
+                    Some(chunk) => PlStructArray::from_arrow(&chunk).into_boxed(),
                 }
             }));
 
@@ -298,10 +302,10 @@ impl ChunkNestingUtils for super::StructChunked {
 
         let mut chunks = Vec::new();
         for (i, chunk) in self.downcast_iter().enumerate() {
-            if let Some(trimmed) = trim_lists_to_normalized_offsets_struct(chunk) {
+            if let Some(trimmed) = trim_lists_to_normalized_offsets_struct(&chunk_to_arrow(chunk)) {
                 chunks.reserve(self.chunks.len());
                 chunks.extend(self.chunks[..i].iter().cloned());
-                chunks.push(trimmed.into_boxed());
+                chunks.push(PlStructArray::from_arrow(&trimmed).into_boxed());
                 break;
             }
         }
@@ -309,8 +313,8 @@ impl ChunkNestingUtils for super::StructChunked {
         // If we found a chunk that needs compacting, create a new ArrayChunked
         if !chunks.is_empty() {
             chunks.extend(self.downcast_iter().skip(chunks.len()).map(|chunk| {
-                match trim_lists_to_normalized_offsets_struct(chunk) {
-                    Some(chunk) => chunk.into_boxed(),
+                match trim_lists_to_normalized_offsets_struct(&chunk_to_arrow(chunk)) {
+                    Some(chunk) => PlStructArray::from_arrow(&chunk).into_boxed(),
                     None => chunk.to_boxed(),
                 }
             }));
@@ -333,7 +337,8 @@ impl ChunkNestingUtils for super::StructChunked {
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            find_validity_mismatch(l, r.as_ref(), idxs);
+            // The kernel is the Arrow one, so both chunks cross over — see `arrow_bridge`.
+            find_validity_mismatch(&*export::to_arrow(l), &*export::to_arrow(&**r), idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
             }
@@ -364,7 +369,8 @@ impl<T: PolarsDataType<IsNested = FalseT>> ChunkNestingUtils for ChunkedArray<T>
         let mut offset: IdxSize = 0;
         for (l, r) in slf.downcast_iter().zip(other.chunks()) {
             let start_length = idxs.len();
-            find_validity_mismatch(l, r.as_ref(), idxs);
+            // The kernel is the Arrow one, so both chunks cross over — see `arrow_bridge`.
+            find_validity_mismatch(&*export::to_arrow(l), &*export::to_arrow(&**r), idxs);
             for idx in idxs[start_length..].iter_mut() {
                 *idx += offset;
             }

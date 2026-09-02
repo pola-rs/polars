@@ -3,9 +3,7 @@ mod frame;
 use std::borrow::Cow;
 use std::fmt::Write;
 
-use arrow::array::StructArray;
 use arrow::bitmap::Bitmap;
-use arrow::compute::utils::combine_validities_and;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::itertools::Itertools;
@@ -26,8 +24,7 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
 ) -> StructChunked {
     if fields.len() == 0 {
         let dtype = DataType::Struct(Vec::new());
-        let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
-        let chunks = vec![StructArray::new(arrow_dtype, length, Vec::new(), None).boxed()];
+        let chunks = vec![PlStructArray::new(Vec::new(), length, None).into_boxed()];
 
         // SAFETY: We construct each chunk above to have the `Struct` data type.
         return unsafe { StructChunked::from_chunks_and_dtype(name, chunks, dtype) };
@@ -41,7 +38,6 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
 
     let n_chunks = fields.clone().next().unwrap().n_chunks();
     let dtype = DataType::Struct(fields.clone().map(|s| s.field().into_owned()).collect());
-    let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
 
     let chunks = (0..n_chunks)
         .map(|c_i| {
@@ -55,7 +51,7 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
                 return None;
             }
 
-            Some(StructArray::new(arrow_dtype.clone(), chunk_length, fields, None).boxed())
+            Some(PlStructArray::new(fields, chunk_length, None).into_boxed())
         })
         .collect::<Option<Vec<_>>>();
 
@@ -214,7 +210,7 @@ impl StructChunked {
         self.struct_fields().iter().enumerate().map(|(i, field)| {
             let field_chunks = self
                 .downcast_iter()
-                .map(|chunk| chunk.values()[i].clone())
+                .map(|chunk| chunk.fields()[i].clone())
                 .collect::<Vec<_>>();
 
             // SAFETY: correct type.
@@ -367,7 +363,7 @@ impl StructChunked {
                 {
                     // SAFETY: only null_count adjusted, recalculated afterwards.
                     for (new, this) in unsafe { ca.downcast_iter_mut() }.zip(self.downcast_iter()) {
-                        new.set_validity(this.validity().cloned())
+                        new.set_validity(this.validity().map(|v| v.to_flat_or_scalar()))
                     }
                 } else {
                     let mut slf_validity = self.rechunk_validity().unwrap();
@@ -433,7 +429,10 @@ impl StructChunked {
         // We keep length and dtypes the same.
         unsafe {
             for (a, b) in self.downcast_iter_mut().zip(other.downcast_iter()) {
-                let new = combine_validities_and(a.validity(), b.validity());
+                let new = crate::chunked_array::validity::combine_validities_and(
+                    a.validity(),
+                    b.validity(),
+                );
                 a.set_validity(new)
             }
         }

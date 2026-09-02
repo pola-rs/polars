@@ -243,6 +243,15 @@ impl PartialEq for dyn PlArray + '_ {
 
 impl Eq for dyn PlArray + '_ {}
 
+/// Compares two arrays element-wise, exactly like [`PartialEq`]: an array holds no value that is
+/// unequal to itself, so there is nothing for a total comparison to do differently.
+impl polars_utils::total_ord::TotalEq for Box<dyn PlArray> {
+    #[inline]
+    fn tot_eq(&self, other: &Self) -> bool {
+        self.eq_dyn(&**other)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use arrow::types::PrimitiveType;

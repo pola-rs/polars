@@ -4,9 +4,101 @@ mod iterator;
 
 use std::borrow::Cow;
 
+use arrow::bitmap::BitmapBuilder;
 use either::Either;
+use polars_array::builder::{PlArrayBuilder, builder_like};
+use polars_array::concatenate::concatenate;
 
+use crate::chunked_array::arrow_bridge::as_flat;
+use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
+
+/// The values `arr` is taken over: the values of every element, laid end to end.
+///
+/// A [`scalar`](polars_array::broadcast) array holds only the values of the single element every
+/// one of them is, so it is written out; a flat array hands its values over as they are.
+pub(crate) fn array_values(arr: &PlFixedSizeListArray) -> PlArrayRef {
+    // TODO(polars-array-scalar): the callers read the values as one run per element, which a
+    // scalar array has to be written out to hand over.
+    as_flat(arr).values().to_boxed()
+}
+
+/// Returns `arr` with its values replaced, keeping its width and validity mask.
+///
+/// # Panics
+/// Panics if `values` does not hold the width of every element, laid end to end.
+pub(crate) fn array_with_values(
+    arr: &PlFixedSizeListArray,
+    values: PlArrayRef,
+) -> PlFixedSizeListArray {
+    let (width, length) = (arr.width(), arr.len());
+    assert_eq!(values.len(), width * length);
+
+    // SAFETY: just checked that the values hold `width` values for every element.
+    unsafe { PlFixedSizeListArray::new_unchecked(values, width, length, None) }
+        .with_validity(arr.validity().map(|v| v.to_flat_or_scalar()))
+}
+
+/// Lays `elements` out as the chunk of an [`ArrayChunked`] of `width` and `inner_dtype`.
+///
+/// Every element of a fixed size list array covers `width` values, so an element that is null
+/// covers `width` of them too — they are the nulls this writes in its place. The width is not
+/// read off the elements: it belongs to the `ArrayChunked`'s [`DataType`], which is the only thing
+/// that has it when every element is null.
+///
+/// # Panics
+/// Panics if any element is not `width` values long.
+pub(crate) fn collect_array_chunk(
+    elements: Vec<Option<PlArrayRef>>,
+    width: usize,
+    inner_dtype: &DataType,
+) -> PlFixedSizeListArray {
+    let length = elements.len();
+    let mut validity = BitmapBuilder::with_capacity(length);
+    let mut has_nulls = false;
+    for element in &elements {
+        if let Some(values) = element {
+            assert_eq!(
+                values.len(),
+                width,
+                "a fixed size list element of the wrong width"
+            );
+        }
+        has_nulls |= element.is_none();
+        validity.push(element.is_some());
+    }
+
+    // The values of a null element are the `width` nulls that stand in for the element it does not
+    // hold; the array is built once and shared by every null element.
+    let null_element = has_nulls.then(|| {
+        let mut builder = builder_like(&*new_empty_chunk(inner_dtype));
+        builder.extend_nulls(width);
+        builder.freeze_reset()
+    });
+
+    let values = elements
+        .iter()
+        .map(|element| match element {
+            Some(values) => &**values,
+            None => &**null_element.as_ref().unwrap(),
+        })
+        .collect::<Vec<_>>();
+    let values = if values.is_empty() {
+        new_empty_chunk(inner_dtype)
+    } else {
+        concatenate(&values).expect("the elements of a fixed size list are all of the same type")
+    };
+
+    // SAFETY: every element covers `width` values, which were laid end to end.
+    unsafe {
+        PlFixedSizeListArray::new_unchecked(
+            values,
+            width,
+            length,
+            has_nulls.then(|| validity.freeze()),
+        )
+    }
+}
 
 impl ArrayChunked {
     /// Get the inner data type of the fixed size list.
@@ -59,7 +151,7 @@ impl ArrayChunked {
                 Either::Right(
                     self.chunks()
                         .iter()
-                        .map(|c| (c.len(), c.validity().cloned())),
+                        .map(|c| (c.len(), c.validity().map(|v| v.to_flat_or_scalar()))),
                 )
             };
 
@@ -67,20 +159,11 @@ impl ArrayChunked {
         let chunks: Vec<_> = chunk_len_validity_iter
             .zip(physical_repr.into_chunks())
             .map(|((len, validity), values)| {
-                FixedSizeListArray::new(
-                    ArrowDataType::FixedSizeList(
-                        Box::new(ArrowField::new(
-                            LIST_VALUES_NAME,
-                            values.dtype().clone(),
-                            true,
-                        )),
-                        width,
-                    ),
-                    len,
-                    values,
-                    validity,
-                )
-                .to_boxed()
+                // SAFETY: the values are the physical repr of the ones taken out, so they still
+                // hold the width of every element, laid end to end.
+                unsafe { PlFixedSizeListArray::new_unchecked(values, width, len, None) }
+                    .with_validity(validity)
+                    .into_boxed()
             })
             .collect();
 
@@ -97,11 +180,7 @@ impl ArrayChunked {
     pub unsafe fn from_physical_unchecked(&self, to_inner_dtype: DataType) -> PolarsResult<Self> {
         debug_assert!(!self.inner_dtype().is_logical());
 
-        let chunks = self
-            .downcast_iter()
-            .map(|chunk| chunk.values())
-            .cloned()
-            .collect();
+        let chunks = self.downcast_iter().map(array_values).collect();
 
         let inner = unsafe {
             Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, chunks, self.inner_dtype())
@@ -111,22 +190,7 @@ impl ArrayChunked {
         let chunks: Vec<_> = self
             .downcast_iter()
             .zip(inner.into_chunks())
-            .map(|(chunk, values)| {
-                FixedSizeListArray::new(
-                    ArrowDataType::FixedSizeList(
-                        Box::new(ArrowField::new(
-                            LIST_VALUES_NAME,
-                            values.dtype().clone(),
-                            true,
-                        )),
-                        self.width(),
-                    ),
-                    chunk.len(),
-                    values,
-                    chunk.validity().cloned(),
-                )
-                .to_boxed()
-            })
+            .map(|(chunk, values)| array_with_values(chunk, values).into_boxed())
             .collect();
 
         let name = self.name().clone();
@@ -136,7 +200,7 @@ impl ArrayChunked {
 
     /// Get the inner values as `Series`
     pub fn get_inner(&self) -> Series {
-        let chunks: Vec<_> = self.downcast_iter().map(|c| c.values().clone()).collect();
+        let chunks: Vec<_> = self.downcast_iter().map(array_values).collect();
 
         // SAFETY: Data type of arrays matches because they are chunks from the same array.
         unsafe {
@@ -158,7 +222,7 @@ impl ArrayChunked {
         let elements = unsafe {
             Series::from_chunks_and_dtype_unchecked(
                 self.name().clone(),
-                vec![arr.values().clone()],
+                vec![array_values(arr)],
                 ca.inner_dtype(),
             )
         };
@@ -172,8 +236,7 @@ impl ArrayChunked {
         let out = out.rechunk();
         let values = out.chunks()[0].clone();
 
-        let inner_dtype = FixedSizeListArray::default_datatype(values.dtype().clone(), ca.width());
-        let arr = FixedSizeListArray::new(inner_dtype, arr.len(), values, arr.validity().cloned());
+        let arr = array_with_values(arr, values);
 
         Ok(unsafe {
             ArrayChunked::from_chunks_and_dtype_unchecked(

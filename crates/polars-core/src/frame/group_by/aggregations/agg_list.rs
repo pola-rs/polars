@@ -1,6 +1,7 @@
-use arrow::offset::Offsets;
+use polars_utils::index::idxsize_to_u64;
 
 use super::*;
+use crate::chunked_array::arrow_bridge::as_flat;
 use crate::chunked_array::builder::ListNullChunkedBuilder;
 use crate::series::implementations::null::NullChunked;
 
@@ -19,11 +20,11 @@ impl<T: PolarsNumericType> AggList for ChunkedArray<T> {
             GroupsType::Idx(groups) => {
                 let mut can_fast_explode = true;
 
-                let arr = ca.downcast_iter().next().unwrap();
+                let arr = as_flat(ca.downcast_iter().next().unwrap());
                 let values = arr.values();
 
-                let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
-                let mut length_so_far = 0i64;
+                let mut offsets = Vec::<u64>::with_capacity(groups.len() + 1);
+                let mut length_so_far = 0u64;
                 offsets.push(length_so_far);
 
                 let mut list_values = Vec::<T::Native>::with_capacity(self.len());
@@ -33,7 +34,7 @@ impl<T: PolarsNumericType> AggList for ChunkedArray<T> {
                         can_fast_explode = false;
                     }
 
-                    length_so_far += idx_len as i64;
+                    length_so_far += idx_len as u64;
                     // SAFETY:
                     // group tuples are in bounds
                     {
@@ -64,25 +65,19 @@ impl<T: PolarsNumericType> AggList for ChunkedArray<T> {
                 } else {
                     None
                 };
+                let list_values_len = list_values.len();
 
-                let array = PrimitiveArray::new(
-                    T::get_static_dtype().to_arrow(CompatLevel::newest()),
-                    list_values.into(),
-                    validity,
-                );
-                let dtype = ListArray::<i64>::default_datatype(
-                    T::get_static_dtype().to_arrow(CompatLevel::newest()),
-                );
+                let length = offsets.len() - 1;
+                let array = PlPrimitiveArray::new(list_values.into(), list_values_len, validity);
                 // SAFETY:
                 // offsets are monotonically increasing
-                let arr = ListArray::<i64>::new(
-                    dtype,
-                    Offsets::new_unchecked(offsets).into(),
-                    Box::new(array),
-                    None,
-                );
+                let arr = PlListArray::new_unchecked(Box::new(array), offsets.into(), length, None);
 
-                let mut ca = ListChunked::with_chunk(self.name().clone(), arr);
+                let mut ca = ListChunked::from_chunks_and_dtype_unchecked(
+                    self.name().clone(),
+                    vec![Box::new(arr)],
+                    DataType::List(Box::new(T::get_static_dtype())),
+                );
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -90,11 +85,11 @@ impl<T: PolarsNumericType> AggList for ChunkedArray<T> {
             },
             GroupsType::Slice { groups, .. } => {
                 let mut can_fast_explode = true;
-                let arr = ca.downcast_iter().next().unwrap();
+                let arr = as_flat(ca.downcast_iter().next().unwrap());
                 let values = arr.values();
 
-                let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
-                let mut length_so_far = 0i64;
+                let mut offsets = Vec::<u64>::with_capacity(groups.len() + 1);
+                let mut length_so_far = 0u64;
                 offsets.push(length_so_far);
 
                 let mut list_values = Vec::<T::Native>::with_capacity(self.len());
@@ -103,7 +98,7 @@ impl<T: PolarsNumericType> AggList for ChunkedArray<T> {
                         can_fast_explode = false;
                     }
 
-                    length_so_far += len as i64;
+                    length_so_far += idxsize_to_u64(len);
                     list_values.extend_from_slice(&values[first as usize..(first + len) as usize]);
                     {
                         // SAFETY:
@@ -129,22 +124,17 @@ impl<T: PolarsNumericType> AggList for ChunkedArray<T> {
                 } else {
                     None
                 };
+                let list_values_len = list_values.len();
 
-                let array = PrimitiveArray::new(
-                    T::get_static_dtype().to_arrow(CompatLevel::newest()),
-                    list_values.into(),
-                    validity,
+                let length = offsets.len() - 1;
+                let array = PlPrimitiveArray::new(list_values.into(), list_values_len, validity);
+                let arr = PlListArray::new_unchecked(Box::new(array), offsets.into(), length, None);
+
+                let mut ca = ListChunked::from_chunks_and_dtype_unchecked(
+                    self.name().clone(),
+                    vec![Box::new(arr)],
+                    DataType::List(Box::new(T::get_static_dtype())),
                 );
-                let dtype = ListArray::<i64>::default_datatype(
-                    T::get_static_dtype().to_arrow(CompatLevel::newest()),
-                );
-                let arr = ListArray::<i64>::new(
-                    dtype,
-                    Offsets::new_unchecked(offsets).into(),
-                    Box::new(array),
-                    None,
-                );
-                let mut ca = ListChunked::with_chunk(self.name().clone(), arr);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -209,63 +199,52 @@ impl AggList for ArrayChunked {
 #[cfg(feature = "object")]
 impl<T: PolarsObject> AggList for ObjectChunked<T> {
     unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
+        use polars_array::builder::StaticArrayBuilder;
+
+        use crate::chunked_array::object::ObjectArrayBuilder;
+
         let mut can_fast_explode = true;
-        let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
-        let mut length_so_far = 0i64;
+        let mut offsets = Vec::<u64>::with_capacity(groups.len() + 1);
+        let mut length_so_far = 0u64;
         offsets.push(length_so_far);
 
-        //  we know that iterators length
-        let iter = {
-            groups
-                .iter()
-                .flat_map(|indicator| {
-                    let (group_vals, len) = match indicator {
-                        GroupsIndicator::Idx((_first, idx)) => {
-                            // SAFETY:
-                            // group tuples always in bounds
-                            let group_vals = self.take_unchecked(idx);
-
-                            (group_vals, idx.len() as IdxSize)
-                        },
-                        GroupsIndicator::Slice([first, len]) => {
-                            let group_vals = _slice_from_offsets(self, first, len);
-
-                            (group_vals, len)
-                        },
-                    };
-
-                    if len == 0 {
-                        can_fast_explode = false;
-                    }
-                    length_so_far += len as i64;
+        // The values of a list of objects are the object array itself, which holds the values and
+        // drops them with it — there is no packing into bytes for an in-memory column.
+        let mut values = ObjectArrayBuilder::<T>::with_capacity(self.len());
+        for indicator in groups.iter() {
+            let (group_vals, len) = match indicator {
+                GroupsIndicator::Idx((_first, idx)) => {
                     // SAFETY:
-                    // we know that offsets has allocated enough slots
-                    offsets.push_unchecked(length_so_far);
+                    // group tuples always in bounds
+                    (self.take_unchecked(idx), idx.len() as IdxSize)
+                },
+                GroupsIndicator::Slice([first, len]) => {
+                    (_slice_from_offsets(self, first, len), len)
+                },
+            };
 
-                    let arr = group_vals.downcast_iter().next().unwrap().clone();
-                    arr.into_iter_cloned()
-                })
-                .trust_my_length(self.len())
-        };
+            if len == 0 {
+                can_fast_explode = false;
+            }
+            length_so_far += idxsize_to_u64(len);
+            // SAFETY:
+            // we know that offsets has allocated enough slots
+            offsets.push_unchecked(length_so_far);
 
-        let mut pe = create_extension(iter);
+            for value in group_vals.iter() {
+                values.push(value);
+            }
+        }
 
-        // SAFETY: This is safe because we just created the PolarsExtension
-        // meaning that the sentinel is heap allocated and the dereference of
-        // the pointer does not fail.
-        pe.set_to_series_fn::<T>();
-        let extension_array = Box::new(pe.take_and_forget()) as ArrayRef;
-        let extension_dtype = extension_array.dtype();
-
-        let dtype = ListArray::<i64>::default_datatype(extension_dtype.clone());
-        // SAFETY: offsets are monotonically increasing.
-        let arr = ListArray::<i64>::new(
-            dtype,
-            Offsets::new_unchecked(offsets).into(),
-            extension_array,
-            None,
+        let length = offsets.len() - 1;
+        // SAFETY: the offsets were built from the lengths of the groups.
+        let arr =
+            PlListArray::new_unchecked(Box::new(values.freeze()), offsets.into(), length, None);
+        let mut listarr = ListChunked::from_chunks_and_dtype_unchecked(
+            self.name().clone(),
+            vec![Box::new(arr)],
+            DataType::List(Box::new(self.dtype().clone())),
         );
-        let mut listarr = ListChunked::with_chunk(self.name().clone(), arr);
         if can_fast_explode {
             listarr.set_fast_explode()
         }
@@ -287,13 +266,15 @@ impl AggList for StructChunked {
         };
 
         let arr = gathered.chunks()[0].clone();
-        let dtype = LargeListArray::default_datatype(arr.dtype().clone());
+        let length = offsets.len() - 1;
 
-        let mut chunk = ListChunked::with_chunk(
+        // SAFETY: the offsets were built from the lengths of the groups that were gathered.
+        let arr = PlListArray::new_unchecked(arr, offsets, length, None);
+        let mut chunk = ListChunked::from_chunks_and_dtype_unchecked(
             self.name().clone(),
-            LargeListArray::new(dtype, offsets, arr, None),
+            vec![Box::new(arr)],
+            DataType::List(Box::new(self.dtype().clone())),
         );
-        chunk.set_dtype(DataType::List(Box::new(self.dtype().clone())));
         if can_fast_explode {
             chunk.set_fast_explode()
         }
@@ -318,13 +299,15 @@ where
     };
 
     let arr = gathered.chunks()[0].clone();
-    let dtype = LargeListArray::default_datatype(arr.dtype().clone());
+    let length = offsets.len() - 1;
 
-    let mut chunk = ListChunked::with_chunk(
+    // SAFETY: the offsets were built from the lengths of the groups that were gathered.
+    let arr = PlListArray::new_unchecked(arr, offsets, length, None);
+    let mut chunk = ListChunked::from_chunks_and_dtype_unchecked(
         ca.name().clone(),
-        LargeListArray::new(dtype, offsets, arr, None),
+        vec![Box::new(arr)],
+        DataType::List(Box::new(ca.dtype().clone())),
     );
-    chunk.set_dtype(DataType::List(Box::new(ca.dtype().clone())));
     if can_fast_explode {
         chunk.set_fast_explode()
     }

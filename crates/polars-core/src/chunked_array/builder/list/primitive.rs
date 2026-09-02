@@ -1,4 +1,5 @@
 use super::*;
+use crate::chunked_array::arrow_bridge::as_flat;
 
 pub struct ListPrimitiveChunkedBuilder<T>
 where
@@ -142,11 +143,13 @@ Expected {}, got {}.", self.field.dtype(), s.dtype())
 
         ca.downcast_iter().for_each(|arr| {
             if arr.null_count() == 0 {
-                values.extend_from_slice(arr.values().as_slice())
+                // The values are read as a slice, so a chunk that is not laid out flat is written
+                // out first — see `arrow_bridge::as_flat`.
+                values.extend_from_slice(as_flat(arr).as_slice())
             } else {
                 // SAFETY:
-                // Arrow arrays are trusted length iterators.
-                unsafe { values.extend_trusted_len_unchecked(arr.into_iter()) }
+                // The arrays are trusted length iterators.
+                unsafe { values.extend_trusted_len_unchecked(arr.iter()) }
             }
         });
         // overflow of i64 is far beyond polars capable lengths.

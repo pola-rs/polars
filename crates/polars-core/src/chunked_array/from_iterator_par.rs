@@ -96,21 +96,30 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutablePrimitiveArray::new);
-        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
+        // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
+        // made of in `O(1)` — see `arrow_bridge`.
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
+            .optional_rechunk()
     }
 }
 
 impl FromParallelIterator<bool> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = bool>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
-        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
+        // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
+        // made of in `O(1)` — see `arrow_bridge`.
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
+            .optional_rechunk()
     }
 }
 
 impl FromParallelIterator<Option<bool>> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<bool>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBooleanArray::new);
-        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
+        // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
+        // made of in `O(1)` — see `arrow_bridge`.
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
+            .optional_rechunk()
     }
 }
 
@@ -120,7 +129,10 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
+        // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
+        // made of in `O(1)` — see `arrow_bridge`.
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
+            .optional_rechunk()
     }
 }
 
@@ -130,7 +142,10 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
+        // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
+        // made of in `O(1)` — see `arrow_bridge`.
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
+            .optional_rechunk()
     }
 }
 
@@ -140,7 +155,10 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
+        // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
+        // made of in `O(1)` — see `arrow_bridge`.
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
+            .optional_rechunk()
     }
 }
 
@@ -150,7 +168,10 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let chunks = collect_into_linked_list(iter, MutableBinaryViewArray::new);
-        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks).optional_rechunk()
+        // The chunks are frozen as Arrow arrays, which cross into the arrays a `ChunkedArray` is
+        // made of in `O(1)` — see `arrow_bridge`.
+        Self::from_chunk_iter(PlSmallStr::EMPTY, chunks.iter().map(ToArrow::from_arrow))
+            .optional_rechunk()
     }
 }
 
@@ -387,7 +408,7 @@ where
     let validity = (validity.unset_bits() > 0).then_some(validity);
     BooleanChunked::with_chunk(
         PlSmallStr::EMPTY,
-        BooleanArray::new(ArrowDataType::Boolean, values, validity),
+        PlBooleanArray::new(values, len, validity),
     )
 }
 

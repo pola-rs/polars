@@ -1174,8 +1174,11 @@ impl Column {
             }
 
             let mut prev_idx = end - start;
+            // The values are read as a slice, so a chunk that is not laid out flat is written out
+            // first — see `arrow_bridge::as_flat`.
             for chunk in arg_unique.downcast_iter() {
-                for &idx in chunk.values().as_slice().iter().rev() {
+                let chunk = crate::chunked_array::arrow_bridge::as_flat(chunk);
+                for &idx in chunk.as_slice().iter().rev() {
                     values.extend(start + idx..start + prev_idx);
                     prev_idx = idx;
                 }

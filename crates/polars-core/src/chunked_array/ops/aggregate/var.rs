@@ -1,6 +1,7 @@
 use polars_compute::moment::VarState;
 
 use super::*;
+use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 
 pub trait VarAggSeries {
     /// Get the variance of the [`ChunkedArray`] as a new [`Series`] of length 1.
@@ -16,8 +17,9 @@ where
 {
     fn var(&self, ddof: u8) -> Option<f64> {
         let mut out = VarState::default();
+        // The kernel is the Arrow one, so each chunk crosses over — see `arrow_bridge`.
         for arr in self.downcast_iter() {
-            out.combine(&polars_compute::moment::var(arr))
+            out.combine(&polars_compute::moment::var(&chunk_to_arrow(arr)))
         }
         out.finalize(ddof)
     }

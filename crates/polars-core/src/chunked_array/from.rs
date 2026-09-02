@@ -153,11 +153,11 @@ where
         // Assertions in debug mode that check the chunks are laid out the way the dtype says.
         #[cfg(debug_assertions)]
         {
-            if let Some(chunk) = chunks.first().filter(|chunk| !chunk.is_empty()) {
-                debug_assert_eq!(
-                    chunk.array_type(),
-                    dtype.to_physical().to_arrow(CompatLevel::newest()).into(),
-                );
+            // An object array has no Arrow counterpart to take the shape from.
+            if !dtype.is_object()
+                && let Some(chunk) = chunks.first().filter(|chunk| !chunk.is_empty())
+            {
+                debug_assert_eq!(chunk.array_type(), new_empty_chunk(&dtype).array_type());
             }
         }
 
@@ -186,8 +186,11 @@ where
         let prototype = ca.chunks.first().expect("a ChunkedArray has a chunk");
         let chunks = vec![polars_array::builder::full_null_like(&**prototype, length)];
         unsafe {
-            let mut out =
-                Self::from_chunks_and_dtype_unchecked(ca.name().clone(), chunks, ca.dtype().clone());
+            let mut out = Self::from_chunks_and_dtype_unchecked(
+                ca.name().clone(),
+                chunks,
+                ca.dtype().clone(),
+            );
             out.length = length;
             out.null_count = length;
             out

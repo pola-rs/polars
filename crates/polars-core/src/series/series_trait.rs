@@ -323,7 +323,7 @@ pub trait SeriesTrait:
     /// Returns the validity of this series as a single bitmap.
     fn rechunk_validity(&self) -> Option<Bitmap> {
         if self.chunks().len() == 1 {
-            return self.chunks()[0].validity().cloned();
+            return self.chunks()[0].validity().map(|v| v.to_flat());
         }
 
         if !self.has_nulls() || self.is_empty() {
@@ -333,7 +333,7 @@ pub trait SeriesTrait:
         let mut bm = BitmapBuilder::with_capacity(self.len());
         for arr in self.chunks() {
             if let Some(v) = arr.validity() {
-                bm.extend_from_bitmap(v);
+                bm.extend_from_bitmap(&v.to_flat());
             } else {
                 bm.extend_constant(arr.len(), true);
             }
@@ -667,6 +667,18 @@ pub trait SeriesTrait:
     /// Get the value at this index as a downcastable Any trait ref.
     fn get_object(&self, _index: usize) -> Option<&dyn PolarsObjectSafe> {
         invalid_operation_panic!(get_object, self)
+    }
+
+    #[cfg(feature = "object")]
+    /// The values of this object column, packed into the fixed size binary array that carries
+    /// them out to Arrow.
+    ///
+    /// The chunks of an object column hold the values themselves, which no Arrow array can; this
+    /// is what packs them into the bytes an Arrow array does hold. It is the object column that
+    /// knows the type of its values, which is why this is dispatched through the [`Series`] rather
+    /// than done on the chunk.
+    fn object_values_to_arrow(&self) -> ArrayRef {
+        invalid_operation_panic!(object_values_to_arrow, self)
     }
 
     #[cfg(feature = "object")]

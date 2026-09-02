@@ -42,7 +42,7 @@ where
 impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
-        BooleanArray::from_iter(iter).into()
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, PlBooleanArray::arr_from_iter(iter))
     }
 }
 
@@ -69,7 +69,7 @@ where
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let arr = MutableBinaryViewArray::from_iterator(iter.into_iter()).freeze();
-        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr))
     }
 }
 
@@ -95,7 +95,7 @@ where
     #[inline]
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
         let arr = MutableBinaryViewArray::from_values_iter(iter.into_iter()).freeze();
-        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr))
     }
 }
 
@@ -107,7 +107,7 @@ where
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let arr = MutableBinaryViewArray::from_iter(iter).freeze();
-        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr))
     }
 }
 
@@ -118,7 +118,7 @@ where
     #[inline]
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
         let arr = MutableBinaryViewArray::from_values_iter(iter.into_iter()).freeze();
-        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, ToArrow::from_arrow(&arr))
     }
 }
 

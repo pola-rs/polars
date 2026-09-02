@@ -1,6 +1,4 @@
 mod any_value;
-use arrow::compute::concatenate::concatenate_validities;
-use arrow::compute::utils::combine_validities_and;
 pub mod flatten;
 pub(crate) mod series;
 mod supertype;
@@ -178,8 +176,9 @@ impl<T: PolarsDataType> Container for ChunkedArray<T> {
     }
 
     fn iter_chunks(&self) -> impl Iterator<Item = Self> {
+        // The chunks carry no logical type, so it is taken from this array.
         self.downcast_iter()
-            .map(|arr| Self::with_chunk(self.name().clone(), arr.clone()))
+            .map(|arr| Self::from_chunk_iter_like(self, [arr.clone()]))
     }
 
     fn should_rechunk(&self) -> bool {

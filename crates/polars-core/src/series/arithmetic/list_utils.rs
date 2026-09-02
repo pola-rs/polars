@@ -1,5 +1,5 @@
 /// Functionality shared between list and array arithmetic implementations.
-use arrow::array::{Array, PrimitiveArray};
+use arrow::array::PrimitiveArray;
 use arrow::compute::utils::combine_validities_and;
 use num_traits::Zero;
 use polars_compute::arithmetic::ArithmeticKernel;
@@ -8,6 +8,7 @@ use polars_error::PolarsResult;
 use polars_utils::float::IsFloat;
 
 use super::*;
+use crate::chunked_array::arrow_bridge::chunk_to_arrow;
 use crate::series::ChunkedArray;
 use crate::utils::try_get_supertype;
 
@@ -81,7 +82,7 @@ impl NumericOp {
     /// Panics if:
     /// * lhs.len() != rhs.len()
     /// * dtype is not numeric.
-    pub(super) fn apply_series(&self, lhs: &Series, rhs: &Series) -> Box<dyn Array> {
+    pub(super) fn apply_series(&self, lhs: &Series, rhs: &Series) -> PlArrayRef {
         assert_eq!(lhs.len(), rhs.len());
         debug_assert_eq!(lhs.dtype(), rhs.dtype());
 
@@ -92,10 +93,13 @@ impl NumericOp {
             let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
             let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
 
-            let lhs = lhs.downcast_get(0).unwrap();
-            let rhs = rhs.downcast_get(0).unwrap();
+            // The kernels are the Arrow ones, so the chunks cross over and the result crosses
+            // back — see `arrow_bridge`.
+            let lhs = chunk_to_arrow(lhs.downcast_get(0).unwrap());
+            let rhs = chunk_to_arrow(rhs.downcast_get(0).unwrap());
 
-            Box::new(self.apply_arithmetic_kernel::<$T>(lhs.clone(), rhs.clone()))
+            let out = self.apply_arithmetic_kernel::<$T>(lhs, rhs);
+            <<$T as PolarsDataType>::Array as ToArrow>::from_arrow(&out).into_boxed()
         })
     }
 

@@ -21,7 +21,7 @@ impl DatetimeChunked {
         unsafe {
             self.physical()
                 .downcast_iter()
-                .flat_map(move |iter| iter.into_iter().map(move |opt_v| opt_v.copied().map(func)))
+                .flat_map(move |iter| iter.into_iter().map(move |opt_v| opt_v.map(func)))
                 .trust_my_length(self.len())
         }
     }

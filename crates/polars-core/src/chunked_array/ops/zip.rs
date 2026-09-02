@@ -1,11 +1,16 @@
 use std::borrow::Cow;
 
+use arrow::array::Array;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
+use arrow::datatypes::ArrowDataType;
+use arrow::types::NativeType;
+use polars_array::arrow::export;
 use polars_compute::if_then_else::{IfThenElseKernel, if_then_else_validity};
 use polars_error::PolarsContext;
 use polars_utils::broadcast::broadcast_len;
 
+use crate::chunked_array::arrow_bridge::{as_flat, chunk_from_arrow, flat_to_arrow};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
@@ -13,6 +18,147 @@ use crate::utils::{align_chunks_binary, align_chunks_ternary};
 
 const SHAPE_MISMATCH_STR: &str =
     "shapes of `self`, `mask` and `other` are not suitable for `zip_with` operation";
+
+/// The `if_then_else` kernel over the chunks of a [`ChunkedArray`].
+///
+/// This is [`IfThenElseKernel`] over the arrays of `polars-array` rather than over the Arrow ones:
+/// a chunk crosses over to the Arrow kernel and the result crosses back — see
+/// [`arrow_bridge`](crate::chunked_array::arrow_bridge) — except for an object array, which has no
+/// Arrow counterpart and answers the kernel itself.
+///
+/// The chunks reach it [`Flat`], which is what an Arrow array is; a chunk in the
+/// [`scalar`](polars_array::broadcast) representation is written out at the call site.
+pub trait ChunkZipKernel: StaticArray {
+    /// The elements of `if_true` where `mask` is set, and of `if_false` where it is not.
+    fn if_then_else(mask: &Bitmap, if_true: &Flat<Self>, if_false: &Flat<Self>) -> Self;
+
+    /// As [`Self::if_then_else`], with a single value standing for every element of `if_true`.
+    fn if_then_else_broadcast_true(
+        mask: &Bitmap,
+        if_true: Self::ValueT<'_>,
+        if_false: &Flat<Self>,
+    ) -> Self;
+
+    /// As [`Self::if_then_else`], with a single value standing for every element of `if_false`.
+    fn if_then_else_broadcast_false(
+        mask: &Bitmap,
+        if_true: &Flat<Self>,
+        if_false: Self::ValueT<'_>,
+    ) -> Self;
+
+    /// As [`Self::if_then_else`], with a single value standing for either side.
+    fn if_then_else_broadcast_both(
+        mask: &Bitmap,
+        if_true: Self::ValueT<'_>,
+        if_false: Self::ValueT<'_>,
+    ) -> Self;
+}
+
+/// The body of a [`ChunkZipKernel`] that hands its chunks to the Arrow kernel.
+///
+/// `$to_arrow_scalar` maps a single value to the one the Arrow kernel takes — the identity for
+/// every array whose elements are the same on both sides, and the export for a nested one, whose
+/// element is an array of its own. `$dtype` is the Arrow data type of the result, which the
+/// Arrow kernel needs when neither side is an array to read it off.
+macro_rules! arrow_zip_kernel {
+    ($to_arrow_scalar:expr, |$t:ident, $f:ident| $dtype:expr) => {
+        #[inline]
+        fn if_then_else(mask: &Bitmap, if_true: &Flat<Self>, if_false: &Flat<Self>) -> Self {
+            chunk_from_arrow(&IfThenElseKernel::if_then_else(
+                mask,
+                &flat_to_arrow(if_true),
+                &flat_to_arrow(if_false),
+            ))
+        }
+
+        #[inline]
+        fn if_then_else_broadcast_true(
+            mask: &Bitmap,
+            if_true: Self::ValueT<'_>,
+            if_false: &Flat<Self>,
+        ) -> Self {
+            chunk_from_arrow(&IfThenElseKernel::if_then_else_broadcast_true(
+                mask,
+                $to_arrow_scalar(if_true),
+                &flat_to_arrow(if_false),
+            ))
+        }
+
+        #[inline]
+        fn if_then_else_broadcast_false(
+            mask: &Bitmap,
+            if_true: &Flat<Self>,
+            if_false: Self::ValueT<'_>,
+        ) -> Self {
+            chunk_from_arrow(&IfThenElseKernel::if_then_else_broadcast_false(
+                mask,
+                &flat_to_arrow(if_true),
+                $to_arrow_scalar(if_false),
+            ))
+        }
+
+        #[inline]
+        fn if_then_else_broadcast_both(
+            mask: &Bitmap,
+            if_true: Self::ValueT<'_>,
+            if_false: Self::ValueT<'_>,
+        ) -> Self {
+            let $t = $to_arrow_scalar(if_true);
+            let $f = $to_arrow_scalar(if_false);
+            let dtype = $dtype;
+            chunk_from_arrow(&IfThenElseKernel::if_then_else_broadcast_both(
+                dtype, mask, $t, $f,
+            ))
+        }
+    };
+}
+
+/// The element of a nested array, exported as the Arrow array the kernel takes.
+#[inline]
+fn to_arrow_element(element: Box<dyn PlArray>) -> Box<dyn Array> {
+    export::to_arrow(&*element)
+}
+
+/// The Arrow data type of a list of `values`.
+fn large_list_dtype(values: &dyn Array) -> ArrowDataType {
+    ArrowDataType::LargeList(Box::new(ArrowField::new(
+        LIST_VALUES_NAME,
+        values.dtype().clone(),
+        true,
+    )))
+}
+
+impl<T: NativeType> ChunkZipKernel for PlPrimitiveArray<T>
+where
+    PrimitiveArray<T>: for<'a> IfThenElseKernel<Scalar<'a> = T>,
+{
+    arrow_zip_kernel!(std::convert::identity, |_t, _f| T::PRIMITIVE.into());
+}
+
+impl ChunkZipKernel for PlBooleanArray {
+    arrow_zip_kernel!(std::convert::identity, |_t, _f| ArrowDataType::Boolean);
+}
+
+impl ChunkZipKernel for PlUtf8ViewArray {
+    arrow_zip_kernel!(std::convert::identity, |_t, _f| ArrowDataType::Utf8View);
+}
+
+impl ChunkZipKernel for PlBinaryViewArray {
+    arrow_zip_kernel!(std::convert::identity, |_t, _f| ArrowDataType::BinaryView);
+}
+
+impl ChunkZipKernel for PlListArray {
+    // The elements of a list array are arrays of their own, whose data type the result carries.
+    arrow_zip_kernel!(to_arrow_element, |t, _f| large_list_dtype(&*t));
+}
+
+#[cfg(feature = "dtype-array")]
+impl ChunkZipKernel for PlFixedSizeListArray {
+    arrow_zip_kernel!(to_arrow_element, |t, _f| ArrowDataType::FixedSizeList(
+        Box::new(ArrowField::new(LIST_VALUES_NAME, t.dtype().clone(), true)),
+        t.len(),
+    ));
+}
 
 fn if_then_else_broadcast_mask<T: PolarsDataType>(
     mask: bool,
@@ -29,7 +175,15 @@ where
     Ok(ret.with_name(if_true.name().clone()))
 }
 
-fn bool_null_to_false(mask: &BooleanArray) -> Bitmap {
+/// The bits of a mask chunk that [`bool_null_to_false`] left flat and fully valid.
+fn mask_values(mask: &PlBooleanArray) -> Bitmap {
+    as_flat(mask).values().clone()
+}
+
+fn bool_null_to_false(mask: &PlBooleanArray) -> Bitmap {
+    // TODO(polars-array-scalar): a scalar mask stands for one bit at every element, which this
+    // writes out to hand back one bit per element.
+    let mask = as_flat(mask);
     if mask.null_count() == 0 {
         mask.values().clone()
     } else {
@@ -54,7 +208,8 @@ fn combine_validities_chunked<
         .zip(mask_al.downcast_iter())
         .map(|(a, m)| {
             let bm = bool_null_to_false(m);
-            let validity = combiner(a.validity(), Some(&bm));
+            let a_validity = a.validity().map(|v| v.to_flat());
+            let validity = combiner(a_validity.as_ref(), Some(&bm));
             a.clone().with_validity_typed(validity)
         });
     ChunkedArray::from_chunk_iter_like(ca, chunks)
@@ -63,7 +218,7 @@ fn combine_validities_chunked<
 impl<T> ChunkZip<T> for ChunkedArray<T>
 where
     T: PolarsDataType<IsStruct = FalseT>,
-    T::Array: for<'a> IfThenElseKernel<Scalar<'a> = T::Physical<'a>>,
+    T::Array: ChunkZipKernel,
     ChunkedArray<T>: ChunkExpandAtIndex<T>,
 {
     fn zip_with(
@@ -94,12 +249,11 @@ where
                     combine_validities_and,
                 ),
                 (Some(t), Some(f)) => {
-                    let dtype = if_true.downcast_iter().next().unwrap().dtype();
                     let chunks = mask.downcast_iter().map(|m| {
                         let bm = bool_null_to_false(m);
                         let t = t.clone();
                         let f = f.clone();
-                        IfThenElseKernel::if_then_else_broadcast_both(dtype.clone(), &bm, t, f)
+                        ChunkZipKernel::if_then_else_broadcast_both(&bm, t, f)
                     });
                     ChunkedArray::from_chunk_iter_like(if_true, chunks)
                 },
@@ -113,7 +267,9 @@ where
                 .downcast_iter()
                 .zip(if_true_al.downcast_iter())
                 .zip(if_false_al.downcast_iter())
-                .map(|((m, t), f)| IfThenElseKernel::if_then_else(&bool_null_to_false(m), t, f));
+                .map(|((m, t), f)| {
+                    ChunkZipKernel::if_then_else(&bool_null_to_false(m), &as_flat(t), &as_flat(f))
+                });
             ChunkedArray::from_chunk_iter_like(if_true, chunks)
 
         // Broadcast true value.
@@ -127,7 +283,7 @@ where
                     .map(|(m, f)| {
                         let bm = bool_null_to_false(m);
                         let t = true_scalar.clone();
-                        IfThenElseKernel::if_then_else_broadcast_true(&bm, t, f)
+                        ChunkZipKernel::if_then_else_broadcast_true(&bm, t, &as_flat(f))
                     });
                 ChunkedArray::from_chunk_iter_like(if_true, chunks)
             } else {
@@ -146,7 +302,7 @@ where
                         .map(|(m, t)| {
                             let bm = bool_null_to_false(m);
                             let f = false_scalar.clone();
-                            IfThenElseKernel::if_then_else_broadcast_false(&bm, t, f)
+                            ChunkZipKernel::if_then_else_broadcast_false(&bm, &as_flat(t), f)
                         });
                 ChunkedArray::from_chunk_iter_like(if_false, chunks)
             } else {
@@ -162,10 +318,8 @@ where
 
 // Basic implementation for ObjectArray.
 #[cfg(feature = "object")]
-impl<T: PolarsObject> IfThenElseKernel for ObjectArray<T> {
-    type Scalar<'a> = &'a T;
-
-    fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {
+impl<T: PolarsObject> ChunkZipKernel for ObjectArray<T> {
+    fn if_then_else(mask: &Bitmap, if_true: &Flat<Self>, if_false: &Flat<Self>) -> Self {
         mask.iter()
             .zip(if_true.iter())
             .zip(if_false.iter())
@@ -175,8 +329,8 @@ impl<T: PolarsObject> IfThenElseKernel for ObjectArray<T> {
 
     fn if_then_else_broadcast_true(
         mask: &Bitmap,
-        if_true: Self::Scalar<'_>,
-        if_false: &Self,
+        if_true: Self::ValueT<'_>,
+        if_false: &Flat<Self>,
     ) -> Self {
         mask.iter()
             .zip(if_false.iter())
@@ -186,8 +340,8 @@ impl<T: PolarsObject> IfThenElseKernel for ObjectArray<T> {
 
     fn if_then_else_broadcast_false(
         mask: &Bitmap,
-        if_true: &Self,
-        if_false: Self::Scalar<'_>,
+        if_true: &Flat<Self>,
+        if_false: Self::ValueT<'_>,
     ) -> Self {
         mask.iter()
             .zip(if_true.iter())
@@ -196,10 +350,9 @@ impl<T: PolarsObject> IfThenElseKernel for ObjectArray<T> {
     }
 
     fn if_then_else_broadcast_both(
-        _dtype: ArrowDataType,
         mask: &Bitmap,
-        if_true: Self::Scalar<'_>,
-        if_false: Self::Scalar<'_>,
+        if_true: Self::ValueT<'_>,
+        if_false: Self::ValueT<'_>,
     ) -> Self {
         mask.iter()
             .map(|m| if m { if_true } else { if_false })
@@ -266,7 +419,8 @@ impl ChunkZip<StructType> for StructChunked {
         unsafe {
             for arr in mask.downcast_iter_mut() {
                 let bm = bool_null_to_false(arr);
-                *arr = BooleanArray::from_data_default(bm, None);
+                let length = arr.len();
+                *arr = PlBooleanArray::new(bm, length, None);
             }
             mask.set_null_count(0);
         }
@@ -323,32 +477,23 @@ impl ChunkZip<StructType> for StructChunked {
                         (true, true) => None,
                         (false, true) => {
                             if mask.chunks().len() == 1 {
-                                let m = mask.chunks()[0]
-                                    .as_any()
-                                    .downcast_ref::<BooleanArray>()
-                                    .unwrap()
-                                    .values();
-                                Some(!m)
+                                Some(!&mask_values(mask.downcast_get(0).unwrap()))
                             } else {
                                 rechunk_bitmaps(
                                     length,
                                     mask.downcast_iter()
-                                        .map(|m| (m.len(), Some(m.values().clone()))),
+                                        .map(|m| (m.len(), Some(mask_values(m)))),
                                 )
                             }
                         },
                         (true, false) => {
                             if mask.chunks().len() == 1 {
-                                let m = mask.chunks()[0]
-                                    .as_any()
-                                    .downcast_ref::<BooleanArray>()
-                                    .unwrap()
-                                    .values();
-                                Some(m.clone())
+                                Some(mask_values(mask.downcast_get(0).unwrap()))
                             } else {
                                 rechunk_bitmaps(
                                     length,
-                                    mask.downcast_iter().map(|m| (m.len(), Some(!m.values()))),
+                                    mask.downcast_iter()
+                                        .map(|m| (m.len(), Some(!&mask_values(m)))),
                                 )
                             }
                         },
@@ -374,21 +519,18 @@ impl ChunkZip<StructType> for StructChunked {
                     };
 
                     if if_false.chunks().len() == 1 {
-                        let if_false = if_false.chunks()[0].validity();
-                        let m = mask.chunks()[0]
-                            .as_any()
-                            .downcast_ref::<BooleanArray>()
-                            .unwrap()
-                            .values();
+                        let if_false = if_false.chunks()[0].validity().map(|v| v.to_flat());
+                        let m = mask_values(mask.downcast_get(0).unwrap());
 
-                        let validity = combine(if_false, m);
+                        let validity = combine(if_false.as_ref(), &m);
                         validity.filter(|v| v.unset_bits() > 0)
                     } else {
                         rechunk_bitmaps(
                             length,
                             if_false.chunks().iter().zip(mask.downcast_iter()).map(
                                 |(chunk, mask)| {
-                                    (mask.len(), combine(chunk.validity(), mask.values()))
+                                    let validity = chunk.validity().map(|v| v.to_flat());
+                                    (mask.len(), combine(validity.as_ref(), &mask_values(mask)))
                                 },
                             ),
                         )
@@ -413,21 +555,18 @@ impl ChunkZip<StructType> for StructChunked {
                     };
 
                     if if_true.chunks().len() == 1 {
-                        let if_true = if_true.chunks()[0].validity();
-                        let m = mask.chunks()[0]
-                            .as_any()
-                            .downcast_ref::<BooleanArray>()
-                            .unwrap()
-                            .values();
+                        let if_true = if_true.chunks()[0].validity().map(|v| v.to_flat());
+                        let m = mask_values(mask.downcast_get(0).unwrap());
 
-                        let validity = combine(if_true, m);
+                        let validity = combine(if_true.as_ref(), &m);
                         validity.filter(|v| v.unset_bits() > 0)
                     } else {
                         rechunk_bitmaps(
                             length,
                             if_true.chunks().iter().zip(mask.downcast_iter()).map(
                                 |(chunk, mask)| {
-                                    (mask.len(), combine(chunk.validity(), mask.values()))
+                                    let validity = chunk.validity().map(|v| v.to_flat());
+                                    (mask.len(), combine(validity.as_ref(), &mask_values(mask)))
                                 },
                             ),
                         )
@@ -447,11 +586,17 @@ impl ChunkZip<StructType> for StructChunked {
                             .all(|(l, r)| l == r)
                     );
 
-                    let validities = if_true
-                        .chunks()
-                        .iter()
-                        .zip(if_false.chunks())
-                        .map(|(l, r)| (l.validity(), r.validity()));
+                    let validities =
+                        if_true
+                            .chunks()
+                            .iter()
+                            .zip(if_false.chunks())
+                            .map(|(l, r)| {
+                                (
+                                    l.validity().map(|v| v.to_flat()),
+                                    r.validity().map(|v| v.to_flat()),
+                                )
+                            });
 
                     rechunk_bitmaps(
                         length,
@@ -460,7 +605,11 @@ impl ChunkZip<StructType> for StructChunked {
                             .map(|((if_true, if_false), mask)| {
                                 (
                                     mask.len(),
-                                    if_then_else_validity(mask.values(), if_true, if_false),
+                                    if_then_else_validity(
+                                        &mask_values(mask),
+                                        if_true.as_ref(),
+                                        if_false.as_ref(),
+                                    ),
                                 )
                             }),
                     )

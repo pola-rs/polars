@@ -179,6 +179,24 @@ impl ToArrow for PlNullArray {
     }
 }
 
+/// Hands the backing buffers of a flat chunk to the Arrow array that holds the same elements.
+///
+/// This is [`ToArrow::to_arrow`] as a free function, for a caller that has the flatness already —
+/// [`as_flat`] is what gets it. It is `O(1)`.
+#[inline]
+pub fn flat_to_arrow<A: ToArrow>(array: &Flat<A>) -> A::Arrow {
+    A::to_arrow(array)
+}
+
+/// Takes the backing buffers of an Arrow array back as the chunk that holds the same elements.
+///
+/// This is [`ToArrow::from_arrow`] as a free function, which is what an Arrow kernel's result
+/// crosses back through. It is `O(1)`, and the result is flat.
+#[inline]
+pub fn chunk_from_arrow<A: ToArrow>(array: &A::Arrow) -> A {
+    A::from_arrow(array)
+}
+
 /// Hands `array` to the Arrow array that holds the same elements, writing it out first if it is
 /// not laid out flat.
 ///

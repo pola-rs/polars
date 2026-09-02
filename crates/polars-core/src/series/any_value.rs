@@ -4,6 +4,8 @@ use arrow::bitmap::Bitmap;
 use num_traits::AsPrimitive;
 use polars_compute::cast::SerPrimitive;
 
+#[cfg(feature = "dtype-array")]
+use crate::chunked_array::array::collect_array_chunk;
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::builder::CategoricalChunkedBuilder;
 use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
@@ -467,9 +469,11 @@ fn any_values_to_binary_offset(
             },
         }
     }
+    // The builder is the Arrow one, so the array crosses over — see `arrow_bridge`.
+    let arr: BinaryArray<i64> = builder.into();
     Ok(BinaryOffsetChunked::with_chunk(
         Default::default(),
-        builder.into(),
+        ToArrow::from_arrow(&arr),
     ))
 }
 
@@ -756,7 +760,7 @@ fn any_values_to_array(
     strict: bool,
     width: usize,
 ) -> PolarsResult<ArrayChunked> {
-    fn to_arr(s: &Series) -> Option<ArrayRef> {
+    fn to_arr(s: &Series) -> Option<PlArrayRef> {
         if s.chunks().len() > 1 {
             let s = s.rechunk();
             Some(s.chunks()[0].clone())
@@ -770,7 +774,7 @@ fn any_values_to_array(
     // This is handled downstream. The builder will choose the first non null type.
     let mut valid = true;
     #[allow(unused_mut)]
-    let mut out: ArrayChunked = if inner_type == &DataType::Null {
+    let elements: Vec<Option<PlArrayRef>> = if inner_type == &DataType::Null {
         avs.iter()
             .map(|av| match av {
                 AnyValue::List(b) | AnyValue::Array(b, _) => to_arr(b),
@@ -780,7 +784,7 @@ fn any_values_to_array(
                     None
                 },
             })
-            .collect_ca_with_dtype(PlSmallStr::EMPTY, target_dtype.clone())
+            .collect::<Vec<_>>()
     }
     // Make sure that wrongly inferred AnyValues don't deviate from the datatype.
     else {
@@ -803,8 +807,17 @@ fn any_values_to_array(
                     None
                 },
             })
-            .collect_ca_with_dtype(PlSmallStr::EMPTY, target_dtype.clone())
+            .collect::<Vec<_>>()
     };
+
+    // The width is not read off the elements: it belongs to the dtype, which is the only thing
+    // that has it when every element is null — see `chunked_array::array`.
+    let chunk = collect_array_chunk(elements, width, inner_type);
+    #[allow(unused_mut)]
+    let mut out: ArrayChunked = ChunkedArray::from_chunk_iter_and_field(
+        Arc::new(Field::new(PlSmallStr::EMPTY, target_dtype.clone())),
+        [chunk],
+    );
 
     if strict && !valid {
         polars_bail!(SchemaMismatch: "unexpected value while building Series of type {:?}", target_dtype);

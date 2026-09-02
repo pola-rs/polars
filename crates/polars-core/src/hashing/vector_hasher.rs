@@ -8,6 +8,7 @@ use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 
 use super::*;
+use crate::chunked_array::arrow_bridge::{as_flat, chunk_to_arrow};
 use crate::prelude::*;
 use crate::runtime::RAYON;
 use crate::series::implementations::null::NullChunked;
@@ -42,7 +43,7 @@ pub(crate) fn get_null_hash_value(random_state: &PlSeedableRandomStateQuality) -
 }
 
 fn insert_null_hash(
-    chunks: &[ArrayRef],
+    chunks: &[PlArrayRef],
     random_state: PlSeedableRandomStateQuality,
     buf: &mut Vec<u64>,
 ) {
@@ -52,7 +53,7 @@ fn insert_null_hash(
     let mut offset = 0;
     chunks.iter().for_each(|arr| {
         if arr.null_count() > 0 {
-            let validity = arr.validity().unwrap();
+            let validity = arr.validity().unwrap().to_flat();
             let (slice, byte_offset, _) = validity.as_slice();
             (0..validity.len())
                 .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
@@ -86,6 +87,7 @@ fn numeric_vec_hash<T>(
     #[allow(unused_unsafe)]
     #[allow(clippy::useless_transmute)]
     ca.downcast_iter().for_each(|arr| {
+        let arr = as_flat(arr);
         buf.extend(
             arr.values()
                 .as_slice()
@@ -110,6 +112,7 @@ fn numeric_vec_hash_combine<T>(
 
     let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
+        let arr = as_flat(arr);
         match arr.null_count() {
             0 => arr
                 .values()
@@ -248,7 +251,7 @@ impl VecHash for BinaryChunked {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter()
-            .for_each(|arr| hash_binview_array(arr, random_state.clone(), buf));
+            .for_each(|arr| hash_binview_array(&chunk_to_arrow(arr), random_state.clone(), buf));
         Ok(())
     }
 
@@ -270,7 +273,7 @@ impl VecHash for BinaryChunked {
                         *h = _boost_hash_combine(l, *h)
                     }),
                 _ => {
-                    let validity = arr.validity().unwrap();
+                    let validity = arr.validity().unwrap().to_flat();
                     let (slice, byte_offset, _) = validity.as_slice();
                     (0..validity.len())
                         .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
@@ -301,7 +304,7 @@ impl VecHash for BinaryOffsetChunked {
         buf.clear();
         buf.reserve(self.len());
         self.downcast_iter()
-            .for_each(|arr| _hash_binary_array(arr, random_state.clone(), buf));
+            .for_each(|arr| _hash_binary_array(&chunk_to_arrow(arr), random_state.clone(), buf));
         Ok(())
     }
 
@@ -323,7 +326,7 @@ impl VecHash for BinaryOffsetChunked {
                         *h = _boost_hash_combine(l, *h)
                     }),
                 _ => {
-                    let validity = arr.validity().unwrap();
+                    let validity = arr.validity().unwrap().to_flat();
                     let (slice, byte_offset, _) = validity.as_slice();
                     (0..validity.len())
                         .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
@@ -414,7 +417,7 @@ impl VecHash for BooleanChunked {
                         *h = _boost_hash_combine(l, *h)
                     }),
                 _ => {
-                    let validity = arr.validity().unwrap();
+                    let validity = arr.validity().unwrap().to_flat();
                     let (slice, byte_offset, _) = validity.as_slice();
                     (0..validity.len())
                         .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
