@@ -1,4 +1,3 @@
-use arrow::bitmap::Bitmap;
 
 use super::*;
 use crate::chunked_array::flags::StatisticsFlags;
@@ -38,7 +37,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 /// boolean array in `O(1)` memory however long it is.
 pub fn is_not_null(name: PlSmallStr, chunks: &[PlArrayRef]) -> BooleanChunked {
     let chunks = chunks.iter().map(|arr| match arr.validity() {
-        Some(validity) => PlBooleanArray::new(validity.to_flat_or_scalar(), arr.len(), None),
+        Some(validity) => PlBooleanArray::from_pl_bitmap(PlBitmap::from(validity)),
         None => PlBooleanArray::new_scalar(true, arr.len()),
     });
     BooleanChunked::from_chunk_iter(name, chunks)
@@ -47,7 +46,9 @@ pub fn is_not_null(name: PlSmallStr, chunks: &[PlArrayRef]) -> BooleanChunked {
 /// The mask of a chunk, as the boolean array of which elements are null — see [`is_not_null`].
 pub fn is_null(name: PlSmallStr, chunks: &[PlArrayRef]) -> BooleanChunked {
     let chunks = chunks.iter().map(|arr| match arr.validity() {
-        Some(validity) => PlBooleanArray::new(invert(validity), arr.len(), None),
+        Some(validity) => {
+            PlBooleanArray::from_pl_bitmap(PlBitmap::new_broadcast(invert(validity), arr.len()))
+        },
         None => PlBooleanArray::new_scalar(false, arr.len()),
     });
     BooleanChunked::from_chunk_iter(name, chunks)
@@ -57,11 +58,8 @@ pub fn replace_non_null(name: PlSmallStr, chunks: &[PlArrayRef], default: bool) 
     BooleanChunked::from_chunk_iter(
         name,
         chunks.iter().map(|el| {
-            PlBooleanArray::new(
-                Bitmap::new_with_value(default, 1),
-                el.len(),
-                el.validity().map(|v| v.to_flat_or_scalar()),
-            )
+            PlBooleanArray::new_scalar(default, el.len())
+                .with_validity_broadcast(el.validity().map(|v| v.to_flat_or_scalar()))
         }),
     )
 }

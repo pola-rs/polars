@@ -1346,7 +1346,8 @@ fn leading_ones(mask: &PlBitmapRef<'_>) -> usize {
     match mask.scalar_value() {
         Some(true) => mask.len(),
         Some(false) => 0,
-        None => mask.flat_bitmap().unwrap().leading_ones(),
+        // A mask over no elements has nothing to count, whatever its backing bitmap holds.
+        None => mask.flat_bitmap().map_or(0, Bitmap::leading_ones),
     }
 }
 
@@ -1355,7 +1356,7 @@ fn leading_zeros(mask: &PlBitmapRef<'_>) -> usize {
     match mask.scalar_value() {
         Some(true) => 0,
         Some(false) => mask.len(),
-        None => mask.flat_bitmap().unwrap().leading_zeros(),
+        None => mask.flat_bitmap().map_or(0, Bitmap::leading_zeros),
     }
 }
 
@@ -1364,7 +1365,7 @@ fn trailing_zeros(mask: &PlBitmapRef<'_>) -> usize {
     match mask.scalar_value() {
         Some(true) => 0,
         Some(false) => mask.len(),
-        None => mask.flat_bitmap().unwrap().trailing_zeros(),
+        None => mask.flat_bitmap().map_or(0, Bitmap::trailing_zeros),
     }
 }
 

@@ -105,12 +105,15 @@ impl<T: PolarsNumericType> Reducer for NumUnorderedImplodeReducer<T> {
             values.boxed(),
             None,
         );
-        let ca = ListChunked::with_chunk(
-            PlSmallStr::EMPTY,
-            <PlListArray as ToArrow>::from_arrow(&arr),
-        );
-        let s = ca.into_series();
-        unsafe { s.from_physical_unchecked(&list_dtype) }
+        // The chunk carries no inner type, so the list is built with its logical type directly.
+        let ca = unsafe {
+            ListChunked::from_chunks_and_dtype(
+                PlSmallStr::EMPTY,
+                vec![<PlListArray as ToArrow>::from_arrow(&arr).into_boxed()],
+                list_dtype,
+            )
+        };
+        Ok(ca.into_series())
     }
 }
 
@@ -176,10 +179,15 @@ impl Reducer for BinaryUnorderedImplodeReducer {
             true,
         )));
         let arr = ListArray::new(arrow_dtype, offsets.freeze(), values.boxed(), None);
-        let ca = ListChunked::with_chunk(
-            PlSmallStr::EMPTY,
-            <PlListArray as ToArrow>::from_arrow(&arr),
-        );
+        // The chunk carries no inner type, so the list is built as the binary list it is and
+        // cast to the requested type from there.
+        let ca = unsafe {
+            ListChunked::from_chunks_and_dtype(
+                PlSmallStr::EMPTY,
+                vec![<PlListArray as ToArrow>::from_arrow(&arr).into_boxed()],
+                DataType::List(Box::new(DataType::Binary)),
+            )
+        };
         let list_dtype = DataType::List(Box::new(dtype.clone()));
         ca.into_series().cast(&list_dtype)
     }
@@ -254,10 +262,14 @@ impl Reducer for BoolUnorderedImplodeReducer {
             values.boxed(),
             None,
         );
-        let ca = ListChunked::with_chunk(
-            PlSmallStr::EMPTY,
-            <PlListArray as ToArrow>::from_arrow(&arr),
-        );
+        // The chunk carries no inner type, so the list is built with its type directly.
+        let ca = unsafe {
+            ListChunked::from_chunks_and_dtype(
+                PlSmallStr::EMPTY,
+                vec![<PlListArray as ToArrow>::from_arrow(&arr).into_boxed()],
+                list_dtype,
+            )
+        };
         Ok(ca.into_series())
     }
 }

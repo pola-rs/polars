@@ -104,8 +104,14 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
         let arr =
             PlFixedSizeListArray::new(import::from_arrow(&*inner_arr), width, 1, outer_validity);
 
-        let mut out = ArrayChunked::with_chunk(args[0].name().clone(), arr);
-        unsafe { out.to_logical(inner_dtype.clone()) };
+        // The chunk carries no inner type, so the array is built with its dtype directly.
+        let out = unsafe {
+            ArrayChunked::from_chunks_and_dtype(
+                args[0].name().clone(),
+                vec![arr.into_boxed()],
+                DataType::Array(Box::new(inner_dtype.clone()), width),
+            )
+        };
 
         return Ok(out.into_column().new_from_index(0, output_height));
     } else {
@@ -128,8 +134,14 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
             outer_validity,
         );
 
-        let mut out = ArrayChunked::with_chunk(args[0].name().clone(), arr);
-        unsafe { out.to_logical(inner_dtype.clone()) };
+        // The chunk carries no inner type, so the array is built with its dtype directly.
+        let out = unsafe {
+            ArrayChunked::from_chunks_and_dtype(
+                args[0].name().clone(),
+                vec![arr.into_boxed()],
+                DataType::Array(Box::new(inner_dtype.clone()), width),
+            )
+        };
 
         out.into_column()
     };

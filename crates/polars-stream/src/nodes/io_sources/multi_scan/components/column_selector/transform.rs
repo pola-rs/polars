@@ -192,11 +192,18 @@ impl ColumnTransform {
                     out_chunks.push(Box::new(fixed_size_list_arr))
                 }
 
-                let mut out =
-                    unsafe { ArrayChunked::from_chunks(input_array_ca.name().clone(), out_chunks) };
-
-                // Ensure logical types are restored.
-                out.set_inner_dtype(values_output_dtype.unwrap());
+                // The chunks carry no inner type, so the array is built with its dtype directly,
+                // which restores the logical type of the values as well.
+                let out = unsafe {
+                    ArrayChunked::from_chunks_and_dtype(
+                        input_array_ca.name().clone(),
+                        out_chunks,
+                        DataType::Array(
+                            Box::new(values_output_dtype.unwrap()),
+                            input_array_ca.width(),
+                        ),
+                    )
+                };
 
                 input._to_new_from_backing(out.into_series())
             },

@@ -3,7 +3,7 @@ use polars_error::{PolarsResult, polars_ensure};
 
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
-use crate::bitmap::{PlBitmapIter, PlBitmapRef};
+use crate::bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 use crate::broadcast::{
     assert_broadcastable, is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len,
 };
@@ -222,6 +222,24 @@ impl PlBooleanArray {
     #[inline]
     pub fn from_slice(values: &[bool]) -> Self {
         Self::from_values(Bitmap::from(values))
+    }
+
+    /// Creates a fully valid [`PlBooleanArray`] whose values are the bits of `values`, in whatever
+    /// representation that mask is in.
+    ///
+    /// A [`PlBitmap`] already knows whether it is flat or scalar for the elements it covers, so
+    /// nothing is inferred here: a scalar mask becomes a scalar array of the same length, and a
+    /// flat one a flat array. This is what a kernel that computes its result as a mask — a
+    /// validity mask inverted, say — hands over without writing a scalar result out. This
+    /// function is `O(1)`.
+    #[inline]
+    pub fn from_pl_bitmap(values: PlBitmap) -> Self {
+        let (values, length) = values.into_inner();
+        Self {
+            values,
+            length,
+            validity: None,
+        }
     }
 
     /// Creates a [`PlBooleanArray`] of `length` copies of `value`, in `O(1)` memory.
@@ -720,8 +738,7 @@ impl PlBooleanArray {
     #[inline]
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: every backing bitmap of a flat array holds one bit per element.
-        self.is_flat()
-            .then(|| unsafe { Flat::new_ref(self) })
+        self.is_flat().then(|| unsafe { Flat::new_ref(self) })
     }
 }
 

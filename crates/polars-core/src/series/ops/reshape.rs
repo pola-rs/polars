@@ -28,9 +28,12 @@ impl Series {
             },
             DataType::List(dtype) => {
                 let ca = s.list().unwrap();
+                // The callers pair the leaf values with the offsets of
+                // `list_offsets_and_validities_recursive`, which are one range per element, so a
+                // scalar chunk is written out to hand over the values those ranges reach.
                 let chunks = ca
                     .downcast_iter()
-                    .map(|arr| arr.values().to_boxed())
+                    .map(|arr| arr.to_flat().values().to_boxed())
                     .collect::<Vec<_>>();
                 // Safety: guarded by the type system
                 unsafe { Series::from_chunks_and_dtype_unchecked(s.name().clone(), chunks, dtype) }
@@ -49,11 +52,23 @@ impl Series {
 
         let mut s = self.rechunk();
 
-        while let DataType::List(_) = s.dtype() {
+        while let DataType::List(inner_dtype) = s.dtype() {
             let ca = s.list().unwrap();
-            offsets.push(ca.offsets().unwrap());
-            validities.push(ca.rechunk_validity());
-            s = ca.get_inner();
+            // The offsets are handed out one range per element, so a chunk that is not laid out
+            // flat is written out — and it is the values it was written out over that the next
+            // level is taken from, so that the ranges reach into them. `get_leaf_array` writes
+            // out the same way.
+            let arr = ca.downcast_as_array().to_flat();
+            offsets.push(export::offsets_to_arrow(arr.offsets().clone()));
+            validities.push(arr.validity().cloned());
+            // SAFETY: the values of a list chunk are laid out the way its inner dtype says.
+            s = unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    ca.name().clone(),
+                    vec![arr.values().to_boxed()],
+                    inner_dtype,
+                )
+            };
         }
 
         (offsets, validities)

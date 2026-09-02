@@ -13,15 +13,25 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
     assert!(align_of::<T::Native>() == align_of::<U::Native>());
 
     let chunks = ca.downcast_iter().map(|array| {
-        // The values are handed over as they are, so a scalar chunk stays one value.
-        let (buf, validity) = (array.to_flat().into_inner().0, array.validity());
-        let reinterpreted_buf = Buffer::try_transmute::<U::Native>(buf).unwrap();
         let length = array.len();
-        PlPrimitiveArray::new(
-            reinterpreted_buf,
-            length,
-            validity.map(|v| v.to_flat_or_scalar()),
-        )
+        // The values are handed over as they are, so a scalar chunk stays one value.
+        let out = if let Some(buf) = array.flat_values() {
+            PlPrimitiveArray::new(
+                Buffer::try_transmute::<U::Native>(buf.clone()).unwrap(),
+                length,
+                None,
+            )
+        } else if let Some(value) = array.scalar_values() {
+            PlPrimitiveArray::new_broadcast(
+                Buffer::try_transmute::<U::Native>(Buffer::from(vec![value])).unwrap(),
+                length,
+                None,
+            )
+        } else {
+            // An empty array over a scalar buffer has no value to share.
+            PlPrimitiveArray::new_empty()
+        };
+        out.with_validity_broadcast(array.validity().map(|v| v.to_flat_or_scalar()))
     });
 
     ChunkedArray::from_chunk_iter(ca.name().clone(), chunks)

@@ -113,7 +113,11 @@ impl ArrayChunked {
     /// Panics if the physical representation of `dtype` differs the physical
     /// representation of the existing inner `dtype`.
     pub fn set_inner_dtype(&mut self, dtype: DataType) {
-        assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
+        // A chunk carries no inner type, so a `ChunkedArray` built from one alone names `Null`
+        // as its inner type until it is set here.
+        assert!(
+            self.inner_dtype().is_null() || dtype.to_physical() == self.inner_dtype().to_physical()
+        );
         let width = self.width();
         let field = Arc::make_mut(&mut self.field);
         field.set_dtype(DataType::Array(Box::new(dtype), width));
@@ -129,7 +133,11 @@ impl ArrayChunked {
     /// # Safety
     /// The caller must ensure that the logical type given fits the physical type of the array.
     pub unsafe fn to_logical(&mut self, inner_dtype: DataType) {
-        debug_assert_eq!(&inner_dtype.to_physical(), self.inner_dtype());
+        // A chunk carries no inner type, so a `ChunkedArray` built from one alone names `Null`
+        // as its inner type until it is set here.
+        debug_assert!(
+            self.inner_dtype().is_null() || &inner_dtype.to_physical() == self.inner_dtype()
+        );
         let width = self.width();
         let fld = Arc::make_mut(&mut self.field);
         fld.set_dtype(DataType::Array(Box::new(inner_dtype), width))

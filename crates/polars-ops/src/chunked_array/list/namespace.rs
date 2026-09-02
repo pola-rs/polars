@@ -347,12 +347,13 @@ pub trait ListNameSpaceImpl: AsList {
 
         let chunks = ca
             .downcast_iter()
-            .map(|arr| sublist_get(&chunk_to_arrow(arr), idx))
+            .map(|arr| polars_array::arrow::import::from_arrow(&*sublist_get(&chunk_to_arrow(arr), idx)))
             .collect::<Vec<_>>();
 
-        let s = Series::try_from((ca.name().clone(), chunks)).unwrap();
         // SAFETY: every element in list has dtype equal to its inner type
-        unsafe { s.from_physical_unchecked(ca.inner_dtype()) }
+        Ok(unsafe {
+            Series::from_chunks_and_dtype_unchecked(ca.name().clone(), chunks, ca.inner_dtype())
+        })
     }
 
     #[cfg(feature = "list_gather")]

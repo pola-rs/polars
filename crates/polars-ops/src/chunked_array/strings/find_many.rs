@@ -20,6 +20,21 @@ fn build_ac(
 }
 
 /// The automaton over the patterns of one element, which are bytes to it.
+/// The element of a list of strings as the bytes it holds.
+///
+/// The values of a list of strings carry the UTF-8 promise, which the kernels here do not need:
+/// they read the patterns as the bytes they are. This is `O(1)`, sharing the buffers.
+fn list_element_as_binview(element: &dyn PlArray) -> PlBinaryViewArray {
+    match element.as_any().downcast_ref::<PlUtf8ViewArray>() {
+        Some(pat) => pat.clone().into_binview(),
+        None => element
+            .as_any()
+            .downcast_ref::<PlBinaryViewArray>()
+            .expect("the values of a list of strings are a view array")
+            .clone(),
+    }
+}
+
 fn build_ac_arr(
     patterns: &PlBinaryViewArray,
     ascii_case_insensitive: bool,
@@ -220,10 +235,8 @@ pub fn extract_many(
                     match z {
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {
-                            // The values of a list of strings are bytes that carry the UTF-8
-                            // promise, which is the array the element downcasts to.
-                            let pat = pat.as_any().downcast_ref::<PlBinaryViewArray>().unwrap();
-                            let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
+                            let pat = list_element_as_binview(&*pat);
+                            let ac = build_ac_arr(&pat, ascii_case_insensitive, leftmost)?;
                             push_str(val, &mut builder, &ac, overlapping);
                         },
                     }
@@ -314,10 +327,8 @@ pub fn find_many(
                     match z {
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {
-                            // The values of a list of strings are bytes that carry the UTF-8
-                            // promise, which is the array the element downcasts to.
-                            let pat = pat.as_any().downcast_ref::<PlBinaryViewArray>().unwrap();
-                            let ac = build_ac_arr(pat, ascii_case_insensitive, leftmost)?;
+                            let pat = list_element_as_binview(&*pat);
+                            let ac = build_ac_arr(&pat, ascii_case_insensitive, leftmost)?;
                             push_idx(val, &mut builder, &ac, overlapping);
                         },
                     }

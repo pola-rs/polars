@@ -262,7 +262,8 @@ where
 
         // Every value is packed into the bytes it is, which the extension array carries; the
         // sentinel that would drop them is dropped with the array this is exported to.
-        let ca = self.0.rechunk();
+        // Object chunks do not go through the generic rechunk.
+        let ca = self.rechunk_object();
         let values = ca.downcast_iter().next().unwrap().clone();
         let mut extension = create_extension(values.into_iter_cloned());
         // SAFETY: the extension was just created, so its sentinel is alive.
