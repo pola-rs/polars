@@ -7,8 +7,9 @@ use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency::get_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
-use polars_io::utils::byte_source::DynByteSourceBuilder;
+use polars_io::utils::byte_source::{DynByteSourceBuilder, FileReadContext};
 use polars_plan::dsl::ScanSource;
+use tokio::sync::Semaphore;
 
 use super::super::shared::pipeline_budget::PipelineBudget;
 use super::{FileReader, ParquetFileReader};
@@ -22,6 +23,8 @@ pub struct ParquetReaderBuilder {
     pub options: Arc<ParquetOptions>,
     pub pipeline_budget: std::sync::OnceLock<PipelineBudget>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
+    /// Shared with every file in the scan. Only relevant for `DynByteSourceBuilder::FilePread`.
+    pub file_read_context: std::sync::OnceLock<FileReadContext>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
 }
 
@@ -31,6 +34,7 @@ impl std::fmt::Debug for ParquetReaderBuilder {
             .field("first_metadata", &self.first_metadata)
             .field("options", &self.options)
             .field("pipeline_budget", &self.pipeline_budget)
+            .field("read_context", &self.file_read_context)
             .finish()
     }
 }
@@ -135,8 +139,29 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         let byte_source_builder =
             if scan_source.is_cloud_url() || polars_config::config().force_async() {
                 DynByteSourceBuilder::ObjectStore(FetchConfig::random_access())
-            } else {
+            } else if scan_source.is_buffer() {
                 DynByteSourceBuilder::Mmap
+            } else {
+                let read_context = self.file_read_context.get_or_init(|| {
+                    let enable_o_direct = polars_config::config().direct_io();
+                    let concurrency = polars_config::config().file_read_concurrency() as usize;
+
+                    if config::verbose() {
+                        eprintln!(
+                            "[ParquetReaderBuilder]: file read_context as configured: \
+                                o_direct: {enable_o_direct}, read_concurrency: {concurrency}"
+                        );
+                    }
+
+                    let permits = Arc::new(Semaphore::new(concurrency));
+
+                    FileReadContext {
+                        enable_o_direct,
+                        concurrency,
+                        permits,
+                    }
+                });
+                DynByteSourceBuilder::FilePread(read_context.clone())
             };
 
         let pipeline_budget = self

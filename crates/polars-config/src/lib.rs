@@ -115,6 +115,13 @@ const DEFAULT_NUMA_MOCK_REGIONS: u64 = 0;
 const DISABLE_HTTP_RATE_LIMIT: &str = "POLARS_DISABLE_HTTP_RATE_LIMIT";
 const DEFAULT_DISABLE_HTTP_RATE_LIMIT: bool = false;
 
+/// Use direct I/O (Linux: `O_DIRECT`), bypassing the page cache.
+const DIRECT_IO: &str = "POLARS_DIRECT_IO";
+const DEFAULT_DIRECT_IO: bool = false;
+
+const FILE_READ_CONCURRENCY: &str = "POLARS_FILE_READ_CONCURRENCY";
+const DEFAULT_FILE_READ_CONCURRENCY: u64 = 32;
+
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
     VERBOSE,
@@ -169,6 +176,8 @@ static KNOWN_OPTIONS: &[&str] = &[
     NUMA_AWARE,
     NUMA_MOCK_REGIONS,
     DISABLE_HTTP_RATE_LIMIT,
+    DIRECT_IO,
+    FILE_READ_CONCURRENCY,
 ];
 
 pub struct Config {
@@ -203,6 +212,8 @@ pub struct Config {
     numa_aware: AtomicBool,
     numa_mock_regions: AtomicU64,
     disable_http_rate_limit: AtomicBool,
+    direct_io: AtomicBool,
+    file_read_concurrency: AtomicU64,
 
     // Derived from others.
     ooc_memory_prefetch_bytes: AtomicU64,
@@ -254,7 +265,8 @@ impl Config {
             numa_aware: AtomicBool::new(DEFAULT_NUMA_AWARE),
             numa_mock_regions: AtomicU64::new(DEFAULT_NUMA_MOCK_REGIONS),
             disable_http_rate_limit: AtomicBool::new(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
-
+            direct_io: AtomicBool::new(DEFAULT_DIRECT_IO),
+            file_read_concurrency: AtomicU64::new(DEFAULT_FILE_READ_CONCURRENCY),
             ooc_memory_prefetch_bytes: AtomicU64::new(0),
         };
         cfg.reload_env_vars();
@@ -444,6 +456,16 @@ impl Config {
                     .unwrap_or(DEFAULT_DISABLE_HTTP_RATE_LIMIT),
                 Ordering::Relaxed,
             ),
+            DIRECT_IO => self.direct_io.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_DIRECT_IO),
+                Ordering::Relaxed,
+            ),
+            FILE_READ_CONCURRENCY => self.file_read_concurrency.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_FILE_READ_CONCURRENCY),
+                Ordering::Relaxed,
+            ),
             _ => {
                 if var.starts_with("POLARS_") {
                     if self.warn_unknown_config.load(Ordering::Relaxed) {
@@ -631,6 +653,16 @@ impl Config {
     #[inline(always)]
     pub fn disable_http_rate_limit(&self) -> bool {
         self.disable_http_rate_limit.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn direct_io(&self) -> bool {
+        self.direct_io.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn file_read_concurrency(&self) -> u64 {
+        self.file_read_concurrency.load(Ordering::Relaxed)
     }
 }
 

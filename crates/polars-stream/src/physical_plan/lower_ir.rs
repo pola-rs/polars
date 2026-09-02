@@ -765,6 +765,7 @@ pub fn lower_ir(
                             first_metadata: metadata_per_source.first_metadata().cloned(),
                             pipeline_budget: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
+                            file_read_context: std::sync::OnceLock::new(),
                             io_metrics: std::sync::OnceLock::new(),
                         },
                     ) as _,
