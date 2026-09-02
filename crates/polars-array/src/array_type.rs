@@ -74,6 +74,8 @@ pub enum PlArrayType {
     FixedSizeList,
     /// A [`PlNullArray`](crate::PlNullArray): a null, with no value under it.
     Null,
+    /// PolarsObject.
+    Object { type_name: &'static str },
 }
 
 impl PlArrayType {
