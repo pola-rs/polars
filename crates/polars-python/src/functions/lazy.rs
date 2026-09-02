@@ -178,14 +178,14 @@ pub fn collect_all_with_callback(
                 .map(|lf| lf.ldf.into_inner().logical_plan)
                 .collect();
 
-            let result = 
+            let result =
                 LazyFrame::collect_all_with_engine(plans, engine.0, optflags.inner.into_inner())
-                .map(|dfs| {
-                    dfs.into_iter()
-                        .map(Into::into)
-                        .collect::<Vec<PyDataFrame>>()
-                })
-                .map_err(PyPolarsErr::from);
+                    .map(|dfs| {
+                        dfs.into_iter()
+                            .map(Into::into)
+                            .collect::<Vec<PyDataFrame>>()
+                    })
+                    .map_err(PyPolarsErr::from);
 
             Python::attach(|py| match result {
                 Ok(dfs) => {
