@@ -9,6 +9,7 @@ from hypothesis.strategies import booleans
 
 import polars as pl
 import polars.selectors as cs
+from polars._plr import _expr_nodes  # type: ignore[attr-defined]
 from polars.exceptions import ArgumentRemovedError, ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
@@ -16,7 +17,7 @@ from polars.testing.parametric import series
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
-    from polars._typing import IntoExpr
+    from polars._typing import EngineType, IntoExpr
 
     class TopKFunction(Protocol):
         """Function signature of `DataFrame.top_k` / `DataFrame.bottom_k`."""
@@ -604,6 +605,157 @@ def test_bottom_k_by() -> None:
     assert_series_equal(
         s.bottom_k_by("a", 4), pl.Series("a", [3, 2, 1, 5]), check_order=False
     )
+
+
+@pytest.mark.parametrize(
+    ("method", "values", "expected"),
+    [
+        ("top_k", [2, 1, 3], [2, 3]),
+        ("bottom_k", [2, 3, 1], [2, 1]),
+    ],
+)
+def test_top_k_maintain_order(
+    method: str, values: list[int], expected: list[int]
+) -> None:
+    expr = getattr(pl.col("a"), method)(2, maintain_order=True)
+    result = pl.DataFrame({"a": values}).select(expr).to_series()
+    assert_series_equal(result, pl.Series("a", expected))
+
+    # Series methods use expression dispatch and must expose the same signature.
+    result = getattr(pl.Series("a", values), method)(2, maintain_order=True)
+    assert_series_equal(result, pl.Series("a", expected))
+
+
+@pytest.mark.parametrize(
+    ("method", "keys", "expected"),
+    [
+        ("top_k_by", [2, 1, 3], ["a", "c"]),
+        ("bottom_k_by", [2, 3, 1], ["a", "c"]),
+    ],
+)
+def test_top_k_by_maintain_order(
+    method: str, keys: list[int], expected: list[str]
+) -> None:
+    df = pl.DataFrame({"value": ["a", "b", "c"], "key": keys})
+    expr = getattr(pl.col("value"), method)("key", 2, maintain_order=True)
+    result = df.select(expr).to_series()
+    assert_series_equal(result, pl.Series("value", expected))
+
+    result = getattr(df["value"], method)(df["key"], 2, maintain_order=True)
+    assert_series_equal(result, pl.Series("value", expected))
+
+
+@pytest.mark.parametrize(
+    ("expr", "display_name", "function_data"),
+    [
+        (pl.col("a").top_k(1), "top_k", ("top_k", False, False)),
+        (
+            pl.col("a").top_k(1, maintain_order=True),
+            "top_k_stable",
+            ("top_k", False, True),
+        ),
+        (pl.col("a").bottom_k(1), "bottom_k", ("top_k", True, False)),
+        (
+            pl.col("a").bottom_k(1, maintain_order=True),
+            "bottom_k_stable",
+            ("top_k", True, True),
+        ),
+        (
+            pl.col("a").top_k_by("b", 1),
+            "top_k_by",
+            ("top_k_by", [False], False),
+        ),
+        (
+            pl.col("a").top_k_by("b", 1, maintain_order=True),
+            "top_k_by_stable",
+            ("top_k_by", [False], True),
+        ),
+        (
+            pl.col("a").bottom_k_by("b", 1),
+            "top_k_by",
+            ("top_k_by", [True], False),
+        ),
+        (
+            pl.col("a").bottom_k_by("b", 1, maintain_order=True),
+            "top_k_by_stable",
+            ("top_k_by", [True], True),
+        ),
+    ],
+)
+def test_top_k_plan_metadata(
+    expr: pl.Expr, display_name: str, function_data: tuple[object, ...]
+) -> None:
+    assert f".{display_name}(" in str(expr)
+
+    lf = pl.LazyFrame(schema={"a": pl.Int64, "b": pl.Int64})
+    plan = lf.select(expr.alias("first"), expr.alias("second")).explain()
+    assert plan.count(f".{display_name}(") == 1
+
+    visitor = lf._ldf.visit()
+    [node], _ = visitor.add_expressions([expr._pyexpr])
+    view = visitor.view_expression(node)
+    assert isinstance(view, _expr_nodes.Function)
+    assert view.function_data == function_data
+
+
+def test_top_k_by_maintain_order_ties() -> None:
+    df = pl.DataFrame(
+        {
+            "value": ["first", "second", "third", "lower"],
+            "key": [3, 3, 3, 2],
+        }
+    )
+    result = df.select(
+        pl.col("value").top_k_by("key", 2, maintain_order=True)
+    ).to_series()
+    assert_series_equal(result, pl.Series("value", ["first", "second"]))
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_top_k_by_maintain_order_grouped(engine: EngineType) -> None:
+    df = pl.DataFrame(
+        {
+            "name": ["a", "a", "b"],
+            "score": [21, 21, 22],
+            "attempt": [1, 2, 1],
+            "day": [6, 7, 8],
+        }
+    )
+    result = (
+        df.lazy()
+        .group_by("name", maintain_order=True)
+        .agg(pl.all().top_k_by("score", 1, maintain_order=True))
+        .explode("score", "attempt", "day", empty_as_null=True)
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame(
+        {
+            "name": ["a", "b"],
+            "score": [21, 22],
+            "attempt": [1, 1],
+            "day": [6, 8],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("engine", ["in-memory", "streaming"])
+def test_top_k_by_maintain_order_projection(engine: EngineType) -> None:
+    result = (
+        pl.LazyFrame({"value": ["a", "b", "c"], "key": [2, 1, 3]})
+        .select(pl.col("value").top_k_by("key", 2, maintain_order=True))
+        .collect(engine=engine)
+    )
+    expected = pl.DataFrame({"value": ["a", "c"]})
+    assert_frame_equal(result, expected)
+
+
+def test_top_k_maintain_order_nulls_and_bounds() -> None:
+    s = pl.Series("a", [None, 2, 1])
+    assert_series_equal(s.top_k(2, maintain_order=True), pl.Series("a", [2, 1]))
+    assert_series_equal(s.bottom_k(2, maintain_order=True), pl.Series("a", [2, 1]))
+    assert_series_equal(s.top_k(0, maintain_order=True), s.head(0))
+    assert_series_equal(s.top_k(10, maintain_order=True), s)
 
 
 def test_sort_head_maintain_order() -> None:

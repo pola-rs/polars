@@ -9,6 +9,14 @@ struct CompareRow<'a> {
     bytes: &'a [u8],
 }
 
+impl CompareRow<'_> {
+    fn cmp_stable(&self, other: &Self) -> Ordering {
+        self.bytes
+            .cmp(other.bytes)
+            .then_with(|| self.idx.cmp(&other.idx))
+    }
+}
+
 impl PartialEq for CompareRow<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
@@ -59,25 +67,25 @@ pub fn _arg_bottom_k(
     let sorted = if k >= from_n_rows {
         match (sort_options.multithreaded, sort_options.maintain_order) {
             (true, true) => RAYON.install(|| {
-                rows.par_sort();
+                rows.par_sort_unstable_by(|a, b| a.cmp_stable(b));
             }),
             (true, false) => RAYON.install(|| {
                 rows.par_sort_unstable();
             }),
-            (false, true) => rows.sort(),
+            (false, true) => rows.sort_unstable_by(|a, b| a.cmp_stable(b)),
             (false, false) => rows.sort_unstable(),
         }
         &rows
     } else if sort_options.maintain_order {
-        // todo: maybe there is some more efficient method, comparable to select_nth_unstable
+        let (lower, _el, _upper) = rows.select_nth_unstable_by(k, |a, b| a.cmp_stable(b));
         if sort_options.multithreaded {
             RAYON.install(|| {
-                rows.par_sort();
+                lower.par_sort_unstable_by(|a, b| a.cmp_stable(b));
             })
         } else {
-            rows.sort();
+            lower.sort_unstable_by(|a, b| a.cmp_stable(b));
         }
-        &rows[..k]
+        &*lower
     } else {
         // todo: possible multi threaded `select_nth_unstable`?
         let (lower, _el, _upper) = rows.select_nth_unstable(k);
