@@ -1453,3 +1453,33 @@ def test_read_database_uri_connection_options(
     )
 
     assert cx_mock.read_sql.call_args.kwargs["conn"] == expected_uri
+
+
+@patch("polars.io.database._utils.import_optional")
+def test_read_database_uri_connectorx_panic_becomes_runtime_error(
+    import_mock: Mock,
+) -> None:
+    # connectorx < 0.4.6 panics on some invalid connection parameters; polars
+    # converts that PanicException into a catchable RuntimeError so behaviour is
+    # consistent with connectorx >= 0.4.6 (which raises RuntimeError natively).
+    # See sfu-db/connector-x#933.
+    from polars.exceptions import PanicException
+
+    cx_mock = Mock()
+    cx_mock.__version__ = "0.4.5"
+    cx_mock.read_sql.side_effect = PanicException(
+        "unknown option at postgresql://user:secret@host:5432/db?bad=1"
+    )
+    import_mock.return_value = cx_mock
+
+    with pytest.raises(RuntimeError, match=r"://\*\*\*:\*\*\*@") as exc_info:
+        pl.read_database_uri(
+            query="SELECT 1",
+            uri="postgresql://user:secret@host:5432/db",
+            engine="connectorx",
+            connection_options={"bad": "1"},
+        )
+
+    # credentials are sanitised and the original panic is preserved as the cause
+    assert "secret" not in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, PanicException)
