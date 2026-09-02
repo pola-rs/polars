@@ -10,7 +10,10 @@
 //!   `length` times — representable in `O(1)` memory. See [`scalar`] for the exact rules.
 //!
 //! Unlike the `polars-arrow` arrays, these arrays carry no logical type; they are purely a physical
-//! representation. Logical typing lives at a higher level.
+//! representation. Logical typing lives at a higher level. The one exception is
+//! [`PlUtf8ViewArray`], the transparent wrapper that carries the promise that the bytes of a
+//! [`PlBinaryViewArray`] are valid UTF-8 — see [`utf8view`] for why that one invariant is worth a
+//! type of its own.
 //!
 //! Every array implements the trait object [`PlArray`] and can be downcast to a concrete struct
 //! based on the [`PlArrayType`] available from [`PlArray::array_type`]. Code that is generic over
@@ -39,6 +42,7 @@ pub mod null;
 pub mod primitive;
 pub mod static_array;
 pub mod struct_;
+pub mod utf8view;
 
 pub use array::PlArray;
 pub use array_type::{PlArrayType, PrimitiveType};
@@ -56,3 +60,4 @@ pub use null::{PlNullArray, PlNullArrayBuilder};
 pub use primitive::{PlPrimitiveArray, PlPrimitiveArrayBuilder};
 pub use static_array::StaticArray;
 pub use struct_::{PlStructArray, PlStructArrayBuilder};
+pub use utf8view::{PlUtf8ViewArray, PlUtf8ViewArrayBuilder};

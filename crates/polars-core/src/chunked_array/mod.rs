@@ -25,7 +25,6 @@ pub mod float;
 pub mod iterator;
 #[cfg(feature = "ndarray")]
 pub(crate) mod ndarray;
-pub mod utf8_view;
 pub mod validity;
 
 pub mod arg_min_max;

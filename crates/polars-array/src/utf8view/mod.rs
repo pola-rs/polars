@@ -1,15 +1,15 @@
 //! The string view of a [`PlBinaryViewArray`].
 //!
-//! `polars-array` is physical storage only: a [`PlBinaryViewArray`] is a sequence of byte strings
-//! and nothing in it says those bytes are a string. A [`StringChunked`](crate::prelude::StringChunked),
-//! on the other hand, is exactly the promise that they are — so the UTF-8 invariant lives here, at
-//! the `ChunkedArray` level, rather than in the array.
+//! The arrays in this crate are physical storage: a [`PlBinaryViewArray`] is a sequence of byte
+//! strings and nothing in it says those bytes are a string, which is why it never validates UTF-8
+//! and hands its elements out as `&[u8]`. [`PlUtf8ViewArray`] is the wrapper that carries the
+//! promise that they *are* one, so that the code above this crate that knows its bytes are strings
+//! — a `StringChunked` and the chunks it is made of — reads an element as the `&str` it is without
+//! validating it again.
 //!
-//! [`PlUtf8ViewArray`] is what carries that invariant into the typed API. It is
-//! `repr(transparent)` over the [`PlBinaryViewArray`] a `StringChunked` chunk actually is, so a
-//! chunk is *borrowed* as one — [`PlUtf8ViewArray::from_binview_ref_unchecked`] — rather than
-//! stored as one, and reading an element hands out the `&str` those bytes are without validating
-//! them again.
+//! The wrapper is `repr(transparent)` over the [`PlBinaryViewArray`] such a chunk actually is, so
+//! a chunk is *borrowed* as one — [`PlUtf8ViewArray::from_binview_ref_unchecked`] — rather than
+//! stored as one.
 //!
 //! # The invariant
 //!
@@ -26,21 +26,44 @@ use std::any::Any;
 
 use arrow::array::View;
 use arrow::bitmap::Bitmap;
-use arrow::trusted_len::TrustedLen;
-use polars_array::binview::{PlBinaryViewIter, PlBinaryViewValuesIter};
-use polars_array::builder::ShareStrategy;
-use polars_array::{
-    ArrayFromIter, Flat, PlArray, PlArrayType, PlBinaryViewArray, PlBinaryViewArrayBuilder,
-    PlBitmapRef, StaticArray, StaticArrayBuilder, ZeroableArrayFromIter,
-};
 use polars_buffer::Buffer;
-use polars_error::PolarsResult;
-use polars_utils::IdxSize;
+use polars_error::{PolarsResult, polars_err};
+
+use crate::array::PlArray;
+use crate::array_type::PlArrayType;
+use crate::binview::PlBinaryViewArray;
+use crate::bitmap::PlBitmapRef;
+use crate::flat::Flat;
+
+mod builder;
+mod iterator;
+
+pub use builder::PlUtf8ViewArrayBuilder;
+pub use iterator::{PlUtf8ViewIter, PlUtf8ViewValuesIter};
 
 /// A [`PlBinaryViewArray`] whose every element is valid UTF-8.
 ///
-/// See the [module docs](self) for the invariant and for why this is a borrowed view of a chunk
-/// rather than the type a chunk is stored as.
+/// This is the counterpart of [`Utf8ViewArray`](arrow::array::Utf8ViewArray), and every method on
+/// it is the method of the same name on the array it wraps, over `&str` instead of `&[u8]`. See the
+/// [module docs](self) for the invariant and for why this is a borrowed view of a chunk rather than
+/// the type a chunk is stored as.
+///
+/// # Example
+/// ```
+/// use polars_array::{PlBinaryViewArray, PlUtf8ViewArray};
+///
+/// let array: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect();
+/// assert_eq!(array.get(0), Some("foo"));
+/// assert_eq!(array.get(1), None);
+///
+/// // A scalar array of a billion elements costs a single view of memory.
+/// let scalar = PlUtf8ViewArray::new_scalar("foo", 1_000_000_000);
+/// assert_eq!(scalar.value(999_999_999), "foo");
+///
+/// // The bytes of an array that is not known to be a string are checked once.
+/// let bytes = PlBinaryViewArray::from_values_iter([b"\xff".as_slice()]);
+/// assert!(PlUtf8ViewArray::from_binview(bytes).is_err());
+/// ```
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct PlUtf8ViewArray(PlBinaryViewArray);
@@ -170,25 +193,29 @@ impl PlUtf8ViewArray {
     /// Iterates the elements, ignoring validity.
     #[inline]
     pub fn values_iter(&self) -> PlUtf8ViewValuesIter<'_> {
-        PlUtf8ViewValuesIter(self.0.values_iter())
+        // SAFETY: the elements of this array are valid UTF-8.
+        unsafe { PlUtf8ViewValuesIter::new(self.0.values_iter()) }
     }
 
     /// Iterates the elements, `None` for the null ones.
     #[inline]
     pub fn iter(&self) -> PlUtf8ViewIter<'_> {
-        PlUtf8ViewIter(self.0.iter())
+        // SAFETY: the elements of this array are valid UTF-8.
+        unsafe { PlUtf8ViewIter::new(self.0.iter()) }
     }
 
     /// Iterates `length` elements, repeating the single element of a scalar array.
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlUtf8ViewValuesIter<'_> {
-        PlUtf8ViewValuesIter(self.0.broadcast_values_iter(length))
+        // SAFETY: the elements of this array are valid UTF-8.
+        unsafe { PlUtf8ViewValuesIter::new(self.0.broadcast_values_iter(length)) }
     }
 
     /// Iterates `length` elements, repeating the single element of a scalar array.
     #[inline]
     pub fn broadcast_iter(&self, length: usize) -> PlUtf8ViewIter<'_> {
-        PlUtf8ViewIter(self.0.broadcast_iter(length))
+        // SAFETY: the elements of this array are valid UTF-8.
+        unsafe { PlUtf8ViewIter::new(self.0.broadcast_iter(length)) }
     }
 
     /// Returns this array with its validity mask replaced.
@@ -303,8 +330,7 @@ fn validate_utf8(array: &PlBinaryViewArray) -> PolarsResult<()> {
         .without_validity()
         .values_iter()
     {
-        std::str::from_utf8(value)
-            .map_err(|e| polars_error::polars_err!(ComputeError: "invalid utf8: {}", e))?;
+        std::str::from_utf8(value).map_err(|e| polars_err!(ComputeError: "invalid utf8: {}", e))?;
     }
     Ok(())
 }
@@ -316,6 +342,15 @@ impl Default for PlUtf8ViewArray {
     }
 }
 
+impl<'a> FromIterator<Option<&'a str>> for PlUtf8ViewArray {
+    #[inline]
+    fn from_iter<I: IntoIterator<Item = Option<&'a str>>>(iter: I) -> Self {
+        // SAFETY: every value collected was a `&str`.
+        unsafe { Self::from_binview_unchecked(iter.into_iter().collect()) }
+    }
+}
+
+/// Compares two arrays element-wise, exactly like comparing the bytes under them.
 impl PartialEq for PlUtf8ViewArray {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -414,349 +449,164 @@ impl PlArray for PlUtf8ViewArray {
     }
 }
 
-impl StaticArray for PlUtf8ViewArray {
-    type ValueT<'a> = &'a str;
-    type ZeroableValueT<'a> = Option<&'a str>;
-    type ValueIterT<'a> = PlUtf8ViewValuesIter<'a>;
-    type IterT<'a> = PlUtf8ViewIter<'a>;
-    type Builder = PlUtf8ViewArrayBuilder;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::StaticArray;
 
-    #[inline]
-    unsafe fn value_unchecked(&self, i: usize) -> &str {
-        unsafe { self.value_unchecked(i) }
+    /// A value of more than [`View::MAX_INLINE_SIZE`] bytes, which no view inlines.
+    const LONG: &str = "a value that is too long to inline";
+
+    #[test]
+    fn elements_are_the_strings_the_bytes_are() {
+        let arr: PlUtf8ViewArray = [Some("foo"), None, Some(LONG)].into_iter().collect();
+
+        assert_eq!(arr.len(), 3);
+        assert!(arr.is_flat());
+        assert_eq!(arr.null_count(), 1);
+        assert_eq!(arr.value(0), "foo");
+        assert_eq!(arr.get(0), Some("foo"));
+        assert_eq!(arr.get(1), None);
+        assert_eq!(arr.total_bytes_len(), 3 + LONG.len());
+        assert_eq!(
+            arr.iter().collect::<Vec<_>>(),
+            [Some("foo"), None, Some(LONG)],
+        );
+        assert_eq!(arr.values_iter().rev().collect::<Vec<_>>().len(), 3);
+        assert_eq!(unsafe { arr.value_unchecked(2) }, LONG);
+        assert_eq!(unsafe { arr.get_unchecked(1) }, None);
+
+        // A scalar array of a billion elements holds one view, as it does for the bytes.
+        let scalar = PlUtf8ViewArray::new_scalar(LONG, 1_000_000_000);
+
+        assert!(scalar.is_scalar());
+        assert_eq!(scalar.scalar_value(), Some(Some(LONG)));
+        assert_eq!(scalar.value(999_999_999), LONG);
+
+        // A single element broadcasts to as many as the caller asks for.
+        let one = PlUtf8ViewArray::new_scalar(LONG, 1);
+        assert_eq!(one.broadcast_iter(3).collect::<Vec<_>>(), [Some(LONG); 3]);
+        assert_eq!(one.broadcast_values_iter(3).collect::<Vec<_>>(), [LONG; 3]);
     }
 
-    #[inline]
-    unsafe fn get_unchecked(&self, i: usize) -> Option<&str> {
-        unsafe { self.get_unchecked(i) }
+    #[test]
+    fn the_bytes_under_a_null_are_validated_too() {
+        let bytes = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"\xff"]);
+
+        assert!(PlUtf8ViewArray::from_binview(bytes.clone()).is_err());
+
+        // Masking the invalid element off is not enough: the mask can be replaced afterwards,
+        // which would expose bytes that were never checked.
+        let masked = bytes.with_validity(Some(Bitmap::from_iter([true, false])));
+        assert!(PlUtf8ViewArray::from_binview(masked).is_err());
+
+        let valid = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), LONG.as_bytes()]);
+        let arr = PlUtf8ViewArray::from_binview(valid).expect("the bytes are valid UTF-8");
+        assert_eq!(arr.value(1), LONG);
     }
 
-    #[inline]
-    fn values_iter(&self) -> Self::ValueIterT<'_> {
-        self.values_iter()
+    #[test]
+    fn a_chunk_is_borrowed_as_an_array_of_strings() {
+        let bytes = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"bar"]);
+
+        // SAFETY: the bytes are valid UTF-8.
+        let arr = unsafe { PlUtf8ViewArray::from_binview_ref_unchecked(&bytes) };
+
+        assert_eq!(arr.value(1), "bar");
+        assert_eq!(arr.as_binview(), &bytes);
+        assert!(
+            arr.data_buffers().is_same_buffer(bytes.data_buffers()),
+            "the wrapper must borrow the chunk, not copy it",
+        );
     }
 
-    #[inline]
-    fn iter(&self) -> Self::IterT<'_> {
-        self.iter()
+    #[test]
+    fn the_boxed_array_is_the_inner_one() {
+        // A `dyn PlArray` of `BinaryView` is downcast to a `PlBinaryViewArray` everywhere, so the
+        // wrapper must not be what a box holds.
+        let arr: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect();
+
+        assert_eq!(arr.array_type(), PlArrayType::BinaryView);
+        for boxed in [
+            arr.to_boxed(),
+            unsafe { arr.new_from_index_unchecked(0, 2) },
+            arr.clone().into_boxed(),
+        ] {
+            assert!(boxed.as_any().downcast_ref::<PlBinaryViewArray>().is_some());
+        }
     }
 
-    #[inline]
-    fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
-        self.broadcast_values_iter(length)
+    #[test]
+    fn slicing_and_validity() {
+        let arr: PlUtf8ViewArray = [Some("foo"), Some("bar"), Some(LONG)].into_iter().collect();
+
+        let sliced = arr.clone().sliced(1, 2);
+        assert_eq!(sliced.iter().collect::<Vec<_>>(), [Some("bar"), Some(LONG)]);
+        assert_eq!(unsafe { arr.clone().sliced_unchecked(2, 1) }.value(0), LONG,);
+
+        let masked = arr
+            .clone()
+            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+        assert_eq!(masked.get(1), None);
+        assert_eq!(
+            masked.value(1),
+            "bar",
+            "the bytes under a null are still there"
+        );
+
+        assert_eq!(
+            arr.new_from_index(0, 2).iter().collect::<Vec<_>>(),
+            [Some("foo"); 2]
+        );
+        assert_eq!(PlUtf8ViewArray::new_full_null(2).null_count(), 2);
+        assert!(PlUtf8ViewArray::new_empty().is_empty());
+        assert!(PlUtf8ViewArray::default().is_empty());
     }
 
-    #[inline]
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
-        self.broadcast_iter(length)
+    #[test]
+    fn a_scalar_array_is_written_out_flat() {
+        let scalar = PlUtf8ViewArray::new_scalar(LONG, 3);
+
+        assert!(scalar.as_flat().is_none());
+        let flat = scalar.to_flat();
+        assert!(flat.is_flat());
+        assert_eq!(flat, scalar);
+        assert_eq!(flat.value(2), LONG);
+
+        // An array that is already flat is borrowed rather than written out again.
+        let arr: PlUtf8ViewArray = [Some("foo")].into_iter().collect();
+        let flat = arr.as_flat().expect("the array is flat");
+        assert_eq!(flat.value(0), "foo");
     }
 
-    #[inline]
-    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
-        self.with_validity(validity)
+    #[test]
+    fn applying_views_sees_the_strings_and_writes_out_flat() {
+        let arr = PlUtf8ViewArray::new_scalar(LONG, 3);
+
+        // Every element is replaced by its first character, which a view inlines rather than
+        // reading out of a data buffer.
+        // SAFETY: an inlined view reads no bytes of the array at all, and the character is valid
+        // UTF-8 because it was a prefix of one.
+        let truncated = unsafe {
+            arr.apply_views(|_, value| {
+                assert_eq!(value, LONG);
+                View::new_inline(&value.as_bytes()[..1])
+            })
+        };
+
+        assert_eq!(truncated.iter().collect::<Vec<_>>(), [Some("a"); 3]);
+        assert!(
+            truncated.is_flat(),
+            "a scalar array is written out to be mapped view by view",
+        );
     }
 
-    #[inline]
-    fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
-        self.new_from_index(index, length)
-    }
+    #[test]
+    fn debug_formats_the_strings() {
+        let arr: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect();
 
-    #[inline]
-    fn is_flat(&self) -> bool {
-        self.is_flat()
-    }
-
-    #[inline]
-    fn to_flat(&self) -> Flat<Self> {
-        self.to_flat()
-    }
-
-    #[inline]
-    fn as_flat(&self) -> Option<&Flat<Self>> {
-        self.as_flat()
-    }
-
-    #[inline]
-    fn into_boxed(self) -> Box<dyn PlArray> {
-        // The trait object is the array this wrapper is transparent over — see the module docs.
-        Box::new(self.0)
-    }
-}
-
-/// Iterator over the elements of a [`PlUtf8ViewArray`], ignoring validity.
-#[derive(Clone)]
-pub struct PlUtf8ViewValuesIter<'a>(PlBinaryViewValuesIter<'a>);
-
-impl<'a> Iterator for PlUtf8ViewValuesIter<'a> {
-    type Item = &'a str;
-
-    #[inline]
-    fn next(&mut self) -> Option<&'a str> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0
-            .next()
-            .map(|v| unsafe { std::str::from_utf8_unchecked(v) })
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-
-impl DoubleEndedIterator for PlUtf8ViewValuesIter<'_> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0
-            .next_back()
-            .map(|v| unsafe { std::str::from_utf8_unchecked(v) })
-    }
-}
-
-impl ExactSizeIterator for PlUtf8ViewValuesIter<'_> {}
-
-// SAFETY: the iterator it wraps is trusted, and mapping the bytes to the string they are does not
-// change how many there are.
-unsafe impl TrustedLen for PlUtf8ViewValuesIter<'_> {}
-
-/// Iterator over the elements of a [`PlUtf8ViewArray`], `None` for the null ones.
-#[derive(Clone)]
-pub struct PlUtf8ViewIter<'a>(PlBinaryViewIter<'a>);
-
-impl<'a> Iterator for PlUtf8ViewIter<'a> {
-    type Item = Option<&'a str>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Option<&'a str>> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0
-            .next()
-            .map(|v| v.map(|v| unsafe { std::str::from_utf8_unchecked(v) }))
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-
-impl DoubleEndedIterator for PlUtf8ViewIter<'_> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8.
-        self.0
-            .next_back()
-            .map(|v| v.map(|v| unsafe { std::str::from_utf8_unchecked(v) }))
-    }
-}
-
-impl ExactSizeIterator for PlUtf8ViewIter<'_> {}
-
-// SAFETY: the iterator it wraps is trusted, and mapping the bytes to the string they are does not
-// change how many there are.
-unsafe impl TrustedLen for PlUtf8ViewIter<'_> {}
-
-/// The builder of a [`PlUtf8ViewArray`].
-///
-/// Every value appended is a `&str`, which is what keeps the built array's invariant: the bytes
-/// that reach the inner [`PlBinaryViewArrayBuilder`] were a string to begin with.
-#[derive(Default)]
-pub struct PlUtf8ViewArrayBuilder(PlBinaryViewArrayBuilder);
-
-impl PlUtf8ViewArrayBuilder {
-    /// A builder with no capacity reserved.
-    #[inline]
-    pub fn new() -> Self {
-        Self(PlBinaryViewArrayBuilder::new())
-    }
-
-    /// A builder with room for `capacity` elements.
-    #[inline]
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self(PlBinaryViewArrayBuilder::with_capacity(capacity))
-    }
-
-    /// The builder of the bytes under these strings.
-    ///
-    /// # Safety
-    /// Every value appended through it must be valid UTF-8.
-    #[inline]
-    pub unsafe fn inner_mut(&mut self) -> &mut PlBinaryViewArrayBuilder {
-        &mut self.0
-    }
-
-    /// Appends a value.
-    #[inline]
-    pub fn push_value(&mut self, value: &str) {
-        self.0.push_value(value.as_bytes());
-    }
-
-    /// Appends a null.
-    #[inline]
-    pub fn push_null(&mut self) {
-        self.0.push_null();
-    }
-
-    /// Appends a value, or a null if there is none.
-    #[inline]
-    pub fn push(&mut self, value: Option<&str>) {
-        self.0.push(value.map(str::as_bytes));
-    }
-}
-
-/// Borrows an array of strings as the bytes under them.
-#[inline(always)]
-fn as_binview(array: &PlUtf8ViewArray) -> &PlBinaryViewArray {
-    &array.0
-}
-
-impl StaticArrayBuilder for PlUtf8ViewArrayBuilder {
-    type Array = PlUtf8ViewArray;
-
-    #[inline]
-    fn reserve(&mut self, additional: usize) {
-        self.0.reserve(additional);
-    }
-
-    #[inline]
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    #[inline]
-    fn freeze(self) -> PlUtf8ViewArray {
-        // SAFETY: every value appended was a `&str`.
-        unsafe { PlUtf8ViewArray::from_binview_unchecked(self.0.freeze()) }
-    }
-
-    #[inline]
-    fn freeze_reset(&mut self) -> PlUtf8ViewArray {
-        // SAFETY: every value appended was a `&str`.
-        unsafe { PlUtf8ViewArray::from_binview_unchecked(self.0.freeze_reset()) }
-    }
-
-    #[inline]
-    fn extend_nulls(&mut self, length: usize) {
-        self.0.extend_nulls(length);
-    }
-
-    #[inline]
-    fn subslice_extend(
-        &mut self,
-        other: &PlUtf8ViewArray,
-        start: usize,
-        length: usize,
-        share: ShareStrategy,
-    ) {
-        self.0
-            .subslice_extend(as_binview(other), start, length, share);
-    }
-
-    #[inline]
-    fn subslice_extend_repeated(
-        &mut self,
-        other: &PlUtf8ViewArray,
-        start: usize,
-        length: usize,
-        repeats: usize,
-        share: ShareStrategy,
-    ) {
-        self.0
-            .subslice_extend_repeated(as_binview(other), start, length, repeats, share);
-    }
-
-    #[inline]
-    fn subslice_extend_each_repeated(
-        &mut self,
-        other: &PlUtf8ViewArray,
-        start: usize,
-        length: usize,
-        repeats: usize,
-        share: ShareStrategy,
-    ) {
-        self.0
-            .subslice_extend_each_repeated(as_binview(other), start, length, repeats, share);
-    }
-
-    #[inline]
-    unsafe fn gather_extend(
-        &mut self,
-        other: &PlUtf8ViewArray,
-        idxs: &[IdxSize],
-        share: ShareStrategy,
-    ) {
-        // SAFETY: the caller keeps every index in bounds.
-        unsafe { self.0.gather_extend(as_binview(other), idxs, share) };
-    }
-
-    #[inline]
-    fn opt_gather_extend(
-        &mut self,
-        other: &PlUtf8ViewArray,
-        idxs: &[IdxSize],
-        share: ShareStrategy,
-    ) {
-        self.0.opt_gather_extend(as_binview(other), idxs, share);
-    }
-}
-
-/// A string that a [`PlUtf8ViewArray`] can be collected from.
-///
-/// This is the marker that keeps the array's invariant across a collect: the bytes reach the inner
-/// [`PlBinaryViewArray`] through the same conversion any byte string does, and it is membership of
-/// this trait — a `&str`, a `String`, a `Cow<str>`, and nothing else — that says they were a
-/// string to begin with.
-pub trait IntoUtf8Bytes: Sized {}
-
-impl IntoUtf8Bytes for &str {}
-impl IntoUtf8Bytes for String {}
-impl IntoUtf8Bytes for std::borrow::Cow<'_, str> {}
-
-impl<V: IntoUtf8Bytes> ArrayFromIter<V> for PlUtf8ViewArray
-where
-    PlBinaryViewArray: ArrayFromIter<V>,
-{
-    #[inline]
-    fn arr_from_iter<I: IntoIterator<Item = V>>(iter: I) -> Self {
-        // SAFETY: `IntoUtf8Bytes` says every value collected was a string.
-        unsafe { Self::from_binview_unchecked(PlBinaryViewArray::arr_from_iter(iter)) }
-    }
-
-    #[inline]
-    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<V, E>>>(iter: I) -> Result<Self, E> {
-        let bytes = PlBinaryViewArray::try_arr_from_iter(iter)?;
-        // SAFETY: as above.
-        Ok(unsafe { Self::from_binview_unchecked(bytes) })
-    }
-}
-
-impl<V: IntoUtf8Bytes> ArrayFromIter<Option<V>> for PlUtf8ViewArray
-where
-    PlBinaryViewArray: ArrayFromIter<Option<V>>,
-{
-    #[inline]
-    fn arr_from_iter<I: IntoIterator<Item = Option<V>>>(iter: I) -> Self {
-        // SAFETY: `IntoUtf8Bytes` says every value collected was a string.
-        unsafe { Self::from_binview_unchecked(PlBinaryViewArray::arr_from_iter(iter)) }
-    }
-
-    #[inline]
-    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<V>, E>>>(
-        iter: I,
-    ) -> Result<Self, E> {
-        let bytes = PlBinaryViewArray::try_arr_from_iter(iter)?;
-        // SAFETY: as above.
-        Ok(unsafe { Self::from_binview_unchecked(bytes) })
-    }
-}
-
-// The zeroable stand-in for a `&str` is `Option<&str>`, which is what the collect above takes.
-impl ZeroableArrayFromIter for PlUtf8ViewArray {}
-
-impl<'a> FromIterator<Option<&'a str>> for PlUtf8ViewArray {
-    #[inline]
-    fn from_iter<I: IntoIterator<Item = Option<&'a str>>>(iter: I) -> Self {
-        Self::arr_from_iter(iter)
+        assert_eq!(format!("{arr:?}"), r#"PlUtf8ViewArray[Some("foo"), None]"#);
+        assert_eq!(arr, arr.clone());
+        assert_ne!(arr, PlUtf8ViewArray::new_scalar("foo", 2));
     }
 }

@@ -36,7 +36,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
     match dtype {
         DataType::String => {
             // A string chunk is stored as the byte strings it is, which the wrapper that carries
-            // the UTF-8 invariant borrows rather than owns — see `chunked_array::utf8_view`.
+            // the UTF-8 invariant borrows rather than owns — see `polars_array::utf8view`.
             let arr = arr
                 .as_any()
                 .downcast_ref::<PlBinaryViewArray>()

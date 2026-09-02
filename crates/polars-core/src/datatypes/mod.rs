@@ -31,21 +31,21 @@ use std::sync::Arc;
 mod schema;
 pub use aliases::*;
 pub use any_value::*;
-pub use polars_array::{ArrayCollectIterExt, ArrayFromIter, StaticArray};
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::reshape::*;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::NativeType;
-use polars_array::{
-    PlArray, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeListArray, PlListArray,
-    PlNullArray, PlPrimitiveArray, PlStructArray,
-};
 use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
 pub use into_scalar::*;
 use num_traits::{AsPrimitive, Bounded, FromPrimitive, Num, NumCast, One, Zero};
+pub use polars_array::{ArrayCollectIterExt, ArrayFromIter, StaticArray};
+use polars_array::{
+    PlArray, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeListArray, PlListArray,
+    PlNullArray, PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
+};
 use polars_compute::arithmetic::HasPrimitiveArithmeticKernel;
 use polars_compute::float_sum::FloatSum;
 #[cfg(feature = "dtype-categorical")]
@@ -67,7 +67,6 @@ use serde::{Deserializer, Serializer};
 pub use temporal::*;
 
 pub use crate::chunked_array::logical::*;
-pub use crate::chunked_array::utf8_view::{PlUtf8ViewArray, PlUtf8ViewArrayBuilder};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 #[cfg(feature = "object")]

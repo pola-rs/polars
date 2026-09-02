@@ -2,10 +2,9 @@
 use std::error::Error;
 
 use polars_array::builder::StaticArrayBuilder;
-use polars_array::{Flat, PlArray, PlBitmapRef, StaticArray};
+use polars_array::{Flat, PlArray, PlBitmapRef, PlUtf8ViewArrayBuilder, StaticArray};
 
 use crate::chunked_array::arrow_bridge::as_flat;
-use crate::chunked_array::utf8_view::PlUtf8ViewArrayBuilder;
 use crate::chunked_array::validity::{PlBitmapRefExt, combine_validities_and};
 use crate::prelude::PlArrayRef;
 

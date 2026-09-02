@@ -23,10 +23,8 @@ use arrow::types::NativeType;
 use polars_array::arrow::{export, import};
 use polars_array::{
     Flat, PlArray, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeListArray,
-    PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray, StaticArray,
+    PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray, PlUtf8ViewArray, StaticArray,
 };
-
-use crate::chunked_array::utf8_view::PlUtf8ViewArray;
 
 /// The Arrow array that holds the same elements as an array of `polars-array`.
 ///

@@ -64,7 +64,7 @@ use arrow::types::NativeType;
 use polars_buffer::Buffer;
 
 use crate::static_array::StaticArray;
-use crate::{PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlPrimitiveArray};
+use crate::{PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlPrimitiveArray, PlUtf8ViewArray};
 
 /// An array that can be collected from an iterator of `T`.
 ///
@@ -524,6 +524,57 @@ impl<V: IntoBytes> ArrayFromIter<Option<V>> for PlBinaryViewArray {
     }
 }
 
+/// The values a [`PlUtf8ViewArray`] can be collected from: the strings, owned or borrowed.
+///
+/// This is the marker that keeps that array's invariant across a collect. The bytes reach the
+/// inner [`PlBinaryViewArray`] through the same [`IntoBytes`] conversion any byte string does, and
+/// it is membership of this trait — a `&str`, a [`String`], a [`Cow<str>`](Cow), and nothing else
+/// — that says they were a string to begin with. It is private to this crate for the same reason
+/// [`IntoBytes`] is, and so that nothing downstream can add a value to it that is not one.
+trait IntoUtf8Bytes: Sized {}
+
+impl IntoUtf8Bytes for &str {}
+impl IntoUtf8Bytes for String {}
+impl IntoUtf8Bytes for Cow<'_, str> {}
+
+impl<V: IntoUtf8Bytes> ArrayFromIter<V> for PlUtf8ViewArray
+where
+    PlBinaryViewArray: ArrayFromIter<V>,
+{
+    #[inline]
+    fn arr_from_iter<I: IntoIterator<Item = V>>(iter: I) -> Self {
+        // SAFETY: `IntoUtf8Bytes` says every value collected was a string.
+        unsafe { Self::from_binview_unchecked(PlBinaryViewArray::arr_from_iter(iter)) }
+    }
+
+    #[inline]
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<V, E>>>(iter: I) -> Result<Self, E> {
+        let bytes = PlBinaryViewArray::try_arr_from_iter(iter)?;
+        // SAFETY: as above.
+        Ok(unsafe { Self::from_binview_unchecked(bytes) })
+    }
+}
+
+impl<V: IntoUtf8Bytes> ArrayFromIter<Option<V>> for PlUtf8ViewArray
+where
+    PlBinaryViewArray: ArrayFromIter<Option<V>>,
+{
+    #[inline]
+    fn arr_from_iter<I: IntoIterator<Item = Option<V>>>(iter: I) -> Self {
+        // SAFETY: `IntoUtf8Bytes` says every value collected was a string.
+        unsafe { Self::from_binview_unchecked(PlBinaryViewArray::arr_from_iter(iter)) }
+    }
+
+    #[inline]
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<V>, E>>>(
+        iter: I,
+    ) -> Result<Self, E> {
+        let bytes = PlBinaryViewArray::try_arr_from_iter(iter)?;
+        // SAFETY: as above.
+        Ok(unsafe { Self::from_binview_unchecked(bytes) })
+    }
+}
+
 // The collects above under another name: the zeroable stand-in for an element of one of these
 // four is the element type itself or an `Option` of it, so there is nothing left for the marker
 // to do.
@@ -531,6 +582,8 @@ impl<T: NativeType> ZeroableArrayFromIter for PlPrimitiveArray<T> {}
 impl ZeroableArrayFromIter for PlBooleanArray {}
 impl ZeroableArrayFromIter for PlBinaryArray {}
 impl ZeroableArrayFromIter for PlBinaryViewArray {}
+// The zeroable stand-in for a `&str` is `Option<&str>`, which is what the collect above takes.
+impl ZeroableArrayFromIter for PlUtf8ViewArray {}
 
 #[cfg(test)]
 mod tests {
@@ -622,6 +675,38 @@ mod tests {
         assert_eq!(collected(b"foo".as_slice()), expected);
         assert_eq!(collected(b"foo".to_vec()), expected);
         assert_eq!(collected(Cow::Borrowed(b"foo".as_slice())), expected);
+        assert_eq!(collected("foo"), expected);
+        assert_eq!(collected(String::from("foo")), expected);
+        assert_eq!(collected(Cow::Borrowed("foo")), expected);
+        assert_eq!(collected(Cow::<str>::Owned(String::from("foo"))), expected);
+    }
+
+    #[test]
+    fn utf8view_collects_values_and_optional_values() {
+        let values: PlUtf8ViewArray = ["foo", "bar"].into_iter().collect_arr();
+        assert_eq!(values.value(0), "foo");
+        assert!(values.iter().all(|v| v.is_some()));
+
+        let options: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect_arr();
+        assert_eq!(options.get(0), Some("foo"));
+        assert_eq!(options.get(1), None);
+
+        assert!(values.is_flat() && options.is_flat());
+    }
+
+    /// Only the values that were a string to begin with can be collected into a
+    /// [`PlUtf8ViewArray`], which is what keeps its invariant across the collect.
+    #[test]
+    fn utf8view_collects_every_kind_of_string() {
+        fn collected<V: IntoUtf8Bytes>(value: V) -> PlUtf8ViewArray
+        where
+            PlBinaryViewArray: ArrayFromIter<Option<V>>,
+        {
+            std::iter::once(Some(value)).collect_arr()
+        }
+
+        let expected: PlUtf8ViewArray = std::iter::once("foo").collect_arr();
+
         assert_eq!(collected("foo"), expected);
         assert_eq!(collected(String::from("foo")), expected);
         assert_eq!(collected(Cow::Borrowed("foo")), expected);

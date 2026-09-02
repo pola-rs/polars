@@ -8,7 +8,8 @@ pub(crate) use arrow::array::*;
 pub use polars_array::{
     Flat, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray,
     PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray,
-    PlStructArray, StaticArrayBuilder, ZeroableArrayFromIter,
+    PlStructArray, PlUtf8ViewArray, PlUtf8ViewArrayBuilder, StaticArrayBuilder,
+    ZeroableArrayFromIter,
 };
 
 /// An owned, cheaply cloneable chunk of a [`ChunkedArray`].
@@ -34,15 +35,14 @@ pub use crate::chunked_array::ChunkedArray;
 #[cfg(feature = "dtype-struct")]
 pub use crate::chunked_array::StructChunked;
 pub use crate::chunked_array::arithmetic::ArithmeticChunked;
+pub use crate::chunked_array::arrow_bridge::ToArrow;
 pub use crate::chunked_array::builder::{
     BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,
     ListBooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,
     ListStringChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, StringChunkedBuilder,
 };
 pub use crate::chunked_array::collect::{ChunkedCollectInferIterExt, ChunkedCollectIterExt};
-pub use crate::chunked_array::arrow_bridge::ToArrow;
 pub use crate::chunked_array::flat::{FlatChunkedArray, FlatNumericChunkedArray};
-pub use crate::chunked_array::validity::PlBitmapRefExt;
 #[cfg(feature = "dtype-categorical")]
 #[allow(unused)] // See rust-lang/rust/issues/160691.
 pub use crate::chunked_array::logical::categorical::*;
@@ -56,6 +56,7 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
+pub use crate::chunked_array::validity::PlBitmapRefExt;
 pub use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter, StaticArray, *};
 pub use crate::error::abort::try_raise_polars_abort;
 pub use crate::error::{
