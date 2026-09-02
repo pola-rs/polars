@@ -257,14 +257,49 @@ fn non_repeated_group(
 ) -> PolarsResult<Option<ArrowDataType>> {
     debug_assert!(!fields.is_empty());
     match (logical_type, converted_type) {
-        (Some(GroupLogicalType::List), _) => to_list(fields, parent_name, options),
-        (None, Some(GroupConvertedType::List)) => to_list(fields, parent_name, options),
+        (Some(GroupLogicalType::List), _) | (None, Some(GroupConvertedType::List)) => {
+            // `to_list` converts the repeated child itself instead of routing it through
+            // `to_dtype`, so it never reaches the check in `to_group_type`.
+            if let ParquetType::GroupType {
+                field_info,
+                logical_type,
+                converted_type,
+                ..
+            } = &fields[0]
+            {
+                ensure_not_repeated_map(field_info, logical_type, converted_type)?;
+            }
+
+            to_list(fields, parent_name, options)
+        },
         (Some(GroupLogicalType::Map), _)
         | (None, Some(GroupConvertedType::Map) | Some(GroupConvertedType::MapKeyValue)) => {
             to_map(fields, parent_name, options)
         },
         _ => to_struct(fields, options),
     }
+}
+
+fn ensure_not_repeated_map(
+    field_info: &FieldInfo,
+    logical_type: &Option<GroupLogicalType>,
+    converted_type: &Option<GroupConvertedType>,
+) -> PolarsResult<()> {
+    let is_map = matches!(logical_type, Some(GroupLogicalType::Map))
+        || matches!(
+            converted_type,
+            Some(GroupConvertedType::Map | GroupConvertedType::MapKeyValue)
+        );
+
+    if is_map && field_info.repetition == Repetition::Repeated {
+        polars_bail!(
+            ComputeError:
+            "parquet group '{}' is annotated as MAP, but it is repeated instead of optional or required",
+            field_info.name,
+        )
+    }
+
+    Ok(())
 }
 
 /// Converts a parquet group type to an arrow [`ArrowDataType::Struct`].
@@ -375,21 +410,9 @@ fn to_group_type(
     options: &SchemaInferenceOptions,
 ) -> PolarsResult<Option<ArrowDataType>> {
     debug_assert!(!fields.is_empty());
-    if field_info.repetition == Repetition::Repeated {
-        // A MAP (or MAP_KEY_VALUE) group should never be repeated, so reject it.
-        if matches!(logical_type, Some(GroupLogicalType::Map))
-            || matches!(
-                converted_type,
-                Some(GroupConvertedType::Map | GroupConvertedType::MapKeyValue)
-            )
-        {
-            polars_bail!(
-                ComputeError:
-                "parquet group '{}' is annotated as MAP, but it is repeated instead of optional or required",
-                field_info.name,
-            )
-        }
+    ensure_not_repeated_map(field_info, logical_type, converted_type)?;
 
+    if field_info.repetition == Repetition::Repeated {
         let Some(inner) = to_struct(fields, options)? else {
             return Ok(None);
         };
@@ -1403,6 +1426,34 @@ mod tests {
             ),
         );
 
+        // An array of maps annotates the LIST, and puts the MAP group inside its repeated level.
+        assert_eq!(
+            infer_one(
+                "
+                message test_schema {
+                  optional group my_map (LIST) {
+                    repeated group list {
+                      optional group element (MAP) {
+                        repeated group key_value {
+                          required binary key (STRING);
+                          optional int32 value;
+                        }
+                      }
+                    }
+                  }
+                }"
+            )?,
+            Field::new(
+                "my_map".into(),
+                ArrowDataType::LargeList(Box::new(Field::new(
+                    "element".into(),
+                    map_of("key_value", str_key("key", false), i32_value("value", true)),
+                    true,
+                ))),
+                true,
+            ),
+        );
+
         // The `value` field may be omitted. An arrow `Map` always has one, so we take the spec up
         // on its alternative and read the group "as a set of keys".
         assert_eq!(
@@ -1411,6 +1462,26 @@ mod tests {
                 message test_schema {
                   optional group my_map (MAP) {
                     repeated group key_value {
+                      required binary key (STRING);
+                    }
+                  }
+                }"
+            )?,
+            Field::new(
+                "my_map".into(),
+                ArrowDataType::LargeList(Box::new(str_key("key_value", false))),
+                true,
+            ),
+        );
+
+        // A value-less map whose entries group also carries the legacy annotation. This reaches
+        // `to_list` from `to_map`, where the repeated entries group is expected.
+        assert_eq!(
+            infer_one(
+                "
+                message test_schema {
+                  optional group my_map (MAP) {
+                    repeated group key_value (MAP_KEY_VALUE) {
                       required binary key (STRING);
                     }
                   }
@@ -1503,6 +1574,22 @@ mod tests {
                     repeated group key_value {
                       required binary key (STRING);
                       optional int32 value;
+                    }
+                  }
+                }",
+            ),
+            // The same rule, reached through a LIST whose repeated level is annotated as the map
+            // instead of holding one.
+            (
+                "parquet group 'element' is annotated as MAP, but it is repeated",
+                "
+                message test_schema {
+                  optional group my_map (LIST) {
+                    repeated group element (MAP) {
+                      repeated group key_value {
+                        required binary key (STRING);
+                        optional int32 value;
+                      }
                     }
                   }
                 }",
