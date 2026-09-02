@@ -251,6 +251,30 @@ def test_exp_log1p(dtype_in: PolarsDataType, dtype_out: PolarsDataType) -> None:
     assert result.collect_schema() == expected.schema
 
 
+@pytest.mark.parametrize(
+    "s",
+    [
+        pl.Series("a", [{"a": 1, "b": "x"}]),
+        pl.Series("a", ["1", "2", "3"]),
+        pl.Series("a", [date(2020, 1, 1), date(2021, 1, 1)]),
+        pl.Series("a", [[1, 2], [3]]),
+    ],
+)
+def test_exp_log1p_invalid_dtype_29102(s: pl.Series) -> None:
+    lf = pl.LazyFrame([s])
+
+    for expr in (pl.col("a").exp(), pl.col("a").log1p()):
+        q = lf.select(expr)
+
+        # planner: schema resolution must reject the input dtype
+        with pytest.raises(InvalidOperationError):
+            q.collect_schema()
+
+        # engine: execution must error, not segfault
+        with pytest.raises(InvalidOperationError):
+            q.collect()
+
+
 def test_dot_in_group_by() -> None:
     df = pl.DataFrame(
         {
