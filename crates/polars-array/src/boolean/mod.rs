@@ -687,7 +687,7 @@ impl PlBooleanArray {
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: every backing bitmap of a flat array holds one bit per element.
         self.is_flat()
-            .then(|| unsafe { Flat::from_ref_unchecked(self) })
+            .then(|| unsafe { Flat::new_ref(self) })
     }
 }
 

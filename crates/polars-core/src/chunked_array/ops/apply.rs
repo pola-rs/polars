@@ -215,12 +215,15 @@ where
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
-        let chunks = self
+        // The values are read as slices, so the chunks are written out flat first where they are
+        // not already.
+        let ca = self.to_flat();
+        let chunks = ca
             .data_views()
-            .zip(self.iter_validities())
+            .zip(ca.as_array().iter_validities())
             .map(|(slice, validity)| {
                 let arr: T::Array = slice.iter().copied().map(f).collect_arr();
-                arr.with_validity(validity.cloned())
+                arr.with_validity_typed(validity.map(|v| v.to_flat_or_scalar()))
             });
         ChunkedArray::from_chunk_iter(self.name().clone(), chunks)
     }

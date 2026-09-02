@@ -716,7 +716,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: every backing buffer of a flat array holds one slot per element.
         self.is_flat()
-            .then(|| unsafe { Flat::from_ref_unchecked(self) })
+            .then(|| unsafe { Flat::new_ref(self) })
     }
 }
 

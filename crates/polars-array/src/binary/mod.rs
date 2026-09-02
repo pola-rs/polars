@@ -975,7 +975,7 @@ impl PlBinaryArray {
         // SAFETY: the offsets of a flat array hold the range of every element, and its mask one
         // bit per element.
         self.is_flat()
-            .then(|| unsafe { Flat::from_ref_unchecked(self) })
+            .then(|| unsafe { Flat::new_ref(self) })
     }
 }
 

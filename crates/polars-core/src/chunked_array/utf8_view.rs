@@ -251,7 +251,7 @@ impl PlUtf8ViewArray {
     #[inline]
     pub fn to_flat(&self) -> Flat<Self> {
         // SAFETY: the inner array is written out flat, and the wrapper is transparent over it.
-        unsafe { Flat::from_array_unchecked(Self(self.0.to_flat().into_array())) }
+        unsafe { Flat::new(Self(self.0.to_flat().into_array())) }
     }
 
     /// Borrows this array as a flat one, or `None` if any backing buffer is scalar.
@@ -260,7 +260,7 @@ impl PlUtf8ViewArray {
         // SAFETY: the inner array is flat, and the wrapper is transparent over it.
         self.0
             .as_flat()
-            .map(|_| unsafe { Flat::from_ref_unchecked(self) })
+            .map(|_| unsafe { Flat::new_ref(self) })
     }
 }
 

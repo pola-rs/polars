@@ -16,6 +16,7 @@ pub mod ops;
 pub mod arithmetic;
 pub mod arrow_bridge;
 pub mod builder;
+pub mod flat;
 pub mod utf8_view;
 pub mod validity;
 pub mod cast;
@@ -974,8 +975,11 @@ where
     T: PolarsNumericType,
 {
     fn as_single_ptr(&mut self) -> PolarsResult<usize> {
+        // The pointer has to be into this array itself, so the chunk is written out in place
+        // rather than into the copy `to_flat` would hand back.
         self.rechunk_mut();
-        let a = self.data_views().next().unwrap();
+        self.flatten_mut();
+        let a = self.as_flat().unwrap().data_views().next().unwrap();
         let ptr = a.as_ptr();
         Ok(ptr as usize)
     }
@@ -1023,50 +1027,9 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    /// Returns the values of the array as a contiguous slice.
-    ///
-    /// A chunk in the [`scalar`](polars_array::broadcast) representation holds one value for every
-    /// element rather than one slot each, so there is no slice in it to hand out: this reports it
-    /// as not being contiguous, like a chunked or nullable array.
-    pub fn cont_slice(&self) -> PolarsResult<&[T::Native]> {
-        polars_ensure!(
-            self.chunks.len() == 1 && self.chunks[0].null_count() == 0,
-            ComputeError: "chunked array is not contiguous"
-        );
-        let values = self.downcast_as_array().flat_values();
-        let values = values.ok_or_else(
-            || polars_err!(ComputeError: "chunked array is not contiguous"),
-        )?;
-        Ok(values.as_slice())
-    }
-
-    /// Returns the values of the array as a contiguous mutable slice.
-    pub(crate) fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]> {
-        if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
-            // SAFETY: we will not swap the array, only write over the values it already has.
-            let arr = unsafe { self.downcast_iter_mut().next().unwrap() };
-            arr.flat_values_mut()?.get_mut_slice()
-        } else {
-            None
-        }
-    }
-
-    /// Get slices of the underlying data, one per chunk.
-    ///
-    /// NOTE: null values should be taken into account by the user of these slices as they are
-    /// handled separately.
-    ///
-    /// # Panics
-    /// Panics if any chunk is in the [`scalar`](polars_array::broadcast) representation, which
-    /// holds one value for every element rather than one slot each and so has no slice to hand
-    /// out. [`ChunkedArray::into_no_null_iter`] iterates either representation.
-    pub fn data_views(&self) -> impl DoubleEndedIterator<Item = &[T::Native]> {
-        self.downcast_iter().map(|arr| {
-            arr.flat_values()
-                .expect("a scalar chunk has no slice of values to hand out")
-                .as_slice()
-        })
-    }
+    // The accessors that hand out a slice of the values live on `Flat<ChunkedArray<T>>` — see
+    // [`crate::chunked_array::flat`]: a chunk in the scalar representation holds one value for
+    // every element rather than one slot each, so there is no slice in it to borrow.
 
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter(

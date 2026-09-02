@@ -380,13 +380,13 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
     #[inline]
     fn to_flat(&self) -> Flat<Self> {
         // SAFETY: an object array holds one `T` per element and never broadcasts.
-        unsafe { Flat::from_array_unchecked(self.clone()) }
+        unsafe { Flat::new(self.clone()) }
     }
 
     #[inline]
     fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: an object array holds one `T` per element and never broadcasts.
-        Some(unsafe { Flat::from_ref_unchecked(self) })
+        Some(unsafe { Flat::new_ref(self) })
     }
 }
 

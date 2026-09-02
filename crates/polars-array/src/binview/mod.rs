@@ -906,7 +906,7 @@ impl PlBinaryViewArray {
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: the views and the mask of a flat array hold one slot per element.
         self.is_flat()
-            .then(|| unsafe { Flat::from_ref_unchecked(self) })
+            .then(|| unsafe { Flat::new_ref(self) })
     }
 }
 

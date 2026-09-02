@@ -897,7 +897,7 @@ impl PlFixedSizeBinaryArray {
         // SAFETY: the values of a flat array hold the width of every element, and its mask one bit
         // per element.
         self.is_flat()
-            .then(|| unsafe { Flat::from_ref_unchecked(self) })
+            .then(|| unsafe { Flat::new_ref(self) })
     }
 
     /// The number of bytes a flat counterpart of this array holds.

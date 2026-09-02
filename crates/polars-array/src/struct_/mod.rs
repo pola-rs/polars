@@ -532,7 +532,7 @@ impl PlStructArray {
     pub fn to_flat(&self) -> Flat<Self> {
         if self.is_flat() {
             // SAFETY: just checked.
-            return unsafe { Flat::from_array_unchecked(self.clone()) };
+            return unsafe { Flat::new(self.clone()) };
         }
 
         let validity = self.validity().map(|validity| validity.to_flat());
@@ -542,7 +542,7 @@ impl PlStructArray {
         let array = unsafe { Self::new_unchecked(self.fields.clone(), self.length, validity) };
 
         // SAFETY: the mask is flat, and a struct array has no other buffer of its own.
-        unsafe { Flat::from_array_unchecked(array) }
+        unsafe { Flat::new(array) }
     }
 
     /// Borrows this array as a flat one, or `None` if its validity mask is scalar.
@@ -550,7 +550,7 @@ impl PlStructArray {
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: `is_flat` is exactly the invariant of `Flat`.
         self.is_flat()
-            .then(|| unsafe { Flat::from_ref_unchecked(self) })
+            .then(|| unsafe { Flat::new_ref(self) })
     }
 }
 

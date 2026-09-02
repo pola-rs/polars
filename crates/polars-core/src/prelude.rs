@@ -41,6 +41,7 @@ pub use crate::chunked_array::builder::{
 };
 pub use crate::chunked_array::collect::{ChunkedCollectInferIterExt, ChunkedCollectIterExt};
 pub use crate::chunked_array::arrow_bridge::ToArrow;
+pub use crate::chunked_array::flat::{FlatChunkedArray, FlatNumericChunkedArray};
 pub use crate::chunked_array::validity::PlBitmapRefExt;
 #[cfg(feature = "dtype-categorical")]
 #[allow(unused)] // See rust-lang/rust/issues/160691.

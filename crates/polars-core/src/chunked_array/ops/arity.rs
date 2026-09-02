@@ -1,10 +1,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use std::borrow::Cow;
 use std::error::Error;
 
 use polars_array::builder::StaticArrayBuilder;
 use polars_array::{Flat, PlArray, PlBitmapRef, StaticArray};
 
+use crate::chunked_array::arrow_bridge::as_flat;
 use crate::chunked_array::utf8_view::PlUtf8ViewArrayBuilder;
 use crate::chunked_array::validity::{PlBitmapRefExt, combine_validities_and};
 use crate::prelude::PlArrayRef;
@@ -21,20 +21,6 @@ use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
 use crate::prelude::{ChunkedArray, PolarsDataType, Series, StringChunked};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
-
-/// Borrows `array` as a flat one, writing out its buffers only if it is not laid out flat.
-///
-/// A kernel is written against a [`Flat`] array so that it reads the backing buffers directly
-/// rather than through a broadcast; this is how a chunk reaches one. The chunks that come from an
-/// import are flat already, so the borrow is the common case and the copy is what a chunk in the
-/// [`scalar`](polars_array::broadcast) representation costs a kernel that cannot use it.
-#[inline]
-pub fn flat_chunk<A: StaticArray>(array: &A) -> Cow<'_, Flat<A>> {
-    match array.as_flat() {
-        Some(flat) => Cow::Borrowed(flat),
-        None => Cow::Owned(array.to_flat()),
-    }
-}
 
 /// Returns `ret` masked off wherever either input has a null, on top of its own mask.
 ///
@@ -158,7 +144,7 @@ where
 ///
 /// This is [`unary_kernel`] for a kernel that reads the backing buffers directly: every chunk
 /// reaches it as a [`Flat`] array, written out first if it was not laid out flat — see
-/// [`flat_chunk`].
+/// [`as_flat`].
 #[inline]
 pub fn unary_kernel_flat<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
 where
@@ -167,7 +153,7 @@ where
     Arr: StaticArray,
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
-    let iter = ca.downcast_iter().map(|arr| op(&flat_chunk(arr)));
+    let iter = ca.downcast_iter().map(|arr| op(&as_flat(arr)));
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
@@ -319,7 +305,7 @@ where
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
     let iter = ca.downcast_iter().map(|arr| {
-        op(&flat_chunk(arr)).with_validity_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
+        op(&as_flat(arr)).with_validity_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
@@ -348,7 +334,7 @@ where
     Arr: StaticArray,
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
-    let iter = ca.downcast_iter().map(|arr| op(&flat_chunk(arr)));
+    let iter = ca.downcast_iter().map(|arr| op(&as_flat(arr)));
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
@@ -601,7 +587,7 @@ where
         .downcast_iter()
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| {
-            let ret = op(&flat_chunk(lhs_arr), &flat_chunk(rhs_arr));
+            let ret = op(&as_flat(lhs_arr), &as_flat(rhs_arr));
             mask_with_inputs(ret, lhs_arr.validity(), rhs_arr.validity())
         });
     ChunkedArray::from_chunk_iter(name, iter)
@@ -675,7 +661,7 @@ where
     let iter = lhs
         .downcast_iter()
         .zip(rhs.downcast_iter())
-        .map(|(lhs_arr, rhs_arr)| op(&flat_chunk(lhs_arr), &flat_chunk(rhs_arr)));
+        .map(|(lhs_arr, rhs_arr)| op(&as_flat(lhs_arr), &as_flat(rhs_arr)));
     ChunkedArray::from_chunk_iter(name, iter)
 }
 
@@ -1043,7 +1029,7 @@ where
     // without that repeated value ever being written out. A column of one element repeats it by
     // definition, and one whose only chunk is in the [`scalar`](polars_array::broadcast)
     // representation repeats it over its whole height — so this subsumes the length-one case
-    // rather than sitting beside it, and `flat_chunk` no longer has a scalar chunk to expand.
+    // rather than sitting beside it, and `as_flat` no longer has a scalar chunk to expand.
     //
     // The `(flat, flat)` path is what is left: two columns of the same height, neither of which
     // stands for a single value, which is what the specialized kernels are written for.

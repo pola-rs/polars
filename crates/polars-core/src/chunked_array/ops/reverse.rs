@@ -9,7 +9,7 @@ where
     T: PolarsNumericType,
 {
     fn reverse(&self) -> ChunkedArray<T> {
-        let mut out = if let Ok(slice) = self.cont_slice() {
+        let mut out = if let Some(slice) = self.as_flat().and_then(|ca| ca.cont_slice().ok()) {
             let ca: NoNull<ChunkedArray<T>> = slice.iter().rev().copied().collect_trusted();
             ca.into_inner()
         } else {

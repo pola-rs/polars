@@ -228,14 +228,14 @@ impl PlNullArray {
     #[inline]
     pub fn to_flat(&self) -> Flat<Self> {
         // SAFETY: a null array has no backing buffer that could be scalar.
-        unsafe { Flat::from_array_unchecked(*self) }
+        unsafe { Flat::new(*self) }
     }
 
     /// Borrows this array as a flat one, which it always is — see [`PlNullArray::is_flat`].
     #[inline]
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: a null array has no backing buffer that could be scalar.
-        Some(unsafe { Flat::from_ref_unchecked(self) })
+        Some(unsafe { Flat::new_ref(self) })
     }
 }
 

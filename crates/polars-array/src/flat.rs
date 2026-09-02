@@ -127,34 +127,69 @@ impl<T: PlArray> Flat<T> {
 }
 
 impl<T> Flat<T> {
-    /// Borrows `array` as a flat one.
+    /// Wraps `array` as a flat one.
+    ///
+    /// This is how a type outside this crate builds the wrapper: the array it holds stays private,
+    /// so [`Flat::as_array`] and [`Flat::into_array`] are the only ways back out and the invariant
+    /// cannot be broken by writing over the field. Reach for it when the array is laid out flat by
+    /// construction, or to lift a wrapper of an array of this crate — the arrays here reach it
+    /// through their own `to_flat`, and `Flat<ChunkedArray<T>>` through this.
     ///
     /// # Safety
-    /// Every backing buffer of `array` must hold one slot per element.
+    /// Every backing buffer of `array` must hold one slot per element. What that means for a type
+    /// that is not an array of this crate is that type's business: for a `ChunkedArray` it is that
+    /// every chunk is flat.
     #[inline(always)]
-    pub unsafe fn from_ref_unchecked(array: &T) -> &Self {
+    pub const unsafe fn new(array: T) -> Self {
+        Self(array)
+    }
+
+    /// Borrows `array` as a flat one.
+    ///
+    /// This is [`Flat::new`] without taking ownership, which the wrapper being
+    /// `repr(transparent)` is what makes possible.
+    ///
+    /// # Safety
+    /// As [`Flat::new`].
+    #[inline(always)]
+    pub const unsafe fn new_ref(array: &T) -> &Self {
         // SAFETY: `Flat` is `repr(transparent)` over the array it wraps, which the caller
         // guarantees is flat.
         unsafe { &*(std::ptr::from_ref(array).cast::<Self>()) }
-    }
-
-    /// Takes `array` as a flat one.
-    ///
-    /// This is the owned counterpart of [`Flat::from_ref_unchecked`], for the arrays that are
-    /// laid out flat by construction and for the wrappers of another crate that delegate to one
-    /// which is — the arrays of this crate reach it through their own `to_flat`.
-    ///
-    /// # Safety
-    /// Every backing buffer of `array` must hold one slot per element.
-    #[inline(always)]
-    pub unsafe fn from_array_unchecked(array: T) -> Self {
-        Self(array)
     }
 
     /// The array itself, which is in the flat representation.
     #[inline(always)]
     pub const fn as_array(&self) -> &T {
         &self.0
+    }
+
+    /// Borrows `array` as a flat one, mutably.
+    ///
+    /// This is [`Flat::new_ref`] with a mutable borrow, for a caller that means to change the
+    /// array through the wrapper — writing over the values of a flat primitive array, say.
+    ///
+    /// # Safety
+    /// As [`Flat::new`], and the array must still be flat when the borrow ends.
+    #[inline(always)]
+    pub const unsafe fn new_mut(array: &mut T) -> &mut Self {
+        // SAFETY: `Flat` is `repr(transparent)` over the array it wraps, which the caller
+        // guarantees is flat.
+        unsafe { &mut *(std::ptr::from_mut(array).cast::<Self>()) }
+    }
+
+    /// The array itself, mutably.
+    ///
+    /// The wrapper deliberately does not deref mutably — mutating the array behind it could
+    /// invalidate the invariant — so this is the escape hatch for the mutations that keep it, such
+    /// as writing over the values of a flat primitive array without touching its length.
+    ///
+    /// # Safety
+    /// The array must still be flat when the borrow ends: every backing buffer must hold one slot
+    /// per element.
+    #[inline(always)]
+    pub const unsafe fn as_array_mut(&mut self) -> &mut T {
+        &mut self.0
     }
 
     /// Unwraps the array, giving up the guarantee that it is flat.

@@ -3,6 +3,7 @@ use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMaxPolicy};
 
 use crate::chunked_array::ChunkedArray;
+use crate::chunked_array::flat::FlatNumericChunkedArray;
 use crate::chunked_array::ops::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
@@ -45,7 +46,7 @@ where
 {
     if ca.null_count() == ca.len() {
         None
-    } else if let Ok(vals) = ca.cont_slice() {
+    } else if let Some(vals) = ca.as_flat().and_then(|ca| ca.cont_slice().ok()) {
         arg_min_numeric_slice(vals, ca.is_sorted_flag())
     } else {
         arg_min_numeric_chunked(ca)
@@ -61,7 +62,7 @@ where
         None
     } else if T::get_static_dtype().is_float() && !matches!(ca.is_sorted_flag(), IsSorted::Not) {
         arg_max_float_sorted(ca)
-    } else if let Ok(vals) = ca.cont_slice() {
+    } else if let Some(vals) = ca.as_flat().and_then(|ca| ca.cont_slice().ok()) {
         arg_max_numeric_slice(vals, ca.is_sorted_flag())
     } else {
         arg_max_numeric_chunked(ca)

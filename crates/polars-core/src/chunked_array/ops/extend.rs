@@ -207,20 +207,20 @@ mod test {
         let mut values = Vec::with_capacity(32);
         values.extend_from_slice(&[1, 2, 3]);
         let mut ca = Int32Chunked::from_vec(PlSmallStr::from_static("a"), values);
-        let location = ca.cont_slice().unwrap().as_ptr() as usize;
+        let location = ca.to_flat().cont_slice().unwrap().as_ptr() as usize;
         let to_append = Int32Chunked::new(PlSmallStr::from_static("a"), &[4, 5, 6]);
 
         ca.extend(&to_append)?;
-        let location2 = ca.cont_slice().unwrap().as_ptr() as usize;
+        let location2 = ca.to_flat().cont_slice().unwrap().as_ptr() as usize;
         assert_eq!(location, location2);
-        assert_eq!(ca.cont_slice().unwrap(), [1, 2, 3, 4, 5, 6]);
+        assert_eq!(ca.to_flat().cont_slice().unwrap(), [1, 2, 3, 4, 5, 6]);
 
         // now check if it succeeds if we cannot do this with a mutable.
         let _temp = ca.chunks.clone();
         ca.extend(&to_append)?;
-        let location2 = ca.cont_slice().unwrap().as_ptr() as usize;
+        let location2 = ca.to_flat().cont_slice().unwrap().as_ptr() as usize;
         assert_ne!(location, location2);
-        assert_eq!(ca.cont_slice().unwrap(), [1, 2, 3, 4, 5, 6, 4, 5, 6]);
+        assert_eq!(ca.to_flat().cont_slice().unwrap(), [1, 2, 3, 4, 5, 6, 4, 5, 6]);
 
         Ok(())
     }

@@ -937,6 +937,7 @@ mod test {
             descending: false,
             ..Default::default()
         });
+        let idx = idx.to_flat();
         let idx = idx.cont_slice().unwrap();
 
         let expected = [2, 4, 0, 3, 7, 6, 5, 1];
@@ -946,6 +947,7 @@ mod test {
             descending: true,
             ..Default::default()
         });
+        let idx = idx.to_flat();
         let idx = idx.cont_slice().unwrap();
         // the duplicates are in reverse order of appearance, so we cannot reverse expected
         let expected = [2, 4, 1, 5, 6, 0, 3, 7];

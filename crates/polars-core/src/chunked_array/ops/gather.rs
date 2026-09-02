@@ -7,6 +7,8 @@ use polars_compute::gather::take_unchecked;
 use polars_error::polars_ensure;
 use polars_utils::index::check_bounds;
 
+use polars_array::builder::{ShareStrategy, builder_like};
+
 use crate::chunked_array::arrow_bridge::{ToArrow, as_flat, with_arrow_chunk};
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -359,15 +361,48 @@ impl IdxCa {
 #[cfg(feature = "dtype-array")]
 impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
-        // Taking a nested type element by element is expensive, and the chunk it would be built
-        // into carries no inner type of its own to be built from: the values are gathered by the
-        // kernel instead, which memcopies within one chunk.
-        let ca = self.rechunk();
-        let target = ca.downcast_as_array();
+        // Taking nested types by value is expensive, so at a certain len[n] ratio
+        // we rechunk first, so that we can memcopy internally
+        if self.n_chunks() > 1 && should_rechunk(self.len(), indices.len()) {
+            let ca = self.rechunk();
+            let idx = indices.rechunk();
+            let idx = as_flat(idx.downcast_as_array());
+            let chunks = vec![take_chunk_unchecked(ca.downcast_as_array(), &idx)];
+            return self.copy_with_chunks(chunks);
+        }
+
+        let ca = self;
+        let targets: Vec<_> = ca.downcast_iter().collect();
+        let cumlens = cumulative_lengths(&targets);
 
         let chunks = indices
             .downcast_iter()
-            .map(|idx_arr| take_chunk_unchecked(target, &as_flat(idx_arr)))
+            .map(|idx_arr| {
+                let idx_arr = as_flat(idx_arr);
+                if let [target] = targets[..] {
+                    return take_chunk_unchecked(target, &idx_arr);
+                }
+
+                // The chunks carry no inner type to build a nested chunk out of, but the target
+                // does: a builder shaped like it is what the elements are appended into, one at a
+                // time, each from whichever chunk holds it.
+                let mut builder = builder_like(targets[0]);
+                builder.reserve(idx_arr.len());
+                for idx in idx_arr.iter() {
+                    let Some(idx) = idx else {
+                        builder.extend_nulls(1);
+                        continue;
+                    };
+                    let (chunk_idx, arr_idx) = resolve_chunked_idx(*idx, &cumlens);
+                    builder.subslice_extend(
+                        *targets.get_unchecked(chunk_idx),
+                        arr_idx,
+                        1,
+                        ShareStrategy::Always,
+                    );
+                }
+                builder.freeze_reset()
+            })
             .collect();
 
         let mut out = ca.with_chunks(chunks);
@@ -387,15 +422,48 @@ impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for ArrayChunked {
 
 impl ChunkTakeUnchecked<IdxCa> for ListChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
-        // Taking a nested type element by element is expensive, and the chunk it would be built
-        // into carries no inner type of its own to be built from: the values are gathered by the
-        // kernel instead, which memcopies within one chunk.
-        let ca = self.rechunk();
-        let target = ca.downcast_as_array();
+        // Taking nested types by value is expensive, so at a certain len[n] ratio
+        // we rechunk first, so that we can memcopy internally
+        if self.n_chunks() > 1 && should_rechunk(self.len(), indices.len()) {
+            let ca = self.rechunk();
+            let idx = indices.rechunk();
+            let idx = as_flat(idx.downcast_as_array());
+            let chunks = vec![take_chunk_unchecked(ca.downcast_as_array(), &idx)];
+            return self.copy_with_chunks(chunks);
+        }
+
+        let ca = self;
+        let targets: Vec<_> = ca.downcast_iter().collect();
+        let cumlens = cumulative_lengths(&targets);
 
         let chunks = indices
             .downcast_iter()
-            .map(|idx_arr| take_chunk_unchecked(target, &as_flat(idx_arr)))
+            .map(|idx_arr| {
+                let idx_arr = as_flat(idx_arr);
+                if let [target] = targets[..] {
+                    return take_chunk_unchecked(target, &idx_arr);
+                }
+
+                // The chunks carry no inner type to build a nested chunk out of, but the target
+                // does: a builder shaped like it is what the elements are appended into, one at a
+                // time, each from whichever chunk holds it.
+                let mut builder = builder_like(targets[0]);
+                builder.reserve(idx_arr.len());
+                for idx in idx_arr.iter() {
+                    let Some(idx) = idx else {
+                        builder.extend_nulls(1);
+                        continue;
+                    };
+                    let (chunk_idx, arr_idx) = resolve_chunked_idx(*idx, &cumlens);
+                    builder.subslice_extend(
+                        *targets.get_unchecked(chunk_idx),
+                        arr_idx,
+                        1,
+                        ShareStrategy::Always,
+                    );
+                }
+                builder.freeze_reset()
+            })
             .collect();
 
         let mut out = ca.with_chunks(chunks);

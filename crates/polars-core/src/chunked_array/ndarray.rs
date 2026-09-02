@@ -22,8 +22,12 @@ where
     /// If data is aligned in a single chunk and has no Null values a zero copy view is returned
     /// as an [ndarray]
     pub fn to_ndarray(&self) -> PolarsResult<ArrayView1<'_, T::Native>> {
-        let slice = self.cont_slice()?;
-        Ok(aview1(slice))
+        // A view borrows from this array, so a chunk that is not laid out flat has no slice here
+        // to point at rather than one to be written out.
+        let ca = self.as_flat().ok_or_else(
+            || polars_err!(ComputeError: "chunked array is not contiguous"),
+        )?;
+        Ok(aview1(ca.cont_slice()?))
     }
 }
 
