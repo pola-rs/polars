@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import (
+    ColumnNotFoundError,
     InvalidOperationError,
     SQLInterfaceError,
     SQLSyntaxError,
@@ -811,10 +812,10 @@ def test_natural_joins_01() -> None:
 
     # misc errors
     with pytest.raises(SQLSyntaxError, match=r"did you mean COLUMNS\(\*\)\?"):
-        pl.sql("SELECT * FROM df1 NATURAL JOIN df2 WHERE COLUMNS('*') >= 5")
+        pl.sql("SELECT * FROM df1 NATURAL JOIN df2 WHERE COLUMNS('*') >= 5").collect()
 
     with pytest.raises(SQLSyntaxError, match=r"COLUMNS expects a regex"):
-        pl.sql("SELECT COLUMNS(1234) FROM df1 NATURAL JOIN df2")
+        pl.sql("SELECT COLUMNS(1234) FROM df1 NATURAL JOIN df2").collect()
 
 
 @pytest.mark.parametrize(
@@ -945,7 +946,7 @@ def test_join_derived_table_isolated_state() -> None:
                 LEFT JOIN (SELECT IDT, INFO2 FROM df2) t2 ON df1.IDT = t2.IDT
                 LEFT JOIN (SELECT IDT, INFO3 FROM df2) t3 ON df1.IDT = t3.IDT
         """,
-        compare_with="duckdb",
+        compare_with="sqlite",
         expected={
             "IDT": ["1"],
             "INFO1": ["my_info1"],
@@ -1050,7 +1051,7 @@ def test_unnamed_nested_join_relation() -> None:
             JOIN (right JOIN right ON right.a = right.a)
             ON left.a = right.a
             """
-        )
+        ).collect()
 
 
 def test_nulls_equal_19624() -> None:
@@ -1076,32 +1077,132 @@ def test_nulls_equal_19624() -> None:
     assert_frame_equal(res_df, expected_df)
 
 
-def test_join_on_literal_string_comparison() -> None:
-    df1 = pl.DataFrame(
-        {
-            "name": ["alice", "bob", "adam", "charlie"],
-            "role": ["admin", "user", "admin", "user"],
-        }
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT"])
+@pytest.mark.parametrize(
+    ("extra_condition", "filtered_side"),
+    [
+        # left-table column = constant (and reversed / unqualified)
+        ("df1.role = 'admin'", "left"),
+        ("'admin' = df1.role", "left"),
+        ("role = 'admin'", "left"),
+        # right-table column = constant (and reversed / unqualified)
+        # ref: https://github.com/pola-rs/polars/issues/28641
+        ("df2.dept = 'IT'", "right"),
+        ("'IT' = df2.dept", "right"),
+        ("dept = 'IT'", "right"),
+        # the constant operand needn't be a bare literal
+        ("df2.dept = UPPER('it')", "right"),
+        ("UPPER('it') = df2.dept", "right"),
+    ],
+)
+def test_join_on_literal_string_comparison(
+    join_type: str, extra_condition: str, filtered_side: str
+) -> None:
+    frames = {
+        "df1": pl.DataFrame(
+            {
+                "name": ["alice", "bob", "adam", "charlie"],
+                "role": ["admin", "user", "admin", "user"],
+            }
+        ),
+        "df2": pl.DataFrame(
+            {
+                "name": ["alice", "bob", "charlie", "adam"],
+                "dept": ["IT", "HR", "IT", "SEC"],
+            }
+        ),
+    }
+    # the outer join cases are what distinguish a correctly-placed join key from a
+    # post-join filter: a row that fails the constant comparison must still be
+    # emitted (null-extended) rather than dropped
+    expected_rows: dict[tuple[str, str], list[tuple[str, str, str | None]]] = {
+        ("left", "INNER"): [("adam", "admin", "SEC"), ("alice", "admin", "IT")],
+        ("left", "LEFT"): [
+            ("adam", "admin", "SEC"),
+            ("alice", "admin", "IT"),
+            ("bob", "user", None),
+            ("charlie", "user", None),
+        ],
+        ("right", "INNER"): [("alice", "admin", "IT"), ("charlie", "user", "IT")],
+        ("right", "LEFT"): [
+            ("adam", "admin", None),
+            ("alice", "admin", "IT"),
+            ("bob", "user", None),
+            ("charlie", "user", "IT"),
+        ],
+    }
+
+    assert_sql_matches(
+        frames,
+        query=f"""
+            SELECT df1.name, df1.role, df2.dept
+            FROM df1
+            {join_type} JOIN df2 ON df1.name = df2.name AND {extra_condition}
+            ORDER BY df1.name
+        """,
+        compare_with="sqlite",
+        expected=pl.DataFrame(
+            data=expected_rows[filtered_side, join_type],
+            schema={"name": str, "role": str, "dept": str},
+            orient="row",
+        ),
     )
-    df2 = pl.DataFrame(
-        {
-            "name": ["alice", "bob", "charlie", "adam"],
-            "dept": ["IT", "HR", "IT", "SEC"],
-        }
+
+
+@pytest.mark.parametrize("join_type", ["INNER", "LEFT"])
+@pytest.mark.parametrize(
+    "extra_condition",
+    [
+        "df1.flag = 'y'",
+        "'y' = df1.flag",
+        "df2.flag = 'y'",
+        "'y' = df2.flag",
+    ],
+)
+def test_join_on_literal_comparison_ambiguous_column(
+    join_type: str, extra_condition: str
+) -> None:
+    # "flag" exists in both frames and isn't part of the equi-join condition, so the
+    # table qualifier (and not the operand order) has to decide which side it filters
+    frames = {
+        "df1": pl.DataFrame({"id": [1, 2, 3], "flag": ["y", "n", "y"]}),
+        "df2": pl.DataFrame({"id": [1, 2, 3], "flag": ["n", "y", "n"]}),
+    }
+    assert_sql_matches(
+        frames,
+        query=f"""
+            SELECT df1.id, df1.flag AS flag1, df2.flag AS flag2
+            FROM df1
+            {join_type} JOIN df2 ON df1.id = df2.id AND {extra_condition}
+            ORDER BY df1.id
+        """,
+        compare_with="sqlite",
     )
-    query = """
-        SELECT df1.name, df1.role, df2.dept
-        FROM df1
-        INNER JOIN df2 ON df1.name = df2.name AND df1.role = 'admin'
-        ORDER BY df1.name
-    """
-    df_expected = pl.DataFrame(
-        data=[("adam", "admin", "SEC"), ("alice", "admin", "IT")],
-        schema={"name": str, "role": str, "dept": str},
-        orient="row",
-    )
-    res = pl.sql(query, eager=True)
-    assert_frame_equal(res, df_expected)
+
+
+@pytest.mark.parametrize(
+    ("extra_condition", "exc", "err"),
+    [
+        ("nope = 'x'", ColumnNotFoundError, 'unable to find column "nope"'),
+        (
+            "df2.nope = 'x'",
+            SQLInterfaceError,
+            "no column named 'nope' found in table 'df2'",
+        ),
+    ],
+)
+def test_join_on_literal_comparison_unknown_column(
+    extra_condition: str, exc: type[Exception], err: str
+) -> None:
+    # a constant comparison against an unresolvable column must still surface as an
+    # error, rather than being silently reassigned to the other side of the join
+    frames = {
+        "df1": pl.DataFrame({"id": [1, 2]}),
+        "df2": pl.DataFrame({"id": [1], "value": ["x"]}),
+    }
+    query = f"SELECT * FROM df1 LEFT JOIN df2 ON df1.id = df2.id AND {extra_condition}"
+    with pytest.raises(exc, match=err):
+        pl.SQLContext(frames).execute(query).collect()
 
 
 @pytest.mark.parametrize(
@@ -1467,7 +1568,7 @@ def test_unsupported_join_conditions(join_condition: str, expected_error: str) -
     df2 = pl.DataFrame({"id": [2, 3, 4], "val": [20, 30, 40]})
 
     with pytest.raises(SQLInterfaceError, match=expected_error):
-        pl.sql(f"SELECT * FROM df1 INNER JOIN df2 ON {join_condition}")
+        pl.sql(f"SELECT * FROM df1 INNER JOIN df2 ON {join_condition}").collect()
 
 
 def test_ambiguous_column_detection_in_joins() -> None:
@@ -1741,7 +1842,7 @@ def test_join_non_equi_case_predicate(sales_frame: pl.LazyFrame) -> None:
                 > CASE WHEN a.total > 0 THEN b.total / a.total ELSE NULL END
             ORDER BY a.cid
         """,
-        compare_with="duckdb",
+        compare_with="sqlite",
     )
 
 
@@ -1758,7 +1859,7 @@ def test_join_predicate_spanning_later_relation(sales_frame: pl.LazyFrame) -> No
               AND d.total > c.total
             ORDER BY a.cid, c_total, d_total
         """,
-        compare_with="duckdb",
+        compare_with="sqlite",
     )
 
 
@@ -1770,7 +1871,7 @@ def test_join_non_equi_nested_alias_in_equi_key(sales_frame: pl.LazyFrame) -> No
             WHERE a.cid + 0 = b.cid + 0 AND a.kind = 's' AND b.kind = 'w'
             ORDER BY a.cid
         """,
-        compare_with="duckdb",
+        compare_with="sqlite",
     )
 
 
@@ -1813,5 +1914,5 @@ def test_join_predicate_operand_spanning_both_sides() -> None:
                 > CASE WHEN ss2.s > 0 THEN ss3.s / ss2.s ELSE NULL END
             ORDER BY ss1.k
         """,
-        compare_with="duckdb",
+        compare_with="sqlite",
     )

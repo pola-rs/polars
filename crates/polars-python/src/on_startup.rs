@@ -315,6 +315,11 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         // Register warning function for `polars_warn!`.
         polars_error::set_warning_function(warning_function);
 
+        // Makes `DslPlan::SQL` resolvable, also for plans deserialized without an
+        // `SQLContext` being constructed here.
+        #[cfg(feature = "sql")]
+        polars::sql::register_sql_resolver();
+
         if catch_keyboard_interrupt {
             register_polars_abort_mechanism();
         }

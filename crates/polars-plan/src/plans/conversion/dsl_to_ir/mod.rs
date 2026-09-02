@@ -184,6 +184,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 python_source,
                 validate_schema,
                 is_pure,
+                explain_name,
+                explain_detail,
             } = options;
 
             IR::PythonScan {
@@ -197,6 +199,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     n_rows: Default::default(),
                     predicate: Default::default(),
                     is_pure,
+                    explain_name,
+                    explain_detail,
                 },
             }
         },
@@ -842,6 +846,27 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 },
             };
             return run_conversion(lp, ctxt, "match_to_schema");
+        },
+        DslPlan::SQL {
+            query,
+            relations,
+            cached_stmt,
+        } => {
+            let resolver = crate::dsl::get_sql_resolver().ok_or_else(|| {
+                polars_err!(
+                    ComputeError:
+                    "cannot resolve SQL: no SQL resolver registered; \
+                     build polars with the 'sql' feature"
+                )
+            })?;
+            let resolved = resolver.resolve(
+                &query,
+                relations,
+                cached_stmt.get(),
+                ctxt.lp_arena,
+                ctxt.expr_arena,
+            )?;
+            return to_alp_impl(resolved, ctxt);
         },
         DslPlan::PipeWithSchema { input, callback } => {
             // Derive the schema from the input

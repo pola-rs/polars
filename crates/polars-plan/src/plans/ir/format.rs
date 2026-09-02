@@ -73,7 +73,7 @@ fn write_scan(
     indent: usize,
     n_columns: usize,
     total_columns: usize,
-    row_estimation: Option<usize>,
+    row_estimation: Option<u64>,
     predicate: &Option<ExprIRDisplay<'_>>,
     pre_slice: Option<Slice>,
     row_index: Option<&RowIndex>,
@@ -223,6 +223,10 @@ impl<'a> IRDisplay<'a> {
                 let (left_keys, right_keys) = options.options.key_vecs();
                 let left_on = self.display_expr_slice(&left_keys);
                 let right_on = self.display_expr_slice(&right_keys);
+                let build_side = match &options.args.build_side {
+                    Some(side) => format!("\n{:indent$}BUILD SIDE: {side:?}", ""),
+                    None => String::new(),
+                };
 
                 // Fused cross + filter (show as nested loop join)
                 if let JoinTypeOptionsIR::CrossAndFilter { predicate } = &options.options {
@@ -233,7 +237,7 @@ impl<'a> IRDisplay<'a> {
                     } else {
                         format!("{how} NESTED LOOP")
                     };
-                    write!(f, "{:indent$}{name} JOIN ON {predicate}:", "")?;
+                    write!(f, "{:indent$}{name} JOIN ON {predicate}:{build_side}", "")?;
                     write!(f, "\n{:indent$}LEFT PLAN:", "")?;
                     self.with_root(*input_left)
                         ._format(f, sub_indent, seen_caches)?;
@@ -243,7 +247,7 @@ impl<'a> IRDisplay<'a> {
                     write!(f, "\n{:indent$}END {name} JOIN", "")
                 } else {
                     let how = &options.args.how;
-                    write!(f, "{:indent$}{how} JOIN:", "")?;
+                    write!(f, "{:indent$}{how} JOIN:{build_side}", "")?;
                     write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
                     self.with_root(*input_left)
                         ._format(f, sub_indent, seen_caches)?;
@@ -816,10 +820,15 @@ pub fn write_ir_non_recursive(
                 PythonPredicate::PyArrow { .. } => None,
                 PythonPredicate::None => None,
             };
+            let header_name = if let Some(name) = &options.explain_name {
+                format!("PYTHON[{name}]")
+            } else {
+                "PYTHON".to_string()
+            };
 
             write_scan(
                 f,
-                "PYTHON",
+                &header_name,
                 &ScanSources::default(),
                 indent,
                 n_columns,
@@ -831,7 +840,13 @@ pub fn write_ir_non_recursive(
                     .map(|len| polars_utils::slice_enum::Slice::Positive { offset: 0, len }),
                 None,
                 None,
-            )
+            )?;
+
+            if let Some(detail) = &options.explain_detail {
+                write!(f, "\n{:indent$}INFO: {}", "", detail)?;
+            }
+
+            Ok(())
         },
         IR::Slice {
             input: _,
@@ -865,11 +880,7 @@ pub fn write_ir_non_recursive(
                 .map(|columns| columns.len())
                 .unwrap_or(usize::MAX);
 
-            let row_estimation = if file_info.row_estimation.1 != usize::MAX {
-                Some(file_info.row_estimation.1)
-            } else {
-                None
-            };
+            let row_estimation = file_info.stats.rows.value();
 
             let predicate = predicate.as_ref().map(|p| p.display(expr_arena));
 

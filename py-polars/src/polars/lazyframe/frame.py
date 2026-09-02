@@ -393,6 +393,8 @@ class LazyFrame:
         pyarrow: bool = False,
         validate_schema: bool = False,
         is_pure: bool = False,
+        explain_name: str | None = None,
+        explain_detail: str | None = None,
     ) -> LazyFrame:
         self = cls.__new__(cls)
         if isinstance(schema, Mapping):
@@ -402,6 +404,8 @@ class LazyFrame:
                 pyarrow=pyarrow,
                 validate_schema=validate_schema,
                 is_pure=is_pure,
+                explain_name=explain_name,
+                explain_detail=explain_detail,
             )
         elif _PYARROW_AVAILABLE and isinstance(schema, pa.Schema):
             self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
@@ -410,10 +414,17 @@ class LazyFrame:
                 pyarrow=pyarrow,
                 validate_schema=validate_schema,
                 is_pure=is_pure,
+                explain_name=explain_name,
+                explain_detail=explain_detail,
             )
         else:
             self._ldf = PyLazyFrame.scan_from_python_function_schema_function(
-                schema, scan_fn, validate_schema=validate_schema, is_pure=is_pure
+                schema,
+                scan_fn,
+                validate_schema=validate_schema,
+                is_pure=is_pure,
+                explain_name=explain_name,
+                explain_detail=explain_detail,
             )
         return self
 
@@ -1457,7 +1468,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if plan_stage == "ir":
             dot = _ldf.to_dot(optimized)
         elif plan_stage == "physical":
-            if engine_.plan_engine == "streaming":
+            if engine_.plan_engine == "streaming" or engine_.plan_engine == "auto":
                 dot = _ldf.to_dot_streaming_phys(optimized)
             else:
                 dot = _ldf.to_dot(optimized)
@@ -2947,6 +2958,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | polars.io.iceberg.IcebergCatalogConfig
         | None = None,
         storage_options: StorageOptionsDict | None = None,
+        compression: ParquetCompression = "zstd",
+        compression_level: int | None = None,
+        row_group_size: int | None = None,
+        maintain_order: bool = True,
         engine: EngineType = "auto",
     ) -> pl.DataFrame:
         """
@@ -2987,6 +3002,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             For cloud storages, this may include configurations for authentication etc.
 
             More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
+        compression
+            Parquet compression codec.
+        compression_level
+            Compression level to use. Higher compression levels usually reduce file
+            size at the expense of write throughput.
+        row_group_size
+            Row group size in number of rows.
+        maintain_order
+            Maintain the input row order in the written files. Setting this to
+            `False` can improve throughput.
         engine
             Engine used to produce rows for the local `pyiceberg` writer.
 
@@ -2994,6 +3019,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         -------
         DataFrame
             Contains the new metadata path.
+
+        Notes
+        -----
+        Partitioned writes support identity, year, month, day, hour, and truncate
+        transforms. Truncation is supported for integer, long, string, and binary
+        source columns, including fields nested within structs. Top-level partition
+        source columns must use an Iceberg metrics mode that records lower and upper
+        bounds (``full`` or ``truncate``). Bucket, void, and decimal truncation are
+        not supported.
+
+        ``mode="overwrite"`` replaces all table data; dynamic partition overwrite
+        is not supported. ``schema_mode="overwrite"`` is not supported for
+        partitioned tables. Tables with sort orders or custom location providers
+        are also not supported.
         """
         from polars.io.iceberg._sink import IcebergSinkState
 
@@ -3004,6 +3043,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             snapshot_properties=snapshot_properties,
             catalog=catalog,
             storage_options=storage_options,
+            compression=compression,
+            compression_level=compression_level,
+            row_group_size=row_group_size,
+            maintain_order=maintain_order,
         )
 
         sink_state.attach_sink(self).collect(engine=engine)

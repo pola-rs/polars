@@ -511,15 +511,15 @@ impl Duration {
     #[doc(hidden)]
     pub const fn duration_us(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MICROSECONDS
-            + (self.weeks * NS_WEEK / 1000 + self.nsecs / 1000 + self.days * NS_DAY / 1000)
+            + (self.weeks * (NS_WEEK / 1000) + self.nsecs / 1000 + self.days * (NS_DAY / 1000))
     }
 
     #[doc(hidden)]
     pub const fn duration_ms(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MILLISECONDS
-            + (self.weeks * NS_WEEK / 1_000_000
+            + (self.weeks * (NS_WEEK / 1_000_000)
                 + self.nsecs / 1_000_000
-                + self.days * NS_DAY / 1_000_000)
+                + self.days * (NS_DAY / 1_000_000))
     }
 
     /// Not-to-exceed estimated duration of the window duration. The actual duration will be
@@ -535,16 +535,16 @@ impl Duration {
     #[doc(hidden)]
     pub const fn nte_duration_us(&self) -> i64 {
         self.months * (31 * 24 + 1) * 3600 * MICROSECONDS
-            + self.weeks * NTE_NS_WEEK / 1000
-            + self.days * NTE_NS_DAY / 1000
+            + self.weeks * (NTE_NS_WEEK / 1000)
+            + self.days * (NTE_NS_DAY / 1000)
             + self.nsecs / 1000
     }
 
     #[doc(hidden)]
     pub const fn nte_duration_ms(&self) -> i64 {
         self.months * (31 * 24 + 1) * 3600 * MILLISECONDS
-            + self.weeks * NTE_NS_WEEK / 1_000_000
-            + self.days * NTE_NS_DAY / 1_000_000
+            + self.weeks * (NTE_NS_WEEK / 1_000_000)
+            + self.days * (NTE_NS_DAY / 1_000_000)
             + self.nsecs / 1_000_000
     }
 

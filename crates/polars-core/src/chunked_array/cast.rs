@@ -115,6 +115,8 @@ fn cast_impl_inner(
         Time => out.into_time(),
         #[cfg(feature = "dtype-decimal")]
         Decimal(precision, scale) => out.into_decimal(*precision, *scale)?,
+        #[cfg(feature = "dtype-extension")]
+        Extension(typ, _) => out.into_extension(typ.clone()),
         _ => out,
     };
 

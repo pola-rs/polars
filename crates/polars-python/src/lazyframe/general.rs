@@ -424,12 +424,15 @@ impl PyLazyFrame {
     }
 
     #[staticmethod]
+    #[pyo3(signature = (schema, scan_fn, pyarrow, validate_schema, is_pure, *, explain_name=None, explain_detail=None))]
     fn scan_from_python_function_arrow_schema(
         schema: &Bound<'_, PyList>,
         scan_fn: Py<PyAny>,
         pyarrow: bool,
         validate_schema: bool,
         is_pure: bool,
+        explain_name: Option<PyBackedStr>,
+        explain_detail: Option<PyBackedStr>,
     ) -> PyResult<Self> {
         let schema = Arc::new(pyarrow_schema_to_rust(schema)?);
 
@@ -439,17 +442,22 @@ impl PyLazyFrame {
             pyarrow,
             validate_schema,
             is_pure,
+            explain_name.as_deref().map(Into::into),
+            explain_detail.as_deref().map(Into::into),
         )
         .into())
     }
 
     #[staticmethod]
+    #[pyo3(signature = (schema, scan_fn, pyarrow, validate_schema, is_pure, *, explain_name=None, explain_detail=None))]
     fn scan_from_python_function_pl_schema(
         schema: Vec<(PyBackedStr, Wrap<DataType>)>,
         scan_fn: Py<PyAny>,
         pyarrow: bool,
         validate_schema: bool,
         is_pure: bool,
+        explain_name: Option<PyBackedStr>,
+        explain_detail: Option<PyBackedStr>,
     ) -> PyResult<Self> {
         let schema = Arc::new(Schema::from_iter(
             schema
@@ -462,16 +470,21 @@ impl PyLazyFrame {
             pyarrow,
             validate_schema,
             is_pure,
+            explain_name.as_deref().map(Into::into),
+            explain_detail.as_deref().map(Into::into),
         )
         .into())
     }
 
     #[staticmethod]
+    #[pyo3(signature = (schema_fn, scan_fn, validate_schema, is_pure, *, explain_name=None, explain_detail=None))]
     fn scan_from_python_function_schema_function(
         schema_fn: Py<PyAny>,
         scan_fn: Py<PyAny>,
         validate_schema: bool,
         is_pure: bool,
+        explain_name: Option<PyBackedStr>,
+        explain_detail: Option<PyBackedStr>,
     ) -> PyResult<Self> {
         Ok(LazyFrame::scan_from_python_function(
             Either::Left(schema_fn),
@@ -479,6 +492,8 @@ impl PyLazyFrame {
             false,
             validate_schema,
             is_pure,
+            explain_name.as_deref().map(Into::into),
+            explain_detail.as_deref().map(Into::into),
         )
         .into())
     }
