@@ -3,7 +3,9 @@ use std::ops::Range;
 #[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
 use std::path::Path;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
+#[cfg(target_os = "linux")]
+use std::sync::LazyLock;
 
 use dio_align::DioAlign;
 use futures::{StreamExt, TryStreamExt};
@@ -265,7 +267,7 @@ impl FileByteSource {
             direct_io::probe_or_disable(&file).map_err(|e| _limit_path_len_io_err(path, e))?;
 
         #[cfg(not(target_os = "linux"))]
-        let o_direct_align = None;
+        let o_direct_align: Option<DioAlign> = None;
 
         #[cfg(target_os = "linux")]
         if o_direct_align.is_none() {
@@ -322,7 +324,7 @@ impl FileByteSource {
         let o_direct_align = direct_io::probe_or_disable(&file)?;
 
         #[cfg(not(target_os = "linux"))]
-        let o_direct_align = None;
+        let o_direct_align: Option<DioAlign> = None;
 
         let concurrency = read_context.concurrency;
         let permits = read_context.permits;
