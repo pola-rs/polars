@@ -13,11 +13,10 @@
 //! arrays over one physical representation it stands for. Rather than take a data type it would
 //! have to validate the array against, this module gives every Arrow array a function of its own
 //! that inlines the data type it exports as: a [`PlBinaryViewArray`] exports as a
-//! [`BinaryViewArray`] through [`binview_to_arrow_binview`] and as a [`Utf8ViewArray`] through
-//! [`binview_to_arrow_utf8view`]. [`to_arrow`] picks the one that promises the least about the
-//! elements — a [`PlBinaryArray`] exports as a [`BinaryArray`] rather than as a [`Utf8Array`] —
-//! and it is the caller that reaches for another function, or replaces the data type afterwards,
-//! when it remembers a logical type the array stood for.
+//! [`BinaryViewArray`] through [`binview_to_arrow_binview`], and a [`PlBinaryArray`] as a
+//! [`BinaryArray`] through [`binary_to_arrow_large_binary`]. Each promises the least about the
+//! elements that their physical layout allows, and it is the caller that replaces the data type
+//! afterwards when it remembers a logical type the array stood for.
 //!
 //! A [`PlUtf8ViewArray`] is the exception, because the UTF-8 promise is part of the array rather
 //! than something the caller remembers about it: it exports as a [`Utf8ViewArray`] through
@@ -30,14 +29,17 @@
 //!
 //! # UTF-8
 //!
-//! Nothing in this crate says that the bytes of a [`PlBinaryArray`] or a [`PlBinaryViewArray`] are
-//! a string, and nothing in it ever validates that they are. The functions that export one as an
-//! Arrow array that does say so — [`binary_to_arrow_large_utf8`] and
-//! [`binview_to_arrow_utf8view`] — are therefore `unsafe`: they hand the bytes over in `O(1)` and
-//! it is the caller that knows they are valid UTF-8.
+//! [`PlUtf8ViewArray`] is the one array here whose elements are known to be a string, which is why
+//! exporting one through [`utf8view_to_arrow_utf8view`] is safe.
 //!
-//! [`PlUtf8ViewArray`] is the array that *does* say so, which is why exporting one through
-//! [`utf8view_to_arrow_utf8view`] is safe.
+//! Nothing says that the bytes of a [`PlBinaryArray`] or a [`PlBinaryViewArray`] are a string, and
+//! nothing here ever validates that they are, so neither has a safe export as an Arrow array that
+//! claims they are one. A [`PlBinaryViewArray`] whose bytes *are* UTF-8 is wrapped as a
+//! [`PlUtf8ViewArray`] first — see [`crate::utf8view`] — rather than exported as a string
+//! directly. [`binary_to_arrow_large_utf8`] is the one function that still hands bytes over behind
+//! a string data type, for the offset-based [`PlBinaryArray`] that has no string counterpart in
+//! this crate to be wrapped as; it is `unsafe` because it is the caller that knows the bytes are
+//! valid UTF-8.
 //!
 //! # The scalar representation is written out
 //!
@@ -56,9 +58,9 @@
 //!
 //! # Example
 //! ```
-//! use arrow::array::{Array, BinaryArray, Utf8ViewArray};
+//! use arrow::array::{Array, BinaryArray, BinaryViewArray, Utf8ViewArray};
 //! use arrow::datatypes::ArrowDataType;
-//! use polars_array::arrow::export::{binview_to_arrow_utf8view, to_arrow};
+//! use polars_array::arrow::export::to_arrow;
 //! use polars_array::{PlBinaryArray, PlBinaryViewArray, PlUtf8ViewArray};
 //!
 //! // The bytes of a `PlBinaryArray` are not a string, so it exports as a binary array.
@@ -67,13 +69,14 @@
 //! assert_eq!(arrow.dtype(), &ArrowDataType::LargeBinary);
 //! assert_eq!(arrow.as_any().downcast_ref::<BinaryArray<i64>>().unwrap().value(0), b"foo");
 //!
-//! // Exporting them as a string is the caller's promise that they are one.
+//! // Nor are the bytes of a `PlBinaryViewArray`, whatever they happen to hold.
 //! let array = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"bar"]);
-//! let arrow = unsafe { binview_to_arrow_utf8view(&array) };
-//! assert_eq!(arrow.value(0), "foo");
+//! let arrow = to_arrow(&array);
+//! assert_eq!(arrow.dtype(), &ArrowDataType::BinaryView);
+//! assert_eq!(arrow.as_any().downcast_ref::<BinaryViewArray>().unwrap().value(0), b"foo");
 //!
-//! // A `PlUtf8ViewArray` carries that promise itself, so it exports as a string array with no
-//! // `unsafe` and no data type to remember.
+//! // A `PlUtf8ViewArray` carries the promise that they are, so it exports as a string array with
+//! // no `unsafe` and no data type to remember.
 //! let array: PlUtf8ViewArray = [Some("foo"), Some("bar")].into_iter().collect();
 //! let arrow = to_arrow(&array);
 //! assert_eq!(arrow.dtype(), &ArrowDataType::Utf8View);
@@ -241,21 +244,19 @@ pub fn binview_to_arrow_binview(array: &PlBinaryViewArray) -> BinaryViewArray {
     }
 }
 
-/// Exports a [`PlBinaryViewArray`] as an Arrow [`Utf8ViewArray`] of
-/// [`Utf8View`](ArrowDataType::Utf8View), without checking that its bytes are valid UTF-8.
+/// Exports a [`PlUtf8ViewArray`] as an Arrow [`Utf8ViewArray`] of
+/// [`Utf8View`](ArrowDataType::Utf8View).
 ///
-/// This is [`binview_to_arrow_binview`] behind a data type that promises the bytes are a string,
-/// which nothing in this crate establishes — see the [module docs](self).
+/// This needs no `unsafe`: the UTF-8 the Arrow data type promises is exactly the invariant
+/// [`PlUtf8ViewArray`] carries — see [`crate::utf8view`]. A [`PlBinaryViewArray`], whose bytes are
+/// not known to be a string, exports through [`binview_to_arrow_binview`] instead.
 ///
 /// This is `O(1)` for a [`flat`](crate::broadcast) array and `O(len)` for a scalar one, which is
 /// written out.
-///
-/// # Safety
-/// Every element of `array` — including the ones under a null — must be valid UTF-8.
-pub unsafe fn binview_to_arrow_utf8view(array: &PlBinaryViewArray) -> Utf8ViewArray {
-    let (views, buffers, validity) = array.to_flat().into_inner();
+pub fn utf8view_to_arrow_utf8view(array: &PlUtf8ViewArray) -> Utf8ViewArray {
+    let (views, buffers, validity) = array.as_binview().to_flat().into_inner();
 
-    // SAFETY: the caller guarantees the elements are valid UTF-8, and the views came out of a
+    // SAFETY: every element of a `PlUtf8ViewArray` is valid UTF-8, and the views came out of a
     // `PlBinaryViewArray`, which validates every one of them against the buffers it reads.
     unsafe {
         Utf8ViewArray::new_unchecked_unknown_md(
@@ -266,19 +267,6 @@ pub unsafe fn binview_to_arrow_utf8view(array: &PlBinaryViewArray) -> Utf8ViewAr
             None,
         )
     }
-}
-
-/// Exports a [`PlUtf8ViewArray`] as an Arrow [`Utf8ViewArray`] of
-/// [`Utf8View`](ArrowDataType::Utf8View).
-///
-/// Unlike [`binview_to_arrow_utf8view`] this is safe: the UTF-8 the Arrow data type promises is
-/// exactly the invariant [`PlUtf8ViewArray`] carries — see [`crate::utf8view`].
-///
-/// This is `O(1)` for a [`flat`](crate::broadcast) array and `O(len)` for a scalar one, which is
-/// written out.
-pub fn utf8view_to_arrow_utf8view(array: &PlUtf8ViewArray) -> Utf8ViewArray {
-    // SAFETY: every element of a `PlUtf8ViewArray` is valid UTF-8.
-    unsafe { binview_to_arrow_utf8view(array.as_binview()) }
 }
 
 /// Exports a [`PlFixedSizeBinaryArray`] as an Arrow [`FixedSizeBinaryArray`] of
@@ -543,16 +531,17 @@ mod tests {
     }
 
     #[test]
-    fn binary_view_is_exported_as_a_string_only_when_the_caller_promises_it_is_one() {
-        let array =
-            PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"a rather long string value"]);
+    fn utf8_view_is_exported_as_a_string() {
+        let array: PlUtf8ViewArray = [Some("foo"), None, Some("a rather long string value")]
+            .into_iter()
+            .collect();
 
-        // SAFETY: both elements are valid UTF-8.
-        let arrow = unsafe { binview_to_arrow_utf8view(&array) };
+        let arrow = utf8view_to_arrow_utf8view(&array);
 
         assert_eq!(arrow.dtype(), &ArrowDataType::Utf8View);
         assert_eq!(arrow.value(0), "foo");
-        assert_eq!(arrow.value(1), "a rather long string value");
+        assert_eq!(arrow.get(1), None);
+        assert_eq!(arrow.value(2), "a rather long string value");
     }
 
     #[test]

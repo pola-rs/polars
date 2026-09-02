@@ -7,15 +7,16 @@
 //! — a `StringChunked` and the chunks it is made of — reads an element as the `&str` it is without
 //! validating it again.
 //!
-//! The wrapper is `repr(transparent)` over the [`PlBinaryViewArray`] such a chunk actually is, so
-//! a chunk can also be *borrowed* as one — [`PlUtf8ViewArray::from_binview_ref_unchecked`] —
-//! without going through the buffers.
+//! The wrapper is `repr(transparent)` over the [`PlBinaryViewArray`] that holds the bytes, so
+//! putting it on and taking it off — [`PlUtf8ViewArray::from_binview`] and
+//! [`PlUtf8ViewArray::as_binview`] — moves no buffers.
 //!
 //! # The invariant
 //!
 //! Every element of a [`PlUtf8ViewArray`] — including the ones masked off as null, which a
-//! validity mask can be put back over at any time — is valid UTF-8. Constructing one is therefore
-//! `unsafe`; [`PlUtf8ViewArray::from_binview`] is the checked constructor that establishes it.
+//! validity mask can be put back over at any time — is valid UTF-8.
+//! [`PlUtf8ViewArray::from_binview`] is the checked constructor that establishes it, and
+//! [`PlUtf8ViewArray::from_binview_unchecked`] the `unsafe` one for a caller that already knows.
 //!
 //! # It is its own array type
 //!
@@ -91,16 +92,6 @@ impl PlUtf8ViewArray {
     #[inline(always)]
     pub const unsafe fn from_binview_unchecked(array: PlBinaryViewArray) -> Self {
         Self(array)
-    }
-
-    /// Borrows `array` as an array of strings without checking that its elements are valid UTF-8.
-    ///
-    /// # Safety
-    /// Every element of `array`, including the ones masked off as null, must be valid UTF-8.
-    #[inline(always)]
-    pub const unsafe fn from_binview_ref_unchecked(array: &PlBinaryViewArray) -> &Self {
-        // SAFETY: `Self` is `repr(transparent)` over the array it wraps.
-        unsafe { &*(std::ptr::from_ref(array).cast::<Self>()) }
     }
 
     /// The bytes of these strings, giving up the promise that they are one.
@@ -527,17 +518,15 @@ mod tests {
     }
 
     #[test]
-    fn a_chunk_is_borrowed_as_an_array_of_strings() {
+    fn wrapping_bytes_as_strings_borrows_them() {
         let bytes = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"bar"]);
-
-        // SAFETY: the bytes are valid UTF-8.
-        let arr = unsafe { PlUtf8ViewArray::from_binview_ref_unchecked(&bytes) };
+        let arr = PlUtf8ViewArray::from_binview(bytes.clone()).expect("the bytes are UTF-8");
 
         assert_eq!(arr.value(1), "bar");
         assert_eq!(arr.as_binview(), &bytes);
         assert!(
             arr.data_buffers().is_same_buffer(bytes.data_buffers()),
-            "the wrapper must borrow the chunk, not copy it",
+            "the wrapper must share the buffers, not copy them",
         );
     }
 
@@ -565,7 +554,7 @@ mod tests {
     #[test]
     fn a_string_array_is_not_equal_to_the_bytes_it_is_stored_as() {
         let arr: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect();
-        let bytes = arr.clone().into_binview();
+        let bytes = arr.as_binview().clone();
 
         assert!(!arr.eq_dyn(&bytes), "the array types differ");
         assert!(!bytes.eq_dyn(&arr), "and the comparison is symmetric");
