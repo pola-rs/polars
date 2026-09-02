@@ -282,6 +282,18 @@ impl PlBitmap {
         Self::from_bitmap(self.as_ref().to_flat())
     }
 
+    /// Consumes this mask into the backing bitmap, keeping the scalar representation.
+    ///
+    /// This is [`Self::into_bitmap`] that does not write a scalar mask out: the single bit is
+    /// handed back as the one-bit bitmap it is, which makes this `O(1)`. The length the mask
+    /// stands for is dropped along the way, so the result belongs on an array through
+    /// `set_validity_broadcast` — the setter that reads a bitmap against the array's own length,
+    /// rather than taking its `len` for the mask's.
+    #[inline]
+    pub fn into_flat_or_scalar(self) -> Bitmap {
+        self.bitmap
+    }
+
     /// Consumes this mask into an ordinary [`Bitmap`] holding one bit per element.
     ///
     /// This expands a scalar mask and is therefore `O(len)`; it is free when this mask
@@ -534,6 +546,17 @@ mod tests {
         assert!(mask.is_scalar());
         assert_eq!(mask.len(), 1_000);
         assert_eq!(mask.into_inner().0.len(), 1);
+    }
+
+    #[test]
+    fn into_flat_or_scalar_keeps_the_representation() {
+        // A scalar mask hands out the single bit it is backed by, whatever it covers.
+        let bitmap = PlBitmap::new_scalar(false, 1_000_000_000).into_flat_or_scalar();
+        assert_eq!(bitmap.len(), 1);
+        assert!(!bitmap.get_bit(0));
+
+        let bitmap = PlBitmap::from_iter([true, false]).into_flat_or_scalar();
+        assert_eq!(bitmap.len(), 2);
     }
 
     #[test]

@@ -128,8 +128,9 @@ impl PhysicalExpr for TernaryExpr {
             match arr.validity() {
                 Some(validity) => combine_validities_and(Some(arr.values()), Some(validity))
                     .expect("the values mask is always there"),
-                None => arr.values().to_flat_or_scalar(),
+                None => PlBitmap::from(arr.values()),
             }
+            .into_flat_or_scalar()
         });
 
         let op_truthy = || {

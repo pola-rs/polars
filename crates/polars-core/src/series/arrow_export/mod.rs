@@ -91,10 +91,8 @@ impl Series {
                 categorical_converter
             },
         }
-        .array_to_arrow(
-            // The export is written against the Arrow arrays, so the chunk crosses over — see
-            // `arrow_bridge`.
-            &*polars_array::arrow::export::to_arrow(&**self.chunks().get(chunk_idx).unwrap()),
+        .chunk_to_arrow(
+            &**self.chunks().get(chunk_idx).unwrap(),
             self.dtype(),
             output_arrow_field,
         )
@@ -115,6 +113,25 @@ pub struct ToArrowConverter {
 }
 
 impl ToArrowConverter {
+    /// Exports one chunk of a [`Series`], crossing it over to Arrow first.
+    ///
+    /// This is [`Self::array_to_arrow`] for a caller that holds the chunk itself rather than an
+    /// Arrow array — the export is written against the Arrow arrays, see
+    /// [`arrow_bridge`](crate::chunked_array::arrow_bridge). The crossing is `O(1)` for a
+    /// [`flat`](polars_array::broadcast) chunk and `O(len)` for a scalar one, which is written out.
+    pub fn chunk_to_arrow<'a>(
+        &mut self,
+        chunk: &dyn polars_array::PlArray,
+        dtype: &DataType,
+        arrow_field: Cow<'a, ArrowField>,
+    ) -> PolarsResult<Box<dyn Array>> {
+        self.array_to_arrow(
+            &*polars_array::arrow::export::to_arrow(chunk),
+            dtype,
+            arrow_field,
+        )
+    }
+
     /// Returns an error if `output_arrow_field` was provided and does not match the output data type.
     pub fn array_to_arrow<'a>(
         &mut self,

@@ -2,7 +2,7 @@
 use std::error::Error;
 
 use polars_array::builder::StaticArrayBuilder;
-use polars_array::{Flat, PlArray, PlBitmapRef, PlUtf8ViewArrayBuilder, StaticArray};
+use polars_array::{Flat, PlArray, PlBitmap, PlBitmapRef, PlUtf8ViewArrayBuilder, StaticArray};
 
 use crate::chunked_array::arrow_bridge::as_flat;
 use crate::chunked_array::validity::{PlBitmapRefExt, combine_validities_and};
@@ -32,14 +32,12 @@ fn mask_with_inputs<A: StaticArray>(
     lhs: Option<PlBitmapRef<'_>>,
     rhs: Option<PlBitmapRef<'_>>,
 ) -> A {
+    // The combined mask covers the inputs' elements, which is what `ret` holds too: a kernel that
+    // handed back a result of a different height than its inputs panics here, or in the setter
+    // below.
     let inputs = combine_validities_and(lhs, rhs);
-    // Panics if the kernel handed back a result of a different height than its inputs.
-    let inputs = inputs
-        .as_ref()
-        .map(|inputs| PlBitmapRef::new(inputs, ret.len()));
-
-    let validity = combine_validities_and(inputs, ret.validity());
-    ret.with_validity_broadcast_typed(validity)
+    let validity = combine_validities_and(inputs.as_ref().map(PlBitmap::as_ref), ret.validity());
+    ret.with_validity_broadcast_typed(validity.map(PlBitmap::into_flat_or_scalar))
 }
 
 /// The height of the output of an elementwise operation over two columns of these lengths, or
@@ -491,7 +489,7 @@ where
                 .map(|(lhs_val, rhs_val)| op(lhs_val, rhs_val));
 
             let array: V::Array = element_iter.collect_arr();
-            array.with_validity_broadcast_typed(validity)
+            array.with_validity_broadcast_typed(validity.map(PlBitmap::into_flat_or_scalar))
         });
     ChunkedArray::from_chunk_iter(lhs.name().clone(), iter)
 }

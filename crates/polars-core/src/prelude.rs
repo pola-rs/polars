@@ -6,9 +6,9 @@ pub(crate) use arrow::array::*;
 // The explicit imports of the array crate shadow the glob above: a `ChunkedArray` is backed by the
 // arrays of `polars-array`, and `arrow::array` is only what it is imported from and exported to.
 pub use polars_array::{
-    Flat, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray,
-    PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray,
-    PlStructArray, PlUtf8ViewArray, PlUtf8ViewArrayBuilder, StaticArrayBuilder,
+    Flat, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmap, PlBitmapRef,
+    PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlNullArray,
+    PlPrimitiveArray, PlStructArray, PlUtf8ViewArray, PlUtf8ViewArrayBuilder, StaticArrayBuilder,
     ZeroableArrayFromIter,
 };
 

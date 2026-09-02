@@ -136,7 +136,11 @@ fn add_boolean(a: &PlBooleanArray, b: &PlBooleanArray) -> PlPrimitiveArray<IdxSi
         .map(|(a, b)| a as IdxSize + b as IdxSize)
         .collect::<Vec<_>>();
     let length = values.len();
-    PlPrimitiveArray::new(values.into(), length, validity)
+    PlPrimitiveArray::new(
+        values.into(),
+        length,
+        validity.map(PlBitmap::into_flat_or_scalar),
+    )
 }
 
 impl Add for &BooleanChunked {

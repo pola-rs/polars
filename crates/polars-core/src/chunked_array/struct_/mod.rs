@@ -433,7 +433,7 @@ impl StructChunked {
                     a.validity(),
                     b.validity(),
                 );
-                a.set_validity_broadcast(new)
+                a.set_validity_broadcast(new.map(PlBitmap::into_flat_or_scalar))
             }
         }
 

@@ -400,7 +400,9 @@ impl<T: PolarsNumericType> ArithmeticChunked for &ChunkedArray<T> {
     }
 
     fn true_div_scalar(self, rhs: Self::Scalar) -> Self::TrueDivOut {
-        unary_kernel_flat(self, |a| PlArithmeticKernel::true_div_scalar(a.clone(), rhs))
+        unary_kernel_flat(self, |a| {
+            PlArithmeticKernel::true_div_scalar(a.clone(), rhs)
+        })
     }
 
     fn true_div_scalar_lhs(lhs: Self::Scalar, rhs: Self) -> Self::TrueDivOut {

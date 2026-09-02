@@ -62,11 +62,15 @@ pub trait PlArithmeticKernel: Sized {
     fn wrapping_sub_scalar_lhs(lhs: Self::Native, rhs: Self) -> PlPrimitiveArray<Self::Native>;
     fn wrapping_mul_scalar(self, rhs: Self::Native) -> PlPrimitiveArray<Self::Native>;
     fn wrapping_floor_div_scalar(self, rhs: Self::Native) -> PlPrimitiveArray<Self::Native>;
-    fn wrapping_floor_div_scalar_lhs(lhs: Self::Native, rhs: Self)
-    -> PlPrimitiveArray<Self::Native>;
+    fn wrapping_floor_div_scalar_lhs(
+        lhs: Self::Native,
+        rhs: Self,
+    ) -> PlPrimitiveArray<Self::Native>;
     fn wrapping_trunc_div_scalar(self, rhs: Self::Native) -> PlPrimitiveArray<Self::Native>;
-    fn wrapping_trunc_div_scalar_lhs(lhs: Self::Native, rhs: Self)
-    -> PlPrimitiveArray<Self::Native>;
+    fn wrapping_trunc_div_scalar_lhs(
+        lhs: Self::Native,
+        rhs: Self,
+    ) -> PlPrimitiveArray<Self::Native>;
     fn wrapping_mod_scalar(self, rhs: Self::Native) -> PlPrimitiveArray<Self::Native>;
     fn wrapping_mod_scalar_lhs(lhs: Self::Native, rhs: Self) -> PlPrimitiveArray<Self::Native>;
 

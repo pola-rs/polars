@@ -1400,6 +1400,7 @@ pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {
                 arr_a.validity(),
                 arr_b.validity(),
             );
+            let validity = validity.map(PlBitmap::into_flat_or_scalar);
             *arr_a = arr_a.with_validity_broadcast(validity.clone());
             *arr_b = arr_b.with_validity_broadcast(validity);
         }

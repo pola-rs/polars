@@ -134,8 +134,9 @@ impl PhysicalExpr for FilterExpr {
             combine_validities_and(Some(predicate.values()), Some(validity))
                 .expect("the values mask is always there")
         } else {
-            predicate.values().to_flat_or_scalar()
-        };
+            PlBitmap::from(predicate.values())
+        }
+        .into_flat_or_scalar();
 
         crate::dispatch::drop_items(ac_s, &predicate)
     }
