@@ -145,7 +145,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         unsafe {
             for (arr, other) in self.chunks_mut().iter_mut().zip(chunks) {
                 let validity = combine_validities_and(arr.validity(), other.validity());
-                *arr = arr.with_validity(validity);
+                *arr = arr.with_validity_broadcast(validity);
             }
         }
         self.compute_len();

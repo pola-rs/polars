@@ -194,8 +194,8 @@ mod tests {
     fn to_flat_of_an_all_null_scalar_does_not_write_out_the_values() {
         // The values of null elements are undetermined, so they are handed out zeroed rather than
         // the repeated bit being written out.
-        let all_null =
-            PlBooleanArray::new_scalar(true, 3).with_validity(Some(Bitmap::new_zeroed(1)));
+        let all_null = PlBooleanArray::new_scalar(true, 3)
+            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
         let flat = all_null.to_flat();
 
         assert!(flat.is_flat());
@@ -231,7 +231,7 @@ mod tests {
         assert!(PlBooleanArray::new_scalar(true, 3).as_flat().is_none());
         assert!(
             PlBooleanArray::from_vec(vec![true, false, true])
-                .with_validity(Some(Bitmap::new_zeroed(1)))
+                .with_validity_broadcast(Some(Bitmap::new_zeroed(1)))
                 .as_flat()
                 .is_none()
         );

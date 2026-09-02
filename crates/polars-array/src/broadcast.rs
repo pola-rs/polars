@@ -41,7 +41,23 @@
 //!
 //! An array that mixes the two — a single shared value under a flat validity mask, say — is a
 //! valid array that neither family builds in one step. Build it in the representation its values
-//! are in and replace the mask with `with_validity`, which validates the mask on its own.
+//! are in and replace the mask with one of the validity setters below.
+//!
+//! # Replacing the validity mask
+//!
+//! The setters name the representation the same way, so that neither of them broadcasts a mask
+//! the caller did not mean to share:
+//!
+//! * `set_validity` and `with_validity` install a *flat* mask, one bit per element —
+//!   [`is_flat_buffer_len`].
+//! * `set_validity_broadcast` and `with_validity_broadcast` install a mask that broadcasts over
+//!   the array, so they additionally admit the single bit every element shares —
+//!   [`is_valid_buffer_len`].
+//!
+//! The broadcasting ones are the wider of the two rather than the mirror image, unlike the
+//! constructors: a caller that has a mask which is already flat *or* scalar for the array —
+//! whichever the mask it was handed happened to be — installs it in one call, exactly as it
+//! would iterate one with [`broadcast_iter`](crate::PlPrimitiveArray::broadcast_iter).
 //!
 //! # Broadcasting an array
 //!

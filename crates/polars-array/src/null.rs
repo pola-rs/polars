@@ -323,6 +323,10 @@ impl PlArray for PlNullArray {
     #[inline]
     fn set_validity(&mut self, _validity: Option<Bitmap>) {}
 
+    /// Does nothing, exactly as [`Self::set_validity`] does.
+    #[inline]
+    fn set_validity_broadcast(&mut self, _validity: Option<Bitmap>) {}
+
     #[inline]
     unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray> {
         Box::new(unsafe { self.new_from_index_unchecked(index, length) })

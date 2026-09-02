@@ -220,8 +220,8 @@ mod tests {
         // The values of null elements are undetermined, so the repeated view is handed out zeroed
         // rather than materialized one by one — out of the shared zeroed buffer, without an
         // allocation.
-        let all_null =
-            PlBinaryViewArray::new_scalar(LONG, 3).with_validity(Some(Bitmap::new_zeroed(1)));
+        let all_null = PlBinaryViewArray::new_scalar(LONG, 3)
+            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
         let flat = all_null.to_flat();
 
         assert!(flat.is_flat());
@@ -259,7 +259,7 @@ mod tests {
         assert!(PlBinaryViewArray::new_scalar(b"foo", 3).as_flat().is_none());
         assert!(
             PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"bar", b"baz"])
-                .with_validity(Some(Bitmap::new_zeroed(1)))
+                .with_validity_broadcast(Some(Bitmap::new_zeroed(1)))
                 .as_flat()
                 .is_none()
         );

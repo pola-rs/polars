@@ -36,7 +36,7 @@ pub(crate) fn array_with_values(
 
     // SAFETY: just checked that the values hold `width` values for every element.
     unsafe { PlFixedSizeListArray::new_unchecked(values, width, length, None) }
-        .with_validity(arr.validity().map(|v| v.to_flat_or_scalar()))
+        .with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
 }
 
 /// Lays `elements` out as the chunk of an [`ArrayChunked`] of `width` and `inner_dtype`.
@@ -162,7 +162,7 @@ impl ArrayChunked {
                 // SAFETY: the values are the physical repr of the ones taken out, so they still
                 // hold the width of every element, laid end to end.
                 unsafe { PlFixedSizeListArray::new_unchecked(values, width, len, None) }
-                    .with_validity(validity)
+                    .with_validity_broadcast(validity)
                     .into_boxed()
             })
             .collect();

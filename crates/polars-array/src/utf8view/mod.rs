@@ -218,11 +218,18 @@ impl PlUtf8ViewArray {
         unsafe { PlUtf8ViewIter::new(self.0.broadcast_iter(length)) }
     }
 
-    /// Returns this array with its validity mask replaced.
+    /// Returns this array with its validity mask replaced by a flat one.
     #[inline]
     #[must_use]
     pub fn with_validity(self, validity: Option<Bitmap>) -> Self {
         Self(self.0.with_validity(validity))
+    }
+
+    /// Returns this array with its validity mask replaced by one that broadcasts over it.
+    #[inline]
+    #[must_use]
+    pub fn with_validity_broadcast(self, validity: Option<Bitmap>) -> Self {
+        Self(self.0.with_validity_broadcast(validity))
     }
 
     /// Returns this array sliced to `length` elements starting at `offset`.
@@ -427,6 +434,11 @@ impl PlArray for PlUtf8ViewArray {
     #[inline]
     fn set_validity(&mut self, validity: Option<Bitmap>) {
         self.0.set_validity(validity);
+    }
+
+    #[inline]
+    fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
+        self.0.set_validity_broadcast(validity);
     }
 
     // The boxed array is the *inner* one: the world downcasts a `dyn PlArray` of

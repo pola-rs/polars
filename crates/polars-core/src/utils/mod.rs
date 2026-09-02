@@ -1380,7 +1380,8 @@ pub fn coalesce_nulls<'a, T: PolarsDataType>(
 
         for arr in a.chunks().iter() {
             for arr_b in unsafe { b.chunks_mut() } {
-                *arr_b = arr_b.with_validity(arr.validity().map(|v| v.to_flat_or_scalar()))
+                *arr_b =
+                    arr_b.with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
             }
         }
         b.compute_len();
@@ -1399,8 +1400,8 @@ pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {
                 arr_a.validity(),
                 arr_b.validity(),
             );
-            *arr_a = arr_a.with_validity(validity.clone());
-            *arr_b = arr_b.with_validity(validity);
+            *arr_a = arr_a.with_validity_broadcast(validity.clone());
+            *arr_b = arr_b.with_validity_broadcast(validity);
         }
         a.compute_len();
         b.compute_len();

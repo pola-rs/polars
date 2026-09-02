@@ -208,8 +208,8 @@ mod tests {
     fn to_flat_of_an_all_null_scalar_does_not_write_out_the_values() {
         // The values of null elements are undetermined, so they are handed out zeroed rather than
         // materialized one by one — out of the shared zeroed buffer, without an allocation.
-        let all_null =
-            PlPrimitiveArray::new_scalar(7i32, 3).with_validity(Some(Bitmap::new_zeroed(1)));
+        let all_null = PlPrimitiveArray::new_scalar(7i32, 3)
+            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
         let flat = all_null.to_flat();
 
         assert!(flat.is_flat());
@@ -245,7 +245,7 @@ mod tests {
         assert!(PlPrimitiveArray::new_scalar(7i32, 3).as_flat().is_none());
         assert!(
             PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-                .with_validity(Some(Bitmap::new_zeroed(1)))
+                .with_validity_broadcast(Some(Bitmap::new_zeroed(1)))
                 .as_flat()
                 .is_none()
         );

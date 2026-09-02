@@ -363,7 +363,7 @@ impl StructChunked {
                 {
                     // SAFETY: only null_count adjusted, recalculated afterwards.
                     for (new, this) in unsafe { ca.downcast_iter_mut() }.zip(self.downcast_iter()) {
-                        new.set_validity(this.validity().map(|v| v.to_flat_or_scalar()))
+                        new.set_validity_broadcast(this.validity().map(|v| v.to_flat_or_scalar()))
                     }
                 } else {
                     let mut slf_validity = self.rechunk_validity().unwrap();
@@ -433,7 +433,7 @@ impl StructChunked {
                     a.validity(),
                     b.validity(),
                 );
-                a.set_validity(new)
+                a.set_validity_broadcast(new)
             }
         }
 

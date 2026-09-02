@@ -39,7 +39,7 @@ fn mask_with_inputs<A: StaticArray>(
         .map(|inputs| PlBitmapRef::new(inputs, ret.len()));
 
     let validity = combine_validities_and(inputs, ret.validity());
-    ret.with_validity_typed(validity)
+    ret.with_validity_broadcast_typed(validity)
 }
 
 /// The height of the output of an elementwise operation over two columns of these lengths, or
@@ -242,7 +242,7 @@ where
     let iter = ca.downcast_iter().map(|arr| {
         let validity = arr.validity().map(|v| v.to_flat_or_scalar());
         let arr: V::Array = arr.values_iter().map(&mut op).collect_arr();
-        arr.with_validity_typed(validity)
+        arr.with_validity_broadcast_typed(validity)
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
@@ -268,7 +268,7 @@ where
     let iter = ca.downcast_iter().map(|arr| {
         let validity = arr.validity().map(|v| v.to_flat_or_scalar());
         let arr: V::Array = arr.values_iter().map(&mut op).try_collect_arr()?;
-        Ok(arr.with_validity_typed(validity))
+        Ok(arr.with_validity_broadcast_typed(validity))
     });
     ChunkedArray::try_from_chunk_iter(ca.name().clone(), iter)
 }
@@ -285,9 +285,9 @@ where
     Arr: StaticArray,
     F: FnMut(&T::Array) -> Arr,
 {
-    let iter = ca
-        .downcast_iter()
-        .map(|arr| op(arr).with_validity_typed(arr.validity().map(|v| v.to_flat_or_scalar())));
+    let iter = ca.downcast_iter().map(|arr| {
+        op(arr).with_validity_broadcast_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
+    });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
@@ -304,7 +304,8 @@ where
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
     let iter = ca.downcast_iter().map(|arr| {
-        op(&as_flat(arr)).with_validity_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
+        op(&as_flat(arr))
+            .with_validity_broadcast_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
@@ -490,7 +491,7 @@ where
                 .map(|(lhs_val, rhs_val)| op(lhs_val, rhs_val));
 
             let array: V::Array = element_iter.collect_arr();
-            array.with_validity_typed(validity)
+            array.with_validity_broadcast_typed(validity)
         });
     ChunkedArray::from_chunk_iter(lhs.name().clone(), iter)
 }

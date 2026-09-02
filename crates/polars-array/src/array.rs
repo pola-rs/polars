@@ -165,20 +165,43 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
         sliced
     }
 
-    /// Replaces the validity mask.
+    /// Replaces the validity mask with a flat one.
     ///
     /// # Panics
-    /// Panics if `validity` is neither flat nor scalar for this array's length.
+    /// Panics if `validity` does not hold one bit per element.
+    /// [`Self::set_validity_broadcast`] is what installs the single bit every element shares;
+    /// this function never infers that from a mask that happens to hold one bit.
     fn set_validity(&mut self, validity: Option<Bitmap>);
 
-    /// Returns this array with its validity mask replaced.
+    /// Replaces the validity mask with one that broadcasts over this array.
+    ///
+    /// This is [`Self::set_validity`] widened to the scalar representation: the mask is either
+    /// flat — one bit per element — or the single bit every element shares. See
+    /// [`crate::broadcast`].
     ///
     /// # Panics
     /// Panics if `validity` is neither flat nor scalar for this array's length.
+    fn set_validity_broadcast(&mut self, validity: Option<Bitmap>);
+
+    /// Returns this array with its validity mask replaced by a flat one.
+    ///
+    /// # Panics
+    /// Panics under the conditions [`Self::set_validity`] panics.
     #[must_use]
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn PlArray> {
         let mut new = self.to_boxed();
         new.set_validity(validity);
+        new
+    }
+
+    /// Returns this array with its validity mask replaced by one that broadcasts over it.
+    ///
+    /// # Panics
+    /// Panics under the conditions [`Self::set_validity_broadcast`] panics.
+    #[must_use]
+    fn with_validity_broadcast(&self, validity: Option<Bitmap>) -> Box<dyn PlArray> {
+        let mut new = self.to_boxed();
+        new.set_validity_broadcast(validity);
         new
     }
 
@@ -497,7 +520,7 @@ mod tests {
     fn setting_validity_through_the_trait_object() {
         for arr in arrays() {
             // A scalar mask of one unset bit nulls out every element.
-            let nulled = arr.with_validity(Some(Bitmap::new_zeroed(1)));
+            let nulled = arr.with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
             assert_eq!(nulled.null_count(), 3);
             assert!(nulled.validity().unwrap().is_scalar());
             assert_eq!(arr.null_count(), 0);

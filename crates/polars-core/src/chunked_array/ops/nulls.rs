@@ -73,7 +73,7 @@ pub(crate) fn coalesce_nulls(chunks: &[PlArrayRef], other: &[PlArrayRef]) -> Vec
         .zip(other)
         .map(|(a, b)| {
             assert_eq!(a.len(), b.len());
-            a.with_validity(combine_validities_and(a.validity(), b.validity()))
+            a.with_validity_broadcast(combine_validities_and(a.validity(), b.validity()))
         })
         .collect()
 }

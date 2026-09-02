@@ -16,6 +16,10 @@ use polars_array::PlBitmapRef;
 /// and one that is set everywhere hands the other side back in whatever representation it is in.
 /// Only two flat masks cost `O(len)`.
 ///
+/// The result is therefore flat *or* scalar, whichever came out cheaper, so it goes on an array
+/// through `set_validity_broadcast` rather than `set_validity` — the latter takes a flat mask
+/// only.
+///
 /// # Panics
 /// Panics if the masks are over a different number of elements.
 pub fn combine_validities_and(
@@ -61,6 +65,8 @@ pub trait PlBitmapRefExt {
     ///
     /// This is [`PlBitmapRef::to_flat`] that does not write a scalar mask out: the single bit is
     /// handed back as the one-bit bitmap it is, which the arrays of `polars-array` read as scalar.
+    /// The result goes on an array through `set_validity_broadcast`, which is the setter that
+    /// admits both representations.
     fn to_flat_or_scalar(&self) -> Bitmap;
 }
 

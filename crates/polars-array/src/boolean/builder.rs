@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn scalar_values_are_read_through_the_broadcast() {
         let array = PlBooleanArray::new_scalar(true, 1_000_000_000)
-            .with_validity(Some(Bitmap::from_iter([true])));
+            .with_validity_broadcast(Some(Bitmap::from_iter([true])));
 
         let mut builder = PlBooleanArrayBuilder::new();
         builder.subslice_extend(&array, 999_999_998, 2, ShareStrategy::Always);

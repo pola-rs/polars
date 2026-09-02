@@ -93,18 +93,14 @@ impl<T: PlArray> Flat<T> {
 
     /// Replaces the validity mask with a flat one.
     ///
+    /// There is no broadcasting counterpart to this:
+    /// [`PlArray::set_validity_broadcast`] admits the single bit every element shares, which
+    /// would leave this array no longer flat.
+    ///
     /// # Panics
-    /// Panics if `validity` does not have exactly [`len`](PlArray::len) bits — a scalar mask would
-    /// leave this array no longer flat.
+    /// Panics if `validity` does not have exactly [`len`](PlArray::len) bits.
     pub fn set_validity(&mut self, validity: Option<Bitmap>) {
-        if let Some(validity) = validity.as_ref() {
-            assert!(
-                validity.len() == self.0.len(),
-                "validity mask of length {} is not flat for an array of length {}",
-                validity.len(),
-                self.0.len(),
-            );
-        }
+        // The flat requirement is the one `PlArray::set_validity` itself imposes.
         self.0.set_validity(validity);
     }
 
@@ -289,7 +285,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "is not flat for an array of length 3")]
     fn a_scalar_validity_mask_is_rejected() {
-        // The mask a `PlPrimitiveArray` would accept as scalar leaves no flat array behind.
+        // The mask `with_validity_broadcast` would accept as scalar leaves no flat array behind.
         let _ = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
             .to_flat()
             .with_validity(Some(Bitmap::new_zeroed(1)));

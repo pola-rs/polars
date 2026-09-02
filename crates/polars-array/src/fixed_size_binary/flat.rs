@@ -214,7 +214,7 @@ mod tests {
         );
         assert!(
             PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2)
-                .with_validity(Some(Bitmap::new_zeroed(1)))
+                .with_validity_broadcast(Some(Bitmap::new_zeroed(1)))
                 .as_flat()
                 .is_none()
         );

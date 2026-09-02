@@ -184,15 +184,27 @@ pub trait StaticArray: PlArray + Clone {
     /// Panics if `self.len()` is neither `length` nor one.
     fn broadcast_iter(&self, length: usize) -> Self::IterT<'_>;
 
-    /// Returns this array with its validity mask replaced.
+    /// Returns this array with its validity mask replaced by a flat one.
     ///
     /// This is [`PlArray::with_validity`] without the trait object, which is what the `_typed`
     /// suffix is for.
     ///
     /// # Panics
-    /// Panics if `validity` is neither flat nor scalar for this array's length.
+    /// Panics if `validity` does not hold one bit per element.
+    /// [`Self::with_validity_broadcast_typed`] is what installs the single bit every element
+    /// shares; this function never infers that from a mask that happens to hold one bit.
     #[must_use]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self;
+
+    /// Returns this array with its validity mask replaced by one that broadcasts over it.
+    ///
+    /// This is [`PlArray::with_validity_broadcast`] without the trait object, which is what the
+    /// `_typed` suffix is for.
+    ///
+    /// # Panics
+    /// Panics if `validity` is neither flat nor scalar for this array's length.
+    #[must_use]
+    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self;
 
     /// Returns an array of `length` copies of the element at `index`.
     ///
@@ -299,6 +311,11 @@ impl<T: NativeType> StaticArray for PlPrimitiveArray<T> {
     }
 
     #[inline]
+    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity_broadcast(validity)
+    }
+
+    #[inline]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
     }
@@ -359,6 +376,11 @@ impl StaticArray for PlBooleanArray {
     #[inline]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
+    }
+
+    #[inline]
+    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -425,6 +447,11 @@ impl StaticArray for PlBinaryArray {
     }
 
     #[inline]
+    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity_broadcast(validity)
+    }
+
+    #[inline]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
     }
@@ -485,6 +512,11 @@ impl StaticArray for PlBinaryViewArray {
     #[inline]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
+    }
+
+    #[inline]
+    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -551,6 +583,11 @@ impl StaticArray for PlUtf8ViewArray {
     #[inline]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
+    }
+
+    #[inline]
+    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -623,6 +660,11 @@ impl StaticArray for PlFixedSizeBinaryArray {
     }
 
     #[inline]
+    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity_broadcast(validity)
+    }
+
+    #[inline]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
     }
@@ -683,6 +725,11 @@ impl StaticArray for PlListArray {
     #[inline]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
+    }
+
+    #[inline]
+    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity_broadcast(validity)
     }
 
     #[inline]
@@ -749,6 +796,11 @@ impl StaticArray for PlFixedSizeListArray {
     }
 
     #[inline]
+    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity_broadcast(validity)
+    }
+
+    #[inline]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
     }
@@ -810,6 +862,11 @@ impl StaticArray for PlStructArray {
     }
 
     #[inline]
+    fn with_validity_broadcast_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity_broadcast(validity)
+    }
+
+    #[inline]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
     }
@@ -868,6 +925,12 @@ impl StaticArray for PlNullArray {
     /// make valid, exactly as [`PlArray::set_validity`] documents.
     #[inline]
     fn with_validity_typed(self, _validity: Option<Bitmap>) -> Self {
+        self
+    }
+
+    /// Returns this array unchanged, exactly as [`Self::with_validity_typed`] does.
+    #[inline]
+    fn with_validity_broadcast_typed(self, _validity: Option<Bitmap>) -> Self {
         self
     }
 
@@ -1169,7 +1232,7 @@ mod tests {
 
         let nulled: PlPrimitiveArray<i32> = array
             .clone()
-            .with_validity_typed(Some(Bitmap::new_zeroed(1)));
+            .with_validity_broadcast_typed(Some(Bitmap::new_zeroed(1)));
         assert_eq!(nulled.null_count(), 3);
 
         let repeated: PlPrimitiveArray<i32> = array.new_from_index_typed(2, 4);

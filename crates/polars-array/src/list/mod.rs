@@ -699,21 +699,55 @@ impl PlListArray {
         PlListIter::new_broadcast(self, length)
     }
 
-    /// Replaces the validity mask.
+    /// Returns this array with its validity mask replaced by a flat one.
     ///
     /// # Panics
-    /// Panics if `validity` is neither flat nor scalar for this array's length.
+    /// Panics if `validity` does not hold one bit per element.
+    /// [`Self::with_validity_broadcast`] is what installs the single bit every element shares;
+    /// this function never infers that from a mask that happens to hold one bit.
     #[must_use]
     pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
         self.set_validity(validity);
         self
     }
 
-    /// Replaces the validity mask.
+    /// Replaces the validity mask with a flat one.
+    ///
+    /// # Panics
+    /// Panics if `validity` does not hold one bit per element.
+    /// [`Self::set_validity_broadcast`] is what installs the single bit every element shares;
+    /// this function never infers that from a mask that happens to hold one bit.
+    pub fn set_validity(&mut self, validity: Option<Bitmap>) {
+        if let Some(validity) = validity.as_ref() {
+            assert!(
+                is_flat_buffer_len(validity.len(), self.length),
+                "validity mask of length {} is not flat for an array of length {}",
+                validity.len(),
+                self.length,
+            );
+        }
+        self.validity = validity;
+    }
+
+    /// Returns this array with its validity mask replaced by one that broadcasts over it.
     ///
     /// # Panics
     /// Panics if `validity` is neither flat nor scalar for this array's length.
-    pub fn set_validity(&mut self, validity: Option<Bitmap>) {
+    #[must_use]
+    pub fn with_validity_broadcast(mut self, validity: Option<Bitmap>) -> Self {
+        self.set_validity_broadcast(validity);
+        self
+    }
+
+    /// Replaces the validity mask with one that broadcasts over this array.
+    ///
+    /// This is [`Self::set_validity`] widened to the scalar representation: the mask is either
+    /// flat — one bit per element — or the single bit every element shares. See
+    /// [`crate::broadcast`].
+    ///
+    /// # Panics
+    /// Panics if `validity` is neither flat nor scalar for this array's length.
+    pub fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
         if let Some(validity) = validity.as_ref() {
             assert!(
                 is_valid_buffer_len(validity.len(), self.length),
@@ -1060,6 +1094,11 @@ impl PlArray for PlListArray {
     }
 
     #[inline]
+    fn set_validity_broadcast(&mut self, validity: Option<Bitmap>) {
+        self.set_validity_broadcast(validity)
+    }
+
+    #[inline]
     unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray> {
         Box::new(unsafe { self.new_from_index_unchecked(index, length) })
     }
@@ -1230,7 +1269,7 @@ mod tests {
 
     #[test]
     fn scalar_validity_over_flat_offsets() {
-        let arr = arr().with_validity(Some(Bitmap::new_zeroed(1)));
+        let arr = arr().with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
 
         assert!(arr.validity_is_scalar());
         assert_eq!(arr.null_count(), 3);
@@ -1363,7 +1402,7 @@ mod tests {
     #[test]
     fn slicing_keeps_scalar_validity() {
         let arr = arr()
-            .with_validity(Some(Bitmap::new_zeroed(1)))
+            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)))
             .sliced(1, 2);
 
         assert_eq!(arr.len(), 2);
@@ -1461,7 +1500,7 @@ mod tests {
         assert_eq!(null, null.clone());
         assert_eq!(
             null,
-            arr().with_validity(Some(Bitmap::new_zeroed(1))),
+            arr().with_validity_broadcast(Some(Bitmap::new_zeroed(1))),
             "every element is null on both sides, so no list is determined",
         );
         assert_ne!(null, arr());
@@ -1541,7 +1580,7 @@ mod tests {
     #[test]
     fn into_inner_returns_the_components() {
         let (values, offsets, length, validity) = PlListArray::new_full_null(values(), 3)
-            .with_validity(Some(Bitmap::new_zeroed(1)))
+            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)))
             .into_inner();
 
         assert_eq!(values.len(), 5);
@@ -1563,7 +1602,7 @@ mod tests {
             Box::new(PlPrimitiveArray::new_scalar(7i32, 1_000_000_000)),
             Buffer::from(vec![0u64, 1_000_000_000]),
         )
-        .with_validity(Some(Bitmap::new_zeroed(1)));
+        .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
         assert_eq!(
             format!("{arr:?}"),
             "PlListArray { length: 1, validity: PlBitmapRef[false], \
@@ -1594,7 +1633,7 @@ mod tests {
         assert!(arr.validity().is_none());
         assert_eq!(&arr, &arr.clone());
 
-        let nulled = arr.with_validity(Some(Bitmap::new_zeroed(1)));
+        let nulled = arr.with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
         assert_eq!(nulled.null_count(), 3);
         assert!(nulled.validity().unwrap().is_scalar());
         assert_eq!(arr.null_count(), 0);
@@ -1856,7 +1895,9 @@ mod tests {
         );
 
         // Only the mask is materialized when it is the only scalar buffer.
-        let scalar_mask = arr.clone().with_validity(Some(Bitmap::new_zeroed(1)));
+        let scalar_mask = arr
+            .clone()
+            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
         assert!(!scalar_mask.is_flat());
         let flat = scalar_mask.to_flat();
 
@@ -1961,7 +2002,7 @@ mod tests {
                 .is_none()
         );
         assert!(
-            arr.with_validity(Some(Bitmap::new_zeroed(1)))
+            arr.with_validity_broadcast(Some(Bitmap::new_zeroed(1)))
                 .as_flat()
                 .is_none()
         );

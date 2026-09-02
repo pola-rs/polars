@@ -1813,7 +1813,7 @@ mod tests {
     fn fixed_size_binary_arrays_concatenate_their_bytes() {
         let lhs = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2);
         let rhs = PlFixedSizeBinaryArray::from_vec(vec![5u8, 6], 2)
-            .with_validity(Some(Bitmap::new_zeroed(1)));
+            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
         let concatenated = concatenate_fixed_size_binary(&[&lhs, &rhs]).unwrap();
 
         assert_eq!(concatenated.len(), 3);
