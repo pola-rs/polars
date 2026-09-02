@@ -7,11 +7,14 @@ pub use arrow::types::PrimitiveType;
 /// and is what [`PlArray::array_type`](crate::PlArray::array_type) hands out so that a `dyn PlArray` can be
 /// downcast to a concrete array.
 ///
-/// Unlike [`ArrowDataType`](arrow::datatypes::ArrowDataType), this carries no logical type — the
-/// arrays in this crate are purely a physical representation, so there is nothing to distinguish a
-/// timestamp from the `i64` it is stored as. It is also derived from the Rust type of the array
-/// rather than stored in it, which is why [`PlArray::array_type`](crate::PlArray::array_type) returns it by
-/// value and there is no way to change it.
+/// Unlike [`ArrowDataType`](arrow::datatypes::ArrowDataType), this carries almost no logical type
+/// — the arrays in this crate are very nearly a physical representation, so there is nothing to
+/// distinguish a timestamp from the `i64` it is stored as. The one exception is
+/// [`PlArrayType::Utf8View`], the promise that the bytes of a view array are valid UTF-8; see
+/// [`crate::utf8view`] for why that one invariant is worth a type of its own. It is also derived
+/// from the Rust type of the array rather than stored in it, which is why
+/// [`PlArray::array_type`](crate::PlArray::array_type) returns it by value and there is no way to
+/// change it.
 ///
 /// # Example
 /// ```
@@ -44,9 +47,19 @@ pub enum PlArrayType {
     ///
     /// The data buffers are part of neither this type nor the array's identity: two binary view
     /// arrays are both [`PlArrayType::BinaryView`] no matter how the bytes of their elements are
-    /// reached. Nothing here says the bytes are a string either — that is a logical type, which
-    /// the arrays in this crate do not carry.
+    /// reached. Nothing here says the bytes are a string either — that is
+    /// [`PlArrayType::Utf8View`], the one logical promise these arrays do carry.
     BinaryView,
+    /// A [`PlUtf8ViewArray`](crate::PlUtf8ViewArray): a [`PlArrayType::BinaryView`] whose bytes
+    /// are known to be valid UTF-8.
+    ///
+    /// This is the one place these arrays carry a logical type, and it is what makes a string
+    /// array distinguishable from the byte array it is stored as: a `dyn PlArray` of
+    /// [`PlArrayType::Utf8View`] downcasts to a [`PlUtf8ViewArray`](crate::PlUtf8ViewArray) and
+    /// exports as an Arrow [`Utf8ViewArray`](arrow::array::Utf8ViewArray), where a
+    /// [`PlArrayType::BinaryView`] does neither. See [`crate::utf8view`] for why that one
+    /// invariant is worth a type of its own.
+    Utf8View,
     /// A [`PlFixedSizeBinaryArray`](crate::PlFixedSizeBinaryArray): a sequence of bytes of a fixed
     /// width, stored in one values buffer the elements cut into consecutive slices.
     ///
@@ -104,9 +117,25 @@ impl PlArrayType {
     }
 
     /// Whether this is [`PlArrayType::BinaryView`].
+    ///
+    /// This is `false` for [`PlArrayType::Utf8View`], which is a distinct array type even though
+    /// it is stored as a binary view — see [`Self::is_view`] for the test that spans both.
     #[inline]
     pub fn is_binary_view(&self) -> bool {
         matches!(self, Self::BinaryView)
+    }
+
+    /// Whether this is [`PlArrayType::Utf8View`].
+    #[inline]
+    pub fn is_utf8_view(&self) -> bool {
+        matches!(self, Self::Utf8View)
+    }
+
+    /// Whether this is [`PlArrayType::BinaryView`] or [`PlArrayType::Utf8View`], the two array
+    /// types stored as a view over a set of data buffers.
+    #[inline]
+    pub fn is_view(&self) -> bool {
+        matches!(self, Self::BinaryView | Self::Utf8View)
     }
 
     /// Whether this is [`PlArrayType::FixedSizeBinary`].

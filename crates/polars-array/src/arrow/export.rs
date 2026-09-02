@@ -8,16 +8,20 @@
 //!
 //! # The logical type is inlined
 //!
-//! The arrays of this crate carry no logical type, so there is nothing in one to derive an
-//! [`ArrowDataType`] from and nothing that says which of several Arrow arrays over one physical
-//! representation it stands for. Rather than take a data type it would have to validate the array
-//! against, this module gives every Arrow array a function of its own that inlines the data type
-//! it exports as: a [`PlBinaryViewArray`] exports as a [`BinaryViewArray`] through
-//! [`binview_to_arrow_binview`] and as a [`Utf8ViewArray`] through [`binview_to_arrow_utf8view`].
-//! [`to_arrow`] picks the one that promises the least about the elements — a
-//! [`PlBinaryArray`] exports as a [`BinaryArray`] rather than as a [`Utf8Array`] — and it is the
-//! caller that reaches for another function, or replaces the data type afterwards, when it
-//! remembers a logical type the array stood for.
+//! Apart from [`PlUtf8ViewArray`], the arrays of this crate carry no logical type, so there is
+//! nothing in one to derive an [`ArrowDataType`] from and nothing that says which of several Arrow
+//! arrays over one physical representation it stands for. Rather than take a data type it would
+//! have to validate the array against, this module gives every Arrow array a function of its own
+//! that inlines the data type it exports as: a [`PlBinaryViewArray`] exports as a
+//! [`BinaryViewArray`] through [`binview_to_arrow_binview`] and as a [`Utf8ViewArray`] through
+//! [`binview_to_arrow_utf8view`]. [`to_arrow`] picks the one that promises the least about the
+//! elements — a [`PlBinaryArray`] exports as a [`BinaryArray`] rather than as a [`Utf8Array`] —
+//! and it is the caller that reaches for another function, or replaces the data type afterwards,
+//! when it remembers a logical type the array stood for.
+//!
+//! A [`PlUtf8ViewArray`] is the exception, because the UTF-8 promise is part of the array rather
+//! than something the caller remembers about it: it exports as a [`Utf8ViewArray`] through
+//! [`utf8view_to_arrow_utf8view`], which needs no `unsafe` and is what [`to_arrow`] picks for it.
 //!
 //! Nothing here is inferred from the values: the data type of a nested array is built from the
 //! data type its exported values came back with, so the fields of an exported [`PlStructArray`]
@@ -31,6 +35,9 @@
 //! Arrow array that does say so — [`binary_to_arrow_large_utf8`] and
 //! [`binview_to_arrow_utf8view`] — are therefore `unsafe`: they hand the bytes over in `O(1)` and
 //! it is the caller that knows they are valid UTF-8.
+//!
+//! [`PlUtf8ViewArray`] is the array that *does* say so, which is why exporting one through
+//! [`utf8view_to_arrow_utf8view`] is safe.
 //!
 //! # The scalar representation is written out
 //!
@@ -52,7 +59,7 @@
 //! use arrow::array::{Array, BinaryArray, Utf8ViewArray};
 //! use arrow::datatypes::ArrowDataType;
 //! use polars_array::arrow::export::{binview_to_arrow_utf8view, to_arrow};
-//! use polars_array::{PlBinaryArray, PlBinaryViewArray};
+//! use polars_array::{PlBinaryArray, PlBinaryViewArray, PlUtf8ViewArray};
 //!
 //! // The bytes of a `PlBinaryArray` are not a string, so it exports as a binary array.
 //! let array = PlBinaryArray::from_values_iter([b"foo".as_slice(), b"bar"]);
@@ -64,6 +71,13 @@
 //! let array = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"bar"]);
 //! let arrow = unsafe { binview_to_arrow_utf8view(&array) };
 //! assert_eq!(arrow.value(0), "foo");
+//!
+//! // A `PlUtf8ViewArray` carries that promise itself, so it exports as a string array with no
+//! // `unsafe` and no data type to remember.
+//! let array: PlUtf8ViewArray = [Some("foo"), Some("bar")].into_iter().collect();
+//! let arrow = to_arrow(&array);
+//! assert_eq!(arrow.dtype(), &ArrowDataType::Utf8View);
+//! assert_eq!(arrow.as_any().downcast_ref::<Utf8ViewArray>().unwrap().value(0), "foo");
 //!
 //! // A scalar array is written out: an arrow array holds one slot per element.
 //! let array = PlBinaryViewArray::new_scalar(b"foo", 3);
@@ -84,7 +98,7 @@ use polars_utils::format_pl_smallstr;
 use crate::{
     PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray,
     PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray,
-    with_match_pl_primitive_array_type,
+    PlUtf8ViewArray, with_match_pl_primitive_array_type,
 };
 
 /// Exports an array of this crate as the Arrow array that holds the same elements.
@@ -116,6 +130,7 @@ pub fn to_arrow(array: &dyn PlArray) -> Box<dyn Array> {
 
         PlArrayType::Binary => Box::new(binary_to_arrow_large_binary(downcast(array))),
         PlArrayType::BinaryView => Box::new(binview_to_arrow_binview(downcast(array))),
+        PlArrayType::Utf8View => Box::new(utf8view_to_arrow_utf8view(downcast(array))),
         PlArrayType::FixedSizeBinary => Box::new(fixed_size_binary_to_arrow_fixed_size_binary(
             downcast(array),
         )),
@@ -251,6 +266,19 @@ pub unsafe fn binview_to_arrow_utf8view(array: &PlBinaryViewArray) -> Utf8ViewAr
             None,
         )
     }
+}
+
+/// Exports a [`PlUtf8ViewArray`] as an Arrow [`Utf8ViewArray`] of
+/// [`Utf8View`](ArrowDataType::Utf8View).
+///
+/// Unlike [`binview_to_arrow_utf8view`] this is safe: the UTF-8 the Arrow data type promises is
+/// exactly the invariant [`PlUtf8ViewArray`] carries — see [`crate::utf8view`].
+///
+/// This is `O(1)` for a [`flat`](crate::broadcast) array and `O(len)` for a scalar one, which is
+/// written out.
+pub fn utf8view_to_arrow_utf8view(array: &PlUtf8ViewArray) -> Utf8ViewArray {
+    // SAFETY: every element of a `PlUtf8ViewArray` is valid UTF-8.
+    unsafe { binview_to_arrow_utf8view(array.as_binview()) }
 }
 
 /// Exports a [`PlFixedSizeBinaryArray`] as an Arrow [`FixedSizeBinaryArray`] of

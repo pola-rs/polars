@@ -2,9 +2,7 @@ mod serializer;
 
 use arrow::array::{Array, NullArray};
 use arrow::legacy::time_zone::Tz;
-use polars_array::PlUtf8ViewArray;
 use polars_array::arrow::export;
-use polars_core::chunked_array::arrow_bridge::chunk_to_arrow;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_error::polars_ensure;
@@ -185,12 +183,6 @@ impl CsvSerializer {
 
     /// Hands each column's single chunk to the Arrow array the serializers are written against.
     ///
-    /// The serializers downcast to the Arrow array of the column's *physical* representation,
-    /// which is what [`export::to_arrow`] hands over — with one exception: a string chunk is a
-    /// [`PlUtf8ViewArray`], whose physical export is a `BinaryViewArray`, while the serializer
-    /// downcasts to `Utf8ViewArray`. That one crosses through the typed bridge instead, which
-    /// keeps the UTF-8 promise the Arrow type carries.
-    ///
     /// # Panics
     /// Panics if a column has >1 chunk.
     fn to_arrow_chunks(columns: &[Column]) -> Vec<Box<dyn Array>> {
@@ -198,15 +190,7 @@ impl CsvSerializer {
             .iter()
             .map(|c| {
                 assert_eq!(c.n_chunks(), 1);
-                let series = c.as_materialized_series();
-
-                match c.dtype() {
-                    DataType::String => {
-                        let chunk = series.str().unwrap().downcast_get(0).unwrap();
-                        Box::new(chunk_to_arrow::<PlUtf8ViewArray>(chunk)) as Box<dyn Array>
-                    },
-                    _ => export::to_arrow(series.chunks()[0].as_ref()),
-                }
+                export::to_arrow(c.as_materialized_series().chunks()[0].as_ref())
             })
             .collect()
     }

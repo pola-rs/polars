@@ -34,16 +34,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         }};
     }
     match dtype {
-        DataType::String => {
-            // A string chunk is stored as the byte strings it is, which the wrapper that carries
-            // the UTF-8 invariant borrows rather than owns — see `polars_array::utf8view`.
-            let arr = arr
-                .as_any()
-                .downcast_ref::<PlBinaryViewArray>()
-                .unwrap_unchecked();
-            let arr = PlUtf8ViewArray::from_binview_ref_unchecked(arr);
-            AnyValue::String(arr.value_unchecked(idx))
-        },
+        DataType::String => downcast_and_pack!(PlUtf8ViewArray, String),
         DataType::Binary => downcast_and_pack!(PlBinaryViewArray, Binary),
         DataType::Boolean => downcast_and_pack!(PlBooleanArray, Boolean),
         DataType::UInt8 => downcast_and_pack!(PlPrimitiveArray<u8>, UInt8),

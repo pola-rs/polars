@@ -75,7 +75,8 @@ use crate::{
     PlBooleanArray, PlBooleanArrayBuilder, PlFixedSizeBinaryArray, PlFixedSizeBinaryArrayBuilder,
     PlFixedSizeListArray, PlFixedSizeListArrayBuilder, PlListArray, PlListArrayBuilder,
     PlNullArray, PlNullArrayBuilder, PlPrimitiveArray, PlPrimitiveArrayBuilder, PlStructArray,
-    PlStructArrayBuilder, with_match_pl_primitive_array_type,
+    PlStructArrayBuilder, PlUtf8ViewArray, PlUtf8ViewArrayBuilder,
+    with_match_pl_primitive_array_type,
 };
 
 /// A builder of one concrete array type.
@@ -538,6 +539,7 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
         PlArrayType::Boolean => Box::new(PlBooleanArrayBuilder::new()),
         PlArrayType::Binary => Box::new(PlBinaryArrayBuilder::new()),
         PlArrayType::BinaryView => Box::new(PlBinaryViewArrayBuilder::new()),
+        PlArrayType::Utf8View => Box::new(PlUtf8ViewArrayBuilder::new()),
         PlArrayType::FixedSizeBinary => {
             let array = array
                 .as_any()
@@ -613,6 +615,7 @@ pub fn full_null_like(array: &dyn PlArray, length: usize) -> Box<dyn PlArray> {
         .expect("a primitive array has a primitive element type"),
         PlArrayType::Binary => Box::new(PlBinaryArray::new_full_null(length)),
         PlArrayType::BinaryView => Box::new(PlBinaryViewArray::new_full_null(length)),
+        PlArrayType::Utf8View => Box::new(PlUtf8ViewArray::new_full_null(length)),
         PlArrayType::FixedSizeBinary => {
             let array = array
                 .as_any()
@@ -623,7 +626,10 @@ pub fn full_null_like(array: &dyn PlArray, length: usize) -> Box<dyn PlArray> {
         PlArrayType::List => {
             let array = array.as_any().downcast_ref::<PlListArray>().unwrap();
             // Every element is an empty list, so the values are only there to carry their shape.
-            Box::new(PlListArray::new_full_null(array.values().sliced(0, 0), length))
+            Box::new(PlListArray::new_full_null(
+                array.values().sliced(0, 0),
+                length,
+            ))
         },
         PlArrayType::FixedSizeList => {
             let array = array

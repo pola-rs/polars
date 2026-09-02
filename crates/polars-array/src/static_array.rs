@@ -255,10 +255,9 @@ pub trait StaticArray: PlArray + Clone {
 
     /// Boxes this array as a [`PlArray`] trait object.
     ///
-    /// This is [`Box::new`] for every array in this crate. A wrapper in another crate that is
-    /// `repr(transparent)` over one of them — carrying an invariant the array itself does not,
-    /// the way a string array is a byte array whose bytes are UTF-8 — overrides this to box the
-    /// array it wraps, so that the trait object always downcasts to the array it really is.
+    /// This is [`Box::new`] for every array in this crate: a trait object always downcasts to the
+    /// array it really is, [`PlUtf8ViewArray`] — which is `repr(transparent)` over a
+    /// [`PlBinaryViewArray`] but a distinct [`PlArrayType`](crate::PlArrayType) — included.
     #[inline]
     fn into_boxed(self) -> Box<dyn PlArray>
     where
@@ -540,9 +539,7 @@ impl StaticArray for PlBinaryViewArray {
     }
 }
 
-/// The elements are the strings the wrapper promises they are — see [`crate::utf8view`] — so
-/// [`Self::into_boxed`] hands out the *inner* array, which is what a `dyn PlArray` of
-/// [`BinaryView`](crate::PlArrayType::BinaryView) is expected to be.
+/// The elements are the strings the wrapper promises they are — see [`crate::utf8view`].
 impl StaticArray for PlUtf8ViewArray {
     type ValueT<'a> = &'a str;
     type ZeroableValueT<'a> = Option<&'a str>;
@@ -608,12 +605,6 @@ impl StaticArray for PlUtf8ViewArray {
     #[inline]
     fn as_flat(&self) -> Option<&Flat<Self>> {
         self.as_flat()
-    }
-
-    #[inline]
-    fn into_boxed(self) -> Box<dyn PlArray> {
-        // The trait object is the array this wrapper is transparent over — see the module docs.
-        Box::new(self.into_binview())
     }
 }
 

@@ -8,13 +8,20 @@
 //!
 //! # The logical type is dropped
 //!
-//! The arrays of this crate are purely a physical representation, so what an Arrow array imports
-//! as is the physical array underneath its [`ArrowDataType`](arrow::datatypes::ArrowDataType),
-//! which is the same for every logical type over one physical representation: a `Date32` array
-//! imports as a [`PlPrimitiveArray<i32>`], and a [`Utf8Array`] and a [`BinaryArray`] both import
-//! as a [`PlBinaryArray`]. Nothing in the imported array says the bytes of that
-//! [`PlBinaryArray`] are a string, and nothing in this module validates that they are — it is the
-//! caller that remembers which logical type the physical array stands for.
+//! The arrays of this crate are very nearly a physical representation, so what an Arrow array
+//! imports as is the physical array underneath its
+//! [`ArrowDataType`](arrow::datatypes::ArrowDataType), which is the same for every logical type
+//! over one physical representation: a `Date32` array imports as a [`PlPrimitiveArray<i32>`], and
+//! a [`Utf8Array`] and a [`BinaryArray`] both import as a [`PlBinaryArray`]. Nothing in the
+//! imported array says the bytes of that [`PlBinaryArray`] are a string, and nothing in this
+//! module validates that they are — it is the caller that remembers which logical type the
+//! physical array stands for.
+//!
+//! The one logical type that is kept is UTF-8 in a view array: a [`Utf8ViewArray`] imports as a
+//! [`PlUtf8ViewArray`] rather than as the [`PlBinaryViewArray`] its bytes are stored as, since
+//! that promise is one these arrays carry too — see [`crate::utf8view`]. So a string array round
+//! trips through [`export`](crate::arrow::export) and back without the caller having to remember
+//! anything about it.
 //!
 //! # Importing never produces a scalar array
 //!
@@ -32,10 +39,10 @@
 //!
 //! # Example
 //! ```
-//! use arrow::array::{Int32Array, Utf8ViewArray};
+//! use arrow::array::{BinaryViewArray, Int32Array, Utf8ViewArray};
 //! use arrow::datatypes::ArrowDataType;
 //! use polars_array::arrow::import::from_arrow;
-//! use polars_array::{PlBinaryViewArray, PlPrimitiveArray};
+//! use polars_array::{PlBinaryViewArray, PlPrimitiveArray, PlUtf8ViewArray};
 //!
 //! // The logical type is dropped: a `Date32` array is the `i32` array underneath it.
 //! let arrow = Int32Array::from_slice([1, 2, 3]).to(ArrowDataType::Date32);
@@ -43,11 +50,17 @@
 //! let array = array.as_any().downcast_ref::<PlPrimitiveArray<i32>>().unwrap();
 //! assert_eq!(array.value(2), 3);
 //!
-//! // So is the promise that the bytes of a string array are a string.
-//! let arrow = Utf8ViewArray::from_slice_values(["foo", "bar"]);
+//! // The bytes of a binary view array are not a string, so they import as bytes.
+//! let arrow = BinaryViewArray::from_slice_values([b"foo".as_slice(), b"bar"]);
 //! let array = from_arrow(&arrow);
 //! let array = array.as_any().downcast_ref::<PlBinaryViewArray>().unwrap();
 //! assert_eq!(array.value(0), b"foo");
+//!
+//! // The promise that a view array's bytes *are* a string is kept.
+//! let arrow = Utf8ViewArray::from_slice_values(["foo", "bar"]);
+//! let array = from_arrow(&arrow);
+//! let array = array.as_any().downcast_ref::<PlUtf8ViewArray>().unwrap();
+//! assert_eq!(array.value(0), "foo");
 //! ```
 
 use std::any::Any;
@@ -66,6 +79,7 @@ use polars_utils::float16::pf16;
 use crate::{
     PlArray, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray,
     PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray,
+    PlUtf8ViewArray,
 };
 
 /// Imports an Arrow array as the array of this crate that holds the same elements.
@@ -93,7 +107,7 @@ pub fn from_arrow(array: &dyn Array) -> Box<dyn PlArray> {
         PhysicalType::BinaryView => Box::new(binary_view_from_arrow(downcast::<
             BinaryViewArrayGeneric<[u8]>,
         >(array))),
-        PhysicalType::Utf8View => Box::new(binary_view_from_arrow(downcast::<
+        PhysicalType::Utf8View => Box::new(utf8_view_from_arrow(downcast::<
             BinaryViewArrayGeneric<str>,
         >(array))),
 
@@ -201,6 +215,17 @@ pub fn binary_view_from_arrow<T: ViewType + ?Sized>(
             array.validity().cloned(),
         )
     }
+}
+
+/// Imports an Arrow [`Utf8ViewArray`](arrow::array::Utf8ViewArray) as a [`PlUtf8ViewArray`],
+/// which is `O(1)`.
+///
+/// Unlike [`binary_view_from_arrow`] this keeps the promise that the bytes are valid UTF-8, which
+/// the Arrow data type carries and [`PlUtf8ViewArray`] carries too — so the round trip through
+/// [`export::to_arrow`](crate::arrow::export::to_arrow) is lossless for a string array.
+pub fn utf8_view_from_arrow(array: &BinaryViewArrayGeneric<str>) -> PlUtf8ViewArray {
+    // SAFETY: the elements of an Arrow `Utf8ViewArray` are valid UTF-8.
+    unsafe { PlUtf8ViewArray::from_binview_unchecked(binary_view_from_arrow(array)) }
 }
 
 /// Imports an Arrow [`FixedSizeBinaryArray`] as a [`PlFixedSizeBinaryArray`], which is `O(1)`.
@@ -530,14 +555,34 @@ mod tests {
     }
 
     #[test]
-    fn utf8_view_is_imported_as_the_bytes_of_its_elements() {
+    fn utf8_view_is_imported_as_the_strings_of_its_elements() {
         let arrow =
             Utf8ViewArray::from_slice([Some("foo"), None, Some("a rather long string value")]);
-        let array = imported::<PlBinaryViewArray>(&arrow);
+        let array = imported::<PlUtf8ViewArray>(&arrow);
 
-        assert_eq!(array.get(0), Some(b"foo".as_slice()));
-        assert_eq!(array.get(2), Some(b"a rather long string value".as_slice()));
-        assert_eq!(array.array_type(), PlArrayType::BinaryView);
+        // The UTF-8 the Arrow data type promises is kept, so this is a string array rather than
+        // the byte array it is stored as.
+        assert_eq!(array.get(0), Some("foo"));
+        assert_eq!(array.get(1), None);
+        assert_eq!(array.get(2), Some("a rather long string value"));
+        assert_eq!(array.array_type(), PlArrayType::Utf8View);
+    }
+
+    #[test]
+    fn a_utf8_view_round_trips_through_arrow_as_a_string_array() {
+        let array: PlUtf8ViewArray = [Some("foo"), None, Some("a rather long string value")]
+            .into_iter()
+            .collect();
+
+        let arrow = crate::arrow::export::to_arrow(&array);
+        assert_eq!(arrow.dtype(), &ArrowDataType::Utf8View);
+
+        let imported = from_arrow(&*arrow);
+        assert_eq!(imported.array_type(), PlArrayType::Utf8View);
+        assert_eq!(
+            imported.as_any().downcast_ref::<PlUtf8ViewArray>().unwrap(),
+            &array,
+        );
     }
 
     #[test]

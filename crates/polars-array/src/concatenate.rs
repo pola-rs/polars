@@ -49,7 +49,8 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::{
     PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlFixedSizeListArray,
-    PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray, with_match_pl_primitive_array_type,
+    PlListArray, PlNullArray, PlPrimitiveArray, PlStructArray, PlUtf8ViewArray,
+    with_match_pl_primitive_array_type,
 };
 
 /// The elements of a slice, in order, a number of times over, each as what it stands for.
@@ -274,8 +275,8 @@ pub fn concatenate_repeated(array: &dyn PlArray, repeats: usize) -> PolarsResult
 
 /// Concatenates the arrays `iter` yields, in order, into a single array of their common
 /// [`PlArrayType`], which is what [`concatenate`] and [`concatenate_repeated`] both come down to.
-fn concatenate_impl<S>(
-    iter: SliceBroadcastIter<'_, '_, dyn PlArray, S>,
+fn concatenate_impl<'a, S>(
+    iter: SliceBroadcastIter<'a, '_, dyn PlArray, S>,
 ) -> PolarsResult<Box<dyn PlArray>> {
     let mut distinct = iter.distinct();
     let Some(first) = distinct.next() else {
@@ -316,6 +317,17 @@ fn concatenate_impl<S>(
         PlArrayType::BinaryView => {
             let map = downcast_map::<PlBinaryViewArray, _>(&iter, array_type)?;
             Ok(Box::new(concatenate_binview_impl(iter.mapped(&map))))
+        },
+        PlArrayType::Utf8View => {
+            // A string array is a binary view array whose bytes are UTF-8, so it concatenates the
+            // same way; what the wrapper adds is the promise, which is re-established below.
+            let map = downcast_map::<PlUtf8ViewArray, _>(&iter, array_type)?;
+            let bytes_map = |array: &'a S| map(array).as_binview();
+            let concatenated = concatenate_binview_impl(iter.mapped(&bytes_map));
+            // SAFETY: every element came from a `PlUtf8ViewArray`, so every one is valid UTF-8.
+            Ok(Box::new(unsafe {
+                PlUtf8ViewArray::from_binview_unchecked(concatenated)
+            }))
         },
         PlArrayType::FixedSizeBinary => {
             let map = downcast_map::<PlFixedSizeBinaryArray, _>(&iter, array_type)?;

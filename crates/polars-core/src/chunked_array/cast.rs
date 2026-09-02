@@ -7,9 +7,9 @@ use polars_compute::cast::CastOptionsImpl;
 use serde::{Deserialize, Serialize};
 
 use super::flags::StatisticsFlags;
+use crate::chunked_array::arrow_bridge::as_flat;
 #[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
-use crate::chunked_array::arrow_bridge::as_flat;
 use crate::prelude::*;
 use crate::utils::{handle_array_casting_failures, handle_casting_failures};
 
@@ -108,9 +108,8 @@ fn cast_impl_inner(
     };
 
     // SAFETY: the chunks were just cast to the physical type of `dtype`.
-    let out = unsafe {
-        Series::from_chunks_and_dtype_unchecked(name, chunks, &dtype.to_physical())
-    };
+    let out =
+        unsafe { Series::from_chunks_and_dtype_unchecked(name, chunks, &dtype.to_physical()) };
     use DataType::*;
     let out = match dtype {
         Date => out.into_date(),
@@ -681,8 +680,112 @@ fn cast_fixed_size_list(
 
 #[cfg(test)]
 mod test {
+    use polars_array::{PlArrayType, PlBinaryViewArray, PlUtf8ViewArray};
+
     use crate::chunked_array::cast::CastOptions;
     use crate::prelude::*;
+
+    /// Every chunk of a string-dtype `ChunkedArray` must be a `PlUtf8ViewArray` trait object, so
+    /// that the UTF-8 promise is recoverable from a `dyn PlArray` without an `unsafe` wrapper —
+    /// see `polars_array::utf8view`.
+    #[track_caller]
+    fn assert_string_chunks(ca: &StringChunked, ctx: &str) {
+        for (i, chunk) in ca.chunks().iter().enumerate() {
+            assert_eq!(
+                chunk.array_type(),
+                PlArrayType::Utf8View,
+                "{ctx}: chunk {i} reports the wrong array type",
+            );
+            assert!(
+                chunk.as_any().downcast_ref::<PlUtf8ViewArray>().is_some(),
+                "{ctx}: chunk {i} does not downcast to PlUtf8ViewArray",
+            );
+            assert!(
+                chunk.as_any().downcast_ref::<PlBinaryViewArray>().is_none(),
+                "{ctx}: chunk {i} still downcasts to the bytes it is stored as",
+            );
+        }
+    }
+
+    #[test]
+    fn string_chunks_are_utf8_view_however_they_are_built() {
+        assert_string_chunks(
+            &StringChunked::new("s".into(), [Some("a"), None, Some("héllo 🎉")]),
+            "new",
+        );
+        assert_string_chunks(&StringChunked::full_null("s".into(), 3), "full_null");
+        assert_string_chunks(
+            &StringChunked::with_chunk("s".into(), PlUtf8ViewArray::new_scalar("rep", 8)),
+            "scalar chunk",
+        );
+
+        // Appending leaves two chunks; rechunking concatenates them.
+        let mut appended = StringChunked::new("s".into(), [Some("a"), None]);
+        appended
+            .append(&StringChunked::new("s".into(), [Some("bb")]))
+            .unwrap();
+        assert_string_chunks(&appended, "append");
+        let rechunked = appended.rechunk();
+        assert_string_chunks(&rechunked, "rechunk");
+        assert_eq!(rechunked.get(2), Some("bb"));
+    }
+
+    #[test]
+    fn casting_between_strings_and_bytes_keeps_each_array_type() {
+        let ca = StringChunked::new("s".into(), [Some("a"), None, Some("héllo")]);
+
+        // A string array viewed as its bytes really becomes a byte array.
+        let bytes = ca.as_binary();
+        for chunk in bytes.chunks() {
+            assert_eq!(chunk.array_type(), PlArrayType::BinaryView);
+        }
+        assert_eq!(bytes.get(0), Some(b"a".as_slice()));
+
+        // And back, which re-establishes the promise.
+        let back = unsafe { bytes.to_string_unchecked() };
+        assert_string_chunks(&back, "to_string_unchecked");
+        assert_eq!(back.get(2), Some("héllo"));
+
+        assert_string_chunks(
+            Series::new("i".into(), [1i32, 2])
+                .cast(&DataType::String)
+                .unwrap()
+                .str()
+                .unwrap(),
+            "int cast to String",
+        );
+    }
+
+    #[test]
+    fn a_string_chunk_round_trips_through_arrow_as_a_string_array() {
+        use polars_array::arrow::{export, import};
+
+        let ca = StringChunked::new("s".into(), [Some("a"), None, Some("héllo 🎉")]);
+        let arrow = export::to_arrow(ca.downcast_get(0).unwrap());
+        assert_eq!(arrow.dtype(), &ArrowDataType::Utf8View);
+
+        let back = import::from_arrow(&*arrow);
+        assert_eq!(back.array_type(), PlArrayType::Utf8View);
+        assert_eq!(
+            back.as_any()
+                .downcast_ref::<PlUtf8ViewArray>()
+                .unwrap()
+                .get(2),
+            Some("héllo 🎉"),
+        );
+    }
+
+    #[test]
+    fn boxing_a_scalar_string_array_does_not_write_it_out() {
+        let scalar = PlUtf8ViewArray::new_scalar("rep", 1_000);
+        let boxed = scalar.into_boxed();
+
+        assert_eq!(boxed.array_type(), PlArrayType::Utf8View);
+        assert!(
+            boxed.is_scalar(),
+            "boxing must stay O(1) rather than materializing every element",
+        );
+    }
 
     #[test]
     fn test_cast_list() -> PolarsResult<()> {

@@ -95,15 +95,12 @@ impl ToArrow for PlUtf8ViewArray {
 
     #[inline]
     fn to_arrow(array: &Flat<Self>) -> Utf8ViewArray {
-        // SAFETY: the elements of a `PlUtf8ViewArray` are valid UTF-8, which is the invariant the
-        // wrapper carries.
-        unsafe { export::binview_to_arrow_utf8view(array.as_binview()) }
+        export::utf8view_to_arrow_utf8view(array.as_array())
     }
 
     #[inline]
     fn from_arrow(array: &Utf8ViewArray) -> Self {
-        // SAFETY: the elements of a `Utf8ViewArray` are valid UTF-8.
-        unsafe { PlUtf8ViewArray::from_binview_unchecked(import::binary_view_from_arrow(array)) }
+        import::utf8_view_from_arrow(array)
     }
 }
 

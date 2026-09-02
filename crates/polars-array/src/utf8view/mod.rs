@@ -8,8 +8,8 @@
 //! validating it again.
 //!
 //! The wrapper is `repr(transparent)` over the [`PlBinaryViewArray`] such a chunk actually is, so
-//! a chunk is *borrowed* as one — [`PlUtf8ViewArray::from_binview_ref_unchecked`] — rather than
-//! stored as one.
+//! a chunk can also be *borrowed* as one — [`PlUtf8ViewArray::from_binview_ref_unchecked`] —
+//! without going through the buffers.
 //!
 //! # The invariant
 //!
@@ -17,10 +17,15 @@
 //! validity mask can be put back over at any time — is valid UTF-8. Constructing one is therefore
 //! `unsafe`; [`PlUtf8ViewArray::from_binview`] is the checked constructor that establishes it.
 //!
-//! Because the wrapper is transparent, it must never *own* the trait object a chunk is stored as:
-//! the rest of the world downcasts a `dyn PlArray` of [`PlArrayType::BinaryView`] to a
-//! [`PlBinaryViewArray`], and a `Box<PlUtf8ViewArray>` would carry the wrong vtable for that. Every
-//! method here that hands out a `Box<dyn PlArray>` therefore boxes the inner array.
+//! # It is its own array type
+//!
+//! This is the one array in the crate that carries a logical type, and it carries it all the way
+//! through the trait object: a boxed [`PlUtf8ViewArray`] reports [`PlArrayType::Utf8View`], is
+//! downcast back to a [`PlUtf8ViewArray`], and exports as an Arrow
+//! [`Utf8ViewArray`](arrow::array::Utf8ViewArray) rather than as the `BinaryViewArray` its bytes
+//! are stored as. So the promise survives being boxed, concatenated, built or round-tripped
+//! through Arrow, and code that holds a `dyn PlArray` never has to reach for an `unsafe` wrapper
+//! to recover it.
 
 use std::any::Any;
 
@@ -387,17 +392,17 @@ impl<'a> IntoIterator for &'a PlUtf8ViewArray {
 impl PlArray for PlUtf8ViewArray {
     #[inline]
     fn as_any(&self) -> &dyn Any {
-        &self.0
+        self
     }
 
     #[inline]
     fn as_any_mut(&mut self) -> &mut dyn Any {
-        &mut self.0
+        self
     }
 
     #[inline]
     fn array_type(&self) -> PlArrayType {
-        PlArrayType::BinaryView
+        PlArrayType::Utf8View
     }
 
     #[inline]
@@ -441,23 +446,27 @@ impl PlArray for PlUtf8ViewArray {
         self.0.set_validity_broadcast(validity);
     }
 
-    // The boxed array is the *inner* one: the world downcasts a `dyn PlArray` of
-    // `PlArrayType::BinaryView` to a `PlBinaryViewArray`, so this wrapper must not own a vtable.
-
     #[inline]
     unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Box<dyn PlArray> {
-        // SAFETY: the caller keeps `index` in bounds.
-        unsafe { PlArray::new_from_index_unchecked(&self.0, index, length) }
+        // SAFETY: the caller keeps `index` in bounds. Repeating one element of a valid string
+        // array keeps every element valid UTF-8.
+        let array = unsafe { self.0.new_from_index_unchecked(index, length) };
+        Box::new(unsafe { Self::from_binview_unchecked(array) })
     }
 
     #[inline]
     fn to_boxed(&self) -> Box<dyn PlArray> {
-        Box::new(self.0.clone())
+        Box::new(self.clone())
     }
 
     #[inline]
     fn eq_dyn(&self, other: &dyn PlArray) -> bool {
-        self.0.eq_dyn(other)
+        // A string array equals another string array with the same elements; a byte array of the
+        // same bytes is a different array type, which `PlBinaryViewArray::eq_dyn` also rejects.
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .is_some_and(|other| self == other)
     }
 }
 
@@ -533,19 +542,36 @@ mod tests {
     }
 
     #[test]
-    fn the_boxed_array_is_the_inner_one() {
-        // A `dyn PlArray` of `BinaryView` is downcast to a `PlBinaryViewArray` everywhere, so the
-        // wrapper must not be what a box holds.
+    fn the_boxed_array_is_the_string_array() {
+        // The UTF-8 promise survives being boxed: a `dyn PlArray` over a string array reports
+        // `Utf8View` and downcasts back to a `PlUtf8ViewArray`, never to the bytes underneath.
         let arr: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect();
 
-        assert_eq!(arr.array_type(), PlArrayType::BinaryView);
+        assert_eq!(arr.array_type(), PlArrayType::Utf8View);
         for boxed in [
             arr.to_boxed(),
             unsafe { arr.new_from_index_unchecked(0, 2) },
             arr.clone().into_boxed(),
         ] {
-            assert!(boxed.as_any().downcast_ref::<PlBinaryViewArray>().is_some());
+            assert_eq!(boxed.array_type(), PlArrayType::Utf8View);
+            assert!(boxed.as_any().downcast_ref::<PlUtf8ViewArray>().is_some());
+            assert!(
+                boxed.as_any().downcast_ref::<PlBinaryViewArray>().is_none(),
+                "a string array must not downcast to the bytes it is stored as",
+            );
         }
+    }
+
+    #[test]
+    fn a_string_array_is_not_equal_to_the_bytes_it_is_stored_as() {
+        let arr: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect();
+        let bytes = arr.clone().into_binview();
+
+        assert!(!arr.eq_dyn(&bytes), "the array types differ");
+        assert!(!bytes.eq_dyn(&arr), "and the comparison is symmetric");
+
+        let same: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect();
+        assert!(arr.eq_dyn(&same));
     }
 
     #[test]
