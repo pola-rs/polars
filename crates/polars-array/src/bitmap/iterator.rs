@@ -192,22 +192,21 @@ unsafe impl TrustedLen for PlBitmapIter<'_> {}
 ///
 /// This is what keeps reading validity off the critical path of an element: the mask holds one bit
 /// per element the values yield, so walking the two together needs no index of its own, and which
-/// representation the mask is in — absent, flat, or the single bit every element shares — is
-/// settled once rather than at every element.
+/// representation the mask is in — flat, or the single bit every element shares — is settled once
+/// rather than at every element.
 ///
 /// The values iterator is the one that governs how many elements there are. A position past the
 /// end of the mask therefore belongs to no element, and reads as valid rather than panicking.
 #[derive(Clone)]
 pub(crate) enum ValidityIter<'a> {
-    /// No mask at all, which is an array without null elements.
-    All,
     /// One bit per element, at the positions `front..back` of `bytes`.
     Flat {
         bytes: &'a [u8],
         front: usize,
         back: usize,
     },
-    /// The single bit every element shares.
+    /// The single bit every element shares. An array with no mask at all shares a set bit, so it
+    /// is this variant too rather than one of its own: the two are the same walk.
     Scalar(bool),
 }
 
@@ -224,8 +223,9 @@ pub(crate) enum ValidityFold<'a> {
 impl<'a> ValidityIter<'a> {
     #[inline]
     pub(crate) fn new(validity: Option<PlBitmapRef<'a>>) -> Self {
+        // An array without a mask has no null elements, which is the set bit they all share.
         let Some(validity) = validity else {
-            return Self::All;
+            return Self::Scalar(true);
         };
 
         match validity.flat_bitmap() {
@@ -247,7 +247,6 @@ impl<'a> ValidityIter<'a> {
     #[inline(always)]
     pub(crate) fn next(&mut self) -> bool {
         match self {
-            Self::All => true,
             Self::Flat { bytes, front, back } => {
                 if *front >= *back {
                     return true;
@@ -264,7 +263,6 @@ impl<'a> ValidityIter<'a> {
     #[inline(always)]
     pub(crate) fn next_back(&mut self) -> bool {
         match self {
-            Self::All => true,
             Self::Flat { bytes, front, back } => {
                 if *front >= *back {
                     return true;
@@ -290,7 +288,7 @@ impl<'a> ValidityIter<'a> {
     #[inline]
     pub(crate) fn into_mask(self) -> ValidityFold<'a> {
         match self {
-            Self::All | Self::Scalar(true) => ValidityFold::Valid,
+            Self::Scalar(true) => ValidityFold::Valid,
             Self::Scalar(false) => ValidityFold::Null,
             Self::Flat { bytes, front, back } => {
                 ValidityFold::Bits(PlBitmapIter::flat(bytes, front..back))
