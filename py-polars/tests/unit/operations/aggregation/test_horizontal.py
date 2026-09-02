@@ -785,7 +785,7 @@ def test_min_max_horizontal_with_nan_28682() -> None:
 
 
 def test_min_max_horizontal_scalar_column_29082() -> None:
-    df = pl.DataFrame({"x": [1, 2, 3]}).select(s=pl.lit(2.0))
+    df = pl.DataFrame({"x": [1, 2, 3]}).with_columns(s=pl.lit(2.0))
     out = df.select(
         mn=pl.min_horizontal("s", pl.lit(3.0)),
         mx=pl.max_horizontal("s", pl.lit(3.0)),
