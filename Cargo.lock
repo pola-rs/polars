@@ -3250,6 +3250,7 @@ dependencies = [
  "itoa",
  "ndarray",
  "num-traits",
+ "polars-array",
  "polars-arrow",
  "polars-async",
  "polars-buffer",

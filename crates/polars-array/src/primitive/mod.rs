@@ -278,6 +278,18 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         self.values_are_flat().then_some(&self.values)
     }
 
+    /// The values buffer, if this array holds one slot per element and nothing else shares it.
+    ///
+    /// This is [`Self::flat_values`] with a mutable borrow, which additionally asks that the
+    /// buffer be uniquely held: the buffers of these arrays are cheaply cloneable, so writing over
+    /// one that another array shares would change that array too. It returns `None` for a scalar
+    /// values buffer and for one that is shared, which is what a caller that means to write in
+    /// place has to fall back from.
+    #[inline]
+    pub fn flat_values_mut(&mut self) -> Option<&mut Buffer<T>> {
+        self.values_are_flat().then_some(&mut self.values)
+    }
+
     /// The value every element of this array reads, if the values buffer holds a single slot.
     ///
     /// This is the values half of [`Self::scalar_value`], which additionally asks that the

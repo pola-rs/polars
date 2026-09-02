@@ -14,6 +14,7 @@ use crate::bitmap::{PlBitmapIter, PlBitmapRef};
 use crate::boolean::PlBooleanIter;
 use crate::broadcast::assert_broadcastable;
 use crate::builder::StaticArrayBuilder;
+use crate::flat::Flat;
 use crate::fixed_size_binary::{PlFixedSizeBinaryIter, PlFixedSizeBinaryValuesIter};
 use crate::fixed_size_list::{PlFixedSizeListIter, PlFixedSizeListValuesIter};
 use crate::list::{PlListIter, PlListValuesIter};
@@ -201,6 +202,39 @@ pub trait StaticArray: PlArray + Clone {
     /// Panics if `index >= self.len()`.
     #[must_use]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self;
+
+    /// Whether every backing buffer of this array holds one slot per element.
+    ///
+    /// This is what [`StaticArray::as_flat`] answers with a borrow rather than with a `bool`; see
+    /// [`crate::broadcast`] for the rules.
+    fn is_flat(&self) -> bool;
+
+    /// Returns this array in the flat representation, writing out every buffer that is scalar.
+    ///
+    /// This is `O(1)` for an array that is already flat and `O(len)` for one that is not — see
+    /// [`Flat`] and the concrete arrays for the exact cost.
+    #[must_use]
+    fn to_flat(&self) -> Flat<Self>;
+
+    /// Borrows this array as a flat one, or `None` if any backing buffer is scalar.
+    ///
+    /// This is the `O(1)` half of [`StaticArray::to_flat`]: it never writes a buffer out, so the
+    /// caller decides what an array that is not laid out flat costs.
+    fn as_flat(&self) -> Option<&Flat<Self>>;
+
+    /// Boxes this array as a [`PlArray`] trait object.
+    ///
+    /// This is [`Box::new`] for every array in this crate. A wrapper in another crate that is
+    /// `repr(transparent)` over one of them — carrying an invariant the array itself does not,
+    /// the way a string array is a byte array whose bytes are UTF-8 — overrides this to box the
+    /// array it wraps, so that the trait object always downcasts to the array it really is.
+    #[inline]
+    fn into_boxed(self) -> Box<dyn PlArray>
+    where
+        Self: Sized,
+    {
+        Box::new(self)
+    }
 }
 
 impl<T: NativeType> StaticArray for PlPrimitiveArray<T> {
@@ -248,6 +282,21 @@ impl<T: NativeType> StaticArray for PlPrimitiveArray<T> {
     #[inline]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
+    }
+
+    #[inline]
+    fn is_flat(&self) -> bool {
+        self.is_flat()
+    }
+
+    #[inline]
+    fn to_flat(&self) -> Flat<Self> {
+        self.to_flat()
+    }
+
+    #[inline]
+    fn as_flat(&self) -> Option<&Flat<Self>> {
+        self.as_flat()
     }
 }
 
@@ -297,6 +346,21 @@ impl StaticArray for PlBooleanArray {
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
     }
+
+    #[inline]
+    fn is_flat(&self) -> bool {
+        self.is_flat()
+    }
+
+    #[inline]
+    fn to_flat(&self) -> Flat<Self> {
+        self.to_flat()
+    }
+
+    #[inline]
+    fn as_flat(&self) -> Option<&Flat<Self>> {
+        self.as_flat()
+    }
 }
 
 impl StaticArray for PlBinaryArray {
@@ -344,6 +408,21 @@ impl StaticArray for PlBinaryArray {
     #[inline]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
+    }
+
+    #[inline]
+    fn is_flat(&self) -> bool {
+        self.is_flat()
+    }
+
+    #[inline]
+    fn to_flat(&self) -> Flat<Self> {
+        self.to_flat()
+    }
+
+    #[inline]
+    fn as_flat(&self) -> Option<&Flat<Self>> {
+        self.as_flat()
     }
 }
 
@@ -393,6 +472,21 @@ impl StaticArray for PlBinaryViewArray {
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
     }
+
+    #[inline]
+    fn is_flat(&self) -> bool {
+        self.is_flat()
+    }
+
+    #[inline]
+    fn to_flat(&self) -> Flat<Self> {
+        self.to_flat()
+    }
+
+    #[inline]
+    fn as_flat(&self) -> Option<&Flat<Self>> {
+        self.as_flat()
+    }
 }
 
 impl StaticArray for PlFixedSizeBinaryArray {
@@ -440,6 +534,21 @@ impl StaticArray for PlFixedSizeBinaryArray {
     #[inline]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
+    }
+
+    #[inline]
+    fn is_flat(&self) -> bool {
+        self.is_flat()
+    }
+
+    #[inline]
+    fn to_flat(&self) -> Flat<Self> {
+        self.to_flat()
+    }
+
+    #[inline]
+    fn as_flat(&self) -> Option<&Flat<Self>> {
+        self.as_flat()
     }
 }
 
@@ -489,6 +598,21 @@ impl StaticArray for PlListArray {
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
     }
+
+    #[inline]
+    fn is_flat(&self) -> bool {
+        self.is_flat()
+    }
+
+    #[inline]
+    fn to_flat(&self) -> Flat<Self> {
+        self.to_flat()
+    }
+
+    #[inline]
+    fn as_flat(&self) -> Option<&Flat<Self>> {
+        self.as_flat()
+    }
 }
 
 impl StaticArray for PlFixedSizeListArray {
@@ -537,6 +661,21 @@ impl StaticArray for PlFixedSizeListArray {
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
     }
+
+    #[inline]
+    fn is_flat(&self) -> bool {
+        self.is_flat()
+    }
+
+    #[inline]
+    fn to_flat(&self) -> Flat<Self> {
+        self.to_flat()
+    }
+
+    #[inline]
+    fn as_flat(&self) -> Option<&Flat<Self>> {
+        self.as_flat()
+    }
 }
 
 /// A [`PlStructArray`] holds no values of its own: an element is a row across the field arrays,
@@ -582,6 +721,21 @@ impl StaticArray for PlStructArray {
     #[inline]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
+    }
+
+    #[inline]
+    fn is_flat(&self) -> bool {
+        self.is_flat()
+    }
+
+    #[inline]
+    fn to_flat(&self) -> Flat<Self> {
+        self.to_flat()
+    }
+
+    #[inline]
+    fn as_flat(&self) -> Option<&Flat<Self>> {
+        self.as_flat()
     }
 }
 
@@ -629,6 +783,21 @@ impl StaticArray for PlNullArray {
     #[inline]
     fn new_from_index_typed(&self, index: usize, length: usize) -> Self {
         self.new_from_index(index, length)
+    }
+
+    #[inline]
+    fn is_flat(&self) -> bool {
+        self.is_flat()
+    }
+
+    #[inline]
+    fn to_flat(&self) -> Flat<Self> {
+        self.to_flat()
+    }
+
+    #[inline]
+    fn as_flat(&self) -> Option<&Flat<Self>> {
+        self.as_flat()
     }
 }
 

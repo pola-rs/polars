@@ -3,6 +3,20 @@ pub use std::sync::Arc;
 
 pub use arrow::array::ArrayRef;
 pub(crate) use arrow::array::*;
+// The explicit imports of the array crate shadow the glob above: a `ChunkedArray` is backed by the
+// arrays of `polars-array`, and `arrow::array` is only what it is imported from and exported to.
+pub use polars_array::{
+    Flat, PlArray, PlArrayType, PlBinaryArray, PlBinaryViewArray, PlBitmapRef, PlBooleanArray,
+    PlFixedSizeBinaryArray, PlFixedSizeListArray, PlListArray, PlNullArray, PlPrimitiveArray,
+    PlStructArray, StaticArrayBuilder, ZeroableArrayFromIter,
+};
+
+/// An owned, cheaply cloneable chunk of a [`ChunkedArray`].
+///
+/// This is the counterpart of [`ArrowArrayRef`](arrow::array::ArrayRef): the chunks of a
+/// `ChunkedArray` are the arrays of `polars-array`, which carry no logical type — that lives in
+/// the `ChunkedArray`'s [`DataType`].
+pub type PlArrayRef = Box<dyn PlArray>;
 pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 pub use arrow::legacy::prelude::*;
 pub(crate) use arrow::trusted_len::TrustedLen;
@@ -26,6 +40,8 @@ pub use crate::chunked_array::builder::{
     ListStringChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, StringChunkedBuilder,
 };
 pub use crate::chunked_array::collect::{ChunkedCollectInferIterExt, ChunkedCollectIterExt};
+pub use crate::chunked_array::arrow_bridge::ToArrow;
+pub use crate::chunked_array::validity::PlBitmapRefExt;
 #[cfg(feature = "dtype-categorical")]
 #[allow(unused)] // See rust-lang/rust/issues/160691.
 pub use crate::chunked_array::logical::categorical::*;
@@ -39,7 +55,7 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
-pub use crate::datatypes::{ArrayCollectIterExt, *};
+pub use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter, StaticArray, *};
 pub use crate::error::abort::try_raise_polars_abort;
 pub use crate::error::{
     PolarsContext, PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn,

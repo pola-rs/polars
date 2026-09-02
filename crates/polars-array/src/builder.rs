@@ -71,9 +71,10 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::static_array::StaticArray;
 use crate::{
-    PlBinaryArrayBuilder, PlBinaryViewArrayBuilder, PlBooleanArrayBuilder, PlFixedSizeBinaryArray,
-    PlFixedSizeBinaryArrayBuilder, PlFixedSizeListArray, PlFixedSizeListArrayBuilder, PlListArray,
-    PlListArrayBuilder, PlNullArrayBuilder, PlPrimitiveArrayBuilder, PlStructArray,
+    PlBinaryArray, PlBinaryArrayBuilder, PlBinaryViewArray, PlBinaryViewArrayBuilder,
+    PlBooleanArray, PlBooleanArrayBuilder, PlFixedSizeBinaryArray, PlFixedSizeBinaryArrayBuilder,
+    PlFixedSizeListArray, PlFixedSizeListArrayBuilder, PlListArray, PlListArrayBuilder,
+    PlNullArray, PlNullArrayBuilder, PlPrimitiveArray, PlPrimitiveArrayBuilder, PlStructArray,
     PlStructArrayBuilder, with_match_pl_primitive_array_type,
 };
 
@@ -576,6 +577,81 @@ pub fn builder_like(array: &dyn PlArray) -> Box<dyn PlArrayBuilder> {
         },
         x @ PlArrayType::Object { .. } => {
             panic!("polars-array: no PlArrayBuilder for {x:?}")
+        },
+    }
+}
+
+/// An array of `length` nulls of the type that `array` is one of.
+///
+/// This is the [`builder_like`] of a fully null array, and like it, nothing but the shape of
+/// `array` is read — the element type, the width, the field arrays — so an empty array does as
+/// well as one holding elements. Unlike building one null at a time, this keeps the
+/// [`scalar`](crate::broadcast) representation: the result is `O(1)` in memory for every array but
+/// a [`PlStructArray`], which is `O(num_fields)`, so its length is unbounded by its memory use.
+///
+/// # Panics
+/// Panics for an object array, which has no builder in this crate either.
+///
+/// # Example
+/// ```
+/// use polars_array::builder::full_null_like;
+/// use polars_array::{PlArray, PlPrimitiveArray};
+///
+/// let array = PlPrimitiveArray::<i32>::new_empty();
+/// let nulls = full_null_like(&array, 1_000_000_000);
+///
+/// assert_eq!(nulls.array_type(), array.array_type());
+/// assert_eq!(nulls.null_count(), 1_000_000_000);
+/// ```
+pub fn full_null_like(array: &dyn PlArray, length: usize) -> Box<dyn PlArray> {
+    match array.array_type() {
+        PlArrayType::Null => Box::new(PlNullArray::new(length)),
+        PlArrayType::Boolean => Box::new(PlBooleanArray::new_full_null(length)),
+        PlArrayType::Primitive(_) => with_match_pl_primitive_array_type!(array, |T| {
+            Box::new(PlPrimitiveArray::<T>::new_full_null(length)) as Box<dyn PlArray>
+        })
+        .expect("a primitive array has a primitive element type"),
+        PlArrayType::Binary => Box::new(PlBinaryArray::new_full_null(length)),
+        PlArrayType::BinaryView => Box::new(PlBinaryViewArray::new_full_null(length)),
+        PlArrayType::FixedSizeBinary => {
+            let array = array
+                .as_any()
+                .downcast_ref::<PlFixedSizeBinaryArray>()
+                .unwrap();
+            Box::new(PlFixedSizeBinaryArray::new_full_null(array.width(), length))
+        },
+        PlArrayType::List => {
+            let array = array.as_any().downcast_ref::<PlListArray>().unwrap();
+            // Every element is an empty list, so the values are only there to carry their shape.
+            Box::new(PlListArray::new_full_null(array.values().sliced(0, 0), length))
+        },
+        PlArrayType::FixedSizeList => {
+            let array = array
+                .as_any()
+                .downcast_ref::<PlFixedSizeListArray>()
+                .unwrap();
+            // An element of a null list is as wide as any other, so the one element the values
+            // stand for is as many nulls as the array is wide.
+            let values = array
+                .flat_values()
+                .or_else(|| array.scalar_values())
+                .expect("the values of a fixed size list array are either flat or scalar");
+            Box::new(PlFixedSizeListArray::new_full_null(
+                full_null_like(values, array.width()),
+                length,
+            ))
+        },
+        PlArrayType::Struct => {
+            let array = array.as_any().downcast_ref::<PlStructArray>().unwrap();
+            let fields = array
+                .fields()
+                .iter()
+                .map(|field| full_null_like(&**field, length))
+                .collect();
+            Box::new(PlStructArray::new_full_null(fields, length))
+        },
+        x @ PlArrayType::Object { .. } => {
+            panic!("polars-array: cannot build a full null {x:?} typed array")
         },
     }
 }

@@ -1,19 +1,18 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::marker::PhantomData;
 
-use arrow::array::*;
 use arrow::compute::utils::combine_validities_and;
 
 use crate::prelude::*;
 use crate::utils::{index_to_chunked_index, index_to_chunked_index_rev};
 
 pub struct Chunks<'a, T> {
-    chunks: &'a [ArrayRef],
+    chunks: &'a [PlArrayRef],
     phantom: PhantomData<T>,
 }
 
 impl<'a, T> Chunks<'a, T> {
-    fn new(chunks: &'a [ArrayRef]) -> Self {
+    fn new(chunks: &'a [PlArrayRef]) -> Self {
         Chunks {
             chunks,
             phantom: PhantomData,
@@ -24,7 +23,7 @@ impl<'a, T> Chunks<'a, T> {
     pub fn get(&self, index: usize) -> Option<&'a T> {
         self.chunks.get(index).map(|arr| {
             let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const T) }
+            unsafe { &*(arr as *const dyn PlArray as *const T) }
         })
     }
 
@@ -32,7 +31,7 @@ impl<'a, T> Chunks<'a, T> {
     pub unsafe fn get_unchecked(&self, index: usize) -> &'a T {
         let arr = self.chunks.get_unchecked(index);
         let arr = &**arr;
-        &*(arr as *const dyn Array as *const T)
+        &*(arr as *const dyn PlArray as *const T)
     }
 
     pub fn len(&self) -> usize {
@@ -43,7 +42,7 @@ impl<'a, T> Chunks<'a, T> {
     pub fn last(&self) -> Option<&'a T> {
         self.chunks.last().map(|arr| {
             let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const T) }
+            unsafe { &*(arr as *const dyn PlArray as *const T) }
         })
     }
 }
@@ -65,22 +64,10 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.chunks.iter().map(|arr| {
             // SAFETY: T::Array guarantees this is correct.
             let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const T::Array) }
+            unsafe { &*(arr as *const dyn PlArray as *const T::Array) }
         })
     }
 
-    #[inline]
-    pub fn downcast_slices(&self) -> Option<impl DoubleEndedIterator<Item = &[T::Physical<'_>]>> {
-        if self.null_count() != 0 {
-            return None;
-        }
-        let arr = self.downcast_iter().next().unwrap();
-        if arr.as_slice().is_some() {
-            Some(self.downcast_iter().map(|arr| arr.as_slice().unwrap()))
-        } else {
-            None
-        }
-    }
 
     /// # Safety
     /// The caller must ensure:
@@ -92,7 +79,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.chunks.iter_mut().map(|arr| {
             // SAFETY: T::Array guarantees this is correct.
             let arr = &mut **arr;
-            &mut *(arr as *mut dyn Array as *mut T::Array)
+            &mut *(arr as *mut dyn PlArray as *mut T::Array)
         })
     }
 
@@ -106,7 +93,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         let arr = self.chunks.get(idx)?;
         // SAFETY: T::Array guarantees this is correct.
         let arr = &**arr;
-        unsafe { Some(&*(arr as *const dyn Array as *const T::Array)) }
+        unsafe { Some(&*(arr as *const dyn PlArray as *const T::Array)) }
     }
 
     /// # Panics
@@ -124,7 +111,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         let arr = self.chunks.get_unchecked(idx);
         // SAFETY: T::Array guarantees this is correct.
         let arr = &**arr;
-        unsafe { &*(arr as *const dyn Array as *const T::Array) }
+        unsafe { &*(arr as *const dyn PlArray as *const T::Array) }
     }
 
     /// Get the index of the chunk and the index of the value in that chunk.
@@ -154,11 +141,14 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// # Panics
     /// Panics if chunks don't align
-    pub fn merge_validities(&mut self, chunks: &[ArrayRef]) {
+    pub fn merge_validities(&mut self, chunks: &[PlArrayRef]) {
         assert_eq!(chunks.len(), self.chunks.len());
         unsafe {
             for (arr, other) in self.chunks_mut().iter_mut().zip(chunks) {
-                let validity = combine_validities_and(arr.validity(), other.validity());
+                let validity = combine_validities_and(
+                    arr.validity().map(|v| v.to_flat()).as_ref(),
+                    other.validity().map(|v| v.to_flat()).as_ref(),
+                );
                 *arr = arr.with_validity(validity);
             }
         }

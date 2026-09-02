@@ -7,6 +7,7 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::builder::{ShareStrategy, StaticArrayBuilder, assert_subslice};
+use crate::flat::Flat;
 
 /// An immutable, cheaply cloneable sequence of `length` nulls.
 ///
@@ -200,6 +201,31 @@ impl PlNullArray {
     pub const unsafe fn new_from_index_unchecked(&self, index: usize, length: usize) -> Self {
         debug_assert!(index < self.length);
         Self::new(length)
+    }
+
+    /// Whether every backing buffer of this array holds one slot per element, which a
+    /// [`PlNullArray`] does vacuously: it has no buffers at all, only a length.
+    ///
+    /// Its validity mask reads as scalar — a single unset bit covering every element — but there
+    /// is no buffer behind it to write out, so there is no scalar representation to leave.
+    #[inline]
+    pub const fn is_flat(&self) -> bool {
+        true
+    }
+
+    /// Returns this array in the flat representation, which is this array — see
+    /// [`PlNullArray::is_flat`]. This function is `O(1)`.
+    #[inline]
+    pub fn to_flat(&self) -> Flat<Self> {
+        // SAFETY: a null array has no backing buffer that could be scalar.
+        unsafe { Flat::from_array_unchecked(*self) }
+    }
+
+    /// Borrows this array as a flat one, which it always is — see [`PlNullArray::is_flat`].
+    #[inline]
+    pub fn as_flat(&self) -> Option<&Flat<Self>> {
+        // SAFETY: a null array has no backing buffer that could be scalar.
+        Some(unsafe { Flat::from_ref_unchecked(self) })
     }
 }
 

@@ -210,22 +210,22 @@ impl Series {
         }
     }
 
-    /// Returns a reference to the Arrow ArrayRef
+    /// Returns a reference to the chunk at `chunk_idx`.
     #[inline]
-    pub fn array_ref(&self, chunk_idx: usize) -> &ArrayRef {
-        &self.chunks()[chunk_idx] as &ArrayRef
+    pub fn array_ref(&self, chunk_idx: usize) -> &PlArrayRef {
+        &self.chunks()[chunk_idx] as &PlArrayRef
     }
 
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
     /// And that the null_count is updated (e.g. with a `compute_len()`)
-    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
         ca.chunks_mut()
     }
 
-    pub fn into_chunks(mut self) -> Vec<ArrayRef> {
+    pub fn into_chunks(mut self) -> Vec<PlArrayRef> {
         let ca = self._get_inner_mut();
         let chunks = std::mem::take(unsafe { ca.chunks_mut() });
         ca.compute_len();

@@ -5,6 +5,7 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len};
+use crate::flat::Flat;
 
 mod builder;
 
@@ -498,6 +499,46 @@ impl PlStructArray {
         // SAFETY: every field repeated one element `length` times, so it holds `length` elements,
         // and the mask is a single bit and therefore scalar.
         unsafe { Self::new_broadcast_unchecked(fields, length, validity) }
+    }
+
+    /// Whether every backing buffer of this array holds one slot per element.
+    ///
+    /// A struct array never broadcasts its fields — each holds one element per row already — so
+    /// the only buffer of its own is the validity mask, and this is
+    /// [`validity_is_scalar`](Self::validity_is_scalar) answered the other way round. Whether a
+    /// *field* is flat is a question for that field.
+    #[inline]
+    pub fn is_flat(&self) -> bool {
+        !self.validity_is_scalar()
+    }
+
+    /// Returns this array in the flat representation, writing out a scalar validity mask.
+    ///
+    /// This is `O(1)` for an array that is already flat and `O(len)` for one whose mask is
+    /// scalar; the fields are handed over as they are — see [`PlStructArray::is_flat`].
+    #[must_use]
+    pub fn to_flat(&self) -> Flat<Self> {
+        if self.is_flat() {
+            // SAFETY: just checked.
+            return unsafe { Flat::from_array_unchecked(self.clone()) };
+        }
+
+        let validity = self.validity().map(|validity| validity.to_flat());
+
+        // SAFETY: the fields are untouched and still hold `length` elements each, and the mask was
+        // just written out to one bit per element.
+        let array = unsafe { Self::new_unchecked(self.fields.clone(), self.length, validity) };
+
+        // SAFETY: the mask is flat, and a struct array has no other buffer of its own.
+        unsafe { Flat::from_array_unchecked(array) }
+    }
+
+    /// Borrows this array as a flat one, or `None` if its validity mask is scalar.
+    #[inline]
+    pub fn as_flat(&self) -> Option<&Flat<Self>> {
+        // SAFETY: `is_flat` is exactly the invariant of `Flat`.
+        self.is_flat()
+            .then(|| unsafe { Flat::from_ref_unchecked(self) })
     }
 }
 

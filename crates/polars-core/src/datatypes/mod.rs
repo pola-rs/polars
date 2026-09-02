@@ -31,12 +31,16 @@ use std::sync::Arc;
 mod schema;
 pub use aliases::*;
 pub use any_value::*;
-pub use arrow::array::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray};
+pub use polars_array::{ArrayCollectIterExt, ArrayFromIter, StaticArray};
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::reshape::*;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::NativeType;
+use polars_array::{
+    PlArray, PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeListArray, PlListArray,
+    PlNullArray, PlPrimitiveArray, PlStructArray,
+};
 use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
@@ -63,6 +67,7 @@ use serde::{Deserializer, Serializer};
 pub use temporal::*;
 
 pub use crate::chunked_array::logical::*;
+pub use crate::chunked_array::utf8_view::{PlUtf8ViewArray, PlUtf8ViewArrayBuilder};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 #[cfg(feature = "object")]
@@ -95,6 +100,18 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
     fn get_static_dtype() -> DataType
     where
         Self: Sized;
+
+    /// An array of `length` nulls, laid out the way [`Self::get_static_dtype`] describes.
+    ///
+    /// The chunks of a [`ChunkedArray`] carry no logical type, so this builds the array the static
+    /// dtype names and nothing more: a nested type has no inner type here, exactly as
+    /// `get_static_dtype` has none. Nulls of a *known* dtype come from
+    /// [`ChunkedArray::full_null_like`], which takes their shape from an array that already has
+    /// one.
+    ///
+    /// The nulls keep the [`scalar`](polars_array::broadcast) representation, so this is `O(1)`
+    /// in memory.
+    fn full_null_array(length: usize) -> Self::Array;
 }
 
 pub trait PolarsPhysicalType: PolarsDataType {
@@ -109,7 +126,7 @@ where
             OwnedPhysical = Self::Native,
             Physical<'a> = Self::Native,
             ZeroablePhysical<'a> = Self::Native,
-            Array = PrimitiveArray<Self::Native>,
+            Array = PlPrimitiveArray<Self::Native>,
             IsNested = FalseT,
             HasViews = FalseT,
             IsStruct = FalseT,
@@ -141,7 +158,7 @@ macro_rules! impl_polars_num_datatype {
             type Physical<'a> = $physical;
             type OwnedPhysical = $owned_phys;
             type ZeroablePhysical<'a> = $physical;
-            type Array = PrimitiveArray<$physical>;
+            type Array = PlPrimitiveArray<$physical>;
             type IsNested = FalseT;
             type HasViews = FalseT;
             type IsStruct = FalseT;
@@ -150,6 +167,11 @@ macro_rules! impl_polars_num_datatype {
             #[inline]
             fn get_static_dtype() -> DataType {
                 DataType::$variant
+            }
+
+            #[inline]
+            fn full_null_array(length: usize) -> Self::Array {
+                PlPrimitiveArray::new_full_null(length)
             }
         }
 
@@ -180,6 +202,11 @@ macro_rules! impl_polars_datatype {
             fn get_static_dtype() -> DataType {
                 $dtype
             }
+
+            #[inline]
+            fn full_null_array(length: usize) -> Self::Array {
+                <$arr>::new_full_null(length)
+            }
         }
     };
 }
@@ -189,7 +216,7 @@ macro_rules! impl_polars_categorical_datatype {
         impl_polars_datatype!(
             $pdt,
             unimplemented!(),
-            PrimitiveArray<$native>,
+            PlPrimitiveArray<$native>,
             'a,
             $native,
             $native,
@@ -226,18 +253,18 @@ impl_polars_num_datatype!(PolarsFloatType, Float16Type, Float16, pf16, pf16);
 impl_polars_num_datatype!(PolarsFloatType, Float32Type, Float32, f32, f32);
 impl_polars_num_datatype!(PolarsFloatType, Float64Type, Float64, f64, f64);
 
-impl_polars_datatype!(StringType, DataType::String, Utf8ViewArray, 'a, &'a str, Option<&'a str>, String, TrueT);
-impl_polars_datatype!(BinaryType, DataType::Binary, BinaryViewArray, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>, TrueT);
-impl_polars_datatype!(BinaryOffsetType, DataType::BinaryOffset, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>, FalseT);
-impl_polars_datatype!(BooleanType, DataType::Boolean, BooleanArray, 'a, bool, bool, bool, FalseT);
+impl_polars_datatype!(StringType, DataType::String, PlUtf8ViewArray, 'a, &'a str, Option<&'a str>, String, TrueT);
+impl_polars_datatype!(BinaryType, DataType::Binary, PlBinaryViewArray, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>, TrueT);
+impl_polars_datatype!(BinaryOffsetType, DataType::BinaryOffset, PlBinaryArray, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>, FalseT);
+impl_polars_datatype!(BooleanType, DataType::Boolean, PlBooleanArray, 'a, bool, bool, bool, FalseT);
 
 #[cfg(feature = "dtype-decimal")]
-impl_polars_datatype!(DecimalType, unimplemented!(), PrimitiveArray<i128>, 'a, i128, i128, i128, FalseT);
-impl_polars_datatype!(DatetimeType, unimplemented!(), PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
-impl_polars_datatype!(DurationType, unimplemented!(), PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
-impl_polars_datatype!(CategoricalType, unimplemented!(), PrimitiveArray<u32>, 'a, u32, u32, u32, FalseT);
-impl_polars_datatype!(DateType, DataType::Date, PrimitiveArray<i32>, 'a, i32, i32, i32, FalseT);
-impl_polars_datatype!(TimeType, DataType::Time, PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
+impl_polars_datatype!(DecimalType, unimplemented!(), PlPrimitiveArray<i128>, 'a, i128, i128, i128, FalseT);
+impl_polars_datatype!(DatetimeType, unimplemented!(), PlPrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
+impl_polars_datatype!(DurationType, unimplemented!(), PlPrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
+impl_polars_datatype!(CategoricalType, unimplemented!(), PlPrimitiveArray<u32>, 'a, u32, u32, u32, FalseT);
+impl_polars_datatype!(DateType, DataType::Date, PlPrimitiveArray<i32>, 'a, i32, i32, i32, FalseT);
+impl_polars_datatype!(TimeType, DataType::Time, PlPrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
 
 impl_polars_categorical_datatype!(Categorical8Type, UInt8Type, u8, U8);
 impl_polars_categorical_datatype!(Categorical16Type, UInt16Type, u16, U16);
@@ -246,10 +273,10 @@ impl_polars_categorical_datatype!(Categorical32Type, UInt32Type, u32, U32);
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}
 unsafe impl PolarsDataType for ListType {
-    type Physical<'a> = Box<dyn Array>;
-    type OwnedPhysical = Box<dyn Array>;
-    type ZeroablePhysical<'a> = Option<Box<dyn Array>>;
-    type Array = ListArray<i64>;
+    type Physical<'a> = Box<dyn PlArray>;
+    type OwnedPhysical = Box<dyn PlArray>;
+    type ZeroablePhysical<'a> = Option<Box<dyn PlArray>>;
+    type Array = PlListArray;
     type IsNested = TrueT;
     type HasViews = FalseT;
     type IsStruct = FalseT;
@@ -258,6 +285,11 @@ unsafe impl PolarsDataType for ListType {
     fn get_static_dtype() -> DataType {
         // Null as we cannot know anything without self.
         DataType::List(Box::new(DataType::Null))
+    }
+
+    fn full_null_array(length: usize) -> Self::Array {
+        // Every element is an empty list, over the values `List(Null)` calls for.
+        PlListArray::new_full_null(Box::new(PlNullArray::new_empty()), length)
     }
 }
 
@@ -279,7 +311,7 @@ unsafe impl PolarsDataType for StructType {
     type Physical<'a> = ();
     type OwnedPhysical = ();
     type ZeroablePhysical<'a> = ();
-    type Array = StructArray;
+    type Array = PlStructArray;
     type IsNested = TrueT;
     type HasViews = FalseT;
     type IsStruct = TrueT;
@@ -291,16 +323,20 @@ unsafe impl PolarsDataType for StructType {
     {
         DataType::Struct(vec![])
     }
+
+    fn full_null_array(length: usize) -> Self::Array {
+        PlStructArray::new_full_null(vec![], length)
+    }
 }
 
 #[cfg(feature = "dtype-array")]
 pub struct FixedSizeListType {}
 #[cfg(feature = "dtype-array")]
 unsafe impl PolarsDataType for FixedSizeListType {
-    type Physical<'a> = Box<dyn Array>;
-    type OwnedPhysical = Box<dyn Array>;
-    type ZeroablePhysical<'a> = Option<Box<dyn Array>>;
-    type Array = FixedSizeListArray;
+    type Physical<'a> = Box<dyn PlArray>;
+    type OwnedPhysical = Box<dyn PlArray>;
+    type ZeroablePhysical<'a> = Option<Box<dyn PlArray>>;
+    type Array = PlFixedSizeListArray;
     type IsNested = TrueT;
     type HasViews = FalseT;
     type IsStruct = FalseT;
@@ -309,6 +345,11 @@ unsafe impl PolarsDataType for FixedSizeListType {
     fn get_static_dtype() -> DataType {
         // Null as we cannot know anything without self.
         DataType::Array(Box::new(DataType::Null), 0)
+    }
+
+    fn full_null_array(length: usize) -> Self::Array {
+        // Every element is a list of width 0, which `Array(Null, 0)` is.
+        PlFixedSizeListArray::new_full_null(Box::new(PlNullArray::new_empty()), length)
     }
 }
 
@@ -327,6 +368,10 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
 
     fn get_static_dtype() -> DataType {
         DataType::Object(T::type_name())
+    }
+
+    fn full_null_array(length: usize) -> Self::Array {
+        ObjectArray::new_full_null(length)
     }
 }
 

@@ -1195,9 +1195,9 @@ where
     T: PolarsDataType,
 {
     let (left, right) = align_chunks_binary(left, right);
-    let left_validity = concatenate_validities(left.chunks());
-    let right_validity = concatenate_validities(right.chunks());
-    combine_validities_and(left_validity.as_ref(), right_validity.as_ref())
+    let left_validity = left.rechunk_validity();
+    let right_validity = right.rechunk_validity();
+    arrow::compute::utils::combine_validities_and(left_validity.as_ref(), right_validity.as_ref())
 }
 
 /// Convenience for `x.into_iter().map(Into::into).collect()` using an `into_vec()` function.
@@ -1278,13 +1278,13 @@ pub(crate) fn index_to_chunked_index_rev<
 
 pub fn first_null<'a, I>(iter: I) -> Option<usize>
 where
-    I: Iterator<Item = &'a dyn Array>,
+    I: Iterator<Item = &'a dyn PlArray>,
 {
     let mut offset = 0;
     for arr in iter {
         if let Some(mask) = arr.validity() {
             let len_mask = mask.len();
-            let n = mask.leading_ones();
+            let n = leading_ones(&mask);
             if n < len_mask {
                 return Some(offset + n);
             }
@@ -1298,13 +1298,13 @@ where
 
 pub fn first_non_null<'a, I>(iter: I) -> Option<usize>
 where
-    I: Iterator<Item = &'a dyn Array>,
+    I: Iterator<Item = &'a dyn PlArray>,
 {
     let mut offset = 0;
     for arr in iter {
         if let Some(mask) = arr.validity() {
             let len_mask = mask.len();
-            let n = mask.leading_zeros();
+            let n = leading_zeros(&mask);
             if n < len_mask {
                 return Some(offset + n);
             }
@@ -1318,7 +1318,7 @@ where
 
 pub fn last_non_null<'a, I>(iter: I, len: usize) -> Option<usize>
 where
-    I: DoubleEndedIterator<Item = &'a dyn Array>,
+    I: DoubleEndedIterator<Item = &'a dyn PlArray>,
 {
     if len == 0 {
         return None;
@@ -1327,7 +1327,7 @@ where
     for arr in iter.rev() {
         if let Some(mask) = arr.validity() {
             let len_mask = mask.len();
-            let n = mask.trailing_zeros();
+            let n = trailing_zeros(&mask);
             if n < len_mask {
                 return Some(len - offset - n - 1);
             }
@@ -1337,6 +1337,36 @@ where
         }
     }
     None
+}
+
+/// The number of set bits `mask` starts with.
+///
+/// A scalar mask is the one bit it holds covering every element, so it is either all ones or all
+/// zeros and never walked.
+fn leading_ones(mask: &PlBitmapRef<'_>) -> usize {
+    match mask.scalar_value() {
+        Some(true) => mask.len(),
+        Some(false) => 0,
+        None => mask.flat_bitmap().unwrap().leading_ones(),
+    }
+}
+
+/// The number of unset bits `mask` starts with — see [`leading_ones`].
+fn leading_zeros(mask: &PlBitmapRef<'_>) -> usize {
+    match mask.scalar_value() {
+        Some(true) => 0,
+        Some(false) => mask.len(),
+        None => mask.flat_bitmap().unwrap().leading_zeros(),
+    }
+}
+
+/// The number of unset bits `mask` ends with — see [`leading_ones`].
+fn trailing_zeros(mask: &PlBitmapRef<'_>) -> usize {
+    match mask.scalar_value() {
+        Some(true) => 0,
+        Some(false) => mask.len(),
+        None => mask.flat_bitmap().unwrap().trailing_zeros(),
+    }
 }
 
 /// ensure that nulls are propagated to both arrays
@@ -1351,7 +1381,7 @@ pub fn coalesce_nulls<'a, T: PolarsDataType>(
 
         for arr in a.chunks().iter() {
             for arr_b in unsafe { b.chunks_mut() } {
-                *arr_b = arr_b.with_validity(arr.validity().cloned())
+                *arr_b = arr_b.with_validity(arr.validity().map(|v| v.to_flat_or_scalar()))
             }
         }
         b.compute_len();
@@ -1366,12 +1396,10 @@ pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {
         let mut a = a.as_materialized_series().rechunk();
         let mut b = b.as_materialized_series().rechunk();
         for (arr_a, arr_b) in unsafe { a.chunks_mut().iter_mut().zip(b.chunks_mut()) } {
-            let validity = match (arr_a.validity(), arr_b.validity()) {
-                (None, Some(b)) => Some(b.clone()),
-                (Some(a), Some(b)) => Some(a & b),
-                (Some(a), None) => Some(a.clone()),
-                (None, None) => None,
-            };
+            let validity = crate::chunked_array::validity::combine_validities_and(
+                arr_a.validity(),
+                arr_b.validity(),
+            );
             *arr_a = arr_a.with_validity(validity.clone());
             *arr_b = arr_b.with_validity(validity);
         }

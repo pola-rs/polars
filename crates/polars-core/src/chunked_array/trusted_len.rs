@@ -2,6 +2,8 @@ use std::borrow::Borrow;
 
 use arrow::legacy::trusted_len::{FromIteratorReversed, TrustedLenPush};
 
+use polars_array::arrow::import::{binary_from_arrow, boolean_from_arrow, primitive_from_arrow};
+
 use crate::chunked_array::from_iterator::PolarsAsRef;
 use crate::prelude::*;
 use crate::utils::{FromTrustedLenIterator, NoNull};
@@ -16,11 +18,10 @@ where
     {
         // SAFETY: iter is TrustedLen.
         let iter = iter.into_iter();
-        let arr = unsafe {
-            PrimitiveArray::from_trusted_len_iter_unchecked(iter)
-                .to(T::get_static_dtype().to_arrow(CompatLevel::newest()))
-        };
-        arr.into()
+        // The Arrow builders are what the trusted-length collect is written against; importing
+        // the array it built hands the buffers over, which is `O(1)`.
+        let arr = unsafe { PrimitiveArray::from_trusted_len_iter_unchecked(iter) };
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, primitive_from_arrow(&arr))
     }
 }
 
@@ -37,13 +38,11 @@ where
     {
         // SAFETY: iter is TrustedLen.
         let iter = iter.into_iter();
-        let values = unsafe { Vec::from_trusted_len_iter_unchecked(iter) }.into();
-        let arr = PrimitiveArray::new(
-            T::get_static_dtype().to_arrow(CompatLevel::newest()),
-            values,
-            None,
-        );
-        NoNull::new(arr.into())
+        let values: polars_buffer::Buffer<T::Native> =
+            unsafe { Vec::from_trusted_len_iter_unchecked(iter) }.into();
+        let length = values.len();
+        let arr = PlPrimitiveArray::new(values, length, None);
+        NoNull::new(ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr))
     }
 }
 
@@ -53,7 +52,7 @@ where
 {
     fn from_trusted_len_iter_rev<I: TrustedLen<Item = Option<T::Native>>>(iter: I) -> Self {
         let arr: PrimitiveArray<T::Native> = iter.collect_reversed();
-        arr.into()
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, primitive_from_arrow(&arr))
     }
 }
 
@@ -63,21 +62,27 @@ where
 {
     fn from_trusted_len_iter_rev<I: TrustedLen<Item = T::Native>>(iter: I) -> Self {
         let arr: PrimitiveArray<T::Native> = iter.collect_reversed();
-        NoNull::new(arr.into())
+        NoNull::new(ChunkedArray::with_chunk(
+            PlSmallStr::EMPTY,
+            primitive_from_arrow(&arr),
+        ))
     }
 }
 
 impl FromIteratorReversed<Option<bool>> for BooleanChunked {
     fn from_trusted_len_iter_rev<I: TrustedLen<Item = Option<bool>>>(iter: I) -> Self {
         let arr: BooleanArray = iter.collect_reversed();
-        arr.into()
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, boolean_from_arrow(&arr))
     }
 }
 
 impl FromIteratorReversed<bool> for NoNull<BooleanChunked> {
     fn from_trusted_len_iter_rev<I: TrustedLen<Item = bool>>(iter: I) -> Self {
         let arr: BooleanArray = iter.collect_reversed();
-        NoNull::new(arr.into())
+        NoNull::new(ChunkedArray::with_chunk(
+            PlSmallStr::EMPTY,
+            boolean_from_arrow(&arr),
+        ))
     }
 }
 
@@ -105,7 +110,7 @@ impl FromTrustedLenIterator<Option<bool>> for ChunkedArray<BooleanType> {
     {
         let iter = iter.into_iter();
         let arr: BooleanArray = iter.collect_trusted();
-        arr.into()
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, boolean_from_arrow(&arr))
     }
 }
 
@@ -116,7 +121,7 @@ impl FromTrustedLenIterator<bool> for BooleanChunked {
     {
         let iter = iter.into_iter();
         let arr: BooleanArray = iter.collect_trusted();
-        arr.into()
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, boolean_from_arrow(&arr))
     }
 }
 
@@ -171,8 +176,8 @@ where
     Ptr: PolarsAsRef<[u8]>,
 {
     fn from_iter_trusted_length<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let arr = BinaryArray::from_iter_values(iter.into_iter());
-        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
+        let arr = BinaryArray::<i64>::from_iter_values(iter.into_iter());
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, binary_from_arrow(&arr))
     }
 }
 
@@ -182,8 +187,8 @@ where
 {
     fn from_iter_trusted_length<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let arr = BinaryArray::from_iter(iter);
-        ChunkedArray::with_chunk(PlSmallStr::EMPTY, arr)
+        let arr = BinaryArray::<i64>::from_iter(iter);
+        ChunkedArray::with_chunk(PlSmallStr::EMPTY, binary_from_arrow(&arr))
     }
 }
 
@@ -203,7 +208,7 @@ mod test {
     fn test_reverse_collect() {
         let ca: NoNull<Int32Chunked> = (0..5).collect_reversed();
         let arr = ca.downcast_iter().next().unwrap();
-        let s = arr.values().as_slice();
+        let s = arr.flat_values().unwrap().as_slice();
         assert_eq!(s, &[4, 3, 2, 1, 0]);
 
         let ca: Int32Chunked = (0..5)

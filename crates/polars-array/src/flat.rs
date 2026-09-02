@@ -132,10 +132,23 @@ impl<T> Flat<T> {
     /// # Safety
     /// Every backing buffer of `array` must hold one slot per element.
     #[inline(always)]
-    pub(crate) unsafe fn from_ref_unchecked(array: &T) -> &Self {
+    pub unsafe fn from_ref_unchecked(array: &T) -> &Self {
         // SAFETY: `Flat` is `repr(transparent)` over the array it wraps, which the caller
         // guarantees is flat.
         unsafe { &*(std::ptr::from_ref(array).cast::<Self>()) }
+    }
+
+    /// Takes `array` as a flat one.
+    ///
+    /// This is the owned counterpart of [`Flat::from_ref_unchecked`], for the arrays that are
+    /// laid out flat by construction and for the wrappers of another crate that delegate to one
+    /// which is — the arrays of this crate reach it through their own `to_flat`.
+    ///
+    /// # Safety
+    /// Every backing buffer of `array` must hold one slot per element.
+    #[inline(always)]
+    pub unsafe fn from_array_unchecked(array: T) -> Self {
+        Self(array)
     }
 
     /// The array itself, which is in the flat representation.

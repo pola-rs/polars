@@ -1,6 +1,7 @@
 //! Implementations of arithmetic operations on ChunkedArrays.
 #[cfg(feature = "dtype-decimal")]
 mod decimal;
+pub mod kernel;
 mod numeric;
 
 use std::ops::{Add, Div, Mul, Rem, Sub};

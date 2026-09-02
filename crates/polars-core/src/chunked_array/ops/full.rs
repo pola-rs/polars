@@ -1,16 +1,20 @@
 use arrow::bitmap::Bitmap;
+use polars_array::builder::full_null_like;
 
 use crate::chunked_array::builder::get_list_builder;
+use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
 use crate::series::IsSorted;
+
+// A `ChunkedArray` of one value repeated is the scalar representation of `polars-array`: every
+// `full` here is `O(1)` in both time and memory, however long the result is.
 
 impl<T> ChunkFull<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     fn full(name: PlSmallStr, value: T::Native, length: usize) -> Self {
-        let data = vec![value; length];
-        let mut out = ChunkedArray::from_vec(name, data);
+        let mut out = ChunkedArray::with_chunk(name, PlPrimitiveArray::new_scalar(value, length));
         out.set_sorted_flag(IsSorted::Ascending);
         out
     }
@@ -21,18 +25,13 @@ where
     T: PolarsNumericType,
 {
     fn full_null(name: PlSmallStr, length: usize) -> Self {
-        let arr = PrimitiveArray::new_null(
-            T::get_static_dtype().to_arrow(CompatLevel::newest()),
-            length,
-        );
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, T::full_null_array(length))
     }
 }
+
 impl ChunkFull<bool> for BooleanChunked {
     fn full(name: PlSmallStr, value: bool, length: usize) -> Self {
-        let bits = Bitmap::new_with_value(value, length);
-        let arr = BooleanArray::from_data_default(bits, None);
-        let mut out = BooleanChunked::with_chunk(name, arr);
+        let mut out = BooleanChunked::with_chunk(name, PlBooleanArray::new_scalar(value, length));
         out.set_sorted_flag(IsSorted::Ascending);
         out
     }
@@ -40,16 +39,13 @@ impl ChunkFull<bool> for BooleanChunked {
 
 impl ChunkFullNull for BooleanChunked {
     fn full_null(name: PlSmallStr, length: usize) -> Self {
-        let arr = BooleanArray::new_null(ArrowDataType::Boolean, length);
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, BooleanType::full_null_array(length))
     }
 }
 
 impl<'a> ChunkFull<&'a str> for StringChunked {
     fn full(name: PlSmallStr, value: &'a str, length: usize) -> Self {
-        let mut builder = StringChunkedBuilder::new(name, length);
-        builder.chunk_builder.extend_constant(length, Some(value));
-        let mut out = builder.finish();
+        let mut out = StringChunked::with_chunk(name, PlUtf8ViewArray::new_scalar(value, length));
         out.set_sorted_flag(IsSorted::Ascending);
         out
     }
@@ -57,16 +53,13 @@ impl<'a> ChunkFull<&'a str> for StringChunked {
 
 impl ChunkFullNull for StringChunked {
     fn full_null(name: PlSmallStr, length: usize) -> Self {
-        let arr = Utf8ViewArray::new_null(DataType::String.to_arrow(CompatLevel::newest()), length);
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, StringType::full_null_array(length))
     }
 }
 
 impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
     fn full(name: PlSmallStr, value: &'a [u8], length: usize) -> Self {
-        let mut builder = BinaryChunkedBuilder::new(name, length);
-        builder.chunk_builder.extend_constant(length, Some(value));
-        let mut out = builder.finish();
+        let mut out = BinaryChunked::with_chunk(name, PlBinaryViewArray::new_scalar(value, length));
         out.set_sorted_flag(IsSorted::Ascending);
         out
     }
@@ -74,18 +67,14 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
 
 impl ChunkFullNull for BinaryChunked {
     fn full_null(name: PlSmallStr, length: usize) -> Self {
-        let arr =
-            BinaryViewArray::new_null(DataType::Binary.to_arrow(CompatLevel::newest()), length);
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, BinaryType::full_null_array(length))
     }
 }
 
 impl<'a> ChunkFull<&'a [u8]> for BinaryOffsetChunked {
     fn full(name: PlSmallStr, value: &'a [u8], length: usize) -> Self {
-        let mut mutable = MutableBinaryArray::with_capacities(length, length * value.len());
-        mutable.extend_values(std::iter::repeat_n(value, length));
-        let arr: BinaryArray<i64> = mutable.into();
-        let mut out = ChunkedArray::with_chunk(name, arr);
+        let mut out =
+            BinaryOffsetChunked::with_chunk(name, PlBinaryArray::new_scalar(value, length));
         out.set_sorted_flag(IsSorted::Ascending);
         out
     }
@@ -93,11 +82,7 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryOffsetChunked {
 
 impl ChunkFullNull for BinaryOffsetChunked {
     fn full_null(name: PlSmallStr, length: usize) -> Self {
-        let arr = BinaryArray::<i64>::new_null(
-            DataType::BinaryOffset.to_arrow(CompatLevel::newest()),
-            length,
-        );
-        ChunkedArray::with_chunk(name, arr)
+        ChunkedArray::with_chunk(name, BinaryOffsetType::full_null_array(length))
     }
 }
 
@@ -136,17 +121,11 @@ impl ArrayChunked {
         inner_dtype: &DataType,
         width: usize,
     ) -> ArrayChunked {
-        let arr = FixedSizeListArray::new_null(
-            ArrowDataType::FixedSizeList(
-                Box::new(ArrowField::new(
-                    LIST_VALUES_NAME,
-                    inner_dtype.to_physical().to_arrow(CompatLevel::newest()),
-                    true,
-                )),
-                width,
-            ),
-            length,
-        );
+        // An element of a null list is as wide as any other, so the one row the values stand for
+        // is `width` nulls of the inner type.
+        let values = full_null_like(&*new_empty_chunk(inner_dtype), width);
+        let arr = PlFixedSizeListArray::new_full_null(values, length);
+
         // SAFETY: physical type matches the logical.
         unsafe {
             ChunkedArray::from_chunks_and_dtype(
@@ -163,16 +142,8 @@ impl ChunkFull<&Series> for ArrayChunked {
     fn full(name: PlSmallStr, value: &Series, length: usize) -> ArrayChunked {
         let width = value.len();
         let dtype = value.dtype();
-        let arrow_dtype = ArrowDataType::FixedSizeList(
-            Box::new(ArrowField::new(
-                LIST_VALUES_NAME,
-                dtype.to_physical().to_arrow(CompatLevel::newest()),
-                true,
-            )),
-            width,
-        );
-        let value = value.rechunk().chunks()[0].clone();
-        let arr = FixedSizeListArray::full(length, value, arrow_dtype);
+        let values = value.rechunk().chunks()[0].clone();
+        let arr = PlFixedSizeListArray::new_scalar(values, length);
 
         // SAFETY: physical type matches the logical.
         unsafe {
@@ -198,14 +169,9 @@ impl ListChunked {
         length: usize,
         inner_dtype: &DataType,
     ) -> ListChunked {
-        let arr: ListArray<i64> = ListArray::new_null(
-            ArrowDataType::LargeList(Box::new(ArrowField::new(
-                LIST_VALUES_NAME,
-                inner_dtype.to_physical().to_arrow(CompatLevel::newest()),
-                true,
-            ))),
-            length,
-        );
+        // Every element is an empty list, so the values are only there to carry the inner shape.
+        let arr = PlListArray::new_full_null(new_empty_chunk(inner_dtype), length);
+
         // SAFETY: physical type matches the logical.
         unsafe {
             ChunkedArray::from_chunks_and_dtype(
@@ -216,6 +182,7 @@ impl ListChunked {
         }
     }
 }
+
 #[cfg(feature = "dtype-struct")]
 impl ChunkFullNull for StructChunked {
     fn full_null(name: PlSmallStr, length: usize) -> StructChunked {

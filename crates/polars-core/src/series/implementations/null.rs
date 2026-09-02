@@ -189,10 +189,10 @@ impl SeriesTrait for NullChunked {
         self.name = name
     }
 
-    fn chunks(&self) -> &Vec<ArrayRef> {
+    fn chunks(&self) -> &Vec<PlArrayRef> {
         &self.chunks
     }
-    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
         &mut self.chunks
     }
 

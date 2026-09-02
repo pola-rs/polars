@@ -74,6 +74,31 @@ impl PlBinaryViewArrayBuilder {
         builder
     }
 
+    /// Appends `value` as an element of its own.
+    ///
+    /// The bytes are copied into the buffers this builder is writing into unless a view inlines
+    /// them, which is what makes this the one way to append a value that is not already an element
+    /// of an array — a string built into a buffer the caller reuses, say.
+    pub fn push_value(&mut self, value: &[u8]) {
+        let view = self.copy_value(value);
+        self.views.push(view);
+        self.validity.extend_constant(1, true);
+    }
+
+    /// Appends a null.
+    pub fn push_null(&mut self) {
+        self.views.push(View::default());
+        self.validity.extend_constant(1, false);
+    }
+
+    /// Appends `value`, or a null if it is [`None`].
+    pub fn push(&mut self, value: Option<&[u8]>) {
+        match value {
+            Some(value) => self.push_value(value),
+            None => self.push_null(),
+        }
+    }
+
     /// The index the first of the buffers being written into will have.
     fn buffer_idx_offset(&self) -> u32 {
         u32::try_from(self.buffers.len())

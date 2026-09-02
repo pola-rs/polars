@@ -10,7 +10,6 @@ mod string;
 
 use std::sync::Arc;
 
-use arrow::array::*;
 use arrow::bitmap::Bitmap;
 pub use boolean::*;
 #[cfg(feature = "dtype-categorical")]

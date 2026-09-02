@@ -108,10 +108,10 @@ where
         ObjectChunked::dtype(&self.0)
     }
 
-    fn chunks(&self) -> &Vec<ArrayRef> {
+    fn chunks(&self) -> &Vec<PlArrayRef> {
         ObjectChunked::chunks(&self.0)
     }
-    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<PlArrayRef> {
         self.0.chunks_mut()
     }
 
