@@ -223,19 +223,23 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
         let array = array.bool()?.rechunk();
         let array = array.downcast_as_array();
 
-        let array = if let Some(validity) = array.validity() {
-            array.values() & validity
+        // Nulls count as false. `SkipBatchPredicate` hands the mask out as one bit per row, so
+        // there is no scalar representation to preserve past this point.
+        let mask = if let Some(validity) = array.validity()
+            && validity.unset_bits() > 0
+        {
+            &array.values().to_flat() & &validity.to_flat()
         } else {
-            array.values().clone()
+            array.values().to_flat()
         };
 
         // @NOTE: Certain predicates like `1 == 1` will only output 1 value. We need to broadcast
         // the result back to the dataframe length.
-        if array.len() == 1 && df.height() != 0 {
-            return Ok(Bitmap::new_with_value(array.get_bit(0), df.height()));
+        if mask.len() == 1 && df.height() != 0 {
+            return Ok(Bitmap::new_with_value(mask.get_bit(0), df.height()));
         }
 
-        assert_eq!(array.len(), df.height());
-        Ok(array)
+        assert_eq!(mask.len(), df.height());
+        Ok(mask)
     }
 }

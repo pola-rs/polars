@@ -230,19 +230,17 @@ pub fn initialize_scan_predicate<'a>(
             );
         }
 
-        let hive_inclusion_bitmap = hive_predicate
+        let hive_inclusion_array = hive_predicate
             .evaluate_io(hive_parts.df())?
             .bool()?
             .rechunk()
             .into_owned()
             .downcast_into_iter()
             .next()
-            .unwrap()
-            .values()
-            .clone();
+            .unwrap();
 
         let hive_len = hive_parts.df().height();
-        let mask_len = hive_inclusion_bitmap.len();
+        let mask_len = hive_inclusion_array.len();
 
         if hive_len != mask_len {
             polars_warn!(
@@ -257,6 +255,10 @@ pub fn initialize_scan_predicate<'a>(
             );
             return Ok((None, Some(predicate)));
         }
+
+        // TODO(polars-array-scalar): a hive predicate that holds throughout leaves the mask as a
+        // single bit; `SkipFilesMask` holds an `arrow::Bitmap`, so it is written out here.
+        let hive_inclusion_bitmap = hive_inclusion_array.values().to_flat();
 
         if predicate.hive_predicate_is_full_predicate {
             let skip_files_mask = SkipFilesMask::Inclusion(hive_inclusion_bitmap);
