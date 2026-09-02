@@ -100,6 +100,28 @@
 //! [`is_valid_fixed_size_values_len`]. Being empty leaves no element for a scalar values array to
 //! stand for, so a `length` of zero admits only empty values, unlike the buffers above.
 
+use polars_utils::slice_broadcast_iter::SliceBroadcastIter;
+
+/// Iterates the slots a backing buffer holds for an array of `length` elements, in order.
+///
+/// This is [`broadcast_index`] hoisted out of the loop: which of the two representations the
+/// buffer is in is settled once, here, rather than at every element, so that a flat buffer is
+/// walked as the slice it already is — which vectorizes — and a scalar one yields the single
+/// value it holds `length` times over, without materializing it.
+///
+/// # Panics
+/// Panics unless `buffer` is [flat](is_flat_buffer_len) or [scalar](is_scalar_buffer_len) for
+/// `length`, which every array of this crate upholds of every buffer it is backed by.
+#[inline]
+pub(crate) fn broadcast_slice<T>(buffer: &[T], length: usize) -> SliceBroadcastIter<'_, T> {
+    SliceBroadcastIter::new_broadcast(buffer, length).unwrap_or_else(|| {
+        panic!(
+            "a buffer of length {} is neither flat nor scalar for an array of length {length}",
+            buffer.len(),
+        )
+    })
+}
+
 /// Maps a logical element index onto a slot in a backing buffer of length `buffer_len`.
 ///
 /// Returns `i` when the buffer holds a slot for every element, and `0` when the buffer is a

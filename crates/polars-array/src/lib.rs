@@ -36,6 +36,8 @@ pub mod concatenate;
 pub mod fixed_size_binary;
 pub mod fixed_size_list;
 pub mod flat;
+#[cfg(test)]
+mod iterator_tests;
 pub mod list;
 mod macros;
 pub mod null;

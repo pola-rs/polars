@@ -2,12 +2,14 @@ use std::ops::Range;
 
 use arrow::trusted_len::TrustedLen;
 
-use crate::bitmap::PlBitmapRef;
-use crate::broadcast::broadcast_index;
+use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 
 /// Iterator over the elements of a [`PlBinaryArray`](super::PlBinaryArray), ignoring validity.
 ///
 /// Each element is the values buffer sliced to the range that element covers, which is `O(1)`.
+/// Scalar offsets are not materialized: whether they hold one range per element or the one range
+/// every element covers does not depend on the position being read — see [`Self::is_scalar`] —
+/// so a loop over the elements settles it once rather than at every one of them.
 #[derive(Clone)]
 pub struct PlBinaryValuesIter<'a> {
     values: &'a [u8],
@@ -28,17 +30,28 @@ impl<'a> PlBinaryValuesIter<'a> {
         }
     }
 
+    /// Whether the offsets hold the one range every element covers, rather than one per element.
+    ///
+    /// Two offsets are a single range, which is what scalar offsets are — and what the offsets of
+    /// an array of one element are too, whichever representation it is in. Either way position
+    /// zero is the only start there is. This does not depend on the position being read, so a
+    /// loop over the elements settles it once rather than at every one of them.
+    #[inline(always)]
+    fn is_scalar(&self) -> bool {
+        self.offsets.len() == 2
+    }
+
+    /// The bytes the element at position `i` covers.
     #[inline(always)]
     fn get(&self, i: usize) -> &'a [u8] {
-        // Scalar offsets hold the one range every element covers, so they are read at slot zero.
-        let i = broadcast_index(i, self.offsets.len() - 1);
-
-        // SAFETY: `i` comes from `self.range`, so the range it reads is in bounds of the offsets:
-        // they hold one slot more than the starts `broadcast_index` maps onto. The offsets are
-        // ordered and bounded by the length of the values, so the range is in bounds of those.
+        // SAFETY: `i` comes from `self.range`, so the slot it reads is a start the offsets hold,
+        // and the end that follows it is in bounds too: they hold one slot more than the starts.
+        // The offsets are ordered and bounded by the length of the values, so the range they
+        // cover is in bounds of those.
         unsafe {
-            let start = *self.offsets.get_unchecked(i) as usize;
-            let end = *self.offsets.get_unchecked(i + 1) as usize;
+            let slot = if self.is_scalar() { 0 } else { i };
+            let start = *self.offsets.get_unchecked(slot) as usize;
+            let end = *self.offsets.get_unchecked(slot + 1) as usize;
             self.values.get_unchecked(start..end)
         }
     }
@@ -61,6 +74,47 @@ impl<'a> Iterator for PlBinaryValuesIter<'a> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.range.size_hint()
     }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.range.len()
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+
+    /// Hoists the representation of the offsets out of the loop: flat ones are walked as the
+    /// consecutive ranges they are, and scalar ones fold over the one range they hold.
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let count = self.range.len();
+
+        if self.is_scalar() {
+            // The offsets are scalar, so every element covers the one range their two slots hold
+            // — which is what position zero reads, and is read once here rather than per element.
+            if count == 0 {
+                return init;
+            }
+            let value = self.get(0);
+            return (0..count).fold(init, |acc, _| f(acc, value));
+        }
+
+        let (values, offsets) = (self.values, self.offsets);
+        // SAFETY: flat offsets hold the start of every element plus the end of the last, so the
+        // starts the range covers and the end that follows them are in bounds.
+        let starts = unsafe { offsets.get_unchecked(self.range.start..=self.range.end) };
+
+        starts.windows(2).fold(init, |acc, range| {
+            // SAFETY: the offsets are ordered and bounded by the length of the values.
+            let value = unsafe { values.get_unchecked(range[0] as usize..range[1] as usize) };
+            f(acc, value)
+        })
+    }
 }
 
 impl DoubleEndedIterator for PlBinaryValuesIter<'_> {
@@ -68,24 +122,39 @@ impl DoubleEndedIterator for PlBinaryValuesIter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.range.next_back().map(|i| self.get(i))
     }
+
+    #[inline]
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        self.range.nth_back(n).map(|i| self.get(i))
+    }
 }
 
-impl ExactSizeIterator for PlBinaryValuesIter<'_> {}
+impl ExactSizeIterator for PlBinaryValuesIter<'_> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.range.len()
+    }
+}
+
 unsafe impl TrustedLen for PlBinaryValuesIter<'_> {}
 
 /// Iterator over the optional elements of a [`PlBinaryArray`](super::PlBinaryArray).
 ///
-/// Neither a scalar validity mask nor scalar offsets are materialized.
+/// Neither a scalar validity mask nor scalar offsets are materialized, and the mask is walked
+/// alongside the values rather than indexed.
 #[derive(Clone)]
 pub struct PlBinaryIter<'a> {
     values: PlBinaryValuesIter<'a>,
-    validity: Option<PlBitmapRef<'a>>,
+    validity: ValidityIter<'a>,
 }
 
 impl<'a> PlBinaryIter<'a> {
     /// # Safety
-    /// `offsets` must be flat or scalar for `length`, per [`crate::broadcast`], and `validity`
-    /// must have `length` bits.
+    /// `offsets` must be flat or scalar for `length`, per [`crate::broadcast`], and must be
+    /// ordered and bounded by the length of `values`.
+    ///
+    /// # Panics
+    /// Panics unless `validity` has `length` bits.
     #[inline]
     pub(super) fn new(
         values: &'a [u8],
@@ -93,19 +162,21 @@ impl<'a> PlBinaryIter<'a> {
         validity: Option<PlBitmapRef<'a>>,
         length: usize,
     ) -> Self {
+        assert!(validity.is_none_or(|validity| validity.len() == length));
+
         Self {
             values: PlBinaryValuesIter::new(values, offsets, length),
-            validity,
+            validity: ValidityIter::new(validity),
         }
     }
 
-    /// Whether the element the values iterator is about to yield at `i` is valid.
-    #[inline(always)]
-    fn is_valid(&self, i: usize) -> bool {
-        // SAFETY: `i` is a position the values iterator has left to yield, so it is in bounds of
-        // the mask, which has one bit per element.
-        self.validity
-            .is_none_or(|validity| unsafe { validity.get_unchecked(i) })
+    /// The values and the mask that says which of them are elements, to walk in one loop.
+    ///
+    /// The mask has its representation hoisted out, so that the loop the caller runs reads no
+    /// mask at all where every element is valid, and neither mask nor values where none is.
+    #[inline]
+    fn split(self) -> (PlBinaryValuesIter<'a>, ValidityFold<'a>) {
+        (self.values, self.validity.into_mask())
     }
 }
 
@@ -114,32 +185,157 @@ impl<'a> Iterator for PlBinaryIter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let i = self.values.range.start;
         let value = self.values.next()?;
-        Some(self.is_valid(i).then_some(value))
+        Some(self.validity.next().then_some(value))
     }
 
     #[inline]
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let i = self.values.range.start.checked_add(n)?;
+        // The mask is advanced alongside the values, whether or not there is a value left.
+        let is_valid = self.validity.nth(n);
         let value = self.values.nth(n)?;
-        Some(self.is_valid(i).then_some(value))
+        Some(is_valid.then_some(value))
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.values.size_hint()
     }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.values.count()
+    }
+
+    /// Walks to the last element from the back, rather than through every one before it.
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+
+    /// Hoists the validity mask out of the loop, and the representation of the offsets with it.
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        match self.split() {
+            (values, ValidityFold::Valid) => values.fold(init, |acc, value| f(acc, Some(value))),
+            (values, ValidityFold::Null) => values.fold(init, |acc, _| f(acc, None)),
+            (values, ValidityFold::Bits(mask)) => {
+                values.zip(mask).fold(init, |acc, (value, is_valid)| {
+                    f(acc, is_valid.then_some(value))
+                })
+            },
+        }
+    }
 }
 
 impl DoubleEndedIterator for PlBinaryIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        let i = self.values.range.end.checked_sub(1)?;
         let value = self.values.next_back()?;
-        Some(self.is_valid(i).then_some(value))
+        Some(self.validity.next_back().then_some(value))
     }
 }
 
-impl ExactSizeIterator for PlBinaryIter<'_> {}
+impl ExactSizeIterator for PlBinaryIter<'_> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+}
+
 unsafe impl TrustedLen for PlBinaryIter<'_> {}
+
+#[cfg(test)]
+mod tests {
+    use arrow::bitmap::Bitmap;
+
+    use crate::PlBinaryArray;
+    use crate::iterator_tests::assert_iterates;
+
+    /// The elements of a flat array, which are of different lengths and include an empty one.
+    fn elements() -> [&'static [u8]; 3] {
+        [b"ab", b"", b"cde"]
+    }
+
+    fn flat_array() -> PlBinaryArray {
+        PlBinaryArray::from_iter(elements().map(Some))
+    }
+
+    #[test]
+    fn flat() {
+        let array = flat_array();
+
+        assert_iterates(array.values_iter(), &elements());
+        assert_iterates(array.iter(), &elements().map(Some));
+    }
+
+    #[test]
+    fn flat_under_a_flat_mask() {
+        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
+
+        assert_iterates(array.values_iter(), &elements());
+        assert_iterates(array.iter(), &[Some(b"ab".as_slice()), None, Some(b"cde")]);
+    }
+
+    #[test]
+    fn flat_under_a_scalar_mask() {
+        let array = flat_array().with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
+
+        assert_iterates(array.iter(), &[None, None, None]);
+    }
+
+    #[test]
+    fn scalar() {
+        let array = PlBinaryArray::new_scalar(b"xy", 4);
+
+        assert_iterates(array.values_iter(), &[b"xy".as_slice(); 4]);
+        assert_iterates(array.iter(), &[Some(b"xy".as_slice()); 4]);
+    }
+
+    #[test]
+    fn scalar_under_a_flat_mask() {
+        let array = PlBinaryArray::new_scalar(b"xy", 3)
+            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+
+        assert_iterates(array.iter(), &[Some(b"xy".as_slice()), None, Some(b"xy")]);
+    }
+
+    #[test]
+    fn all_null() {
+        assert_iterates(PlBinaryArray::new_full_null(3).iter(), &[None; 3]);
+    }
+
+    #[test]
+    fn empty() {
+        let array = PlBinaryArray::new_empty();
+
+        assert_iterates(array.values_iter(), &[]);
+        assert_iterates(array.iter(), &[]);
+    }
+
+    #[test]
+    fn broadcast() {
+        let array = PlBinaryArray::from_iter([Some(b"ab")]);
+
+        assert_iterates(array.broadcast_values_iter(4), &[b"ab".as_slice(); 4]);
+        assert_iterates(array.broadcast_iter(4), &[Some(b"ab".as_slice()); 4]);
+
+        assert_iterates(
+            PlBinaryArray::new_full_null(1).broadcast_iter(4),
+            &[None; 4],
+        );
+    }
+
+    #[test]
+    fn a_broadcast_array_is_not_materialized() {
+        // Walking a billion elements would not finish; the scalar path must hit.
+        let array = PlBinaryArray::new_scalar(b"xy", 1_000_000_000);
+
+        assert_eq!(array.values_iter().count(), 1_000_000_000);
+        assert_eq!(array.values_iter().nth(999_999_999), Some(b"xy".as_slice()));
+        assert_eq!(array.iter().last(), Some(Some(b"xy".as_slice())));
+    }
+}

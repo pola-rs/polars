@@ -1,7 +1,5 @@
 //! The typed counterpart of [`PlArray`].
 
-use std::ops::Range;
-
 use arrow::bitmap::Bitmap;
 use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
@@ -10,7 +8,7 @@ use bytemuck::Zeroable;
 use crate::array::PlArray;
 use crate::binary::{PlBinaryIter, PlBinaryValuesIter};
 use crate::binview::{PlBinaryViewIter, PlBinaryViewValuesIter};
-use crate::bitmap::{PlBitmapIter, PlBitmapRef};
+use crate::bitmap::{PlBitmapIter, PlBitmapRef, ValidityFold, ValidityIter};
 use crate::boolean::PlBooleanIter;
 use crate::broadcast::assert_broadcastable;
 use crate::builder::StaticArrayBuilder;
@@ -951,11 +949,12 @@ impl StaticArray for PlNullArray {
 /// This is what a [`PlStructArray`] and a [`PlNullArray`] iterate as: all there is to an element
 /// of one is whether it is null, so an element is `()` and the iterator is the validity mask under
 /// another name. A scalar mask is not materialized, so this is `O(1)` in memory regardless of the
-/// length.
+/// length, and a flat one is walked a machine word at a time rather than indexed a bit at a time.
 #[derive(Clone)]
 pub struct PlUnitIter<'a> {
-    validity: Option<PlBitmapRef<'a>>,
-    range: Range<usize>,
+    validity: ValidityIter<'a>,
+    /// How many elements are left; the mask, when there is one, has one bit per element of them.
+    remaining: usize,
 }
 
 impl<'a> PlUnitIter<'a> {
@@ -966,17 +965,9 @@ impl<'a> PlUnitIter<'a> {
         assert!(validity.is_none_or(|validity| validity.len() == length));
 
         Self {
-            validity,
-            range: 0..length,
+            validity: ValidityIter::new(validity),
+            remaining: length,
         }
-    }
-
-    #[inline(always)]
-    fn get(&self, i: usize) -> Option<()> {
-        // SAFETY: `i` comes from `self.range`, so it is in bounds of the mask.
-        self.validity
-            .is_none_or(|validity| unsafe { validity.get_unchecked(i) })
-            .then_some(())
     }
 }
 
@@ -985,28 +976,72 @@ impl Iterator for PlUnitIter<'_> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.range.next().map(|i| self.get(i))
+        self.remaining = self.remaining.checked_sub(1)?;
+        Some(self.validity.next().then_some(()))
     }
 
     #[inline]
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.range.nth(n).map(|i| self.get(i))
+        // The mask is advanced alongside the elements, whether or not there is one left.
+        let is_valid = self.validity.nth(n);
+        let Some(remaining) = self.remaining.checked_sub(n + 1) else {
+            self.remaining = 0;
+            return None;
+        };
+        self.remaining = remaining;
+        Some(is_valid.then_some(()))
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.range.size_hint()
+        (self.remaining, Some(self.remaining))
+    }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.remaining
+    }
+
+    /// Walks to the last element from the back, rather than through every one before it.
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+
+    /// Hoists the validity mask out of the loop: an array without null elements folds over the
+    /// count alone, and one with a mask folds over the mask, which is what it is.
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let remaining = self.remaining;
+
+        match self.validity.into_mask() {
+            ValidityFold::Valid => (0..remaining).fold(init, |acc, _| f(acc, Some(()))),
+            ValidityFold::Null => (0..remaining).fold(init, |acc, _| f(acc, None)),
+            ValidityFold::Bits(mask) => {
+                mask.fold(init, |acc, is_valid| f(acc, is_valid.then_some(())))
+            },
+        }
     }
 }
 
 impl DoubleEndedIterator for PlUnitIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.range.next_back().map(|i| self.get(i))
+        self.remaining = self.remaining.checked_sub(1)?;
+        Some(self.validity.next_back().then_some(()))
     }
 }
 
-impl ExactSizeIterator for PlUnitIter<'_> {}
+impl ExactSizeIterator for PlUnitIter<'_> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.remaining
+    }
+}
+
 unsafe impl TrustedLen for PlUnitIter<'_> {}
 
 #[cfg(test)]
@@ -1014,6 +1049,64 @@ mod tests {
     use polars_buffer::Buffer;
 
     use super::*;
+    use crate::iterator_tests::assert_iterates;
+
+    /// The iterator of an array whose elements carry no value of their own, in both
+    /// representations of its validity mask.
+    mod unit_iter {
+        use super::*;
+
+        #[test]
+        fn a_struct_under_a_flat_mask() {
+            let field = Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]));
+            let array =
+                PlStructArray::new(vec![field], 3, Some(Bitmap::from_iter([true, false, true])));
+
+            assert_iterates(array.iter(), &[Some(()), None, Some(())]);
+        }
+
+        #[test]
+        fn a_struct_without_a_mask() {
+            let field = Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]));
+            let array = PlStructArray::new(vec![field], 3, None);
+
+            assert_iterates(array.iter(), &[Some(()); 3]);
+            assert_iterates(array.broadcast_iter(3), &[Some(()); 3]);
+        }
+
+        #[test]
+        fn a_struct_under_a_scalar_mask() {
+            let field = Box::new(PlPrimitiveArray::new_scalar(1i32, 4));
+            let array = PlStructArray::new_broadcast(vec![field], 4, Some(Bitmap::new_zeroed(1)));
+
+            assert_iterates(array.iter(), &[None; 4]);
+        }
+
+        #[test]
+        fn nulls() {
+            assert_iterates(PlNullArray::new(4).iter(), &[None; 4]);
+            assert_iterates(PlNullArray::new(0).iter(), &[]);
+            assert_iterates(PlNullArray::new(1).broadcast_iter(4), &[None; 4]);
+        }
+
+        #[test]
+        fn empty() {
+            let array = PlStructArray::new(vec![Box::new(PlNullArray::new(0))], 0, None);
+
+            assert_iterates(array.iter(), &[]);
+        }
+
+        #[test]
+        fn a_scalar_mask_is_not_materialized() {
+            // Walking a billion elements would not finish; the scalar path must hit.
+            let array = PlNullArray::new(1_000_000_000);
+
+            assert_eq!(array.iter().count(), 1_000_000_000);
+            assert_eq!(array.iter().nth(999_999_999), Some(None));
+            assert_eq!(array.iter().last(), Some(None));
+            assert_eq!(array.iter().len(), 1_000_000_000);
+        }
+    }
 
     /// The elements of an array, in order, as they format — every accessor of the trait over one
     /// array.

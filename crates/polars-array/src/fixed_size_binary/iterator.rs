@@ -2,19 +2,19 @@ use std::ops::Range;
 
 use arrow::trusted_len::TrustedLen;
 
-use crate::bitmap::PlBitmapRef;
+use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 
 /// Iterator over the elements of a [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray),
 /// ignoring validity.
 ///
 /// Each element is the values buffer sliced to the range that element covers, which is `O(1)`.
+/// Scalar values are not materialized: whether they hold one element each or the one element they
+/// all cover does not depend on the position being read — see [`Self::is_scalar`] — so a loop
+/// over the elements settles it once rather than at every one of them.
 #[derive(Clone)]
 pub struct PlFixedSizeBinaryValuesIter<'a> {
     values: &'a [u8],
     width: usize,
-    /// How far apart the elements are: the width where the values are flat, and zero where they
-    /// are scalar and every element covers the same bytes.
-    stride: usize,
     range: Range<usize>,
 }
 
@@ -27,16 +27,24 @@ impl<'a> PlFixedSizeBinaryValuesIter<'a> {
         Self {
             values,
             width,
-            // Scalar values hold the one element every element covers, so every position reads
-            // them from the start; flat ones lay the elements end to end, one width apart.
-            stride: if values.len() == width { 0 } else { width },
             range: 0..length,
         }
     }
 
+    /// Whether the values hold the one element every element covers, rather than one per element.
+    ///
+    /// A single element wide is what scalar values are — and what the values of an array of one
+    /// element are too, whichever representation it is in. Either way every position reads them
+    /// from the start. This does not depend on the position being read, so a loop over the
+    /// elements settles it once rather than at every one of them.
+    #[inline(always)]
+    fn is_scalar(&self) -> bool {
+        self.values.len() == self.width
+    }
+
     #[inline(always)]
     fn get(&self, i: usize) -> &'a [u8] {
-        let start = i * self.stride;
+        let start = if self.is_scalar() { 0 } else { i * self.width };
         // SAFETY: `i` comes from `self.range`, so the element it reads is in bounds of the values:
         // they are either flat over every position the range holds, or the one element all of them
         // read from the start.
@@ -61,6 +69,46 @@ impl<'a> Iterator for PlFixedSizeBinaryValuesIter<'a> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.range.size_hint()
     }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.range.len()
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+
+    /// Hoists the representation of the values out of the loop: flat ones are walked as the
+    /// consecutive elements they are, and scalar ones fold over the one element they hold.
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let count = self.range.len();
+
+        if self.is_scalar() {
+            // The values are scalar, so every element covers the one element they hold — which
+            // is what position zero reads, and is sliced once here rather than per element. This
+            // is also where a width of zero lands, which `chunks_exact` has no chunk for.
+            if count == 0 {
+                return init;
+            }
+            let value = self.get(0);
+            return (0..count).fold(init, |acc, _| f(acc, value));
+        }
+
+        // SAFETY: flat values lay the elements end to end, `width` bytes each, so the ones the
+        // range covers are in bounds.
+        let elements = unsafe {
+            self.values
+                .get_unchecked(self.range.start * self.width..self.range.end * self.width)
+        };
+
+        elements.chunks_exact(self.width).fold(init, f)
+    }
 }
 
 impl DoubleEndedIterator for PlFixedSizeBinaryValuesIter<'_> {
@@ -68,25 +116,39 @@ impl DoubleEndedIterator for PlFixedSizeBinaryValuesIter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.range.next_back().map(|i| self.get(i))
     }
+
+    #[inline]
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        self.range.nth_back(n).map(|i| self.get(i))
+    }
 }
 
-impl ExactSizeIterator for PlFixedSizeBinaryValuesIter<'_> {}
+impl ExactSizeIterator for PlFixedSizeBinaryValuesIter<'_> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.range.len()
+    }
+}
+
 unsafe impl TrustedLen for PlFixedSizeBinaryValuesIter<'_> {}
 
 /// Iterator over the optional elements of a
 /// [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray).
 ///
-/// Neither a scalar validity mask nor scalar values are materialized.
+/// Neither a scalar validity mask nor scalar values are materialized, and the mask is walked
+/// alongside the values rather than indexed.
 #[derive(Clone)]
 pub struct PlFixedSizeBinaryIter<'a> {
     values: PlFixedSizeBinaryValuesIter<'a>,
-    validity: Option<PlBitmapRef<'a>>,
+    validity: ValidityIter<'a>,
 }
 
 impl<'a> PlFixedSizeBinaryIter<'a> {
     /// # Safety
-    /// `values` must be flat or scalar for `length` and `width`, per [`crate::broadcast`], and
-    /// `validity` must have `length` bits.
+    /// `values` must be flat or scalar for `length` and `width`, per [`crate::broadcast`].
+    ///
+    /// # Panics
+    /// Panics unless `validity` has `length` bits.
     #[inline]
     pub(super) fn new(
         values: &'a [u8],
@@ -94,19 +156,21 @@ impl<'a> PlFixedSizeBinaryIter<'a> {
         validity: Option<PlBitmapRef<'a>>,
         length: usize,
     ) -> Self {
+        assert!(validity.is_none_or(|validity| validity.len() == length));
+
         Self {
             values: PlFixedSizeBinaryValuesIter::new(values, width, length),
-            validity,
+            validity: ValidityIter::new(validity),
         }
     }
 
-    /// Whether the element the values iterator is about to yield at `i` is valid.
-    #[inline(always)]
-    fn is_valid(&self, i: usize) -> bool {
-        // SAFETY: `i` is a position the values iterator has left to yield, so it is in bounds of
-        // the mask, which has one bit per element.
-        self.validity
-            .is_none_or(|validity| unsafe { validity.get_unchecked(i) })
+    /// The values and the mask that says which of them are elements, to walk in one loop.
+    ///
+    /// The mask has its representation hoisted out, so that the loop the caller runs reads no
+    /// mask at all where every element is valid, and neither mask nor values where none is.
+    #[inline]
+    fn split(self) -> (PlFixedSizeBinaryValuesIter<'a>, ValidityFold<'a>) {
+        (self.values, self.validity.into_mask())
     }
 }
 
@@ -115,32 +179,174 @@ impl<'a> Iterator for PlFixedSizeBinaryIter<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let i = self.values.range.start;
         let value = self.values.next()?;
-        Some(self.is_valid(i).then_some(value))
+        Some(self.validity.next().then_some(value))
     }
 
     #[inline]
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let i = self.values.range.start.checked_add(n)?;
+        // The mask is advanced alongside the values, whether or not there is a value left.
+        let is_valid = self.validity.nth(n);
         let value = self.values.nth(n)?;
-        Some(self.is_valid(i).then_some(value))
+        Some(is_valid.then_some(value))
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.values.size_hint()
     }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.values.count()
+    }
+
+    /// Walks to the last element from the back, rather than through every one before it.
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+
+    /// Hoists the validity mask out of the loop, and the representation of the values with it.
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        match self.split() {
+            (values, ValidityFold::Valid) => values.fold(init, |acc, value| f(acc, Some(value))),
+            (values, ValidityFold::Null) => values.fold(init, |acc, _| f(acc, None)),
+            (values, ValidityFold::Bits(mask)) => {
+                values.zip(mask).fold(init, |acc, (value, is_valid)| {
+                    f(acc, is_valid.then_some(value))
+                })
+            },
+        }
+    }
 }
 
 impl DoubleEndedIterator for PlFixedSizeBinaryIter<'_> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        let i = self.values.range.end.checked_sub(1)?;
         let value = self.values.next_back()?;
-        Some(self.is_valid(i).then_some(value))
+        Some(self.validity.next_back().then_some(value))
     }
 }
 
-impl ExactSizeIterator for PlFixedSizeBinaryIter<'_> {}
+impl ExactSizeIterator for PlFixedSizeBinaryIter<'_> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+}
+
 unsafe impl TrustedLen for PlFixedSizeBinaryIter<'_> {}
+
+#[cfg(test)]
+mod tests {
+    use arrow::bitmap::Bitmap;
+
+    use crate::PlFixedSizeBinaryArray;
+    use crate::iterator_tests::assert_iterates;
+
+    /// The elements of a flat array of three elements two bytes wide.
+    fn elements() -> [&'static [u8]; 3] {
+        [b"ab", b"cd", b"ef"]
+    }
+
+    fn flat_array() -> PlFixedSizeBinaryArray {
+        PlFixedSizeBinaryArray::from_vec(b"abcdef".to_vec(), 2)
+    }
+
+    #[test]
+    fn flat() {
+        let array = flat_array();
+
+        assert_iterates(array.values_iter(), &elements());
+        assert_iterates(array.iter(), &elements().map(Some));
+    }
+
+    #[test]
+    fn flat_under_a_flat_mask() {
+        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
+
+        assert_iterates(array.values_iter(), &elements());
+        assert_iterates(array.iter(), &[Some(b"ab".as_slice()), None, Some(b"ef")]);
+    }
+
+    #[test]
+    fn flat_under_a_scalar_mask() {
+        let array = flat_array().with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
+
+        assert_iterates(array.iter(), &[None, None, None]);
+    }
+
+    #[test]
+    fn scalar() {
+        let array = PlFixedSizeBinaryArray::new_scalar(b"xy", 4);
+
+        assert_iterates(array.values_iter(), &[b"xy".as_slice(); 4]);
+        assert_iterates(array.iter(), &[Some(b"xy".as_slice()); 4]);
+    }
+
+    #[test]
+    fn scalar_under_a_flat_mask() {
+        let array = PlFixedSizeBinaryArray::new_scalar(b"xy", 3)
+            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+
+        assert_iterates(array.iter(), &[Some(b"xy".as_slice()), None, Some(b"xy")]);
+    }
+
+    #[test]
+    fn all_null() {
+        assert_iterates(
+            PlFixedSizeBinaryArray::new_full_null(2, 3).iter(),
+            &[None; 3],
+        );
+    }
+
+    #[test]
+    fn empty() {
+        let array = PlFixedSizeBinaryArray::new_empty(2);
+
+        assert_iterates(array.values_iter(), &[]);
+        assert_iterates(array.iter(), &[]);
+    }
+
+    #[test]
+    fn elements_of_no_bytes() {
+        // A width of zero leaves every element the same empty slice, which is the one flat array
+        // whose values are also scalar.
+        let array = PlFixedSizeBinaryArray::new_empty(0);
+
+        assert_iterates(array.values_iter(), &[]);
+        assert_iterates(array.iter(), &[]);
+
+        let array = PlFixedSizeBinaryArray::new_scalar(b"", 3);
+        assert_iterates(array.values_iter(), &[b"".as_slice(); 3]);
+        assert_iterates(array.iter(), &[Some(b"".as_slice()); 3]);
+    }
+
+    #[test]
+    fn broadcast() {
+        let array = PlFixedSizeBinaryArray::from_vec(b"ab".to_vec(), 2);
+
+        assert_iterates(array.broadcast_values_iter(4), &[b"ab".as_slice(); 4]);
+        assert_iterates(array.broadcast_iter(4), &[Some(b"ab".as_slice()); 4]);
+
+        assert_iterates(
+            PlFixedSizeBinaryArray::new_full_null(2, 1).broadcast_iter(4),
+            &[None; 4],
+        );
+    }
+
+    #[test]
+    fn a_broadcast_array_is_not_materialized() {
+        // Walking a billion elements would not finish; the scalar path must hit.
+        let array = PlFixedSizeBinaryArray::new_scalar(b"xy", 1_000_000_000);
+
+        assert_eq!(array.values_iter().count(), 1_000_000_000);
+        assert_eq!(array.values_iter().nth(999_999_999), Some(b"xy".as_slice()));
+        assert_eq!(array.iter().last(), Some(Some(b"xy".as_slice())));
+    }
+}

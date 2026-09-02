@@ -7,6 +7,7 @@ mod iterator;
 mod reference;
 
 pub use iterator::PlBitmapIter;
+pub(crate) use iterator::{ValidityFold, ValidityIter};
 pub use reference::PlBitmapRef;
 
 /// An immutable, cheaply cloneable mask of `length` bits, in either the flat or the scalar
