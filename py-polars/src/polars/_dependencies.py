@@ -9,6 +9,11 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 if TYPE_CHECKING:
+    if sys.version_info >= (3, 13):
+        from typing import TypeIs
+    else:
+        from typing_extensions import TypeIs
+
     from collections.abc import Hashable
 
 _ALTAIR_AVAILABLE = True
@@ -240,6 +245,10 @@ def _check_for_torch(obj: Any, *, check_type: bool = True) -> bool:
     )
 
 
+def is_pandas_timestamp(obj: Any) -> TypeIs[pandas.Timestamp]:
+    return _check_for_pandas(obj) and isinstance(obj, pandas.Timestamp)
+
+
 def _check_for_pytz(obj: Any, *, check_type: bool = True) -> bool:
     return _PYTZ_AVAILABLE and _might_be(
         cast("Hashable", type(obj) if check_type else obj), "pytz"
@@ -340,6 +349,7 @@ __all__ = [
     "_check_for_pydantic",
     "_check_for_torch",
     "_check_for_pytz",
+    "is_pandas_timestamp",
     # exported flags/guards
     "_ALTAIR_AVAILABLE",
     "_DELTALAKE_AVAILABLE",

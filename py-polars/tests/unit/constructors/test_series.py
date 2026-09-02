@@ -152,8 +152,7 @@ def test_series_init_np_temporal_with_nat_15518() -> None:
 
 def test_series_init_pandas_timestamp_18127() -> None:
     result = pl.Series([pd.Timestamp("2000-01-01T00:00:00.123456789", tz="UTC")])
-    # Note: time unit is not (yet) respected, it should be Datetime('ns', 'UTC').
-    assert result.dtype == pl.Datetime("us", "UTC")
+    assert result.dtype == pl.Datetime("ns", "UTC")
 
 
 def test_series_init_np_2d_zero_zero_shape() -> None:

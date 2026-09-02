@@ -35,6 +35,58 @@ use crate::interned;
 use crate::py_modules::{pl_series, pl_utils};
 use crate::series::PySeries;
 
+fn is_pandas_timestamp(ob: &Bound<'_, PyAny>) -> bool {
+    static TIMESTAMP_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+    TIMESTAMP_TYPE
+        .import(ob.py(), "pandas", "Timestamp")
+        .and_then(|timestamp| ob.is_instance(timestamp))
+        .unwrap_or(false)
+}
+
+fn rescale_from_micros(ob: &Bound<'_, PyAny>, micros: i64) -> PyResult<(i64, TimeUnit)> {
+    let py = ob.py();
+
+    let resolution = match ob.getattr(intern!(py, "resolution")) {
+        Ok(resolution) if resolution.cast::<PyDelta>().is_ok() => resolution,
+        _ => return Ok((micros, TimeUnit::Microseconds)),
+    };
+    let field = |name| {
+        resolution
+            .getattr(name)
+            .and_then(|v| v.extract::<i64>())
+            .unwrap_or(-1)
+    };
+    match (
+        field(intern!(py, "days")),
+        field(intern!(py, "seconds")),
+        field(intern!(py, "microseconds")),
+    ) {
+        (0, 1, 0) | (0, 0, 1_000) => Ok((micros.div_euclid(1_000), TimeUnit::Milliseconds)),
+        (0, 0, 0) if is_pandas_timestamp(ob) => {
+            // this deliberately only allows pandas timestamps to make ns precision polars Datetime
+            // reason being that normal datetime.datetime does not support ns precision
+            let nanos = ob
+                .getattr(intern!(py, "nanosecond"))
+                .and_then(|n| n.extract::<i64>())
+                .map_err(|e| {
+                    PyValueError::new_err(format!(
+                        "cannot read .nanosecond of a pandas.Timestamp, \
+                         this code will need rewriting: {e}"
+                    ))
+                })?;
+            if nanos < 0 || nanos >= 1_000 {
+                return Err(PyValueError::new_err(format!(
+                    "expected `nanosecond` of a pandas.Timestamp to be in 0..1000, got \
+                     {nanos} instead"
+                )));
+            }
+            let total = i128::from(micros) * 1_000 + i128::from(nanos);
+            Ok((i64::try_from(total)?, TimeUnit::Nanoseconds))
+        },
+        _ => Ok((micros, TimeUnit::Microseconds)),
+    }
+}
+
 impl<'py> IntoPyObject<'py> for Wrap<AnyValue<'_>> {
     type Target = PyAny;
     type Output = Bound<'py, Self::Target>;
@@ -244,8 +296,9 @@ pub(crate) fn py_object_to_any_value(
         if tzinfo.is_none() {
             let datetime = ob.extract::<NaiveDateTime>()?;
             let delta = datetime - DateTime::UNIX_EPOCH.naive_utc();
-            let timestamp = delta.num_microseconds().unwrap();
-            return Ok(AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None));
+            let micros = delta.num_microseconds().unwrap();
+            let (timestamp, time_unit) = rescale_from_micros(ob, micros)?;
+            return Ok(AnyValue::Datetime(timestamp, time_unit, None));
         }
 
         // Try converting `pytz` timezone to `zoneinfo` timezone
@@ -287,9 +340,10 @@ pub(crate) fn py_object_to_any_value(
             (delta.num_microseconds().unwrap(), TimeZone::UTC)
         };
 
+        let (timestamp, time_unit) = rescale_from_micros(ob, timestamp)?;
         Ok(AnyValue::DatetimeOwned(
             timestamp,
-            TimeUnit::Microseconds,
+            time_unit,
             Some(Arc::new(tz)),
         ))
     }

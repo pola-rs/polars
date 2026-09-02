@@ -27,6 +27,7 @@ from polars._utils.construction.utils import (
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
     is_sqlalchemy_row,
+    time_unit_of,
 )
 from polars._utils.various import (
     range_to_series,
@@ -229,6 +230,8 @@ def sequence_to_pyseries(
     if issubclass(python_dtype, tuple(py_temporal_types)):
         if dtype is None:
             dtype = parse_into_dtype(python_dtype)  # construct from integer
+            if dtype == Datetime:
+                dtype = Datetime(time_unit_of(value))
         elif dtype in py_temporal_types:
             dtype = parse_into_dtype(dtype)
 

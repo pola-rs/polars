@@ -11,6 +11,7 @@ from typing import (
 )
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from polars._dependencies import is_pandas_timestamp
 from polars._utils.constants import (
     EPOCH,
     EPOCH_DATE,
@@ -100,7 +101,9 @@ def datetime_to_int(dt: datetime, time_unit: TimeUnit) -> int:
     if time_unit == "us":
         return seconds * US_PER_SECOND + microseconds
     elif time_unit == "ns":
-        return seconds * NS_PER_SECOND + microseconds * 1_000
+        # this deliberately only reads nanoseconds off pandas timestamps
+        nanoseconds = dt.nanosecond if is_pandas_timestamp(dt) else 0
+        return seconds * NS_PER_SECOND + microseconds * 1_000 + nanoseconds
     elif time_unit == "ms":
         return seconds * MS_PER_SECOND + microseconds // 1_000
     else:

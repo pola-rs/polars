@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import timedelta
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Final, get_type_hints
 
 import polars as pl
-from polars._dependencies import _check_for_pydantic, pydantic
+from polars._dependencies import _check_for_pydantic, is_pandas_timestamp, pydantic
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     import pandas as pd
+
+    from polars._typing import TimeUnit
 
 PANDAS_SIMPLE_NUMPY_DTYPES: Final[set[str]] = {
     "int64",
@@ -122,3 +125,19 @@ def is_simple_numpy_backed_pandas_series(
         and not series.empty
         and isinstance(next(iter(series)), str)
     )
+
+
+def time_unit_of(value: Any) -> TimeUnit:
+    """The `pl.Datetime` time unit of `value`, defaulting to `"us"`."""
+    resolution = getattr(value, "resolution", None)
+    if not isinstance(resolution, timedelta):
+        return "us"
+    match (resolution.days, resolution.seconds, resolution.microseconds):
+        # this deliberately only allows pandas timestamps to be made ns precision
+        # in polars
+        case (0, 0, 0) if is_pandas_timestamp(value):
+            return "ns"
+        case (0, 1, 0) | (0, 0, 1000):
+            return "ms"
+        case _:
+            return "us"
