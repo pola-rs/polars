@@ -86,7 +86,7 @@ impl RecordBatchEncoder {
                         let dtype = rechunked.dtype();
 
                         let array: Box<dyn Array> = arrow_converter
-                            .array_to_arrow(
+                            .chunk_to_arrow(
                                 rechunked.chunks()[0].as_ref(),
                                 dtype,
                                 Cow::Borrowed(&arrow_field),

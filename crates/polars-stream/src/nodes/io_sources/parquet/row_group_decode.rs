@@ -561,9 +561,12 @@ impl RowGroupDecoder {
 
         mask.rechunk_mut();
         let mask_bitmap = mask.downcast_as_array();
+        // TODO(polars-array-scalar): the parquet prefilter takes the mask as a flat `Bitmap`, so
+        // a scalar chunk is written out here. A mask that is one repeated bit selects either every
+        // row or none of them, which the decode could answer without a bitmap at all.
         let mask_bitmap = match mask_bitmap.validity() {
-            None => mask_bitmap.values().clone(),
-            Some(v) => mask_bitmap.values() & v,
+            None => mask_bitmap.values().to_flat(),
+            Some(v) => &mask_bitmap.values().to_flat() & &v.to_flat(),
         };
 
         assert_eq!(mask_bitmap.len(), projection_height);

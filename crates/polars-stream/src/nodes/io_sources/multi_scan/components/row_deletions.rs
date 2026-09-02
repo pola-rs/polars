@@ -1,14 +1,14 @@
 use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "python")]
-use arrow::array::ListArray;
-use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, NamedFrom, PlIndexMap};
+use polars_core::prelude::{
+    BooleanChunked, ChunkAgg, DataType, NamedFrom, PlBooleanArray, PlIndexMap, PlListArray,
+};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::series::Series;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
@@ -57,7 +57,7 @@ pub enum DeletionFilesProvider {
     DeltaDeletionVector {
         provider: DeltaDeletionVectorProvider,
         selected_paths: Buffer<PlRefPath>,
-        cache: Arc<tokio::sync::OnceCell<Option<ListArray<i64>>>>,
+        cache: Arc<tokio::sync::OnceCell<Option<PlListArray>>>,
     },
 }
 
@@ -408,7 +408,7 @@ impl DeletionFilesProvider {
                                 let arr = list.value(scan_source_idx);
                                 let bool_arr = arr
                                     .as_any()
-                                    .downcast_ref::<BooleanArray>()
+                                    .downcast_ref::<PlBooleanArray>()
                                     .ok_or_else(|| {
                                         polars_err!(ComputeError:
                                             "expected boolean array in Delta deletion vector")
@@ -608,11 +608,14 @@ impl ExternalFilterMask {
         phys_slice
     }
 
+    // TODO(polars-array-scalar): the callers walk the mask bit by bit, so a scalar chunk is
+    // written out here. A mask that is one repeated bit deletes either every row or none of them,
+    // which the slice arithmetic could answer without a bitmap.
     fn get_mask(&self) -> Bitmap {
         match self {
-            Self::Iceberg { mask } => mask.rechunk().downcast_get(0).unwrap().values().clone(),
+            Self::Iceberg { mask } => mask.rechunk().downcast_get(0).unwrap().values().to_flat(),
             Self::DeltaDeletionVector { mask } => {
-                mask.rechunk().downcast_get(0).unwrap().values().clone()
+                mask.rechunk().downcast_get(0).unwrap().values().to_flat()
             },
         }
     }

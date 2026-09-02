@@ -1,15 +1,17 @@
-use arrow::array::{BinaryViewArray, FixedSizeBinaryArray, PrimitiveArray};
-use arrow::datatypes::ArrowDataType;
+use arrow::bitmap::Bitmap;
 use polars_buffer::Buffer;
-use polars_core::prelude::{Column, DataType, LargeBinaryArray};
+use polars_core::prelude::{
+    Column, DataType, PlBinaryArray, PlBinaryViewArray, PlFixedSizeBinaryArray,
+    PlPrimitiveArray,
+};
 use polars_core::with_match_physical_integer_type;
 
 pub type PartitionKey = polars_utils::small_bytes::SmallBytes;
 
 pub enum PreComputedKeys {
-    Binview(BinaryViewArray),
-    Primitive(FixedSizeBinaryArray),
-    RowEncoded(LargeBinaryArray),
+    Binview(PlBinaryViewArray),
+    Primitive(PlFixedSizeBinaryArray),
+    RowEncoded(PlBinaryArray),
 }
 
 impl PreComputedKeys {
@@ -51,18 +53,35 @@ impl PreComputedKeys {
                     .try_into()
                     .unwrap();
 
-                let (bytes, width): (Buffer<u8>, usize) = with_match_physical_integer_type!(dt, |$T| {
-                    let arr: &PrimitiveArray<$T> = arr.as_any().downcast_ref().unwrap();
-                    (arr.values().clone().try_transmute().unwrap(), std::mem::size_of::<$T>())
+                let length = arr.len();
+                let arr: PlFixedSizeBinaryArray = with_match_physical_integer_type!(dt, |$T| {
+                    let arr: &PlPrimitiveArray<$T> = arr.as_any().downcast_ref().unwrap();
+                    let width = std::mem::size_of::<$T>();
+
+                    // A scalar chunk holds the one value every element covers, so the keys that
+                    // stand for it are scalar too: the bytes are laid out once rather than once
+                    // per row.
+                    match arr.scalar_value() {
+                        Some(value) => {
+                            let bytes = Buffer::from(vec![value.unwrap_or_default()]);
+                            PlFixedSizeBinaryArray::new_broadcast(
+                                bytes.try_transmute().unwrap(),
+                                width,
+                                length,
+                                value.is_none().then(|| Bitmap::new_zeroed(1)),
+                            )
+                        },
+                        None => {
+                            let flat = arr.to_flat();
+                            PlFixedSizeBinaryArray::new(
+                                flat.values().clone().try_transmute().unwrap(),
+                                width,
+                                length,
+                                flat.validity().cloned(),
+                            )
+                        },
+                    }
                 });
-
-                assert_eq!(width * arr.len(), bytes.len());
-
-                let arr = FixedSizeBinaryArray::new(
-                    ArrowDataType::FixedSizeBinary(width),
-                    bytes,
-                    arr.validity().cloned(),
-                );
 
                 PreComputedKeys::Primitive(arr)
             },

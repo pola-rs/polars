@@ -1,5 +1,6 @@
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_compute::ewm::EwmStateUpdate;
+use polars_core::chunked_array::arrow_bridge::with_arrow_chunk;
 use polars_core::prelude::IntoColumn;
 use polars_core::series::Series;
 use polars_error::PolarsResult;
@@ -59,11 +60,17 @@ impl ComputeNode for EwmNode {
                 unsafe {
                     let c = df.columns_mut_retain_schema().get_mut(0).unwrap();
 
+                    // TODO(polars-array-scalar): the kernel is stateful over the elements it
+                    // sees, so a scalar chunk is written out on the way to Arrow. A state
+                    // update that takes a repeated value would fold it in `O(1)`.
+                    let rechunked = c.as_materialized_series().rechunk();
+                    let updated = with_arrow_chunk(&*rechunked.chunks()[0], |arr| {
+                        self.state.ewm_state_update(arr)
+                    });
+
                     *c = Series::from_chunks_and_dtype_unchecked(
                         c.name().clone(),
-                        vec![self.state.ewm_state_update(
-                            c.as_materialized_series().rechunk().chunks()[0].as_ref(),
-                        )],
+                        vec![updated],
                         c.dtype(),
                     )
                     .into_column()
