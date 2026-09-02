@@ -24,7 +24,7 @@ impl ArrayChunked {
         assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
         let width = self.width();
         let field = Arc::make_mut(&mut self.field);
-        field.coerce(DataType::Array(Box::new(dtype), width));
+        field.set_dtype(DataType::Array(Box::new(dtype), width));
     }
 
     pub fn width(&self) -> usize {
@@ -40,7 +40,7 @@ impl ArrayChunked {
         debug_assert_eq!(&inner_dtype.to_physical(), self.inner_dtype());
         let width = self.width();
         let fld = Arc::make_mut(&mut self.field);
-        fld.coerce(DataType::Array(Box::new(inner_dtype), width))
+        fld.set_dtype(DataType::Array(Box::new(inner_dtype), width))
     }
 
     /// Convert the datatype of the array into the physical datatype.
