@@ -3,11 +3,7 @@ use arrow::legacy::kernels::{Ambiguous, NonExistent, convert_to_naive_local};
 #[cfg(feature = "timezones")]
 use arrow::legacy::time_zone::Tz;
 #[cfg(feature = "timezones")]
-use chrono::NaiveDateTime;
-#[cfg(feature = "timezones")]
-use chrono::TimeZone;
-#[cfg(feature = "timezones")]
-use chrono_tz::TZ_VARIANTS;
+use jiff::civil::DateTime as NaiveDateTime;
 #[cfg(feature = "timezones")]
 use polars_core::prelude::PolarsResult;
 
@@ -28,16 +24,20 @@ pub(crate) fn try_localize_datetime(
     ambiguous: Ambiguous,
     non_existent: NonExistent,
 ) -> PolarsResult<Option<NaiveDateTime>> {
-    convert_to_naive_local(&chrono_tz::UTC, tz, ndt, ambiguous, non_existent)
+    convert_to_naive_local(&Tz::UTC, tz, ndt, ambiguous, non_existent)
 }
 
 #[cfg(feature = "timezones")]
 pub(crate) fn unlocalize_datetime(ndt: NaiveDateTime, tz: &Tz) -> NaiveDateTime {
     // e.g. '2021-01-01 03:00CDT' -> '2021-01-01 03:00'
-    tz.from_utc_datetime(&ndt).naive_local()
+    let ts = Tz::UTC.to_timestamp(ndt).expect("datetime out-of-range");
+    tz.to_datetime(ts)
 }
 
 #[cfg(feature = "timezones")]
-pub fn known_timezones() -> [&'static str; TZ_VARIANTS.len()] {
-    core::array::from_fn(|i| TZ_VARIANTS[i].name())
+pub fn known_timezones() -> Vec<String> {
+    jiff::tz::db()
+        .available()
+        .map(|name| name.as_str().to_string())
+        .collect()
 }

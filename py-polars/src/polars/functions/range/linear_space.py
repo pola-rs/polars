@@ -157,9 +157,9 @@ def linear_space(
     shape: (3,)
     Series: 'literal' [datetime[μs]]
     [
-            2025-01-11 08:00:00
-            2025-01-21 16:00:00
-            2025-02-01 00:00:00
+        2025-01-11T08:00:00
+        2025-01-21T16:00:00
+        2025-02-01T00:00:00
     ]
 
     When `eager=False` (default), an expression is produced. You can generate a sequence

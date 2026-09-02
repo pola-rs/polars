@@ -1,5 +1,5 @@
 use arrow::legacy::time_zone::Tz;
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime as NaiveDateTime;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{
     MILLISECONDS, SECONDS_IN_DAY, timestamp_ms_to_datetime, timestamp_ns_to_datetime,

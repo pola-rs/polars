@@ -3483,17 +3483,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Number of rows that will be processed per thread.
         datetime_format
             A format string, with the specifiers defined by the
-            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            `jiff <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             Rust crate. If no format specified, the default fractional-second
             precision is inferred from the maximum timeunit found in the frame's
             Datetime cols (if any).
         date_format
             A format string, with the specifiers defined by the
-            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            `jiff <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             Rust crate.
         time_format
             A format string, with the specifiers defined by the
-            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            `jiff <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             Rust crate.
         float_scientific
             Whether to use scientific form always (true), never (false), or
@@ -4153,9 +4153,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ --- ┆ --- ┆ ---                 │
         │ i64 ┆ f64 ┆ datetime[μs]        │
         ╞═════╪═════╪═════════════════════╡
-        │ 1   ┆ 6.0 ┆ 2020-01-02 00:00:00 │
-        │ 2   ┆ 7.0 ┆ 2021-03-04 00:00:00 │
-        │ 3   ┆ 8.0 ┆ 2022-05-06 00:00:00 │
+        │ 1   ┆ 6.0 ┆ 2020-01-02T00:00:00 │
+        │ 2   ┆ 7.0 ┆ 2021-03-04T00:00:00 │
+        │ 3   ┆ 8.0 ┆ 2022-05-06T00:00:00 │
         └─────┴─────┴─────────────────────┘
 
         Use selectors to define the columns being cast:
@@ -5060,12 +5060,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ ---                 ┆ ---   ┆ ---   ┆ ---   │
         │ datetime[μs]        ┆ i64   ┆ i64   ┆ i64   │
         ╞═════════════════════╪═══════╪═══════╪═══════╡
-        │ 2020-01-01 13:45:48 ┆ 3     ┆ 3     ┆ 3     │
-        │ 2020-01-01 16:42:13 ┆ 10    ┆ 3     ┆ 7     │
-        │ 2020-01-01 16:45:09 ┆ 15    ┆ 3     ┆ 7     │
-        │ 2020-01-02 18:12:48 ┆ 24    ┆ 3     ┆ 9     │
-        │ 2020-01-03 19:45:32 ┆ 11    ┆ 2     ┆ 9     │
-        │ 2020-01-08 23:16:43 ┆ 1     ┆ 1     ┆ 1     │
+        │ 2020-01-01T13:45:48 ┆ 3     ┆ 3     ┆ 3     │
+        │ 2020-01-01T16:42:13 ┆ 10    ┆ 3     ┆ 7     │
+        │ 2020-01-01T16:45:09 ┆ 15    ┆ 3     ┆ 7     │
+        │ 2020-01-02T18:12:48 ┆ 24    ┆ 3     ┆ 9     │
+        │ 2020-01-03T19:45:32 ┆ 11    ┆ 2     ┆ 9     │
+        │ 2020-01-08T23:16:43 ┆ 1     ┆ 1     ┆ 1     │
         └─────────────────────┴───────┴───────┴───────┘
         """
         index_column_py = parse_into_expression(index_column)
@@ -5259,13 +5259,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ ---                 ┆ --- │
         │ datetime[μs]        ┆ i64 │
         ╞═════════════════════╪═════╡
-        │ 2021-12-16 00:00:00 ┆ 0   │
-        │ 2021-12-16 00:30:00 ┆ 1   │
-        │ 2021-12-16 01:00:00 ┆ 2   │
-        │ 2021-12-16 01:30:00 ┆ 3   │
-        │ 2021-12-16 02:00:00 ┆ 4   │
-        │ 2021-12-16 02:30:00 ┆ 5   │
-        │ 2021-12-16 03:00:00 ┆ 6   │
+        │ 2021-12-16T00:00:00 ┆ 0   │
+        │ 2021-12-16T00:30:00 ┆ 1   │
+        │ 2021-12-16T01:00:00 ┆ 2   │
+        │ 2021-12-16T01:30:00 ┆ 3   │
+        │ 2021-12-16T02:00:00 ┆ 4   │
+        │ 2021-12-16T02:30:00 ┆ 5   │
+        │ 2021-12-16T03:00:00 ┆ 6   │
         └─────────────────────┴─────┘
 
         Group by windows of 1 hour.
@@ -5279,10 +5279,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ ---                 ┆ ---       │
         │ datetime[μs]        ┆ list[i64] │
         ╞═════════════════════╪═══════════╡
-        │ 2021-12-15 23:00:00 ┆ [0]       │
-        │ 2021-12-16 00:00:00 ┆ [1, 2]    │
-        │ 2021-12-16 01:00:00 ┆ [3, 4]    │
-        │ 2021-12-16 02:00:00 ┆ [5, 6]    │
+        │ 2021-12-15T23:00:00 ┆ [0]       │
+        │ 2021-12-16T00:00:00 ┆ [1, 2]    │
+        │ 2021-12-16T01:00:00 ┆ [3, 4]    │
+        │ 2021-12-16T02:00:00 ┆ [5, 6]    │
         └─────────────────────┴───────────┘
 
         The window boundaries can also be added to the aggregation result
@@ -5296,10 +5296,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ ---                 ┆ ---                 ┆ ---                 ┆ --- │
         │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ f64 │
         ╞═════════════════════╪═════════════════════╪═════════════════════╪═════╡
-        │ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ 0.0 │
-        │ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 1.5 │
-        │ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 3.5 │
-        │ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 5.5 │
+        │ 2021-12-15T23:00:00 ┆ 2021-12-16T00:00:00 ┆ 2021-12-15T23:00:00 ┆ 0.0 │
+        │ 2021-12-16T00:00:00 ┆ 2021-12-16T01:00:00 ┆ 2021-12-16T00:00:00 ┆ 1.5 │
+        │ 2021-12-16T01:00:00 ┆ 2021-12-16T02:00:00 ┆ 2021-12-16T01:00:00 ┆ 3.5 │
+        │ 2021-12-16T02:00:00 ┆ 2021-12-16T03:00:00 ┆ 2021-12-16T02:00:00 ┆ 5.5 │
         └─────────────────────┴─────────────────────┴─────────────────────┴─────┘
 
         When closed="left", the window excludes the right end of interval:
@@ -5314,10 +5314,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ ---                 ┆ ---       │
         │ datetime[μs]        ┆ list[i64] │
         ╞═════════════════════╪═══════════╡
-        │ 2021-12-16 00:00:00 ┆ [0, 1]    │
-        │ 2021-12-16 01:00:00 ┆ [2, 3]    │
-        │ 2021-12-16 02:00:00 ┆ [4, 5]    │
-        │ 2021-12-16 03:00:00 ┆ [6]       │
+        │ 2021-12-16T00:00:00 ┆ [0, 1]    │
+        │ 2021-12-16T01:00:00 ┆ [2, 3]    │
+        │ 2021-12-16T02:00:00 ┆ [4, 5]    │
+        │ 2021-12-16T03:00:00 ┆ [6]       │
         └─────────────────────┴───────────┘
 
         When closed="both" the time values at the window boundaries belong to 2 groups.
@@ -5331,10 +5331,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ ---                 ┆ ---       │
         │ datetime[μs]        ┆ list[i64] │
         ╞═════════════════════╪═══════════╡
-        │ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
-        │ 2021-12-16 01:00:00 ┆ [2, 3, 4] │
-        │ 2021-12-16 02:00:00 ┆ [4, 5, 6] │
-        │ 2021-12-16 03:00:00 ┆ [6]       │
+        │ 2021-12-16T00:00:00 ┆ [0, 1, 2] │
+        │ 2021-12-16T01:00:00 ┆ [2, 3, 4] │
+        │ 2021-12-16T02:00:00 ┆ [4, 5, 6] │
+        │ 2021-12-16T03:00:00 ┆ [6]       │
         └─────────────────────┴───────────┘
 
         Dynamic group bys can also be combined with grouping on normal keys
@@ -5347,13 +5347,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ ---                 ┆ --- ┆ ---    │
         │ datetime[μs]        ┆ i64 ┆ str    │
         ╞═════════════════════╪═════╪════════╡
-        │ 2021-12-16 00:00:00 ┆ 0   ┆ a      │
-        │ 2021-12-16 00:30:00 ┆ 1   ┆ a      │
-        │ 2021-12-16 01:00:00 ┆ 2   ┆ a      │
-        │ 2021-12-16 01:30:00 ┆ 3   ┆ b      │
-        │ 2021-12-16 02:00:00 ┆ 4   ┆ b      │
-        │ 2021-12-16 02:30:00 ┆ 5   ┆ a      │
-        │ 2021-12-16 03:00:00 ┆ 6   ┆ a      │
+        │ 2021-12-16T00:00:00 ┆ 0   ┆ a      │
+        │ 2021-12-16T00:30:00 ┆ 1   ┆ a      │
+        │ 2021-12-16T01:00:00 ┆ 2   ┆ a      │
+        │ 2021-12-16T01:30:00 ┆ 3   ┆ b      │
+        │ 2021-12-16T02:00:00 ┆ 4   ┆ b      │
+        │ 2021-12-16T02:30:00 ┆ 5   ┆ a      │
+        │ 2021-12-16T03:00:00 ┆ 6   ┆ a      │
         └─────────────────────┴─────┴────────┘
         >>> lf.group_by_dynamic(
         ...     "time",
@@ -5368,12 +5368,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---       │
         │ str    ┆ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ list[i64] │
         ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪═══════════╡
-        │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
-        │ a      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ [2]       │
-        │ a      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ [5, 6]    │
-        │ a      ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 04:00:00 ┆ 2021-12-16 03:00:00 ┆ [6]       │
-        │ b      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ [3, 4]    │
-        │ b      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ [4]       │
+        │ a      ┆ 2021-12-16T00:00:00 ┆ 2021-12-16T01:00:00 ┆ 2021-12-16T00:00:00 ┆ [0, 1, 2] │
+        │ a      ┆ 2021-12-16T01:00:00 ┆ 2021-12-16T02:00:00 ┆ 2021-12-16T01:00:00 ┆ [2]       │
+        │ a      ┆ 2021-12-16T02:00:00 ┆ 2021-12-16T03:00:00 ┆ 2021-12-16T02:00:00 ┆ [5, 6]    │
+        │ a      ┆ 2021-12-16T03:00:00 ┆ 2021-12-16T04:00:00 ┆ 2021-12-16T03:00:00 ┆ [6]       │
+        │ b      ┆ 2021-12-16T01:00:00 ┆ 2021-12-16T02:00:00 ┆ 2021-12-16T01:00:00 ┆ [3, 4]    │
+        │ b      ┆ 2021-12-16T02:00:00 ┆ 2021-12-16T03:00:00 ┆ 2021-12-16T02:00:00 ┆ [4]       │
         └────────┴─────────────────────┴─────────────────────┴─────────────────────┴───────────┘
 
         Dynamic group by on an index column

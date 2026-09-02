@@ -1564,7 +1564,8 @@ def test_dt_extract_with_null_tz_aware_27862(method: str) -> None:
 def test_dt_extract_present_out_of_range_27862(method: str, tz: str | None) -> None:
     # A *present* (non-null) timestamp that is out of the representable datetime
     # range must yield null, not a garbage default value or a panic. Build it by
-    # casting a raw i64 that is far beyond chrono's range into a Datetime column.
+    # casting a raw i64 that is far beyond the representable range into a
+    # Datetime column.
     s = pl.Series([9_000_000_000_000_000_000], dtype=pl.Int64).cast(
         pl.Datetime("us", tz)
     )
@@ -1596,15 +1597,17 @@ def test_offset_by_out_of_range_no_panic_29017() -> None:
 
 def test_offset_by_boundary_value_succeeds_df_29017() -> None:
     df = pl.DataFrame({"d": [date(2023, 1, 1)]})
-    result = df.with_columns(pl.col("d").dt.offset_by("260119y"))
-    assert result["d"].dt.year().item() == 262142
+    # 9999 is the maximum year Polars' temporal types can represent.
+    result = df.with_columns(pl.col("d").dt.offset_by("7976y"))
+    assert result["d"].dt.year().item() == 9999
     assert result["d"].dt.month().item() == 1
     assert result["d"].dt.day().item() == 1
 
 
 def test_offset_by_boundary_value_succeeds_series_29017() -> None:
     s = pl.Series("d", [date(2023, 1, 1)])
-    result = s.dt.offset_by("260119y")
-    assert result.dt.year().item() == 262142
+    # 9999 is the maximum year Polars' temporal types can represent.
+    result = s.dt.offset_by("7976y")
+    assert result.dt.year().item() == 9999
     assert result.dt.month().item() == 1
     assert result.dt.day().item() == 1

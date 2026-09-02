@@ -175,8 +175,8 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         format
-            * Format to use, refer to the `chrono strftime documentation
-              <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            * Format to use, refer to the `jiff strftime documentation
+              <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
               for specification. Example: `"%y-%m-%d"`.
 
             * If no format is provided, the appropriate ISO format for the underlying
@@ -282,8 +282,8 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         Parameters
         ----------
         format
-            Format to use, refer to the `chrono strftime documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Format to use, refer to the `jiff strftime documentation
+            <https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html>`_
             for specification. Example: `"%y-%m-%d"`.
 
         See Also
@@ -802,7 +802,7 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (1,)
         Series: '' [datetime[μs, Asia/Kathmandu]]
         [
-                2021-01-02 05:00:00 +0545
+            2021-01-02T05:00:00+05:45
         ]
         >>> ser.dt.time()
         shape: (1,)
@@ -833,7 +833,7 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (1,)
         Series: '' [datetime[μs, Asia/Kathmandu]]
         [
-                2021-01-02 05:00:00 +0545
+            2021-01-02T05:00:00+05:45
         ]
         >>> ser.dt.date()
         shape: (1,)
@@ -868,10 +868,10 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (4,)
         Series: 'datetime' [datetime[μs]]
         [
-                2001-01-01 00:00:00
-                2001-01-01 01:00:00
-                2001-01-01 02:00:00
-                2001-01-01 03:00:00
+            2001-01-01T00:00:00
+            2001-01-01T01:00:00
+            2001-01-01T02:00:00
+            2001-01-01T03:00:00
         ]
         >>> date.dt.hour()
         shape: (4,)
@@ -909,9 +909,9 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (3,)
         Series: 'datetime' [datetime[μs]]
         [
-                2001-01-01 00:00:00
-                2001-01-01 00:02:00
-                2001-01-01 00:04:00
+            2001-01-01T00:00:00
+            2001-01-01T00:02:00
+            2001-01-01T00:04:00
         ]
         >>> date.dt.minute()
         shape: (3,)
@@ -1030,15 +1030,15 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (9,)
         Series: 'datetime' [datetime[μs]]
         [
-                2001-01-01 00:00:00
-                2001-01-01 00:00:00.500
-                2001-01-01 00:00:01
-                2001-01-01 00:00:01.500
-                2001-01-01 00:00:02
-                2001-01-01 00:00:02.500
-                2001-01-01 00:00:03
-                2001-01-01 00:00:03.500
-                2001-01-01 00:00:04
+            2001-01-01T00:00:00
+            2001-01-01T00:00:00.5
+            2001-01-01T00:00:01
+            2001-01-01T00:00:01.5
+            2001-01-01T00:00:02
+            2001-01-01T00:00:02.5
+            2001-01-01T00:00:03
+            2001-01-01T00:00:03.5
+            2001-01-01T00:00:04
         ]
         >>> date.dt.microsecond()
         shape: (9,)
@@ -1079,15 +1079,15 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (9,)
         Series: 'datetime' [datetime[μs]]
         [
-                2001-01-01 00:00:00
-                2001-01-01 00:00:00.500
-                2001-01-01 00:00:01
-                2001-01-01 00:00:01.500
-                2001-01-01 00:00:02
-                2001-01-01 00:00:02.500
-                2001-01-01 00:00:03
-                2001-01-01 00:00:03.500
-                2001-01-01 00:00:04
+            2001-01-01T00:00:00
+            2001-01-01T00:00:00.5
+            2001-01-01T00:00:01
+            2001-01-01T00:00:01.5
+            2001-01-01T00:00:02
+            2001-01-01T00:00:02.5
+            2001-01-01T00:00:03
+            2001-01-01T00:00:03.5
+            2001-01-01T00:00:04
         ]
         >>> date.dt.nanosecond()
         shape: (9,)
@@ -1126,9 +1126,9 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (3,)
         Series: 'datetime' [datetime[μs]]
         [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
+            2001-01-01T00:00:00
+            2001-01-02T00:00:00
+            2001-01-03T00:00:00
         ]
         >>> date.dt.timestamp().alias("timestamp_us")
         shape: (3,)
@@ -1169,9 +1169,9 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (3,)
         Series: 'datetime' [datetime[μs]]
         [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
+            2001-01-01T00:00:00
+            2001-01-02T00:00:00
+            2001-01-03T00:00:00
         ]
         >>> date.dt.epoch().alias("epoch_ns")
         shape: (3,)
@@ -1210,25 +1210,25 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (3,)
         Series: 'datetime' [datetime[μs]]
         [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
+            2001-01-01T00:00:00
+            2001-01-02T00:00:00
+            2001-01-03T00:00:00
         ]
         >>> date.dt.cast_time_unit("ms").alias("time_unit_ms")
         shape: (3,)
         Series: 'time_unit_ms' [datetime[ms]]
         [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
+            2001-01-01T00:00:00
+            2001-01-02T00:00:00
+            2001-01-03T00:00:00
         ]
         >>> date.dt.cast_time_unit("ns").alias("time_unit_ns")
         shape: (3,)
         Series: 'time_unit_ns' [datetime[ns]]
         [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
+            2001-01-01T00:00:00
+            2001-01-02T00:00:00
+            2001-01-03T00:00:00
         ]
         """
 
@@ -1258,18 +1258,18 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (3,)
         Series: 'datetime' [datetime[μs, UTC]]
         [
-                2020-03-01 00:00:00 UTC
-                2020-04-01 00:00:00 UTC
-                2020-05-01 00:00:00 UTC
+            2020-03-01T00:00:00+00:00
+            2020-04-01T00:00:00+00:00
+            2020-05-01T00:00:00+00:00
         ]
         >>> date = date.dt.convert_time_zone("Europe/London").alias("London")
         >>> date
         shape: (3,)
         Series: 'London' [datetime[μs, Europe/London]]
         [
-            2020-03-01 00:00:00 GMT
-            2020-04-01 01:00:00 BST
-            2020-05-01 01:00:00 BST
+            2020-03-01T00:00:00+00:00
+            2020-04-01T01:00:00+01:00
+            2020-05-01T01:00:00+01:00
         ]
         """
 
@@ -1333,11 +1333,11 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         │ ---                         ┆ ---                            │
         │ datetime[μs, Europe/London] ┆ datetime[μs, Europe/Amsterdam] │
         ╞═════════════════════════════╪════════════════════════════════╡
-        │ 2020-03-01 00:00:00 GMT     ┆ 2020-03-01 00:00:00 CET        │
-        │ 2020-04-01 01:00:00 BST     ┆ 2020-04-01 01:00:00 CEST       │
-        │ 2020-05-01 01:00:00 BST     ┆ 2020-05-01 01:00:00 CEST       │
-        │ 2020-06-01 01:00:00 BST     ┆ 2020-06-01 01:00:00 CEST       │
-        │ 2020-07-01 01:00:00 BST     ┆ 2020-07-01 01:00:00 CEST       │
+        │ 2020-03-01T00:00:00+00:00   ┆ 2020-03-01T00:00:00+01:00      │
+        │ 2020-04-01T01:00:00+01:00   ┆ 2020-04-01T01:00:00+02:00      │
+        │ 2020-05-01T01:00:00+01:00   ┆ 2020-05-01T01:00:00+02:00      │
+        │ 2020-06-01T01:00:00+01:00   ┆ 2020-06-01T01:00:00+02:00      │
+        │ 2020-07-01T01:00:00+01:00   ┆ 2020-07-01T01:00:00+02:00      │
         └─────────────────────────────┴────────────────────────────────┘
 
         You can use `ambiguous` to deal with ambiguous datetimes:
@@ -1365,10 +1365,10 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         │ ---                 ┆ ---       ┆ ---                           │
         │ datetime[μs]        ┆ str       ┆ datetime[μs, Europe/Brussels] │
         ╞═════════════════════╪═══════════╪═══════════════════════════════╡
-        │ 2018-10-28 01:30:00 ┆ earliest  ┆ 2018-10-28 01:30:00 CEST      │
-        │ 2018-10-28 02:00:00 ┆ earliest  ┆ 2018-10-28 02:00:00 CEST      │
-        │ 2018-10-28 02:30:00 ┆ earliest  ┆ 2018-10-28 02:30:00 CEST      │
-        │ 2018-10-28 02:00:00 ┆ latest    ┆ 2018-10-28 02:00:00 CET       │
+        │ 2018-10-28T01:30:00 ┆ earliest  ┆ 2018-10-28T01:30:00+02:00     │
+        │ 2018-10-28T02:00:00 ┆ earliest  ┆ 2018-10-28T02:00:00+02:00     │
+        │ 2018-10-28T02:30:00 ┆ earliest  ┆ 2018-10-28T02:30:00+02:00     │
+        │ 2018-10-28T02:00:00 ┆ latest    ┆ 2018-10-28T02:00:00+01:00     │
         └─────────────────────┴───────────┴───────────────────────────────┘
         """
 
@@ -1397,9 +1397,9 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (3,)
         Series: 'datetime' [datetime[μs]]
         [
-                2020-03-01 00:00:00
-                2020-04-01 00:00:00
-                2020-05-01 00:00:00
+            2020-03-01T00:00:00
+            2020-04-01T00:00:00
+            2020-05-01T00:00:00
         ]
         >>> date.diff().dt.total_days()
         shape: (3,)
@@ -1436,10 +1436,10 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (4,)
         Series: 'datetime' [datetime[μs]]
         [
-                2020-01-01 00:00:00
-                2020-01-02 00:00:00
-                2020-01-03 00:00:00
-                2020-01-04 00:00:00
+            2020-01-01T00:00:00
+            2020-01-02T00:00:00
+            2020-01-03T00:00:00
+            2020-01-04T00:00:00
         ]
         >>> date.diff().dt.total_hours()
         shape: (4,)
@@ -1477,10 +1477,10 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (4,)
         Series: 'datetime' [datetime[μs]]
         [
-                2020-01-01 00:00:00
-                2020-01-02 00:00:00
-                2020-01-03 00:00:00
-                2020-01-04 00:00:00
+            2020-01-01T00:00:00
+            2020-01-02T00:00:00
+            2020-01-03T00:00:00
+            2020-01-04T00:00:00
         ]
         >>> date.diff().dt.total_minutes()
         shape: (4,)
@@ -1518,11 +1518,11 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (5,)
         Series: 'datetime' [datetime[μs]]
         [
-                2020-01-01 00:00:00
-                2020-01-01 00:01:00
-                2020-01-01 00:02:00
-                2020-01-01 00:03:00
-                2020-01-01 00:04:00
+            2020-01-01T00:00:00
+            2020-01-01T00:01:00
+            2020-01-01T00:02:00
+            2020-01-01T00:03:00
+            2020-01-01T00:04:00
         ]
         >>> date.diff().dt.total_seconds()
         shape: (5,)
@@ -1564,9 +1564,9 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (3,)
         Series: 'datetime' [datetime[μs]]
         [
-                2020-01-01 00:00:00
-                2020-01-01 00:00:00.001
-                2020-01-01 00:00:00.002
+            2020-01-01T00:00:00
+            2020-01-01T00:00:00.001
+            2020-01-01T00:00:00.002
         ]
         >>> date.diff().dt.total_milliseconds()
         shape: (3,)
@@ -1606,9 +1606,9 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (3,)
         Series: 'datetime' [datetime[μs]]
         [
-                2020-01-01 00:00:00
-                2020-01-01 00:00:00.001
-                2020-01-01 00:00:00.002
+            2020-01-01T00:00:00
+            2020-01-01T00:00:00.001
+            2020-01-01T00:00:00.002
         ]
         >>> date.diff().dt.total_microseconds()
         shape: (3,)
@@ -1650,9 +1650,9 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (3,)
         Series: 'datetime' [datetime[μs]]
         [
-                2020-01-01 00:00:00
-                2020-01-01 00:00:00.001
-                2020-01-01 00:00:00.002
+            2020-01-01T00:00:00
+            2020-01-01T00:00:00.001
+            2020-01-01T00:00:00.002
         ]
         >>> date.diff().dt.total_nanoseconds()
         shape: (3,)
@@ -1710,34 +1710,34 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (6,)
         Series: 'datetime' [datetime[μs]]
         [
-                2000-01-01 00:00:00
-                2001-01-01 00:00:00
-                2002-01-01 00:00:00
-                2003-01-01 00:00:00
-                2004-01-01 00:00:00
-                2005-01-01 00:00:00
+            2000-01-01T00:00:00
+            2001-01-01T00:00:00
+            2002-01-01T00:00:00
+            2003-01-01T00:00:00
+            2004-01-01T00:00:00
+            2005-01-01T00:00:00
         ]
         >>> dates.dt.offset_by("1y").alias("date_plus_1y")
         shape: (6,)
         Series: 'date_plus_1y' [datetime[μs]]
         [
-                2001-01-01 00:00:00
-                2002-01-01 00:00:00
-                2003-01-01 00:00:00
-                2004-01-01 00:00:00
-                2005-01-01 00:00:00
-                2006-01-01 00:00:00
+            2001-01-01T00:00:00
+            2002-01-01T00:00:00
+            2003-01-01T00:00:00
+            2004-01-01T00:00:00
+            2005-01-01T00:00:00
+            2006-01-01T00:00:00
         ]
         >>> dates.dt.offset_by("-1y2mo").alias("date_minus_1y_2mon")
         shape: (6,)
         Series: 'date_minus_1y_2mon' [datetime[μs]]
         [
-                1998-11-01 00:00:00
-                1999-11-01 00:00:00
-                2000-11-01 00:00:00
-                2001-11-01 00:00:00
-                2002-11-01 00:00:00
-                2003-11-01 00:00:00
+            1998-11-01T00:00:00
+            1999-11-01T00:00:00
+            2000-11-01T00:00:00
+            2001-11-01T00:00:00
+            2002-11-01T00:00:00
+            2003-11-01T00:00:00
         ]
         """
 
@@ -1804,29 +1804,29 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (9,)
         Series: 'datetime' [datetime[μs]]
         [
-            2001-01-01 00:00:00
-            2001-01-01 02:45:00
-            2001-01-01 05:30:00
-            2001-01-01 08:15:00
-            2001-01-01 11:00:00
-            2001-01-01 13:45:00
-            2001-01-01 16:30:00
-            2001-01-01 19:15:00
-            2001-01-01 22:00:00
+            2001-01-01T00:00:00
+            2001-01-01T02:45:00
+            2001-01-01T05:30:00
+            2001-01-01T08:15:00
+            2001-01-01T11:00:00
+            2001-01-01T13:45:00
+            2001-01-01T16:30:00
+            2001-01-01T19:15:00
+            2001-01-01T22:00:00
         ]
         >>> s.dt.truncate("1h")
         shape: (9,)
         Series: 'datetime' [datetime[μs]]
         [
-            2001-01-01 00:00:00
-            2001-01-01 02:00:00
-            2001-01-01 05:00:00
-            2001-01-01 08:00:00
-            2001-01-01 11:00:00
-            2001-01-01 13:00:00
-            2001-01-01 16:00:00
-            2001-01-01 19:00:00
-            2001-01-01 22:00:00
+            2001-01-01T00:00:00
+            2001-01-01T02:00:00
+            2001-01-01T05:00:00
+            2001-01-01T08:00:00
+            2001-01-01T11:00:00
+            2001-01-01T13:00:00
+            2001-01-01T16:00:00
+            2001-01-01T19:00:00
+            2001-01-01T22:00:00
         ]
 
         >>> s = pl.datetime_range(
@@ -1836,25 +1836,25 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (7,)
         Series: 'datetime' [datetime[μs]]
         [
-                2001-01-01 00:00:00
-                2001-01-01 00:10:00
-                2001-01-01 00:20:00
-                2001-01-01 00:30:00
-                2001-01-01 00:40:00
-                2001-01-01 00:50:00
-                2001-01-01 01:00:00
+            2001-01-01T00:00:00
+            2001-01-01T00:10:00
+            2001-01-01T00:20:00
+            2001-01-01T00:30:00
+            2001-01-01T00:40:00
+            2001-01-01T00:50:00
+            2001-01-01T01:00:00
         ]
         >>> s.dt.truncate("30m")
         shape: (7,)
         Series: 'datetime' [datetime[μs]]
         [
-                2001-01-01 00:00:00
-                2001-01-01 00:00:00
-                2001-01-01 00:00:00
-                2001-01-01 00:30:00
-                2001-01-01 00:30:00
-                2001-01-01 00:30:00
-                2001-01-01 01:00:00
+            2001-01-01T00:00:00
+            2001-01-01T00:00:00
+            2001-01-01T00:00:00
+            2001-01-01T00:30:00
+            2001-01-01T00:30:00
+            2001-01-01T00:30:00
+            2001-01-01T01:00:00
         ]
         """
 
@@ -1920,29 +1920,29 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (9,)
         Series: 'datetime' [datetime[μs]]
         [
-            2001-01-01 00:00:00
-            2001-01-01 02:45:00
-            2001-01-01 05:30:00
-            2001-01-01 08:15:00
-            2001-01-01 11:00:00
-            2001-01-01 13:45:00
-            2001-01-01 16:30:00
-            2001-01-01 19:15:00
-            2001-01-01 22:00:00
+            2001-01-01T00:00:00
+            2001-01-01T02:45:00
+            2001-01-01T05:30:00
+            2001-01-01T08:15:00
+            2001-01-01T11:00:00
+            2001-01-01T13:45:00
+            2001-01-01T16:30:00
+            2001-01-01T19:15:00
+            2001-01-01T22:00:00
         ]
         >>> s.dt.round("1h")
         shape: (9,)
         Series: 'datetime' [datetime[μs]]
         [
-            2001-01-01 00:00:00
-            2001-01-01 03:00:00
-            2001-01-01 06:00:00
-            2001-01-01 08:00:00
-            2001-01-01 11:00:00
-            2001-01-01 14:00:00
-            2001-01-01 17:00:00
-            2001-01-01 19:00:00
-            2001-01-01 22:00:00
+            2001-01-01T00:00:00
+            2001-01-01T03:00:00
+            2001-01-01T06:00:00
+            2001-01-01T08:00:00
+            2001-01-01T11:00:00
+            2001-01-01T14:00:00
+            2001-01-01T17:00:00
+            2001-01-01T19:00:00
+            2001-01-01T22:00:00
         ]
         >>> round_str = s.dt.round("1h")
         >>> round_td = s.dt.round(timedelta(hours=1))
@@ -1956,13 +1956,13 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (7,)
         Series: 'datetime' [datetime[μs]]
         [
-                2001-01-01 00:00:00
-                2001-01-01 00:00:00
-                2001-01-01 00:30:00
-                2001-01-01 00:30:00
-                2001-01-01 00:30:00
-                2001-01-01 01:00:00
-                2001-01-01 01:00:00
+            2001-01-01T00:00:00
+            2001-01-01T00:00:00
+            2001-01-01T00:30:00
+            2001-01-01T00:30:00
+            2001-01-01T00:30:00
+            2001-01-01T01:00:00
+            2001-01-01T01:00:00
         ]
         """
 
@@ -1991,8 +1991,8 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (2,)
         Series: 'dtm' [datetime[μs]]
         [
-            2022-12-31 01:02:03.456
-            2023-07-05 01:02:03.456
+            2022-12-31T01:02:03.456
+            2023-07-05T01:02:03.456
         ]
         """
 
@@ -2020,10 +2020,10 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (4,)
         Series: 'datetime' [datetime[μs]]
         [
-                2000-01-01 02:00:00
-                2000-02-01 02:00:00
-                2000-03-01 02:00:00
-                2000-04-01 02:00:00
+            2000-01-01T02:00:00
+            2000-02-01T02:00:00
+            2000-03-01T02:00:00
+            2000-04-01T02:00:00
         ]
         """
 
@@ -2051,10 +2051,10 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (4,)
         Series: 'datetime' [datetime[μs]]
         [
-                2000-01-31 02:00:00
-                2000-02-29 02:00:00
-                2000-03-31 02:00:00
-                2000-04-30 02:00:00
+            2000-01-31T02:00:00
+            2000-02-29T02:00:00
+            2000-03-31T02:00:00
+            2000-04-30T02:00:00
         ]
         """
 
@@ -2089,8 +2089,8 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (2,)
         Series: 'datetime' [datetime[μs, Pacific/Apia]]
         [
-                2011-12-29 00:00:00 -10
-                2011-12-31 00:00:00 +14
+            2011-12-29T00:00:00-10:00
+            2011-12-31T00:00:00+14:00
         ]
         >>> s.dt.base_utc_offset()
         shape: (2,)
@@ -2127,8 +2127,8 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         shape: (2,)
         Series: 'datetime' [datetime[μs, Europe/London]]
         [
-                2020-10-25 00:00:00 BST
-                2020-10-26 00:00:00 GMT
+            2020-10-25T00:00:00+01:00
+            2020-10-26T00:00:00+00:00
         ]
         >>> s.dt.dst_offset()
         shape: (2,)

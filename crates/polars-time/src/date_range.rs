@@ -1,5 +1,5 @@
 use arrow::legacy::time_zone::Tz;
-use chrono::{Datelike, NaiveDateTime, NaiveTime};
+use jiff::civil::{DateTime as NaiveDateTime, Time as NaiveTime};
 use polars_core::chunked_array::temporal::time_to_time64ns;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -21,19 +21,19 @@ pub fn date_range(
     tu: TimeUnit,
     tz: Option<&Tz>,
 ) -> PolarsResult<DatetimeChunked> {
+    let start_ts = jiff::tz::TimeZone::UTC
+        .to_timestamp(start)
+        .expect("datetime out-of-range");
+    let end_ts = jiff::tz::TimeZone::UTC
+        .to_timestamp(end)
+        .expect("datetime out-of-range");
     let (start, end) = match tu {
         TimeUnit::Nanoseconds => (
-            start.and_utc().timestamp_nanos_opt().unwrap(),
-            end.and_utc().timestamp_nanos_opt().unwrap(),
+            i64::try_from(start_ts.as_nanosecond()).expect("timestamp out-of-range"),
+            i64::try_from(end_ts.as_nanosecond()).expect("timestamp out-of-range"),
         ),
-        TimeUnit::Microseconds => (
-            start.and_utc().timestamp_micros(),
-            end.and_utc().timestamp_micros(),
-        ),
-        TimeUnit::Milliseconds => (
-            start.and_utc().timestamp_millis(),
-            end.and_utc().timestamp_millis(),
-        ),
+        TimeUnit::Microseconds => (start_ts.as_microsecond(), end_ts.as_microsecond()),
+        TimeUnit::Milliseconds => (start_ts.as_millisecond(), end_ts.as_millisecond()),
     };
     datetime_range_impl(name, start, end, interval, closed, tu, tz)
 }
@@ -54,7 +54,7 @@ pub fn datetime_range_impl(
     );
     let mut out = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => out.into_datetime(tu, Some(TimeZone::from_chrono(tz))),
+        Some(tz) => out.into_datetime(tu, Some(TimeZone::from_jiff_tz(tz))),
         _ => out.into_datetime(tu, None),
     };
 
@@ -117,7 +117,7 @@ pub(crate) fn datetime_range_i64(
     };
     let time_zone_opt: Option<TimeZone> = match time_zone {
         #[cfg(feature = "timezones")]
-        Some(tz) => Some(TimeZone::from_chrono(tz)),
+        Some(tz) => Some(TimeZone::from_jiff_tz(tz)),
         _ => None,
     };
 
