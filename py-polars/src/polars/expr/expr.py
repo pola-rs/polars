@@ -6924,8 +6924,7 @@ class Expr(metaclass=_Meta):
         This operation is only allowed for numeric types of the same size.
         For lower bits numbers, you can safely use the cast operation.
 
-        Either `signed` or `dtype` can be specified.
-        Defaults to `signed=True` otherwise.
+        Exactly one of `signed` or `dtype` must be specified.
 
         .. engine-support:: in-memory, streaming, distributed
 
