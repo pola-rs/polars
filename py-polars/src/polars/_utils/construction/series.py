@@ -196,14 +196,15 @@ def sequence_to_pyseries(
 
         return pyseries
 
-    elif dtype == Map:
+    elif isinstance(dtype, Map):
         # A dict is otherwise inferred as a Struct, so the Map dtype has to drive this.
-        if not isinstance(dtype, Map):
-            msg = "Map requires a key and a value type, e.g. `pl.Map(pl.String, pl.Int64)`"
-            raise TypeError(msg)
         return PySeries.new_from_any_values_and_dtype(
             name, values, dtype, strict=strict
         )
+
+    elif dtype == Map:
+        msg = "Map requires a key and a value type, e.g. `pl.Map(pl.String, pl.Int64)`"
+        raise TypeError(msg)
 
     elif dtype == Struct:
         # This is very bad. Goes via rows? And needs to do outer nullability separate.
