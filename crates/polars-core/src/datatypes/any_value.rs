@@ -827,7 +827,16 @@ impl<'a> From<&AnyValue<'a>> for DataType {
 impl AnyValue<'_> {
     pub fn hash_impl<H: Hasher>(&self, state: &mut H, cheap: bool) {
         use AnyValue::*;
-        std::mem::discriminant(self).hash(state);
+
+        // Hash discriminant, not distinguishing between owned/non-owned.
+        match self {
+            #[cfg(feature = "dtype-struct")]
+            Struct(..) | StructOwned(..) => 0.hash(state),
+            StringOwned(v) => std::mem::discriminant(&String(v)).hash(state),
+            BinaryOwned(v) => std::mem::discriminant(&Binary(v)).hash(state),
+            _ => std::mem::discriminant(self).hash(state),
+        };
+
         match self {
             Int8(v) => v.hash(state),
             Int16(v) => v.hash(state),
@@ -840,12 +849,12 @@ impl AnyValue<'_> {
             UInt64(v) => v.hash(state),
             UInt128(v) => feature_gated!("dtype-u128", v.hash(state)),
             String(v) => v.hash(state),
-            StringOwned(v) => v.hash(state),
+            StringOwned(v) => v.as_str().hash(state),
             Float16(v) => v.to_ne_bytes().hash(state),
             Float32(v) => v.to_ne_bytes().hash(state),
             Float64(v) => v.to_ne_bytes().hash(state),
             Binary(v) => v.hash(state),
-            BinaryOwned(v) => v.hash(state),
+            BinaryOwned(v) => v.as_slice().hash(state),
             Boolean(v) => v.hash(state),
             List(v) => {
                 if !cheap || v.len() < CHEAP_SERIES_HASH_LIMIT {
@@ -897,7 +906,11 @@ impl AnyValue<'_> {
                 }
             },
             #[cfg(feature = "dtype-struct")]
-            StructOwned(v) => v.0.hash(state),
+            StructOwned(v) => {
+                if !cheap {
+                    v.0.hash(state);
+                }
+            },
             #[cfg(feature = "dtype-decimal")]
             Decimal(v, s, p) => {
                 v.hash(state);

@@ -357,4 +357,4 @@ def test_array_typed_literals_mixed_error() -> None:
         SQLInterfaceError,
         match="expected consistent dtypes",
     ):
-        pl.sql("SELECT ARRAY[DATE '2024-01-01', TIME '12:00:00']")
+        pl.sql("SELECT ARRAY[DATE '2024-01-01', TIME '12:00:00']").collect()

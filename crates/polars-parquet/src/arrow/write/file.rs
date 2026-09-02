@@ -31,6 +31,10 @@ impl<W: Write> FileWriter<W> {
     pub fn schema(&self) -> &ArrowSchema {
         &self.schema
     }
+
+    pub fn metadata(&self) -> Option<&ThriftFileMetadata> {
+        self.writer.metadata()
+    }
 }
 
 impl<W: Write> FileWriter<W> {

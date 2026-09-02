@@ -13,7 +13,6 @@ use polars_utils::abs_diff::AbsDiff;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
-use rayon::prelude::*;
 
 use super::*;
 use crate::frame::join::{prepare_binary, prepare_keys_multiple};
@@ -102,60 +101,56 @@ where
     let split_by_right = split_and_flatten(by_right, n_threads);
     let offsets = compute_len_offsets(split_by_left.iter().map(|s| s.len()));
 
-    let right_slices = split_by_right
+    let right_arrays = split_by_right
         .iter()
         .map(|ca| {
             assert_eq!(ca.chunks().len(), 1);
-            ca.downcast_iter().next().unwrap().iter()
+            ca.downcast_iter().next().unwrap()
         })
-        .collect();
-    let hash_tbls = build_tables(right_slices, false);
+        .collect::<Vec<_>>();
+    let hash_tbls = build_tables_from_arrays::<S>(&right_arrays, false);
     let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
-    let out = split_by_left
-        .into_par_iter()
-        .zip(offsets)
-        .map(|(by_left, offset)| {
-            let mut results = Vec::with_capacity(by_left.len());
-            let mut group_states: PlHashMap<IdxSize, A> =
-                PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
+    let bufs = par_map_collect(split_by_left.len(), &|part_idx| {
+        let by_left = &split_by_left[part_idx];
+        let offset = offsets[part_idx];
+        let mut results = Vec::with_capacity(by_left.len());
+        let mut group_states: PlHashMap<IdxSize, A> = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
 
-            assert_eq!(by_left.chunks().len(), 1);
-            let by_left_chunk = by_left.downcast_iter().next().unwrap();
-            for (rel_idx_left, opt_by_left_k) in by_left_chunk.iter().enumerate() {
-                let Some(by_left_k) = opt_by_left_k else {
-                    results.push(NullableIdxSize::null());
-                    continue;
-                };
-                let by_left_k = Some(by_left_k).to_total_ord();
-                let idx_left = (rel_idx_left + offset) as IdxSize;
-                let Some(left_val) = left_val_arr.get(idx_left as usize) else {
-                    results.push(NullableIdxSize::null());
-                    continue;
-                };
+        assert_eq!(by_left.chunks().len(), 1);
+        let by_left_chunk = by_left.downcast_iter().next().unwrap();
+        for (rel_idx_left, opt_by_left_k) in by_left_chunk.iter().enumerate() {
+            let Some(by_left_k) = opt_by_left_k else {
+                results.push(NullableIdxSize::null());
+                continue;
+            };
+            let by_left_k = Some(by_left_k).to_total_ord();
+            let idx_left = (rel_idx_left + offset) as IdxSize;
+            let Some(left_val) = left_val_arr.get(idx_left as usize) else {
+                results.push(NullableIdxSize::null());
+                continue;
+            };
 
-                let group_probe_table = unsafe {
-                    hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
-                };
-                let Some(right_grp_idxs) = group_probe_table.get(&by_left_k) else {
-                    results.push(NullableIdxSize::null());
-                    continue;
-                };
-                let id = asof_in_group::<T, A, &F>(
-                    left_val,
-                    right_val_arr,
-                    right_grp_idxs.as_slice(),
-                    &mut group_states,
-                    &filter,
-                    allow_eq,
-                );
-                results.push(materialize_nullable(id));
-            }
-            results
-        });
-
-    let bufs = RAYON.install(|| out.collect::<Vec<_>>());
+            let group_probe_table = unsafe {
+                hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
+            };
+            let Some(right_grp_idxs) = group_probe_table.get(&by_left_k) else {
+                results.push(NullableIdxSize::null());
+                continue;
+            };
+            let id = asof_in_group::<T, A, &F>(
+                left_val,
+                right_val_arr,
+                right_grp_idxs.as_slice(),
+                &mut group_states,
+                &filter,
+                allow_eq,
+            );
+            results.push(materialize_nullable(id));
+        }
+        results
+    });
     Ok(flatten_nullable(&bufs))
 }
 
@@ -184,41 +179,39 @@ where
     let n_tables = hash_tbls.len();
 
     // Now we probe the right hand side for each left hand side.
-    let iter = prep_by_left
-        .into_par_iter()
-        .zip(offsets)
-        .map(|(by_left, offset)| {
-            let mut results = Vec::with_capacity(by_left.len());
-            let mut group_states: PlHashMap<_, A> = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
+    let bufs = par_map_collect(prep_by_left.len(), &|part_idx| {
+        let by_left = &prep_by_left[part_idx];
+        let offset = offsets[part_idx];
+        let mut results = Vec::with_capacity(by_left.len());
+        let mut group_states: PlHashMap<_, A> = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
 
-            for (rel_idx_left, by_left_k) in by_left.iter().enumerate() {
-                let idx_left = (rel_idx_left + offset) as IdxSize;
-                let Some(left_val) = left_val_arr.get(idx_left as usize) else {
-                    results.push(NullableIdxSize::null());
-                    continue;
-                };
+        for (rel_idx_left, by_left_k) in by_left.iter().enumerate() {
+            let idx_left = (rel_idx_left + offset) as IdxSize;
+            let Some(left_val) = left_val_arr.get(idx_left as usize) else {
+                results.push(NullableIdxSize::null());
+                continue;
+            };
 
-                let group_probe_table = unsafe {
-                    hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
-                };
-                let Some(right_grp_idxs) = group_probe_table.get(by_left_k) else {
-                    results.push(NullableIdxSize::null());
-                    continue;
-                };
-                let id = asof_in_group::<T, A, &F>(
-                    left_val,
-                    right_val_arr,
-                    right_grp_idxs.as_slice(),
-                    &mut group_states,
-                    &filter,
-                    allow_eq,
-                );
+            let group_probe_table = unsafe {
+                hash_tbls.get_unchecked(hash_to_partition(by_left_k.dirty_hash(), n_tables))
+            };
+            let Some(right_grp_idxs) = group_probe_table.get(by_left_k) else {
+                results.push(NullableIdxSize::null());
+                continue;
+            };
+            let id = asof_in_group::<T, A, &F>(
+                left_val,
+                right_val_arr,
+                right_grp_idxs.as_slice(),
+                &mut group_states,
+                &filter,
+                allow_eq,
+            );
 
-                results.push(materialize_nullable(id));
-            }
-            results
-        });
-    let bufs = RAYON.install(|| iter.collect::<Vec<_>>());
+            results.push(materialize_nullable(id));
+        }
+        results
+    });
     flatten_nullable(&bufs)
 }
 

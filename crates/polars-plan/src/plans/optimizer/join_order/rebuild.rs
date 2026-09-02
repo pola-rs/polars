@@ -7,7 +7,7 @@ use polars_utils::arena::{Arena, Node};
 
 use super::cluster::Cluster;
 use crate::plans::schema::det_join_schema;
-use crate::plans::{AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR};
+use crate::plans::{AExpr, ExprIR, IR, JoinOptionsIR, JoinTypeOptionsIR, ProjectionOptions};
 
 /// Emit a left-deep join chain over `order`, projected back to the cluster's
 /// original schema.
@@ -51,7 +51,21 @@ pub(super) fn rebuild(
         is_placed[next] = true;
     }
 
-    if acc_schema != cluster.output_schema {
+    if !cluster.restore.is_empty() {
+        // The leaves were renamed apart, so the original names are restored by alias
+        // rather than selected by name.
+        acc_node = ir_arena.add(IR::Select {
+            input: acc_node,
+            expr: cluster.restore.clone(),
+            schema: cluster.output_schema.clone(),
+            options: ProjectionOptions {
+                run_parallel: false,
+                duplicate_check: false,
+                should_broadcast: false,
+                maintain_dataframe_height: false,
+            },
+        });
+    } else if acc_schema != cluster.output_schema {
         acc_node = ir_arena.add(IR::SimpleProjection {
             input: acc_node,
             columns: cluster.output_schema.clone(),

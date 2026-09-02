@@ -81,11 +81,11 @@ impl Field {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// let mut f = Field::new("Temperature".into(), DataType::Int32);
-    /// f.coerce(DataType::Float32);
+    /// f.set_dtype(DataType::Float32);
     ///
     /// assert_eq!(f, Field::new("Temperature".into(), DataType::Float32));
     /// ```
-    pub fn coerce(&mut self, dtype: DataType) {
+    pub fn set_dtype(&mut self, dtype: DataType) {
         self.dtype = dtype;
     }
 
