@@ -208,6 +208,35 @@ impl<'a, T> DoubleEndedIterator for SliceBroadcastIter<'a, T> {
         let off = size_of::<T>().wrapping_mul(self.state >> 1) & self.mask();
         Some(unsafe { &*self.ptr.as_ptr().byte_add(off) })
     }
+
+    #[inline]
+    fn nth_back(&mut self, k: usize) -> Option<&'a T> {
+        if k >= self.len() {
+            self.state &= 1; // exhaust, keep mode
+            return None;
+        }
+        self.state -= k << 1;
+        self.next_back()
+    }
+
+    /// Hoists the mode branch out of the loop, the way [`Iterator::fold`] does. `rev().collect()`
+    /// and friends route through here.
+    #[inline]
+    fn rfold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, &'a T) -> B,
+    {
+        match self.split() {
+            Ok(s) => s.iter().rfold(init, f),
+            Err((x, n)) => {
+                let mut acc = init;
+                for _ in 0..n {
+                    acc = f(acc, x);
+                }
+                acc
+            },
+        }
+    }
 }
 
 impl<T> ExactSizeIterator for SliceBroadcastIter<'_, T> {
@@ -295,6 +324,30 @@ mod tests {
             Some(&8)
         );
         assert_eq!(SliceBroadcastIter::new(&v).last(), Some(&40));
+    }
+
+    #[test]
+    fn nth_back_and_rfold() {
+        let v = [10, 20, 30, 40];
+        let mut it = SliceBroadcastIter::new(&v);
+        assert_eq!(it.nth_back(1), Some(&30));
+        assert_eq!(it.next_back(), Some(&20));
+        assert_eq!(it.len(), 1);
+        assert_eq!(SliceBroadcastIter::new(&v).nth_back(4), None);
+
+        let one = [8];
+        let mut it = SliceBroadcastIter::new_broadcast(&one, 5).unwrap();
+        assert_eq!(it.nth_back(3), Some(&8));
+        assert_eq!(it.len(), 1);
+
+        let got: Vec<_> = SliceBroadcastIter::new(&v).rev().copied().collect();
+        assert_eq!(got, vec![40, 30, 20, 10]);
+        let got: Vec<_> = SliceBroadcastIter::new_broadcast(&one, 3)
+            .unwrap()
+            .rev()
+            .copied()
+            .collect();
+        assert_eq!(got, vec![8, 8, 8]);
     }
 
     #[test]
