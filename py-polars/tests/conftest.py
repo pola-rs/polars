@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import os
-import shutil
 import sys
 import tempfile
 from pathlib import Path, PosixPath
@@ -26,13 +25,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 _xdist_crash_config: pytest.Config | None = None
-_xdist_crash_log_dir: Path | None = None
+_xdist_crash_log_dir: tempfile.TemporaryDirectory[str] | None = None
 
 # How much of a crashed worker's captured output we echo, in bytes.
 _XDIST_CRASH_OUTPUT_LIMIT = 64 * 1024
 
+
 def _crash_log_path(log_dir: str | Path, worker_id: str, stream: str) -> Path:
     return Path(log_dir) / f"{worker_id}.{stream}"
+
 
 def _capture_to_file(capman: Any, stream: str, path: Path) -> None:
     """Redirect pytest's fd-level capture of `stream` to a persistent file."""
@@ -82,21 +83,23 @@ def pytest_configure_node(node: Any) -> None:
     """Tell each xdist worker where to persist its captured output."""
     global _xdist_crash_log_dir
     if _xdist_crash_log_dir is None:
-        _xdist_crash_log_dir = Path(tempfile.mkdtemp(prefix="polars-xdist-crash-"))
-    node.workerinput["polars_crash_log_dir"] = str(_xdist_crash_log_dir)
+        _xdist_crash_log_dir = tempfile.TemporaryDirectory(
+            prefix="polars-xdist-crash-", ignore_cleanup_errors=True
+        )
+    node.workerinput["polars_crash_log_dir"] = _xdist_crash_log_dir.name
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
     global _xdist_crash_log_dir
     if _xdist_crash_log_dir is not None:
-        shutil.rmtree(_xdist_crash_log_dir, ignore_errors=True)
+        _xdist_crash_log_dir.cleanup()
         _xdist_crash_log_dir = None
 
 
 def _read_crash_output(worker_id: str, stream: str) -> str:
     if _xdist_crash_log_dir is None:
         return ""
-    path = _crash_log_path(_xdist_crash_log_dir, worker_id, stream)
+    path = _crash_log_path(_xdist_crash_log_dir.name, worker_id, stream)
     try:
         data = path.read_bytes()
     except OSError:
