@@ -450,7 +450,10 @@ def read_database_uri(
         Which keys are accepted depends on the connectorx source, which forwards them
         to the underlying driver and rejects the ones it does not recognize. Support
         is also version-dependent: connectorx 0.4.5 does not preserve spaces in
-        parameter values, and does not forward URL parameters for Trino.
+        parameter values, reports an unrecognized parameter as a panic rather than an
+        error, and does not forward URL parameters for Trino. These are resolved from
+        connectorx 0.4.6 (spaces preserved, unknown parameters raised as errors, and
+        Trino parameters forwarded); with 0.4.5 those limitations remain.
 
         .. note::
             Prefer keeping credentials in the URI itself; unlike the
