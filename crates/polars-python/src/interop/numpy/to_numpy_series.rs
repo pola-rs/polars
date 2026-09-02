@@ -10,7 +10,7 @@ use pyo3::prelude::*;
 use super::to_numpy_df::df_to_numpy;
 use super::utils::{
     create_borrowed_np_array, dtype_supports_view, polars_dtype_to_np_temporal_dtype,
-    reshape_numpy_array, series_contains_null,
+    reshape_numpy_array, series_contains_null, series_is_flat,
 };
 use crate::conversion::ObjectValue;
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
@@ -33,8 +33,12 @@ impl PySeries {
     /// WARNING: The resulting view will show the underlying value for nulls,
     /// which may be any value. The caller is responsible for handling nulls
     /// appropriately.
+    ///
+    /// The values are handed over as they are, so the array shares its memory with this Series
+    /// wherever the layout allows it; a copy is made only where there is no single run of values
+    /// to point at — see `handle_chunks`.
     fn to_numpy_view(&self, py: Python) -> Option<Py<PyAny>> {
-        let (view, _) = try_series_to_numpy_view(py, &self.series.read(), true, false)?;
+        let (view, _) = try_series_to_numpy_view(py, &self.series.read(), true, true)?;
         Some(view)
     }
 }
@@ -77,7 +81,7 @@ fn try_series_to_numpy_view(
     py: Python<'_>,
     s: &Series,
     allow_nulls: bool,
-    allow_rechunk: bool,
+    allow_copy: bool,
 ) -> Option<(Py<PyAny>, bool)> {
     if !dtype_supports_view(s.dtype()) {
         return None;
@@ -85,18 +89,21 @@ fn try_series_to_numpy_view(
     if !allow_nulls && series_contains_null(s) {
         return None;
     }
-    let (s_owned, writable_flag) = handle_chunks(py, s, allow_rechunk)?;
+    let (s_owned, writable_flag) = handle_chunks(py, s, allow_copy)?;
     let array = series_to_numpy_view_recursive(py, s_owned, writable_flag);
     Some((array, writable_flag))
 }
 
-/// Rechunk the Series if required.
+/// Rechunk and lay out the Series flat if required.
 ///
-/// NumPy arrays are always contiguous, so we may have to rechunk before creating a view.
-/// If we do so, we can flag the resulting array as writable.
-fn handle_chunks(py: Python<'_>, s: &Series, allow_rechunk: bool) -> Option<(Series, bool)> {
-    let is_chunked = s.n_chunks() > 1;
-    match (is_chunked, allow_rechunk) {
+/// NumPy arrays are always contiguous, so we may have to rechunk before creating a view. A Series
+/// that is not flat has to be written out as well: a scalar chunk holds a single value standing
+/// for every element, where the view needs one slot per element. Either is a copy, so both are
+/// gated on `allow_copy`; if one is needed, we can flag the resulting array as writable. The
+/// writing out itself is left to the functions that take the pointer, which know the element type.
+fn handle_chunks(py: Python<'_>, s: &Series, allow_copy: bool) -> Option<(Series, bool)> {
+    let needs_copy = s.n_chunks() > 1 || !series_is_flat(s);
+    match (needs_copy, allow_copy) {
         (true, false) => None,
         (true, true) => Some((py.detach(|| s.rechunk()), true)),
         (false, _) => Some((s.clone(), false)),
@@ -117,18 +124,28 @@ fn series_to_numpy_view_recursive(py: Python<'_>, s: Series, writable: bool) -> 
 }
 
 /// Create a NumPy view of a numeric Series.
-fn numeric_series_to_numpy_view(py: Python<'_>, s: Series, writable: bool) -> Py<PyAny> {
+fn numeric_series_to_numpy_view(py: Python<'_>, mut s: Series, writable: bool) -> Py<PyAny> {
     let dims = [s.len()].into_dimension();
-    with_match_physical_numpy_polars_type!(s.dtype(), |$T| {
+    // Cloned so that the Series can be left flat below, which borrows it mutably.
+    let dtype = s.dtype().clone();
+    with_match_physical_numpy_polars_type!(&dtype, |$T| {
         let np_dtype = <$T as PolarsNumericType>::Native::get_dtype(py);
-        let ca: &ChunkedArray<$T> = s.unpack::<$T>().unwrap();
         let flags = if writable {
             flags::NPY_ARRAY_FARRAY
         } else {
             flags::NPY_ARRAY_FARRAY_RO
         };
 
-        let slice = ca.data_views().next().unwrap();
+        // The view is a pointer into the values, so the Series it is taken from and that is kept
+        // alive behind it is the one left flat, rather than a copy of it. `handle_chunks` is what
+        // decided that writing a scalar chunk out here is allowed.
+        //
+        // TODO(polars-array-scalar): a NumPy array carries its own strides, so a scalar chunk is
+        // the single value a zero-strided array reads for every element. `create_borrowed_np_array`
+        // leaves the strides to NumPy to derive from the shape, so the chunk is written out here.
+        let ca: &mut ChunkedArray<$T> = s._get_inner_mut().as_mut();
+        ca.flatten_mut();
+        let slice = ca.as_flat().unwrap().data_views().next().unwrap();
 
         unsafe {
             create_borrowed_np_array::<_>(
@@ -146,16 +163,23 @@ fn numeric_series_to_numpy_view(py: Python<'_>, s: Series, writable: bool) -> Py
 /// Create a NumPy view of a Datetime or Duration Series.
 fn temporal_series_to_numpy_view(py: Python<'_>, s: Series, writable: bool) -> Py<PyAny> {
     let np_dtype = polars_dtype_to_np_temporal_dtype(py, s.dtype());
-
-    let phys = s.to_physical_repr();
-    let ca = phys.i64().unwrap();
-    let slice = ca.data_views().next().unwrap();
     let dims = [s.len()].into_dimension();
     let flags = if writable {
         flags::NPY_ARRAY_FARRAY
     } else {
         flags::NPY_ARRAY_FARRAY_RO
     };
+
+    // The view is a pointer into the values of the physical Series, which shares them with `s`, so
+    // it is that one which is left flat and kept alive behind the view. `handle_chunks` is what
+    // decided that writing a scalar chunk out here is allowed.
+    //
+    // TODO(polars-array-scalar): as in `numeric_series_to_numpy_view`, a zero-strided NumPy array
+    // would read a scalar chunk in place rather than have it written out.
+    let mut phys = s.to_physical_repr().into_owned();
+    let ca: &mut Int64Chunked = phys._get_inner_mut().as_mut();
+    ca.flatten_mut();
+    let slice = ca.as_flat().unwrap().data_views().next().unwrap();
 
     unsafe {
         create_borrowed_np_array::<_>(
@@ -164,7 +188,7 @@ fn temporal_series_to_numpy_view(py: Python<'_>, s: Series, writable: bool) -> P
             dims,
             flags,
             slice.as_ptr() as _,
-            PySeries::from(s).into_py_any(py).unwrap(), // Keep the Series memory alive.,
+            PySeries::from(phys).into_py_any(py).unwrap(), // Keep the Series memory alive.,
         )
     }
 }

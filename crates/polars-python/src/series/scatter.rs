@@ -1,4 +1,3 @@
-use arrow::array::Array;
 use polars::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::prelude::*;
@@ -70,15 +69,19 @@ fn scatter(s: Series, idx: &Series, values: &Series) -> Result<Series, (Series, 
         Ok(idx) => idx,
         Err(err) => return Err((s, err)),
     };
+    // TODO(polars-array-scalar): the indices are handed on as a slice, which a scalar chunk holds
+    // a single slot of, so one that is not laid out flat is written out here rather than the
+    // single index it stands for being scattered once.
     let idx = idx.rechunk();
-    let idx = idx.downcast_as_array();
+    let idx = idx.to_flat();
+    let idx = idx.flat_as_array();
     if idx.has_nulls() {
         return Err((
             s,
             PolarsError::ComputeError("index values should not be null".into()),
         ));
     }
-    let idx = idx.values().as_slice();
+    let idx = idx.as_slice();
 
     let mut values = match values.to_physical_repr().cast(&s.dtype().to_physical()) {
         Ok(values) => values,
