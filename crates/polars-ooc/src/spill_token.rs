@@ -36,7 +36,7 @@ enum ValueSlot<T> {
 enum PinOrLockResult<'a, T: Spillable> {
     Pinned(PinnedRef<'a, T>),
     Locked,
-    Dropped
+    Dropped,
 }
 
 #[derive(Default)]
@@ -222,7 +222,7 @@ impl<T: Spillable> SpillTokenInner<T> {
         match Self::pin_or_lock(slf).await {
             PinOrLockResult::Pinned(p) => return Some(p),
             PinOrLockResult::Dropped => return None,
-            PinOrLockResult::Locked => {}
+            PinOrLockResult::Locked => {},
         }
 
         // We now hold the lock, meaning the value was spilled.
@@ -423,7 +423,7 @@ where
                     state: AtomicU64::new(0),
                     lock: Mutex::default(),
                 };
-            }
+            },
             PinOrLockResult::Dropped => unreachable!(),
             PinOrLockResult::Locked => {},
         }

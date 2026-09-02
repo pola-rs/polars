@@ -240,7 +240,8 @@ impl MemoryManager {
                     stats.finish_prefetch_exploration_event(true);
                     break;
                 },
-                PrefetchScheduleResult::NothingToPrefetch | PrefetchScheduleResult::StaleContext => {
+                PrefetchScheduleResult::NothingToPrefetch
+                | PrefetchScheduleResult::StaleContext => {
                     stats.finish_prefetch_exploration_event(false)
                 },
             }
