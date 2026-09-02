@@ -2,6 +2,7 @@
 use std::sync::Arc;
 
 use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, IntervalUnit, Metadata, TimeUnit};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -14,7 +15,7 @@ use crate::parquet::schema::types::{
 
 /// Converts [`ParquetType`]s to a [`Field`], ignoring parquet fields that do not contain
 /// any physical column.
-pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> ArrowSchema {
+pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> PolarsResult<ArrowSchema> {
     parquet_to_arrow_schema_with_options(fields, &None)
 }
 
@@ -22,12 +23,20 @@ pub fn parquet_to_arrow_schema(fields: &[ParquetType]) -> ArrowSchema {
 pub fn parquet_to_arrow_schema_with_options(
     fields: &[ParquetType],
     options: &Option<SchemaInferenceOptions>,
-) -> ArrowSchema {
-    fields
+) -> PolarsResult<ArrowSchema> {
+    let default_options = SchemaInferenceOptions::default();
+    let options = options.as_ref().unwrap_or(&default_options);
+
+    let fields = fields
         .iter()
-        .filter_map(|f| to_field(f, options.as_ref().unwrap_or(&Default::default())))
+        .map(|f| to_field(f, options))
+        .collect::<PolarsResult<Vec<Option<Field>>>>()?;
+
+    Ok(fields
+        .into_iter()
+        .flatten()
         .map(|x| (x.name.clone(), x))
-        .collect()
+        .collect())
 }
 
 fn from_int32(
@@ -245,15 +254,14 @@ fn non_repeated_group(
     fields: &[ParquetType],
     parent_name: &str,
     options: &SchemaInferenceOptions,
-) -> Option<ArrowDataType> {
+) -> PolarsResult<Option<ArrowDataType>> {
     debug_assert!(!fields.is_empty());
     match (logical_type, converted_type) {
         (Some(GroupLogicalType::List), _) => to_list(fields, parent_name, options),
         (None, Some(GroupConvertedType::List)) => to_list(fields, parent_name, options),
         (Some(GroupLogicalType::Map), _)
         | (None, Some(GroupConvertedType::Map) | Some(GroupConvertedType::MapKeyValue)) => {
-            // Keep reading a malformed map as a list of entries
-            to_map(fields, options).or_else(|| to_list(fields, parent_name, options))
+            to_map(fields, parent_name, options)
         },
         _ => to_struct(fields, options),
     }
@@ -261,42 +269,98 @@ fn non_repeated_group(
 
 /// Converts a parquet group type to an arrow [`ArrowDataType::Struct`].
 /// Returns [`None`] if all its fields are empty
-fn to_struct(fields: &[ParquetType], options: &SchemaInferenceOptions) -> Option<ArrowDataType> {
+fn to_struct(
+    fields: &[ParquetType],
+    options: &SchemaInferenceOptions,
+) -> PolarsResult<Option<ArrowDataType>> {
     let fields = fields
         .iter()
-        .filter_map(|f| to_field(f, options))
-        .collect::<Vec<Field>>();
+        .map(|f| to_field(f, options))
+        .collect::<PolarsResult<Vec<Option<Field>>>>()?;
+    let fields = fields.into_iter().flatten().collect::<Vec<Field>>();
+
     if fields.is_empty() {
-        None
+        Ok(None)
     } else {
-        Some(ArrowDataType::Struct(fields))
+        Ok(Some(ArrowDataType::Struct(fields)))
     }
 }
 
-/// Converts a parquet `MAP` / `MAP_KEY_VALUE` group to an arrow
-/// [`ArrowDataType::Map`].
+/// Converts a parquet `MAP` / `MAP_KEY_VALUE` group to an arrow [`ArrowDataType::Map`].
 ///
-/// The parquet `MAP` group has a single repeated `key_value` child with `key`
-/// and `value` fields. We build the arrow `Map`'s inner `Field` from those
-/// as `Struct([key, value])`.
-fn to_map(fields: &[ParquetType], options: &SchemaInferenceOptions) -> Option<ArrowDataType> {
-    let Some(ParquetType::GroupType {
+/// We follow the spec (https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#maps)
+/// to the letter, including the backwards-compatibility rules. On the happy path, this is
+/// group (MAP) -> repeated group key_value -> {required key, optional value}.
+fn to_map(
+    fields: &[ParquetType],
+    parent_name: &str,
+    options: &SchemaInferenceOptions,
+) -> PolarsResult<Option<ArrowDataType>> {
+    macro_rules! invalid_map {
+        ($($arg:tt)*) => {
+            polars_bail!(
+                ComputeError:
+                "parquet group '{}' is annotated as MAP, but {}",
+                parent_name,
+                format!($($arg)*),
+            )
+        };
+    }
+
+    let [entries] = fields else {
+        invalid_map!(
+            "it has {} children instead of a single `key_value`",
+            fields.len()
+        )
+    };
+    let ParquetType::GroupType {
         field_info,
         fields: kv_fields,
         ..
-    }) = fields.first()
+    } = entries
     else {
-        return None;
+        invalid_map!("its `{}` child is not a group", entries.name())
     };
-    let entries = to_struct(kv_fields, options)?;
-
-    // `MapArray` requires exactly a key and a value field.
-    if !matches!(&entries, ArrowDataType::Struct(fields) if fields.len() == 2) {
-        return None;
+    if field_info.repetition != Repetition::Repeated {
+        invalid_map!("its `{}` child is not repeated", field_info.name)
+    }
+    if kv_fields.is_empty() {
+        invalid_map!("its `{}` child has no key field", field_info.name)
+    }
+    if kv_fields.len() > 2 {
+        invalid_map!(
+            "its `{}` child has {} fields instead of a key and an optional value",
+            field_info.name,
+            kv_fields.len(),
+        )
     }
 
-    let entry = Field::new(field_info.name.clone(), entries, false);
-    Some(ArrowDataType::Map(Box::new(entry), false))
+    // The key is identified by position, not by name.
+    let key_info = kv_fields[0].get_field_info();
+    if key_info.repetition != Repetition::Required {
+        invalid_map!(
+            "its map key `{}` is {:?} instead of required",
+            key_info.name,
+            key_info.repetition,
+        )
+    }
+
+    // A `value` field is optional in parquet, but an arrow `Map` always has one. The spec allows
+    // reading such a group as a set of keys, so fall through to the plain list conversion.
+    if kv_fields.len() == 1 {
+        return to_list(fields, parent_name, options);
+    }
+
+    let Some(entries_dtype) = to_struct(kv_fields, options)? else {
+        invalid_map!("its `{}` child has no columns", field_info.name)
+    };
+    // `to_struct` drops column-less children, so recheck that both survived.
+    if !matches!(&entries_dtype, ArrowDataType::Struct(fields) if fields.len() == 2) {
+        invalid_map!("its key or value field has no columns")
+    }
+
+    let entry = Field::new(field_info.name.clone(), entries_dtype, false);
+    Ok(Some(ArrowDataType::Map(Box::new(entry), false)))
 }
 
 /// Entry point for converting parquet group type.
@@ -309,14 +373,31 @@ fn to_group_type(
     fields: &[ParquetType],
     parent_name: &str,
     options: &SchemaInferenceOptions,
-) -> Option<ArrowDataType> {
+) -> PolarsResult<Option<ArrowDataType>> {
     debug_assert!(!fields.is_empty());
     if field_info.repetition == Repetition::Repeated {
-        Some(ArrowDataType::LargeList(Box::new(Field::new(
+        // A MAP (or MAP_KEY_VALUE) group should never be repeated, so reject it.
+        if matches!(logical_type, Some(GroupLogicalType::Map))
+            || matches!(
+                converted_type,
+                Some(GroupConvertedType::Map | GroupConvertedType::MapKeyValue)
+            )
+        {
+            polars_bail!(
+                ComputeError:
+                "parquet group '{}' is annotated as MAP, but it is repeated instead of optional or required",
+                field_info.name,
+            )
+        }
+
+        let Some(inner) = to_struct(fields, options)? else {
+            return Ok(None);
+        };
+        Ok(Some(ArrowDataType::LargeList(Box::new(Field::new(
             field_info.name.clone(),
-            to_struct(fields, options)?,
+            inner,
             is_nullable(field_info),
-        ))))
+        )))))
     } else {
         non_repeated_group(logical_type, converted_type, fields, parent_name, options)
     }
@@ -334,7 +415,7 @@ pub(crate) fn is_nullable(field_info: &FieldInfo) -> bool {
 /// Converts parquet schema to arrow field.
 /// Returns `None` iff the parquet type has no associated primitive types,
 /// i.e. if it is a column-less group type.
-fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> Option<Field> {
+fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> PolarsResult<Option<Field>> {
     let field_info = type_.get_field_info();
 
     let metadata: Option<Arc<Metadata>> = field_info.id.map(|x: i32| {
@@ -347,15 +428,19 @@ fn to_field(type_: &ParquetType, options: &SchemaInferenceOptions) -> Option<Fie
         )
     });
 
+    let Some(dtype) = to_dtype(type_, options)? else {
+        return Ok(None);
+    };
+
     let mut arrow_field = Field::new(
         field_info.name.clone(),
-        to_dtype(type_, options)?,
+        dtype,
         is_nullable(type_.get_field_info()),
     );
 
     arrow_field.metadata = metadata;
 
-    Some(arrow_field)
+    Ok(Some(arrow_field))
 }
 
 /// Converts a parquet list to arrow list.
@@ -366,7 +451,7 @@ fn to_list(
     fields: &[ParquetType],
     parent_name: &str,
     options: &SchemaInferenceOptions,
-) -> Option<ArrowDataType> {
+) -> PolarsResult<Option<ArrowDataType>> {
     let item = fields.first().unwrap();
 
     let item_type = match item {
@@ -382,12 +467,15 @@ fn to_list(
             } {
                 // extract the repetition field
                 let nested_item = fields.first().unwrap();
-                to_dtype(nested_item, options)
+                to_dtype(nested_item, options)?
             } else {
-                to_struct(fields, options)
+                to_struct(fields, options)?
             }
         },
-    }?;
+    };
+    let Some(item_type) = item_type else {
+        return Ok(None);
+    };
 
     // Check that the name of the list child is "list", in which case we
     // get the child nullability and name (normally "element") from the nested
@@ -409,11 +497,11 @@ fn to_list(
         ),
     };
 
-    Some(ArrowDataType::LargeList(Box::new(Field::new(
+    Ok(Some(ArrowDataType::LargeList(Box::new(Field::new(
         list_item_name,
         item_type,
         item_is_optional,
-    ))))
+    )))))
 }
 
 /// Converts parquet schema to arrow data type.
@@ -428,9 +516,9 @@ fn to_list(
 pub(crate) fn to_dtype(
     type_: &ParquetType,
     options: &SchemaInferenceOptions,
-) -> Option<ArrowDataType> {
+) -> PolarsResult<Option<ArrowDataType>> {
     match type_ {
-        ParquetType::PrimitiveType(primitive) => Some(to_primitive_type(primitive, options)),
+        ParquetType::PrimitiveType(primitive) => Ok(Some(to_primitive_type(primitive, options))),
         ParquetType::GroupType {
             field_info,
             logical_type,
@@ -438,7 +526,7 @@ pub(crate) fn to_dtype(
             fields,
         } => {
             if fields.is_empty() {
-                None
+                Ok(None)
             } else {
                 to_group_type(
                     field_info,
@@ -455,8 +543,6 @@ pub(crate) fn to_dtype(
 
 #[cfg(test)]
 mod tests {
-    use polars_error::*;
-
     use super::*;
     use crate::parquet::metadata::SchemaDescriptor;
 
@@ -492,7 +578,7 @@ mod tests {
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
-        let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
         let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(fields, expected);
@@ -517,7 +603,7 @@ mod tests {
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
-        let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
         let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(fields, expected);
@@ -538,7 +624,7 @@ mod tests {
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message)?;
-        let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
         let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(fields, expected);
@@ -776,7 +862,7 @@ mod tests {
         }
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
-        let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
         let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
@@ -819,7 +905,7 @@ mod tests {
         }
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
-        let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
         let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
@@ -905,7 +991,7 @@ mod tests {
         }
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
-        let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
         let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
@@ -939,7 +1025,7 @@ mod tests {
         ";
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
-        let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
         let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
@@ -995,7 +1081,7 @@ mod tests {
         ";
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
-        let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
         let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
@@ -1081,7 +1167,7 @@ mod tests {
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
-        let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
         let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
@@ -1197,11 +1283,239 @@ mod tests {
         ];
 
         let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
-        let fields = parquet_to_arrow_schema(parquet_schema.fields());
+        let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
         let fields = fields.iter_values().cloned().collect::<Vec<_>>();
 
         assert_eq!(arrow_fields, fields);
         Ok(())
+    }
+
+    /// The arrow dtype Polars infers for a parquet `MAP` group whose repeated child is named
+    /// `entries_name` and holds `key` and `value`.
+    fn map_of(entries_name: &str, key: Field, value: Field) -> ArrowDataType {
+        ArrowDataType::Map(
+            Box::new(Field::new(
+                entries_name.into(),
+                ArrowDataType::Struct(vec![key, value]),
+                false,
+            )),
+            false,
+        )
+    }
+
+    fn infer_one(message_type: &str) -> PolarsResult<Field> {
+        let parquet_schema = SchemaDescriptor::try_from_message(message_type)?;
+        let fields = parquet_to_arrow_schema(parquet_schema.fields())?;
+        Ok(fields.get("my_map").unwrap().clone())
+    }
+
+    /// The `MAP` shapes that [the spec] requires us to accept, including its
+    /// backward-compatibility rules.
+    ///
+    /// [the spec]: https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#maps
+    #[test]
+    fn test_parquet_maps() -> PolarsResult<()> {
+        let str_key =
+            |name: &str, is_nullable| Field::new(name.into(), ArrowDataType::Utf8View, is_nullable);
+        let i32_value =
+            |name: &str, is_nullable| Field::new(name.into(), ArrowDataType::Int32, is_nullable);
+
+        // The canonical form: `Map<String, Integer>` with a non-null map and nullable values.
+        assert_eq!(
+            infer_one(
+                "
+                message test_schema {
+                  required group my_map (MAP) {
+                    repeated group key_value {
+                      required binary key (STRING);
+                      optional int32 value;
+                    }
+                  }
+                }"
+            )?,
+            Field::new(
+                "my_map".into(),
+                map_of("key_value", str_key("key", false), i32_value("value", true)),
+                false,
+            ),
+        );
+
+        // Backward-compatibility: the `key_value`/`key`/`value` names "may not be used in
+        // existing data and should not be enforced as errors when reading", so the fields are
+        // identified by position.
+        assert_eq!(
+            infer_one(
+                "
+                message test_schema {
+                  optional group my_map (MAP) {
+                    repeated group map {
+                      required binary str (STRING);
+                      required int32 num;
+                    }
+                  }
+                }"
+            )?,
+            Field::new(
+                "my_map".into(),
+                map_of("map", str_key("str", false), i32_value("num", false)),
+                true,
+            ),
+        );
+
+        // Backward-compatibility: a `MAP_KEY_VALUE` group that is not contained by a `MAP` group
+        // "should be handled as a `MAP`-annotated group".
+        assert_eq!(
+            infer_one(
+                "
+                message test_schema {
+                  optional group my_map (MAP_KEY_VALUE) {
+                    repeated group map {
+                      required binary key (STRING);
+                      optional int32 value;
+                    }
+                  }
+                }"
+            )?,
+            Field::new(
+                "my_map".into(),
+                map_of("map", str_key("key", false), i32_value("value", true)),
+                true,
+            ),
+        );
+
+        // A `MAP_KEY_VALUE` group that *is* contained by a `MAP` group is just the entries group.
+        assert_eq!(
+            infer_one(
+                "
+                message test_schema {
+                  optional group my_map (MAP) {
+                    repeated group key_value (MAP_KEY_VALUE) {
+                      required binary key (STRING);
+                      optional int32 value;
+                    }
+                  }
+                }"
+            )?,
+            Field::new(
+                "my_map".into(),
+                map_of("key_value", str_key("key", false), i32_value("value", true)),
+                true,
+            ),
+        );
+
+        // The `value` field may be omitted. An arrow `Map` always has one, so we take the spec up
+        // on its alternative and read the group "as a set of keys".
+        assert_eq!(
+            infer_one(
+                "
+                message test_schema {
+                  optional group my_map (MAP) {
+                    repeated group key_value {
+                      required binary key (STRING);
+                    }
+                  }
+                }"
+            )?,
+            Field::new(
+                "my_map".into(),
+                ArrowDataType::LargeList(Box::new(str_key("key_value", false))),
+                true,
+            ),
+        );
+
+        Ok(())
+    }
+
+    /// A group annotated as `MAP` that does not satisfy the spec is refused, rather than being
+    /// silently reinterpreted as a list of its entries.
+    #[test]
+    fn test_parquet_maps_reject_nonconforming() {
+        // "The `key` field [...] must have repetition `required`".
+        let cases = [
+            (
+                "its map key `key` is Optional instead of required",
+                "
+                message test_schema {
+                  optional group my_map (MAP) {
+                    repeated group key_value {
+                      optional binary key (STRING);
+                      optional int32 value;
+                    }
+                  }
+                }",
+            ),
+            // "It must not contain any other values."
+            (
+                "has 3 fields instead of a key and an optional value",
+                "
+                message test_schema {
+                  optional group my_map (MAP) {
+                    repeated group key_value {
+                      required binary key (STRING);
+                      optional int32 value;
+                      optional int32 extra;
+                    }
+                  }
+                }",
+            ),
+            // "The middle level [...] must be a repeated group".
+            (
+                "its `key_value` child is not repeated",
+                "
+                message test_schema {
+                  optional group my_map (MAP) {
+                    optional group key_value {
+                      required binary key (STRING);
+                      optional int32 value;
+                    }
+                  }
+                }",
+            ),
+            // "[the outer-most level] contains a single field named `key_value`".
+            (
+                "it has 2 children instead of a single `key_value`",
+                "
+                message test_schema {
+                  optional group my_map (MAP) {
+                    repeated group key_value {
+                      required binary key (STRING);
+                      optional int32 value;
+                    }
+                    optional int32 stray;
+                  }
+                }",
+            ),
+            (
+                "its `key_value` child is not a group",
+                "
+                message test_schema {
+                  optional group my_map (MAP) {
+                    repeated binary key_value (STRING);
+                  }
+                }",
+            ),
+            // "The repetition of this level must be either `optional` or `required`".
+            (
+                "it is repeated instead of optional or required",
+                "
+                message test_schema {
+                  repeated group my_map (MAP) {
+                    repeated group key_value {
+                      required binary key (STRING);
+                      optional int32 value;
+                    }
+                  }
+                }",
+            ),
+        ];
+
+        for (expected, message_type) in cases {
+            let err = infer_one(message_type).unwrap_err().to_string();
+            assert!(
+                err.contains(expected),
+                "expected error to contain {expected:?}, got {err:?}",
+            );
+        }
     }
 
     #[test]
@@ -1254,7 +1568,7 @@ mod tests {
                 &Some(SchemaInferenceOptions {
                     int96_coerce_to_timeunit: tu,
                 }),
-            );
+            )?;
             let fields = fields.iter_values().cloned().collect::<Vec<_>>();
             assert_eq!(arrow_fields, fields);
         }
