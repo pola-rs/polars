@@ -51,6 +51,11 @@ use rayon::prelude::*;
 use self::cross_join::fused_cross_filter;
 use super::IntoDf;
 
+/// Reduces monomorphization: rayon plumbing is instantiated per `R`, not per closure.
+pub(crate) fn par_map_collect<R: Send>(n: usize, f: &(dyn Fn(usize) -> R + Sync)) -> Vec<R> {
+    RAYON.install(|| (0..n).into_par_iter().map(f).collect())
+}
+
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
     ///
