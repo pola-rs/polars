@@ -166,6 +166,24 @@ where
     })
 }
 
+/// Reduces monomorphization: keeps `build_tables` instantiated once per key type.
+pub(crate) fn build_tables_from_arrays<T>(
+    arrays: &[&T::Array],
+    nulls_equal: bool,
+) -> Vec<PlHashMap<<Option<T::Native> as ToTotalOrd>::TotalOrdItem, IdxVec>>
+where
+    T: PolarsNumericType,
+    Option<T::Native>: TotalHash + TotalEq + ToTotalOrd,
+    <Option<T::Native> as ToTotalOrd>::TotalOrdItem:
+        Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
+{
+    let keys = arrays
+        .iter()
+        .map(|arr| arr.iter().map(|v| v.copied()))
+        .collect();
+    build_tables(keys, nulls_equal)
+}
+
 // we determine the offset so that we later know which index to store in the join tuples
 pub(super) fn probe_to_offsets<T, I>(probe: &[I]) -> Vec<usize>
 where
