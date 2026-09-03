@@ -198,10 +198,11 @@ pub(super) fn node_stats_with_cache(
             let left = node_stats_with_cache(*input_left, ir_arena, expr_arena, cache)?;
             let right = node_stats_with_cache(*input_right, ir_arena, expr_arena, cache)?;
 
-            let key_domains: f64 = on
-                .iter()
-                .map(|(left_key, right_key)| key_domain(&left, left_key, &right, right_key))
-                .product();
+            let key_domains = composite_key_domain(
+                on.iter()
+                    .map(|(left_key, right_key)| key_domain(&left, left_key, &right, right_key)),
+                left.unfiltered.max(right.unfiltered),
+            );
             let how = &options.args.how;
             let rows = |l: f64, r: f64| join_rows(how, l, r, join_cardinality(l, r, key_domains));
 
@@ -584,6 +585,14 @@ pub fn join_cardinality(left: f64, right: f64, key_domain_product: f64) -> f64 {
     // Every factor comes from `key_domain`, which floors at `MIN_CARDINALITY`, so
     // the product is always >= 1.
     (left * right / key_domain_product).max(MIN_CARDINALITY)
+}
+
+/// Domain size of a composite key, from the domains of the columns making it up.
+///
+/// The parts multiply, which holds only if they vary independently. `max_rows` bounds
+/// the result, since neither side holds more distinct combinations than it has rows.
+pub fn composite_key_domain(parts: impl Iterator<Item = f64>, max_rows: f64) -> f64 {
+    parts.product::<f64>().min(max_rows).max(MIN_CARDINALITY)
 }
 
 /// Domain size of the key joining two leaves.

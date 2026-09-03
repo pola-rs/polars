@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use arrow::legacy::time_zone::Tz;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
-use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, GroupsType, Int64Chunked, IntoColumn, TimeUnit};
@@ -14,6 +13,7 @@ use polars_time::prelude::{GroupByDynamicWindower, Label, ensure_duration_matche
 use polars_time::{DynamicGroupOptions, LB_NAME, UB_NAME};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::ComputeNode;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -22,6 +22,7 @@ use crate::expression::StreamExpr;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::{RecvPort, SendPort};
+use crate::utils::morsel_distributor::morsel_distributor;
 
 type NextWindows = (Vec<[IdxSize; 2]>, Vec<i64>, Vec<i64>, DataFrame);
 
@@ -43,6 +44,7 @@ pub struct DynamicGroupBy {
     include_boundaries: bool,
     windower: GroupByDynamicWindower,
     aggs: Arc<[(PlSmallStr, StreamExpr)]>,
+    seq_offset: Arc<RelaxedCell<u64>>,
 }
 impl DynamicGroupBy {
     pub fn new(
@@ -119,6 +121,7 @@ impl DynamicGroupBy {
             include_boundaries,
             windower,
             aggs,
+            seq_offset: Arc::default(),
         })
     }
 
@@ -357,7 +360,7 @@ impl ComputeNode for DynamicGroupBy {
                     _ = send
                         .send(Morsel::new_unregistered(
                             df,
-                            self.seq.successor(),
+                            self.seq.successor().offset_by_u64(self.seq_offset.load()),
                             SourceToken::new(),
                         ))
                         .await;
@@ -372,11 +375,11 @@ impl ComputeNode for DynamicGroupBy {
         let mut recv = recv.serial();
         let send = send_ports[0].take().unwrap().parallel();
 
-        let (mut distributor, rxs) =
-            distributor_channel::<(Morsel, Vec<[IdxSize; 2]>, Vec<i64>, Vec<i64>)>(
-                send.len(),
-                *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
-            );
+        let (mut distributor, rxs) = morsel_distributor(
+            send.len(),
+            *DEFAULT_DISTRIBUTOR_BUFFER_SIZE,
+            self.seq_offset.clone(),
+        );
 
         // Worker tasks.
         //
@@ -393,7 +396,7 @@ impl ComputeNode for DynamicGroupBy {
             let include_boundaries = self.include_boundaries;
 
             scope.spawn_task(TaskPriority::High, async move {
-                while let Ok((mut morsel, windows, lower_bound, upper_bound)) = rx.recv().await {
+                while let Ok((mut morsel, (windows, lower_bound, upper_bound))) = rx.recv().await {
                     morsel = morsel
                         .async_try_map::<PolarsError, _, _>(async |df| {
                             Self::evaluate_one(
@@ -468,9 +471,7 @@ impl ComputeNode for DynamicGroupBy {
                     if distributor
                         .send((
                             Morsel::new_unregistered(df, seq, source_token),
-                            windows,
-                            lower_bound,
-                            upper_bound,
+                            (windows, lower_bound, upper_bound),
                         ))
                         .await
                         .is_err()

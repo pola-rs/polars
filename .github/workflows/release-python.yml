@@ -19,11 +19,11 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.10'
+  POLARS_BUILD_COMMIT: ${{ inputs.sha || github.sha }}
   PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
-  RUST_MIN_STACK: 33554432 # 32 MiB
 
   COMPAT_TUNE_CPU: ''
   COMPAT_FEATURES: '+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b'
@@ -344,6 +344,10 @@ jobs:
         with:
           command: build
           target: ${{ matrix.target }}
+          # `maturin-action` only forwards environment variables matching a
+          # fixed prefix allowlist into the manylinux/musllinux container, so
+          # `POLARS_BUILD_COMMIT` has to be passed through explicitly.
+          docker-options: -e POLARS_BUILD_COMMIT
           args: >
             --profile ${{ inputs.dry-run == true && 'dev' || 'dist-release' }}
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
@@ -356,7 +360,12 @@ jobs:
         if: endsWith(matrix.target, '-musl') == false
         run: |
           pip install --force-reinstall --verbose dist/*.whl
-          python -c 'import polars; polars.show_versions()'
+          python -c 'import polars; polars.show_versions()' | tee versions.txt
+
+          if ! grep -qE "^Build: +$POLARS_BUILD_COMMIT\$" versions.txt; then
+            echo "::error::show_versions() does not report build commit $POLARS_BUILD_COMMIT"
+            exit 1
+          fi
 
       - name: Upload wheel
         uses: actions/upload-artifact@v7

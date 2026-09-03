@@ -562,6 +562,34 @@ def test_sink_iceberg_all_types(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+def test_sink_iceberg_uses_native_parquet_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tbl, _ = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
+    )
+    file_io_type = type(tbl.io)
+    original_new_input = file_io_type.new_input
+
+    def new_input(self: Any, location: str) -> Any:
+        if "/data/" in location:
+            msg = f"unexpected data file read: {location}"
+            raise AssertionError(msg)
+        return original_new_input(self, location)
+
+    monkeypatch.setattr(file_io_type, "new_input", new_input)
+
+    pl.LazyFrame({"a": [1, 2, 3]}).sink_iceberg(tbl, mode="append")
+
+    [task] = tbl.scan().plan_files()
+    assert task.file.record_count == 3
+    assert (
+        task.file.file_size_in_bytes
+        == Path(task.file.file_path.removeprefix("file://")).stat().st_size
+    )
+
+
+@pytest.mark.write_disk
 def test_sink_iceberg_parquet_writer_options(tmp_path: Path) -> None:
     tbl, _ = new_iceberg_table(
         tmp_path, schema=IcebergSchema(NestedField(1, "a", LongType()))
@@ -2618,10 +2646,12 @@ def test_scan_iceberg_nulls_nested(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize("use_pyiceberg_filter", [True, False])
 def test_scan_iceberg_parquet_prefilter_with_column_mapping(
     tmp_path: Path,
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
+    use_pyiceberg_filter: bool,
 ) -> None:
     catalog = SqlCatalog(
         "default",
@@ -2694,14 +2724,8 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
         ),
     )
 
-    # Upstream issue - PyIceberg filter does not handle schema evolution
-    with pytest.raises(Exception, match="unpack requires a buffer of 8 bytes"):
-        pl.scan_iceberg(
-            tbl, reader_override="native", use_pyiceberg_filter=True
-        ).filter(pl.col("column_3") == 5).collect()
-
     q = pl.scan_iceberg(
-        tbl, reader_override="native", use_pyiceberg_filter=False
+        tbl, reader_override="native", use_pyiceberg_filter=use_pyiceberg_filter
     ).filter(pl.col("column_3") == 5)
 
     with plmonkeypatch.context() as cx:
@@ -2720,6 +2744,11 @@ def test_scan_iceberg_parquet_prefilter_with_column_mapping(
             }
         ),
     )
+
+    if use_pyiceberg_filter:
+        # Skipped from pyiceberg, we don't see the file at all.
+        assert "[MultiScanTaskInit]: 1 source" in capture
+        return
 
     # First file
     assert "Source filter mask initialization via table statistics" in capture

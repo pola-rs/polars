@@ -1,8 +1,10 @@
 use polars::lazy::dsl;
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 
 use crate::PyExpr;
+use crate::error::PyPolarsErr;
 
 #[pyfunction]
 pub fn when(condition: PyExpr) -> PyWhen {
@@ -57,11 +59,18 @@ impl PyThen {
     }
 
     fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        crate::conversion::serde_pickle(&self.inner, py)
+        let mut bytes: Vec<u8> = vec![];
+        self.inner
+            .serialize_compact_into(&mut bytes)
+            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+        Ok(PyBytes::new(py, &bytes))
     }
 
     fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
-        crate::conversion::serde_unpickle(&mut self.inner, state)
+        let bytes = state.extract::<PyBackedBytes>()?;
+        self.inner = dsl::Then::deserialize_compact_from(&mut &*bytes)
+            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+        Ok(())
     }
 }
 
@@ -87,10 +96,17 @@ impl PyChainedThen {
     }
 
     fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-        crate::conversion::serde_pickle(&self.inner, py)
+        let mut bytes: Vec<u8> = vec![];
+        self.inner
+            .serialize_compact_into(&mut bytes)
+            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+        Ok(PyBytes::new(py, &bytes))
     }
 
     fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
-        crate::conversion::serde_unpickle(&mut self.inner, state)
+        let bytes = state.extract::<PyBackedBytes>()?;
+        self.inner = dsl::ChainedThen::deserialize_compact_from(&mut &*bytes)
+            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+        Ok(())
     }
 }

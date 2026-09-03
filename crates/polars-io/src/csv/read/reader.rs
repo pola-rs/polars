@@ -191,7 +191,7 @@ pub fn prepare_csv_schema(
             let out = match fld.dtype() {
                 Time => {
                     fields_to_cast.push(fld.clone());
-                    fld.coerce(String);
+                    fld.set_dtype(String);
                     PolarsResult::Ok(fld)
                 },
                 _ => {
