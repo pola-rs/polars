@@ -42,6 +42,13 @@
             overlays = [ inputs.rust-overlay.overlays.default ];
           };
 
+          checks.formatting =
+            pkgs.runCommandLocal "check-formatting" { nativeBuildInputs = [ pkgs.nixfmt ]; }
+              ''
+                nixfmt --check ${./flake.nix}
+                touch "$out"
+              '';
+
           devShells.default = pkgs.mkShell {
             packages = [
               python
@@ -86,6 +93,8 @@
               source "$workspace_root/.venv/bin/activate"
             '';
           };
+
+          formatter = pkgs.nixfmt;
         };
     };
 }
