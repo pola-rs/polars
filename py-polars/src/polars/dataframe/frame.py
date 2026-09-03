@@ -2923,7 +2923,7 @@ class DataFrame:
         else:
             target = file
 
-        engine: EngineType = "in-memory"
+        engine: EngineType = "streaming"
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 
@@ -3166,7 +3166,7 @@ class DataFrame:
         else:
             target = file
 
-        engine: EngineType = "in-memory"
+        engine: EngineType = "streaming"
 
         from polars.lazyframe.opt_flags import QueryOptFlags
 

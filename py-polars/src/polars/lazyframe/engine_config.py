@@ -63,7 +63,10 @@ def set_engine_affinity_override(engine: Engine | None) -> None:
 
 def _eager_engine() -> Engine:
     """Return the engine used for internal eager operations."""
-    return _IN_MEMORY_ENGINE
+    # `"auto"` never consults the configured affinity -- only `_select_engine` does --
+    # so this stays local, while Rust picks in-memory for eager plans and streaming
+    # otherwise. See `LazyFrame::collect_with_engine`.
+    return _AUTO_ENGINE
 
 
 def _engine_from_name(engine: EngineTypeName) -> Engine:
