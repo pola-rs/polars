@@ -5,8 +5,13 @@ use num_traits::Zero;
 use polars_compute::arithmetic::pl_num::PlNumArithmetic;
 use polars_compute::sum::WrappingAdd;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
+use rayon::prelude::*;
 
-type ArrayDotKernel = fn(&ArrayChunked, &ArrayChunked, usize) -> PolarsResult<Series>;
+// Historical crossover center; recalibrate against the all-valid baseline.
+const PARALLEL_MIN_COORDINATE_WORK: usize = 1 << 20;
+
+type ArrayDotKernel = fn(&ArrayChunked, &ArrayChunked, usize, bool) -> PolarsResult<Series>;
 
 pub fn is_supported_array_dot_dtype(dtype: &DataType) -> bool {
     array_dot_kernel(dtype).is_some()
@@ -107,10 +112,53 @@ where
     output
 }
 
-fn dot_primitive<T>(
+#[inline(never)]
+fn dot_outer_all_valid_parallel<T>(
+    row_reducer: &DotRowReducer<T>,
+    lhs_broadcast: bool,
+    rhs_broadcast: bool,
+    output_len: usize,
+) -> Vec<T::Sum>
+where
+    T: NativeType + PlNumArithmetic + SumCast,
+    T::Sum: WrappingAdd,
+{
+    let mut output = Vec::with_capacity(output_len);
+
+    RAYON.install(|| {
+        (0..output_len)
+            .into_par_iter()
+            .map(|output_idx| {
+                let lhs_idx = if lhs_broadcast { 0 } else { output_idx };
+                let rhs_idx = if rhs_broadcast { 0 } else { output_idx };
+                // SAFETY: broadcast uses row 0; otherwise validated equal
+                // lengths make `output_idx` valid for both operands.
+                unsafe { row_reducer.dot_row(lhs_idx, rhs_idx) }
+            })
+            .collect_into_vec(&mut output);
+    });
+
+    output
+}
+
+#[inline]
+fn should_parallelize(
+    allow_parallel: bool,
+    output_len: usize,
+    width: usize,
+    n_threads: usize,
+) -> bool {
+    allow_parallel
+        && n_threads > 1
+        && output_len > 1
+        && output_len.saturating_mul(width) >= PARALLEL_MIN_COORDINATE_WORK
+}
+
+fn dot_primitive<T, const MAY_PARALLELIZE: bool>(
     lhs: &ArrayChunked,
     rhs: &ArrayChunked,
     output_len: usize,
+    allow_parallel: bool,
 ) -> PolarsResult<Series>
 where
     T: NativeType + PlNumArithmetic + SumCast,
@@ -161,7 +209,21 @@ where
     // An absent outer bitmap guarantees valid output rows without scanning.
     // Child validity only filters coordinate pairs inside `DotRowReducer`.
     if lhs_array.validity().is_none() && rhs_array.validity().is_none() {
-        let output = dot_outer_all_valid(&row_reducer, lhs_broadcast, rhs_broadcast, output_len);
+        let parallel = if MAY_PARALLELIZE {
+            should_parallelize(
+                allow_parallel,
+                output_len,
+                width,
+                RAYON.current_num_threads(),
+            )
+        } else {
+            false
+        };
+        let output = if parallel {
+            dot_outer_all_valid_parallel(&row_reducer, lhs_broadcast, rhs_broadcast, output_len)
+        } else {
+            dot_outer_all_valid(&row_reducer, lhs_broadcast, rhs_broadcast, output_len)
+        };
         let output = PrimitiveArray::from_data_default(output.into(), None);
         return Series::try_from((lhs.name().clone(), vec![Box::new(output) as ArrayRef]));
     }
@@ -196,26 +258,35 @@ where
 
 fn array_dot_kernel(dtype: &DataType) -> Option<ArrayDotKernel> {
     let kernel = match dtype {
-        DataType::Int8 => dot_primitive::<i8>,
-        DataType::Int16 => dot_primitive::<i16>,
-        DataType::Int32 => dot_primitive::<i32>,
-        DataType::Int64 => dot_primitive::<i64>,
+        DataType::Int8 => dot_primitive::<i8, false>,
+        DataType::Int16 => dot_primitive::<i16, false>,
+        DataType::Int32 => dot_primitive::<i32, false>,
+        DataType::Int64 => dot_primitive::<i64, false>,
         #[cfg(feature = "dtype-i128")]
-        DataType::Int128 => dot_primitive::<i128>,
-        DataType::UInt8 => dot_primitive::<u8>,
-        DataType::UInt16 => dot_primitive::<u16>,
-        DataType::UInt32 => dot_primitive::<u32>,
-        DataType::UInt64 => dot_primitive::<u64>,
+        DataType::Int128 => dot_primitive::<i128, false>,
+        DataType::UInt8 => dot_primitive::<u8, false>,
+        DataType::UInt16 => dot_primitive::<u16, false>,
+        DataType::UInt32 => dot_primitive::<u32, false>,
+        DataType::UInt64 => dot_primitive::<u64, false>,
         #[cfg(feature = "dtype-u128")]
-        DataType::UInt128 => dot_primitive::<u128>,
-        DataType::Float32 => dot_primitive::<f32>,
-        DataType::Float64 => dot_primitive::<f64>,
+        DataType::UInt128 => dot_primitive::<u128, false>,
+        DataType::Float32 => dot_primitive::<f32, true>,
+        DataType::Float64 => dot_primitive::<f64, true>,
         _ => return None,
     };
     Some(kernel)
 }
 
 pub(super) fn array_dot(lhs: &ArrayChunked, rhs: &ArrayChunked) -> PolarsResult<Series> {
+    array_dot_with_parallelism(lhs, rhs, false)
+}
+
+#[doc(hidden)]
+pub fn array_dot_with_parallelism(
+    lhs: &ArrayChunked,
+    rhs: &ArrayChunked,
+    allow_parallel: bool,
+) -> PolarsResult<Series> {
     let (lhs_inner, lhs_width) = match lhs.dtype() {
         DataType::Array(inner, width) => (inner.as_ref(), *width),
         _ => unreachable!(),
@@ -257,5 +328,115 @@ pub(super) fn array_dot(lhs: &ArrayChunked, rhs: &ArrayChunked) -> PolarsResult<
         ));
     }
 
-    kernel(lhs, rhs, output_len)
+    kernel(lhs, rhs, output_len, allow_parallel)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_should_parallelize() {
+        assert!(!should_parallelize(false, usize::MAX, 2, 16));
+        assert!(!should_parallelize(true, 2, usize::MAX, 1));
+        assert!(!should_parallelize(true, 1, usize::MAX, 16));
+        assert!(!should_parallelize(true, usize::MAX, 0, 16));
+        assert!(!should_parallelize(
+            true,
+            PARALLEL_MIN_COORDINATE_WORK - 1,
+            1,
+            16,
+        ));
+        assert!(should_parallelize(true, PARALLEL_MIN_COORDINATE_WORK, 1, 2,));
+        assert!(should_parallelize(true, usize::MAX, 2, 2));
+    }
+
+    #[test]
+    fn test_parallel_outer_matches_serial_bitwise() {
+        let lhs = [
+            1e20_f32,
+            1.0,
+            -1e20,
+            -0.0,
+            1.0,
+            2.0,
+            f32::INFINITY,
+            1.0,
+            2.0,
+            f32::NAN,
+            2.0,
+            3.0,
+        ];
+        let rhs = [
+            1.0_f32, 1.0, 1.0, 1.0, -1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        ];
+        let reducer = DotRowReducer {
+            lhs_slice: &lhs,
+            rhs_slice: &rhs,
+            lhs_inner_validity: None,
+            rhs_inner_validity: None,
+            width: 3,
+        };
+
+        let serial = dot_outer_all_valid(&reducer, false, false, 4);
+        let parallel = dot_outer_all_valid_parallel(&reducer, false, false, 4);
+        assert_eq!(
+            serial
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            parallel
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn test_parallel_outer_broadcast_and_inner_nulls() {
+        let lhs = [1.0_f64, 2.0, 3.0];
+        let rhs = [4.0_f64, 5.0, 6.0, 7.0, 8.0, 9.0];
+        let lhs_validity: Bitmap = [true, false, true].into_iter().collect();
+        let rhs_validity: Bitmap = [true, true, false, true, false, true].into_iter().collect();
+        let reducer = DotRowReducer {
+            lhs_slice: &lhs,
+            rhs_slice: &rhs,
+            lhs_inner_validity: Some(&lhs_validity),
+            rhs_inner_validity: Some(&rhs_validity),
+            width: 3,
+        };
+
+        assert_eq!(
+            dot_outer_all_valid(&reducer, true, false, 2),
+            dot_outer_all_valid_parallel(&reducer, true, false, 2),
+        );
+
+        let reverse_reducer = DotRowReducer {
+            lhs_slice: &rhs,
+            rhs_slice: &lhs,
+            lhs_inner_validity: Some(&rhs_validity),
+            rhs_inner_validity: Some(&lhs_validity),
+            width: 3,
+        };
+        assert_eq!(
+            dot_outer_all_valid(&reverse_reducer, false, true, 2),
+            dot_outer_all_valid_parallel(&reverse_reducer, false, true, 2),
+        );
+    }
+
+    #[test]
+    fn test_parallel_outer_zero_width() {
+        let reducer = DotRowReducer::<f64> {
+            lhs_slice: &[],
+            rhs_slice: &[],
+            lhs_inner_validity: None,
+            rhs_inner_validity: None,
+            width: 0,
+        };
+
+        assert_eq!(
+            dot_outer_all_valid_parallel(&reducer, false, false, 3),
+            vec![0.0, 0.0, 0.0],
+        );
+    }
 }

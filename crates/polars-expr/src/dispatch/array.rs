@@ -1,6 +1,6 @@
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::{Column, DataType, ExplodeOptions, IntoColumn, SortOptions};
-use polars_ops::prelude::array::ArrayNameSpace;
+use polars_ops::prelude::array::{ArrayNameSpace, array_dot_with_parallelism};
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRArrayFunction;
 use polars_utils::broadcast::broadcast_len;
@@ -8,7 +8,10 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
 
-pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsUdf>> {
+pub fn function_expr_to_udf(
+    func: IRArrayFunction,
+    allow_threading: bool,
+) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRArrayFunction::*;
     match func {
         Concat => map_as_slice!(concat_arr),
@@ -16,7 +19,7 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
         Min => map!(min),
         Max => map!(max),
         Sum => map!(sum),
-        Dot => map_as_slice!(dot),
+        Dot => map_as_slice!(dot, allow_threading),
         ToList => map!(to_list),
         Std(ddof) => map!(std, ddof),
         Var(ddof) => map!(var, ddof),
@@ -74,12 +77,11 @@ pub(super) fn sum(s: &Column) -> PolarsResult<Column> {
     s.array()?.array_sum().map(Column::from)
 }
 
-pub(super) fn dot(s: &[Column]) -> PolarsResult<Column> {
+pub(super) fn dot(s: &[Column], allow_parallel: bool) -> PolarsResult<Column> {
     let lhs = s[0].as_materialized_series_maintain_scalar();
     let rhs = s[1].as_materialized_series_maintain_scalar();
 
-    lhs.array()?
-        .array_dot(rhs.array()?)?
+    array_dot_with_parallelism(lhs.array()?, rhs.array()?, allow_parallel)?
         .into_column()
         .broadcast_owned_to(broadcast_len(s)?)
 }

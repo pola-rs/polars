@@ -139,11 +139,21 @@ mod trigonometry;
 pub use groups_dispatch::drop_items;
 
 pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUdf>> {
+    function_expr_to_udf_with_threading(func, false)
+}
+
+pub(crate) fn function_expr_to_udf_with_threading(
+    func: IRFunctionExpr,
+    allow_threading: bool,
+) -> SpecialEq<Arc<dyn ColumnsUdf>> {
+    #[cfg(not(feature = "dtype-array"))]
+    let _ = allow_threading;
+
     use IRFunctionExpr as F;
     match func {
         // Namespaces
         #[cfg(feature = "dtype-array")]
-        F::ArrayExpr(func) => array::function_expr_to_udf(func),
+        F::ArrayExpr(func) => array::function_expr_to_udf(func, allow_threading),
         F::BinaryExpr(func) => binary::function_expr_to_udf(func),
         #[cfg(feature = "dtype-categorical")]
         F::Categorical(func) => cat::function_expr_to_udf(func),
