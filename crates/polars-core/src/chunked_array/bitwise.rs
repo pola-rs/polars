@@ -89,7 +89,12 @@ impl BitOr for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary_kernel_flat(self, rhs, polars_compute::boolean::or, self.name().clone())
+        arity::binary_elementwise_kernel_flat(
+            self,
+            rhs,
+            polars_compute::boolean::or,
+            self.name().clone(),
+        )
     }
 }
 
@@ -119,7 +124,7 @@ impl BitXor for &BooleanChunked {
                 Some(true) => !other_ca,
             }
         } else {
-            arity::binary_kernel_flat(
+            arity::binary_elementwise_kernel_flat(
                 self,
                 rhs,
                 |l_arr, r_arr| {
@@ -166,7 +171,12 @@ impl BitAnd for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary_kernel_flat(self, rhs, polars_compute::boolean::and, self.name().clone())
+        arity::binary_elementwise_kernel_flat(
+            self,
+            rhs,
+            polars_compute::boolean::and,
+            self.name().clone(),
+        )
     }
 }
 

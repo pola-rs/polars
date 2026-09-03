@@ -1,4 +1,4 @@
-use crate::prelude::arity::unary_mut_values_flat;
+use crate::prelude::arity::unary_elementwise_mut_values_flat;
 use crate::prelude::*;
 
 fn str_to_cat_enum(map: &CategoricalMapping, s: &str) -> PolarsResult<CatSize> {
@@ -234,7 +234,7 @@ where
                 BooleanChunked::full(lhs.name().clone(), true, lhs.len())
             }
         } else {
-            unary_mut_values_flat(lhs.physical(), |arr| {
+            unary_elementwise_mut_values_flat(lhs.physical(), |arr| {
                 PlBooleanArray::new_scalar(!is_eq, arr.len())
             })
         };

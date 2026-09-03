@@ -41,7 +41,7 @@ where
                     BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values_flat(
+            _ => arity::binary_elementwise_mut_values_flat(
                 self,
                 rhs,
                 |a, b| a.tot_eq_kernel(b).into(),
@@ -70,7 +70,7 @@ where
                     rhs.is_null()
                 }
             },
-            _ => arity::binary_kernel_flat(
+            _ => arity::binary_elementwise_kernel_flat(
                 self,
                 rhs,
                 |a, b| a.tot_eq_missing_kernel(b).into(),
@@ -99,7 +99,7 @@ where
                     BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values_flat(
+            _ => arity::binary_elementwise_mut_values_flat(
                 self,
                 rhs,
                 |a, b| a.tot_ne_kernel(b).into(),
@@ -128,7 +128,7 @@ where
                     rhs.is_not_null()
                 }
             },
-            _ => arity::binary_kernel_flat(
+            _ => arity::binary_elementwise_kernel_flat(
                 self,
                 rhs,
                 |a, b| a.tot_ne_missing_kernel(b).into(),
@@ -165,7 +165,7 @@ where
                     BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values_flat(
+            _ => arity::binary_elementwise_mut_values_flat(
                 self,
                 rhs,
                 |a, b| a.tot_lt_kernel(b).into(),
@@ -194,7 +194,7 @@ where
                     BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values_flat(
+            _ => arity::binary_elementwise_mut_values_flat(
                 self,
                 rhs,
                 |a, b| a.tot_le_kernel(b).into(),
@@ -273,7 +273,7 @@ impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
         match (self.scalar_value(), rhs.scalar_value()) {
             (_, Some(value)) if self.len() == length => {
                 if let Some(value) = value {
-                    arity::unary_mut_values_flat(self, |arr| {
+                    arity::unary_elementwise_mut_values_flat(self, |arr| {
                         arr.tot_eq_kernel_broadcast(&value).into()
                     })
                 } else {
@@ -282,14 +282,14 @@ impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
             },
             (Some(value), _) => {
                 if let Some(value) = value {
-                    arity::unary_mut_values_flat(rhs, |arr| {
+                    arity::unary_elementwise_mut_values_flat(rhs, |arr| {
                         arr.tot_eq_kernel_broadcast(&value).into()
                     })
                 } else {
                     BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values_flat(
+            _ => arity::binary_elementwise_mut_values_flat(
                 self,
                 rhs,
                 |a, b| a.tot_eq_kernel(b).into(),
@@ -306,7 +306,7 @@ impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
         match (self.scalar_value(), rhs.scalar_value()) {
             (_, Some(value)) if self.len() == length => {
                 if let Some(value) = value {
-                    arity::unary_mut_with_options_flat(self, |arr| {
+                    arity::unary_elementwise_mut_with_options_flat(self, |arr| {
                         arr.tot_eq_missing_kernel_broadcast(&value).into()
                     })
                 } else {
@@ -315,14 +315,14 @@ impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
             },
             (Some(value), _) => {
                 if let Some(value) = value {
-                    arity::unary_mut_with_options_flat(rhs, |arr| {
+                    arity::unary_elementwise_mut_with_options_flat(rhs, |arr| {
                         arr.tot_eq_missing_kernel_broadcast(&value).into()
                     })
                 } else {
                     rhs.is_null()
                 }
             },
-            _ => arity::binary_kernel_flat(
+            _ => arity::binary_elementwise_kernel_flat(
                 self,
                 rhs,
                 |a, b| a.tot_eq_missing_kernel(b).into(),
@@ -339,7 +339,7 @@ impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
         match (self.scalar_value(), rhs.scalar_value()) {
             (_, Some(value)) if self.len() == length => {
                 if let Some(value) = value {
-                    arity::unary_mut_values_flat(self, |arr| {
+                    arity::unary_elementwise_mut_values_flat(self, |arr| {
                         arr.tot_ne_kernel_broadcast(&value).into()
                     })
                 } else {
@@ -348,14 +348,14 @@ impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
             },
             (Some(value), _) => {
                 if let Some(value) = value {
-                    arity::unary_mut_values_flat(rhs, |arr| {
+                    arity::unary_elementwise_mut_values_flat(rhs, |arr| {
                         arr.tot_ne_kernel_broadcast(&value).into()
                     })
                 } else {
                     BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values_flat(
+            _ => arity::binary_elementwise_mut_values_flat(
                 self,
                 rhs,
                 |a, b| a.tot_ne_kernel(b).into(),
@@ -372,7 +372,7 @@ impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
         match (self.scalar_value(), rhs.scalar_value()) {
             (_, Some(value)) if self.len() == length => {
                 if let Some(value) = value {
-                    arity::unary_mut_with_options_flat(self, |arr| {
+                    arity::unary_elementwise_mut_with_options_flat(self, |arr| {
                         arr.tot_ne_missing_kernel_broadcast(&value).into()
                     })
                 } else {
@@ -381,14 +381,14 @@ impl ChunkCompareEq<&BooleanChunked> for BooleanChunked {
             },
             (Some(value), _) => {
                 if let Some(value) = value {
-                    arity::unary_mut_with_options_flat(rhs, |arr| {
+                    arity::unary_elementwise_mut_with_options_flat(rhs, |arr| {
                         arr.tot_ne_missing_kernel_broadcast(&value).into()
                     })
                 } else {
                     rhs.is_not_null()
                 }
             },
-            _ => arity::binary_kernel_flat(
+            _ => arity::binary_elementwise_kernel_flat(
                 self,
                 rhs,
                 |a, b| a.tot_ne_missing_kernel(b).into(),
@@ -409,7 +409,7 @@ impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
         match (self.scalar_value(), rhs.scalar_value()) {
             (_, Some(value)) if self.len() == length => {
                 if let Some(value) = value {
-                    arity::unary_mut_values_flat(self, |arr| {
+                    arity::unary_elementwise_mut_values_flat(self, |arr| {
                         arr.tot_lt_kernel_broadcast(&value).into()
                     })
                 } else {
@@ -418,14 +418,14 @@ impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
             },
             (Some(value), _) => {
                 if let Some(value) = value {
-                    arity::unary_mut_values_flat(rhs, |arr| {
+                    arity::unary_elementwise_mut_values_flat(rhs, |arr| {
                         arr.tot_gt_kernel_broadcast(&value).into()
                     })
                 } else {
                     BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values_flat(
+            _ => arity::binary_elementwise_mut_values_flat(
                 self,
                 rhs,
                 |a, b| a.tot_lt_kernel(b).into(),
@@ -442,7 +442,7 @@ impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
         match (self.scalar_value(), rhs.scalar_value()) {
             (_, Some(value)) if self.len() == length => {
                 if let Some(value) = value {
-                    arity::unary_mut_values_flat(self, |arr| {
+                    arity::unary_elementwise_mut_values_flat(self, |arr| {
                         arr.tot_le_kernel_broadcast(&value).into()
                     })
                 } else {
@@ -451,14 +451,14 @@ impl ChunkCompareIneq<&BooleanChunked> for BooleanChunked {
             },
             (Some(value), _) => {
                 if let Some(value) = value {
-                    arity::unary_mut_values_flat(rhs, |arr| {
+                    arity::unary_elementwise_mut_values_flat(rhs, |arr| {
                         arr.tot_ge_kernel_broadcast(&value).into()
                     })
                 } else {
                     BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                 }
             },
-            _ => arity::binary_mut_values_flat(
+            _ => arity::binary_elementwise_mut_values_flat(
                 self,
                 rhs,
                 |a, b| a.tot_le_kernel(b).into(),
@@ -542,7 +542,7 @@ macro_rules! binary_eq_ineq_impl {
                             BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                         }
                     },
-                    _ => arity::binary_mut_values_flat(
+                    _ => arity::binary_elementwise_mut_values_flat(
                         self,
                         rhs,
                         |a, b| a.tot_eq_kernel(b).into(),
@@ -571,7 +571,7 @@ macro_rules! binary_eq_ineq_impl {
                             rhs.is_null()
                         }
                     },
-                    _ => arity::binary_kernel_flat(
+                    _ => arity::binary_elementwise_kernel_flat(
                         self,
                         rhs,
                         |a, b| a.tot_eq_missing_kernel(b).into(),
@@ -600,7 +600,7 @@ macro_rules! binary_eq_ineq_impl {
                             BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                         }
                     },
-                    _ => arity::binary_mut_values_flat(
+                    _ => arity::binary_elementwise_mut_values_flat(
                         self,
                         rhs,
                         |a, b| a.tot_ne_kernel(b).into(),
@@ -629,7 +629,7 @@ macro_rules! binary_eq_ineq_impl {
                             rhs.is_not_null()
                         }
                     },
-                    _ => arity::binary_kernel_flat(
+                    _ => arity::binary_elementwise_kernel_flat(
                         self,
                         rhs,
                         |a, b| a.tot_ne_missing_kernel(b).into(),
@@ -662,7 +662,7 @@ macro_rules! binary_eq_ineq_impl {
                             BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                         }
                     },
-                    _ => arity::binary_mut_values_flat(
+                    _ => arity::binary_elementwise_mut_values_flat(
                         self,
                         rhs,
                         |a, b| a.tot_lt_kernel(b).into(),
@@ -691,7 +691,7 @@ macro_rules! binary_eq_ineq_impl {
                             BooleanChunked::full_null(PlSmallStr::EMPTY, rhs.len())
                         }
                     },
-                    _ => arity::binary_mut_values_flat(
+                    _ => arity::binary_elementwise_mut_values_flat(
                         self,
                         rhs,
                         |a, b| a.tot_le_kernel(b).into(),
@@ -742,9 +742,11 @@ where
             let values = polars_array::arrow::export::to_arrow(&*right);
 
             if missing {
-                arity::unary_mut_with_options_flat(lhs, |a| broadcast_op(a, &values).into())
+                arity::unary_elementwise_mut_with_options_flat(lhs, |a| {
+                    broadcast_op(a, &values).into()
+                })
             } else {
-                arity::unary_mut_values_flat(lhs, |a| broadcast_op(a, &values).into())
+                arity::unary_elementwise_mut_values_flat(lhs, |a| broadcast_op(a, &values).into())
             }
         },
         (Some(left), _) => {
@@ -759,16 +761,28 @@ where
             let values = polars_array::arrow::export::to_arrow(&*left);
 
             if missing {
-                arity::unary_mut_with_options_flat(rhs, |a| broadcast_op(a, &values).into())
+                arity::unary_elementwise_mut_with_options_flat(rhs, |a| {
+                    broadcast_op(a, &values).into()
+                })
             } else {
-                arity::unary_mut_values_flat(rhs, |a| broadcast_op(a, &values).into())
+                arity::unary_elementwise_mut_values_flat(rhs, |a| broadcast_op(a, &values).into())
             }
         },
         _ => {
             if missing {
-                arity::binary_kernel_flat(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY)
+                arity::binary_elementwise_kernel_flat(
+                    lhs,
+                    rhs,
+                    |a, b| op(a, b).into(),
+                    PlSmallStr::EMPTY,
+                )
             } else {
-                arity::binary_mut_values_flat(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY)
+                arity::binary_elementwise_mut_values_flat(
+                    lhs,
+                    rhs,
+                    |a, b| op(a, b).into(),
+                    PlSmallStr::EMPTY,
+                )
             }
         },
     }
@@ -955,9 +969,13 @@ where
             let right_values = polars_array::arrow::export::to_arrow(&*right);
 
             if missing {
-                arity::unary_mut_with_options_flat(lhs, |a| broadcast_op(a, &right_values).into())
+                arity::unary_elementwise_mut_with_options_flat(lhs, |a| {
+                    broadcast_op(a, &right_values).into()
+                })
             } else {
-                arity::unary_mut_values_flat(lhs, |a| broadcast_op(a, &right_values).into())
+                arity::unary_elementwise_mut_values_flat(lhs, |a| {
+                    broadcast_op(a, &right_values).into()
+                })
             }
         },
         (Some(left), _) => {
@@ -972,16 +990,30 @@ where
             let left_values = polars_array::arrow::export::to_arrow(&*left);
 
             if missing {
-                arity::unary_mut_with_options_flat(rhs, |a| broadcast_op(a, &left_values).into())
+                arity::unary_elementwise_mut_with_options_flat(rhs, |a| {
+                    broadcast_op(a, &left_values).into()
+                })
             } else {
-                arity::unary_mut_values_flat(rhs, |a| broadcast_op(a, &left_values).into())
+                arity::unary_elementwise_mut_values_flat(rhs, |a| {
+                    broadcast_op(a, &left_values).into()
+                })
             }
         },
         _ => {
             if missing {
-                arity::binary_kernel_flat(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY)
+                arity::binary_elementwise_kernel_flat(
+                    lhs,
+                    rhs,
+                    |a, b| op(a, b).into(),
+                    PlSmallStr::EMPTY,
+                )
             } else {
-                arity::binary_mut_values_flat(lhs, rhs, |a, b| op(a, b).into(), PlSmallStr::EMPTY)
+                arity::binary_elementwise_mut_values_flat(
+                    lhs,
+                    rhs,
+                    |a, b| op(a, b).into(),
+                    PlSmallStr::EMPTY,
+                )
             }
         },
     }

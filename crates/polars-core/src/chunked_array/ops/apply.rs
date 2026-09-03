@@ -123,8 +123,22 @@ where
 {
     use arrow::Either::*;
     let chunks = chunks.into_iter().map(|arr| {
-        // TODO(polars-array-scalar): the crossing to Arrow writes a scalar chunk out, where `f`
-        // could be applied to the single value it stands for in `O(1)`.
+        // A scalar chunk reads one value at every element, so `f` is applied to that value alone
+        // and what comes back stands for every element in turn. The borrow is scoped so that the
+        // chunk below is still the only reference to its buffers.
+        {
+            let typed = arr
+                .as_any()
+                .downcast_ref::<PlPrimitiveArray<S::Native>>()
+                .unwrap();
+            if let Some(value) = typed.scalar_values() {
+                let validity = typed.validity().map(|v| v.to_flat_or_scalar());
+                return PlPrimitiveArray::new_scalar(f(value), typed.len())
+                    .with_validity_broadcast(validity);
+            }
+        }
+
+        // The crossing to Arrow leaves the buffers as they are: the chunk is flat by now.
         let owned_arr = chunk_to_arrow(
             arr.as_any()
                 .downcast_ref::<PlPrimitiveArray<S::Native>>()

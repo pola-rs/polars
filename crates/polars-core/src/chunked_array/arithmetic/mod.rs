@@ -98,7 +98,7 @@ impl Add for &BinaryChunked {
 
         // The kernel is the Arrow one, so both chunks cross over and the result crosses back —
         // see `polars_array::arrow::bridge`.
-        arity::binary_kernel_flat(
+        arity::binary_elementwise_kernel_flat(
             self,
             rhs,
             |l, r| chunk_from_arrow(&concat_binview(&flat_to_arrow(l), &flat_to_arrow(r))),

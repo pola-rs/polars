@@ -149,8 +149,12 @@ impl ChunkZipKernel for PlFixedSizeListArray {
     ));
 }
 
+/// The result of a mask that reads the same at every element: `mask_len` is the height that mask
+/// covers, which is one for a column of a single element and the height of the column for one
+/// whose only chunk repeats a single bit.
 fn if_then_else_broadcast_mask<T: PolarsDataType>(
     mask: bool,
+    mask_len: usize,
     if_true: &ChunkedArray<T>,
     if_false: &ChunkedArray<T>,
 ) -> PolarsResult<ChunkedArray<T>>
@@ -159,7 +163,7 @@ where
 {
     let src = if mask { if_true } else { if_false };
     let other = if mask { if_false } else { if_true };
-    let len = broadcast_len([src.len(), other.len()]).context(SHAPE_MISMATCH_STR)?;
+    let len = broadcast_len([mask_len, src.len(), other.len()]).context(SHAPE_MISMATCH_STR)?;
     let ret = src.broadcast_to(len)?.into_owned();
     Ok(ret.with_name(if_true.name().clone()))
 }
@@ -218,9 +222,16 @@ where
         let if_true = self;
         let if_false = other;
 
-        // Broadcast mask.
-        if mask.len() == 1 {
-            return if_then_else_broadcast_mask(mask.get(0).unwrap_or(false), if_true, if_false);
+        // Broadcast mask: a mask that reads the same at every element — a column of one element,
+        // or one whose only chunk repeats a single bit — picks the same side throughout, so the
+        // sides are neither zipped nor written out. A null reads as false, as it does below.
+        if let Some(bit) = mask.scalar_value() {
+            return if_then_else_broadcast_mask(
+                bit.unwrap_or(false),
+                mask.len(),
+                if_true,
+                if_false,
+            );
         }
 
         // Broadcast both.

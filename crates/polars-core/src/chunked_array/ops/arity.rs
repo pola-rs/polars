@@ -125,17 +125,126 @@ where
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
-/// Applies a kernel written against the [`flat`](polars_array::broadcast) representation: this is
-/// [`unary_kernel`] with every chunk written out flat first.
+/// Applies an elementwise kernel written against the [`flat`](polars_array::broadcast)
+/// representation to one chunk, leaving a [`scalar`](polars_array::broadcast) chunk scalar.
+///
+/// A flat chunk reaches `op` as it is. A scalar chunk is not written out: `op` is handed the
+/// single element it repeats, and the one element that comes back stands for the whole chunk.
+///
+/// `op` must be elementwise — every element of the result a function of the element at the same
+/// index alone — which is what makes the answer for one element the answer for every element.
 #[inline]
-pub fn unary_kernel_flat<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
+fn elementwise_flat<A, Arr, F>(arr: &A, op: &mut F) -> Arr
+where
+    A: StaticArray,
+    Arr: StaticArray,
+    F: FnMut(&Flat<A>) -> Arr,
+{
+    if let Some(flat) = arr.as_flat() {
+        return op(flat);
+    }
+
+    let length = arr.len();
+    if !PlArray::is_scalar(arr) || length < 2 {
+        // Only some of the buffers hold a single slot, so there is no one element standing for
+        // the rest; a chunk of a single element has nothing to save either.
+        return op(&arr.to_flat());
+    }
+
+    // Sliced down to the one element the chunk repeats, which leaves every buffer holding the
+    // single slot it already held, and is therefore flat as well as `O(1)`.
+    let mut single = arr.clone();
+    single.slice(0, 1);
+
+    let out = op(&single.to_flat());
+    debug_assert_eq!(
+        out.len(),
+        1,
+        "an elementwise kernel answers one element with one"
+    );
+
+    out.new_from_index_typed(0, length)
+}
+
+/// [`elementwise_flat`] for a kernel that reads two chunks of the same height at once.
+///
+/// The shortcut is taken only when both chunks are scalar: a kernel reading one flat side cannot
+/// be answered by a single element of the other.
+#[inline]
+fn elementwise_binary_flat<A, B, Arr, F>(lhs: &A, rhs: &B, op: &mut F) -> Arr
+where
+    A: StaticArray,
+    B: StaticArray,
+    Arr: StaticArray,
+    F: FnMut(&Flat<A>, &Flat<B>) -> Arr,
+{
+    if let (Some(lhs), Some(rhs)) = (lhs.as_flat(), rhs.as_flat()) {
+        return op(lhs, rhs);
+    }
+
+    // The chunks are aligned, so the two lengths are the same one.
+    let length = lhs.len();
+    if length < 2 || !PlArray::is_scalar(lhs) || !PlArray::is_scalar(rhs) {
+        return op(&lhs.to_flat(), &rhs.to_flat());
+    }
+
+    let (mut lhs, mut rhs) = (lhs.clone(), rhs.clone());
+    lhs.slice(0, 1);
+    rhs.slice(0, 1);
+
+    let out = op(&lhs.to_flat(), &rhs.to_flat());
+    debug_assert_eq!(
+        out.len(),
+        1,
+        "an elementwise kernel answers one element with one"
+    );
+
+    out.new_from_index_typed(0, length)
+}
+
+/// [`elementwise_flat`] for a kernel that takes its chunk by value.
+#[inline]
+fn elementwise_owned_flat<A, Arr, F>(arr: A, op: &mut F) -> Arr
+where
+    A: StaticArray,
+    Arr: StaticArray,
+    F: FnMut(Flat<A>) -> Arr,
+{
+    let length = arr.len();
+    if arr.as_flat().is_none() && PlArray::is_scalar(&arr) && length >= 2 {
+        let mut single = arr;
+        single.slice(0, 1);
+
+        let out = op(single.to_flat().into_owned());
+        debug_assert_eq!(
+            out.len(),
+            1,
+            "an elementwise kernel answers one element with one"
+        );
+
+        return out.new_from_index_typed(0, length);
+    }
+
+    op(arr.to_flat().into_owned())
+}
+
+/// Applies an elementwise kernel written against the [`flat`](polars_array::broadcast)
+/// representation: this is [`unary_kernel`] over the backing buffers.
+///
+/// `op` must be elementwise; a [`scalar`](polars_array::broadcast) chunk reaches it as the single
+/// element it repeats, and the result is repeated in turn. See [`elementwise_flat`].
+#[inline]
+pub fn unary_elementwise_kernel_flat<T, V, F, Arr>(
+    ca: &ChunkedArray<T>,
+    mut op: F,
+) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
     Arr: StaticArray,
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
-    let iter = ca.downcast_iter().map(|arr| op(&arr.to_flat()));
+    let iter = ca.downcast_iter().map(|arr| elementwise_flat(arr, &mut op));
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
@@ -153,10 +262,16 @@ where
     ChunkedArray::from_chunk_iter(name, iter)
 }
 
-/// Applies an owned kernel written against the [`flat`](polars_array::broadcast) representation:
-/// [`unary_kernel_owned`] for a kernel that reads the backing buffers directly.
+/// Applies an owned elementwise kernel written against the [`flat`](polars_array::broadcast)
+/// representation: [`unary_kernel_owned`] for a kernel that reads the backing buffers directly.
+///
+/// `op` must be elementwise; a [`scalar`](polars_array::broadcast) chunk reaches it as the single
+/// element it repeats, and the result is repeated in turn. See [`elementwise_flat`].
 #[inline]
-pub fn unary_kernel_owned_flat<T, V, F, Arr>(ca: ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
+pub fn unary_elementwise_kernel_owned_flat<T, V, F, Arr>(
+    ca: ChunkedArray<T>,
+    mut op: F,
+) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
@@ -166,7 +281,7 @@ where
     let name = ca.name().clone();
     let iter = ca
         .downcast_into_iter()
-        .map(|arr| op(arr.to_flat().into_owned()));
+        .map(|arr| elementwise_owned_flat(arr, &mut op));
     ChunkedArray::from_chunk_iter(name, iter)
 }
 
@@ -272,10 +387,17 @@ where
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
-/// Applies a kernel written against the [`flat`](polars_array::broadcast) representation, putting
-/// the input's validity mask back on the result: [`unary_mut_values`] over the buffers.
+/// Applies an elementwise kernel written against the [`flat`](polars_array::broadcast)
+/// representation, putting the input's validity mask back on the result: [`unary_mut_values`]
+/// over the buffers.
+///
+/// `op` must be elementwise; a [`scalar`](polars_array::broadcast) chunk reaches it as the single
+/// element it repeats, and the result is repeated in turn. See [`elementwise_flat`].
 #[inline]
-pub fn unary_mut_values_flat<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
+pub fn unary_elementwise_mut_values_flat<T, V, F, Arr>(
+    ca: &ChunkedArray<T>,
+    mut op: F,
+) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
@@ -283,7 +405,7 @@ where
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
     let iter = ca.downcast_iter().map(|arr| {
-        op(&arr.to_flat())
+        elementwise_flat(arr, &mut op)
             .with_validity_broadcast_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
@@ -301,17 +423,24 @@ where
     ChunkedArray::from_chunk_iter(ca.name().clone(), ca.downcast_iter().map(op))
 }
 
-/// Applies a kernel written against the [`flat`](polars_array::broadcast) representation, leaving
-/// the result's own validity mask alone: [`unary_mut_with_options`] over the buffers.
+/// Applies an elementwise kernel written against the [`flat`](polars_array::broadcast)
+/// representation, leaving the result's own validity mask alone: [`unary_mut_with_options`] over
+/// the buffers.
+///
+/// `op` must be elementwise; a [`scalar`](polars_array::broadcast) chunk reaches it as the single
+/// element it repeats, and the result is repeated in turn. See [`elementwise_flat`].
 #[inline]
-pub fn unary_mut_with_options_flat<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
+pub fn unary_elementwise_mut_with_options_flat<T, V, F, Arr>(
+    ca: &ChunkedArray<T>,
+    mut op: F,
+) -> ChunkedArray<V>
 where
     T: PolarsDataType,
     V: PolarsDataType<Array = Arr>,
     Arr: StaticArray,
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
-    let iter = ca.downcast_iter().map(|arr| op(&arr.to_flat()));
+    let iter = ca.downcast_iter().map(|arr| elementwise_flat(arr, &mut op));
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
@@ -540,10 +669,14 @@ where
     ChunkedArray::from_chunk_iter(name, iter)
 }
 
-/// Applies a binary kernel written against the [`flat`](polars_array::broadcast) representation,
-/// masking off every element that either side has a null at: [`binary_mut_values`] over buffers.
+/// Applies an elementwise binary kernel written against the [`flat`](polars_array::broadcast)
+/// representation, masking off every element that either side has a null at:
+/// [`binary_mut_values`] over buffers.
+///
+/// `op` must be elementwise; two [`scalar`](polars_array::broadcast) chunks reach it as the single
+/// element each repeats, and the result is repeated in turn. See [`elementwise_binary_flat`].
 #[inline]
-pub fn binary_mut_values_flat<T, U, V, F, Arr>(
+pub fn binary_elementwise_mut_values_flat<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
@@ -561,7 +694,7 @@ where
         .downcast_iter()
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| {
-            let ret = op(&lhs_arr.to_flat(), &rhs_arr.to_flat());
+            let ret = elementwise_binary_flat(lhs_arr, rhs_arr, &mut op);
             mask_with_inputs(ret, lhs_arr.validity(), rhs_arr.validity())
         });
     ChunkedArray::from_chunk_iter(name, iter)
@@ -613,9 +746,12 @@ where
     ChunkedArray::try_from_chunk_iter(name, iter)
 }
 
-/// Applies a binary kernel written against the [`flat`](polars_array::broadcast) representation.
-/// This is the `(flat, flat)` path of [`apply_binary_kernel_broadcast`].
-pub fn binary_kernel_flat<T, U, V, F, Arr>(
+/// Applies an elementwise binary kernel written against the [`flat`](polars_array::broadcast)
+/// representation. This is the `(flat, flat)` path of [`apply_binary_kernel_broadcast`].
+///
+/// `op` must be elementwise; two [`scalar`](polars_array::broadcast) chunks reach it as the single
+/// element each repeats, and the result is repeated in turn. See [`elementwise_binary_flat`].
+pub fn binary_elementwise_kernel_flat<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
@@ -632,7 +768,7 @@ where
     let iter = lhs
         .downcast_iter()
         .zip(rhs.downcast_iter())
-        .map(|(lhs_arr, rhs_arr)| op(&lhs_arr.to_flat(), &rhs_arr.to_flat()));
+        .map(|(lhs_arr, rhs_arr)| elementwise_binary_flat(lhs_arr, rhs_arr, &mut op));
     ChunkedArray::from_chunk_iter(name, iter)
 }
 
@@ -1000,13 +1136,17 @@ where
         // broadcast right path
         (_, Some(rhs)) if lhs.len() == length => match rhs {
             None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
-            Some(rhs) => unary_kernel_flat(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone())),
+            Some(rhs) => {
+                unary_elementwise_kernel_flat(lhs, |arr| rhs_broadcast_kernel(arr, rhs.clone()))
+            },
         },
         (Some(lhs), _) => match lhs {
             None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
-            Some(lhs) => unary_kernel_flat(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr)),
+            Some(lhs) => {
+                unary_elementwise_kernel_flat(rhs, |arr| lhs_broadcast_kernel(lhs.clone(), arr))
+            },
         },
-        _ => binary_kernel_flat(lhs, rhs, |lhs, rhs| kernel(lhs, rhs), name.clone()),
+        _ => binary_elementwise_kernel_flat(lhs, rhs, |lhs, rhs| kernel(lhs, rhs), name.clone()),
     };
     out.with_name(name.clone())
 }
@@ -1056,4 +1196,142 @@ where
         })
     };
     out.with_name(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow::bitmap::Bitmap;
+    use polars_array::{PlBooleanArray, PlPrimitiveArray};
+
+    use super::*;
+    use crate::prelude::{BooleanChunked, Int32Chunked};
+
+    fn chunk(arr: PlPrimitiveArray<i32>) -> Int32Chunked {
+        Int32Chunked::with_chunk(PlSmallStr::EMPTY, arr)
+    }
+
+    /// The kernel below is elementwise, so it may be handed a single element; it counts its calls
+    /// to show that a scalar chunk reaches it once rather than over a written-out buffer.
+    fn is_seven(ca: &Int32Chunked, calls: &mut usize) -> BooleanChunked {
+        unary_elementwise_kernel_flat(ca, |arr| {
+            *calls += 1;
+            PlBooleanArray::from_iter(arr.values_iter().map(|v| *v == 7))
+        })
+    }
+
+    #[test]
+    fn a_scalar_chunk_reaches_an_elementwise_kernel_as_one_element() {
+        let mut calls = 0;
+        let out = is_seven(&chunk(PlPrimitiveArray::new_scalar(7i32, 5)), &mut calls);
+
+        assert_eq!(calls, 1);
+        assert_eq!(out.len(), 5);
+        assert!(out.downcast_get(0).unwrap().is_scalar(), "{out:?}");
+        assert!(out.iter().all(|v| v == Some(true)));
+
+        // The single element is the one the kernel answers for, whatever the answer is.
+        let mut calls = 0;
+        let out = is_seven(&chunk(PlPrimitiveArray::new_scalar(3i32, 5)), &mut calls);
+        assert_eq!(calls, 1);
+        assert!(out.iter().all(|v| v == Some(false)));
+    }
+
+    /// A kernel that carries the input's mask over, which is what makes the null of an all-null
+    /// scalar chunk the answer for every element of the result.
+    fn is_seven_keeping_nulls(ca: &Int32Chunked, calls: &mut usize) -> BooleanChunked {
+        unary_elementwise_kernel_flat(ca, |arr| {
+            *calls += 1;
+            let values = Bitmap::from_iter(arr.values_iter().map(|v| *v == 7));
+            PlBooleanArray::new(values, arr.len(), arr.validity().cloned())
+        })
+    }
+
+    #[test]
+    fn a_scalar_null_chunk_answers_null_for_every_element() {
+        let mut calls = 0;
+        let out = is_seven_keeping_nulls(
+            &chunk(PlPrimitiveArray::<i32>::new_full_null(5)),
+            &mut calls,
+        );
+
+        assert_eq!(calls, 1);
+        assert_eq!(out.len(), 5);
+        assert_eq!(out.null_count(), 5);
+        assert!(out.downcast_get(0).unwrap().is_scalar(), "{out:?}");
+
+        // A scalar chunk of a value keeps its mask over too.
+        let mut calls = 0;
+        let out = is_seven_keeping_nulls(&chunk(PlPrimitiveArray::new_scalar(7i32, 5)), &mut calls);
+        assert_eq!(calls, 1);
+        assert_eq!(out.null_count(), 0);
+        assert!(out.iter().all(|v| v == Some(true)));
+    }
+
+    #[test]
+    fn a_flat_chunk_is_handed_over_element_by_element() {
+        let mut calls = 0;
+        let out = is_seven(
+            &chunk(PlPrimitiveArray::from_vec(vec![7i32, 3, 7])),
+            &mut calls,
+        );
+
+        assert_eq!(calls, 1);
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [Some(true), Some(false), Some(true)],
+        );
+    }
+
+    /// A chunk with a scalar values buffer but a flat validity mask is neither: there is no one
+    /// element standing for the rest, so it is written out as before.
+    #[test]
+    fn a_half_scalar_chunk_is_written_out() {
+        let arr = PlPrimitiveArray::new_scalar(7i32, 4)
+            .with_validity(Some(Bitmap::from_iter([true, false, true, true])));
+        assert!(!arr.is_scalar() && !arr.is_flat());
+
+        let mut calls = 0;
+        let out = is_seven(&chunk(arr), &mut calls);
+
+        assert_eq!(calls, 1);
+        assert_eq!(out.len(), 4);
+        assert!(out.iter().all(|v| v == Some(true)));
+    }
+
+    #[test]
+    fn two_scalar_chunks_reach_a_binary_kernel_as_one_element_each() {
+        let lhs = chunk(PlPrimitiveArray::new_scalar(7i32, 5));
+        let rhs = chunk(PlPrimitiveArray::new_scalar(3i32, 5));
+
+        let mut calls = 0;
+        let out: BooleanChunked = binary_elementwise_kernel_flat(
+            &lhs,
+            &rhs,
+            |a, b| {
+                calls += 1;
+                PlBooleanArray::from_iter(a.values_iter().zip(b.values_iter()).map(|(l, r)| l > r))
+            },
+            PlSmallStr::EMPTY,
+        );
+
+        assert_eq!(calls, 1);
+        assert_eq!(out.len(), 5);
+        assert!(out.downcast_get(0).unwrap().is_scalar(), "{out:?}");
+        assert!(out.iter().all(|v| v == Some(true)));
+
+        // One flat side leaves nothing to repeat: the kernel sees every element of both.
+        let rhs = chunk(PlPrimitiveArray::from_vec(vec![3i32, 9, 3, 9, 3]));
+        let out: BooleanChunked = binary_elementwise_kernel_flat(
+            &lhs,
+            &rhs,
+            |a, b| {
+                PlBooleanArray::from_iter(a.values_iter().zip(b.values_iter()).map(|(l, r)| l > r))
+            },
+            PlSmallStr::EMPTY,
+        );
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [Some(true), Some(false), Some(true), Some(false), Some(true)],
+        );
+    }
 }

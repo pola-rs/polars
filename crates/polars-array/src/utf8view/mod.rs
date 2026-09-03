@@ -236,10 +236,29 @@ impl PlUtf8ViewArray {
     /// The views the closure hands back must uphold every invariant of a view: each must read bytes
     /// this array's data buffers hold, and those bytes must be valid UTF-8.
     pub unsafe fn apply_views<F: FnMut(View, &str) -> View>(&self, mut update_view: F) -> Self {
-        // TODO(polars-array-scalar): a scalar array holds one view standing for every element, so
-        // the views could be mapped in `O(1)` rather than written out flat first.
+        // A scalar views buffer holds the one view every element reads, so the closure maps that
+        // view alone and what it hands back stands for every element in turn. The mask is put
+        // back as it was, which is what keeps a null element null.
+        let length = self.0.len();
+        if self.0.views_are_scalar() && length > 1 {
+            let validity = self.0.validity().map(|v| v.to_flat_or_scalar());
+            // The mask is dropped first so that the one element is read as a value whatever the
+            // mask says of it, which is what the written-out path does as well.
+            // SAFETY: the elements were valid UTF-8, and dropping the mask and slicing leaves
+            // every one of them as it was; the caller's contract carries over to the closure.
+            let single = unsafe {
+                Self::from_binview_unchecked(self.0.clone().without_validity()).sliced(0, 1)
+            };
+
+            // SAFETY: as above.
+            let mapped = unsafe { single.apply_views(update_view) };
+
+            return mapped
+                .new_from_index(0, length)
+                .with_validity_broadcast(validity);
+        }
+
         let flat = self.0.to_flat();
-        let length = flat.len();
         let (views, buffers, validity) = flat.into_owned().into_inner();
 
         let views: Vec<View> = views
@@ -454,6 +473,57 @@ mod tests {
         assert!(
             arr.data_buffers().is_same_buffer(bytes.data_buffers()),
             "the wrapper must share the buffers, not copy them",
+        );
+    }
+
+    /// Truncates every element to its first `keep` bytes, which is what a `str.head` does.
+    ///
+    /// `keep` stays above [`View::MAX_INLINE_SIZE`] so that a view of the buffer stays one: the
+    /// prefix a longer view already carries is the prefix of what is kept.
+    fn head(arr: &PlUtf8ViewArray, keep: u32, calls: &mut usize) -> PlUtf8ViewArray {
+        assert!(keep > View::MAX_INLINE_SIZE);
+        // SAFETY: a prefix of a view reads bytes the same buffer already holds, and the values
+        // here are ASCII, so a prefix of one is valid UTF-8 too.
+        unsafe {
+            arr.apply_views(|mut view, _| {
+                *calls += 1;
+                view.length = view.length.min(keep);
+                view
+            })
+        }
+    }
+
+    #[test]
+    fn a_scalar_array_maps_its_one_view() {
+        let mut calls = 0;
+        let out = head(&PlUtf8ViewArray::new_scalar(LONG, 1_000), 20, &mut calls);
+
+        assert_eq!(calls, 1, "the one view every element reads is mapped once");
+        assert_eq!(out.len(), 1_000);
+        assert!(out.is_scalar(), "{out:?}");
+        assert_eq!(out.scalar_value(), Some(Some(&LONG[..20])));
+
+        // A mask over the scalar views is kept, element for element.
+        let arr = PlUtf8ViewArray::new_scalar(LONG, 4)
+            .with_validity(Some(Bitmap::from_iter([true, false, true, false])));
+        let mut calls = 0;
+        let out = head(&arr, 20, &mut calls);
+
+        assert_eq!(calls, 1);
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [Some(&LONG[..20]), None, Some(&LONG[..20]), None],
+        );
+
+        // A flat array is mapped view by view, as before.
+        let arr: PlUtf8ViewArray = [Some(LONG), None, Some(&LONG[10..])].into_iter().collect();
+        let mut calls = 0;
+        let out = head(&arr, 20, &mut calls);
+
+        assert_eq!(calls, 3);
+        assert_eq!(
+            out.iter().collect::<Vec<_>>(),
+            [Some(&LONG[..20]), None, Some(&LONG[10..30])],
         );
     }
 

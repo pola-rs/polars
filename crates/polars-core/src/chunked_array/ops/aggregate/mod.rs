@@ -5,6 +5,7 @@ mod var;
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float, One, ToPrimitive, Zero};
 use polars_array::arrow::bridge::chunk_to_arrow;
+use polars_array::bitmap::combine_validities_and;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_compute::float_sum;
@@ -128,7 +129,11 @@ where
     fn sum(&self) -> Option<T::Native> {
         Some(
             // The kernel is the Arrow one, so each chunk crosses over — see `polars_array::arrow::bridge`.
-            // TODO(polars-array-scalar): the sum of a scalar chunk is its value times its length.
+            // TODO(polars-array-scalar): the sum of a scalar chunk is its one value added up as
+            // many times as the chunk has non-null elements, which is `O(log n)` doublings for an
+            // integer. Reaching that needs `WrappingAdd` on `T::Native`, which this impl does not
+            // bound, and floats have no exact answer to fall back on: the kernel sums them
+            // pairwise, which no closed form reproduces.
             self.downcast_iter()
                 .map(|arr| sum(&chunk_to_arrow(arr)))
                 .fold(T::Native::zero(), |acc, v| acc + v),
@@ -136,7 +141,9 @@ where
     }
 
     fn _sum_as_f64(&self) -> f64 {
-        // TODO(polars-array-scalar): the sum of a scalar chunk is its value times its length.
+        // TODO(polars-array-scalar): the sum of a scalar chunk is its value times the number of
+        // non-null elements, but the kernel sums pairwise, so the two do not round alike; see
+        // `sum` above.
         self.downcast_iter()
             .map(|arr| float_sum::sum_arr_as_f64(&chunk_to_arrow(arr)))
             .sum()
@@ -160,8 +167,12 @@ where
             },
             IsSorted::Not => self
                 .downcast_iter()
-                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
-                .filter_map(|arr| MinMaxKernel::min_ignore_nan_kernel(&chunk_to_arrow(arr)))
+                .filter_map(|arr| match arr.scalar_value() {
+                    // Every element of a scalar chunk is the one value it repeats, which is
+                    // therefore its own extremum: the chunk is read, not written out.
+                    Some(value) => value,
+                    None => MinMaxKernel::min_ignore_nan_kernel(&chunk_to_arrow(arr)),
+                })
                 .reduce(MinMax::min_ignore_nan),
         }
     }
@@ -193,8 +204,11 @@ where
             },
             IsSorted::Not => self
                 .downcast_iter()
-                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
-                .filter_map(|arr| MinMaxKernel::max_ignore_nan_kernel(&chunk_to_arrow(arr)))
+                .filter_map(|arr| match arr.scalar_value() {
+                    // See `min`: a scalar chunk is its own extremum.
+                    Some(value) => value,
+                    None => MinMaxKernel::max_ignore_nan_kernel(&chunk_to_arrow(arr)),
+                })
                 .reduce(MinMax::max_ignore_nan),
         }
     }
@@ -235,8 +249,11 @@ where
             },
             IsSorted::Not => self
                 .downcast_iter()
-                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
-                .filter_map(|arr| MinMaxKernel::min_max_ignore_nan_kernel(&chunk_to_arrow(arr)))
+                .filter_map(|arr| match arr.scalar_value() {
+                    // See `min`: a scalar chunk is both its own minimum and its own maximum.
+                    Some(value) => value.map(|value| (value, value)),
+                    None => MinMaxKernel::min_max_ignore_nan_kernel(&chunk_to_arrow(arr)),
+                })
                 .reduce(|(min1, max1), (min2, max2)| {
                     (
                         MinMax::min_ignore_nan(min1, min2),
@@ -261,16 +278,14 @@ impl BooleanChunked {
         Some(if self.is_empty() {
             0
         } else {
-            // TODO(polars-array-scalar): the sum of a scalar chunk is its value times its length.
             self.downcast_iter()
                 .map(|arr| {
-                    let arr = arr.to_flat();
-                    match arr.validity() {
-                        Some(validity) => {
-                            (arr.len() - (validity & arr.values()).unset_bits()) as IdxSize
-                        },
-                        None => (arr.len() - arr.values().unset_bits()) as IdxSize,
-                    }
+                    // The elements that count are the ones that are both valid and set, which is
+                    // the `and` of the two masks. A scalar mask among them is combined as the one
+                    // bit it stands for, so a scalar chunk is counted in `O(1)`.
+                    combine_validities_and(Some(arr.values()), arr.validity())
+                        .expect("the values mask is always there")
+                        .set_bits() as IdxSize
                 })
                 .sum()
         })
@@ -527,8 +542,12 @@ impl StringChunked {
             },
             IsSorted::Not => self
                 .downcast_iter()
-                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
-                .filter_map(|arr| arr.iter().flatten().reduce(MinMax::max_ignore_nan))
+                .filter_map(|arr| match arr.scalar_value() {
+                    // Every element of a scalar chunk is the one value it repeats, which is
+                    // therefore its own extremum: the chunk is read, not walked.
+                    Some(value) => value,
+                    None => arr.iter().flatten().reduce(MinMax::max_ignore_nan),
+                })
                 .reduce(MinMax::max_ignore_nan),
         }
     }
@@ -551,8 +570,12 @@ impl StringChunked {
             },
             IsSorted::Not => self
                 .downcast_iter()
-                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
-                .filter_map(|arr| arr.iter().flatten().reduce(MinMax::min_ignore_nan))
+                .filter_map(|arr| match arr.scalar_value() {
+                    // Every element of a scalar chunk is the one value it repeats, which is
+                    // therefore its own extremum: the chunk is read, not walked.
+                    Some(value) => value,
+                    None => arr.iter().flatten().reduce(MinMax::min_ignore_nan),
+                })
                 .reduce(MinMax::min_ignore_nan),
         }
     }
@@ -663,8 +686,12 @@ impl BinaryChunked {
             },
             IsSorted::Not => self
                 .downcast_iter()
-                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
-                .filter_map(|arr| arr.iter().flatten().reduce(MinMax::max_ignore_nan))
+                .filter_map(|arr| match arr.scalar_value() {
+                    // Every element of a scalar chunk is the one value it repeats, which is
+                    // therefore its own extremum: the chunk is read, not walked.
+                    Some(value) => value,
+                    None => arr.iter().flatten().reduce(MinMax::max_ignore_nan),
+                })
                 .reduce(MinMax::max_ignore_nan),
         }
     }
@@ -688,8 +715,12 @@ impl BinaryChunked {
             },
             IsSorted::Not => self
                 .downcast_iter()
-                // TODO(polars-array-scalar): the extremum of a scalar chunk is its single value.
-                .filter_map(|arr| arr.iter().flatten().reduce(MinMax::min_ignore_nan))
+                .filter_map(|arr| match arr.scalar_value() {
+                    // Every element of a scalar chunk is the one value it repeats, which is
+                    // therefore its own extremum: the chunk is read, not walked.
+                    Some(value) => value,
+                    None => arr.iter().flatten().reduce(MinMax::min_ignore_nan),
+                })
                 .reduce(MinMax::min_ignore_nan),
         }
     }

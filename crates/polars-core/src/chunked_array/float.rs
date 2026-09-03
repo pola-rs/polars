@@ -6,7 +6,7 @@ use polars_compute::nan::{is_nan, is_not_nan};
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::{canonical_f16, canonical_f32, canonical_f64};
 
-use crate::prelude::arity::{unary_elementwise_values, unary_kernel_flat};
+use crate::prelude::arity::{unary_elementwise_kernel_flat, unary_elementwise_values};
 use crate::prelude::*;
 
 impl<T> ChunkedArray<T>
@@ -15,15 +15,13 @@ where
     T::Native: Float,
 {
     pub fn is_nan(&self) -> BooleanChunked {
-        // TODO(polars-array-scalar): whether the single value of a scalar chunk is NaN answers it
-        // for every element, which this writes out to ask element by element.
-        unary_kernel_flat(self, |arr| {
+        unary_elementwise_kernel_flat(self, |arr| {
             let out = is_nan(arr.values()).unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
             PlBooleanArray::new(out, arr.len(), arr.validity().cloned())
         })
     }
     pub fn is_not_nan(&self) -> BooleanChunked {
-        unary_kernel_flat(self, |arr| {
+        unary_elementwise_kernel_flat(self, |arr| {
             let out =
                 is_not_nan(arr.values()).unwrap_or_else(|| Bitmap::new_with_value(true, arr.len()));
             PlBooleanArray::new(out, arr.len(), arr.validity().cloned())

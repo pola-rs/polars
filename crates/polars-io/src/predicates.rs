@@ -3,6 +3,7 @@ use std::fmt;
 use arrow::array::Array;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
+use polars_array::bitmap::combine_validities_and;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
@@ -102,12 +103,16 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
 
         bm.reserve(true_mask.len());
         for chunk in true_mask.downcast_iter() {
-            // TODO(polars-array-scalar): the mask is appended bit by bit, so a scalar chunk is
-            // written out here rather than its single bit being extended over `len` bits.
-            let chunk = chunk.to_flat();
-            match chunk.validity() {
-                None => bm.extend_from_bitmap(chunk.values()),
-                Some(v) => bm.extend_from_bitmap(&(chunk.values() & v)),
+            // What is appended is the values `and` the mask, which are combined as the single bit
+            // they stand for where either is scalar.
+            let bits = combine_validities_and(Some(chunk.values()), chunk.validity())
+                .expect("the values mask is always there");
+
+            match bits.scalar_value() {
+                // One bit standing for the whole chunk is extended over it, not written out.
+                Some(bit) => bm.extend_constant(bits.len(), bit),
+                // What is left holds one bit per element already, so this borrows it as it is.
+                None => bm.extend_from_bitmap(&bits.as_ref().to_flat()),
             }
         }
     }

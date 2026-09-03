@@ -417,8 +417,13 @@ fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
 }
 
 fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOptions) -> bool {
-    // TODO(polars-array-scalar): the values are read as slices, so a scalar chunk is written out
-    // here rather than being reported sorted outright.
+    // A column whose only chunk repeats a single value is sorted whichever way it is read: every
+    // element compares equal to the one before it. Nulls are left to the tail of this function,
+    // which slices them off and comes back here.
+    if ca.null_count() == 0 && ca.scalar_value().is_some() {
+        return true;
+    }
+
     let flat = ca.to_flat();
     if let Ok(vals) = flat.cont_slice() {
         let mut previous = vals[0];

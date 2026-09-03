@@ -1,6 +1,6 @@
 use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
 use polars_core::chunked_array::ChunkedArray;
-use polars_core::chunked_array::ops::arity::unary_mut_values_flat;
+use polars_core::chunked_array::ops::arity::unary_elementwise_mut_values_flat;
 use polars_core::prelude::DataType;
 use polars_core::series::Series;
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_integer_polars_type};
@@ -17,7 +17,7 @@ macro_rules! apply_bitwise_op {
             match s.dtype() {
                 DataType::Boolean => {
                     let ca: &ChunkedArray<BooleanType> = s.as_any().downcast_ref().unwrap();
-                    Ok(unary_mut_values_flat::<BooleanType, UInt32Type, _, _>(
+                    Ok(unary_elementwise_mut_values_flat::<BooleanType, UInt32Type, _, _>(
                         ca,
                         |a| {
                             let a = flat_to_arrow(a);
@@ -28,7 +28,7 @@ macro_rules! apply_bitwise_op {
                 dt if dt.is_integer() => {
                     with_match_physical_integer_polars_type!(dt, |$T| {
                         let ca: &ChunkedArray<$T> = s.as_any().downcast_ref().unwrap();
-                        Ok(unary_mut_values_flat::<$T, UInt32Type, _, _>(
+                        Ok(unary_elementwise_mut_values_flat::<$T, UInt32Type, _, _>(
                             ca,
                             |a| {
                                 let a = flat_to_arrow(a);
@@ -40,7 +40,7 @@ macro_rules! apply_bitwise_op {
                 dt if dt.is_float() => {
                     with_match_physical_float_polars_type!(dt, |$T| {
                         let ca: &ChunkedArray<$T> = s.as_any().downcast_ref().unwrap();
-                        Ok(unary_mut_values_flat::<$T, UInt32Type, _, _>(
+                        Ok(unary_elementwise_mut_values_flat::<$T, UInt32Type, _, _>(
                             ca,
                             |a| {
                                 let a = flat_to_arrow(a);
