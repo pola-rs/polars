@@ -52,35 +52,11 @@
                   openssl_3_6
                 ]
               );
-
-              extraPyDeps = [
-                "importlib-resources"
-                "psutil"
-                "hvplot"
-                "seaborn"
-
-                "duckdb"
-                "pandas"
-                "jax"
-                "torch"
-                "jupyterlab"
-                "pyiceberg"
-
-                "pygithub"
-
-                # Used for polars-benchmark
-                "pydantic-settings"
-                "ruff"
-
-                # # Used for Altair SVG / PNG conversions
-                "vl-convert-python"
-              ];
             in
             {
               packages =
                 (with pkgs; [
                   py.python
-                  py.venvShellHook
                   py.build
                   py.mypy
                   rustToolchain
@@ -102,28 +78,12 @@
 
               buildInputs = runtimePkgs;
 
-              postVenvCreation = ''
-                unset CONDA_PREFIX
-                MATURIN_PEP517_ARGS="--profile dev" uv pip install --upgrade --compile-bytecode --no-build \
-                  -r py-polars/requirements-dev.txt \
-                  -r py-polars/requirements-lint.txt \
-                  -r py-polars/docs/requirements-docs.txt \
-                  -r docs/source/requirements.txt \
-                  ${lib.join " " extraPyDeps} \
-                && uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core \
-                && uv pip install --no-deps -e py-polars \
-                && uv pip uninstall polars-runtime-compat polars-runtime-64  ## Uninstall runtimes which might take precedence over polars-runtime-32
-              '';
-
-              venvDir = ".venv";
-
-              postShellHook =
+              shellHook =
                 let
                   openCmd = if pkgs.stdenv.hostPlatform.isLinux then "xdg-open" else "open";
                 in
                 ''
                   export WORKSPACE_ROOT=$(git rev-parse --show-toplevel)
-                  export VENV=$WORKSPACE_ROOT/.venv
 
                   # Jemmalloc compiled with gcc doesn't like when we ask for the
                   # compiler to compile with fortify source so lets enable everything
@@ -132,14 +92,17 @@
 
                   export PYO3_NO_RECOMPILE=1
 
-                  export PYTHON_SHARED_LIB=$($VENV/bin/python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
-
                   # - cc is needed for numpy to function
                   # - python shared libs are required for rust-side tests
-                  export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$PYTHON_SHARED_LIB"
+                  export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${py.python}/lib"
 
                   export POLARS_DOT_SVG_VIEWER="${openCmd} %file%"
                   export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
+
+                  # Create the virtual environment and install the Python
+                  # requirements if they are missing; a no-op otherwise.
+                  make -s -C "$WORKSPACE_ROOT" .venv
+                  source "$WORKSPACE_ROOT/.venv/bin/activate"
                 '';
             }
           );
