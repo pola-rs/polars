@@ -10,7 +10,8 @@
 //! setters still accept a single slot for an array of no elements — a scalar over `n` elements is
 //! a scalar over `0` of them too — but store the empty buffer in its place, so that no array is
 //! ever backed by a slot none of its elements reads. That is what the `normalize_*` functions of
-//! this module do.
+//! this module do, and what the `slice_*` functions keep holding as an array is sliced down to
+//! nothing.
 
 use std::sync::LazyLock;
 
@@ -232,9 +233,198 @@ pub(crate) fn normalize_values(mut values: Box<dyn PlArray>, length: usize) -> B
     values
 }
 
+/// Slices a backing buffer that is flat or scalar for an array of `array_len` elements down to the
+/// `length` slots at `offset`.
+///
+/// A scalar buffer is left as it is — every element of the slice reads the same slot as every
+/// element of the array does — unless the slice is empty, which leaves no element to read it.
+///
+/// # Safety
+/// `offset + length` must not exceed `array_len`.
+#[inline]
+pub(crate) unsafe fn slice_buffer<T>(
+    buffer: &mut Buffer<T>,
+    array_len: usize,
+    offset: usize,
+    length: usize,
+) {
+    if is_flat_buffer_len(buffer.len(), array_len) {
+        unsafe { buffer.slice_in_place_unchecked(offset..offset + length) };
+    } else if length == 0 {
+        unsafe { buffer.slice_in_place_unchecked(0..0) };
+    }
+}
+
+/// Slices a backing bitmap that is flat or scalar for an array of `array_len` elements down to the
+/// `length` bits at `offset`, as [`slice_buffer`].
+///
+/// # Safety
+/// `offset + length` must not exceed `array_len`.
+#[inline]
+pub(crate) unsafe fn slice_bitmap(
+    bitmap: &mut Bitmap,
+    array_len: usize,
+    offset: usize,
+    length: usize,
+) {
+    if is_flat_buffer_len(bitmap.len(), array_len) {
+        unsafe { bitmap.slice_unchecked(offset, length) };
+    } else if length == 0 {
+        unsafe { bitmap.slice_unchecked(0, 0) };
+    }
+}
+
+/// Slices the validity mask of an array of `array_len` elements down to the `length` bits at
+/// `offset`, as [`slice_bitmap`].
+///
+/// # Safety
+/// `offset + length` must not exceed `array_len`.
+#[inline]
+pub(crate) unsafe fn slice_validity(
+    validity: &mut Option<Bitmap>,
+    array_len: usize,
+    offset: usize,
+    length: usize,
+) {
+    if let Some(validity) = validity.as_mut() {
+        unsafe { slice_bitmap(validity, array_len, offset, length) };
+    }
+}
+
+/// Slices the offsets of a list or binary array of `array_len` elements down to the `length`
+/// elements at `offset`.
+///
+/// The values the offsets point into are left as they are: nothing normalizes them, so what falls
+/// outside the slice simply stops being reachable. Scalar offsets are left alone as well, like a
+/// scalar mask, unless the slice is empty: the one offset that holds no starts is then all it
+/// keeps of the range every element of the array shares.
+///
+/// # Safety
+/// `offset + length` must not exceed `array_len`.
+#[inline]
+pub(crate) unsafe fn slice_offsets(
+    offsets: &mut Buffer<u64>,
+    array_len: usize,
+    offset: usize,
+    length: usize,
+) {
+    if is_flat_offsets_len(offsets.len(), array_len) {
+        unsafe { offsets.slice_in_place_unchecked(offset..offset + length + 1) };
+    } else if length == 0 {
+        unsafe { offsets.slice_in_place_unchecked(0..1) };
+    }
+}
+
+/// Slices a backing buffer of a fixed size array of `array_len` elements that are `width` slots
+/// wide down to the `length` elements at `offset`, a width at a time.
+///
+/// A scalar buffer is left as it is — every element of the slice covers the same slots as every
+/// element of the array does — unless the slice is empty, which leaves no element to cover them.
+///
+/// # Safety
+/// `offset + length` must not exceed `array_len`.
+#[inline]
+pub(crate) unsafe fn slice_fixed_size_buffer<T>(
+    buffer: &mut Buffer<T>,
+    width: usize,
+    array_len: usize,
+    offset: usize,
+    length: usize,
+) {
+    if is_flat_fixed_size_values_len(buffer.len(), width, array_len) {
+        unsafe { buffer.slice_in_place_unchecked(offset * width..(offset + length) * width) };
+    } else if length == 0 {
+        unsafe { buffer.slice_in_place_unchecked(0..0) };
+    }
+}
+
+/// Slices the values array of a fixed size list array of `array_len` elements that are `width`
+/// values wide down to the `length` elements at `offset`, as [`slice_fixed_size_buffer`].
+///
+/// # Safety
+/// `offset + length` must not exceed `array_len`.
+#[inline]
+pub(crate) unsafe fn slice_fixed_size_values(
+    values: &mut Box<dyn PlArray>,
+    width: usize,
+    array_len: usize,
+    offset: usize,
+    length: usize,
+) {
+    if is_flat_fixed_size_values_len(values.len(), width, array_len) {
+        unsafe { values.slice_unchecked(offset * width, length * width) };
+    } else if length == 0 {
+        unsafe { values.slice_unchecked(0, 0) };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Slicing leaves a scalar buffer alone — every element of the slice reads the same slot — but
+    /// an empty slice has no element left to read it, so the slot goes.
+    #[test]
+    fn slicing_to_nothing_drops_the_scalar_slot() {
+        unsafe {
+            let mut values = Buffer::from(vec![7i32]);
+            slice_buffer(&mut values, 3, 1, 2);
+            assert_eq!(values.as_slice(), [7]);
+            slice_buffer(&mut values, 3, 1, 0);
+            assert!(values.is_empty());
+
+            let mut values = Buffer::from(vec![1i32, 2, 3]);
+            slice_buffer(&mut values, 3, 1, 2);
+            assert_eq!(values.as_slice(), [2, 3]);
+
+            let mut bitmap = Bitmap::new_zeroed(1);
+            slice_bitmap(&mut bitmap, 3, 1, 2);
+            assert_eq!(bitmap.len(), 1);
+            slice_bitmap(&mut bitmap, 3, 1, 0);
+            assert!(bitmap.is_empty());
+
+            let mut validity = Some(Bitmap::new_zeroed(1));
+            slice_validity(&mut validity, 3, 0, 0);
+            assert!(validity.unwrap().is_empty());
+            let mut validity = None;
+            slice_validity(&mut validity, 3, 0, 0);
+            assert!(validity.is_none());
+
+            let mut offsets = Buffer::from(vec![2u64, 5]);
+            slice_offsets(&mut offsets, 3, 1, 2);
+            assert_eq!(offsets.as_slice(), [2, 5]);
+            slice_offsets(&mut offsets, 3, 1, 0);
+            assert_eq!(offsets.as_slice(), [2]);
+
+            let mut offsets = Buffer::from(vec![0u64, 1, 2, 3]);
+            slice_offsets(&mut offsets, 3, 1, 2);
+            assert_eq!(offsets.as_slice(), [1, 2, 3]);
+
+            let mut values = Buffer::from(vec![1u8, 2]);
+            slice_fixed_size_buffer(&mut values, 2, 3, 1, 2);
+            assert_eq!(values.as_slice(), [1, 2]);
+            slice_fixed_size_buffer(&mut values, 2, 3, 1, 0);
+            assert!(values.is_empty());
+
+            let mut values = Buffer::from(vec![1u8, 2, 3, 4, 5, 6]);
+            slice_fixed_size_buffer(&mut values, 2, 3, 1, 2);
+            assert_eq!(values.as_slice(), [3, 4, 5, 6]);
+
+            let element = || -> Box<dyn PlArray> {
+                Box::new(crate::PlPrimitiveArray::from_vec(vec![1i32, 2]))
+            };
+            let mut values = element();
+            slice_fixed_size_values(&mut values, 2, 3, 1, 2);
+            assert_eq!(values.len(), 2);
+            slice_fixed_size_values(&mut values, 2, 3, 1, 0);
+            assert!(values.is_empty());
+
+            let mut values: Box<dyn PlArray> =
+                Box::new(crate::PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4, 5, 6]));
+            slice_fixed_size_values(&mut values, 2, 3, 1, 2);
+            assert_eq!(values.len(), 4);
+        }
+    }
 
     #[test]
     fn a_single_slot_is_scalar_for_no_elements_but_is_not_kept() {

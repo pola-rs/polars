@@ -6,7 +6,7 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
 use crate::broadcast::{
     is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len, normalize_bitmap,
-    normalize_validity, scalar_buffer_len,
+    normalize_validity, scalar_buffer_len, slice_bitmap, slice_validity,
 };
 use crate::flat::Flat;
 
@@ -496,19 +496,9 @@ impl PlBooleanArray {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // Scalar bitmaps are unaffected by slicing — every element reads the same bit — with the
-        // one exception of an empty slice, which keeps no element to read it.
-        if self.values_are_flat() {
-            unsafe { self.values.slice_unchecked(offset, length) };
-        } else if length == 0 {
-            unsafe { self.values.slice_unchecked(0, 0) };
-        }
-        if let Some(validity) = self.validity.as_mut() {
-            if validity.len() == self.length {
-                unsafe { validity.slice_unchecked(offset, length) };
-            } else if length == 0 {
-                unsafe { validity.slice_unchecked(0, 0) };
-            }
+        unsafe {
+            slice_bitmap(&mut self.values, self.length, offset, length);
+            slice_validity(&mut self.validity, self.length, offset, length);
         }
 
         self.length = length;

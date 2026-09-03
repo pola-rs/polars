@@ -10,7 +10,7 @@ use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{
     assert_broadcastable, is_flat_buffer_len, is_flat_fixed_size_values_len, is_scalar_buffer_len,
     is_scalar_fixed_size_values_len, is_valid_buffer_len, normalize_buffer, normalize_validity,
-    scalar_buffer_len,
+    scalar_buffer_len, slice_fixed_size_buffer, slice_validity,
 };
 use crate::flat::Flat;
 
@@ -602,27 +602,11 @@ impl PlFixedSizeBinaryArray {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        if self.values_are_flat() {
-            // There is nothing to leave the bytes outside the slice behind, so they are sliced
-            // along with it, a width at a time.
-            unsafe {
-                self.values
-                    .slice_in_place_unchecked(offset * self.width..(offset + length) * self.width)
-            };
-        } else if length == 0 {
-            // Scalar values are unaffected by slicing — every element covers the same bytes — with
-            // the one exception of an empty slice, which keeps no element to share them.
-            unsafe { self.values.slice_in_place_unchecked(0..0) };
-        }
-
-        // A scalar mask is unaffected by slicing — every element reads the same bit — with the one
-        // exception of an empty slice, which keeps no element to read it.
-        if let Some(validity) = self.validity.as_mut() {
-            if validity.len() == self.length {
-                unsafe { validity.slice_unchecked(offset, length) };
-            } else if length == 0 {
-                unsafe { validity.slice_unchecked(0, 0) };
-            }
+        // There are no offsets to leave the bytes outside the slice behind, so they are sliced
+        // along with it; see `slice_fixed_size_buffer`.
+        unsafe {
+            slice_fixed_size_buffer(&mut self.values, self.width, self.length, offset, length);
+            slice_validity(&mut self.validity, self.length, offset, length);
         }
 
         self.length = length;

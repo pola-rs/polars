@@ -8,7 +8,8 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{
     assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
-    is_valid_buffer_len, normalize_buffer, normalize_validity, scalar_buffer_len,
+    is_valid_buffer_len, normalize_buffer, normalize_validity, scalar_buffer_len, slice_buffer,
+    slice_validity,
 };
 use crate::flat::Flat;
 
@@ -510,22 +511,9 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // Scalar buffers are unaffected by slicing — every element reads the same slot — with the
-        // one exception of an empty slice, which keeps no element to read it.
-        if self.values_are_flat() {
-            unsafe {
-                self.values
-                    .slice_in_place_unchecked(offset..offset + length)
-            };
-        } else if length == 0 {
-            unsafe { self.values.slice_in_place_unchecked(0..0) };
-        }
-        if let Some(validity) = self.validity.as_mut() {
-            if validity.len() == self.length {
-                unsafe { validity.slice_unchecked(offset, length) };
-            } else if length == 0 {
-                unsafe { validity.slice_unchecked(0, 0) };
-            }
+        unsafe {
+            slice_buffer(&mut self.values, self.length, offset, length);
+            slice_validity(&mut self.validity, self.length, offset, length);
         }
 
         self.length = length;

@@ -10,7 +10,7 @@ use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{
     assert_broadcastable, broadcast_index, is_flat_buffer_len, is_flat_offsets_len,
     is_scalar_buffer_len, is_scalar_offsets_len, is_valid_buffer_len, normalize_offsets,
-    normalize_validity, scalar_buffer_len, scalar_offsets_len,
+    normalize_validity, scalar_buffer_len, scalar_offsets_len, slice_offsets, slice_validity,
 };
 use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
@@ -596,29 +596,10 @@ impl PlListArray {
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
         debug_assert!(offset + length <= self.length);
 
-        // The values array is left as it is: the offsets are what point into it, and they are not
-        // normalized, so the elements that fall outside the slice simply stop being reachable.
-        // Scalar offsets are left alone as well, like a scalar mask: every element of the slice
-        // covers the same range every element of this array does.
-        if self.offsets_are_flat() {
-            unsafe {
-                self.offsets
-                    .slice_in_place_unchecked(offset..offset + length + 1)
-            };
-        } else if length == 0 {
-            // An empty slice covers no range, so the one offset that holds no starts is all it
-            // keeps of the range every element of this array shares.
-            unsafe { self.offsets.slice_in_place_unchecked(0..1) };
-        }
-
-        // A scalar mask is unaffected by slicing — every element reads the same bit — with the one
-        // exception of an empty slice, which keeps no element to read it.
-        if let Some(validity) = self.validity.as_mut() {
-            if validity.len() == self.length {
-                unsafe { validity.slice_unchecked(offset, length) };
-            } else if length == 0 {
-                unsafe { validity.slice_unchecked(0, 0) };
-            }
+        // The values array the offsets point into is left as it is; see `slice_offsets`.
+        unsafe {
+            slice_offsets(&mut self.offsets, self.length, offset, length);
+            slice_validity(&mut self.validity, self.length, offset, length);
         }
 
         self.length = length;

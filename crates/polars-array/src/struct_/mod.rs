@@ -6,7 +6,7 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{
     is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len, normalize_validity,
-    scalar_buffer_len,
+    scalar_buffer_len, slice_validity,
 };
 use crate::flat::Flat;
 
@@ -383,15 +383,7 @@ impl PlStructArray {
             unsafe { field.slice_unchecked(offset, length) };
         }
 
-        // A scalar mask is unaffected by slicing — every element reads the same bit — with the one
-        // exception of an empty slice, which keeps no element to read it.
-        if let Some(validity) = self.validity.as_mut() {
-            if validity.len() == self.length {
-                unsafe { validity.slice_unchecked(offset, length) };
-            } else if length == 0 {
-                unsafe { validity.slice_unchecked(0, 0) };
-            }
-        }
+        unsafe { slice_validity(&mut self.validity, self.length, offset, length) };
 
         self.length = length;
     }

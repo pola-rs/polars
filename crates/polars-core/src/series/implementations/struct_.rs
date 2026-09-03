@@ -1,19 +1,6 @@
 use arrow::bitmap::Bitmap;
 
 use super::*;
-
-/// A boolean array of `length` elements over `bits`, which has to be flat or scalar for it.
-fn boolean_from_bits(bits: Bitmap, length: usize) -> PlBooleanArray {
-    if bits.len() == length {
-        PlBooleanArray::new(bits, length, None)
-    } else if length == 0 {
-        // There is no element to share the single bit, so an empty array keeps none of it.
-        PlBooleanArray::new_empty()
-    } else {
-        PlBooleanArray::new_broadcast(bits, length, None)
-    }
-}
-
 use crate::chunked_array::StructChunked;
 use crate::prelude::row_encode::{
     _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_unordered,
@@ -311,7 +298,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
                 Some(valid) => polars_array::bitmap::invert(valid),
                 None => Bitmap::new_with_value(false, 1),
             };
-            boolean_from_bits(bitmap, arr.len())
+            PlBooleanArray::from_pl_bitmap(PlBitmap::new_broadcast(bitmap, arr.len()))
         });
         BooleanChunked::from_chunk_iter(self.name().clone(), iter)
     }
@@ -322,7 +309,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
                 Some(valid) => valid.to_flat_or_scalar(),
                 None => Bitmap::new_with_value(true, 1),
             };
-            boolean_from_bits(bitmap, arr.len())
+            PlBooleanArray::from_pl_bitmap(PlBitmap::new_broadcast(bitmap, arr.len()))
         });
         BooleanChunked::from_chunk_iter(self.name().clone(), iter)
     }
