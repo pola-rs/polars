@@ -14,7 +14,9 @@ use polars_error::abort::register_polars_abort_mechanism;
 use polars_ffi::version_0::SeriesExport;
 use polars_plan::plans::python_df_to_rust;
 use polars_utils::python_convert_registry::{FromPythonConvertRegistry, PythonConvertRegistry};
-use polars_utils::version::{set_polars_lib_build_commit, set_polars_lib_name, set_polars_lib_version};
+use polars_utils::version::{
+    set_polars_lib_build_commit, set_polars_lib_name, set_polars_lib_version,
+};
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::PyCFunction;
