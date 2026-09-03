@@ -228,9 +228,9 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
         let mask = if let Some(validity) = array.validity()
             && validity.unset_bits() > 0
         {
-            &array.values().to_flat() & &validity.to_flat()
+            &*array.values().to_flat() & &*validity.to_flat()
         } else {
-            array.values().to_flat()
+            array.values().to_flat().into_owned()
         };
 
         // @NOTE: Certain predicates like `1 == 1` will only output 1 value. We need to broadcast

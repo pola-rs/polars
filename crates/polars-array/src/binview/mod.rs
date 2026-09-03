@@ -716,7 +716,9 @@ impl PlBinaryViewArray {
             Buffer::from(vec![self.views[0]; self.length])
         };
 
-        let validity = self.validity().map(|validity| validity.to_flat());
+        let validity = self
+            .validity()
+            .map(|validity| validity.to_flat().into_owned());
 
         Cow::Owned(Flat(Self {
             views,

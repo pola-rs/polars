@@ -30,7 +30,7 @@ unsafe fn gather_skip_nulls_idx_pairs_unchecked<'a, T: PolarsDataType>(
         let mut nonnull_before_offset = 0;
         // TODO(polars-array-scalar): the null scan walks the mask bit by bit, so a scalar mask is
         // written out here rather than its single bit being read once.
-        let validity = arr.validity().map(|v| v.to_flat());
+        let validity = arr.validity().map(|v| v.to_flat().into_owned());
         let mask = validity
             .as_ref()
             .map(BitMask::from_bitmap)

@@ -872,7 +872,7 @@ impl ArrayChunked {
                     values,
                     offsets.into(),
                     chunk.len(),
-                    chunk.validity().map(|v| v.to_flat()),
+                    chunk.validity().map(|v| v.to_flat().into_owned()),
                 )) as PlArrayRef
             })
             .collect();

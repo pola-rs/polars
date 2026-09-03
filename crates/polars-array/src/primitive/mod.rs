@@ -589,7 +589,9 @@ impl<T: NativeType> PlPrimitiveArray<T> {
             Buffer::from(vec![self.values[0]; self.length])
         };
 
-        let validity = self.validity().map(|validity| validity.to_flat());
+        let validity = self
+            .validity()
+            .map(|validity| validity.to_flat().into_owned());
 
         Cow::Owned(Flat(Self {
             values,

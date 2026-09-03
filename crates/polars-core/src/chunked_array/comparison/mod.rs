@@ -1048,7 +1048,7 @@ fn true_count(arr: &PlBooleanArray) -> usize {
             (Some(true), Some(true)) => arr.len(),
             (Some(true), None) => validity.set_bits(),
             (None, Some(true)) => values.set_bits(),
-            (None, None) => (&values.to_flat() & &validity.to_flat()).set_bits(),
+            (None, None) => (&*values.to_flat() & &*validity.to_flat()).set_bits(),
         },
     }
 }
@@ -1063,7 +1063,7 @@ fn false_count(arr: &PlBooleanArray) -> usize {
             (Some(false), Some(true)) => arr.len(),
             (Some(false), None) => validity.set_bits(),
             (None, Some(true)) => values.unset_bits(),
-            (None, None) => (&!&values.to_flat() & &validity.to_flat()).set_bits(),
+            (None, None) => (&!&*values.to_flat() & &*validity.to_flat()).set_bits(),
         },
     }
 }

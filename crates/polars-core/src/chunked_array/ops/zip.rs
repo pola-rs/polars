@@ -197,7 +197,7 @@ fn combine_validities_chunked<
         .zip(mask_al.downcast_iter())
         .map(|(a, m)| {
             let bm = bool_null_to_false(m);
-            let a_validity = a.validity().map(|v| v.to_flat());
+            let a_validity = a.validity().map(|v| v.to_flat().into_owned());
             let validity = combiner(a_validity.as_ref(), Some(&bm));
             a.clone().with_validity_typed(validity)
         });
@@ -508,7 +508,9 @@ impl ChunkZip<StructType> for StructChunked {
                     };
 
                     if if_false.chunks().len() == 1 {
-                        let if_false = if_false.chunks()[0].validity().map(|v| v.to_flat());
+                        let if_false = if_false.chunks()[0]
+                            .validity()
+                            .map(|v| v.to_flat().into_owned());
                         let m = mask_values(mask.downcast_get(0).unwrap());
 
                         let validity = combine(if_false.as_ref(), &m);
@@ -518,7 +520,8 @@ impl ChunkZip<StructType> for StructChunked {
                             length,
                             if_false.chunks().iter().zip(mask.downcast_iter()).map(
                                 |(chunk, mask)| {
-                                    let validity = chunk.validity().map(|v| v.to_flat());
+                                    let validity =
+                                        chunk.validity().map(|v| v.to_flat().into_owned());
                                     (mask.len(), combine(validity.as_ref(), &mask_values(mask)))
                                 },
                             ),
@@ -544,7 +547,9 @@ impl ChunkZip<StructType> for StructChunked {
                     };
 
                     if if_true.chunks().len() == 1 {
-                        let if_true = if_true.chunks()[0].validity().map(|v| v.to_flat());
+                        let if_true = if_true.chunks()[0]
+                            .validity()
+                            .map(|v| v.to_flat().into_owned());
                         let m = mask_values(mask.downcast_get(0).unwrap());
 
                         let validity = combine(if_true.as_ref(), &m);
@@ -554,7 +559,8 @@ impl ChunkZip<StructType> for StructChunked {
                             length,
                             if_true.chunks().iter().zip(mask.downcast_iter()).map(
                                 |(chunk, mask)| {
-                                    let validity = chunk.validity().map(|v| v.to_flat());
+                                    let validity =
+                                        chunk.validity().map(|v| v.to_flat().into_owned());
                                     (mask.len(), combine(validity.as_ref(), &mask_values(mask)))
                                 },
                             ),
@@ -582,8 +588,8 @@ impl ChunkZip<StructType> for StructChunked {
                             .zip(if_false.chunks())
                             .map(|(l, r)| {
                                 (
-                                    l.validity().map(|v| v.to_flat()),
-                                    r.validity().map(|v| v.to_flat()),
+                                    l.validity().map(|v| v.to_flat().into_owned()),
+                                    r.validity().map(|v| v.to_flat().into_owned()),
                                 )
                             });
 

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use arrow::bitmap::Bitmap;
 use polars_error::{PolarsResult, polars_ensure};
 
@@ -177,13 +179,14 @@ impl<'a> PlBitmapRef<'a> {
         self.length - self.unset_bits()
     }
 
-    /// Materializes an ordinary [`Bitmap`] holding one bit per element.
-    pub fn to_flat(&self) -> Bitmap {
-        if self.is_flat() {
-            self.bitmap.clone()
-        } else {
-            Bitmap::new_with_value(self.bitmap.get_bit(0), self.length)
+    /// Returns an ordinary [`Bitmap`] holding one bit per element, borrowing the backing bitmap if
+    /// it already holds one.
+    pub fn to_flat(&self) -> Cow<'a, Bitmap> {
+        if let Some(bitmap) = self.flat_bitmap() {
+            return Cow::Borrowed(bitmap);
         }
+
+        Cow::Owned(Bitmap::new_with_value(self.bitmap.get_bit(0), self.length))
     }
 
     /// This mask as a [`Bitmap`], keeping the scalar representation where it has one.
@@ -280,7 +283,8 @@ mod tests {
         assert!(!mask.get(1));
         assert_eq!(mask.unset_bits(), 1);
         assert_eq!(mask.set_bits(), 2);
-        assert_eq!(mask.to_flat(), bitmap);
+        assert_eq!(*mask.to_flat(), bitmap);
+        assert!(matches!(mask.to_flat(), Cow::Borrowed(_)));
     }
 
     #[test]
@@ -296,6 +300,7 @@ mod tests {
         assert_eq!(mask.set_bits(), 0);
 
         let flat = mask.to_flat();
+        assert!(matches!(flat, Cow::Owned(_)));
         assert_eq!(flat.len(), 1_000);
         assert_eq!(flat.unset_bits(), 1_000);
     }

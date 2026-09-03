@@ -476,7 +476,9 @@ impl PlStructArray {
             return Cow::Borrowed(flat);
         }
 
-        let validity = self.validity().map(|validity| validity.to_flat());
+        let validity = self
+            .validity()
+            .map(|validity| validity.to_flat().into_owned());
 
         // SAFETY: the fields are untouched and still hold `length` elements each, and the mask was
         // just written out to one bit per element.
@@ -499,7 +501,7 @@ impl PlStructArray {
 fn masked(field: &dyn PlArray, mask: PlBitmapRef<'_>) -> Box<dyn PlArray> {
     let validity = match field.validity() {
         Some(field_validity) => and(&field_validity.to_flat(), &mask.to_flat()),
-        None => mask.to_flat(),
+        None => mask.to_flat().into_owned(),
     };
     field.with_validity(Some(validity))
 }

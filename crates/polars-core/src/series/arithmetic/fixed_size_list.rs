@@ -200,7 +200,7 @@ mod inner {
                     out.push(
                         arr.validity()
                             .filter(|x| x.unset_bits() > 0)
-                            .map(|x| x.to_flat()),
+                            .map(|x| x.to_flat().into_owned()),
                     );
                     let values = array_values(arr);
                     opt_arr =

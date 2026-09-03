@@ -214,7 +214,9 @@ pub fn struct_to_arrow_struct(array: &PlStructArray) -> StructArray {
         .map(|(i, value)| Field::new(format_pl_smallstr!("{i}"), value.dtype().clone(), true))
         .collect();
 
-    let validity = array.validity().map(|validity| validity.to_flat());
+    let validity = array
+        .validity()
+        .map(|validity| validity.to_flat().into_owned());
 
     StructArray::new(ArrowDataType::Struct(fields), array.len(), values, validity)
 }

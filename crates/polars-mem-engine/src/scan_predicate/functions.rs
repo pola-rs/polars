@@ -258,7 +258,7 @@ pub fn initialize_scan_predicate<'a>(
 
         // TODO(polars-array-scalar): a hive predicate that holds throughout leaves the mask as a
         // single bit; `SkipFilesMask` holds an `arrow::Bitmap`, so it is written out here.
-        let hive_inclusion_bitmap = hive_inclusion_array.values().to_flat();
+        let hive_inclusion_bitmap = hive_inclusion_array.values().to_flat().into_owned();
 
         if predicate.hive_predicate_is_full_predicate {
             let skip_files_mask = SkipFilesMask::Inclusion(hive_inclusion_bitmap);

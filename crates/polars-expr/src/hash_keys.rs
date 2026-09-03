@@ -189,7 +189,9 @@ impl HashKeys {
     pub fn validity(&self) -> Option<Bitmap> {
         match self {
             HashKeys::RowEncoded(s) => s.keys.validity().cloned(),
-            HashKeys::Single(s) => s.keys.chunks()[0].validity().map(|v| v.to_flat()),
+            HashKeys::Single(s) => s.keys.chunks()[0]
+                .validity()
+                .map(|v| v.to_flat().into_owned()),
             HashKeys::Binview(s) => s.keys.validity().cloned(),
         }
     }

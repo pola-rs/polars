@@ -567,13 +567,15 @@ impl PlBooleanArray {
             // repeated bit need not be written out: a zeroed bitmap stands in for it.
             Bitmap::new_zeroed(self.length)
         } else {
-            self.values().to_flat()
+            self.values().to_flat().into_owned()
         };
 
         Cow::Owned(Flat(Self {
             values,
             length: self.length,
-            validity: self.validity().map(|validity| validity.to_flat()),
+            validity: self
+                .validity()
+                .map(|validity| validity.to_flat().into_owned()),
         }))
     }
 

@@ -670,7 +670,9 @@ impl PlListArray {
             return Cow::Borrowed(flat);
         }
 
-        let validity = self.validity().map(|validity| validity.to_flat());
+        let validity = self
+            .validity()
+            .map(|validity| validity.to_flat().into_owned());
 
         let (values, offsets) = if self.offsets_are_flat() {
             (self.values.clone(), self.offsets.clone())

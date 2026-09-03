@@ -56,7 +56,7 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
                     .chunks()
                     .to_vec()
                     .into_iter()
-                    .map(|arr| arr.validity().map(|v| v.to_flat()))
+                    .map(|arr| arr.validity().map(|v| v.to_flat().into_owned()))
             })
             .collect::<Vec<_>>();
 

@@ -614,10 +614,20 @@ impl ExternalFilterMask {
     // written out here, where one repeated bit deletes either every row or none of them.
     fn get_mask(&self) -> Bitmap {
         match self {
-            Self::Iceberg { mask } => mask.rechunk().downcast_get(0).unwrap().values().to_flat(),
-            Self::DeltaDeletionVector { mask } => {
-                mask.rechunk().downcast_get(0).unwrap().values().to_flat()
-            },
+            Self::Iceberg { mask } => mask
+                .rechunk()
+                .downcast_get(0)
+                .unwrap()
+                .values()
+                .to_flat()
+                .into_owned(),
+            Self::DeltaDeletionVector { mask } => mask
+                .rechunk()
+                .downcast_get(0)
+                .unwrap()
+                .values()
+                .to_flat()
+                .into_owned(),
         }
     }
 

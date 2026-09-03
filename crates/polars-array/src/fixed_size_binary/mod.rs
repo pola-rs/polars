@@ -680,7 +680,9 @@ impl PlFixedSizeBinaryArray {
             return Cow::Borrowed(flat);
         }
 
-        let validity = self.validity().map(|validity| validity.to_flat());
+        let validity = self
+            .validity()
+            .map(|validity| validity.to_flat().into_owned());
 
         let values = if self.values_are_flat() {
             self.values.clone()

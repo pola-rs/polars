@@ -208,7 +208,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     pub fn rechunk_validity(&self) -> Option<Bitmap> {
         if self.chunks.len() == 1 {
-            return self.chunks[0].validity().map(|v| v.to_flat());
+            return self.chunks[0].validity().map(|v| v.to_flat().into_owned());
         }
 
         if !self.has_nulls() || self.is_empty() {
