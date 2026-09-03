@@ -215,13 +215,14 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
                                 .into()
                         },
                     }
-                } else if let Some(value) = arr.scalar_values() {
+                } else {
+                    let value = arr
+                        .scalar_values()
+                        .expect("values buffer should be one of flat or scalar");
                     let validity = arr.validity().map(|v| v.to_flat_or_scalar());
                     *arr = PlPrimitiveArray::new_scalar(f(value), arr.len())
                         .with_validity_broadcast(validity);
                 }
-                // Neither representation is readable only for an empty array, which has no
-                // element to map.
             })
         };
         // can be in any order now
