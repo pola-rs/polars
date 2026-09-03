@@ -1,4 +1,3 @@
-use polars_array::as_flat;
 use polars_utils::index::idxsize_to_u64;
 
 use super::*;
@@ -20,7 +19,7 @@ impl<T: PolarsNumericType> AggList for ChunkedArray<T> {
             GroupsType::Idx(groups) => {
                 let mut can_fast_explode = true;
 
-                let arr = as_flat(ca.downcast_iter().next().unwrap());
+                let arr = ca.downcast_iter().next().unwrap().to_flat();
                 let values = arr.values();
 
                 let mut offsets = Vec::<u64>::with_capacity(groups.len() + 1);
@@ -85,7 +84,7 @@ impl<T: PolarsNumericType> AggList for ChunkedArray<T> {
             },
             GroupsType::Slice { groups, .. } => {
                 let mut can_fast_explode = true;
-                let arr = as_flat(ca.downcast_iter().next().unwrap());
+                let arr = ca.downcast_iter().next().unwrap().to_flat();
                 let values = arr.values();
 
                 let mut offsets = Vec::<u64>::with_capacity(groups.len() + 1);

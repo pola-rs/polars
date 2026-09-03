@@ -1175,9 +1175,9 @@ impl Column {
 
             let mut prev_idx = end - start;
             // The values are read as a slice, so a chunk that is not laid out flat is written out
-            // first — see `polars_array::as_flat`.
+            // first — see `StaticArray::to_flat`.
             for chunk in arg_unique.downcast_iter() {
-                let chunk = polars_array::as_flat(chunk);
+                let chunk = chunk.to_flat();
                 for &idx in chunk.as_slice().iter().rev() {
                     values.extend(start + idx..start + prev_idx);
                     prev_idx = idx;

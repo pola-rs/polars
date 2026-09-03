@@ -7,7 +7,6 @@ use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_array::arrow::bridge::{chunk_from_arrow, flat_to_arrow};
 use polars_array::arrow::export;
-use polars_array::as_flat;
 use polars_compute::if_then_else::{IfThenElseKernel, if_then_else_validity};
 use polars_error::PolarsContext;
 use polars_utils::broadcast::broadcast_len;
@@ -167,13 +166,13 @@ where
 
 /// The bits of a mask chunk that [`bool_null_to_false`] left flat and fully valid.
 fn mask_values(mask: &PlBooleanArray) -> Bitmap {
-    as_flat(mask).values().clone()
+    mask.to_flat().values().clone()
 }
 
 fn bool_null_to_false(mask: &PlBooleanArray) -> Bitmap {
     // TODO(polars-array-scalar): a scalar mask stands for one bit at every element, which this
     // writes out to hand back one bit per element.
-    let mask = as_flat(mask);
+    let mask = mask.to_flat();
     if mask.null_count() == 0 {
         mask.values().clone()
     } else {
@@ -258,7 +257,7 @@ where
                 .zip(if_true_al.downcast_iter())
                 .zip(if_false_al.downcast_iter())
                 .map(|((m, t), f)| {
-                    ChunkZipKernel::if_then_else(&bool_null_to_false(m), &as_flat(t), &as_flat(f))
+                    ChunkZipKernel::if_then_else(&bool_null_to_false(m), &t.to_flat(), &f.to_flat())
                 });
             ChunkedArray::from_chunk_iter_like(if_true, chunks)
 
@@ -273,7 +272,7 @@ where
                     .map(|(m, f)| {
                         let bm = bool_null_to_false(m);
                         let t = true_scalar.clone();
-                        ChunkZipKernel::if_then_else_broadcast_true(&bm, t, &as_flat(f))
+                        ChunkZipKernel::if_then_else_broadcast_true(&bm, t, &f.to_flat())
                     });
                 ChunkedArray::from_chunk_iter_like(if_true, chunks)
             } else {
@@ -292,7 +291,7 @@ where
                         .map(|(m, t)| {
                             let bm = bool_null_to_false(m);
                             let f = false_scalar.clone();
-                            ChunkZipKernel::if_then_else_broadcast_false(&bm, &as_flat(t), f)
+                            ChunkZipKernel::if_then_else_broadcast_false(&bm, &t.to_flat(), f)
                         });
                 ChunkedArray::from_chunk_iter_like(if_false, chunks)
             } else {

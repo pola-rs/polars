@@ -1,4 +1,3 @@
-use polars_array::as_flat;
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::min_max::{MaxIgnoreNan, MinIgnoreNan, MinMaxPolicy};
 
@@ -192,7 +191,7 @@ where
                         })
                 } else {
                     // When no nulls & array not empty => we can use fast argmin.
-                    let arr = as_flat(arr);
+                    let arr = arr.to_flat();
                     let min_idx: usize = arr.as_slice().argmin();
                     Some((min_idx, arr.value(min_idx)))
                 };
@@ -243,7 +242,7 @@ where
                         })
                 } else {
                     // When no nulls & array not empty => we can use fast argmax.
-                    let arr = as_flat(arr);
+                    let arr = arr.to_flat();
                     let max_idx: usize = arr.as_slice().argmax();
                     Some((max_idx, arr.value(max_idx)))
                 };

@@ -1,12 +1,10 @@
 //! The wrapper that marks an array as being in the flat representation.
 
-use std::borrow::Cow;
 use std::ops::Deref;
 
 use arrow::bitmap::Bitmap;
 
 use crate::array::PlArray;
-use crate::static_array::StaticArray;
 
 /// An array whose backing buffers all hold one slot per element.
 #[repr(transparent)]
@@ -187,15 +185,6 @@ impl<T: std::fmt::Debug> std::fmt::Debug for Flat<T> {
     }
 }
 
-/// Borrows `array` as a flat one, writing out its buffers only if it is not laid out flat.
-#[inline]
-pub fn as_flat<A: StaticArray>(array: &A) -> Cow<'_, Flat<A>> {
-    match array.as_flat() {
-        Some(flat) => Cow::Borrowed(flat),
-        None => Cow::Owned(array.to_flat()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,13 +192,19 @@ mod tests {
 
     #[test]
     fn slicing_stays_flat() {
-        let flat = PlPrimitiveArray::new_scalar(7i32, 5).to_flat().sliced(1, 2);
+        let flat = PlPrimitiveArray::new_scalar(7i32, 5)
+            .to_flat()
+            .into_owned()
+            .sliced(1, 2);
 
         assert!(flat.is_flat());
         assert_eq!(flat.values().as_slice(), [7, 7]);
 
         // Slicing away every element leaves an empty flat array.
-        let flat = PlBooleanArray::new_full_null(5).to_flat().sliced(2, 0);
+        let flat = PlBooleanArray::new_full_null(5)
+            .to_flat()
+            .into_owned()
+            .sliced(2, 0);
 
         assert!(flat.is_flat());
         assert!(flat.is_empty());
@@ -217,7 +212,9 @@ mod tests {
 
     #[test]
     fn validity_must_stay_flat() {
-        let flat = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).to_flat();
+        let flat = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
+            .to_flat()
+            .into_owned();
 
         let with_nulls = flat.with_validity(Some(Bitmap::from_iter([true, false, true])));
         assert!(with_nulls.is_flat());
@@ -231,13 +228,13 @@ mod tests {
         let flat = scalar.to_flat();
 
         // Equality and formatting see through the wrapper.
-        assert_eq!(flat, scalar);
+        assert_eq!(*flat, scalar);
         assert_eq!(flat, flat.clone());
         assert_eq!(format!("{flat:?}"), format!("{:?}", flat.as_array()));
 
         // The deref reaches everything that is not specialized.
         assert_eq!(flat.len(), 3);
         assert!(!flat.has_nulls());
-        assert_eq!(flat.into_array(), scalar);
+        assert_eq!(flat.into_owned().into_array(), scalar);
     }
 }

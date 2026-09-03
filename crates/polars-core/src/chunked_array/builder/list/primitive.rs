@@ -1,5 +1,3 @@
-use polars_array::as_flat;
-
 use super::*;
 
 pub struct ListPrimitiveChunkedBuilder<T>
@@ -145,8 +143,8 @@ Expected {}, got {}.", self.field.dtype(), s.dtype())
         ca.downcast_iter().for_each(|arr| {
             if arr.null_count() == 0 {
                 // The values are read as a slice, so a chunk that is not laid out flat is written
-                // out first — see `polars_array::as_flat`.
-                values.extend_from_slice(as_flat(arr).as_slice())
+                // out first — see `StaticArray::to_flat`.
+                values.extend_from_slice(arr.to_flat().as_slice())
             } else {
                 // SAFETY:
                 // The arrays are trusted length iterators.

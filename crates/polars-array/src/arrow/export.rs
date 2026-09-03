@@ -63,7 +63,7 @@ pub fn null_to_arrow_null(array: &PlNullArray) -> NullArray {
 /// Exports a [`PlBooleanArray`] as an Arrow [`BooleanArray`] of
 /// [`Boolean`](ArrowDataType::Boolean).
 pub fn boolean_to_arrow_boolean(array: &PlBooleanArray) -> BooleanArray {
-    let (values, validity) = array.to_flat().into_inner();
+    let (values, validity) = array.to_flat().into_owned().into_inner();
     BooleanArray::new(ArrowDataType::Boolean, values, validity)
 }
 
@@ -72,14 +72,14 @@ pub fn boolean_to_arrow_boolean(array: &PlBooleanArray) -> BooleanArray {
 pub fn primitive_to_arrow_primitive<T: NativeType>(
     array: &PlPrimitiveArray<T>,
 ) -> PrimitiveArray<T> {
-    let (values, validity) = array.to_flat().into_inner();
+    let (values, validity) = array.to_flat().into_owned().into_inner();
     PrimitiveArray::new(T::PRIMITIVE.into(), values, validity)
 }
 
 /// Exports a [`PlBinaryArray`] as an Arrow [`BinaryArray`] of
 /// [`LargeBinary`](ArrowDataType::LargeBinary).
 pub fn binary_to_arrow_large_binary(array: &PlBinaryArray) -> BinaryArray<i64> {
-    let (values, offsets, validity) = array.to_flat().into_inner();
+    let (values, offsets, validity) = array.to_flat().into_owned().into_inner();
     BinaryArray::new(
         ArrowDataType::LargeBinary,
         offsets_to_arrow(offsets),
@@ -94,7 +94,7 @@ pub fn binary_to_arrow_large_binary(array: &PlBinaryArray) -> BinaryArray<i64> {
 /// # Safety
 /// Every element of `array` — including the ones under a null — must be valid UTF-8.
 pub unsafe fn binary_to_arrow_large_utf8(array: &PlBinaryArray) -> Utf8Array<i64> {
-    let (values, offsets, validity) = array.to_flat().into_inner();
+    let (values, offsets, validity) = array.to_flat().into_owned().into_inner();
 
     // SAFETY: the caller guarantees the elements are valid UTF-8, and the offsets came out of a
     // flat `PlBinaryArray`, which lays them end to end within the values.
@@ -111,7 +111,7 @@ pub unsafe fn binary_to_arrow_large_utf8(array: &PlBinaryArray) -> Utf8Array<i64
 /// Exports a [`PlBinaryViewArray`] as an Arrow [`BinaryViewArray`] of
 /// [`BinaryView`](ArrowDataType::BinaryView).
 pub fn binview_to_arrow_binview(array: &PlBinaryViewArray) -> BinaryViewArray {
-    let (views, buffers, validity) = array.to_flat().into_inner();
+    let (views, buffers, validity) = array.to_flat().into_owned().into_inner();
 
     // SAFETY: the views came out of a `PlBinaryViewArray`, which validates every one of them
     // against the buffers it reads.
@@ -129,7 +129,7 @@ pub fn binview_to_arrow_binview(array: &PlBinaryViewArray) -> BinaryViewArray {
 /// Exports a [`PlUtf8ViewArray`] as an Arrow [`Utf8ViewArray`] of
 /// [`Utf8View`](ArrowDataType::Utf8View).
 pub fn utf8view_to_arrow_utf8view(array: &PlUtf8ViewArray) -> Utf8ViewArray {
-    let (views, buffers, validity) = array.as_binview().to_flat().into_inner();
+    let (views, buffers, validity) = array.as_binview().to_flat().into_owned().into_inner();
 
     // SAFETY: every element of a `PlUtf8ViewArray` is valid UTF-8, and the views came out of a
     // `PlBinaryViewArray`, which validates every one of them against the buffers it reads.
@@ -173,7 +173,7 @@ pub fn fixed_size_binary_to_arrow_fixed_size_binary(
 /// # Panics
 /// Panics if the values of `array` have no Arrow counterpart — see the [module docs](self).
 pub fn list_to_arrow_large_list(array: &PlListArray) -> ListArray<i64> {
-    let (values, offsets, validity) = array.to_flat().into_inner();
+    let (values, offsets, validity) = array.to_flat().into_owned().into_inner();
     let values = to_arrow(&*values);
 
     let dtype = ListArray::<i64>::default_datatype(values.dtype().clone());
@@ -189,7 +189,7 @@ pub fn fixed_size_list_to_arrow_fixed_size_list(
     array: &PlFixedSizeListArray,
 ) -> FixedSizeListArray {
     let length = array.len();
-    let (values, width, validity) = array.to_flat().into_inner();
+    let (values, width, validity) = array.to_flat().into_owned().into_inner();
     let values = to_arrow(&*values);
 
     let dtype = FixedSizeListArray::default_datatype(values.dtype().clone(), width);

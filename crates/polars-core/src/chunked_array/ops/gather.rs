@@ -4,7 +4,6 @@ use std::sync::OnceLock;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use polars_array::arrow::bridge::{ToArrow, with_arrow_chunk};
-use polars_array::as_flat;
 use polars_array::builder::{ShareStrategy, builder_like};
 use polars_compute::gather::take_unchecked;
 use polars_error::polars_ensure;
@@ -43,7 +42,7 @@ pub fn check_bounds_nulls(idx: &Flat<PlPrimitiveArray<IdxSize>>, len: IdxSize) -
 
 pub fn check_bounds_ca(indices: &IdxCa, len: IdxSize) -> PolarsResult<()> {
     let all_valid = indices.downcast_iter().all(|a| {
-        let a = as_flat(a);
+        let a = a.to_flat();
         if a.null_count() == 0 {
             check_bounds(a.as_slice(), len).is_ok()
         } else {
@@ -191,7 +190,7 @@ where
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let idx_arr = as_flat(idx_arr);
+            let idx_arr = idx_arr.to_flat();
             if idx_arr.null_count() == 0 {
                 gather_idx_array_unchecked(&targets, targets_have_nulls, idx_arr.as_slice())
             } else if targets.len() == 1 {
@@ -239,7 +238,7 @@ impl ChunkTakeUnchecked<IdxCa> for BinaryChunked {
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let idx_arr = as_flat(idx_arr);
+            let idx_arr = idx_arr.to_flat();
             if targets.len() == 1 {
                 let target = targets.first().unwrap();
                 take_chunk_unchecked(*target, &idx_arr)
@@ -275,7 +274,7 @@ impl ChunkTakeUnchecked<IdxCa> for StringChunked {
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
-            let idx_arr = as_flat(idx_arr);
+            let idx_arr = idx_arr.to_flat();
             if targets.len() == 1 {
                 let target = targets.first().unwrap();
                 take_chunk_unchecked(*target, &idx_arr)
@@ -329,7 +328,7 @@ impl ChunkTakeUnchecked<IdxCa> for StructChunked {
         let chunks = a
             .downcast_iter()
             .zip(index.downcast_iter())
-            .map(|(arr, idx)| take_chunk_unchecked(arr, &as_flat(idx)))
+            .map(|(arr, idx)| take_chunk_unchecked(arr, &idx.to_flat()))
             .collect::<Vec<_>>();
         self.copy_with_chunks(chunks)
     }
@@ -364,7 +363,7 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
         if self.n_chunks() > 1 && should_rechunk(self.len(), indices.len()) {
             let ca = self.rechunk();
             let idx = indices.rechunk();
-            let idx = as_flat(idx.downcast_as_array());
+            let idx = idx.downcast_as_array().to_flat();
             let chunks = vec![take_chunk_unchecked(ca.downcast_as_array(), &idx)];
             return self.copy_with_chunks(chunks);
         }
@@ -376,7 +375,7 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
         let chunks = indices
             .downcast_iter()
             .map(|idx_arr| {
-                let idx_arr = as_flat(idx_arr);
+                let idx_arr = idx_arr.to_flat();
                 if let [target] = targets[..] {
                     return take_chunk_unchecked(target, &idx_arr);
                 }
@@ -424,7 +423,7 @@ impl ChunkTakeUnchecked<IdxCa> for ListChunked {
         if self.n_chunks() > 1 && should_rechunk(self.len(), indices.len()) {
             let ca = self.rechunk();
             let idx = indices.rechunk();
-            let idx = as_flat(idx.downcast_as_array());
+            let idx = idx.downcast_as_array().to_flat();
             let chunks = vec![take_chunk_unchecked(ca.downcast_as_array(), &idx)];
             return self.copy_with_chunks(chunks);
         }
@@ -436,7 +435,7 @@ impl ChunkTakeUnchecked<IdxCa> for ListChunked {
         let chunks = indices
             .downcast_iter()
             .map(|idx_arr| {
-                let idx_arr = as_flat(idx_arr);
+                let idx_arr = idx_arr.to_flat();
                 if let [target] = targets[..] {
                     return take_chunk_unchecked(target, &idx_arr);
                 }

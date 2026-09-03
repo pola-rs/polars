@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
 use arrow::bitmap::Bitmap;
@@ -191,9 +192,9 @@ impl PlNullArray {
     /// Returns this array in the flat representation, which is this array — see
     /// [`PlNullArray::is_flat`].
     #[inline]
-    pub fn to_flat(&self) -> Flat<Self> {
+    pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         // SAFETY: a null array has no backing buffer that could be scalar.
-        unsafe { Flat::new(*self) }
+        Cow::Borrowed(unsafe { Flat::new_ref(self) })
     }
 
     /// Borrows this array as a flat one, which it always is — see [`PlNullArray::is_flat`].

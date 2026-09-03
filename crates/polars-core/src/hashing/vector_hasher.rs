@@ -2,7 +2,6 @@ use std::hash::BuildHasher;
 
 use arrow::bitmap::utils::get_bit_unchecked;
 use polars_array::arrow::bridge::chunk_to_arrow;
-use polars_array::as_flat;
 use polars_utils::aliases::PlSeedableRandomStateQuality;
 use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
@@ -88,7 +87,7 @@ fn numeric_vec_hash<T>(
     #[allow(unused_unsafe)]
     #[allow(clippy::useless_transmute)]
     ca.downcast_iter().for_each(|arr| {
-        let arr = as_flat(arr);
+        let arr = arr.to_flat();
         buf.extend(
             arr.values()
                 .as_slice()
@@ -113,7 +112,7 @@ fn numeric_vec_hash_combine<T>(
 
     let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
-        let arr = as_flat(arr);
+        let arr = arr.to_flat();
         match arr.null_count() {
             0 => arr
                 .values()

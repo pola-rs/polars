@@ -3,9 +3,7 @@ use std::error::Error;
 
 use polars_array::bitmap::combine_validities_and;
 use polars_array::builder::StaticArrayBuilder;
-use polars_array::{
-    Flat, PlArray, PlBitmap, PlBitmapRef, PlUtf8ViewArrayBuilder, StaticArray, as_flat,
-};
+use polars_array::{Flat, PlArray, PlBitmap, PlBitmapRef, PlUtf8ViewArrayBuilder, StaticArray};
 
 use crate::prelude::PlArrayRef;
 
@@ -137,7 +135,7 @@ where
     Arr: StaticArray,
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
-    let iter = ca.downcast_iter().map(|arr| op(&as_flat(arr)));
+    let iter = ca.downcast_iter().map(|arr| op(&arr.to_flat()));
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
@@ -168,7 +166,7 @@ where
     let name = ca.name().clone();
     let iter = ca
         .downcast_into_iter()
-        .map(|arr| op(StaticArray::to_flat(&arr)));
+        .map(|arr| op(arr.to_flat().into_owned()));
     ChunkedArray::from_chunk_iter(name, iter)
 }
 
@@ -285,7 +283,7 @@ where
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
     let iter = ca.downcast_iter().map(|arr| {
-        op(&as_flat(arr))
+        op(&arr.to_flat())
             .with_validity_broadcast_typed(arr.validity().map(|v| v.to_flat_or_scalar()))
     });
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
@@ -313,7 +311,7 @@ where
     Arr: StaticArray,
     F: FnMut(&Flat<T::Array>) -> Arr,
 {
-    let iter = ca.downcast_iter().map(|arr| op(&as_flat(arr)));
+    let iter = ca.downcast_iter().map(|arr| op(&arr.to_flat()));
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
@@ -563,7 +561,7 @@ where
         .downcast_iter()
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| {
-            let ret = op(&as_flat(lhs_arr), &as_flat(rhs_arr));
+            let ret = op(&lhs_arr.to_flat(), &rhs_arr.to_flat());
             mask_with_inputs(ret, lhs_arr.validity(), rhs_arr.validity())
         });
     ChunkedArray::from_chunk_iter(name, iter)
@@ -634,7 +632,7 @@ where
     let iter = lhs
         .downcast_iter()
         .zip(rhs.downcast_iter())
-        .map(|(lhs_arr, rhs_arr)| op(&as_flat(lhs_arr), &as_flat(rhs_arr)));
+        .map(|(lhs_arr, rhs_arr)| op(&lhs_arr.to_flat(), &rhs_arr.to_flat()));
     ChunkedArray::from_chunk_iter(name, iter)
 }
 
@@ -1042,19 +1040,19 @@ where
         match rhs.scalar_value().unwrap() {
             None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
             Some(rhs) => unary_kernel_owned(lhs, |arr| {
-                rhs_broadcast_kernel(StaticArray::to_flat(&arr), rhs.clone())
+                rhs_broadcast_kernel(arr.to_flat().into_owned(), rhs.clone())
             }),
         }
     } else if lhs_repeats {
         match lhs.scalar_value().unwrap() {
             None => ChunkedArray::<O>::with_chunk(name.clone(), O::full_null_array(length)),
             Some(lhs) => unary_kernel_owned(rhs, |arr| {
-                lhs_broadcast_kernel(lhs.clone(), StaticArray::to_flat(&arr))
+                lhs_broadcast_kernel(lhs.clone(), arr.to_flat().into_owned())
             }),
         }
     } else {
         binary_owned(lhs, rhs, |lhs, rhs| {
-            kernel(StaticArray::to_flat(&lhs), StaticArray::to_flat(&rhs))
+            kernel(lhs.to_flat().into_owned(), rhs.to_flat().into_owned())
         })
     };
     out.with_name(name)

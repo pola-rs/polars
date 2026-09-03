@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ops::Range;
 
 use arrow::bitmap::Bitmap;
@@ -662,10 +663,11 @@ impl PlListArray {
         }
     }
 
-    /// Returns an equivalent array whose own backing buffers both hold one slot per element.
-    pub fn to_flat(&self) -> Flat<Self> {
-        if self.is_flat() {
-            return Flat(self.clone());
+    /// Returns an equivalent array whose own backing buffers both hold one slot per element,
+    /// borrowing this array itself if they already do.
+    pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
+        if let Some(flat) = self.as_flat() {
+            return Cow::Borrowed(flat);
         }
 
         let validity = self.validity().map(|validity| validity.to_flat());
@@ -699,7 +701,9 @@ impl PlListArray {
 
         // SAFETY: the offsets are ordered, one per element plus the end of the last, and within the
         // values; the mask is the flat counterpart of one valid for this array's length.
-        Flat(unsafe { Self::new_unchecked(values, offsets, self.length, validity) })
+        Cow::Owned(Flat(unsafe {
+            Self::new_unchecked(values, offsets, self.length, validity)
+        }))
     }
 
     /// Borrows this array as a [`Flat`] one, if both of its own backing buffers already hold one
@@ -961,14 +965,14 @@ mod tests {
         }
 
         // The representation is not part of a value, in either direction.
-        assert_eq!(flat, arr);
-        assert_eq!(arr, flat);
+        assert_eq!(*flat, arr);
+        assert_eq!(arr, *flat);
 
         // A flat validity mask is carried over as it is.
-        let masked = arr
+        let masked_arr = arr
             .clone()
-            .with_validity(Some(Bitmap::from_iter([true, false, true])))
-            .to_flat();
+            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let masked = masked_arr.to_flat();
         assert!(masked.is_flat());
         assert_eq!(masked.null_count(), 1);
         assert_eq!(masked.offsets().as_slice(), [0, 3, 6, 9]);

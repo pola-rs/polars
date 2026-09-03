@@ -1,5 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::any::Any;
+use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
@@ -393,9 +394,9 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
     }
 
     #[inline]
-    fn to_flat(&self) -> Flat<Self> {
+    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         // SAFETY: an object array holds one `T` per element and never broadcasts.
-        unsafe { Flat::new(self.clone()) }
+        Cow::Borrowed(unsafe { Flat::new_ref(self) })
     }
 
     #[inline]

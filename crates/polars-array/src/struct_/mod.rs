@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use arrow::bitmap::{Bitmap, and};
 use polars_error::{PolarsResult, polars_ensure};
 
@@ -466,12 +468,12 @@ impl PlStructArray {
             && self.fields.iter().all(|field| field.is_scalar())
     }
 
-    /// Returns this array in the flat representation, writing out a scalar validity mask.
+    /// Returns this array in the flat representation, writing out a scalar validity mask and
+    /// borrowing this array itself if its mask is not scalar.
     #[must_use]
-    pub fn to_flat(&self) -> Flat<Self> {
-        if self.is_flat() {
-            // SAFETY: just checked.
-            return unsafe { Flat::new(self.clone()) };
+    pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
+        if let Some(flat) = self.as_flat() {
+            return Cow::Borrowed(flat);
         }
 
         let validity = self.validity().map(|validity| validity.to_flat());
@@ -481,7 +483,7 @@ impl PlStructArray {
         let array = unsafe { Self::new_unchecked(self.fields.clone(), self.length, validity) };
 
         // SAFETY: the mask is flat, and a struct array has no other buffer of its own.
-        unsafe { Flat::new(array) }
+        Cow::Owned(unsafe { Flat::new(array) })
     }
 
     /// Borrows this array as a flat one, or `None` if its validity mask is scalar.

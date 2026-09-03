@@ -1,6 +1,5 @@
 use arrow::bitmap::bitmask::BitMask;
 use polars_array::arrow::bridge::chunk_to_arrow;
-use polars_array::as_flat;
 
 use super::*;
 use crate::chunked_array::cast::CastOptions;
@@ -313,8 +312,8 @@ impl BooleanChunked {
 
         let ca = RAYON.install(|| {
             // The masks are read as one run, so a chunk that is not laid out flat is written out
-            // first — see `polars_array::as_flat`.
-            let values = as_flat(values);
+            // first — see `StaticArray::to_flat`.
+            let values = values.to_flat();
             let validity = values
                 .validity()
                 .filter(|v| v.unset_bits() > 0)

@@ -1,5 +1,3 @@
-use polars_array::as_flat;
-
 use super::BooleanChunked;
 
 fn first_true_idx_impl(ca: &BooleanChunked, invert: bool) -> Option<usize> {
@@ -16,8 +14,8 @@ fn first_true_idx_impl(ca: &BooleanChunked, invert: bool) -> Option<usize> {
     let mut offset = 0;
     for arr in ca.downcast_iter() {
         // The bits are walked as one run, so a chunk that is not laid out flat is written out
-        // first — see `polars_array::as_flat`.
-        let arr = as_flat(arr);
+        // first — see `StaticArray::to_flat`.
+        let arr = arr.to_flat();
         let values = arr.values();
         if let Some(validity) = arr.validity() {
             let mut x_it = values.fast_iter_u56();
@@ -57,7 +55,7 @@ impl BooleanChunked {
     pub fn num_trues(&self) -> usize {
         self.downcast_iter()
             .map(|arr| {
-                let arr = as_flat(arr);
+                let arr = arr.to_flat();
                 match arr.validity() {
                     None => arr.values().set_bits(),
                     Some(validity) => arr.values().num_intersections_with(validity),
@@ -69,7 +67,7 @@ impl BooleanChunked {
     pub fn num_falses(&self) -> usize {
         self.downcast_iter()
             .map(|arr| {
-                let arr = as_flat(arr);
+                let arr = arr.to_flat();
                 match arr.validity() {
                     None => arr.values().unset_bits(),
                     Some(validity) => (!arr.values()).num_intersections_with(validity),

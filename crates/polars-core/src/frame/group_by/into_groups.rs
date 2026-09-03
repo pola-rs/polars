@@ -1,7 +1,6 @@
 use arrow::legacy::kernels::sort_partition::{
     create_clean_partitions, partition_to_groups, partition_to_groups_amortized_varsize,
 };
-use polars_array::as_flat;
 use polars_error::abort::try_raise_polars_abort;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
@@ -68,7 +67,7 @@ where
         if arr.is_empty() {
             return GroupsSlice::default();
         }
-        let arr = as_flat(arr);
+        let arr = arr.to_flat();
         let mut values = arr.as_slice();
         let null_count = arr.null_count();
         let length = values.len();

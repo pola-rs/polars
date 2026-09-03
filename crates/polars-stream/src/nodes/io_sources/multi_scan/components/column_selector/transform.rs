@@ -116,7 +116,8 @@ impl ColumnTransform {
 
                     // The offsets and the mask are handed over as they are: only the values were
                     // mapped, and that leaves their number untouched.
-                    let (_, offsets, length, validity) = list_arr.into_array().into_inner();
+                    let (_, offsets, length, validity) =
+                        list_arr.into_owned().into_array().into_inner();
                     let list_arr = PlListArray::new(values, offsets, length, validity);
 
                     out_chunks.push(Box::new(list_arr))
@@ -183,7 +184,7 @@ impl ColumnTransform {
                     // The width and the mask are handed over as they are: only the values were
                     // mapped, and that leaves their number untouched.
                     let (_, width, length, validity) =
-                        fixed_size_list_arr.into_array().into_inner();
+                        fixed_size_list_arr.into_owned().into_array().into_inner();
                     let fixed_size_list_arr =
                         PlFixedSizeListArray::new(values, width, length, validity);
 

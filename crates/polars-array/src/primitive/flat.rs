@@ -195,7 +195,9 @@ mod tests {
 
     #[test]
     fn values_are_written_over_when_the_buffer_is_not_shared() {
-        let mut flat = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]).to_flat();
+        let mut flat = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
+            .to_flat()
+            .into_owned();
         flat.values_mut().expect("the buffer is not shared")[0] = 7;
         assert_eq!(flat.as_slice(), [7, 2, 3]);
 
@@ -207,7 +209,9 @@ mod tests {
 
     #[test]
     fn values_are_reinterpreted_in_place() {
-        let flat = PlPrimitiveArray::from_vec(vec![1u32, 2, 3]).to_flat();
+        let flat = PlPrimitiveArray::from_vec(vec![1u32, 2, 3])
+            .to_flat()
+            .into_owned();
         let values = flat.values().as_ptr();
 
         let transmuted = flat.transmute::<i32>();

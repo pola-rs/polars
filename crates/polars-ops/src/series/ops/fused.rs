@@ -1,5 +1,4 @@
 use arrow::compute::utils::combine_validities_and3;
-use polars_array::as_flat;
 use polars_core::prelude::*;
 use polars_core::utils::align_chunks_ternary;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -39,7 +38,7 @@ fn fma_ca<T: PolarsNumericType>(
         .downcast_iter()
         .zip(b.downcast_iter())
         .zip(c.downcast_iter())
-        .map(|((a, b), c)| fma_arr(&as_flat(a), &as_flat(b), &as_flat(c)));
+        .map(|((a, b), c)| fma_arr(&a.to_flat(), &b.to_flat(), &c.to_flat()));
     ChunkedArray::from_chunk_iter(a.name().clone(), chunks)
 }
 
@@ -92,7 +91,7 @@ fn fsm_ca<T: PolarsNumericType>(
         .downcast_iter()
         .zip(b.downcast_iter())
         .zip(c.downcast_iter())
-        .map(|((a, b), c)| fsm_arr(&as_flat(a), &as_flat(b), &as_flat(c)));
+        .map(|((a, b), c)| fsm_arr(&a.to_flat(), &b.to_flat(), &c.to_flat()));
     ChunkedArray::from_chunk_iter(a.name().clone(), chunks)
 }
 
@@ -144,7 +143,7 @@ fn fms_ca<T: PolarsNumericType>(
         .downcast_iter()
         .zip(b.downcast_iter())
         .zip(c.downcast_iter())
-        .map(|((a, b), c)| fms_arr(&as_flat(a), &as_flat(b), &as_flat(c)));
+        .map(|((a, b), c)| fms_arr(&a.to_flat(), &b.to_flat(), &c.to_flat()));
     ChunkedArray::from_chunk_iter(a.name().clone(), chunks)
 }
 

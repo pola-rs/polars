@@ -1,5 +1,4 @@
 use ndarray::prelude::*;
-use polars_array::as_flat;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
@@ -144,9 +143,9 @@ impl DataFrame {
 
                             let mut chunk_offset = 0;
                             // The values are read as slices, so a chunk that is not laid out flat
-                            // is written out first — see `polars_array::as_flat`.
+                            // is written out first — see `StaticArray::to_flat`.
                             for arr in ca.downcast_iter() {
-                                let arr = as_flat(arr);
+                                let arr = arr.to_flat();
                                 let vals = arr.values();
 
                                 // SAFETY:

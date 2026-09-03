@@ -6,7 +6,6 @@ use std::borrow::Cow;
 
 use arrow::bitmap::BitmapBuilder;
 use either::Either;
-use polars_array::as_flat;
 use polars_array::builder::{PlArrayBuilder, builder_like};
 use polars_array::concatenate::concatenate;
 
@@ -18,7 +17,7 @@ use crate::prelude::*;
 pub(crate) fn array_values(arr: &PlFixedSizeListArray) -> PlArrayRef {
     // TODO(polars-array-scalar): the callers read the values as one run per element, which a
     // scalar array has to be written out to hand over.
-    as_flat(arr).values().to_boxed()
+    arr.to_flat().values().to_boxed()
 }
 
 /// Returns `arr` with its values replaced, keeping its width and validity mask. Panics if

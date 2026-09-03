@@ -96,8 +96,8 @@ impl NumericOp {
 
             // TODO(polars-array-scalar): the kernels want one slot per element, so a chunk
             // repeating a single value is written out rather than operated on once.
-            let lhs = StaticArray::to_flat(lhs.downcast_get(0).unwrap());
-            let rhs = StaticArray::to_flat(rhs.downcast_get(0).unwrap());
+            let lhs = lhs.downcast_get(0).unwrap().to_flat().into_owned();
+            let rhs = rhs.downcast_get(0).unwrap().to_flat().into_owned();
 
             self.apply_arithmetic_kernel::<$T>(lhs, rhs).into_boxed()
         })

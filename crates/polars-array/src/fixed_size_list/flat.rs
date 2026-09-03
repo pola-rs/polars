@@ -52,7 +52,7 @@ mod tests {
 
         assert_eq!(flat.values().len(), 6);
         assert!(flat.validity().is_none());
-        assert_eq!(flat, arr);
+        assert_eq!(*flat, arr);
     }
 
     #[test]
@@ -73,7 +73,7 @@ mod tests {
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4])),
             2,
         );
-        let (values, width, validity) = arr.to_flat().into_inner();
+        let (values, width, validity) = arr.to_flat().into_owned().into_inner();
 
         assert_eq!(values.len(), 4);
         assert_eq!(width, 2);

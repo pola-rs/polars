@@ -15,7 +15,6 @@ use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
 use polars_array::arrow::bridge::chunk_to_arrow;
-use polars_array::as_flat;
 use polars_compute::rolling::no_nulls::{
     MaxWindow, MinWindow, MomentWindow, QuantileWindow, RollingAggWindowNoNulls,
 };
@@ -89,8 +88,8 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
     let arr = with_match_physical_numeric_polars_type!(phys_dtype, |$T| {
         let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
         // The kernel reads the values as a slice, so a chunk that is not laid out flat is
-        // written out first — see `polars_array::as_flat`.
-        let arr = as_flat(ca.downcast_as_array());
+        // written out first — see `StaticArray::to_flat`.
+        let arr = ca.downcast_as_array().to_flat();
         let values = arr.as_slice();
         let validity = arr.validity();
 
@@ -348,7 +347,7 @@ where
                     .cast_with_options(&K::get_static_dtype(), CastOptions::Overflowing)
                     .unwrap();
                 let ca: &ChunkedArray<K> = s.as_ref().as_ref();
-                let arr = as_flat(ca.downcast_iter().next().unwrap());
+                let arr = ca.downcast_iter().next().unwrap().to_flat();
                 let values = arr.as_slice();
                 let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
@@ -542,7 +541,7 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = as_flat(self.downcast_iter().next().unwrap());
+                    let arr = self.downcast_iter().next().unwrap().to_flat();
                     let values = arr.as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -645,7 +644,7 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = as_flat(self.downcast_as_array());
+                    let arr = self.downcast_as_array().to_flat();
                     let values = arr.as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let idx_arr = match arr.validity() {
@@ -732,7 +731,7 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = as_flat(self.downcast_iter().next().unwrap());
+                    let arr = self.downcast_iter().next().unwrap().to_flat();
                     let values = arr.as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -837,7 +836,7 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, self.chunks()) {
-                    let arr = as_flat(self.downcast_iter().next().unwrap());
+                    let arr = self.downcast_iter().next().unwrap().to_flat();
                     let values = arr.as_slice();
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let idx_arr = match arr.validity() {
@@ -919,7 +918,7 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = as_flat(self.downcast_iter().next().unwrap());
+                    let arr = self.downcast_iter().next().unwrap().to_flat();
                     let values = arr.as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -1018,7 +1017,7 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = as_flat(self.downcast_iter().next().unwrap());
+                    let arr = self.downcast_iter().next().unwrap().to_flat();
                     let values = arr.as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -1087,7 +1086,7 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = as_flat(self.downcast_iter().next().unwrap());
+                    let arr = self.downcast_iter().next().unwrap().to_flat();
                     let values = arr.as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
@@ -1168,7 +1167,7 @@ where
                 monotonic,
             } => {
                 if _use_rolling_kernels(groups, *overlapping, *monotonic, self.chunks()) {
-                    let arr = as_flat(ca.downcast_iter().next().unwrap());
+                    let arr = ca.downcast_iter().next().unwrap().to_flat();
                     let values = arr.as_slice();
                     let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {

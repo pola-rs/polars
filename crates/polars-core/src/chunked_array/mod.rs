@@ -866,7 +866,7 @@ impl ArrayChunked {
                 let offsets = (0..=chunk.len())
                     .map(|i| (i * width) as u64)
                     .collect::<Vec<u64>>();
-                let values = chunk.to_flat().into_array().into_inner().0;
+                let values = chunk.to_flat().into_owned().into_array().into_inner().0;
 
                 Box::new(PlListArray::new(
                     values,

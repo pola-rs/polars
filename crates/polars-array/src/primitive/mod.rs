@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
 use polars_buffer::Buffer;
@@ -568,10 +570,11 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         Self::new_scalar(value, length)
     }
 
-    /// Returns an equivalent array whose backing buffers all hold one slot per element.
-    pub fn to_flat(&self) -> Flat<Self> {
-        if self.is_flat() {
-            return Flat(self.clone());
+    /// Returns an equivalent array whose backing buffers all hold one slot per element, borrowing
+    /// this array itself if they already do.
+    pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
+        if let Some(flat) = self.as_flat() {
+            return Cow::Borrowed(flat);
         }
 
         let values = if self.values_are_flat() {
@@ -588,11 +591,11 @@ impl<T: NativeType> PlPrimitiveArray<T> {
 
         let validity = self.validity().map(|validity| validity.to_flat());
 
-        Flat(Self {
+        Cow::Owned(Flat(Self {
             values,
             length: self.length,
             validity,
-        })
+        }))
     }
 
     /// Borrows this array as a [`Flat`] one, if every backing buffer already holds one slot per

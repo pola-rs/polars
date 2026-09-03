@@ -680,7 +680,7 @@ impl PhysicalExpr for WindowExpr {
                         );
                         let arr = arr.idx()?;
                         let arr = arr.rechunk();
-                        Some(arr.downcast_as_array().to_flat())
+                        Some(arr.downcast_as_array().to_flat().into_owned())
                     })
                 } else {
                     None

@@ -169,7 +169,7 @@ mod tests {
         assert_eq!(flat.as_slice(), b"ababab");
         assert_eq!(flat.values().len(), 6);
         assert!(flat.validity().is_none());
-        assert_eq!(flat, arr);
+        assert_eq!(*flat, arr);
     }
 
     #[test]
@@ -183,9 +183,9 @@ mod tests {
 
     #[test]
     fn elements_are_read_without_a_broadcast() {
-        let flat = PlBinaryArray::from_values_iter([b"foo".as_slice(), b"", b"bar"])
-            .with_validity(Some(Bitmap::from_iter([true, false, true])))
-            .to_flat();
+        let arr = PlBinaryArray::from_values_iter([b"foo".as_slice(), b"", b"bar"])
+            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let flat = arr.to_flat();
 
         assert_eq!(flat.value_range(0), 0..3);
         assert_eq!(flat.value(0), b"foo");

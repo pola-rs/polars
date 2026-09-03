@@ -5,7 +5,6 @@ mod var;
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float, One, ToPrimitive, Zero};
 use polars_array::arrow::bridge::chunk_to_arrow;
-use polars_array::as_flat;
 #[cfg(feature = "dtype-decimal")]
 use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_compute::float_sum;
@@ -265,7 +264,7 @@ impl BooleanChunked {
             // TODO(polars-array-scalar): the sum of a scalar chunk is its value times its length.
             self.downcast_iter()
                 .map(|arr| {
-                    let arr = as_flat(arr);
+                    let arr = arr.to_flat();
                     match arr.validity() {
                         Some(validity) => {
                             (arr.len() - (validity & arr.values()).unset_bits()) as IdxSize

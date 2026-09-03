@@ -1,6 +1,7 @@
 //! The string view of a [`PlBinaryViewArray`].
 
 use std::any::Any;
+use std::borrow::Cow;
 
 use arrow::array::View;
 use arrow::bitmap::Bitmap;
@@ -217,11 +218,16 @@ impl PlUtf8ViewArray {
         self.0.is_flat()
     }
 
-    /// Returns this array in the flat representation.
+    /// Returns this array in the flat representation, borrowing this array itself if it is already
+    /// laid out flat.
     #[inline]
-    pub fn to_flat(&self) -> Flat<Self> {
+    pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
+        if let Some(flat) = self.as_flat() {
+            return Cow::Borrowed(flat);
+        }
+
         // SAFETY: the inner array is written out flat, and the wrapper is transparent over it.
-        unsafe { Flat::new(Self(self.0.to_flat().into_array())) }
+        Cow::Owned(unsafe { Flat::new(Self(self.0.to_flat().into_owned().into_array())) })
     }
 
     /// Returns this array with every view replaced by what `update_view` makes of it.
@@ -232,9 +238,9 @@ impl PlUtf8ViewArray {
     pub unsafe fn apply_views<F: FnMut(View, &str) -> View>(&self, mut update_view: F) -> Self {
         // TODO(polars-array-scalar): a scalar array holds one view standing for every element, so
         // the views could be mapped in `O(1)` rather than written out flat first.
-        let flat = self.to_flat().into_array();
+        let flat = self.0.to_flat();
         let length = flat.len();
-        let (views, buffers, validity) = flat.0.to_flat().into_inner();
+        let (views, buffers, validity) = flat.into_owned().into_inner();
 
         let views: Vec<View> = views
             .as_slice()
@@ -269,7 +275,7 @@ fn validate_utf8(array: &PlBinaryViewArray) -> PolarsResult<()> {
     // replacing the mask must not be able to expose bytes that were never checked.
     for value in array
         .to_flat()
-        .into_array()
+        .into_owned()
         .without_validity()
         .values_iter()
     {
@@ -458,7 +464,7 @@ mod tests {
         assert!(scalar.as_flat().is_none());
         let flat = scalar.to_flat();
         assert!(flat.is_flat());
-        assert_eq!(flat, scalar);
+        assert_eq!(*flat, scalar);
         assert_eq!(flat.value(2), LONG);
 
         // An array that is already flat is borrowed rather than written out again.

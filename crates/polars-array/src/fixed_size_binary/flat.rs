@@ -124,7 +124,7 @@ mod tests {
         assert!(flat.is_flat());
         assert_eq!(flat.values().len(), 6);
         assert_eq!(flat.as_slice(), b"ababab");
-        assert_eq!(flat, scalar);
+        assert_eq!(*flat, scalar);
 
         // A scalar mask is written out alongside them.
         let null_scalar = PlFixedSizeBinaryArray::new_full_null(2, 3);
@@ -133,7 +133,7 @@ mod tests {
         assert!(flat.is_flat());
         assert_eq!(flat.validity().unwrap().len(), 3);
         assert_eq!(flat.null_count(), 3);
-        assert_eq!(flat, null_scalar);
+        assert_eq!(*flat, null_scalar);
     }
 
     #[test]
@@ -170,9 +170,9 @@ mod tests {
 
     #[test]
     fn elements_are_read_without_a_broadcast() {
-        let flat = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4, 5, 6], 2)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])))
-            .to_flat();
+        let arr = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4, 5, 6], 2)
+            .with_validity(Some(Bitmap::from_iter([true, false, true])));
+        let flat = arr.to_flat();
 
         assert_eq!(flat.value(0), [1, 2]);
         assert_eq!(flat.value(1), [3, 4]);

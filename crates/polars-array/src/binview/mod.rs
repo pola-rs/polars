@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use arrow::array::View;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use buffers::{copy_only_value, copy_value};
@@ -694,10 +696,11 @@ impl PlBinaryViewArray {
         }
     }
 
-    /// Returns an equivalent array whose views and mask both hold one slot per element.
-    pub fn to_flat(&self) -> Flat<Self> {
-        if self.is_flat() {
-            return Flat(self.clone());
+    /// Returns an equivalent array whose views and mask both hold one slot per element, borrowing
+    /// this array itself if they already do.
+    pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
+        if let Some(flat) = self.as_flat() {
+            return Cow::Borrowed(flat);
         }
 
         let views = if self.views_are_flat() {
@@ -715,12 +718,12 @@ impl PlBinaryViewArray {
 
         let validity = self.validity().map(|validity| validity.to_flat());
 
-        Flat(Self {
+        Cow::Owned(Flat(Self {
             views,
             buffers: self.buffers.clone(),
             length: self.length,
             validity,
-        })
+        }))
     }
 
     /// Borrows this array as a [`Flat`] one, if its views and mask already hold one slot per

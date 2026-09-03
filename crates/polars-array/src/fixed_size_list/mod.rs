@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ops::Range;
 
 use arrow::bitmap::Bitmap;
@@ -643,10 +644,10 @@ impl PlFixedSizeListArray {
     }
 
     /// Returns an equivalent array whose values hold the values of every element and whose mask
-    /// holds one bit per element.
-    pub fn to_flat(&self) -> Flat<Self> {
-        if self.is_flat() {
-            return Flat(self.clone());
+    /// holds one bit per element, borrowing this array itself if they already do.
+    pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
+        if let Some(flat) = self.as_flat() {
+            return Cow::Borrowed(flat);
         }
 
         let validity = self.validity().map(|validity| validity.to_flat());
@@ -669,7 +670,9 @@ impl PlFixedSizeListArray {
 
         // SAFETY: the values are the element every element covers, repeated once per element, and
         // the mask is the flat counterpart of one valid for this array's length.
-        Flat(unsafe { Self::new_unchecked(values, self.width, self.length, validity) })
+        Cow::Owned(Flat(unsafe {
+            Self::new_unchecked(values, self.width, self.length, validity)
+        }))
     }
 
     /// Borrows this array as a [`Flat`] one, if its values already hold the values of every element
@@ -918,7 +921,7 @@ mod tests {
             elements(flat.values()),
             [Some(1), Some(2), Some(1), Some(2), Some(1), Some(2)],
         );
-        assert_eq!(flat, scalar);
+        assert_eq!(*flat, scalar);
     }
 
     #[test]

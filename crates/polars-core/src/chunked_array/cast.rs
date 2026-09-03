@@ -2,7 +2,6 @@
 
 use std::borrow::Cow;
 
-use polars_array::as_flat;
 use polars_compute::cast::CastOptionsImpl;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
@@ -290,7 +289,7 @@ impl ChunkCast for StringChunked {
             #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(precision, scale) => {
                 let chunks = self.downcast_iter().map(|arr| {
-                    let arr = <PlUtf8ViewArray as ToArrow>::to_arrow(&as_flat(arr)).to_binview();
+                    let arr = <PlUtf8ViewArray as ToArrow>::to_arrow(&arr.to_flat()).to_binview();
                     let arr = polars_compute::cast::binview_to_decimal(&arr, *precision, *scale);
                     polars_array::arrow::import::primitive_from_arrow(&arr)
                 });
@@ -613,7 +612,7 @@ fn cast_list(
     let new_values = new_inner.rechunk().array_ref(0).clone();
 
     // The offsets and the mask are handed over as they are: only the values were cast.
-    let (_, offsets, length, validity) = arr.into_array().into_inner();
+    let (_, offsets, length, validity) = arr.into_owned().into_array().into_inner();
     let new_arr = PlListArray::new(new_values, offsets, length, validity);
     Ok((Box::new(new_arr), inner_dtype))
 }
@@ -633,7 +632,7 @@ unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> Polars
     let new_inner = s.cast_unchecked(child_type)?;
     let new_values = new_inner.rechunk().array_ref(0).clone();
 
-    let (_, offsets, length, validity) = arr.into_array().into_inner();
+    let (_, offsets, length, validity) = arr.into_owned().into_array().into_inner();
     let new_arr = PlListArray::new(new_values, offsets, length, validity);
     Ok(ListChunked::from_chunks_and_dtype_unchecked(
         ca.name().clone(),
@@ -669,7 +668,7 @@ fn cast_fixed_size_list(
     let new_values = new_inner.rechunk().array_ref(0).clone();
 
     // The width and the mask are handed over as they are: only the values were cast.
-    let (_, width, length, validity) = arr.into_array().into_inner();
+    let (_, width, length, validity) = arr.into_owned().into_array().into_inner();
     let new_arr = PlFixedSizeListArray::new(new_values, width, length, validity);
     Ok((Box::new(new_arr), inner_dtype))
 }

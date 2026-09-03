@@ -79,8 +79,8 @@ where
     nnca.rechunk_mut();
     // TODO(polars-array-scalar): the values are partitioned in place, so a scalar chunk is
     // written out here rather than the one value it stands for being repeated `k` times.
-    let chunk = nnca.downcast_into_iter().next().unwrap().to_flat();
-    let (buffer, _) = chunk.into_inner();
+    let chunk = nnca.downcast_into_iter().next().unwrap();
+    let (buffer, _) = chunk.to_flat().into_owned().into_inner();
     let mut vec = buffer.to_vec();
 
     // Partition.
@@ -115,8 +115,8 @@ fn top_k_binary_impl(
     let mut nnca = ca.drop_nulls();
     nnca.rechunk_mut();
     // TODO(polars-array-scalar): as in `top_k_num_impl`, a scalar chunk is written out here.
-    let chunk = nnca.downcast_into_iter().next().unwrap().to_flat();
-    let (views, buffers, _) = chunk.into_inner();
+    let chunk = nnca.downcast_into_iter().next().unwrap();
+    let (views, buffers, _) = chunk.to_flat().into_owned().into_inner();
     let mut views = views.to_vec();
 
     // Partition.

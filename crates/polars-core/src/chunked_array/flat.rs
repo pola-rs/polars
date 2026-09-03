@@ -31,7 +31,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
         let chunks = self
             .downcast_iter()
-            .map(|arr| arr.to_flat().into_array().into_boxed())
+            .map(|arr| arr.to_flat().into_owned().into_array().into_boxed())
             .collect();
 
         // SAFETY: the chunks were just written out flat, and writing one out changes neither its
@@ -54,7 +54,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
         let chunks: Vec<PlArrayRef> = self
             .downcast_iter()
-            .map(|arr| arr.to_flat().into_array().into_boxed())
+            .map(|arr| arr.to_flat().into_owned().into_array().into_boxed())
             .collect();
 
         // SAFETY: writing a chunk out flat changes neither its length nor its null count, so the

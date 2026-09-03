@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_ensure};
 
@@ -553,10 +555,11 @@ impl PlBooleanArray {
         Self::new_scalar(value, length)
     }
 
-    /// Returns an equivalent array whose backing bitmaps all hold one bit per element.
-    pub fn to_flat(&self) -> Flat<Self> {
-        if self.is_flat() {
-            return Flat(self.clone());
+    /// Returns an equivalent array whose backing bitmaps all hold one bit per element, borrowing
+    /// this array itself if they already do.
+    pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
+        if let Some(flat) = self.as_flat() {
+            return Cow::Borrowed(flat);
         }
 
         let values = if self.values_are_scalar() && self.scalar_value() == Some(None) {
@@ -567,11 +570,11 @@ impl PlBooleanArray {
             self.values().to_flat()
         };
 
-        Flat(Self {
+        Cow::Owned(Flat(Self {
             values,
             length: self.length,
             validity: self.validity().map(|validity| validity.to_flat()),
-        })
+        }))
     }
 
     /// Borrows this array as a [`Flat`] one, if every backing bitmap already holds one bit per

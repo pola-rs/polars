@@ -50,7 +50,7 @@ fn bitonic_mask<T: PolarsNumericType>(
     let chunks = ca.downcast_iter().map(|arr| {
         // The sorted flag is what makes this worth a partition point, and a sorted array of more
         // than one element is never in the scalar representation.
-        let arr = polars_array::as_flat(arr);
+        let arr = arr.to_flat();
         let values = arr.as_slice();
         let true_range_start = if let Some(f_a) = f_a {
             values.partition_point(|x| !apply::<T>(f_a, *x, rhs))

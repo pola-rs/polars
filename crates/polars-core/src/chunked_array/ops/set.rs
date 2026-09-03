@@ -1,14 +1,13 @@
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::legacy::kernels::set::{scatter_single_non_null, set_with_mask};
 use polars_array::arrow::bridge::chunk_to_arrow;
-use polars_array::as_flat;
 
 use crate::prelude::*;
 use crate::utils::align_chunks_binary;
 
 /// The bits of `mask` that are set and not null.
 fn true_and_valid(mask: &PlBooleanArray) -> Bitmap {
-    let mask = as_flat(mask);
+    let mask = mask.to_flat();
     match mask.validity() {
         Some(validity) => mask.values() & validity,
         None => mask.values().clone(),
@@ -79,7 +78,7 @@ where
                 else {
                     let mut av = Vec::with_capacity(self.len());
                     for chunk in self.downcast_iter() {
-                        av.extend_from_slice(as_flat(chunk).as_slice())
+                        av.extend_from_slice(chunk.to_flat().as_slice())
                     }
                     let data = av.as_mut_slice();
 
@@ -162,7 +161,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         let mut validity = MutableBitmap::with_capacity(self.len());
 
         for a in self.downcast_iter() {
-            let a = as_flat(a);
+            let a = a.to_flat();
             values.extend_from_bitmap(a.values());
             if let Some(v) = a.validity() {
                 validity.extend_from_bitmap(v)

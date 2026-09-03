@@ -156,7 +156,7 @@ mod tests {
         assert!(flat.is_flat());
         assert_eq!(flat.values().len(), 3);
         assert_eq!(flat.values_iter().collect::<Vec<_>>(), [true; 3]);
-        assert_eq!(flat, scalar);
+        assert_eq!(*flat, scalar);
 
         let null_scalar = PlBooleanArray::new_full_null(3);
         let flat = null_scalar.to_flat();
@@ -164,7 +164,7 @@ mod tests {
         assert!(flat.is_flat());
         assert_eq!(flat.validity().unwrap().len(), 3);
         assert_eq!(flat.null_count(), 3);
-        assert_eq!(flat, null_scalar);
+        assert_eq!(*flat, null_scalar);
     }
 
     #[test]
@@ -198,10 +198,10 @@ mod tests {
 
     #[test]
     fn elements_are_read_without_a_broadcast() {
-        let flat = [Some(true), None, Some(false)]
+        let arr = [Some(true), None, Some(false)]
             .into_iter()
-            .collect::<PlBooleanArray>()
-            .to_flat();
+            .collect::<PlBooleanArray>();
+        let flat = arr.to_flat();
 
         assert!(flat.value(0));
         assert_eq!(flat.get(0), Some(true));

@@ -175,7 +175,7 @@ mod tests {
 
         assert!(flat.is_flat());
         assert_eq!(flat.views().len(), 3);
-        assert_eq!(flat, scalar);
+        assert_eq!(*flat, scalar);
 
         // Only the views are written out: the bytes stay in the buffer they are already in.
         assert!(flat.data_buffers().is_same_buffer(scalar.data_buffers()));
@@ -187,7 +187,7 @@ mod tests {
         assert!(flat.is_flat());
         assert_eq!(flat.validity().unwrap().len(), 3);
         assert_eq!(flat.null_count(), 3);
-        assert_eq!(flat, null_scalar);
+        assert_eq!(*flat, null_scalar);
     }
 
     #[test]
@@ -223,10 +223,10 @@ mod tests {
 
     #[test]
     fn elements_are_read_without_a_broadcast() {
-        let flat = [Some(b"foo".as_slice()), None, Some(LONG)]
+        let arr = [Some(b"foo".as_slice()), None, Some(LONG)]
             .into_iter()
-            .collect::<PlBinaryViewArray>()
-            .to_flat();
+            .collect::<PlBinaryViewArray>();
+        let flat = arr.to_flat();
 
         assert_eq!(flat.value(0), b"foo");
         assert_eq!(flat.get(0), Some(b"foo".as_slice()));

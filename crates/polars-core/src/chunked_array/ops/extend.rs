@@ -1,6 +1,5 @@
 use arrow::Either;
 use polars_array::arrow::bridge::chunk_to_arrow;
-use polars_array::as_flat;
 use polars_array::concatenate::concatenate;
 
 use crate::prelude::append::update_sorted_flag_before_append;
@@ -81,7 +80,7 @@ where
                     for arr in other.downcast_iter() {
                         match arr.null_count() {
                             0 => {
-                                let flat = as_flat(arr);
+                                let flat = arr.to_flat();
                                 mutable.extend_from_slice(flat.as_slice())
                             },
                             _ => mutable.extend_trusted_len(arr.iter()),

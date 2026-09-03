@@ -1,5 +1,7 @@
 //! The typed counterpart of [`PlArray`].
 
+use std::borrow::Cow;
+
 use arrow::bitmap::Bitmap;
 use arrow::trusted_len::TrustedLen;
 use arrow::types::NativeType;
@@ -142,9 +144,10 @@ pub trait StaticArray: PlArray + Clone {
         (PlArray::is_scalar(self) && !self.is_empty()).then(|| unsafe { self.get_unchecked(0) })
     }
 
-    /// Returns this array in the flat representation, writing out every buffer that is scalar.
+    /// Returns this array in the flat representation, writing out every buffer that is scalar and
+    /// borrowing this array itself if none is.
     #[must_use]
-    fn to_flat(&self) -> Flat<Self>;
+    fn to_flat(&self) -> Cow<'_, Flat<Self>>;
 
     /// Borrows this array as a flat one, or `None` if any backing buffer is scalar.
     fn as_flat(&self) -> Option<&Flat<Self>>;
@@ -212,7 +215,7 @@ impl<T: NativeType> StaticArray for PlPrimitiveArray<T> {
     }
 
     #[inline]
-    fn to_flat(&self) -> Flat<Self> {
+    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         self.to_flat()
     }
 
@@ -275,7 +278,7 @@ impl StaticArray for PlBooleanArray {
     }
 
     #[inline]
-    fn to_flat(&self) -> Flat<Self> {
+    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         self.to_flat()
     }
 
@@ -338,7 +341,7 @@ impl StaticArray for PlBinaryArray {
     }
 
     #[inline]
-    fn to_flat(&self) -> Flat<Self> {
+    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         self.to_flat()
     }
 
@@ -401,7 +404,7 @@ impl StaticArray for PlBinaryViewArray {
     }
 
     #[inline]
-    fn to_flat(&self) -> Flat<Self> {
+    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         self.to_flat()
     }
 
@@ -465,7 +468,7 @@ impl StaticArray for PlUtf8ViewArray {
     }
 
     #[inline]
-    fn to_flat(&self) -> Flat<Self> {
+    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         self.to_flat()
     }
 
@@ -528,7 +531,7 @@ impl StaticArray for PlFixedSizeBinaryArray {
     }
 
     #[inline]
-    fn to_flat(&self) -> Flat<Self> {
+    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         self.to_flat()
     }
 
@@ -591,7 +594,7 @@ impl StaticArray for PlListArray {
     }
 
     #[inline]
-    fn to_flat(&self) -> Flat<Self> {
+    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         self.to_flat()
     }
 
@@ -654,7 +657,7 @@ impl StaticArray for PlFixedSizeListArray {
     }
 
     #[inline]
-    fn to_flat(&self) -> Flat<Self> {
+    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         self.to_flat()
     }
 
@@ -713,7 +716,7 @@ impl StaticArray for PlStructArray {
     }
 
     #[inline]
-    fn to_flat(&self) -> Flat<Self> {
+    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         self.to_flat()
     }
 
@@ -775,7 +778,7 @@ impl StaticArray for PlNullArray {
     }
 
     #[inline]
-    fn to_flat(&self) -> Flat<Self> {
+    fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         self.to_flat()
     }
 
