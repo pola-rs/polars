@@ -4698,3 +4698,43 @@ def test_o_direct_matches_buffered(
     direct = pl.scan_parquet(path).collect()
 
     assert_frame_equal(direct, buffered)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "advice",
+    ["normal", "sequential", "random", "willneed", "foo_blah"],
+)
+def test_file_posix_fadv(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, advice: str
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / f"fadv_{advice or 'empty'}.parquet"
+    expect = _write_df_mixed_offset(path, n_rows=10_000, row_group_size=997)
+
+    plmonkeypatch.setenv("POLARS_FILE_POSIX_FADV", advice)
+    assert_frame_equal(pl.scan_parquet(path).collect(), expect)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("direct_io", ["0", "1"])
+def test_scan_parquet_from_file_handle(
+    tmp_path: Path, plmonkeypatch: PlMonkeyPatch, direct_io: str
+) -> None:
+    # An open file object takes a different route than a path. The reader is
+    # handed a descriptor it did not open, so it cannot add O_DIRECT to it --
+    # POLARS_DIRECT_IO=1 must degrade to buffered reads and still be correct,
+    # rather than failing.
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "handle.parquet"
+    expect = _write_df_mixed_offset(path, n_rows=20_000, row_group_size=997)
+
+    plmonkeypatch.setenv("POLARS_DIRECT_IO", direct_io)
+    with path.open("rb") as f:
+        assert_frame_equal(pl.scan_parquet(f).collect(), expect)
+
+    # Trigger coalescing path
+    with path.open("rb") as f:
+        assert_frame_equal(
+            pl.scan_parquet(f).select("a", "c").collect(), expect.select("a", "c")
+        )

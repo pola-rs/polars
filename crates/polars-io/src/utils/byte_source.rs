@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::ops::Range;
 #[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
@@ -11,7 +10,7 @@ use polars_buffer::Buffer;
 use polars_config::FileAdvice;
 use polars_core::prelude::PlHashMap;
 use polars_core::runtime::ASYNC;
-use polars_error::{PolarsResult, feature_gated, polars_err};
+use polars_error::{PolarsResult, feature_gated, polars_bail, polars_err};
 use polars_utils::aliases::InitHashMaps;
 use polars_utils::io::_limit_path_len_io_err;
 use polars_utils::mmap::MMapSemaphore;
@@ -377,7 +376,6 @@ impl ByteSource for FileByteSource {
             return Ok(out);
         }
 
-        // Sort by original start and merge.
         ranges.sort_unstable_by_key(|r| r.start);
 
         let mut spans: Vec<Range<usize>> = Vec::with_capacity(ranges.len());
@@ -409,31 +407,29 @@ impl ByteSource for FileByteSource {
             .await?;
 
         // Slice out of the containing span into the original ranges.
-        // Sort enables binary search.
         fetched.sort_unstable_by_key(|(s, _)| s.start);
+
+        if let Some(w) = ranges.windows(2).find(|w| w[0].start == w[1].start) {
+            polars_bail!(
+                ComputeError:
+                "duplicate range start {} in read request ({:?} and {:?})",
+                w[0].start, w[0], w[1]
+            );
+        }
 
         let mut out = PlHashMap::with_capacity(ranges.len());
         for r in ranges.iter() {
-            // A column chunk may declare a zero length, and an empty range at
-            // the end of its span matches no span in the search below.
+            // No span available.
             if r.is_empty() {
                 out.insert(r.start, Buffer::new());
                 continue;
             }
 
-            let idx = fetched
-                .binary_search_by(|(s, _)| {
-                    if s.end <= r.start {
-                        Ordering::Less
-                    } else if s.start > r.start {
-                        Ordering::Greater
-                    } else {
-                        Ordering::Equal
-                    }
-                })
-                .expect("every range lies within a span");
-
-            let (span, buf) = &fetched[idx];
+            // Spans are sorted by start and each range lies within one, so the
+            // containing span is the last one starting at or before `r.start`.
+            let idx = fetched.partition_point(|(s, _)| s.start <= r.start);
+            let (span, buf) = &fetched[idx - 1];
+            debug_assert!(span.start <= r.start && r.end <= span.end);
 
             let off = r.start - span.start;
             out.insert(r.start, buf.clone().sliced(off..off + r.len()));
@@ -669,6 +665,83 @@ impl DynByteSourceBuilder {
             Self::Mmap => None,
             Self::FilePread(_) => None,
             Self::ObjectStore(fetch_config) => Some(&fetch_config.strategy),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MIB: usize = 1 << 20;
+
+    /// A file source over `len` bytes of `(i % 251)`, plus those bytes.
+    fn source(dir: &std::path::Path, len: usize) -> (FileByteSource, Vec<u8>) {
+        let path = dir.join("f.bin");
+        let contents: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&path, &contents).unwrap();
+
+        let read_context = FileReadContext {
+            enable_o_direct: false,
+            concurrency: 4,
+            permits: Arc::new(Semaphore::new(4)),
+            advice: FileAdvice::Normal,
+        };
+        let source = FileByteSource::try_new_from_std(
+            std::fs::File::open(&path).unwrap(),
+            read_context,
+            None,
+        )
+        .unwrap();
+        (source, contents)
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn get_ranges_resolves_every_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let (source, contents) = source(dir.path(), 17 * MIB);
+        let rt = runtime();
+
+        let cases: [(&str, &[Range<usize>]); 6] = [
+            ("disjoint", &[0..100, 500..600, 900..1000]),
+            ("unsorted", &[900..1000, 0..100, 500..600]),
+            ("partial overlap", &[0..100, 50..150]),
+            ("contained", &[0..200, 50..100]),
+            // A zero-length column chunk is declarable in file metadata.
+            ("empty range at a span end", &[0..100, 100..100]),
+            // Spans become [0..4096, 5M..14M, 13M..16M]: the last two overlap,
+            // and both contain 13.5M, but only the third covers 16M.
+            (
+                "overlapping spans",
+                &[
+                    0..4096,
+                    5_000_000..14_000_000,
+                    13_000_000..13_500_000,
+                    13_500_000..16_000_000,
+                ],
+            ),
+        ];
+
+        for (name, ranges) in cases {
+            let mut ranges = ranges.to_vec();
+            let expect = ranges.clone();
+            let out = rt.block_on(source.get_ranges(&mut ranges)).unwrap();
+
+            assert_eq!(out.len(), expect.len(), "{name}");
+            for r in &expect {
+                let got = out
+                    .get(&r.start)
+                    .unwrap_or_else(|| panic!("{name}: {r:?} missing"));
+                assert_eq!(got.as_ref(), &contents[r.clone()], "{name}: {r:?}");
+            }
         }
     }
 }
