@@ -225,7 +225,6 @@ impl PacingBudget {
         self.horizon
     }
 
-    /// Helper so downstream doesn't have to re-implement the formula
     pub fn request_budget(&self, bdp: f64) -> f64 {
         bdp.min(self.rate() * self.horizon().as_secs_f64())
     }

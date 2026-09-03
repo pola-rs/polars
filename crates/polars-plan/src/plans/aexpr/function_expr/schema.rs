@@ -142,7 +142,7 @@ impl IRFunctionExpr {
                 has_min: _,
                 has_max: _,
             } => mapper.with_same_dtype(),
-            Quantile { method: _ } => mapper.moment_dtype(),
+            Quantile { method: _ } => mapper.quantile_dtype(),
             #[cfg(feature = "mode")]
             Mode { maintain_order: _ } => mapper.with_same_dtype(),
             #[cfg(feature = "moment")]
@@ -283,7 +283,15 @@ impl IRFunctionExpr {
             #[cfg(feature = "interpolate_by")]
             InterpolateBy => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "log")]
-            Entropy { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
+            Entropy { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Log1p => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "log1p")?
+                .map_to_float_dtype(),
+            #[cfg(feature = "log")]
+            Exp => mapper
+                .ensure_satisfies(|_, dtype| dtype.is_numeric() || dtype.is_bool(), "exp")?
+                .map_to_float_dtype(),
             #[cfg(feature = "log")]
             Log => mapper.log_dtype(),
             Unique(_) => mapper.with_same_dtype(),
@@ -786,6 +794,14 @@ impl<'a> FieldsMapper<'a> {
             &DataType::Float64
         };
         Ok(Field::new(self.fields[0].name().clone(), out_dtype.clone()))
+    }
+
+    pub fn quantile_dtype(&self) -> PolarsResult<Field> {
+        let mut out = self.moment_dtype()?;
+        if matches!(self.fields[1].dtype(), DataType::List(_)) {
+            out.set_dtype(DataType::List(Box::new(out.dtype().clone())));
+        }
+        Ok(out)
     }
 
     #[cfg(feature = "extract_jsonpath")]

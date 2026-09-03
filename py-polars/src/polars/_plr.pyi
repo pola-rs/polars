@@ -11,6 +11,7 @@ from polars.io.scan_options._options import ScanOptions
 # This file mirrors all the definitions made in the polars-python Rust API.
 
 __version__: str
+_BUILD_COMMIT: str
 __build__: Any
 _ir_nodes: Any
 _allocator: Any
