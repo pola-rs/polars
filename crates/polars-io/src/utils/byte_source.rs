@@ -4,12 +4,11 @@ use std::ops::Range;
 use std::os::fd::AsRawFd;
 use std::path::Path;
 use std::sync::Arc;
-#[cfg(target_os = "linux")]
-use std::sync::LazyLock;
 
 use dio_align::DioAlign;
 use futures::{StreamExt, TryStreamExt};
 use polars_buffer::Buffer;
+use polars_config::FileAdvice;
 use polars_core::prelude::PlHashMap;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, feature_gated, polars_err};
@@ -30,36 +29,6 @@ use crate::metrics::{IOMetrics, OptIOMetrics};
 pub mod dio_align;
 #[cfg(target_os = "linux")]
 mod direct_io;
-
-//kdn DEV CONTROL STATICS
-#[cfg(target_os = "linux")]
-static PLDEV_OPEN_FADV: LazyLock<usize> = LazyLock::new(|| {
-    std::env::var("PLDEV_OPEN_FADV").map_or(0, |x| {
-        let fadv = x.parse::<usize>().unwrap();
-
-        if polars_config::config().verbose() {
-            //defaults to POSIX_FADV_NORMAL
-            match fadv {
-                0 => {
-                    eprintln!("PLDEV_OPEN_FADV posix_adv_normal");
-                },
-                1 => {
-                    eprintln!("PLDEV_OPEN_FADV posix_adv_sequential");
-                },
-                2 => {
-                    eprintln!("PLDEV_OPEN_FADV posix_adv_random");
-                },
-                3 => {
-                    eprintln!("PLDEV_OPEN_FADV posix_adv_willneed");
-                },
-                _ => panic!("illegal value for PLDEV_OPEN_FADV: {}", fadv),
-            }
-        };
-
-        fadv
-    })
-});
-
 #[allow(async_fn_in_trait)]
 pub trait ByteSource: Send + Sync {
     async fn get_size(&self) -> PolarsResult<usize>;
@@ -134,6 +103,8 @@ pub struct FileReadContext {
     pub enable_o_direct: bool,
     pub concurrency: usize,
     pub permits: Arc<Semaphore>,
+    /// Ignored when direct I/O is active: there is no page cache to advise.
+    pub advice: FileAdvice,
 }
 
 impl std::fmt::Debug for FileReadContext {
@@ -142,28 +113,24 @@ impl std::fmt::Debug for FileReadContext {
             .field("available_permits", &self.permits.available_permits())
             .field("enable_odirect", &self.enable_o_direct)
             .field("concurrency", &self.concurrency)
+            .field("advice", &self.advice)
             .finish()
     }
 }
 
 #[cfg(target_os = "linux")]
-fn _fadvise(file: &std::fs::File) {
-    match *PLDEV_OPEN_FADV {
-        0 => {}, //defaults to POSIX_FADV_NORMAL
-        1 => unsafe {
-            libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_SEQUENTIAL);
-        },
-        2 => unsafe {
-            libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_RANDOM);
-        },
-        3 => {
-            unsafe {
-                // Makes little sense in this context.
-                libc::posix_fadvise(file.as_raw_fd(), 0, 0, libc::POSIX_FADV_WILLNEED);
-            }
-        },
-        _ => unreachable!("unexpected PLDEV_OPEN_FADV"),
+fn _fadvise(file: &std::fs::File, advice: FileAdvice) {
+    let advice = match advice {
+        // The OS default is already POSIX_FADV_NORMAL.
+        FileAdvice::Normal => return,
+        FileAdvice::Sequential => libc::POSIX_FADV_SEQUENTIAL,
+        FileAdvice::Random => libc::POSIX_FADV_RANDOM,
+        FileAdvice::WillNeed => libc::POSIX_FADV_WILLNEED,
     };
+
+    unsafe {
+        libc::posix_fadvise(file.as_raw_fd(), 0, 0, advice);
+    }
 }
 
 #[cfg(unix)]
@@ -272,7 +239,7 @@ impl FileByteSource {
         #[cfg(target_os = "linux")]
         if o_direct_align.is_none() {
             // Inert under O_DIRECT: there is no page cache to advise.
-            _fadvise(&file);
+            _fadvise(&file, read_context.advice);
         }
 
         let concurrency = read_context.concurrency;
@@ -325,6 +292,11 @@ impl FileByteSource {
 
         #[cfg(not(target_os = "linux"))]
         let o_direct_align: Option<DioAlign> = None;
+
+        #[cfg(target_os = "linux")]
+        if o_direct_align.is_none() {
+            _fadvise(&file, read_context.advice);
+        }
 
         let concurrency = read_context.concurrency;
         let permits = read_context.permits;
@@ -409,13 +381,13 @@ impl ByteSource for FileByteSource {
 
         // Threshold for coalescing. Note, individual ranges may exceed MAX_SPAN.
         const MAX_SPAN: usize = 8 << 20;
-        // Tolerate small gaps.
-        let max_gap = self.o_direct_align.map_or(4096, |a| a.offset);
+        // Tolerate small gaps. We match typical page size for now; this could be tuned.
+        const MAX_GAP: usize = 4096;
 
         for r in ranges.iter() {
             match spans.last_mut() {
                 Some(last)
-                    if r.start.saturating_sub(last.end) <= max_gap
+                    if r.start.saturating_sub(last.end) <= MAX_GAP
                         && r.end.saturating_sub(last.start) <= MAX_SPAN =>
                 {
                     last.end = last.end.max(r.end)

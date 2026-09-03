@@ -145,14 +145,15 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                 let read_context = self.file_read_context.get_or_init(|| {
                     let cfg = polars_config::config();
                     let enable_o_direct = cfg.direct_io();
-                    // Zero leaves the semaphore permanently empty and makes
-                    // `buffer_unordered` unbounded, hanging the scan.
                     let concurrency = cfg.file_read_concurrency().max(1) as usize;
+                    let fadv = cfg.file_posix_fadv();
 
                     if config::verbose() {
                         eprintln!(
                             "[ParquetReaderBuilder]: file read_context as configured: \
-                                o_direct: {enable_o_direct}, read_concurrency: {concurrency}"
+                                read_concurrency: {concurrency}, \
+                                posix_fadv: {fadv}, \
+                                o_direct: {enable_o_direct}"
                         );
                     }
 
@@ -162,6 +163,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                         enable_o_direct,
                         concurrency,
                         permits,
+                        advice: fadv,
                     }
                 });
                 DynByteSourceBuilder::FilePread(read_context.clone())
