@@ -703,9 +703,11 @@ impl PlBinaryArray {
     /// Returns an iterator over `length` elements, repeating the single element of this array if
     /// that is all it holds, and ignoring validity.
     ///
-    /// This is [`Self::broadcast_iter`] without the validity check, exactly as
-    /// [`Self::values_iter`] is [`Self::iter`] without it. The values of null elements are
-    /// undetermined (they can be any byte string).
+    /// This array either has `length` elements — in which case this is [`Self::values_iter`] — or
+    /// a single element, which the `length` values this yields are then all read from.
+    /// Broadcasting is `O(1)`, and allocates nothing: the value is repeated as it is read, rather
+    /// than materialized into an array to iterate the way [`Self::new_from_index`] would have to.
+    /// The values of null elements are undetermined (they can be any byte string).
     ///
     /// # Panics
     /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
@@ -715,28 +717,6 @@ impl PlBinaryArray {
         // SAFETY: an array of one element holds the one range that element covers, which is scalar
         // for any length; otherwise `length` is the length the offsets are already valid for.
         PlBinaryValuesIter::new(&self.values, &self.offsets, length)
-    }
-
-    /// Returns an iterator over `length` optional elements, repeating the single element of this
-    /// array if that is all it holds.
-    ///
-    /// This array either has `length` elements — in which case this is [`Self::iter`] — or a
-    /// single element, which the `length` elements this yields then all read. Broadcasting is
-    /// `O(1)`, and allocates nothing: the element is repeated as it is read, rather than
-    /// materialized into an array to iterate the way [`Self::new_from_index`] would have to.
-    ///
-    /// # Panics
-    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
-    #[inline]
-    pub fn broadcast_iter(&self, length: usize) -> PlBinaryIter<'_> {
-        assert_broadcastable(self.length, length);
-        // SAFETY: as in `broadcast_values_iter`, and the mask is broadcast alongside the offsets.
-        PlBinaryIter::new(
-            &self.values,
-            &self.offsets,
-            self.validity().map(|validity| validity.broadcast(length)),
-            length,
-        )
     }
 
     /// Returns this array with its validity mask replaced by a flat one.
@@ -2020,27 +2000,22 @@ mod tests {
 
         // A billion copies of it are iterated without it ever being materialized: every element is
         // the same `O(1)` slice of the same values buffer.
-        let mut iter = single.broadcast_iter(1_000_000_000);
+        let mut iter = single.broadcast_values_iter(1_000_000_000);
         assert_eq!(iter.len(), 1_000_000_000);
-        assert_eq!(iter.next(), Some(Some(b"fo".as_slice())));
-        assert_eq!(iter.nth(999_999_997), Some(Some(b"fo".as_slice())));
-        assert_eq!(iter.next_back(), Some(Some(b"fo".as_slice())));
+        assert_eq!(iter.next(), Some(b"fo".as_slice()));
+        assert_eq!(iter.nth(999_999_997), Some(b"fo".as_slice()));
+        assert_eq!(iter.next_back(), Some(b"fo".as_slice()));
         assert!(iter.next().is_none());
         assert_eq!(
             single.broadcast_values_iter(1_000_000_000).nth(999_999_999),
             Some(b"fo".as_slice()),
         );
 
-        // A null element broadcasts as nulls.
-        let nulls = PlBinaryArray::new_full_null(1);
-        assert!(nulls.broadcast_iter(3).all(|element| element.is_none()));
-        assert_eq!(nulls.broadcast_iter(3).count(), 3);
-
         // An array of the length asked for iterates as it is, whatever it is backed by.
         let arr = arr().with_validity(Some(Bitmap::from_iter([true, false, true])));
         assert_eq!(
-            arr.broadcast_iter(3).collect::<Vec<_>>(),
-            arr.iter().collect::<Vec<_>>(),
+            arr.broadcast_values_iter(3).collect::<Vec<_>>(),
+            arr.values_iter().collect::<Vec<_>>(),
         );
         assert_eq!(
             arr.broadcast_values_iter(3).collect::<Vec<_>>(),
@@ -2050,20 +2025,20 @@ mod tests {
         // A scalar array broadcasts to the length it has like any other.
         let scalar = PlBinaryArray::new_scalar(b"ab", 3);
         assert_eq!(
-            scalar.broadcast_iter(3).collect::<Vec<_>>(),
-            [Some(b"ab".as_slice()); 3],
+            scalar.broadcast_values_iter(3).collect::<Vec<_>>(),
+            [b"ab".as_slice(); 3],
         );
 
         // Broadcasting to nothing yields nothing, and an empty array broadcasts to nothing else:
         // it has no element to repeat.
-        assert_eq!(single.broadcast_iter(0).len(), 0);
-        assert_eq!(PlBinaryArray::new_empty().broadcast_iter(0).len(), 0);
+        assert_eq!(single.broadcast_values_iter(0).len(), 0);
+        assert_eq!(PlBinaryArray::new_empty().broadcast_values_iter(0).len(), 0);
     }
 
     #[test]
     #[should_panic(expected = "an array of length 3 does not broadcast to length 4")]
     fn broadcasting_more_than_one_value_panics() {
-        let _ = arr().broadcast_iter(4);
+        let _ = arr().broadcast_values_iter(4);
     }
 
     #[test]

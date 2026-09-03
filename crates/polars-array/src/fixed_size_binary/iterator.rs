@@ -332,12 +332,6 @@ mod tests {
         let array = PlFixedSizeBinaryArray::from_vec(b"ab".to_vec(), 2);
 
         assert_iterates(array.broadcast_values_iter(4), &[b"ab".as_slice(); 4]);
-        assert_iterates(array.broadcast_iter(4), &[Some(b"ab".as_slice()); 4]);
-
-        assert_iterates(
-            PlFixedSizeBinaryArray::new_full_null(2, 1).broadcast_iter(4),
-            &[None; 4],
-        );
     }
 
     #[test]

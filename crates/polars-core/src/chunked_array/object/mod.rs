@@ -363,12 +363,6 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
     }
 
     #[inline]
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
-        assert_eq!(self.len(), length, "an object array never broadcasts");
-        ObjectIter::new(self)
-    }
-
-    #[inline]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         let mut out = self;
         PlArray::set_validity(&mut out, validity);

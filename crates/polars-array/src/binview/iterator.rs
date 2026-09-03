@@ -307,12 +307,6 @@ mod tests {
         let array = PlBinaryViewArray::from_iter([Some(elements()[2])]);
 
         assert_iterates(array.broadcast_values_iter(4), &[elements()[2]; 4]);
-        assert_iterates(array.broadcast_iter(4), &[Some(elements()[2]); 4]);
-
-        assert_iterates(
-            PlBinaryViewArray::new_full_null(1).broadcast_iter(4),
-            &[None; 4],
-        );
     }
 
     #[test]

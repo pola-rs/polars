@@ -271,10 +271,9 @@ mod tests {
         let expected = [(); 4].map(|()| element(&[1, 2]));
 
         assert_iterates(array.broadcast_values_iter(4), &expected);
-        assert_iterates(array.broadcast_iter(4), &expected.map(Some));
 
         // An array is its own broadcast to the length it already has.
-        assert_iterates(flat_array().broadcast_iter(3), &elements().map(Some));
+        assert_iterates(flat_array().broadcast_values_iter(3), &elements());
     }
 
     #[test]

@@ -176,12 +176,6 @@ mod tests {
         let array = PlBooleanArray::from_vec(vec![true]);
 
         assert_iterates(array.broadcast_values_iter(4), &[true; 4]);
-        assert_iterates(array.broadcast_iter(4), &[Some(true); 4]);
-
-        assert_iterates(
-            PlBooleanArray::new_full_null(1).broadcast_iter(4),
-            &[None; 4],
-        );
     }
 
     #[test]

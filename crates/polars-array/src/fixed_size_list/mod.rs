@@ -649,9 +649,11 @@ impl PlFixedSizeListArray {
     /// Returns an iterator over `length` elements, repeating the single element of this array if
     /// that is all it holds, and ignoring validity.
     ///
-    /// This is [`Self::broadcast_iter`] without the validity check, exactly as
-    /// [`Self::values_iter`] is [`Self::iter`] without it. The values of null elements are
-    /// undetermined (they can be any list of the width).
+    /// This array either has `length` elements — in which case this is [`Self::values_iter`] — or
+    /// a single element, which the `length` values this yields are then all read from.
+    /// Broadcasting is `O(1)`, and allocates nothing: the value is repeated as it is read, rather
+    /// than materialized into an array to iterate the way [`Self::new_from_index`] would have to.
+    /// The values of null elements are undetermined (they can be any list of the width).
     ///
     /// # Panics
     /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
@@ -660,23 +662,6 @@ impl PlFixedSizeListArray {
         assert_broadcastable(self.length, length);
         // SAFETY: this array broadcasts to `length`, which is what was just asserted.
         PlFixedSizeListValuesIter::new_broadcast(self, length)
-    }
-
-    /// Returns an iterator over `length` optional elements, repeating the single element of this
-    /// array if that is all it holds.
-    ///
-    /// This array either has `length` elements — in which case this is [`Self::iter`] — or a
-    /// single element, which the `length` elements this yields then all read. Broadcasting is
-    /// `O(1)`, and allocates nothing: the element is repeated as it is read, rather than
-    /// materialized into an array to iterate the way [`Self::new_from_index`] would have to.
-    ///
-    /// # Panics
-    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
-    #[inline]
-    pub fn broadcast_iter(&self, length: usize) -> PlFixedSizeListIter<'_> {
-        assert_broadcastable(self.length, length);
-        // SAFETY: this array broadcasts to `length`, which is what was just asserted.
-        PlFixedSizeListIter::new_broadcast(self, length)
     }
 
     /// Returns this array with its validity mask replaced by a flat one.
@@ -1737,11 +1722,11 @@ mod tests {
 
         // A billion copies of that list are iterated without the list ever being materialized:
         // every element is the same `O(1)` slice of the same values array.
-        let mut iter = single.broadcast_iter(1_000_000_000);
+        let mut iter = single.broadcast_values_iter(1_000_000_000);
         assert_eq!(iter.len(), 1_000_000_000);
-        assert_eq!(iter.next().unwrap().unwrap().len(), 1_000_000_000);
-        assert_eq!(iter.nth(999_999_997).unwrap().unwrap().len(), 1_000_000_000);
-        assert_eq!(iter.next_back().unwrap().unwrap().len(), 1_000_000_000);
+        assert_eq!(iter.next().unwrap().len(), 1_000_000_000);
+        assert_eq!(iter.nth(999_999_997).unwrap().len(), 1_000_000_000);
+        assert_eq!(iter.next_back().unwrap().len(), 1_000_000_000);
         assert!(iter.next().is_none());
         assert_eq!(
             single
@@ -1752,21 +1737,15 @@ mod tests {
             1_000_000_000,
         );
 
-        // A null element broadcasts as nulls.
-        let nulls = PlFixedSizeListArray::new_full_null(
-            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
-            1,
-        );
-        assert!(nulls.broadcast_iter(3).all(|element| element.is_none()));
-        assert_eq!(nulls.broadcast_iter(3).count(), 3);
-
         // An array of the length asked for iterates as it is, whatever it is backed by.
         let arr = arr().with_validity(Some(Bitmap::from_iter([true, false, true])));
-        let lists = |iter: PlFixedSizeListIter<'_>| {
-            iter.map(|element| element.map(|list| elements(&*list)))
-                .collect::<Vec<_>>()
+        let lists = |iter: PlFixedSizeListValuesIter<'_>| {
+            iter.map(|list| elements(&*list)).collect::<Vec<_>>()
         };
-        assert_eq!(lists(arr.broadcast_iter(3)), lists(arr.iter()));
+        assert_eq!(
+            lists(arr.broadcast_values_iter(3)),
+            lists(arr.values_iter())
+        );
         assert_eq!(
             elements(&*arr.broadcast_values_iter(3).next_back().unwrap()),
             [Some(5), Some(6)],
@@ -1778,16 +1757,16 @@ mod tests {
             3,
         );
         assert_eq!(
-            lists(scalar.broadcast_iter(3)),
-            vec![Some(vec![Some(1), Some(2)]); 3],
+            lists(scalar.broadcast_values_iter(3)),
+            vec![vec![Some(1), Some(2)]; 3],
         );
 
         // Broadcasting to nothing yields nothing, and an empty array broadcasts to nothing
         // else: it has no element to repeat.
-        assert_eq!(single.broadcast_iter(0).len(), 0);
+        assert_eq!(single.broadcast_values_iter(0).len(), 0);
         assert_eq!(
             PlFixedSizeListArray::new_empty(values(), 2)
-                .broadcast_iter(0)
+                .broadcast_values_iter(0)
                 .len(),
             0,
         );
@@ -1796,7 +1775,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "an array of length 3 does not broadcast to length 4")]
     fn broadcasting_more_than_one_list_panics() {
-        let _ = arr().broadcast_iter(4);
+        let _ = arr().broadcast_values_iter(4);
     }
 
     #[test]

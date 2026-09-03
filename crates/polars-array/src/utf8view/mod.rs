@@ -207,13 +207,6 @@ impl PlUtf8ViewArray {
         unsafe { PlUtf8ViewValuesIter::new(self.0.broadcast_values_iter(length)) }
     }
 
-    /// Iterates `length` elements, repeating the single element of a scalar array.
-    #[inline]
-    pub fn broadcast_iter(&self, length: usize) -> PlUtf8ViewIter<'_> {
-        // SAFETY: the elements of this array are valid UTF-8.
-        unsafe { PlUtf8ViewIter::new(self.0.broadcast_iter(length)) }
-    }
-
     /// Returns this array with its validity mask replaced by a flat one.
     #[inline]
     #[must_use]
@@ -497,7 +490,6 @@ mod tests {
 
         // A single element broadcasts to as many as the caller asks for.
         let one = PlUtf8ViewArray::new_scalar(LONG, 1);
-        assert_eq!(one.broadcast_iter(3).collect::<Vec<_>>(), [Some(LONG); 3]);
         assert_eq!(one.broadcast_values_iter(3).collect::<Vec<_>>(), [LONG; 3]);
     }
 

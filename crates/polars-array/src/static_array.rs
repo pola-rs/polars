@@ -172,16 +172,6 @@ pub trait StaticArray: PlArray + Clone {
     /// Panics if `self.len()` is neither `length` nor one.
     fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_>;
 
-    /// Returns an iterator over `length` optional elements, repeating the single element of this
-    /// array if that is all it holds.
-    ///
-    /// This is [`Self::iter`] of this array broadcast to `length` elements, which is `O(1)` — the
-    /// copies are never materialized. See [`crate::broadcast`].
-    ///
-    /// # Panics
-    /// Panics if `self.len()` is neither `length` nor one.
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_>;
-
     /// Returns this array with its validity mask replaced by a flat one.
     ///
     /// This is [`PlArray::with_validity`] without the trait object, which is what the `_typed`
@@ -298,11 +288,6 @@ impl<T: NativeType> StaticArray for PlPrimitiveArray<T> {
     }
 
     #[inline]
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
-        self.broadcast_iter(length)
-    }
-
-    #[inline]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
     }
@@ -363,11 +348,6 @@ impl StaticArray for PlBooleanArray {
     #[inline]
     fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
         self.broadcast_values_iter(length)
-    }
-
-    #[inline]
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
-        self.broadcast_iter(length)
     }
 
     #[inline]
@@ -434,11 +414,6 @@ impl StaticArray for PlBinaryArray {
     }
 
     #[inline]
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
-        self.broadcast_iter(length)
-    }
-
-    #[inline]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
     }
@@ -499,11 +474,6 @@ impl StaticArray for PlBinaryViewArray {
     #[inline]
     fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
         self.broadcast_values_iter(length)
-    }
-
-    #[inline]
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
-        self.broadcast_iter(length)
     }
 
     #[inline]
@@ -571,11 +541,6 @@ impl StaticArray for PlUtf8ViewArray {
     }
 
     #[inline]
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
-        self.broadcast_iter(length)
-    }
-
-    #[inline]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
     }
@@ -636,11 +601,6 @@ impl StaticArray for PlFixedSizeBinaryArray {
     #[inline]
     fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
         self.broadcast_values_iter(length)
-    }
-
-    #[inline]
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
-        self.broadcast_iter(length)
     }
 
     #[inline]
@@ -707,11 +667,6 @@ impl StaticArray for PlListArray {
     }
 
     #[inline]
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
-        self.broadcast_iter(length)
-    }
-
-    #[inline]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
     }
@@ -775,11 +730,6 @@ impl StaticArray for PlFixedSizeListArray {
     }
 
     #[inline]
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
-        self.broadcast_iter(length)
-    }
-
-    #[inline]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
     }
@@ -840,12 +790,6 @@ impl StaticArray for PlStructArray {
     }
 
     #[inline]
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
-        assert_broadcastable(self.len(), length);
-        PlUnitIter::new(self.validity().map(|v| v.broadcast(length)), length)
-    }
-
-    #[inline]
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
     }
@@ -902,12 +846,6 @@ impl StaticArray for PlNullArray {
     fn broadcast_values_iter(&self, length: usize) -> Self::ValueIterT<'_> {
         assert_broadcastable(self.len(), length);
         std::iter::repeat_n((), length)
-    }
-
-    #[inline]
-    fn broadcast_iter(&self, length: usize) -> Self::IterT<'_> {
-        assert_broadcastable(self.len(), length);
-        PlUnitIter::new(Some(self.validity().broadcast(length)), length)
     }
 
     /// Returns this array unchanged: an array of nothing but nulls has no element a mask could
@@ -1071,7 +1009,6 @@ mod tests {
             let array = PlStructArray::new(vec![field], 3, None);
 
             assert_iterates(array.iter(), &[Some(()); 3]);
-            assert_iterates(array.broadcast_iter(3), &[Some(()); 3]);
         }
 
         #[test]
@@ -1086,7 +1023,6 @@ mod tests {
         fn nulls() {
             assert_iterates(PlNullArray::new(4).iter(), &[None; 4]);
             assert_iterates(PlNullArray::new(0).iter(), &[]);
-            assert_iterates(PlNullArray::new(1).broadcast_iter(4), &[None; 4]);
         }
 
         #[test]
@@ -1240,17 +1176,19 @@ mod tests {
             one.broadcast_values_iter(1_000_000_000).len(),
             1_000_000_000
         );
-        assert_eq!(one.broadcast_iter(1_000_000_000).last(), Some(Some(7)));
+        assert_eq!(one.broadcast_values_iter(1_000_000_000).last(), Some(7));
 
         let one = PlStructArray::from_fields(vec![Box::new(one)]);
         assert_eq!(
             one.broadcast_values_iter(1_000_000_000).len(),
             1_000_000_000
         );
-        assert_eq!(one.broadcast_iter(1_000_000_000).len(), 1_000_000_000);
 
         let nulls = PlNullArray::new(1);
-        assert_eq!(nulls.broadcast_iter(1_000_000_000).last(), Some(None));
+        assert_eq!(
+            nulls.broadcast_values_iter(1_000_000_000).len(),
+            1_000_000_000
+        );
     }
 
     #[test]
@@ -1286,7 +1224,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "does not broadcast to length")]
     fn broadcasting_more_than_one_element_is_rejected() {
-        let _ = PlNullArray::new(2).broadcast_iter(3);
+        let _ = PlNullArray::new(2).broadcast_values_iter(3);
     }
 
     #[test]

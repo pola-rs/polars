@@ -268,14 +268,10 @@ mod tests {
         let array = PlPrimitiveArray::from_vec(vec![5i32]);
 
         assert_iterates(array.broadcast_values_iter(4), &[5; 4]);
-        assert_iterates(array.broadcast_iter(4), &[Some(5); 4]);
-
-        let array = PlPrimitiveArray::<i32>::new_full_null(1);
-        assert_iterates(array.broadcast_iter(4), &[None; 4]);
 
         // An array is its own broadcast to the length it already has.
         let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
-        assert_iterates(array.broadcast_iter(3), &[Some(1), Some(2), Some(3)]);
+        assert_iterates(array.broadcast_values_iter(3), &[1, 2, 3]);
     }
 
     #[test]

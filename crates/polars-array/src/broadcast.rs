@@ -57,7 +57,8 @@
 //! The broadcasting ones are the wider of the two rather than the mirror image, unlike the
 //! constructors: a caller that has a mask which is already flat *or* scalar for the array —
 //! whichever the mask it was handed happened to be — installs it in one call, exactly as it
-//! would iterate one with [`broadcast_iter`](crate::PlPrimitiveArray::broadcast_iter).
+//! would iterate one with
+//! [`broadcast_values_iter`](crate::PlPrimitiveArray::broadcast_values_iter).
 //!
 //! The constructors of the mask types themselves — [`PlBitmap`](crate::PlBitmap) and
 //! [`PlBitmapRef`](crate::PlBitmapRef) — split the same way as those setters, for the same
@@ -71,9 +72,9 @@
 //! The same rule applies one level up, to the arrays themselves: an array of a single element
 //! stands for that element repeated any number of times, exactly as a scalar buffer stands for
 //! the value in its one slot. That is what
-//! [`broadcast_iter`](crate::PlPrimitiveArray::broadcast_iter) exploits: an array of one element
-//! iterates as `length` copies of that element, which is `O(1)` because the copies are never
-//! materialized. Whether the array is flat or scalar does not come into it — an array of one
+//! [`broadcast_values_iter`](crate::PlPrimitiveArray::broadcast_values_iter) exploits: an array of
+//! one element iterates as `length` copies of that element, which is `O(1)` because the copies are
+//! never materialized. Whether the array is flat or scalar does not come into it — an array of one
 //! element holds a single slot in every backing buffer either way, so it is the *logical* lengths
 //! that [`is_broadcastable`] relates.
 //!

@@ -4,9 +4,7 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmap, PlBitmapIter, PlBitmapRef};
-use crate::broadcast::{
-    assert_broadcastable, is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len,
-};
+use crate::broadcast::{is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len};
 use crate::flat::Flat;
 
 mod builder;
@@ -495,35 +493,17 @@ impl PlBooleanArray {
     /// Returns an iterator over `length` values, repeating the single value of this array if
     /// that is all it holds, and ignoring validity.
     ///
-    /// This is [`Self::broadcast_iter`] without the validity check, exactly as
-    /// [`Self::values_iter`] is [`Self::iter`] without it. The values of null elements are
-    /// undetermined (they can be anything).
+    /// This array either has `length` elements — in which case this is [`Self::values_iter`] — or
+    /// a single element, which the `length` values this yields are then all read from.
+    /// Broadcasting is `O(1)`, and allocates nothing: the value is repeated as it is read, rather
+    /// than materialized into an array to iterate the way [`Self::new_from_index`] would have to.
+    /// The values of null elements are undetermined (they can be anything).
     ///
     /// # Panics
     /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
     #[inline]
     pub fn broadcast_values_iter(&self, length: usize) -> PlBitmapIter<'_> {
         self.values().broadcast(length).iter()
-    }
-
-    /// Returns an iterator over `length` optional elements, repeating the single element of this
-    /// array if that is all it holds.
-    ///
-    /// This array either has `length` elements — in which case this is [`Self::iter`] — or a
-    /// single element, which the `length` elements this yields then all read. Broadcasting is
-    /// `O(1)`, and allocates nothing: the element is repeated as it is read, rather than
-    /// materialized into an array to iterate the way [`Self::new_from_index`] would have to.
-    ///
-    /// # Panics
-    /// Panics if [`self.len()`](Self::len) is neither `length` nor one.
-    #[inline]
-    pub fn broadcast_iter(&self, length: usize) -> PlBooleanIter<'_> {
-        assert_broadcastable(self.length, length);
-        PlBooleanIter::new(
-            self.values().broadcast(length),
-            self.validity().map(|validity| validity.broadcast(length)),
-            length,
-        )
     }
 
     /// Returns this array with its validity mask replaced by a flat one.
@@ -1284,43 +1264,47 @@ mod tests {
         let arr = PlBooleanArray::from_vec(vec![true]);
 
         // A billion copies of the element are iterated without ever being materialized.
-        let mut iter = arr.broadcast_iter(1_000_000_000);
+        let mut iter = arr.broadcast_values_iter(1_000_000_000);
         assert_eq!(iter.len(), 1_000_000_000);
-        assert_eq!(iter.next(), Some(Some(true)));
-        assert_eq!(iter.nth(999_999_997), Some(Some(true)));
-        assert_eq!(iter.next_back(), Some(Some(true)));
+        assert_eq!(iter.next(), Some(true));
+        assert_eq!(iter.nth(999_999_997), Some(true));
+        assert_eq!(iter.next_back(), Some(true));
         assert_eq!(iter.next(), None);
         assert_eq!(
             arr.broadcast_values_iter(1_000_000_000).nth(999_999_999),
             Some(true),
         );
 
-        // A null element broadcasts as nulls.
-        let arr = PlBooleanArray::from_iter([None::<bool>]);
-        assert_eq!(arr.broadcast_iter(3).collect::<Vec<_>>(), [None; 3]);
-
         // An array of the length asked for iterates as it is, whatever it is backed by.
         let arr = PlBooleanArray::from_iter([Some(true), None, Some(false)]);
-        assert!(arr.broadcast_iter(3).eq(arr.iter()));
         assert!(arr.broadcast_values_iter(3).eq(arr.values_iter()));
-        assert!(arr.broadcast_iter(3).rev().eq(arr.iter().rev()));
+        assert!(
+            arr.broadcast_values_iter(3)
+                .rev()
+                .eq(arr.values_iter().rev())
+        );
 
         let scalar = PlBooleanArray::new_scalar(true, 3);
-        assert!(scalar.broadcast_iter(3).eq(scalar.iter()));
+        assert!(scalar.broadcast_values_iter(3).eq(scalar.values_iter()));
 
         // Broadcasting to nothing yields nothing, and an empty array broadcasts to nothing
         // else: it has no element to repeat.
         assert_eq!(
-            PlBooleanArray::from_vec(vec![true]).broadcast_iter(0).len(),
+            PlBooleanArray::from_vec(vec![true])
+                .broadcast_values_iter(0)
+                .len(),
             0
         );
-        assert_eq!(PlBooleanArray::new_empty().broadcast_iter(0).len(), 0);
+        assert_eq!(
+            PlBooleanArray::new_empty().broadcast_values_iter(0).len(),
+            0
+        );
     }
 
     #[test]
     #[should_panic(expected = "an array of length 3 does not broadcast to length 4")]
     fn broadcasting_more_than_one_element_panics() {
-        let _ = PlBooleanArray::from_vec(vec![true, false, true]).broadcast_iter(4);
+        let _ = PlBooleanArray::from_vec(vec![true, false, true]).broadcast_values_iter(4);
     }
 
     #[test]

@@ -321,12 +321,6 @@ mod tests {
         let array = PlBinaryArray::from_iter([Some(b"ab")]);
 
         assert_iterates(array.broadcast_values_iter(4), &[b"ab".as_slice(); 4]);
-        assert_iterates(array.broadcast_iter(4), &[Some(b"ab".as_slice()); 4]);
-
-        assert_iterates(
-            PlBinaryArray::new_full_null(1).broadcast_iter(4),
-            &[None; 4],
-        );
     }
 
     #[test]
