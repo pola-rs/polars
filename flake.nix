@@ -3,8 +3,8 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    fenix = {
-      url = "github:nix-community/fenix";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     flake-parts = {
@@ -27,9 +27,11 @@
           ...
         }:
         let
-          rustToolchain = pkgs.fenix.fromToolchainName {
-            name = (lib.importTOML ./rust-toolchain.toml).toolchain.channel;
-            sha256 = "sha256-wBCNU5N9ftXKTMzvUW3xolIXmK5Z/93SdAxK1sMRDxQ=";
+          rustToolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
+            extensions = [
+              "rust-analyzer"
+              "rust-src"
+            ];
           };
 
           # Create an alias for python packages, such that we can use the same python version for everything
@@ -38,7 +40,7 @@
         {
           _module.args.pkgs = import inputs.nixpkgs {
             inherit system;
-            overlays = [ inputs.fenix.overlays.default ];
+            overlays = [ inputs.rust-overlay.overlays.default ];
           };
 
           devShells.default = pkgs.mkShell (
@@ -73,15 +75,6 @@
                 # # Used for Altair SVG / PNG conversions
                 "vl-convert-python"
               ];
-
-              rustPkg = rustToolchain.withComponents [
-                "cargo"
-                "clippy"
-                "rust-src"
-                "rustc"
-                "rustfmt"
-                "rust-analyzer"
-              ];
             in
             {
               packages =
@@ -90,7 +83,7 @@
                   py.venvShellHook
                   py.build
                   py.mypy
-                  rustPkg
+                  rustToolchain
                   cmake
                   gnumake
                   maturin
@@ -146,7 +139,7 @@
                   export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$PYTHON_SHARED_LIB"
 
                   export POLARS_DOT_SVG_VIEWER="${openCmd} %file%"
-                  export RUST_SRC_PATH="${rustToolchain.rust-src}/lib/rustlib/src/rust/library"
+                  export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
                 '';
             }
           );
