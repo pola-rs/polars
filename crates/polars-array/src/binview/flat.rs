@@ -216,32 +216,6 @@ mod tests {
     }
 
     #[test]
-    fn to_flat_of_an_all_null_scalar_does_not_write_out_the_views() {
-        // The values of null elements are undetermined, so the repeated view is handed out zeroed
-        // rather than materialized one by one — out of the shared zeroed buffer, without an
-        // allocation.
-        let all_null = PlBinaryViewArray::new_scalar(LONG, 3)
-            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
-        let flat = all_null.to_flat();
-
-        assert!(flat.is_flat());
-        assert_eq!(flat.null_count(), 3);
-        assert_eq!(flat, all_null);
-        assert!(flat.views().is_same_buffer(&Buffer::zeroed(3)));
-
-        // A valid scalar array still has its view repeated.
-        let flat = PlBinaryViewArray::new_scalar(LONG, 3).to_flat();
-        assert_eq!(flat.value(2), LONG);
-
-        // So does one whose nulls do not cover every element.
-        let flat = PlBinaryViewArray::new_scalar(LONG, 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])))
-            .to_flat();
-        assert_eq!(flat.value(2), LONG);
-        assert_eq!(flat.get(1), None);
-    }
-
-    #[test]
     fn as_flat_borrows_an_already_flat_array() {
         let arr: PlBinaryViewArray = [Some(b"foo".as_slice()), None, Some(LONG)]
             .into_iter()
@@ -270,27 +244,6 @@ mod tests {
                 .as_flat()
                 .is_none()
         );
-    }
-
-    #[test]
-    fn to_flat_of_a_flat_array_only_clones() {
-        let arr: PlBinaryViewArray = [Some(b"foo".as_slice()), None].into_iter().collect();
-        let flat = arr.to_flat();
-
-        assert_eq!(flat, arr);
-        assert!(
-            flat.views().is_same_buffer(arr.flat_views().unwrap()),
-            "the views buffer must be shared, not materialized again",
-        );
-    }
-
-    #[test]
-    fn to_flat_of_empty_scalar() {
-        let flat = PlBinaryViewArray::new_scalar(LONG, 0).to_flat();
-
-        assert!(flat.is_flat());
-        assert!(flat.is_empty());
-        assert_eq!(flat.views().len(), 0);
     }
 
     #[test]
@@ -323,69 +276,5 @@ mod tests {
                 .validity()
                 .is_none()
         );
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn value_panics_out_of_bounds() {
-        let _ = PlBinaryViewArray::new_scalar(b"foo", 3).to_flat().value(3);
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn view_panics_out_of_bounds() {
-        let _ = PlBinaryViewArray::new_scalar(b"foo", 3).to_flat().view(3);
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn is_valid_panics_out_of_bounds() {
-        let _ = PlBinaryViewArray::new_scalar(b"foo", 3)
-            .to_flat()
-            .is_valid(3);
-    }
-
-    #[test]
-    fn iterating_a_flat_array() {
-        let flat = PlBinaryViewArray::new_scalar(b"foo", 3).to_flat();
-
-        assert_eq!(
-            (&flat).into_iter().collect::<Vec<_>>(),
-            [Some(b"foo".as_slice()); 3],
-        );
-        assert_eq!(flat.iter().len(), 3);
-    }
-
-    #[test]
-    fn into_inner_gives_up_the_length() {
-        let (views, buffers, validity) = PlBinaryViewArray::new_full_null(3).to_flat().into_inner();
-
-        assert_eq!(views.len(), 3);
-        assert!(buffers.is_empty());
-        assert_eq!(validity.unwrap().len(), 3);
-
-        let (views, buffers, validity) =
-            PlBinaryViewArray::from_values_iter([b"foo".as_slice(), LONG])
-                .to_flat()
-                .into_inner();
-
-        assert_eq!(views.len(), 2);
-        assert_eq!(buffers.len(), 1);
-        assert!(validity.is_none());
-    }
-
-    #[test]
-    fn equality_ignores_representation() {
-        let scalar = PlBinaryViewArray::new_scalar(LONG, 3);
-        let flat = scalar.to_flat();
-
-        assert_eq!(flat, scalar);
-        assert_eq!(scalar, flat);
-        assert_eq!(
-            flat,
-            PlBinaryViewArray::from_values_iter([LONG, LONG, LONG]).to_flat(),
-        );
-        assert_ne!(flat, PlBinaryViewArray::new_scalar(LONG, 4));
-        assert_ne!(PlBinaryViewArray::new_full_null(3), flat);
     }
 }

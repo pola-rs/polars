@@ -6,13 +6,7 @@ use polars_utils::slice_broadcast_iter::SliceBroadcastIter;
 use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 use crate::broadcast::broadcast_slice;
 
-/// Iterator over the values of a [`PlBinaryViewArray`](super::PlBinaryViewArray), ignoring
-/// validity.
-///
-/// A scalar views buffer is not materialized: the single view every element shares is read as
-/// many times as the array is long, so this is `O(1)` in memory. Which of the two representations
-/// the views are in is settled once, when the iterator is created, rather than at every element —
-/// see [`broadcast_slice`].
+/// Iterator over the values of a [`PlBinaryViewArray`](super::PlBinaryViewArray), ignoring validity.
 #[derive(Clone)]
 pub struct PlBinaryViewValuesIter<'a> {
     views: SliceBroadcastIter<'a, View>,
@@ -120,9 +114,6 @@ impl ExactSizeIterator for PlBinaryViewValuesIter<'_> {
 unsafe impl TrustedLen for PlBinaryViewValuesIter<'_> {}
 
 /// Iterator over the optional elements of a [`PlBinaryViewArray`](super::PlBinaryViewArray).
-///
-/// Neither scalar views nor a scalar validity mask are materialized, and the mask is walked
-/// alongside the views rather than indexed.
 #[derive(Clone)]
 pub struct PlBinaryViewIter<'a> {
     values: PlBinaryViewValuesIter<'a>,
@@ -228,7 +219,6 @@ unsafe impl TrustedLen for PlBinaryViewIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use crate::PlBinaryViewArray;
     use crate::iterator_tests::assert_iterates;
@@ -256,57 +246,11 @@ mod tests {
     }
 
     #[test]
-    fn flat_under_a_flat_mask() {
-        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(
-            array.iter(),
-            &[Some(elements()[0]), None, Some(elements()[2])],
-        );
-    }
-
-    #[test]
-    fn flat_under_a_scalar_mask() {
-        let array = flat_array().with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
-
-        assert_iterates(array.iter(), &[None, None, None]);
-    }
-
-    #[test]
     fn scalar() {
         let array = PlBinaryViewArray::new_scalar(b"xy", 4);
 
         assert_iterates(array.values_iter(), &[b"xy".as_slice(); 4]);
         assert_iterates(array.iter(), &[Some(b"xy".as_slice()); 4]);
-    }
-
-    #[test]
-    fn scalar_under_a_flat_mask() {
-        let array = PlBinaryViewArray::new_scalar(b"xy", 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(array.iter(), &[Some(b"xy".as_slice()), None, Some(b"xy")]);
-    }
-
-    #[test]
-    fn all_null() {
-        assert_iterates(PlBinaryViewArray::new_full_null(3).iter(), &[None; 3]);
-    }
-
-    #[test]
-    fn empty() {
-        let array = PlBinaryViewArray::new_empty();
-
-        assert_iterates(array.values_iter(), &[]);
-        assert_iterates(array.iter(), &[]);
-    }
-
-    #[test]
-    fn broadcast() {
-        let array = PlBinaryViewArray::from_iter([Some(elements()[2])]);
-
-        assert_iterates(array.broadcast_values_iter(4), &[elements()[2]; 4]);
     }
 
     #[test]

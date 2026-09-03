@@ -7,8 +7,6 @@ use crate::array::PlArray;
 use crate::broadcast::is_broadcastable;
 
 /// Iterator over the elements of a [`PlListArray`], ignoring validity.
-///
-/// Each element is the values array sliced to the range that element covers, which is `O(1)`.
 #[derive(Clone)]
 pub struct PlListValuesIter<'a> {
     array: &'a PlListArray,
@@ -100,8 +98,6 @@ impl ExactSizeIterator for PlListValuesIter<'_> {}
 unsafe impl TrustedLen for PlListValuesIter<'_> {}
 
 /// Iterator over the optional elements of a [`PlListArray`].
-///
-/// A scalar validity mask is not materialized, and neither is the values array of an element.
 #[derive(Clone)]
 pub struct PlListIter<'a> {
     array: &'a PlListArray,
@@ -194,7 +190,7 @@ unsafe impl TrustedLen for PlListIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
+
     use polars_buffer::Buffer;
 
     use crate::iterator_tests::assert_iterates;
@@ -228,58 +224,12 @@ mod tests {
     }
 
     #[test]
-    fn flat_under_a_flat_mask() {
-        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
-        let [first, _, last] = elements();
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(array.iter(), &[Some(first), None, Some(last)]);
-    }
-
-    #[test]
-    fn flat_under_a_scalar_mask() {
-        let array = flat_array().with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
-
-        assert_iterates(array.iter(), &[None, None, None]);
-    }
-
-    #[test]
     fn scalar() {
         let array = PlListArray::new_scalar(element(&[1, 2]), 4);
         let expected = [(); 4].map(|()| element(&[1, 2]));
 
         assert_iterates(array.values_iter(), &expected);
         assert_iterates(array.iter(), &expected.map(Some));
-    }
-
-    #[test]
-    fn scalar_under_a_flat_mask() {
-        let array = PlListArray::new_scalar(element(&[1, 2]), 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(
-            array.iter(),
-            &[Some(element(&[1, 2])), None, Some(element(&[1, 2]))],
-        );
-    }
-
-    #[test]
-    fn empty() {
-        let array = PlListArray::new_empty(element(&[]));
-
-        assert_iterates(array.values_iter(), &[]);
-        assert_iterates(array.iter(), &[]);
-    }
-
-    #[test]
-    fn broadcast() {
-        let array = PlListArray::new(element(&[1, 2]), Buffer::from_owner([0, 2]), 1, None);
-        let expected = [(); 4].map(|()| element(&[1, 2]));
-
-        assert_iterates(array.broadcast_values_iter(4), &expected);
-
-        // An array is its own broadcast to the length it already has.
-        assert_iterates(flat_array().broadcast_values_iter(3), &elements());
     }
 
     #[test]

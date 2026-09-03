@@ -1,17 +1,4 @@
 //! Handing a chunk to an Arrow kernel, and taking the result back.
-//!
-//! The arrays of this crate are what a chunk is made of; the kernels of `polars-compute` are
-//! written against the Arrow arrays of `polars-arrow`. The two lay their elements out the same way
-//! and are built on the same [`Buffer`](polars_buffer::Buffer) and [`Bitmap`](arrow::bitmap::Bitmap),
-//! so crossing between them moves the backing buffers rather than copying the elements.
-//!
-//! [`ToArrow`] is that crossing, typed: it names, for each array of this crate, the Arrow array
-//! that holds the same elements, so that a kernel written for one can be called on the other
-//! without a downcast. It is defined on [`Flat`] arrays only — an Arrow array holds one slot per
-//! element, which is what being flat means, and an array in the [`scalar`](crate::broadcast)
-//! representation has to be written out before it can cross. That is what keeps the cost visible
-//! at the call site: the caller decides what a scalar chunk costs a kernel, and reaches for a
-//! broadcasting kernel where the repeated value is all the kernel needs.
 
 use arrow::array::{
     Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray, ListArray, NullArray,

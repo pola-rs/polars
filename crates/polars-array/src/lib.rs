@@ -1,26 +1,4 @@
 //! The Polars vector format.
-//!
-//! The arrays in this crate are the intended replacement for the array types in `polars-arrow`.
-//! They differ from their Arrow counterparts in two important ways:
-//!
-//! * They are cheaply cloneable: all buffers are backed by [`Buffer`](polars_buffer::Buffer),
-//!   so cloning and slicing are `O(1)`.
-//! * They carry their logical length in a separate `length` field instead of deriving it from the
-//!   backing buffers. This makes a *scalar* (scalar) array — one logical value repeated
-//!   `length` times — representable in `O(1)` memory. See [`scalar`] for the exact rules.
-//!
-//! Unlike the `polars-arrow` arrays, these arrays carry no logical type; they are purely a physical
-//! representation. Logical typing lives at a higher level. The one exception is
-//! [`PlUtf8ViewArray`], the transparent wrapper that carries the promise that the bytes of a
-//! [`PlBinaryViewArray`] are valid UTF-8 — see [`utf8view`] for why that one invariant is worth a
-//! type of its own.
-//!
-//! Every array implements the trait object [`PlArray`] and can be downcast to a concrete struct
-//! based on the [`PlArrayType`] available from [`PlArray::array_type`]. Code that is generic over
-//! the array rather than over its element type is written against [`StaticArray`], the typed
-//! counterpart of that trait, and an array that is not laid out already is built by a
-//! [`StaticArrayBuilder`] — see [`builder`]. An array of a known type is also collected from an
-//! iterator of its elements — see [`collect`].
 
 pub mod array;
 pub mod array_type;

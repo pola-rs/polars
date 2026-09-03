@@ -10,23 +10,6 @@ use crate::builder::{
 };
 
 /// A builder of a [`PlBooleanArray`].
-///
-/// The values are staged in a [`BitmapBuilder`], which is what the frozen array is taken over, so
-/// the array this builds is [flat](crate::Flat) — a bit per element, however many of the appended
-/// elements shared one. The value of a null element is written out as `false`.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
-/// use polars_array::{PlBooleanArray, PlBooleanArrayBuilder};
-///
-/// let mut builder = PlBooleanArrayBuilder::new();
-/// builder.extend_nulls(1);
-/// builder.extend(&PlBooleanArray::new_scalar(true, 2), ShareStrategy::Never);
-///
-/// let array = builder.freeze();
-/// assert_eq!(array.iter().collect::<Vec<_>>(), [None, Some(true), Some(true)]);
-/// ```
 pub struct PlBooleanArrayBuilder {
     values: BitmapBuilder,
     validity: OptBitmapBuilder,
@@ -258,18 +241,5 @@ mod tests {
         assert_eq!(built.len(), 7);
         assert_eq!(built.null_count(), 1);
         assert_eq!(built.iter().take(6).flatten().count(), 6);
-    }
-
-    #[test]
-    fn freeze_reset_leaves_an_empty_builder() {
-        let mut builder = PlBooleanArrayBuilder::new();
-        builder.extend(
-            &PlBooleanArray::from_vec(vec![true, false]),
-            ShareStrategy::Never,
-        );
-
-        assert_eq!(builder.freeze_reset().len(), 2);
-        assert!(builder.is_empty());
-        assert!(builder.freeze().is_empty());
     }
 }

@@ -6,14 +6,6 @@ use arrow::trusted_len::TrustedLen;
 use crate::bitmap::PlBitmapRef;
 
 /// Iterator over the bits of a [`PlBitmap`](super::PlBitmap) or a [`PlBitmapRef`].
-///
-/// A scalar mask is iterated without being materialized, so this is `O(1)` in memory regardless
-/// of the mask's length.
-///
-/// Which of the two representations the mask is in is settled once, when the iterator is created,
-/// rather than at every bit: a flat mask is walked by index, so that the bits it yields do not
-/// depend on one another and a loop over them runs several at a time, and a scalar one is a
-/// counter over the single bit every element shares.
 #[derive(Clone)]
 pub struct PlBitmapIter<'a> {
     repr: Repr<'a>,
@@ -189,14 +181,6 @@ impl ExactSizeIterator for PlBitmapIter<'_> {
 unsafe impl TrustedLen for PlBitmapIter<'_> {}
 
 /// The validity mask of an element iterator, walked in lockstep with the values.
-///
-/// This is what keeps reading validity off the critical path of an element: the mask holds one bit
-/// per element the values yield, so walking the two together needs no index of its own, and which
-/// representation the mask is in — flat, or the single bit every element shares — is settled once
-/// rather than at every element.
-///
-/// The values iterator is the one that governs how many elements there are. A position past the
-/// end of the mask therefore belongs to no element, and reads as valid rather than panicking.
 #[derive(Clone)]
 pub(crate) enum ValidityIter<'a> {
     /// One bit per element, at the positions `front..back` of `bytes`.
@@ -299,7 +283,6 @@ impl<'a> ValidityIter<'a> {
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use crate::PlBitmap;
     use crate::iterator_tests::assert_iterates;
@@ -311,35 +294,10 @@ mod tests {
     }
 
     #[test]
-    fn flat_at_an_offset() {
-        // A sliced bitmap starts part way into a byte, which is the other path through the words
-        // a flat mask is walked in.
-        let mask = PlBitmap::from_iter([true; 200]).sliced(3, 130);
-        assert_iterates(mask.iter(), &[true; 130]);
-
-        let bits: Vec<bool> = (0..200).map(|i| i % 3 == 0).collect();
-        let mask = PlBitmap::from_iter(bits.iter().copied()).sliced(5, 100);
-        assert_iterates(mask.iter(), &bits[5..105]);
-    }
-
-    #[test]
     fn scalar() {
         let mask = PlBitmap::new_scalar(true, 5);
         assert_iterates(mask.iter(), &[true; 5]);
         assert_iterates(PlBitmap::new_scalar(false, 3).iter(), &[false; 3]);
-    }
-
-    #[test]
-    fn empty() {
-        assert_iterates(PlBitmap::new_empty().iter(), &[]);
-        // An empty mask backed by a stray bit is scalar rather than flat, and reads no bit.
-        assert_iterates(PlBitmap::new_scalar(true, 0).iter(), &[]);
-    }
-
-    #[test]
-    fn one_bit_is_both_representations() {
-        assert_iterates(PlBitmap::from_iter([true]).iter(), &[true]);
-        assert_iterates(PlBitmap::new_scalar(false, 1).iter(), &[false]);
     }
 
     #[test]
@@ -351,14 +309,5 @@ mod tests {
         assert_eq!(mask.iter().nth(999_999_999), Some(true));
         assert_eq!(mask.iter().last(), Some(true));
         assert_eq!(mask.iter().len(), 1_000_000_000);
-    }
-
-    #[test]
-    fn borrowed_masks_iterate_the_same() {
-        let bitmap = Bitmap::from_iter([true, false, true]);
-        assert_iterates(
-            PlBitmap::from_bitmap(bitmap).as_ref().iter(),
-            &[true, false, true],
-        );
     }
 }

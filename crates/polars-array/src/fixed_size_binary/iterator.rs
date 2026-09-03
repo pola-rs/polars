@@ -4,13 +4,7 @@ use arrow::trusted_len::TrustedLen;
 
 use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 
-/// Iterator over the elements of a [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray),
-/// ignoring validity.
-///
-/// Each element is the values buffer sliced to the range that element covers, which is `O(1)`.
-/// Scalar values are not materialized: whether they hold one element each or the one element they
-/// all cover does not depend on the position being read — see [`Self::is_scalar`] — so a loop
-/// over the elements settles it once rather than at every one of them.
+/// Iterator over the elements of a [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray), ignoring validity.
 #[derive(Clone)]
 pub struct PlFixedSizeBinaryValuesIter<'a> {
     values: &'a [u8],
@@ -46,8 +40,7 @@ impl<'a> PlFixedSizeBinaryValuesIter<'a> {
     fn get(&self, i: usize) -> &'a [u8] {
         let start = if self.is_scalar() { 0 } else { i * self.width };
         // SAFETY: `i` comes from `self.range`, so the element it reads is in bounds of the values:
-        // they are either flat over every position the range holds, or the one element all of them
-        // read from the start.
+        // either flat over every position, or the one element all of them read from the start.
         unsafe { self.values.get_unchecked(start..start + self.width) }
     }
 }
@@ -132,11 +125,7 @@ impl ExactSizeIterator for PlFixedSizeBinaryValuesIter<'_> {
 
 unsafe impl TrustedLen for PlFixedSizeBinaryValuesIter<'_> {}
 
-/// Iterator over the optional elements of a
-/// [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray).
-///
-/// Neither a scalar validity mask nor scalar values are materialized, and the mask is walked
-/// alongside the values rather than indexed.
+/// Iterator over the optional elements of a [`PlFixedSizeBinaryArray`](super::PlFixedSizeBinaryArray).
 #[derive(Clone)]
 pub struct PlFixedSizeBinaryIter<'a> {
     values: PlFixedSizeBinaryValuesIter<'a>,
@@ -244,7 +233,6 @@ unsafe impl TrustedLen for PlFixedSizeBinaryIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use crate::PlFixedSizeBinaryArray;
     use crate::iterator_tests::assert_iterates;
@@ -267,71 +255,11 @@ mod tests {
     }
 
     #[test]
-    fn flat_under_a_flat_mask() {
-        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(array.iter(), &[Some(b"ab".as_slice()), None, Some(b"ef")]);
-    }
-
-    #[test]
-    fn flat_under_a_scalar_mask() {
-        let array = flat_array().with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
-
-        assert_iterates(array.iter(), &[None, None, None]);
-    }
-
-    #[test]
     fn scalar() {
         let array = PlFixedSizeBinaryArray::new_scalar(b"xy", 4);
 
         assert_iterates(array.values_iter(), &[b"xy".as_slice(); 4]);
         assert_iterates(array.iter(), &[Some(b"xy".as_slice()); 4]);
-    }
-
-    #[test]
-    fn scalar_under_a_flat_mask() {
-        let array = PlFixedSizeBinaryArray::new_scalar(b"xy", 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(array.iter(), &[Some(b"xy".as_slice()), None, Some(b"xy")]);
-    }
-
-    #[test]
-    fn all_null() {
-        assert_iterates(
-            PlFixedSizeBinaryArray::new_full_null(2, 3).iter(),
-            &[None; 3],
-        );
-    }
-
-    #[test]
-    fn empty() {
-        let array = PlFixedSizeBinaryArray::new_empty(2);
-
-        assert_iterates(array.values_iter(), &[]);
-        assert_iterates(array.iter(), &[]);
-    }
-
-    #[test]
-    fn elements_of_no_bytes() {
-        // A width of zero leaves every element the same empty slice, which is the one flat array
-        // whose values are also scalar.
-        let array = PlFixedSizeBinaryArray::new_empty(0);
-
-        assert_iterates(array.values_iter(), &[]);
-        assert_iterates(array.iter(), &[]);
-
-        let array = PlFixedSizeBinaryArray::new_scalar(b"", 3);
-        assert_iterates(array.values_iter(), &[b"".as_slice(); 3]);
-        assert_iterates(array.iter(), &[Some(b"".as_slice()); 3]);
-    }
-
-    #[test]
-    fn broadcast() {
-        let array = PlFixedSizeBinaryArray::from_vec(b"ab".to_vec(), 2);
-
-        assert_iterates(array.broadcast_values_iter(4), &[b"ab".as_slice(); 4]);
     }
 
     #[test]

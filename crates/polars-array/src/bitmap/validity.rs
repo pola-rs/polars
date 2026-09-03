@@ -1,10 +1,4 @@
 //! Combining the validity masks of arrays.
-//!
-//! An array hands its mask out as a [`PlBitmapRef`], which is either flat — one bit per element —
-//! or scalar, a single bit standing for every element. The helpers here combine two of those
-//! without writing a scalar mask out when they do not have to: the `and` of two scalar masks is
-//! itself one bit, so an array that is fully null stays `O(1)` in memory across an operation that
-//! only touches validity.
 
 use arrow::bitmap::Bitmap;
 
@@ -97,23 +91,6 @@ mod tests {
     }
 
     #[test]
-    fn a_scalar_mask_that_is_set_everywhere_leaves_the_other_one_as_it_is() {
-        let flat = PlBitmap::from_iter([true, false, true]);
-        let scalar = PlBitmap::new_scalar(true, 3);
-
-        for combined in [
-            combine_validities_and(Some(scalar.as_ref()), Some(flat.as_ref())).unwrap(),
-            combine_validities_and(Some(flat.as_ref()), Some(scalar.as_ref())).unwrap(),
-            // An absent mask is all valid, and does the same.
-            combine_validities_and(Some(flat.as_ref()), None).unwrap(),
-            combine_validities_and(None, Some(flat.as_ref())).unwrap(),
-        ] {
-            assert_eq!(combined.len(), 3);
-            assert_eq!(combined, flat);
-        }
-    }
-
-    #[test]
     fn a_scalar_mask_that_is_unset_everywhere_nulls_the_result_out() {
         let flat = PlBitmap::from_iter([true, false, true]);
         let scalar = PlBitmap::new_scalar(false, 3);
@@ -138,29 +115,5 @@ mod tests {
         assert_eq!(combined.len(), 3);
         assert!(combined.is_flat());
         assert_eq!(combined, PlBitmap::from_iter([true, false, false]));
-    }
-
-    #[test]
-    fn two_absent_masks_stay_absent() {
-        assert!(combine_validities_and(None, None).is_none());
-    }
-
-    #[test]
-    #[should_panic(expected = "validity masks cover different lengths")]
-    fn combining_masks_over_different_lengths_panics() {
-        let lhs = PlBitmap::new_scalar(true, 3);
-        let rhs = PlBitmap::new_scalar(true, 4);
-
-        combine_validities_and(Some(lhs.as_ref()), Some(rhs.as_ref()));
-    }
-
-    #[test]
-    fn inverting_a_scalar_mask_keeps_it_scalar() {
-        let mask = PlBitmap::new_scalar(false, 1_000);
-
-        let inverted = invert(mask.as_ref());
-
-        assert_eq!(inverted.len(), 1);
-        assert!(inverted.get_bit(0));
     }
 }

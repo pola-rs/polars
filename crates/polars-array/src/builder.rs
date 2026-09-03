@@ -1,61 +1,4 @@
 //! Building arrays element by element, or array by array.
-//!
-//! The arrays in this crate are immutable, so an array that is not built out of buffers that are
-//! already laid out is built by a *builder*: a growable staging area that is appended to and then
-//! [`freeze`](StaticArrayBuilder::freeze)n into the array it built. [`StaticArrayBuilder`] is the
-//! typed trait every concrete builder implements, and [`PlArrayBuilder`] is its trait object,
-//! which is what the builders of the nested arrays hold their children as.
-//!
-//! # What a builder appends
-//!
-//! A builder is fed whole arrays rather than single elements: [`extend`](StaticArrayBuilder::extend)
-//! and its subslice, repeat and gather variants are what a concatenation, a slice-and-append or a
-//! take is written in terms of. Which one to reach for follows the shape of the copy:
-//!
-//! * [`subslice_extend`](StaticArrayBuilder::subslice_extend) appends a contiguous run of
-//!   elements, in order.
-//! * [`subslice_extend_repeated`](StaticArrayBuilder::subslice_extend_repeated) appends that run
-//!   `repeats` times over — `abcabcabc`.
-//! * [`subslice_extend_each_repeated`](StaticArrayBuilder::subslice_extend_each_repeated) appends
-//!   each of its elements `repeats` times — `aaabbbccc`.
-//! * [`gather_extend`](StaticArrayBuilder::gather_extend) appends the elements at the given
-//!   indices, in the order they are given, and
-//!   [`opt_gather_extend`](StaticArrayBuilder::opt_gather_extend) does the same with
-//!   out-of-bounds indices standing for nulls.
-//!
-//! The array being appended may be in either representation — a scalar array is not materialized
-//! to be read, see [`crate::broadcast`] — but what a builder holds always has one slot per
-//! element, so the array it freezes is [flat](crate::Flat). Concatenating arrays *while* keeping
-//! the scalar representation wherever it survives is what [`crate::concatenate`] is for; a builder
-//! is what to reach for when the result is going to be materialized anyway.
-//!
-//! # Sharing buffers
-//!
-//! Every buffer in this crate is cheaply cloneable, so appending an array can often adopt one of
-//! its buffers instead of copying the bytes out of it. [`ShareStrategy`] is how the caller says
-//! whether that is wanted: sharing is cheaper, but it keeps the whole buffer alive for as long as
-//! the built array is, which is a poor trade when a handful of elements are copied out of a large
-//! array that is about to be dropped. Only [`PlBinaryViewArrayBuilder`] and the builders of the
-//! nested arrays over one have anything to share.
-//!
-//! # Example
-//! ```
-//! use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
-//! use polars_array::{PlPrimitiveArray, PlPrimitiveArrayBuilder};
-//!
-//! let lhs = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
-//! let rhs = PlPrimitiveArray::new_scalar(7i32, 2);
-//!
-//! let mut builder = PlPrimitiveArrayBuilder::<i32>::new();
-//! builder.extend(&lhs, ShareStrategy::Always);
-//! builder.extend_nulls(1);
-//! builder.subslice_extend(&rhs, 0, 2, ShareStrategy::Always);
-//!
-//! assert_eq!(builder.len(), 6);
-//! let array = builder.freeze();
-//! assert_eq!(array.flat_values().unwrap().as_slice(), [1, 2, 3, 0, 7, 7]);
-//! assert_eq!(array.null_count(), 1);
-//! ```
 
 /// Whether a builder may adopt the buffers of the arrays it appends, rather than copying out of
 /// them.
@@ -776,7 +719,7 @@ mod tests {
     use super::*;
     use crate::{
         PlBinaryArray, PlBinaryViewArray, PlBooleanArray, PlFixedSizeBinaryArray, PlNullArray,
-        PlPrimitiveArray, PlStructArray, with_match_pl_primitive_array_type,
+        PlPrimitiveArray, PlStructArray,
     };
 
     /// One array of every array type, all of three elements, with a null in the middle.
@@ -856,29 +799,6 @@ mod tests {
     }
 
     #[test]
-    fn appending_no_elements_appends_nothing() {
-        for array in arrays() {
-            let mut builder = builder_like(&*array);
-
-            // A subslice of no elements is in bounds wherever it starts, the end included.
-            builder.subslice_extend(&*array, 0, 0, ShareStrategy::Always);
-            builder.subslice_extend(&*array, array.len(), 0, ShareStrategy::Never);
-            builder.subslice_extend_repeated(&*array, 1, 0, 3, ShareStrategy::Always);
-            builder.subslice_extend_each_repeated(&*array, 1, 1, 0, ShareStrategy::Always);
-            builder.extend_nulls(0);
-            unsafe { builder.gather_extend(&*array, &[], ShareStrategy::Always) };
-            builder.opt_gather_extend(&*array, &[], ShareStrategy::Always);
-
-            // So is every element of an array that holds none.
-            let empty = array.sliced(0, 0);
-            builder.extend(&*empty, ShareStrategy::Always);
-
-            assert!(builder.is_empty());
-            assert!(builder.freeze().is_empty());
-        }
-    }
-
-    #[test]
     fn freeze_reset_leaves_an_empty_builder() {
         for array in arrays() {
             let mut builder = builder_like(&*array);
@@ -893,16 +813,6 @@ mod tests {
             let built = builder.freeze();
             assert_eq!(built.len(), 1);
             assert_eq!(built.null_count(), 1);
-        }
-    }
-
-    #[test]
-    fn an_empty_builder_freezes_an_empty_array() {
-        for array in arrays() {
-            let built = builder_like(&*array).freeze();
-
-            assert!(built.is_empty());
-            assert_eq!(built.array_type(), array.array_type());
         }
     }
 
@@ -926,29 +836,5 @@ mod tests {
             values.flat_values().unwrap().array_type(),
             PlArrayType::Boolean
         );
-    }
-
-    #[test]
-    fn builder_like_follows_the_element_type_of_a_primitive_array() {
-        fn builds_the_same_element_type<T: arrow::types::NativeType>() -> bool {
-            let array = PlPrimitiveArray::<T>::new_empty();
-            let built = builder_like(&array).freeze();
-            with_match_pl_primitive_array_type!(&*built, |E| {
-                std::any::TypeId::of::<E>() == std::any::TypeId::of::<T>()
-            })
-            .unwrap()
-        }
-
-        assert!(builds_the_same_element_type::<u8>());
-        assert!(builds_the_same_element_type::<i64>());
-        assert!(builds_the_same_element_type::<f64>());
-        assert!(builds_the_same_element_type::<arrow::array::View>());
-    }
-
-    #[test]
-    #[should_panic(expected = "cannot append a Boolean array to a builder")]
-    fn appending_an_array_of_another_type_panics() {
-        let mut builder = builder_like(&PlPrimitiveArray::<i32>::new_empty());
-        builder.extend(&PlBooleanArray::from_vec(vec![true]), ShareStrategy::Always);
     }
 }

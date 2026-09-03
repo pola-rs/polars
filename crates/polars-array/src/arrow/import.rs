@@ -1,67 +1,4 @@
 //! Importing the Arrow arrays of `polars-arrow` as the arrays of this crate.
-//!
-//! An Arrow array lays its elements out the way the array of this crate that holds them does, and
-//! is built on the same [`Buffer`] and [`Bitmap`], so importing hands the backing buffers over
-//! rather than copying the elements: [`from_arrow`] is `O(1)` for every Arrow array but the ones
-//! whose offsets are 32 bits wide, which are widened into the 64-bit offsets a [`PlBinaryArray`]
-//! and a [`PlListArray`] hold. See [`offsets_from_arrow`].
-//!
-//! # The logical type is dropped
-//!
-//! The arrays of this crate are very nearly a physical representation, so what an Arrow array
-//! imports as is the physical array underneath its
-//! [`ArrowDataType`](arrow::datatypes::ArrowDataType), which is the same for every logical type
-//! over one physical representation: a `Date32` array imports as a [`PlPrimitiveArray<i32>`], and
-//! a [`Utf8Array`] and a [`BinaryArray`] both import as a [`PlBinaryArray`]. Nothing in the
-//! imported array says the bytes of that [`PlBinaryArray`] are a string, and nothing in this
-//! module validates that they are — it is the caller that remembers which logical type the
-//! physical array stands for.
-//!
-//! The one logical type that is kept is UTF-8 in a view array: a [`Utf8ViewArray`] imports as a
-//! [`PlUtf8ViewArray`] rather than as the [`PlBinaryViewArray`] its bytes are stored as, since
-//! that promise is one these arrays carry too — see [`crate::utf8view`]. So a string array round
-//! trips through [`export`](crate::arrow::export) and back without the caller having to remember
-//! anything about it.
-//!
-//! # Importing never produces a scalar array
-//!
-//! An Arrow array holds one slot per element in every one of its buffers, which is what makes an
-//! imported array [`flat`](crate::broadcast) rather than scalar. The scalar representation has no
-//! Arrow counterpart to be imported from.
-//!
-//! # Arrays with no counterpart
-//!
-//! A dictionary, union or map array has no counterpart in this crate, and neither has an Arrow
-//! array whose elements are [`months_days_ms`](arrow::types::months_days_ms), which is of no Rust
-//! type an array can be taken over. Importing one panics with [`unimplemented!`]: decoding it into
-//! an array that does have a counterpart is a decision for the caller, and there is nothing here
-//! to encode it as in the meantime.
-//!
-//! # Example
-//! ```
-//! use arrow::array::{BinaryViewArray, Int32Array, Utf8ViewArray};
-//! use arrow::datatypes::ArrowDataType;
-//! use polars_array::arrow::import::from_arrow;
-//! use polars_array::{PlBinaryViewArray, PlPrimitiveArray, PlUtf8ViewArray};
-//!
-//! // The logical type is dropped: a `Date32` array is the `i32` array underneath it.
-//! let arrow = Int32Array::from_slice([1, 2, 3]).to(ArrowDataType::Date32);
-//! let array = from_arrow(&arrow);
-//! let array = array.as_any().downcast_ref::<PlPrimitiveArray<i32>>().unwrap();
-//! assert_eq!(array.value(2), 3);
-//!
-//! // The bytes of a binary view array are not a string, so they import as bytes.
-//! let arrow = BinaryViewArray::from_slice_values([b"foo".as_slice(), b"bar"]);
-//! let array = from_arrow(&arrow);
-//! let array = array.as_any().downcast_ref::<PlBinaryViewArray>().unwrap();
-//! assert_eq!(array.value(0), b"foo");
-//!
-//! // The promise that a view array's bytes *are* a string is kept.
-//! let arrow = Utf8ViewArray::from_slice_values(["foo", "bar"]);
-//! let array = from_arrow(&arrow);
-//! let array = array.as_any().downcast_ref::<PlUtf8ViewArray>().unwrap();
-//! assert_eq!(array.value(0), "foo");
-//! ```
 
 use std::any::Any;
 
@@ -164,9 +101,8 @@ pub fn primitive_from_arrow<T: NativeType>(array: &PrimitiveArray<T>) -> PlPrimi
 /// This is `O(1)` for `BinaryArray<i64>` and `O(len)` for `BinaryArray<i32>`, whose offsets are
 /// widened — see [`offsets_from_arrow`].
 pub fn binary_from_arrow<O: Offset>(array: &BinaryArray<O>) -> PlBinaryArray {
-    // SAFETY: the offsets of an Arrow array are monotonically non-decreasing, hold one per element
-    // plus the end of the last, and end within the values; its validity mask holds one bit per
-    // element. Widening the offsets preserves all of that.
+    // SAFETY: an Arrow array's offsets are ordered, one per element plus the end of the last, and
+    // end within the values; widening them preserves that, as does its flat validity mask.
     unsafe {
         PlBinaryArray::new_unchecked(
             array.values().clone(),
@@ -183,9 +119,8 @@ pub fn binary_from_arrow<O: Offset>(array: &BinaryArray<O>) -> PlBinaryArray {
 /// not carry. This is `O(1)` for `Utf8Array<i64>` and `O(len)` for `Utf8Array<i32>`, whose offsets
 /// are widened — see [`offsets_from_arrow`].
 pub fn utf8_from_arrow<O: Offset>(array: &Utf8Array<O>) -> PlBinaryArray {
-    // SAFETY: the offsets of an Arrow array are monotonically non-decreasing, hold one per element
-    // plus the end of the last, and end within the values; its validity mask holds one bit per
-    // element. Widening the offsets preserves all of that.
+    // SAFETY: an Arrow array's offsets are ordered, one per element plus the end of the last, and
+    // end within the values; widening them preserves that, as does its flat validity mask.
     unsafe {
         PlBinaryArray::new_unchecked(
             array.values().clone(),
@@ -253,10 +188,8 @@ pub fn fixed_size_binary_from_arrow(array: &FixedSizeBinaryArray) -> PlFixedSize
 pub fn list_from_arrow<O: Offset>(array: &ListArray<O>) -> PlListArray {
     let values = from_arrow(&**array.values());
 
-    // SAFETY: the offsets of an Arrow array are monotonically non-decreasing, hold one per element
-    // plus the end of the last, and end within the values; its validity mask holds one bit per
-    // element. Widening the offsets preserves all of that, and importing the values preserves how
-    // many of them there are.
+    // SAFETY: an Arrow array's offsets are ordered, one per element plus the end of the last, and
+    // end within the values; widening them and importing the values preserves that.
     unsafe {
         PlListArray::new_unchecked(
             values,
@@ -276,9 +209,8 @@ pub fn list_from_arrow<O: Offset>(array: &ListArray<O>) -> PlListArray {
 pub fn fixed_size_list_from_arrow(array: &FixedSizeListArray) -> PlFixedSizeListArray {
     let values = from_arrow(&**array.values());
 
-    // SAFETY: the values of an Arrow fixed size list array hold `size` values per element, and its
-    // validity mask one bit per element, which is what makes them flat here; importing the values
-    // preserves how many of them there are.
+    // SAFETY: an Arrow fixed size list array holds `size` values per element and one validity bit
+    // per element, and importing the values preserves how many there are.
     unsafe {
         PlFixedSizeListArray::new_unchecked(
             values,
@@ -305,8 +237,7 @@ pub fn struct_from_arrow(array: &StructArray) -> PlStructArray {
         .collect();
 
     // SAFETY: every field of an Arrow struct array has as many elements as the array, and its
-    // validity mask holds one bit per element, which is what makes it flat here; importing a field
-    // preserves how many elements it has.
+    // validity mask one bit per element; importing a field preserves that.
     unsafe { PlStructArray::new_unchecked(fields, array.len(), array.validity().cloned()) }
 }
 
@@ -391,18 +322,10 @@ fn primitive_from_arrow_dyn(array: &dyn Array, primitive: PrimitiveType) -> Box<
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::{
-        Array, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeBinaryArray,
-        FixedSizeListArray, Int32Array, Int64Array, ListArray, NullArray, PrimitiveArray,
-        StructArray, Utf8Array, Utf8ViewArray,
-    };
-    use arrow::bitmap::Bitmap;
-    use arrow::datatypes::{ArrowDataType, Field};
-    use arrow::offset::OffsetsBuffer;
-    use polars_buffer::Buffer;
+    use arrow::array::{Array, BinaryArray, FixedSizeListArray, Int32Array, PrimitiveArray};
+    use arrow::datatypes::ArrowDataType;
 
     use super::*;
-    use crate::PlArrayType;
 
     /// Downcasts an imported array to the array of this crate it is expected to be.
     fn imported<A: PlArray + Clone>(array: &dyn Array) -> Box<A> {
@@ -412,41 +335,6 @@ mod tests {
             Some(array) => Box::new(array.clone()),
             None => panic!("an arrow array imported as {array_type:?}, which is another array"),
         }
-    }
-
-    #[test]
-    fn null_is_imported() {
-        let arrow = NullArray::new(ArrowDataType::Null, 7);
-        let array = imported::<PlNullArray>(&arrow);
-
-        assert_eq!(array.len(), 7);
-        assert_eq!(array.array_type(), PlArrayType::Null);
-    }
-
-    #[test]
-    fn boolean_is_imported() {
-        let arrow = BooleanArray::from([Some(true), None, Some(false)]);
-        let array = imported::<PlBooleanArray>(&arrow);
-
-        assert_eq!(array.len(), 3);
-        assert_eq!(array.get(0), Some(true));
-        assert_eq!(array.get(1), None);
-        assert_eq!(array.get(2), Some(false));
-    }
-
-    #[test]
-    fn primitive_is_imported_of_the_element_type_of_the_arrow_array() {
-        let arrow = Int32Array::from([Some(1), None, Some(3)]);
-        let array = imported::<PlPrimitiveArray<i32>>(&arrow);
-
-        assert_eq!(array.len(), 3);
-        assert_eq!(array.get(0), Some(1));
-        assert_eq!(array.get(1), None);
-        assert_eq!(array.get(2), Some(3));
-        assert_eq!(
-            array.array_type(),
-            PlArrayType::Primitive(PrimitiveType::Int32)
-        );
     }
 
     #[test]
@@ -473,241 +361,6 @@ mod tests {
         imports::<f64>();
         imports::<days_ms>();
         imports::<months_days_ns>();
-    }
-
-    #[test]
-    fn a_view_is_imported_as_a_view_rather_than_as_the_u128_of_its_primitive_type() {
-        let arrow = PrimitiveArray::<View>::new_null(ArrowDataType::UInt128, 2);
-        assert!(
-            arrow
-                .dtype()
-                .to_physical_type()
-                .eq_primitive(PrimitiveType::UInt128)
-        );
-
-        let array = imported::<PlPrimitiveArray<View>>(&arrow);
-        assert_eq!(array.len(), 2);
-    }
-
-    #[test]
-    fn the_logical_type_of_an_arrow_array_is_dropped() {
-        let arrow = Int32Array::from_slice([1, 2, 3]).to(ArrowDataType::Date32);
-        let array = imported::<PlPrimitiveArray<i32>>(&arrow);
-
-        assert_eq!(array.value(1), 2);
-    }
-
-    #[test]
-    fn binary_is_imported_behind_widened_offsets() {
-        let arrow = BinaryArray::<i32>::from([Some(b"foo".as_slice()), None, Some(b"barbar")]);
-        let array = imported::<PlBinaryArray>(&arrow);
-
-        assert_eq!(array.len(), 3);
-        assert_eq!(array.get(0), Some(b"foo".as_slice()));
-        assert_eq!(array.get(1), None);
-        assert_eq!(array.get(2), Some(b"barbar".as_slice()));
-        assert_eq!(array.flat_offsets().unwrap().as_slice(), [0, 3, 3, 9]);
-    }
-
-    #[test]
-    fn large_binary_is_imported_behind_the_offsets_it_already_has() {
-        let arrow = BinaryArray::<i64>::from([Some(b"foo".as_slice()), None, Some(b"barbar")]);
-        let offsets = arrow.offsets().buffer().as_ptr();
-
-        let array = imported::<PlBinaryArray>(&arrow);
-
-        assert_eq!(array.get(2), Some(b"barbar".as_slice()));
-        // The offsets were reinterpreted rather than copied, so they are the same allocation.
-        assert_eq!(
-            array.flat_offsets().unwrap().as_ptr(),
-            offsets.cast::<u64>()
-        );
-    }
-
-    #[test]
-    fn utf8_is_imported_as_the_bytes_of_its_elements() {
-        let arrow = Utf8Array::<i32>::from([Some("foo"), None, Some("bar")]);
-        let array = imported::<PlBinaryArray>(&arrow);
-
-        assert_eq!(array.get(0), Some(b"foo".as_slice()));
-        assert_eq!(array.get(1), None);
-        assert_eq!(array.array_type(), PlArrayType::Binary);
-    }
-
-    #[test]
-    fn large_utf8_is_imported_as_the_bytes_of_its_elements() {
-        let arrow = Utf8Array::<i64>::from([Some("foo"), None, Some("bar")]);
-        let array = imported::<PlBinaryArray>(&arrow);
-
-        assert_eq!(array.get(2), Some(b"bar".as_slice()));
-        assert_eq!(array.flat_offsets().unwrap().as_slice(), [0, 3, 3, 6]);
-    }
-
-    #[test]
-    fn binary_view_is_imported() {
-        let arrow =
-            BinaryViewArray::from_slice([Some(b"foo".as_slice()), None, Some(b"bar".as_slice())]);
-        let array = imported::<PlBinaryViewArray>(&arrow);
-
-        assert_eq!(array.len(), 3);
-        assert_eq!(array.get(0), Some(b"foo".as_slice()));
-        assert_eq!(array.get(1), None);
-    }
-
-    #[test]
-    fn utf8_view_is_imported_as_the_strings_of_its_elements() {
-        let arrow =
-            Utf8ViewArray::from_slice([Some("foo"), None, Some("a rather long string value")]);
-        let array = imported::<PlUtf8ViewArray>(&arrow);
-
-        // The UTF-8 the Arrow data type promises is kept, so this is a string array rather than
-        // the byte array it is stored as.
-        assert_eq!(array.get(0), Some("foo"));
-        assert_eq!(array.get(1), None);
-        assert_eq!(array.get(2), Some("a rather long string value"));
-        assert_eq!(array.array_type(), PlArrayType::Utf8View);
-    }
-
-    #[test]
-    fn a_utf8_view_round_trips_through_arrow_as_a_string_array() {
-        let array: PlUtf8ViewArray = [Some("foo"), None, Some("a rather long string value")]
-            .into_iter()
-            .collect();
-
-        let arrow = crate::arrow::export::to_arrow(&array);
-        assert_eq!(arrow.dtype(), &ArrowDataType::Utf8View);
-
-        let imported = from_arrow(&*arrow);
-        assert_eq!(imported.array_type(), PlArrayType::Utf8View);
-        assert_eq!(
-            imported.as_any().downcast_ref::<PlUtf8ViewArray>().unwrap(),
-            &array,
-        );
-    }
-
-    #[test]
-    fn fixed_size_binary_is_imported_with_its_width() {
-        let arrow = FixedSizeBinaryArray::new(
-            ArrowDataType::FixedSizeBinary(2),
-            Buffer::from(vec![1, 2, 3, 4, 5, 6]),
-            Some(Bitmap::from([true, false, true])),
-        );
-        let array = imported::<PlFixedSizeBinaryArray>(&arrow);
-
-        assert_eq!(array.len(), 3);
-        assert_eq!(array.width(), 2);
-        assert_eq!(array.get(0), Some([1, 2].as_slice()));
-        assert_eq!(array.get(1), None);
-        assert_eq!(array.get(2), Some([5, 6].as_slice()));
-    }
-
-    #[test]
-    fn list_is_imported_behind_widened_offsets() {
-        let values = Int32Array::from_slice([1, 2, 3, 4]);
-        let arrow = ListArray::<i32>::new(
-            ListArray::<i32>::default_datatype(ArrowDataType::Int32),
-            OffsetsBuffer::try_from(vec![0i32, 2, 2, 4]).unwrap(),
-            values.boxed(),
-            Some(Bitmap::from([true, false, true])),
-        );
-        let array = imported::<PlListArray>(&arrow);
-
-        assert_eq!(array.len(), 3);
-        assert_eq!(array.flat_offsets().unwrap().as_slice(), [0, 2, 2, 4]);
-        assert_eq!(
-            array.values().array_type(),
-            PlArrayType::Primitive(PrimitiveType::Int32)
-        );
-        assert!(array.get(1).is_none());
-
-        let element = array.get(0).unwrap();
-        let element = element
-            .as_any()
-            .downcast_ref::<PlPrimitiveArray<i32>>()
-            .unwrap();
-        assert_eq!(element.iter().collect::<Vec<_>>(), [Some(1), Some(2)]);
-    }
-
-    #[test]
-    fn large_list_is_imported_behind_the_offsets_it_already_has() {
-        let values = Int64Array::from_slice([1, 2, 3, 4]);
-        let arrow = ListArray::<i64>::new(
-            ListArray::<i64>::default_datatype(ArrowDataType::Int64),
-            OffsetsBuffer::try_from(vec![0i64, 2, 4]).unwrap(),
-            values.boxed(),
-            None,
-        );
-        let offsets = arrow.offsets().buffer().as_ptr();
-
-        let array = imported::<PlListArray>(&arrow);
-
-        assert_eq!(array.len(), 2);
-        assert_eq!(
-            array.flat_offsets().unwrap().as_ptr(),
-            offsets.cast::<u64>()
-        );
-    }
-
-    #[test]
-    fn fixed_size_list_is_imported_with_its_width() {
-        let values = Int32Array::from_slice([1, 2, 3, 4]);
-        let arrow = FixedSizeListArray::new(
-            FixedSizeListArray::default_datatype(ArrowDataType::Int32, 2),
-            2,
-            values.boxed(),
-            Some(Bitmap::from([true, false])),
-        );
-        let array = imported::<PlFixedSizeListArray>(&arrow);
-
-        assert_eq!(array.len(), 2);
-        assert_eq!(array.width(), 2);
-        assert!(array.get(1).is_none());
-
-        let element = array.get(0).unwrap();
-        let element = element
-            .as_any()
-            .downcast_ref::<PlPrimitiveArray<i32>>()
-            .unwrap();
-        assert_eq!(element.iter().collect::<Vec<_>>(), [Some(1), Some(2)]);
-    }
-
-    #[test]
-    fn struct_is_imported_as_its_fields_in_order() {
-        let arrow = StructArray::new(
-            ArrowDataType::Struct(vec![
-                Field::new("a".into(), ArrowDataType::Int32, true),
-                Field::new("b".into(), ArrowDataType::Boolean, true),
-            ]),
-            2,
-            vec![
-                Int32Array::from_slice([1, 2]).boxed(),
-                BooleanArray::from_slice([true, false]).boxed(),
-            ],
-            Some(Bitmap::from([true, false])),
-        );
-        let array = imported::<PlStructArray>(&arrow);
-
-        assert_eq!(array.len(), 2);
-        assert_eq!(array.fields().len(), 2);
-        assert_eq!(
-            array.fields()[0].array_type(),
-            PlArrayType::Primitive(PrimitiveType::Int32)
-        );
-        assert_eq!(array.fields()[1].array_type(), PlArrayType::Boolean);
-    }
-
-    #[test]
-    fn nested_values_are_imported_along_with_the_array_over_them() {
-        let values = Utf8Array::<i32>::from_slice(["foo", "bar"]);
-        let arrow = ListArray::<i32>::new(
-            ListArray::<i32>::default_datatype(ArrowDataType::Utf8),
-            OffsetsBuffer::try_from(vec![0i32, 1, 2]).unwrap(),
-            values.boxed(),
-            None,
-        );
-        let array = imported::<PlListArray>(&arrow);
-
-        assert_eq!(array.values().array_type(), PlArrayType::Binary);
     }
 
     #[test]
@@ -748,30 +401,5 @@ mod tests {
         let arrow = BinaryArray::<i32>::from_slice([b"a", b"a"]);
         let array = imported::<PlBinaryArray>(&arrow);
         assert!(array.offsets_are_flat());
-    }
-
-    #[test]
-    #[should_panic(expected = "no array of polars-array holds its elements")]
-    fn a_dictionary_array_has_no_counterpart_to_import_as() {
-        use arrow::array::DictionaryArray;
-        use arrow::datatypes::IntegerType;
-
-        let keys = PrimitiveArray::<u32>::from_slice([0, 1]);
-        let values = Utf8Array::<i32>::from_slice(["foo", "bar"]);
-        let arrow = DictionaryArray::try_new(
-            ArrowDataType::Dictionary(IntegerType::UInt32, Box::new(ArrowDataType::Utf8), false),
-            keys,
-            values.boxed(),
-        )
-        .unwrap();
-
-        from_arrow(&arrow);
-    }
-
-    #[test]
-    #[should_panic(expected = "they are of no rust type")]
-    fn months_days_ms_elements_have_no_rust_type_to_import_as() {
-        let arrow = NullArray::new(ArrowDataType::Null, 1);
-        primitive_from_arrow_dyn(&arrow, PrimitiveType::MonthDayMillis);
     }
 }

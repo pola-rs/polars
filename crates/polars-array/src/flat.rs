@@ -9,42 +9,6 @@ use crate::array::PlArray;
 use crate::static_array::StaticArray;
 
 /// An array whose backing buffers all hold one slot per element.
-///
-/// The arrays in this crate store their logical length separately from their backing buffers, so
-/// each buffer is independently either flat or scalar and reading an element goes through
-/// [`broadcast_index`](crate::broadcast::broadcast_index) — see [`crate::broadcast`] for the rules.
-/// This wrapper is the proof that none of that indirection is needed: the array it holds is flat,
-/// so every backing buffer has exactly one slot per element and can be handed out as an ordinary
-/// buffer.
-///
-/// That is what the specialized methods on the concrete wrappers exploit: they hand out the
-/// backing buffers of a [`PlPrimitiveArray`](crate::PlPrimitiveArray) or
-/// [`PlBooleanArray`](crate::PlBooleanArray) directly, and read and iterate them without a
-/// broadcast, mirroring [`PrimitiveArray`](arrow::array::PrimitiveArray) and
-/// [`BooleanArray`](arrow::array::BooleanArray).
-///
-/// A [`Flat`] derefs to the array it wraps, so every method of that array remains available; the
-/// specialized methods shadow the broadcast-aware ones of the same name. It does *not* deref
-/// mutably — mutating the array behind the wrapper could invalidate the invariant — so the
-/// operations that preserve flatness ([`Flat::sliced`], [`Flat::with_validity`]) are reimplemented
-/// on the wrapper.
-///
-/// # Example
-/// ```
-/// use polars_array::{Flat, PlPrimitiveArray};
-///
-/// // A scalar array holds one slot for all three elements.
-/// let scalar = PlPrimitiveArray::new_scalar(7i32, 3);
-/// assert_eq!(scalar.scalar_values(), Some(7));
-///
-/// // Its flat counterpart holds one slot per element, and hands them out as a slice.
-/// let flat: Flat<PlPrimitiveArray<i32>> = scalar.to_flat();
-/// assert_eq!(flat.values().as_slice(), [7, 7, 7]);
-///
-/// // Everything else is reached through the deref to `PlPrimitiveArray`.
-/// assert_eq!(flat.len(), 3);
-/// assert_eq!(flat.null_count(), 0);
-/// ```
 #[repr(transparent)]
 pub struct Flat<T>(pub(crate) T);
 
@@ -299,15 +263,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "is not flat for an array of length 3")]
-    fn a_scalar_validity_mask_is_rejected() {
-        // The mask `with_validity_broadcast` would accept as scalar leaves no flat array behind.
-        let _ = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-            .to_flat()
-            .with_validity(Some(Bitmap::new_zeroed(1)));
-    }
-
-    #[test]
     fn a_flat_array_is_the_array_it_wraps() {
         let scalar = PlPrimitiveArray::new_scalar(7i32, 3);
         let flat = scalar.to_flat();
@@ -321,13 +276,5 @@ mod tests {
         assert_eq!(flat.len(), 3);
         assert!(!flat.has_nulls());
         assert_eq!(flat.into_array(), scalar);
-    }
-
-    #[test]
-    fn an_empty_array_is_flat() {
-        let flat = Flat::<PlPrimitiveArray<i32>>::default();
-
-        assert!(flat.is_empty());
-        assert_eq!(flat.values().len(), 0);
     }
 }

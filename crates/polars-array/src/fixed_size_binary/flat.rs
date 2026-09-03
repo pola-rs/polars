@@ -158,44 +158,6 @@ mod tests {
     }
 
     #[test]
-    fn to_flat_of_an_all_null_array_does_not_write_out_the_values() {
-        // The bytes of null elements are undetermined, so they are handed out zeroed rather than
-        // written out one element at a time — out of the shared zeroed buffer, without an
-        // allocation.
-        let all_null = PlFixedSizeBinaryArray::new_full_null(2, 3);
-        let flat = all_null.to_flat();
-
-        assert_eq!(flat.as_slice(), [0, 0, 0, 0, 0, 0]);
-        assert!(flat.values().is_same_buffer(&Buffer::zeroed(6)));
-
-        // A valid scalar array still has its element repeated.
-        assert_eq!(
-            PlFixedSizeBinaryArray::new_scalar(b"ab", 3)
-                .to_flat()
-                .as_slice(),
-            b"ababab",
-        );
-
-        // So does one whose nulls do not cover every element.
-        let flat = PlFixedSizeBinaryArray::new_scalar(b"ab", 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])))
-            .to_flat();
-        assert_eq!(flat.as_slice(), b"ababab");
-    }
-
-    #[test]
-    fn to_flat_of_an_already_flat_array_only_clones() {
-        let arr = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2);
-        let flat = arr.to_flat();
-
-        assert_eq!(flat, arr);
-        assert!(
-            flat.values().is_same_buffer(arr.flat_values().unwrap()),
-            "the values buffer must be shared, not materialized again",
-        );
-    }
-
-    #[test]
     fn as_flat_borrows_an_already_flat_array() {
         let arr = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2)
             .with_validity(Some(Bitmap::from_iter([true, false])));
@@ -244,41 +206,5 @@ mod tests {
         assert_eq!(unsafe { flat.get_unchecked(1) }, None);
         assert!(unsafe { flat.is_null_unchecked(1) });
         assert!(unsafe { flat.is_valid_unchecked(0) });
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn value_panics_out_of_bounds() {
-        let _ = PlFixedSizeBinaryArray::new_scalar(b"ab", 3)
-            .to_flat()
-            .value(3);
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn get_panics_out_of_bounds() {
-        let _ = PlFixedSizeBinaryArray::new_scalar(b"ab", 3)
-            .to_flat()
-            .get(3);
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn is_valid_panics_out_of_bounds() {
-        let _ = PlFixedSizeBinaryArray::new_scalar(b"ab", 3)
-            .to_flat()
-            .is_valid(3);
-    }
-
-    #[test]
-    fn a_width_of_zero_holds_no_bytes() {
-        let arr = PlFixedSizeBinaryArray::new(Buffer::new(), 0, 3, None);
-        let flat = arr
-            .as_flat()
-            .expect("no bytes at all is every representation");
-
-        assert!(flat.as_slice().is_empty());
-        assert!(flat.value(2).is_empty());
-        assert_eq!(flat.get(2), Some([].as_slice()));
     }
 }

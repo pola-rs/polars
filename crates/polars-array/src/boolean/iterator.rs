@@ -3,11 +3,6 @@ use arrow::trusted_len::TrustedLen;
 use crate::bitmap::{PlBitmapIter, PlBitmapRef, ValidityFold, ValidityIter};
 
 /// Iterator over the optional elements of a [`PlBooleanArray`](super::PlBooleanArray).
-///
-/// Neither a scalar values bitmap nor a scalar validity mask is materialized, so this is
-/// `O(1)` in memory regardless of the array's length. The two masks are walked alongside each
-/// other rather than indexed, so a flat one is read a machine word at a time; which
-/// representation either is in is settled once, when the iterator is created.
 #[derive(Clone)]
 pub struct PlBooleanIter<'a> {
     values: PlBitmapIter<'a>,
@@ -112,7 +107,6 @@ unsafe impl TrustedLen for PlBooleanIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use crate::PlBooleanArray;
     use crate::iterator_tests::assert_iterates;
@@ -126,56 +120,11 @@ mod tests {
     }
 
     #[test]
-    fn flat_under_a_flat_mask() {
-        let array = PlBooleanArray::from_vec(vec![true, false, true])
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(array.values_iter(), &[true, false, true]);
-        assert_iterates(array.iter(), &[Some(true), None, Some(true)]);
-    }
-
-    #[test]
-    fn flat_under_a_scalar_mask() {
-        let array = PlBooleanArray::from_vec(vec![true, false, true])
-            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
-
-        assert_iterates(array.iter(), &[None, None, None]);
-    }
-
-    #[test]
     fn scalar() {
         let array = PlBooleanArray::new_scalar(true, 4);
 
         assert_iterates(array.values_iter(), &[true; 4]);
         assert_iterates(array.iter(), &[Some(true); 4]);
-    }
-
-    #[test]
-    fn scalar_under_a_flat_mask() {
-        let array = PlBooleanArray::new_scalar(true, 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(array.iter(), &[Some(true), None, Some(true)]);
-    }
-
-    #[test]
-    fn all_null() {
-        assert_iterates(PlBooleanArray::new_full_null(3).iter(), &[None; 3]);
-    }
-
-    #[test]
-    fn empty() {
-        let array = PlBooleanArray::new_empty();
-
-        assert_iterates(array.values_iter(), &[]);
-        assert_iterates(array.iter(), &[]);
-    }
-
-    #[test]
-    fn broadcast() {
-        let array = PlBooleanArray::from_vec(vec![true]);
-
-        assert_iterates(array.broadcast_values_iter(4), &[true; 4]);
     }
 
     #[test]

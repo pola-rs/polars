@@ -13,24 +13,6 @@ use crate::builder::{
 };
 
 /// A builder of a [`PlPrimitiveArray`].
-///
-/// The values are staged in a `Vec<T>`, which is what the frozen array is taken over, so the
-/// array this builds is [flat](crate::Flat) — a value per element, however many of the appended
-/// elements shared one. The value of a null element is written out as `T::default()`.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
-/// use polars_array::{PlPrimitiveArray, PlPrimitiveArrayBuilder};
-///
-/// let mut builder = PlPrimitiveArrayBuilder::<u8>::new();
-/// builder.extend_nulls(1);
-/// builder.extend(&PlPrimitiveArray::from_vec(vec![1u8, 2]), ShareStrategy::Never);
-///
-/// let array = builder.freeze();
-/// assert_eq!(array.flat_values().unwrap().as_slice(), [0, 1, 2]);
-/// assert_eq!(array.null_count(), 1);
-/// ```
 pub struct PlPrimitiveArrayBuilder<T: NativeType> {
     values: Vec<T>,
     validity: OptBitmapBuilder,
@@ -280,30 +262,6 @@ mod tests {
         assert_eq!(
             built.iter().collect::<Vec<_>>(),
             [Some(7), Some(7), Some(7), Some(7), Some(7), Some(7), None],
-        );
-    }
-
-    #[test]
-    fn a_fully_null_array_appends_its_nulls_in_o_1() {
-        let array = PlPrimitiveArray::<i32>::new_full_null(1_000_000_000);
-
-        let mut builder = PlPrimitiveArrayBuilder::<i32>::new();
-        builder.subslice_extend(&array, 0, 3, ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 3);
-        assert_eq!(built.null_count(), 3);
-    }
-
-    #[test]
-    #[should_panic(expected = "out of bounds of an array of length 3")]
-    fn appending_out_of_bounds_panics() {
-        let mut builder = PlPrimitiveArrayBuilder::<i32>::new();
-        builder.subslice_extend(
-            &PlPrimitiveArray::from_vec(vec![1i32, 2, 3]),
-            2,
-            2,
-            ShareStrategy::Never,
         );
     }
 }

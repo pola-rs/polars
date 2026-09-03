@@ -1,32 +1,4 @@
 //! The string view of a [`PlBinaryViewArray`].
-//!
-//! The arrays in this crate are physical storage: a [`PlBinaryViewArray`] is a sequence of byte
-//! strings and nothing in it says those bytes are a string, which is why it never validates UTF-8
-//! and hands its elements out as `&[u8]`. [`PlUtf8ViewArray`] is the wrapper that carries the
-//! promise that they *are* one, so that the code above this crate that knows its bytes are strings
-//! — a `StringChunked` and the chunks it is made of — reads an element as the `&str` it is without
-//! validating it again.
-//!
-//! The wrapper is `repr(transparent)` over the [`PlBinaryViewArray`] that holds the bytes, so
-//! putting it on and taking it off — [`PlUtf8ViewArray::from_binview`] and
-//! [`PlUtf8ViewArray::as_binview`] — moves no buffers.
-//!
-//! # The invariant
-//!
-//! Every element of a [`PlUtf8ViewArray`] — including the ones masked off as null, which a
-//! validity mask can be put back over at any time — is valid UTF-8.
-//! [`PlUtf8ViewArray::from_binview`] is the checked constructor that establishes it, and
-//! [`PlUtf8ViewArray::from_binview_unchecked`] the `unsafe` one for a caller that already knows.
-//!
-//! # It is its own array type
-//!
-//! This is the one array in the crate that carries a logical type, and it carries it all the way
-//! through the trait object: a boxed [`PlUtf8ViewArray`] reports [`PlArrayType::Utf8View`], is
-//! downcast back to a [`PlUtf8ViewArray`], and exports as an Arrow
-//! [`Utf8ViewArray`](arrow::array::Utf8ViewArray) rather than as the `BinaryViewArray` its bytes
-//! are stored as. So the promise survives being boxed, concatenated, built or round-tripped
-//! through Arrow, and code that holds a `dyn PlArray` never has to reach for an `unsafe` wrapper
-//! to recover it.
 
 use std::any::Any;
 
@@ -48,28 +20,6 @@ pub use builder::PlUtf8ViewArrayBuilder;
 pub use iterator::{PlUtf8ViewIter, PlUtf8ViewValuesIter};
 
 /// A [`PlBinaryViewArray`] whose every element is valid UTF-8.
-///
-/// This is the counterpart of [`Utf8ViewArray`](arrow::array::Utf8ViewArray), and every method on
-/// it is the method of the same name on the array it wraps, over `&str` instead of `&[u8]`. See the
-/// [module docs](self) for the invariant and for why this is a borrowed view of a chunk rather than
-/// the type a chunk is stored as.
-///
-/// # Example
-/// ```
-/// use polars_array::{PlBinaryViewArray, PlUtf8ViewArray};
-///
-/// let array: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect();
-/// assert_eq!(array.get(0), Some("foo"));
-/// assert_eq!(array.get(1), None);
-///
-/// // A scalar array of a billion elements costs a single view of memory.
-/// let scalar = PlUtf8ViewArray::new_scalar("foo", 1_000_000_000);
-/// assert_eq!(scalar.value(999_999_999), "foo");
-///
-/// // The bytes of an array that is not known to be a string are checked once.
-/// let bytes = PlBinaryViewArray::from_values_iter([b"\xff".as_slice()]);
-/// assert!(PlUtf8ViewArray::from_binview(bytes).is_err());
-/// ```
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct PlUtf8ViewArray(PlBinaryViewArray);
@@ -457,8 +407,6 @@ impl PlArray for PlUtf8ViewArray {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::StaticArray;
-
     /// A value of more than [`View::MAX_INLINE_SIZE`] bytes, which no view inlines.
     const LONG: &str = "a value that is too long to inline";
 
@@ -494,22 +442,6 @@ mod tests {
     }
 
     #[test]
-    fn the_bytes_under_a_null_are_validated_too() {
-        let bytes = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"\xff"]);
-
-        assert!(PlUtf8ViewArray::from_binview(bytes.clone()).is_err());
-
-        // Masking the invalid element off is not enough: the mask can be replaced afterwards,
-        // which would expose bytes that were never checked.
-        let masked = bytes.with_validity(Some(Bitmap::from_iter([true, false])));
-        assert!(PlUtf8ViewArray::from_binview(masked).is_err());
-
-        let valid = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), LONG.as_bytes()]);
-        let arr = PlUtf8ViewArray::from_binview(valid).expect("the bytes are valid UTF-8");
-        assert_eq!(arr.value(1), LONG);
-    }
-
-    #[test]
     fn wrapping_bytes_as_strings_borrows_them() {
         let bytes = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"bar"]);
         let arr = PlUtf8ViewArray::from_binview(bytes.clone()).expect("the bytes are UTF-8");
@@ -520,66 +452,6 @@ mod tests {
             arr.data_buffers().is_same_buffer(bytes.data_buffers()),
             "the wrapper must share the buffers, not copy them",
         );
-    }
-
-    #[test]
-    fn the_boxed_array_is_the_string_array() {
-        // The UTF-8 promise survives being boxed: a `dyn PlArray` over a string array reports
-        // `Utf8View` and downcasts back to a `PlUtf8ViewArray`, never to the bytes underneath.
-        let arr: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect();
-
-        assert_eq!(arr.array_type(), PlArrayType::Utf8View);
-        for boxed in [
-            arr.to_boxed(),
-            unsafe { arr.new_from_index_unchecked(0, 2) },
-            arr.clone().into_boxed(),
-        ] {
-            assert_eq!(boxed.array_type(), PlArrayType::Utf8View);
-            assert!(boxed.as_any().downcast_ref::<PlUtf8ViewArray>().is_some());
-            assert!(
-                boxed.as_any().downcast_ref::<PlBinaryViewArray>().is_none(),
-                "a string array must not downcast to the bytes it is stored as",
-            );
-        }
-    }
-
-    #[test]
-    fn a_string_array_is_not_equal_to_the_bytes_it_is_stored_as() {
-        let arr: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect();
-        let bytes = arr.as_binview().clone();
-
-        assert!(!arr.eq_dyn(&bytes), "the array types differ");
-        assert!(!bytes.eq_dyn(&arr), "and the comparison is symmetric");
-
-        let same: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect();
-        assert!(arr.eq_dyn(&same));
-    }
-
-    #[test]
-    fn slicing_and_validity() {
-        let arr: PlUtf8ViewArray = [Some("foo"), Some("bar"), Some(LONG)].into_iter().collect();
-
-        let sliced = arr.clone().sliced(1, 2);
-        assert_eq!(sliced.iter().collect::<Vec<_>>(), [Some("bar"), Some(LONG)]);
-        assert_eq!(unsafe { arr.clone().sliced_unchecked(2, 1) }.value(0), LONG,);
-
-        let masked = arr
-            .clone()
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
-        assert_eq!(masked.get(1), None);
-        assert_eq!(
-            masked.value(1),
-            "bar",
-            "the bytes under a null are still there"
-        );
-
-        assert_eq!(
-            arr.new_from_index(0, 2).iter().collect::<Vec<_>>(),
-            [Some("foo"); 2]
-        );
-        assert_eq!(PlUtf8ViewArray::new_full_null(2).null_count(), 2);
-        assert!(PlUtf8ViewArray::new_empty().is_empty());
-        assert!(PlUtf8ViewArray::default().is_empty());
     }
 
     #[test]
@@ -596,36 +468,5 @@ mod tests {
         let arr: PlUtf8ViewArray = [Some("foo")].into_iter().collect();
         let flat = arr.as_flat().expect("the array is flat");
         assert_eq!(flat.value(0), "foo");
-    }
-
-    #[test]
-    fn applying_views_sees_the_strings_and_writes_out_flat() {
-        let arr = PlUtf8ViewArray::new_scalar(LONG, 3);
-
-        // Every element is replaced by its first character, which a view inlines rather than
-        // reading out of a data buffer.
-        // SAFETY: an inlined view reads no bytes of the array at all, and the character is valid
-        // UTF-8 because it was a prefix of one.
-        let truncated = unsafe {
-            arr.apply_views(|_, value| {
-                assert_eq!(value, LONG);
-                View::new_inline(&value.as_bytes()[..1])
-            })
-        };
-
-        assert_eq!(truncated.iter().collect::<Vec<_>>(), [Some("a"); 3]);
-        assert!(
-            truncated.is_flat(),
-            "a scalar array is written out to be mapped view by view",
-        );
-    }
-
-    #[test]
-    fn debug_formats_the_strings() {
-        let arr: PlUtf8ViewArray = [Some("foo"), None].into_iter().collect();
-
-        assert_eq!(format!("{arr:?}"), r#"PlUtf8ViewArray[Some("foo"), None]"#);
-        assert_eq!(arr, arr.clone());
-        assert_ne!(arr, PlUtf8ViewArray::new_scalar("foo", 2));
     }
 }

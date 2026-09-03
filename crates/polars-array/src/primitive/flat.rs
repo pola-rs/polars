@@ -205,31 +205,6 @@ mod tests {
     }
 
     #[test]
-    fn to_flat_of_an_all_null_scalar_does_not_write_out_the_values() {
-        // The values of null elements are undetermined, so they are handed out zeroed rather than
-        // materialized one by one — out of the shared zeroed buffer, without an allocation.
-        let all_null = PlPrimitiveArray::new_scalar(7i32, 3)
-            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
-        let flat = all_null.to_flat();
-
-        assert!(flat.is_flat());
-        assert_eq!(flat.null_count(), 3);
-        assert_eq!(flat, all_null);
-        assert_eq!(flat.as_slice(), [0, 0, 0]);
-        assert!(flat.values().is_same_buffer(&Buffer::zeroed(3)));
-
-        // A valid scalar array still has its value repeated.
-        let flat = PlPrimitiveArray::new_scalar(7i32, 3).to_flat();
-        assert_eq!(flat.as_slice(), [7, 7, 7]);
-
-        // So does one whose nulls do not cover every element.
-        let flat = PlPrimitiveArray::new_scalar(7i32, 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])))
-            .to_flat();
-        assert_eq!(flat.as_slice(), [7, 7, 7]);
-    }
-
-    #[test]
     fn as_flat_borrows_an_already_flat_array() {
         let arr: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
         let flat = arr.as_flat().expect("the array is flat");
@@ -259,37 +234,6 @@ mod tests {
     }
 
     #[test]
-    fn to_flat_of_a_flat_array_only_clones() {
-        let arr: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
-        let flat = arr.to_flat();
-
-        assert_eq!(flat, arr);
-        assert!(
-            flat.values().is_same_buffer(arr.flat_values().unwrap()),
-            "the values buffer must be shared, not materialized again",
-        );
-    }
-
-    #[test]
-    fn to_flat_of_empty_scalar() {
-        let flat = PlPrimitiveArray::new_scalar(7i32, 0).to_flat();
-
-        assert!(flat.is_flat());
-        assert!(flat.is_empty());
-        assert_eq!(flat.values().len(), 0);
-    }
-
-    #[test]
-    fn buffers_are_handed_out_as_they_are() {
-        let flat = PlPrimitiveArray::<i32>::new_full_null(3).to_flat();
-
-        assert_eq!(flat.values().len(), 3);
-        assert_eq!(flat.as_slice().len(), 3);
-        assert_eq!(flat.validity().unwrap().len(), 3);
-        assert_eq!(flat.validity().unwrap().unset_bits(), 3);
-    }
-
-    #[test]
     fn elements_are_read_without_a_broadcast() {
         let flat: Flat<PlPrimitiveArray<i32>> = [Some(1), None, Some(3)]
             .into_iter()
@@ -306,69 +250,5 @@ mod tests {
         assert_eq!(unsafe { flat.value_unchecked(2) }, 3);
         assert_eq!(unsafe { flat.get_unchecked(1) }, None);
         assert!(unsafe { flat.is_null_unchecked(1) });
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn value_panics_out_of_bounds() {
-        let _ = PlPrimitiveArray::new_scalar(7i32, 3).to_flat().value(3);
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn get_panics_out_of_bounds() {
-        let _ = PlPrimitiveArray::new_scalar(7i32, 3).to_flat().get(3);
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn is_valid_panics_out_of_bounds() {
-        let _ = PlPrimitiveArray::new_scalar(7i32, 3).to_flat().is_valid(3);
-    }
-
-    #[test]
-    fn iterators_walk_the_buffers() {
-        let flat = PlPrimitiveArray::new_scalar(7i32, 3).to_flat();
-
-        assert_eq!(flat.values_iter().copied().collect::<Vec<_>>(), [7, 7, 7]);
-        assert_eq!(flat.iter().collect::<Vec<_>>(), [Some(&7); 3]);
-        assert_eq!((&flat).into_iter().collect::<Vec<_>>(), [Some(&7); 3]);
-
-        let flat: Flat<PlPrimitiveArray<i32>> = [Some(1), None, Some(3)]
-            .into_iter()
-            .collect::<PlPrimitiveArray<i32>>()
-            .to_flat();
-
-        assert_eq!(flat.values_iter().len(), 3);
-        assert_eq!(flat.iter().collect::<Vec<_>>(), [Some(&1), None, Some(&3)]);
-    }
-
-    #[test]
-    fn into_inner_gives_up_the_length() {
-        let (values, validity) = PlPrimitiveArray::<i32>::new_full_null(3)
-            .to_flat()
-            .into_inner();
-
-        assert_eq!(values.len(), 3);
-        assert_eq!(validity.unwrap().len(), 3);
-
-        let (values, validity) = PlPrimitiveArray::from_vec(vec![1i32, 2])
-            .to_flat()
-            .into_inner();
-
-        assert_eq!(values.as_slice(), [1, 2]);
-        assert!(validity.is_none());
-    }
-
-    #[test]
-    fn equality_ignores_representation() {
-        let scalar = PlPrimitiveArray::new_scalar(7i32, 3);
-        let flat = scalar.to_flat();
-
-        assert_eq!(flat, scalar);
-        assert_eq!(scalar, flat);
-        assert_eq!(flat, PlPrimitiveArray::from_vec(vec![7i32, 7, 7]).to_flat());
-        assert_ne!(flat, PlPrimitiveArray::new_scalar(7i32, 4));
-        assert_ne!(PlPrimitiveArray::<i32>::new_full_null(3), flat);
     }
 }

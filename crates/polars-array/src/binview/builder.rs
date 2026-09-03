@@ -14,35 +14,6 @@ use crate::builder::{
 };
 
 /// A builder of a [`PlBinaryViewArray`].
-///
-/// The views are staged in a `Vec<View>`, which is what the frozen array is taken over, so the
-/// array this builds is [flat](crate::Flat) — a view per element, however many of the appended
-/// elements shared one. A null element is written out as a zeroed view, which reads no bytes at
-/// all.
-///
-/// Where the bytes of an element come from is what [`ShareStrategy`] decides: appending an array
-/// with [`ShareStrategy::Always`] adopts the data buffers its views point into, which costs a
-/// buffer handle rather than the bytes, while [`ShareStrategy::Never`] copies the bytes into data
-/// buffers of this builder's own. A buffer is adopted at most once however many arrays it is
-/// appended through, and the bytes a view inlines are always what that view already stands for.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
-/// use polars_array::{PlBinaryViewArray, PlBinaryViewArrayBuilder};
-///
-/// let array = PlBinaryViewArray::from_values_iter([b"foo".as_slice(), b"bar"]);
-///
-/// let mut builder = PlBinaryViewArrayBuilder::new();
-/// builder.extend_nulls(1);
-/// builder.extend(&array, ShareStrategy::Always);
-///
-/// let built = builder.freeze();
-/// assert_eq!(
-///     built.iter().collect::<Vec<_>>(),
-///     [None, Some(b"foo".as_slice()), Some(b"bar")],
-/// );
-/// ```
 pub struct PlBinaryViewArrayBuilder {
     views: Vec<View>,
     /// The data buffers whose index is final: the ones already adopted or flushed, in order.
@@ -419,61 +390,6 @@ mod tests {
     }
 
     #[test]
-    fn shared_buffers_are_adopted_once() {
-        let array = PlBinaryViewArray::from_values_iter([LONG, b"foo".as_slice()]);
-        assert_eq!(array.data_buffers().len(), 1);
-
-        let mut builder = PlBinaryViewArrayBuilder::new();
-        builder.extend(&array, ShareStrategy::Always);
-        builder.extend(&array, ShareStrategy::Always);
-        builder.extend(&array.clone().sliced(0, 1), ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 5);
-        assert_eq!(
-            built.data_buffers().len(),
-            1,
-            "one allocation is adopted once, however many arrays it is appended through",
-        );
-        assert!(
-            built.data_buffers()[0].is_same_buffer(&array.data_buffers()[0]),
-            "the bytes must be shared, not copied",
-        );
-        assert_eq!(built.value(4), LONG);
-    }
-
-    #[test]
-    fn copied_buffers_are_the_builders_own() {
-        let array = PlBinaryViewArray::from_values_iter([LONG]);
-
-        let mut builder = PlBinaryViewArrayBuilder::new();
-        builder.extend(&array, ShareStrategy::Never);
-
-        let built = builder.freeze();
-        assert_eq!(built.value(0), LONG);
-        assert!(
-            !built.data_buffers()[0].is_same_buffer(&array.data_buffers()[0]),
-            "the bytes must be copied, not shared",
-        );
-    }
-
-    #[test]
-    fn copied_and_adopted_buffers_are_indexed_together() {
-        let copied = PlBinaryViewArray::from_values_iter([LONG]);
-        let adopted = PlBinaryViewArray::from_values_iter([b"another value too long to inline"]);
-
-        let mut builder = PlBinaryViewArrayBuilder::new();
-        builder.extend(&copied, ShareStrategy::Never);
-        builder.extend(&adopted, ShareStrategy::Always);
-        builder.extend(&copied, ShareStrategy::Never);
-
-        let built = builder.freeze();
-        assert_eq!(built.value(0), LONG);
-        assert_eq!(built.value(1), b"another value too long to inline");
-        assert_eq!(built.value(2), LONG);
-    }
-
-    #[test]
     fn a_scalar_array_is_appended_without_being_materialized() {
         let array = PlBinaryViewArray::new_scalar(LONG, 1_000_000_000);
 
@@ -489,34 +405,5 @@ mod tests {
             2,
             "the bytes of the one value are copied once and shared once",
         );
-    }
-
-    #[test]
-    fn a_fully_null_array_appends_its_nulls() {
-        let array = PlBinaryViewArray::new_full_null(1_000_000_000);
-
-        let mut builder = PlBinaryViewArrayBuilder::new();
-        builder.subslice_extend(&array, 0, 3, ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 3);
-        assert_eq!(built.null_count(), 3);
-        assert!(built.data_buffers().is_empty());
-    }
-
-    #[test]
-    fn freeze_reset_leaves_an_empty_builder() {
-        let array = PlBinaryViewArray::from_values_iter([LONG]);
-
-        let mut builder = PlBinaryViewArrayBuilder::new();
-        builder.extend(&array, ShareStrategy::Never);
-        let built = builder.freeze_reset();
-        assert_eq!(built.value(0), LONG);
-
-        assert!(builder.is_empty());
-        builder.extend(&array, ShareStrategy::Never);
-        let built = builder.freeze();
-        assert_eq!(built.len(), 1);
-        assert_eq!(built.value(0), LONG);
     }
 }

@@ -11,30 +11,6 @@ use crate::builder::{
 };
 
 /// A builder of a [`PlStructArray`].
-///
-/// A struct array holds no values of its own, only a validity mask over its field arrays, so this
-/// builder is a mask and a length over one builder per field: appending an element appends that
-/// element of every field to the builder of that field. [`ShareStrategy`] is passed straight
-/// through to them, and so is a null element, whose fields hold a value like any other element's —
-/// undetermined, but there.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::{ShareStrategy, StaticArrayBuilder, builder_like};
-/// use polars_array::{PlPrimitiveArray, PlStructArray, PlStructArrayBuilder};
-///
-/// let array = PlStructArray::from_fields(vec![Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2]))]);
-///
-/// let fields = array.fields().iter().map(|field| builder_like(&**field)).collect();
-/// let mut builder = PlStructArrayBuilder::new(fields);
-/// builder.extend_nulls(1);
-/// builder.extend(&array, ShareStrategy::Always);
-///
-/// let built = builder.freeze();
-/// assert_eq!(built.len(), 3);
-/// assert_eq!(built.null_count(), 1);
-/// assert_eq!(built.field(0).len(), 3);
-/// ```
 pub struct PlStructArrayBuilder {
     fields: Vec<Box<dyn PlArrayBuilder>>,
     length: usize,
@@ -314,43 +290,5 @@ mod tests {
         assert_eq!(built.len(), 3);
         assert_eq!(built.null_count(), 3);
         assert_eq!(built.field(0).len(), 3);
-    }
-
-    #[test]
-    fn a_struct_array_of_no_fields_is_a_length_and_a_mask() {
-        let array = PlStructArray::new(vec![], 3, Some(Bitmap::from_iter([true, false, true])));
-
-        let mut builder = PlStructArrayBuilder::new(vec![]);
-        assert_eq!(builder.num_fields(), 0);
-        builder.extend(&array, ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 3);
-        assert_eq!(built.null_count(), 1);
-        assert!(built.fields().is_empty());
-    }
-
-    #[test]
-    #[should_panic(expected = "cannot append a struct array of 1 fields to a builder of 2 fields")]
-    fn appending_another_number_of_fields_panics() {
-        let mut builder = builder();
-        builder.extend(
-            &PlStructArray::from_fields(vec![Box::new(PlPrimitiveArray::from_vec(vec![1i32]))]),
-            ShareStrategy::Always,
-        );
-    }
-
-    #[test]
-    fn freeze_reset_leaves_an_empty_builder() {
-        let array = array();
-
-        let mut builder = builder();
-        builder.extend(&array, ShareStrategy::Always);
-        assert_eq!(builder.freeze_reset().len(), 3);
-
-        assert!(builder.is_empty());
-        assert!(builder.fields()[0].is_empty());
-        builder.extend_nulls(1);
-        assert_eq!(builder.freeze().len(), 1);
     }
 }

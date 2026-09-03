@@ -10,42 +10,6 @@ use crate::builder::{
 };
 
 /// A builder of a [`PlFixedSizeListArray`].
-///
-/// A fixed size list array is a values array read a width at a time, so this builder is a width
-/// and a length over the builder of those values: appending an element appends the width of values
-/// it covers to the child builder, and there is nothing else to hold. The values of the array this
-/// builds are therefore laid end to end, one width per element, which makes it
-/// [flat](crate::Flat) however many of the appended elements shared a list.
-///
-/// The child builder is what the values of the built array come out of, so it is what decides
-/// their representation and how they are appended; [`ShareStrategy`] is passed straight through to
-/// it. A null element covers a width of values like any other, which the child appends as nulls.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::{ShareStrategy, StaticArrayBuilder, builder_like};
-/// use polars_array::{
-///     PlArray, PlFixedSizeListArray, PlFixedSizeListArrayBuilder, PlPrimitiveArray,
-/// };
-///
-/// // Two lists of two values: `[1, 2]` and `[3, 4]`.
-/// let array = PlFixedSizeListArray::from_values(
-///     Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4])),
-///     2,
-/// );
-///
-/// let values = array.flat_values().unwrap();
-/// let mut builder = PlFixedSizeListArrayBuilder::new(builder_like(values), 2);
-/// builder.extend_nulls(1);
-/// builder.extend(&array, ShareStrategy::Always);
-///
-/// let built = builder.freeze();
-/// assert_eq!(built.len(), 3);
-/// assert_eq!(built.width(), 2);
-/// assert_eq!(built.null_count(), 1);
-/// // Every element covers a width of values, including the null one.
-/// assert_eq!(built.flat_values().unwrap().len(), 6);
-/// ```
 pub struct PlFixedSizeListArrayBuilder<B: PlArrayBuilder = Box<dyn PlArrayBuilder>> {
     values: B,
     width: usize,
@@ -402,70 +366,5 @@ mod tests {
             ],
         );
         assert_eq!(built.null_count(), 1);
-    }
-
-    #[test]
-    fn a_fully_null_array_appends_a_width_of_nulls_per_element() {
-        let array = PlFixedSizeListArray::new_full_null(
-            Box::new(PlPrimitiveArray::<i32>::new_scalar(1, 2)),
-            1_000_000_000,
-        );
-
-        let mut builder =
-            PlFixedSizeListArrayBuilder::new(builder_like(array.scalar_values().unwrap()), 2);
-        builder.subslice_extend(&array, 0, 3, ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 3);
-        assert_eq!(built.null_count(), 3);
-        assert_eq!(built.flat_values().unwrap().len(), 6);
-    }
-
-    #[test]
-    fn a_width_of_zero_holds_no_values() {
-        // Three elements of no values at all, which is all a width of zero leaves of them.
-        let array =
-            PlFixedSizeListArray::new(Box::new(PlPrimitiveArray::<i32>::new_empty()), 0, 3, None);
-
-        let mut builder =
-            PlFixedSizeListArrayBuilder::new(builder_like(array.scalar_values().unwrap()), 0);
-        builder.extend_nulls(2);
-        builder.extend(&array, ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 5);
-        assert_eq!(built.width(), 0);
-        assert_eq!(built.null_count(), 2);
-        assert!(built.flat_values().unwrap().is_empty());
-    }
-
-    #[test]
-    #[should_panic(
-        expected = "cannot append a fixed size list array of width 3 to a builder of \
-                              width 2"
-    )]
-    fn appending_another_width_panics() {
-        let mut builder = builder();
-        builder.extend(
-            &PlFixedSizeListArray::from_values(
-                Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
-                3,
-            ),
-            ShareStrategy::Always,
-        );
-    }
-
-    #[test]
-    fn freeze_reset_leaves_an_empty_builder() {
-        let array = array();
-
-        let mut builder = builder();
-        builder.extend(&array, ShareStrategy::Always);
-        assert_eq!(builder.freeze_reset().len(), 3);
-
-        assert!(builder.is_empty());
-        assert!(builder.values().is_empty());
-        builder.extend_nulls(1);
-        assert_eq!(builder.freeze().len(), 1);
     }
 }

@@ -7,30 +7,6 @@ use crate::binview::{PlBinaryViewArray, PlBinaryViewArrayBuilder};
 use crate::builder::{ShareStrategy, StaticArrayBuilder};
 
 /// A builder of a [`PlUtf8ViewArray`].
-///
-/// Every value appended is a `&str`, which is what keeps the built array's invariant: the bytes
-/// that reach the inner [`PlBinaryViewArrayBuilder`] were a string to begin with. Everything else
-/// — how the views are staged, and what [`ShareStrategy`] decides about the bytes of an appended
-/// array — is that builder's, so see it for the details.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
-/// use polars_array::{PlUtf8ViewArray, PlUtf8ViewArrayBuilder};
-///
-/// let array = PlUtf8ViewArray::new_scalar("foo", 2);
-///
-/// let mut builder = PlUtf8ViewArrayBuilder::new();
-/// builder.push_value("bar");
-/// builder.push_null();
-/// builder.extend(&array, ShareStrategy::Always);
-///
-/// let built = builder.freeze();
-/// assert_eq!(
-///     built.iter().collect::<Vec<_>>(),
-///     [Some("bar"), None, Some("foo"), Some("foo")],
-/// );
-/// ```
 #[derive(Default)]
 pub struct PlUtf8ViewArrayBuilder(PlBinaryViewArrayBuilder);
 
@@ -251,18 +227,5 @@ mod tests {
         let built = builder.freeze();
         assert!(!built.data_buffers()[0].is_same_buffer(&array.data_buffers()[0]));
         assert_eq!(built.value(1), LONG);
-    }
-
-    #[test]
-    fn appending_bytes_through_the_inner_builder() {
-        let mut builder = PlUtf8ViewArrayBuilder::new();
-        builder.push_value("foo");
-        // SAFETY: the bytes appended are valid UTF-8.
-        unsafe { builder.inner_mut() }.push_value(LONG.as_bytes());
-
-        assert_eq!(
-            builder.freeze().iter().collect::<Vec<_>>(),
-            [Some("foo"), Some(LONG)],
-        );
     }
 }

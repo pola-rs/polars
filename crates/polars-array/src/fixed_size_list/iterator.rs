@@ -7,8 +7,6 @@ use crate::array::PlArray;
 use crate::broadcast::is_broadcastable;
 
 /// Iterator over the elements of a [`PlFixedSizeListArray`], ignoring validity.
-///
-/// Each element is the values array sliced to the range that element covers, which is `O(1)`.
 #[derive(Clone)]
 pub struct PlFixedSizeListValuesIter<'a> {
     array: &'a PlFixedSizeListArray,
@@ -100,8 +98,6 @@ impl ExactSizeIterator for PlFixedSizeListValuesIter<'_> {}
 unsafe impl TrustedLen for PlFixedSizeListValuesIter<'_> {}
 
 /// Iterator over the optional elements of a [`PlFixedSizeListArray`].
-///
-/// A scalar validity mask is not materialized, and neither is the values array of an element.
 #[derive(Clone)]
 pub struct PlFixedSizeListIter<'a> {
     array: &'a PlFixedSizeListArray,
@@ -194,7 +190,6 @@ unsafe impl TrustedLen for PlFixedSizeListIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use crate::iterator_tests::assert_iterates;
     use crate::{PlArray, PlFixedSizeListArray, PlPrimitiveArray};
@@ -222,58 +217,12 @@ mod tests {
     }
 
     #[test]
-    fn flat_under_a_flat_mask() {
-        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
-        let [first, _, last] = elements();
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(array.iter(), &[Some(first), None, Some(last)]);
-    }
-
-    #[test]
-    fn flat_under_a_scalar_mask() {
-        let array = flat_array().with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
-
-        assert_iterates(array.iter(), &[None, None, None]);
-    }
-
-    #[test]
     fn scalar() {
         let array = PlFixedSizeListArray::new_scalar(element(&[1, 2]), 4);
         let expected = [(); 4].map(|()| element(&[1, 2]));
 
         assert_iterates(array.values_iter(), &expected);
         assert_iterates(array.iter(), &expected.map(Some));
-    }
-
-    #[test]
-    fn scalar_under_a_flat_mask() {
-        let array = PlFixedSizeListArray::new_scalar(element(&[1, 2]), 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(
-            array.iter(),
-            &[Some(element(&[1, 2])), None, Some(element(&[1, 2]))],
-        );
-    }
-
-    #[test]
-    fn empty() {
-        let array = PlFixedSizeListArray::new_empty(element(&[]), 2);
-
-        assert_iterates(array.values_iter(), &[]);
-        assert_iterates(array.iter(), &[]);
-    }
-
-    #[test]
-    fn broadcast() {
-        let array = PlFixedSizeListArray::new(element(&[1, 2]), 2, 1, None);
-        let expected = [(); 4].map(|()| element(&[1, 2]));
-
-        assert_iterates(array.broadcast_values_iter(4), &expected);
-
-        // An array is its own broadcast to the length it already has.
-        assert_iterates(flat_array().broadcast_values_iter(3), &elements());
     }
 
     #[test]

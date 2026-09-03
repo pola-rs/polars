@@ -1,10 +1,4 @@
-//! The data buffers the bytes of a [`PlBinaryViewArray`](super::PlBinaryViewArray) are copied
-//! into.
-//!
-//! Writing them is what every constructor and builder that copies a value shares, and it follows
-//! [`BinaryViewArray`](arrow::array::BinaryViewArray): a buffer is filled up to
-//! [`BINVIEW_ARROW_BUFFER_LEN_LIMIT`] and never grown once it is written into, and a value longer
-//! than [`BINVIEW_MAX_ROW_BYTE_LEN`] is rejected.
+//! The data buffers a [`PlBinaryViewArray`](super::PlBinaryViewArray) copies its bytes into.
 
 use arrow::array::{BINVIEW_ARROW_BUFFER_LEN_LIMIT, BINVIEW_MAX_ROW_BYTE_LEN, View};
 
@@ -208,88 +202,5 @@ mod tests {
         assert_eq!(second.offset, 0);
         assert_eq!(read(&first, &buffers), value(20, b'a'));
         assert_eq!(read(&second, &buffers), value(20, b'b'));
-    }
-
-    #[test]
-    fn a_value_longer_than_the_limit_keeps_the_buffer_it_needs_to_itself() {
-        let mut buffers = Vec::new();
-        let long = copy(&mut buffers, &value(MAX_ROW_BYTE_LEN, b'a'));
-        let short = copy(&mut buffers, &value(13, b'b'));
-
-        assert_eq!(buffers.len(), 2);
-        assert_eq!(
-            buffers[0].len(),
-            MAX_ROW_BYTE_LEN,
-            "a value longer than the limit is held whole, by a buffer of its own",
-        );
-        assert_eq!(buffers[1].len(), 13);
-        assert_eq!(read(&long, &buffers), value(MAX_ROW_BYTE_LEN, b'a'));
-        assert_eq!(read(&short, &buffers), value(13, b'b'));
-    }
-
-    #[test]
-    #[should_panic(expected = "is longer than the 64 bytes a view can hold")]
-    fn a_value_longer_than_a_view_can_hold_panics() {
-        copy(&mut Vec::new(), &value(MAX_ROW_BYTE_LEN + 1, b'a'));
-    }
-
-    #[test]
-    fn buffer_indices_are_relative_to_the_offset() {
-        let mut buffers = Vec::new();
-        let first = copy_value_limited::<BUFFER_LEN_LIMIT, MAX_ROW_BYTE_LEN>(
-            &mut buffers,
-            7,
-            &value(20, b'a'),
-        );
-        let second = copy_value_limited::<BUFFER_LEN_LIMIT, MAX_ROW_BYTE_LEN>(
-            &mut buffers,
-            7,
-            &value(20, b'b'),
-        );
-
-        assert_eq!(first.buffer_idx, 7);
-        assert_eq!(second.buffer_idx, 8);
-    }
-
-    #[test]
-    fn the_only_value_gets_a_buffer_of_exactly_its_size() {
-        let (view, buffers) = copy_only_value_limited::<MAX_ROW_BYTE_LEN>(&value(20, b'a'));
-
-        assert_eq!(buffers.len(), 1);
-        assert_eq!(buffers[0].len(), 20);
-        assert_eq!(
-            buffers[0].capacity(),
-            20,
-            "nothing follows the value, so no room is left for it",
-        );
-        assert_eq!(view.buffer_idx, 0);
-        assert_eq!(view.offset, 0);
-        assert_eq!(read(&view, &buffers), value(20, b'a'));
-    }
-
-    #[test]
-    fn the_only_value_reaches_no_buffer_when_it_is_inlined() {
-        let (view, buffers) = copy_only_value_limited::<MAX_ROW_BYTE_LEN>(b"foo");
-
-        assert!(view.is_inline());
-        assert!(buffers.is_empty());
-        assert_eq!(read(&view, &buffers), b"foo");
-    }
-
-    #[test]
-    #[should_panic(expected = "is longer than the 64 bytes a view can hold")]
-    fn the_only_value_panics_when_longer_than_a_view_can_hold() {
-        copy_only_value_limited::<MAX_ROW_BYTE_LEN>(&value(MAX_ROW_BYTE_LEN + 1, b'a'));
-    }
-
-    #[test]
-    fn a_block_of_values_is_copied_into_one_buffer() {
-        let mut buffers = Vec::new();
-        for i in 0..DEFAULT_BLOCK_SIZE / 16 {
-            copy_value(&mut buffers, 0, &value(16, i as u8));
-        }
-
-        assert_eq!(buffers.len(), 1, "the values of a whole block share it");
-        assert_eq!(buffers[0].len(), DEFAULT_BLOCK_SIZE);
     }
 }

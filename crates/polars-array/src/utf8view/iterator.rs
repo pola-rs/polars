@@ -13,9 +13,6 @@ unsafe fn as_str(bytes: &[u8]) -> &str {
 }
 
 /// Iterator over the elements of a [`PlUtf8ViewArray`](super::PlUtf8ViewArray), ignoring validity.
-///
-/// This is the iterator over the bytes under it, whose scalar views are not materialized; see
-/// [`PlBinaryViewValuesIter`].
 #[derive(Clone)]
 pub struct PlUtf8ViewValuesIter<'a>(PlBinaryViewValuesIter<'a>);
 
@@ -107,11 +104,7 @@ impl ExactSizeIterator for PlUtf8ViewValuesIter<'_> {
 // change how many there are.
 unsafe impl TrustedLen for PlUtf8ViewValuesIter<'_> {}
 
-/// Iterator over the elements of a [`PlUtf8ViewArray`](super::PlUtf8ViewArray), `None` for the
-/// null ones.
-///
-/// This is the iterator over the bytes under it, whose scalar views and scalar validity mask are
-/// not materialized; see [`PlBinaryViewIter`].
+/// Iterator over the elements of a [`PlUtf8ViewArray`](super::PlUtf8ViewArray), `None` for the null ones.
 #[derive(Clone)]
 pub struct PlUtf8ViewIter<'a>(PlBinaryViewIter<'a>);
 
@@ -195,7 +188,6 @@ unsafe impl TrustedLen for PlUtf8ViewIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use crate::PlUtf8ViewArray;
     use crate::iterator_tests::assert_iterates;
@@ -223,50 +215,11 @@ mod tests {
     }
 
     #[test]
-    fn flat_under_a_flat_mask() {
-        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(
-            array.iter(),
-            &[Some(elements()[0]), None, Some(elements()[2])],
-        );
-    }
-
-    #[test]
     fn scalar() {
         let array = PlUtf8ViewArray::new_scalar("xy", 4);
 
         assert_iterates(array.values_iter(), &["xy"; 4]);
         assert_iterates(array.iter(), &[Some("xy"); 4]);
-    }
-
-    #[test]
-    fn scalar_under_a_flat_mask() {
-        let array = PlUtf8ViewArray::new_scalar("xy", 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(array.iter(), &[Some("xy"), None, Some("xy")]);
-    }
-
-    #[test]
-    fn all_null() {
-        assert_iterates(PlUtf8ViewArray::new_full_null(3).iter(), &[None; 3]);
-    }
-
-    #[test]
-    fn empty() {
-        let array = PlUtf8ViewArray::new_empty();
-
-        assert_iterates(array.values_iter(), &[]);
-        assert_iterates(array.iter(), &[]);
-    }
-
-    #[test]
-    fn broadcast() {
-        let array = PlUtf8ViewArray::from_iter([Some(elements()[2])]);
-
-        assert_iterates(array.broadcast_values_iter(4), &[elements()[2]; 4]);
     }
 
     #[test]

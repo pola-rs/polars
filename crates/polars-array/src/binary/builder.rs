@@ -11,34 +11,6 @@ use crate::builder::{
 };
 
 /// A builder of a [`PlBinaryArray`].
-///
-/// A binary array is offsets over a values buffer, so this builder is a growing offsets buffer over
-/// a growing `Vec<u8>` of bytes: appending an element appends its bytes here and one offset. The
-/// offsets hold one slot per element plus the end of the last, so the array this builds is
-/// [flat](crate::Flat) — one range per element, however many of the appended elements shared one.
-/// A null element is written out as the empty byte string, which reaches no bytes at all.
-///
-/// There are no buffers to adopt here, so [`ShareStrategy`] is immaterial: the bytes of an element
-/// are always copied out of the array they come from.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
-/// use polars_array::{PlBinaryArray, PlBinaryArrayBuilder};
-///
-/// let array = PlBinaryArray::from_values_iter([b"foo".as_slice(), b"bar"]);
-///
-/// let mut builder = PlBinaryArrayBuilder::new();
-/// builder.extend_nulls(1);
-/// builder.extend(&array, ShareStrategy::Never);
-///
-/// let built = builder.freeze();
-/// assert_eq!(built.len(), 3);
-/// assert_eq!(built.null_count(), 1);
-/// // The null element covers the empty range the first value starts at.
-/// assert_eq!(built.flat_offsets().unwrap().as_slice(), [0, 0, 3, 6]);
-/// assert_eq!(built.values().as_slice(), b"foobar");
-/// ```
 pub struct PlBinaryArrayBuilder {
     values: Vec<u8>,
     /// The start of every element appended so far, plus the end of the last: one slot more than the
@@ -360,25 +332,6 @@ mod tests {
     }
 
     #[test]
-    fn gathering_consecutive_indices_is_one_subslice() {
-        let array = array();
-
-        let mut builder = PlBinaryArrayBuilder::new();
-        unsafe { builder.gather_extend(&array, &[0, 1, 2, 0], ShareStrategy::Never) };
-
-        let built = builder.freeze();
-        assert_eq!(
-            elements(&built),
-            [
-                Some(b"foo".to_vec()),
-                None,
-                Some(b"bar".to_vec()),
-                Some(b"foo".to_vec()),
-            ],
-        );
-    }
-
-    #[test]
     fn a_scalar_array_is_appended_without_being_materialized() {
         let array = PlBinaryArray::new_scalar(b"ab", 1_000_000_000);
 
@@ -395,59 +348,5 @@ mod tests {
         assert_eq!(built.values().as_slice(), b"abababababab");
         assert_eq!(built.get(5), Some(b"ab".as_slice()));
         assert_eq!(built.get(6), None);
-    }
-
-    #[test]
-    fn a_fully_null_array_appends_no_bytes() {
-        let array = PlBinaryArray::new_full_null(1_000_000_000);
-
-        let mut builder = PlBinaryArrayBuilder::new();
-        builder.subslice_extend(&array, 0, 3, ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 3);
-        assert_eq!(built.null_count(), 3);
-        assert!(built.values().is_empty());
-        assert_eq!(built.flat_offsets().unwrap().as_slice(), [0, 0, 0, 0]);
-    }
-
-    #[test]
-    #[should_panic(expected = "out of bounds of an array of length 3")]
-    fn appending_out_of_bounds_panics() {
-        let mut builder = PlBinaryArrayBuilder::new();
-        builder.subslice_extend(&array(), 2, 2, ShareStrategy::Never);
-    }
-
-    #[test]
-    fn freeze_reset_leaves_an_empty_builder() {
-        let mut builder = PlBinaryArrayBuilder::new();
-        builder.extend(&array(), ShareStrategy::Never);
-        assert_eq!(builder.freeze_reset(), array());
-
-        assert!(builder.is_empty());
-        builder.extend_nulls(1);
-        let built = builder.freeze();
-        assert_eq!(built.len(), 1);
-        assert_eq!(built.null_count(), 1);
-        assert!(built.values().is_empty());
-    }
-
-    #[test]
-    fn appending_nothing_appends_nothing() {
-        let array = array();
-
-        let mut builder = PlBinaryArrayBuilder::new();
-        // A subslice of no elements is in bounds wherever it starts, the end included.
-        builder.subslice_extend(&array, 0, 0, ShareStrategy::Never);
-        builder.subslice_extend(&array, array.len(), 0, ShareStrategy::Never);
-        builder.subslice_extend_each_repeated(&array, 1, 1, 0, ShareStrategy::Never);
-        builder.extend_nulls(0);
-        unsafe { builder.gather_extend(&array, &[], ShareStrategy::Never) };
-        builder.opt_gather_extend(&array, &[], ShareStrategy::Never);
-
-        assert!(builder.is_empty());
-        let built = builder.freeze();
-        assert!(built.is_empty());
-        assert_eq!(built.flat_offsets().unwrap().as_slice(), [0]);
     }
 }

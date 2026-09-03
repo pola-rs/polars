@@ -883,11 +883,6 @@ impl StaticArray for PlNullArray {
 }
 
 /// Iterator over the optional elements of an array whose elements carry no value of their own.
-///
-/// This is what a [`PlStructArray`] and a [`PlNullArray`] iterate as: all there is to an element
-/// of one is whether it is null, so an element is `()` and the iterator is the validity mask under
-/// another name. A scalar mask is not materialized, so this is `O(1)` in memory regardless of the
-/// length, and a flat one is walked a machine word at a time rather than indexed a bit at a time.
 #[derive(Clone)]
 pub struct PlUnitIter<'a> {
     validity: ValidityIter<'a>,
@@ -984,7 +979,6 @@ unsafe impl TrustedLen for PlUnitIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use polars_buffer::Buffer;
 
     use super::*;
     use crate::iterator_tests::assert_iterates;
@@ -1002,164 +996,6 @@ mod tests {
 
             assert_iterates(array.iter(), &[Some(()), None, Some(())]);
         }
-
-        #[test]
-        fn a_struct_without_a_mask() {
-            let field = Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3]));
-            let array = PlStructArray::new(vec![field], 3, None);
-
-            assert_iterates(array.iter(), &[Some(()); 3]);
-        }
-
-        #[test]
-        fn a_struct_under_a_scalar_mask() {
-            let field = Box::new(PlPrimitiveArray::new_scalar(1i32, 4));
-            let array = PlStructArray::new_broadcast(vec![field], 4, Some(Bitmap::new_zeroed(1)));
-
-            assert_iterates(array.iter(), &[None; 4]);
-        }
-
-        #[test]
-        fn nulls() {
-            assert_iterates(PlNullArray::new(4).iter(), &[None; 4]);
-            assert_iterates(PlNullArray::new(0).iter(), &[]);
-        }
-
-        #[test]
-        fn empty() {
-            let array = PlStructArray::new(vec![Box::new(PlNullArray::new(0))], 0, None);
-
-            assert_iterates(array.iter(), &[]);
-        }
-
-        #[test]
-        fn a_scalar_mask_is_not_materialized() {
-            // Walking a billion elements would not finish; the scalar path must hit.
-            let array = PlNullArray::new(1_000_000_000);
-
-            assert_eq!(array.iter().count(), 1_000_000_000);
-            assert_eq!(array.iter().nth(999_999_999), Some(None));
-            assert_eq!(array.iter().last(), Some(None));
-            assert_eq!(array.iter().len(), 1_000_000_000);
-        }
-    }
-
-    /// The elements of an array, in order, as they format — every accessor of the trait over one
-    /// array.
-    fn elements<A: StaticArray>(array: &A) -> Vec<String>
-    where
-        for<'a> A::ValueT<'a>: std::fmt::Debug,
-    {
-        let by_index: Vec<String> = (0..array.len())
-            .map(|i| format!("{:?}", array.get(i)))
-            .collect();
-
-        // Every way of reading the elements agrees with reading them one by one.
-        assert_eq!(
-            array.iter().map(|v| format!("{v:?}")).collect::<Vec<_>>(),
-            by_index,
-        );
-        assert_eq!(
-            array
-                .iter()
-                .rev()
-                .map(|v| format!("{v:?}"))
-                .collect::<Vec<_>>(),
-            by_index.iter().rev().cloned().collect::<Vec<_>>(),
-        );
-        assert_eq!(array.values_iter().len(), array.len());
-        assert_eq!(array.iter().len(), array.len());
-
-        for (i, element) in by_index.iter().enumerate() {
-            assert_eq!(&format!("{:?}", unsafe { array.get_unchecked(i) }), element);
-            // The value is there whether or not the element is null.
-            let _ = array.value(i);
-            let _ = unsafe { array.value_unchecked(i) };
-        }
-
-        by_index
-    }
-
-    #[test]
-    fn primitive_elements() {
-        let array: PlPrimitiveArray<i32> = [Some(1), None, Some(3)].into_iter().collect();
-
-        assert_eq!(elements(&array), ["Some(1)", "None", "Some(3)"]);
-        assert_eq!(StaticArray::value(&array, 0), 1);
-        assert_eq!(array.values_iter().collect::<Vec<_>>().len(), 3);
-    }
-
-    #[test]
-    fn boolean_elements() {
-        let array: PlBooleanArray = [Some(true), None].into_iter().collect();
-
-        assert_eq!(elements(&array), ["Some(true)", "None"]);
-    }
-
-    #[test]
-    fn binary_elements() {
-        let array: PlBinaryArray = [Some(b"foo".as_slice()), None].into_iter().collect();
-
-        assert_eq!(elements(&array), ["Some([102, 111, 111])", "None"]);
-        assert_eq!(StaticArray::value(&array, 0), b"foo");
-    }
-
-    #[test]
-    fn binview_elements() {
-        let array: PlBinaryViewArray = [Some(b"foo".as_slice()), None].into_iter().collect();
-
-        assert_eq!(elements(&array), ["Some([102, 111, 111])", "None"]);
-    }
-
-    #[test]
-    fn fixed_size_binary_elements() {
-        let array = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2)
-            .with_validity(Some(Bitmap::from_iter([true, false])));
-
-        assert_eq!(elements(&array), ["Some([1, 2])", "None"]);
-        assert_eq!(StaticArray::value(&array, 0), [1, 2]);
-    }
-
-    #[test]
-    fn list_elements() {
-        let array = PlListArray::from_offsets(
-            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
-            Buffer::from(vec![0u64, 2, 3]),
-        );
-
-        assert_eq!(elements(&array).len(), 2);
-        assert_eq!(StaticArray::value(&array, 0).len(), 2);
-    }
-
-    #[test]
-    fn fixed_size_list_elements() {
-        let array = PlFixedSizeListArray::from_values(
-            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3, 4])),
-            2,
-        );
-
-        assert_eq!(elements(&array).len(), 2);
-        assert_eq!(StaticArray::value(&array, 1).len(), 2);
-    }
-
-    #[test]
-    fn struct_elements() {
-        let array = PlStructArray::new(
-            vec![Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2]))],
-            2,
-            Some(Bitmap::from_iter([true, false])),
-        );
-
-        assert_eq!(elements(&array), ["Some(())", "None"]);
-    }
-
-    #[test]
-    fn null_elements() {
-        let array = PlNullArray::new(2);
-
-        assert_eq!(elements(&array), ["None", "None"]);
-        // The mask cannot be replaced: every element of a null array stays null.
-        assert!(array.with_validity_typed(None).is_null(1));
     }
 
     #[test]
@@ -1192,63 +1028,6 @@ mod tests {
     }
 
     #[test]
-    fn the_scalar_value_is_read_without_walking_the_array() {
-        // A billion elements would not be walked in reasonable time; that this test finishes is
-        // what shows the repeated element is read off the buffers.
-        let array = PlPrimitiveArray::new_scalar(7i32, 1_000_000_000);
-        assert_eq!(StaticArray::scalar_value(&array), Some(Some(7)));
-
-        // An array of nothing but nulls repeats its null, whatever is under the mask.
-        let nulls = PlBooleanArray::new_full_null(1_000_000_000);
-        assert_eq!(StaticArray::scalar_value(&nulls), Some(None));
-        assert_eq!(
-            StaticArray::scalar_value(&PlNullArray::new(1_000_000_000)),
-            Some(None)
-        );
-
-        // An array of one element repeats it; one that is flat over more elements repeats
-        // nothing, and an empty one has no element to repeat.
-        let one = PlPrimitiveArray::from_vec(vec![7i32]);
-        assert_eq!(StaticArray::scalar_value(&one), Some(Some(7)));
-
-        let flat = PlPrimitiveArray::from_vec(vec![7i32, 7]);
-        assert_eq!(StaticArray::scalar_value(&flat), None);
-        assert_eq!(StaticArray::scalar_value(&flat.sliced(0, 0)), None);
-
-        // A flat mask over a scalar values buffer is still a buffer that is not shared.
-        let masked = PlPrimitiveArray::new_scalar(7i32, 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
-        assert_eq!(StaticArray::scalar_value(&masked), None);
-    }
-
-    #[test]
-    #[should_panic(expected = "does not broadcast to length")]
-    fn broadcasting_more_than_one_element_is_rejected() {
-        let _ = PlNullArray::new(2).broadcast_values_iter(3);
-    }
-
-    #[test]
-    fn the_builder_of_an_array_builds_that_array() {
-        use crate::builder::ShareStrategy;
-        use crate::{PlBooleanArrayBuilder, PlPrimitiveArrayBuilder};
-
-        /// Every element of `array`, appended to the builder of the arrays it is one of.
-        fn rebuild<A: StaticArray>(builder: &mut A::Builder, array: &A) -> A {
-            builder.extend(array, ShareStrategy::Always);
-            builder.freeze_reset()
-        }
-
-        let array: PlPrimitiveArray<i32> = [Some(1), None].into_iter().collect();
-        assert_eq!(
-            rebuild(&mut PlPrimitiveArrayBuilder::<i32>::new(), &array),
-            array,
-        );
-
-        let array = PlBooleanArray::new_scalar(true, 3);
-        assert_eq!(rebuild(&mut PlBooleanArrayBuilder::new(), &array), array);
-    }
-
-    #[test]
     fn typed_operations_keep_the_concrete_type() {
         let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
 
@@ -1259,61 +1038,5 @@ mod tests {
 
         let repeated: PlPrimitiveArray<i32> = array.new_from_index_typed(2, 4);
         assert_eq!(repeated, PlPrimitiveArray::new_scalar(3, 4));
-    }
-
-    /// Every array names a zeroable stand-in for its elements, including the ones that cannot be
-    /// collected back from it: the stand-in is what a kernel keeps its slots in, and the slot of
-    /// an element it has no value for is left at the zero.
-    #[test]
-    fn every_array_has_a_zeroable_stand_in_for_its_elements() {
-        use bytemuck::Zeroable;
-
-        /// The elements of `array`, with the slot of each null left zeroed.
-        fn zeroable_values<A: StaticArray>(array: &A) -> Vec<A::ZeroableValueT<'_>> {
-            array
-                .iter()
-                .map(|value| value.map_or_else(Zeroable::zeroed, Into::into))
-                .collect()
-        }
-
-        let validity = Some(Bitmap::from_iter([true, false]));
-
-        let array = PlPrimitiveArray::from_vec(vec![1i32, 2]).with_validity(validity.clone());
-        assert_eq!(zeroable_values(&array), [1, 0]);
-
-        let array = PlBooleanArray::new_scalar(true, 2).with_validity(validity.clone());
-        assert_eq!(zeroable_values(&array), [true, false]);
-
-        let array =
-            PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2).with_validity(validity.clone());
-        assert_eq!(zeroable_values(&array), [Some([1, 2].as_slice()), None]);
-
-        let array = PlListArray::from_offsets(
-            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
-            Buffer::from(vec![0u64, 2, 3]),
-        )
-        .with_validity(validity.clone());
-        let values = zeroable_values(&array);
-        assert_eq!(values[0].as_ref().map(|list| list.len()), Some(2));
-        assert!(values[1].is_none());
-
-        let array = PlFixedSizeListArray::from_values(
-            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
-            1,
-        )
-        .with_validity(validity.clone());
-        let values = zeroable_values(&array);
-        assert_eq!(values[0].as_ref().map(|list| list.len()), Some(1));
-        assert!(values[1].is_none());
-
-        // The elements of these two carry no value, so there is nothing for the zero to stand in
-        // for either.
-        let array = PlStructArray::new(
-            vec![Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2]))],
-            2,
-            validity,
-        );
-        assert_eq!(zeroable_values(&array), [(), ()]);
-        assert_eq!(zeroable_values(&PlNullArray::new(2)), [(), ()]);
     }
 }

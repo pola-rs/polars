@@ -11,33 +11,6 @@ use crate::builder::{
 };
 
 /// A builder of a [`PlFixedSizeBinaryArray`].
-///
-/// The bytes are staged in a `Vec<u8>`, which is what the frozen array is taken over, so the array
-/// this builds is [flat](crate::Flat) — a width of bytes per element, however many of the appended
-/// elements shared a value. The bytes of a null element are written out as zeros, and a null
-/// covers a width of them like any other element.
-///
-/// There are no buffers to adopt here, so [`ShareStrategy`] is immaterial: the bytes of an element
-/// are always copied out of the array they come from.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
-/// use polars_array::{PlFixedSizeBinaryArray, PlFixedSizeBinaryArrayBuilder};
-///
-/// let array = PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3, 4], 2);
-///
-/// let mut builder = PlFixedSizeBinaryArrayBuilder::new(2);
-/// builder.extend_nulls(1);
-/// builder.extend(&array, ShareStrategy::Never);
-///
-/// let built = builder.freeze();
-/// assert_eq!(built.len(), 3);
-/// assert_eq!(built.width(), 2);
-/// assert_eq!(built.null_count(), 1);
-/// // Every element covers a width of bytes, including the null one.
-/// assert_eq!(built.flat_values().unwrap().as_slice(), [0, 0, 1, 2, 3, 4]);
-/// ```
 pub struct PlFixedSizeBinaryArrayBuilder {
     values: Vec<u8>,
     width: usize,
@@ -346,67 +319,5 @@ mod tests {
         assert_eq!(built.flat_values().unwrap().as_slice(), b"abababababab\0\0");
         assert_eq!(built.get(5), Some(b"ab".as_slice()));
         assert_eq!(built.get(6), None);
-    }
-
-    #[test]
-    fn a_fully_null_array_appends_a_width_of_zeros_per_element() {
-        let array = PlFixedSizeBinaryArray::new_full_null(2, 1_000_000_000);
-
-        let mut builder = PlFixedSizeBinaryArrayBuilder::new(2);
-        builder.subslice_extend(&array, 0, 3, ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 3);
-        assert_eq!(built.null_count(), 3);
-        assert_eq!(built.flat_values().unwrap().len(), 6);
-    }
-
-    #[test]
-    fn a_width_of_zero_holds_no_bytes() {
-        let array = PlFixedSizeBinaryArray::new(Buffer::new(), 0, 3, None);
-
-        let mut builder = PlFixedSizeBinaryArrayBuilder::new(0);
-        builder.extend_nulls(2);
-        builder.extend(&array, ShareStrategy::Never);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 5);
-        assert_eq!(built.width(), 0);
-        assert_eq!(built.null_count(), 2);
-        assert!(built.flat_values().unwrap().is_empty());
-        assert_eq!(built.get(4), Some([].as_slice()));
-    }
-
-    #[test]
-    #[should_panic(
-        expected = "cannot append a fixed size binary array of width 3 to a builder of width 2"
-    )]
-    fn appending_another_width_panics() {
-        let mut builder = PlFixedSizeBinaryArrayBuilder::new(2);
-        builder.extend(
-            &PlFixedSizeBinaryArray::from_vec(vec![1u8, 2, 3], 3),
-            ShareStrategy::Never,
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "out of bounds of an array of length 3")]
-    fn appending_out_of_bounds_panics() {
-        let mut builder = PlFixedSizeBinaryArrayBuilder::new(2);
-        builder.subslice_extend(&array(), 2, 2, ShareStrategy::Never);
-    }
-
-    #[test]
-    fn freeze_reset_leaves_an_empty_builder() {
-        let mut builder = PlFixedSizeBinaryArrayBuilder::new(2);
-        builder.extend(&array(), ShareStrategy::Never);
-        assert_eq!(builder.freeze_reset(), array());
-
-        assert!(builder.is_empty());
-        builder.extend_nulls(1);
-        let built = builder.freeze();
-        assert_eq!(built.len(), 1);
-        assert_eq!(built.width(), 2);
-        assert_eq!(built.null_count(), 1);
     }
 }

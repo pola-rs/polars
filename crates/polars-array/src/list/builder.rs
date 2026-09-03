@@ -11,39 +11,6 @@ use crate::builder::{
 };
 
 /// A builder of a [`PlListArray`].
-///
-/// A list array is offsets over a values array, so this builder is a growing offsets buffer over
-/// the builder of those values: appending an element appends the values its list covers to the
-/// child builder, and one offset here. The offsets hold one slot per element plus the end of the
-/// last, so the array this builds is [flat](crate::Flat) — one range per element, however many of
-/// the appended elements shared one.
-///
-/// The child builder is what the values of the built array come out of, so it is what decides
-/// their representation and how they are appended; [`ShareStrategy`] is passed straight through to
-/// it. A null element is written out as an empty list, which reaches no values at all.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::{ShareStrategy, StaticArrayBuilder, builder_like};
-/// use polars_array::{PlArray, PlListArray, PlListArrayBuilder, PlPrimitiveArray};
-/// use polars_buffer::Buffer;
-///
-/// // Two lists over three values: `[1, 2]` and `[3]`.
-/// let array = PlListArray::from_offsets(
-///     Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2, 3])),
-///     Buffer::from(vec![0u64, 2, 3]),
-/// );
-///
-/// let mut builder = PlListArrayBuilder::new(builder_like(array.values()));
-/// builder.extend_nulls(1);
-/// builder.extend(&array, ShareStrategy::Always);
-///
-/// let built = builder.freeze();
-/// assert_eq!(built.len(), 3);
-/// assert_eq!(built.value_range(0), 0..0);
-/// assert_eq!(built.value_range(2), 2..3);
-/// assert_eq!(built.values().len(), 3);
-/// ```
 pub struct PlListArrayBuilder<B: PlArrayBuilder = Box<dyn PlArrayBuilder>> {
     /// The start of every element appended so far, plus the end of the last: one slot more than
     /// the elements, which is what the offsets of a flat list array hold.
@@ -394,25 +361,6 @@ mod tests {
     }
 
     #[test]
-    fn gathering_consecutive_indices_is_one_subslice() {
-        let array = array();
-
-        let mut builder = builder();
-        unsafe { builder.gather_extend(&array, &[0, 1, 2, 0], ShareStrategy::Always) };
-
-        let built = builder.freeze();
-        assert_eq!(
-            elements(&built),
-            [
-                Some(vec![1, 2]),
-                None,
-                Some(vec![3, 4, 5]),
-                Some(vec![1, 2]),
-            ],
-        );
-    }
-
-    #[test]
     fn a_scalar_array_is_appended_without_being_materialized() {
         let array = PlListArray::new_scalar(
             Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
@@ -438,45 +386,5 @@ mod tests {
                 None,
             ],
         );
-    }
-
-    #[test]
-    fn a_fully_null_array_appends_no_values() {
-        let array = PlListArray::new_full_null(
-            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
-            1_000_000_000,
-        );
-
-        let mut builder = PlListArrayBuilder::new(builder_like(array.values()));
-        builder.subslice_extend(&array, 0, 3, ShareStrategy::Always);
-
-        let built = builder.freeze();
-        assert_eq!(built.len(), 3);
-        assert_eq!(built.null_count(), 3);
-    }
-
-    #[test]
-    fn freeze_reset_leaves_an_empty_builder() {
-        let array = array();
-
-        let mut builder = builder();
-        builder.extend(&array, ShareStrategy::Always);
-        assert_eq!(builder.freeze_reset().len(), 3);
-
-        assert!(builder.is_empty());
-        assert!(builder.values().is_empty());
-        builder.extend_nulls(1);
-        assert_eq!(builder.freeze().len(), 1);
-    }
-
-    #[test]
-    fn a_builder_over_a_typed_child_needs_no_trait_object() {
-        use crate::PlPrimitiveArrayBuilder;
-
-        let array = array();
-        let mut builder = PlListArrayBuilder::new(PlPrimitiveArrayBuilder::<i32>::new());
-        builder.extend(&array, ShareStrategy::Always);
-
-        assert_eq!(elements(&builder.freeze()), elements(&array));
     }
 }

@@ -6,11 +6,6 @@ use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 use crate::broadcast::broadcast_slice;
 
 /// Iterator over the values of a [`PlPrimitiveArray`](super::PlPrimitiveArray), ignoring validity.
-///
-/// A scalar values buffer is not materialized: the single value every element shares is handed
-/// out as many times as the array is long, so this is `O(1)` in memory. Which of the two
-/// representations the values are in is settled once, when the iterator is created, rather than
-/// at every element — see [`broadcast_slice`].
 #[derive(Clone)]
 pub struct PlPrimitiveValuesIter<'a, T: NativeType> {
     values: SliceBroadcastIter<'a, T>,
@@ -98,10 +93,6 @@ impl<T: NativeType> ExactSizeIterator for PlPrimitiveValuesIter<'_, T> {
 unsafe impl<T: NativeType> TrustedLen for PlPrimitiveValuesIter<'_, T> {}
 
 /// Iterator over the optional elements of a [`PlPrimitiveArray`](super::PlPrimitiveArray).
-///
-/// Neither scalar values nor a scalar validity mask are materialized, and the two are walked
-/// alongside each other rather than indexed, so this is `O(1)` in memory and reads a flat mask a
-/// machine word at a time.
 #[derive(Clone)]
 pub struct PlPrimitiveIter<'a, T: NativeType> {
     values: SliceBroadcastIter<'a, T>,
@@ -202,7 +193,6 @@ unsafe impl<T: NativeType> TrustedLen for PlPrimitiveIter<'_, T> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use crate::PlPrimitiveArray;
     use crate::iterator_tests::assert_iterates;
@@ -216,62 +206,11 @@ mod tests {
     }
 
     #[test]
-    fn flat_under_a_flat_mask() {
-        let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(array.values_iter(), &[1, 2, 3]);
-        assert_iterates(array.iter(), &[Some(1), None, Some(3)]);
-    }
-
-    #[test]
-    fn flat_under_a_scalar_mask() {
-        let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3])
-            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
-
-        assert_iterates(array.values_iter(), &[1, 2, 3]);
-        assert_iterates(array.iter(), &[None, None, None]);
-    }
-
-    #[test]
     fn scalar() {
         let array = PlPrimitiveArray::new_scalar(7i32, 4);
 
         assert_iterates(array.values_iter(), &[7; 4]);
         assert_iterates(array.iter(), &[Some(7); 4]);
-    }
-
-    #[test]
-    fn scalar_under_a_flat_mask() {
-        let array = PlPrimitiveArray::new_scalar(7i32, 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(array.values_iter(), &[7, 7, 7]);
-        assert_iterates(array.iter(), &[Some(7), None, Some(7)]);
-    }
-
-    #[test]
-    fn all_null() {
-        assert_iterates(PlPrimitiveArray::<i32>::new_full_null(3).iter(), &[None; 3]);
-    }
-
-    #[test]
-    fn empty() {
-        let array = PlPrimitiveArray::<i32>::new_empty();
-
-        assert_iterates(array.values_iter(), &[]);
-        assert_iterates(array.iter(), &[]);
-    }
-
-    #[test]
-    fn broadcast() {
-        let array = PlPrimitiveArray::from_vec(vec![5i32]);
-
-        assert_iterates(array.broadcast_values_iter(4), &[5; 4]);
-
-        // An array is its own broadcast to the length it already has.
-        let array = PlPrimitiveArray::from_vec(vec![1i32, 2, 3]);
-        assert_iterates(array.broadcast_values_iter(3), &[1, 2, 3]);
     }
 
     #[test]

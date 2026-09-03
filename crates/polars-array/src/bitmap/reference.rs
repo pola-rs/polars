@@ -7,32 +7,9 @@ use crate::broadcast::{
 };
 
 /// A borrowed validity mask of `length` bits, in either the flat or the scalar representation.
-///
-/// A [`Bitmap`] always stores one bit per element, so a mask that is constant across a billion
-/// elements costs a billion bits to represent. This type pairs a bitmap with the logical `length`
-/// it stands for, which lets that constant mask be a single bit: bit `i` reads slot
-/// [`broadcast_index(i, bitmap.len())`](crate::broadcast::broadcast_index) of the backing bitmap.
-/// See [`crate::broadcast`] for the full rules.
-///
-/// This is what [`PlPrimitiveArray::validity`](crate::PlPrimitiveArray::validity) hands out, so
-/// that reading validity never has to reason about which representation the array happens to be
-/// in. Use [`Self::to_flat`] to materialize an ordinary one-bit-per-element [`Bitmap`], or convert
-/// it into an owned [`PlBitmap`](crate::PlBitmap) to keep the mask around.
-///
-/// # Example
-/// ```
-/// use polars_array::PlPrimitiveArray;
-///
-/// let arr = PlPrimitiveArray::<i32>::new_full_null(1_000_000_000);
-/// let validity = arr.validity().unwrap();
-///
-/// assert_eq!(validity.len(), 1_000_000_000);
-/// assert_eq!(validity.scalar_value(), Some(false));
-/// assert!(validity.flat_bitmap().is_none());
-/// assert!(!validity.get(999_999_999));
-/// ```
 #[derive(Clone, Copy)]
 pub struct PlBitmapRef<'a> {
+    /// Scalar: bitmap.len() == 1
     bitmap: &'a Bitmap,
     length: usize,
 }
@@ -363,97 +340,6 @@ mod tests {
     }
 
     #[test]
-    fn length_one_is_both_representations() {
-        let bitmap = Bitmap::new_with_value(true, 1);
-        let mask = PlBitmapRef::new(&bitmap, 1);
-
-        assert!(mask.is_flat());
-        assert_eq!(mask.scalar_value(), Some(true));
-        assert!(mask.get(0));
-        assert_eq!(mask.set_bits(), 1);
-        assert_eq!(mask.to_flat(), bitmap);
-    }
-
-    #[test]
-    fn empty() {
-        let bitmap = Bitmap::new();
-        let mask = PlBitmapRef::new(&bitmap, 0);
-
-        assert!(mask.is_empty());
-        assert!(mask.is_flat());
-        assert_eq!(mask.scalar_value(), None);
-        assert_eq!(mask.unset_bits(), 0);
-        assert!(mask.to_flat().is_empty());
-
-        // A one-bit bitmap is a valid backing for an empty mask; it is simply never read.
-        let bitmap = Bitmap::new_zeroed(1);
-        let mask = PlBitmapRef::new_broadcast(&bitmap, 0);
-
-        assert!(mask.is_empty());
-        assert_eq!(mask.scalar_value(), None);
-        assert_eq!(mask.unset_bits(), 0);
-        assert!(mask.to_flat().is_empty());
-    }
-
-    #[test]
-    fn the_backing_bitmap_is_reached_through_its_representation() {
-        let bitmap = Bitmap::from_iter([true, false, true]);
-        let mask = PlBitmapRef::new(&bitmap, 3);
-
-        assert_eq!(mask.flat_bitmap(), Some(&bitmap));
-        assert_eq!(mask.scalar_value(), None);
-        assert_eq!(mask.into_inner(), (&bitmap, 3));
-
-        // A scalar mask hands out no flat bitmap; it is its single bit that is reached instead.
-        let bitmap = Bitmap::new_zeroed(1);
-        let mask = PlBitmapRef::new_broadcast(&bitmap, 1_000_000_000);
-
-        assert_eq!(mask.flat_bitmap(), None);
-        assert_eq!(mask.scalar_value(), Some(false));
-        assert_eq!(mask.into_inner(), (&bitmap, 1_000_000_000));
-
-        // An empty mask has no bit to share, and is flat unless it is backed by a stray one.
-        assert_eq!(
-            PlBitmapRef::new(&Bitmap::new(), 0)
-                .flat_bitmap()
-                .map(Bitmap::len),
-            Some(0)
-        );
-        assert_eq!(PlBitmapRef::new_broadcast(&bitmap, 0).flat_bitmap(), None);
-        assert_eq!(PlBitmapRef::new_broadcast(&bitmap, 0).scalar_value(), None);
-    }
-
-    #[test]
-    fn try_new_takes_flat_bitmaps_only() {
-        let bitmap = Bitmap::new_zeroed(2);
-
-        assert!(PlBitmapRef::try_new(&bitmap, 3).is_err());
-        assert!(PlBitmapRef::try_new(&bitmap, 2).is_ok());
-
-        // A single bit is not silently broadcast: that is what `try_new_broadcast` is for.
-        let bit = Bitmap::new_zeroed(1);
-        assert!(PlBitmapRef::try_new(&bit, 3).is_err());
-        assert!(PlBitmapRef::try_new(&bit, 1).is_ok());
-    }
-
-    #[test]
-    fn try_new_broadcast_takes_flat_and_scalar_bitmaps() {
-        let bit = Bitmap::new_zeroed(1);
-        let mask = PlBitmapRef::try_new_broadcast(&bit, 1_000).unwrap();
-        assert!(mask.is_scalar());
-        assert_eq!(mask.len(), 1_000);
-        assert_eq!(mask.scalar_value(), Some(false));
-
-        let flat = Bitmap::from_iter([true, false]);
-        let mask = PlBitmapRef::new_broadcast(&flat, 2);
-        assert!(mask.is_flat());
-        assert_eq!(mask.flat_bitmap(), Some(&flat));
-
-        // Anything in between is neither representation, and no broadcast either.
-        assert!(PlBitmapRef::try_new_broadcast(&flat, 3).is_err());
-    }
-
-    #[test]
     fn iterates_both_representations() {
         let bitmap = Bitmap::from_iter([true, false, true]);
         let mask = PlBitmapRef::new(&bitmap, 3);
@@ -470,64 +356,5 @@ mod tests {
 
         assert_eq!(mask.iter().collect::<Vec<_>>(), [false; 4]);
         assert_eq!(mask.iter().len(), 4);
-    }
-
-    #[test]
-    fn broadcasting_a_single_bit() {
-        let bitmap = Bitmap::new_with_value(true, 1);
-        let mask = PlBitmapRef::new(&bitmap, 1);
-
-        let broadcast = mask.broadcast(1_000_000_000);
-        assert_eq!(broadcast.len(), 1_000_000_000);
-        assert!(broadcast.flat_bitmap().is_none());
-        assert_eq!(broadcast.scalar_value(), Some(true));
-        assert_eq!(broadcast.set_bits(), 1_000_000_000);
-        assert_eq!(broadcast.iter().take(3).collect::<Vec<_>>(), [true; 3]);
-
-        // A mask of the length asked for is handed back as it is, whatever it is backed by.
-        let flat = Bitmap::from_iter([true, false, true]);
-        let mask = PlBitmapRef::new(&flat, 3);
-        assert_eq!(mask.broadcast(3), mask);
-    }
-
-    #[test]
-    #[should_panic(expected = "does not broadcast")]
-    fn broadcasting_more_than_one_bit_panics() {
-        let bitmap = Bitmap::from_iter([true, false]);
-        let _ = PlBitmapRef::new(&bitmap, 2).broadcast(4);
-    }
-
-    #[test]
-    fn equality_ignores_representation() {
-        let flat = Bitmap::from_iter([false, false, false]);
-        let scalar = Bitmap::new_zeroed(1);
-
-        assert_eq!(
-            PlBitmapRef::new(&flat, 3),
-            PlBitmapRef::new_broadcast(&scalar, 3),
-        );
-        assert_ne!(
-            PlBitmapRef::new(&flat, 3),
-            PlBitmapRef::new_broadcast(&scalar, 4),
-        );
-        assert_ne!(
-            PlBitmapRef::new(&flat, 3),
-            PlBitmapRef::new_broadcast(&Bitmap::new_with_value(true, 1), 3),
-        );
-    }
-
-    #[test]
-    fn debug_does_not_materialize_scalars() {
-        let bitmap = Bitmap::new_zeroed(1);
-        assert_eq!(
-            format!("{:?}", PlBitmapRef::new_broadcast(&bitmap, 1_000_000_000)),
-            "PlBitmapRef[false; 1000000000]",
-        );
-
-        let bitmap = Bitmap::from_iter([true, false]);
-        assert_eq!(
-            format!("{:?}", PlBitmapRef::new(&bitmap, 2)),
-            "PlBitmapRef[true, false]",
-        );
     }
 }

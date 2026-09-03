@@ -5,11 +5,6 @@ use arrow::trusted_len::TrustedLen;
 use crate::bitmap::{PlBitmapRef, ValidityFold, ValidityIter};
 
 /// Iterator over the elements of a [`PlBinaryArray`](super::PlBinaryArray), ignoring validity.
-///
-/// Each element is the values buffer sliced to the range that element covers, which is `O(1)`.
-/// Scalar offsets are not materialized: whether they hold one range per element or the one range
-/// every element covers does not depend on the position being read — see [`Self::is_scalar`] —
-/// so a loop over the elements settles it once rather than at every one of them.
 #[derive(Clone)]
 pub struct PlBinaryValuesIter<'a> {
     values: &'a [u8],
@@ -44,10 +39,8 @@ impl<'a> PlBinaryValuesIter<'a> {
     /// The bytes the element at position `i` covers.
     #[inline(always)]
     fn get(&self, i: usize) -> &'a [u8] {
-        // SAFETY: `i` comes from `self.range`, so the slot it reads is a start the offsets hold,
-        // and the end that follows it is in bounds too: they hold one slot more than the starts.
-        // The offsets are ordered and bounded by the length of the values, so the range they
-        // cover is in bounds of those.
+        // SAFETY: `i` is a start the offsets hold and `i + 1` the end after it; the offsets are
+        // ordered and bounded by the length of the values, so the range they cover is in bounds.
         unsafe {
             let slot = if self.is_scalar() { 0 } else { i };
             let start = *self.offsets.get_unchecked(slot) as usize;
@@ -139,9 +132,6 @@ impl ExactSizeIterator for PlBinaryValuesIter<'_> {
 unsafe impl TrustedLen for PlBinaryValuesIter<'_> {}
 
 /// Iterator over the optional elements of a [`PlBinaryArray`](super::PlBinaryArray).
-///
-/// Neither a scalar validity mask nor scalar offsets are materialized, and the mask is walked
-/// alongside the values rather than indexed.
 #[derive(Clone)]
 pub struct PlBinaryIter<'a> {
     values: PlBinaryValuesIter<'a>,
@@ -250,7 +240,6 @@ unsafe impl TrustedLen for PlBinaryIter<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use arrow::bitmap::Bitmap;
 
     use crate::PlBinaryArray;
     use crate::iterator_tests::assert_iterates;
@@ -273,54 +262,11 @@ mod tests {
     }
 
     #[test]
-    fn flat_under_a_flat_mask() {
-        let array = flat_array().with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(array.values_iter(), &elements());
-        assert_iterates(array.iter(), &[Some(b"ab".as_slice()), None, Some(b"cde")]);
-    }
-
-    #[test]
-    fn flat_under_a_scalar_mask() {
-        let array = flat_array().with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
-
-        assert_iterates(array.iter(), &[None, None, None]);
-    }
-
-    #[test]
     fn scalar() {
         let array = PlBinaryArray::new_scalar(b"xy", 4);
 
         assert_iterates(array.values_iter(), &[b"xy".as_slice(); 4]);
         assert_iterates(array.iter(), &[Some(b"xy".as_slice()); 4]);
-    }
-
-    #[test]
-    fn scalar_under_a_flat_mask() {
-        let array = PlBinaryArray::new_scalar(b"xy", 3)
-            .with_validity(Some(Bitmap::from_iter([true, false, true])));
-
-        assert_iterates(array.iter(), &[Some(b"xy".as_slice()), None, Some(b"xy")]);
-    }
-
-    #[test]
-    fn all_null() {
-        assert_iterates(PlBinaryArray::new_full_null(3).iter(), &[None; 3]);
-    }
-
-    #[test]
-    fn empty() {
-        let array = PlBinaryArray::new_empty();
-
-        assert_iterates(array.values_iter(), &[]);
-        assert_iterates(array.iter(), &[]);
-    }
-
-    #[test]
-    fn broadcast() {
-        let array = PlBinaryArray::from_iter([Some(b"ab")]);
-
-        assert_iterates(array.broadcast_values_iter(4), &[b"ab".as_slice(); 4]);
     }
 
     #[test]

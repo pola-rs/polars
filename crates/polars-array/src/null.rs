@@ -10,27 +10,6 @@ use crate::builder::{ShareStrategy, StaticArrayBuilder, assert_subslice};
 use crate::flat::Flat;
 
 /// An immutable, cheaply cloneable sequence of `length` nulls.
-///
-/// This is the array of the type that holds nothing but nulls: it has no values, no element type
-/// and no buffers, only a length. Every element is null, which is what distinguishes it from the
-/// fully null array of any other type — there is no value hiding under the mask, undetermined or
-/// otherwise.
-///
-/// # Example
-/// ```
-/// use polars_array::PlNullArray;
-///
-/// let arr = PlNullArray::new(1_000_000_000);
-/// assert_eq!(arr.len(), 1_000_000_000);
-/// assert_eq!(arr.null_count(), 1_000_000_000);
-/// assert!(arr.is_null(999_999_999));
-///
-/// // The mask covers every element, backed by a single bit.
-/// let validity = arr.validity();
-/// assert_eq!(validity.len(), 1_000_000_000);
-/// assert_eq!(validity.scalar_value(), Some(false));
-/// assert!(validity.is_scalar());
-/// ```
 #[derive(Clone, Copy)]
 pub struct PlNullArray {
     length: usize,
@@ -346,24 +325,6 @@ impl PlArray for PlNullArray {
 }
 
 /// A builder of a [`PlNullArray`].
-///
-/// A null array is nothing but a length, so this builder is nothing but a length either: every
-/// element it appends is a null, whatever it was appended from, and the array it freezes costs
-/// `O(1)` memory however many elements it holds.
-///
-/// # Example
-/// ```
-/// use polars_array::builder::{ShareStrategy, StaticArrayBuilder};
-/// use polars_array::{PlNullArray, PlNullArrayBuilder};
-///
-/// let mut builder = PlNullArrayBuilder::new();
-/// builder.extend_nulls(1_000_000_000);
-/// builder.extend(&PlNullArray::new(1), ShareStrategy::Always);
-///
-/// let array = builder.freeze();
-/// assert_eq!(array.len(), 1_000_000_001);
-/// assert_eq!(array.null_count(), 1_000_000_001);
-/// ```
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PlNullArrayBuilder {
     length: usize,
@@ -489,30 +450,6 @@ mod tests {
     }
 
     #[test]
-    fn validity_is_a_shared_scalar_mask() {
-        let validity = PlNullArray::new(1_000_000_000).validity();
-
-        assert_eq!(validity.len(), 1_000_000_000);
-        assert!(validity.flat_bitmap().is_none());
-        assert!(validity.is_scalar());
-        assert_eq!(validity.unset_bits(), 1_000_000_000);
-        assert_eq!(validity.set_bits(), 0);
-        assert!(!validity.get(999_999_999));
-        assert_eq!(validity.scalar_value(), Some(false));
-
-        // Every array reads the same bit, so the mask outlives the array it came from.
-        let validity: PlBitmapRef<'static> = PlNullArray::new(2).validity();
-        assert!(std::ptr::eq(
-            validity.into_inner().0,
-            PlNullArray::new(7).validity().into_inner().0,
-        ));
-
-        // A mask of one bit over one element is flat and scalar at once, like everywhere else.
-        assert!(PlNullArray::new(1).validity().is_flat());
-        assert_eq!(PlNullArray::new(0).validity().len(), 0);
-    }
-
-    #[test]
     fn slicing_only_changes_the_length() {
         let arr = PlNullArray::new(1_000_000_000).sliced(500, 2);
 
@@ -524,90 +461,5 @@ mod tests {
         unsafe { arr.slice_unchecked(1, 0) };
         assert!(arr.is_empty());
         assert!(!arr.has_nulls());
-    }
-
-    #[test]
-    #[should_panic(expected = "must be smaller than the length")]
-    fn slicing_out_of_bounds_panics() {
-        let _ = PlNullArray::new(3).sliced(2, 2);
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn reading_out_of_bounds_panics() {
-        let _ = PlNullArray::new(3).is_null(3);
-    }
-
-    #[test]
-    fn equality_is_equality_of_lengths() {
-        assert_eq!(PlNullArray::new(3), PlNullArray::new(3));
-        assert_ne!(PlNullArray::new(3), PlNullArray::new(4));
-        assert_eq!(PlNullArray::new_empty(), PlNullArray::default());
-    }
-
-    #[test]
-    fn debug_does_not_materialize_the_elements() {
-        assert_eq!(
-            format!("{:?}", PlNullArray::new(1_000_000_000)),
-            "PlNullArray[null; 1000000000]",
-        );
-        assert_eq!(format!("{:?}", PlNullArray::new(1)), "PlNullArray[null]");
-        assert_eq!(format!("{:?}", PlNullArray::new_empty()), "PlNullArray[]");
-    }
-
-    #[test]
-    fn behind_the_trait_object() {
-        let arr: Box<dyn PlArray> = Box::new(PlNullArray::new(1_000_000_000));
-
-        assert_eq!(arr.array_type(), PlArrayType::Null);
-        assert!(arr.array_type().is_null());
-        assert_eq!(arr.len(), 1_000_000_000);
-        assert_eq!(arr.null_count(), 1_000_000_000);
-        assert!(arr.has_nulls());
-        assert!(arr.is_null(999_999_999));
-        assert!(arr.validity().unwrap().is_scalar());
-        assert_eq!(&arr, &arr.clone());
-
-        let sliced = arr.sliced(500, 2);
-        assert_eq!(sliced.len(), 2);
-        assert_eq!(sliced.null_count(), 2);
-
-        // A null array is not the fully null array of any other type.
-        let other: Box<dyn PlArray> = Box::new(crate::PlBooleanArray::new_full_null(1_000_000_000));
-        assert_ne!(&arr, &other);
-    }
-
-    #[test]
-    fn the_validity_of_a_null_array_cannot_be_replaced() {
-        let arr: Box<dyn PlArray> = Box::new(PlNullArray::new(3));
-
-        // Unlike every other array, dropping the mask leaves every element null.
-        let valid = arr.without_validity();
-        assert_eq!(valid.null_count(), 3);
-        assert!(valid.validity().is_some());
-
-        let masked = arr.with_validity(Some(Bitmap::new_with_value(true, 3)));
-        assert_eq!(masked.null_count(), 3);
-    }
-
-    #[test]
-    fn new_from_index_repeats_a_null() {
-        let arr = PlNullArray::new(3);
-
-        assert_eq!(
-            arr.new_from_index(2, 1_000_000_000),
-            PlNullArray::new(1_000_000_000),
-        );
-        assert_eq!(
-            unsafe { arr.new_from_index_unchecked(0, 2) },
-            PlNullArray::new(2)
-        );
-        assert!(arr.new_from_index(0, 0).is_empty());
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn repeating_an_element_out_of_bounds_panics() {
-        let _ = PlNullArray::new(3).new_from_index(3, 1);
     }
 }

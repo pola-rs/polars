@@ -1,15 +1,4 @@
 //! What every iterator of this crate is expected to agree on.
-//!
-//! The iterators do not walk their array a position at a time: each of them settles the
-//! representation its buffers are in once, when it is created, and then walks whichever of the
-//! two it found — a slice, a bitmap read a word at a time, or a single value repeated. That
-//! leaves a fair number of paths through the same iterator, since [`Iterator`] lets `nth`,
-//! `count`, `last` and `fold` be specialized away from the `next` they default to, and the
-//! specializations are where the walk actually happens.
-//!
-//! [`assert_iterates`] drives all of them against the elements the iterator is meant to yield, so
-//! that a test only has to say what an array holds, in either representation, and hand over its
-//! iterator.
 
 use std::fmt::Debug;
 

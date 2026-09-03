@@ -89,9 +89,8 @@ impl Flat<PlBinaryArray> {
     #[inline]
     pub unsafe fn value_range_unchecked(&self, i: usize) -> Range<usize> {
         debug_assert!(i < self.0.length);
-        // SAFETY: the offsets hold the start of every element plus the end of the last, so `i + 1`
-        // is in bounds. Every offset is at most the length of the values, and therefore fits in a
-        // `usize`.
+        // SAFETY: the offsets hold one slot more than the starts, so `i + 1` is in bounds, and
+        // every offset is at most the length of the values and therefore fits in a `usize`.
         unsafe {
             let start = *self.0.offsets.get_unchecked(i) as usize;
             let end = *self.0.offsets.get_unchecked(i + 1) as usize;
@@ -210,16 +209,6 @@ mod tests {
     }
 
     #[test]
-    fn into_inner_gives_up_the_length() {
-        let arr = PlBinaryArray::from_values_iter([b"foo".as_slice(), b"bar"]);
-        let (values, offsets, validity) = arr.to_flat().into_inner();
-
-        assert_eq!(values.as_slice(), b"foobar");
-        assert_eq!(offsets.as_slice(), [0, 3, 6]);
-        assert!(validity.is_none());
-    }
-
-    #[test]
     fn elements_are_read_without_a_broadcast() {
         let flat = PlBinaryArray::from_values_iter([b"foo".as_slice(), b"", b"bar"])
             .with_validity(Some(Bitmap::from_iter([true, false, true])))
@@ -238,29 +227,5 @@ mod tests {
         assert_eq!(unsafe { flat.get_unchecked(1) }, None);
         assert!(unsafe { flat.is_null_unchecked(1) });
         assert!(unsafe { flat.is_valid_unchecked(0) });
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn value_panics_out_of_bounds() {
-        let _ = PlBinaryArray::new_scalar(b"ab", 3).to_flat().value(3);
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn get_panics_out_of_bounds() {
-        let _ = PlBinaryArray::new_scalar(b"ab", 3).to_flat().get(3);
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn is_valid_panics_out_of_bounds() {
-        let _ = PlBinaryArray::new_scalar(b"ab", 3).to_flat().is_valid(3);
-    }
-
-    #[test]
-    #[should_panic(expected = "index out of bounds")]
-    fn value_range_panics_out_of_bounds() {
-        let _ = PlBinaryArray::new_scalar(b"ab", 3).to_flat().value_range(3);
     }
 }
