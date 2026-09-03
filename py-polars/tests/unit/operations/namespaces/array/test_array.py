@@ -329,6 +329,15 @@ def test_arr_dot_inner_nulls_without_outer_validity() -> None:
         pl.Series("a", [4.0, 0.0], dtype=pl.Float64),
     )
 
+    query = pl.Series(
+        "b",
+        [[4.0, None, 6.0]],
+        dtype=pl.Array(pl.Float64, 3),
+    )
+    expected = pl.Series("a", [22.0, 0.0], dtype=pl.Float64)
+    assert_series_equal(lhs.arr.dot(query), expected)
+    assert_series_equal(query.arr.dot(lhs), expected.rename("b"))
+
 
 def test_arr_dot_zero_width_without_outer_validity() -> None:
     zero_width = pl.Series("a", [[], []], dtype=pl.Array(pl.Float64, 0))

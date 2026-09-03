@@ -37,8 +37,9 @@ where
 {
     /// # Safety
     ///
-    /// Row-offset calculations must not overflow. Each selected row must fit in
-    /// its value slice and optional validity bitmap.
+    /// Selected row indices must be valid for their corresponding outer
+    /// arrays. Child values and optional validity must cover each complete
+    /// fixed-width layout; `outer_len * width` must fit in `usize`.
     #[inline(always)]
     unsafe fn dot_row(&self, lhs_idx: usize, rhs_idx: usize) -> T::Sum {
         let lhs_offset = lhs_idx * self.width;
@@ -135,6 +136,18 @@ where
     let lhs_inner_validity = lhs_values.validity();
     let rhs_inner_validity = rhs_values.validity();
     let width = lhs.width();
+    debug_assert!(
+        lhs.len()
+            .checked_mul(width)
+            .is_some_and(|len| lhs_slice.len() >= len)
+    );
+    debug_assert!(
+        rhs.len()
+            .checked_mul(width)
+            .is_some_and(|len| rhs_slice.len() >= len)
+    );
+    debug_assert!(lhs_inner_validity.is_none_or(|validity| validity.len() >= lhs_slice.len()));
+    debug_assert!(rhs_inner_validity.is_none_or(|validity| validity.len() >= rhs_slice.len()));
     let row_reducer = DotRowReducer {
         lhs_slice,
         rhs_slice,
@@ -145,6 +158,8 @@ where
     let lhs_broadcast = lhs.len() == 1 && output_len != 1;
     let rhs_broadcast = rhs.len() == 1 && output_len != 1;
 
+    // An absent outer bitmap guarantees valid output rows without scanning.
+    // Child validity only filters coordinate pairs inside `DotRowReducer`.
     if lhs_array.validity().is_none() && rhs_array.validity().is_none() {
         let output = dot_outer_all_valid(&row_reducer, lhs_broadcast, rhs_broadcast, output_len);
         let output = PrimitiveArray::from_data_default(output.into(), None);
