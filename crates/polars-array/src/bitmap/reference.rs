@@ -4,6 +4,7 @@ use polars_error::{PolarsResult, polars_ensure};
 use crate::bitmap::PlBitmapIter;
 use crate::broadcast::{
     assert_broadcastable, broadcast_index, is_flat_buffer_len, is_valid_buffer_len,
+    normalize_bitmap_ref,
 };
 
 /// A borrowed validity mask of `length` bits, in either the flat or the scalar representation.
@@ -62,7 +63,10 @@ impl<'a> PlBitmapRef<'a> {
             bitmap.len(), length,
         );
 
-        Ok(Self { bitmap, length })
+        Ok(Self {
+            bitmap: normalize_bitmap_ref(bitmap, length),
+            length,
+        })
     }
 
     /// Creates a [`PlBitmapRef`] of `length` bits backed by a `bitmap` that broadcasts over them.
@@ -78,11 +82,14 @@ impl<'a> PlBitmapRef<'a> {
     /// without validating it.
     ///
     /// # Safety
-    /// `bitmap` must be either flat (length equal to `length`) or scalar (length one).
+    /// `bitmap` must be flat or scalar for `length`, per [`is_valid_buffer_len`].
     #[inline]
     pub unsafe fn new_broadcast_unchecked(bitmap: &'a Bitmap, length: usize) -> Self {
         debug_assert!(is_valid_buffer_len(bitmap.len(), length));
-        Self { bitmap, length }
+        Self {
+            bitmap: normalize_bitmap_ref(bitmap, length),
+            length,
+        }
     }
 
     /// The number of bits in this mask.
@@ -310,5 +317,24 @@ mod tests {
 
         assert_eq!(mask.iter().collect::<Vec<_>>(), [false; 4]);
         assert_eq!(mask.iter().len(), 4);
+    }
+
+    #[test]
+    fn a_mask_over_no_elements_borrows_no_bit() {
+        // A single bit is scalar for no elements too, but there is no element left to read it, so
+        // it is not borrowed: the mask is flat, like every empty mask, rather than scalar.
+        let bitmap = Bitmap::new_zeroed(1);
+        let mask = PlBitmapRef::new_broadcast(&bitmap, 0);
+
+        assert!(mask.is_empty());
+        assert!(mask.is_flat());
+        assert!(!mask.is_scalar());
+        assert!(mask.flat_bitmap().unwrap().is_empty());
+
+        // Broadcasting a single bit over no elements borrows none either.
+        let mask = PlBitmapRef::new_broadcast(&bitmap, 1).broadcast(0);
+
+        assert!(mask.is_flat());
+        assert!(!mask.is_scalar());
     }
 }

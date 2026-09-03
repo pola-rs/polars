@@ -6,6 +6,7 @@ use polars_utils::IdxSize;
 use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
+use crate::broadcast::empty_bitmap;
 use crate::builder::{ShareStrategy, StaticArrayBuilder, assert_subslice};
 use crate::flat::Flat;
 
@@ -51,9 +52,12 @@ impl PlNullArray {
     pub fn validity(&self) -> PlBitmapRef<'static> {
         // An empty array has no element to share the bit, so its mask is empty as well: that is
         // the mask a scalar mask of no bits holds. See [`crate::broadcast`].
-        let bitmap = if self.length == 0 { &EMPTY } else { &SCALAR };
+        let bitmap = if self.length == 0 {
+            empty_bitmap()
+        } else {
+            &SCALAR
+        };
         return unsafe { PlBitmapRef::new_broadcast_unchecked(bitmap, self.length) };
-        static EMPTY: LazyLock<Bitmap> = LazyLock::new(Bitmap::new);
         static SCALAR: LazyLock<Bitmap> = LazyLock::new(|| Bitmap::new_zeroed(1));
     }
 

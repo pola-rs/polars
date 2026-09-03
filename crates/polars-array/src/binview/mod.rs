@@ -9,7 +9,7 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{
     assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
-    is_valid_buffer_len, scalar_buffer_len,
+    is_valid_buffer_len, normalize_buffer, normalize_validity, scalar_buffer_len,
 };
 use crate::flat::Flat;
 
@@ -118,8 +118,8 @@ impl PlBinaryViewArray {
     /// Creates a scalar [`PlBinaryViewArray`] of `length` elements out of its internal components.
     ///
     /// # Errors
-    /// This function errors if `views` or `validity` does not hold exactly one slot, or if the view
-    /// does not read bytes that `buffers` holds.
+    /// This function errors if `views` or `validity` is not scalar for `length`, per
+    /// [`is_scalar_buffer_len`], or if the view does not read bytes that `buffers` holds.
     pub fn try_new_broadcast(
         views: Buffer<View>,
         buffers: Buffer<Buffer<u8>>,
@@ -147,10 +147,10 @@ impl PlBinaryViewArray {
         validate_views(&views, &buffers)?;
 
         Ok(Self {
-            views,
+            views: normalize_buffer(views, length),
             buffers,
             length,
-            validity,
+            validity: normalize_validity(validity, length),
         })
     }
 
@@ -172,8 +172,8 @@ impl PlBinaryViewArray {
     /// without validating them.
     ///
     /// # Safety
-    /// `views` and `validity` must each hold exactly one slot, or none at all if `length` is zero,
-    /// and every view must read bytes that `buffers` holds.
+    /// `views` and `validity` must each be scalar for `length`, per [`is_scalar_buffer_len`], and
+    /// every view must read bytes that `buffers` holds.
     #[inline]
     pub unsafe fn new_broadcast_unchecked(
         views: Buffer<View>,
@@ -192,10 +192,10 @@ impl PlBinaryViewArray {
         }
 
         Self {
-            views,
+            views: normalize_buffer(views, length),
             buffers,
             length,
-            validity,
+            validity: normalize_validity(validity, length),
         }
     }
 
@@ -588,7 +588,7 @@ impl PlBinaryViewArray {
                 self.length,
             );
         }
-        self.validity = validity;
+        self.validity = normalize_validity(validity, self.length);
     }
 
     /// Drops the validity mask, making every element valid.
@@ -1030,5 +1030,23 @@ mod tests {
         let sliced = arr.sliced(0, 1);
         assert_eq!(sliced.total_buffer_len(), LONG.len());
         assert_eq!(sliced.total_bytes_len(), 3);
+    }
+
+    #[test]
+    fn an_array_of_no_elements_keeps_no_view() {
+        // A single slot is scalar for no elements too, but there is no element left to read it, so
+        // it is not kept: the array is flat, like every empty array, rather than scalar.
+        let arr = PlBinaryViewArray::new_broadcast(
+            Buffer::zeroed(1),
+            Buffer::new(),
+            0,
+            Some(Bitmap::new_zeroed(1)),
+        );
+
+        assert!(arr.is_empty());
+        assert!(arr.is_flat());
+        assert!(!arr.is_scalar());
+        assert!(arr.flat_views().unwrap().is_empty());
+        assert!(arr.validity().unwrap().is_empty());
     }
 }

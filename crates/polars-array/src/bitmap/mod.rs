@@ -1,7 +1,9 @@
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{PolarsResult, polars_ensure};
 
-use crate::broadcast::{is_flat_buffer_len, is_valid_buffer_len, scalar_buffer_len};
+use crate::broadcast::{
+    is_flat_buffer_len, is_valid_buffer_len, normalize_bitmap, scalar_buffer_len,
+};
 
 mod iterator;
 mod reference;
@@ -69,7 +71,10 @@ impl PlBitmap {
             bitmap.len(), length,
         );
 
-        Ok(Self { bitmap, length })
+        Ok(Self {
+            bitmap: normalize_bitmap(bitmap, length),
+            length,
+        })
     }
 
     /// Creates a [`PlBitmap`] of `length` bits backed by a `bitmap` that broadcasts over them.
@@ -85,11 +90,14 @@ impl PlBitmap {
     /// without validating it.
     ///
     /// # Safety
-    /// `bitmap` must be either flat (length equal to `length`) or scalar (length one).
+    /// `bitmap` must be flat or scalar for `length`, per [`is_valid_buffer_len`].
     #[inline]
     pub unsafe fn new_broadcast_unchecked(bitmap: Bitmap, length: usize) -> Self {
         debug_assert!(is_valid_buffer_len(bitmap.len(), length));
-        Self { bitmap, length }
+        Self {
+            bitmap: normalize_bitmap(bitmap, length),
+            length,
+        }
     }
 
     /// Creates an empty [`PlBitmap`].
@@ -413,5 +421,18 @@ mod tests {
         assert_eq!(bitmap.set_bits(), 3);
 
         assert!(PlBitmap::new_scalar(true, 0).into_bitmap().is_empty());
+    }
+
+    #[test]
+    fn a_mask_over_no_elements_keeps_no_bit() {
+        // A single bit is scalar for no elements too, but there is no element left to read it, so
+        // it is not kept: the mask is flat, like every empty mask, rather than scalar.
+        let mask = PlBitmap::new_broadcast(Bitmap::new_zeroed(1), 0);
+
+        assert!(mask.is_empty());
+        assert!(mask.is_flat());
+        assert!(!mask.is_scalar());
+        assert!(mask.flat_bitmap().unwrap().is_empty());
+        assert_eq!(mask.scalar_value(), None);
     }
 }

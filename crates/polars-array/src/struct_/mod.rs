@@ -5,7 +5,8 @@ use crate::array::PlArray;
 use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{
-    is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len, scalar_buffer_len,
+    is_flat_buffer_len, is_scalar_buffer_len, is_valid_buffer_len, normalize_validity,
+    scalar_buffer_len,
 };
 use crate::flat::Flat;
 
@@ -92,7 +93,7 @@ impl PlStructArray {
     ///
     /// # Errors
     /// This function errors if any field does not have exactly `length` elements, or if `validity`
-    /// does not hold exactly one bit.
+    /// is not scalar for `length`, per [`is_scalar_buffer_len`].
     pub fn try_new_broadcast(
         fields: Vec<Box<dyn PlArray>>,
         length: usize,
@@ -113,7 +114,7 @@ impl PlStructArray {
         Ok(Self {
             fields,
             length,
-            validity,
+            validity: normalize_validity(validity, length),
         })
     }
 
@@ -134,8 +135,8 @@ impl PlStructArray {
     /// without validating them.
     ///
     /// # Safety
-    /// Every field must have exactly `length` elements, and `validity` must hold exactly one bit,
-    /// or none at all if `length` is zero.
+    /// Every field must have exactly `length` elements, and `validity` must be scalar for `length`,
+    /// per [`is_scalar_buffer_len`].
     #[inline]
     pub unsafe fn new_broadcast_unchecked(
         fields: Vec<Box<dyn PlArray>>,
@@ -154,7 +155,7 @@ impl PlStructArray {
         Self {
             fields,
             length,
-            validity,
+            validity: normalize_validity(validity, length),
         }
     }
 
@@ -348,7 +349,7 @@ impl PlStructArray {
                 self.length,
             );
         }
-        self.validity = validity;
+        self.validity = normalize_validity(validity, self.length);
     }
 
     /// Drops the validity mask, making every row valid.
@@ -715,5 +716,17 @@ mod tests {
                 .as_slice(),
             [2, 3],
         );
+    }
+
+    #[test]
+    fn an_array_of_no_elements_keeps_no_bit() {
+        // A single bit is scalar for no elements too, but there is no element left to read it, so
+        // it is not kept: the array is flat, like every empty array, rather than scalar.
+        let arr = PlStructArray::new_broadcast(scalar_fields(0), 0, Some(Bitmap::new_zeroed(1)));
+
+        assert!(arr.is_empty());
+        assert!(arr.is_flat());
+        assert!(!arr.is_scalar());
+        assert!(arr.validity().unwrap().is_empty());
     }
 }

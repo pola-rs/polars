@@ -8,7 +8,7 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::PlBitmapRef;
 use crate::broadcast::{
     assert_broadcastable, broadcast_index, is_flat_buffer_len, is_scalar_buffer_len,
-    is_valid_buffer_len, scalar_buffer_len,
+    is_valid_buffer_len, normalize_buffer, normalize_validity, scalar_buffer_len,
 };
 use crate::flat::Flat;
 
@@ -100,7 +100,8 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// Creates a scalar [`PlPrimitiveArray`] of `length` elements out of its internal components.
     ///
     /// # Errors
-    /// This function errors if `values` or `validity` does not hold exactly one slot.
+    /// This function errors if `values` or `validity` is not scalar for `length`, per
+    /// [`is_scalar_buffer_len`].
     pub fn try_new_broadcast(
         values: Buffer<T>,
         length: usize,
@@ -125,9 +126,9 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         }
 
         Ok(Self {
-            values,
+            values: normalize_buffer(values, length),
             length,
-            validity,
+            validity: normalize_validity(validity, length),
         })
     }
 
@@ -144,7 +145,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
     /// without validating them.
     ///
     /// # Safety
-    /// `values` and `validity` must each hold exactly one slot, or none at all if `length` is zero.
+    /// `values` and `validity` must each be scalar for `length`, per [`is_scalar_buffer_len`].
     #[inline]
     pub unsafe fn new_broadcast_unchecked(
         values: Buffer<T>,
@@ -161,9 +162,9 @@ impl<T: NativeType> PlPrimitiveArray<T> {
         }
 
         Self {
-            values,
+            values: normalize_buffer(values, length),
             length,
-            validity,
+            validity: normalize_validity(validity, length),
         }
     }
 
@@ -480,7 +481,7 @@ impl<T: NativeType> PlPrimitiveArray<T> {
                 self.length,
             );
         }
-        self.validity = validity;
+        self.validity = normalize_validity(validity, self.length);
     }
 
     /// Drops the validity mask, making every element valid.
@@ -837,5 +838,31 @@ mod tests {
         assert_eq!(arr.flat_values().unwrap().len(), 2);
         assert_eq!(arr.validity().unwrap().len(), 2);
         assert_eq!(arr.iter().collect::<Vec<_>>(), [None, Some(3)]);
+    }
+
+    #[test]
+    fn an_array_of_no_elements_keeps_no_slot() {
+        // A single slot is scalar for no elements too, but there is no element left to read it, so
+        // it is not kept: the array is flat, like every empty array, rather than scalar.
+        let arr = PlPrimitiveArray::new_broadcast(
+            Buffer::from(vec![7i32]),
+            0,
+            Some(Bitmap::new_zeroed(1)),
+        );
+
+        assert!(arr.is_empty());
+        assert!(arr.is_flat());
+        assert!(!arr.is_scalar());
+        assert!(arr.flat_values().unwrap().is_empty());
+        assert!(arr.validity().unwrap().is_flat());
+        assert!(arr.validity().unwrap().is_empty());
+
+        // The same goes for a mask broadcast over an empty array after the fact.
+        let arr = PlPrimitiveArray::<i32>::new_empty()
+            .with_validity_broadcast(Some(Bitmap::new_zeroed(1)));
+
+        assert!(arr.is_flat());
+        assert!(!arr.is_scalar());
+        assert!(arr.validity().unwrap().is_empty());
     }
 }

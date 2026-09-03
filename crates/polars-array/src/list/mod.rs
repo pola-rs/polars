@@ -9,8 +9,8 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{
     assert_broadcastable, broadcast_index, is_flat_buffer_len, is_flat_offsets_len,
-    is_scalar_buffer_len, is_scalar_offsets_len, is_valid_buffer_len, scalar_buffer_len,
-    scalar_offsets_len,
+    is_scalar_buffer_len, is_scalar_offsets_len, is_valid_buffer_len, normalize_offsets,
+    normalize_validity, scalar_buffer_len, scalar_offsets_len,
 };
 use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
@@ -120,8 +120,9 @@ impl PlListArray {
     /// Creates a scalar [`PlListArray`] of `length` elements out of its internal components.
     ///
     /// # Errors
-    /// This function errors unless `offsets` holds two non-decreasing offsets ending within
-    /// `values`, and `validity` holds exactly one bit.
+    /// This function errors unless `offsets` is scalar for `length`, per [`is_scalar_offsets_len`],
+    /// non-decreasing and ending within `values`, and `validity` is scalar for `length`, per
+    /// [`is_scalar_buffer_len`].
     pub fn try_new_broadcast(
         values: Box<dyn PlArray>,
         offsets: Buffer<u64>,
@@ -150,9 +151,9 @@ impl PlListArray {
 
         Ok(Self {
             values,
-            offsets,
+            offsets: normalize_offsets(offsets, length),
             length,
-            validity,
+            validity: normalize_validity(validity, length),
         })
     }
 
@@ -174,8 +175,8 @@ impl PlListArray {
     /// validating them.
     ///
     /// # Safety
-    /// `offsets` must be non-decreasing, hold two offsets (one if `length` is zero) and end
-    /// within `values`; `validity` must hold one bit, or none if `length` is zero.
+    /// `offsets` must be non-decreasing, scalar for `length` per [`is_scalar_offsets_len`], and end
+    /// within `values`; `validity` must be scalar for `length`, per [`is_scalar_buffer_len`].
     #[inline]
     pub unsafe fn new_broadcast_unchecked(
         values: Box<dyn PlArray>,
@@ -196,9 +197,9 @@ impl PlListArray {
 
         Self {
             values,
-            offsets,
+            offsets: normalize_offsets(offsets, length),
             length,
-            validity,
+            validity: normalize_validity(validity, length),
         }
     }
 
@@ -566,7 +567,7 @@ impl PlListArray {
                 self.length,
             );
         }
-        self.validity = validity;
+        self.validity = normalize_validity(validity, self.length);
     }
 
     /// Drops the validity mask, making every element valid.
@@ -991,5 +992,24 @@ mod tests {
         assert_eq!(masked.null_count(), 1);
         assert_eq!(masked.offsets().as_slice(), [0, 3, 6, 9]);
         assert_eq!(masked.get(1), None);
+    }
+
+    #[test]
+    fn an_array_of_no_elements_keeps_no_range() {
+        // A single slot is scalar for no elements too, but there is no element left to read it, so
+        // it is not kept: the array is flat, like every empty array, rather than scalar.
+        let arr = PlListArray::new_broadcast(
+            values(),
+            Buffer::from(vec![2u64, 5]),
+            0,
+            Some(Bitmap::new_zeroed(1)),
+        );
+
+        assert!(arr.is_empty());
+        assert!(arr.is_flat());
+        assert!(!arr.is_scalar());
+        // The one offset that holds no starts is what is left of the range, as slicing leaves it.
+        assert_eq!(arr.flat_offsets().unwrap().as_slice(), [2]);
+        assert!(arr.validity().unwrap().is_empty());
     }
 }

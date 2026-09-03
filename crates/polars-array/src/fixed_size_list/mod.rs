@@ -8,7 +8,8 @@ use crate::array_type::PlArrayType;
 use crate::bitmap::{PlBitmapRef, validity_eq};
 use crate::broadcast::{
     assert_broadcastable, is_flat_buffer_len, is_flat_fixed_size_values_len, is_scalar_buffer_len,
-    is_scalar_fixed_size_values_len, is_valid_buffer_len, scalar_buffer_len,
+    is_scalar_fixed_size_values_len, is_valid_buffer_len, normalize_validity, normalize_values,
+    scalar_buffer_len,
 };
 use crate::concatenate::concatenate_repeated;
 use crate::flat::Flat;
@@ -116,8 +117,9 @@ impl PlFixedSizeListArray {
     /// components.
     ///
     /// # Errors
-    /// This function errors if `values` does not hold exactly `width` values, or if `validity` does
-    /// not hold exactly one bit.
+    /// This function errors if `values` is not scalar for `width` and `length`, per
+    /// [`is_scalar_fixed_size_values_len`], or if `validity` is not scalar for `length`, per
+    /// [`is_scalar_buffer_len`].
     pub fn try_new_broadcast(
         values: Box<dyn PlArray>,
         width: usize,
@@ -143,10 +145,10 @@ impl PlFixedSizeListArray {
         }
 
         Ok(Self {
-            values,
+            values: normalize_values(values, length),
             width,
             length,
-            validity,
+            validity: normalize_validity(validity, length),
         })
     }
 
@@ -169,8 +171,8 @@ impl PlFixedSizeListArray {
     /// components without validating them.
     ///
     /// # Safety
-    /// `values` must hold exactly `width` values — or none at all, if `length` is zero — and
-    /// `validity` exactly one bit, or none at all if `length` is zero.
+    /// `values` must be scalar for `width` and `length`, per [`is_scalar_fixed_size_values_len`],
+    /// and `validity` scalar for `length`, per [`is_scalar_buffer_len`].
     #[inline]
     pub unsafe fn new_broadcast_unchecked(
         values: Box<dyn PlArray>,
@@ -188,10 +190,10 @@ impl PlFixedSizeListArray {
         }
 
         Self {
-            values,
+            values: normalize_values(values, length),
             width,
             length,
-            validity,
+            validity: normalize_validity(validity, length),
         }
     }
 
@@ -553,7 +555,7 @@ impl PlFixedSizeListArray {
                 self.length,
             );
         }
-        self.validity = validity;
+        self.validity = normalize_validity(validity, self.length);
     }
 
     /// Drops the validity mask, making every element valid.
@@ -933,5 +935,23 @@ mod tests {
             [Some(1), Some(2), Some(1), Some(2), Some(1), Some(2)],
         );
         assert_eq!(flat, scalar);
+    }
+
+    #[test]
+    fn an_array_of_no_elements_covers_no_values() {
+        // A single slot is scalar for no elements too, but there is no element left to read it, so
+        // it is not kept: the array is flat, like every empty array, rather than scalar.
+        let arr = PlFixedSizeListArray::new_broadcast(
+            Box::new(PlPrimitiveArray::from_vec(vec![1i32, 2])),
+            2,
+            0,
+            Some(Bitmap::new_zeroed(1)),
+        );
+
+        assert!(arr.is_empty());
+        assert!(arr.is_flat());
+        assert!(!arr.is_scalar());
+        assert!(arr.flat_values().unwrap().is_empty());
+        assert!(arr.validity().unwrap().is_empty());
     }
 }
