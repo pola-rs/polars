@@ -320,16 +320,17 @@ def test_sink_rejects_unsupported_options(
 
 
 @pytest.mark.usefixtures("_stub_cloud")
-def test_lazy_sink_builds_a_plan_locally(lf: pl.LazyFrame, tmp_path: Path) -> None:
+def test_lazy_sink_builds_a_plan_locally(lf: pl.LazyFrame) -> None:
     # `LazyFrame.remote` is not stubbed here, so any dispatch would fail on the missing
     # `pc.LazyFrameRemote`. This is how Polars Cloud builds the plan it ships.
-    path = tmp_path / "out.parquet"
+    out = io.BytesIO()
     with pl.Config(engine_affinity=pl.RemoteEngine()):
-        plan = lf.sink_parquet(path, lazy=True)
+        plan = lf.sink_parquet(out, lazy=True)
 
     assert isinstance(plan, pl.LazyFrame)
     plan.collect(engine="in-memory")
-    assert pl.read_parquet(path).height == 3
+    out.seek(0)
+    assert pl.read_parquet(out).height == 3
 
 
 @pytest.mark.parametrize("path", [io.BytesIO(), Path("local/path")])
@@ -374,12 +375,15 @@ def test_plan_methods_never_reach_polars_cloud(lf: pl.LazyFrame) -> None:
 
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
 @pytest.mark.usefixtures("_stub_cloud")
-def test_eager_operations_stay_local(tmp_path: Path) -> None:
+def test_eager_operations_stay_local() -> None:
     # None of these may reach `polars_cloud`: `LazyFrame.remote` is not stubbed here,
     # so any dispatch would fail on the missing `pc.LazyFrameRemote`.
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    df.write_parquet(tmp_path / "data.parquet")
-    df.write_ipc(tmp_path / "data.ipc")
+    parquet, ipc = io.BytesIO(), io.BytesIO()
+    df.write_parquet(parquet)
+    df.write_ipc(ipc)
+    parquet.seek(0)
+    ipc.seek(0)
 
     with pl.Config(engine_affinity=pl.RemoteEngine()):
         assert df.filter(pl.col("a") > 1).height == 2
@@ -388,8 +392,8 @@ def test_eager_operations_stay_local(tmp_path: Path) -> None:
         assert df.group_by("a").head(1).height == 3
         assert df[::2].height == 2
         assert pl.read_csv(io.BytesIO(b"a,b\n1,2\n")).height == 1
-        assert pl.read_parquet(tmp_path / "data.parquet").height == 3
-        assert pl.read_ipc(tmp_path / "data.ipc").height == 3
+        assert pl.read_parquet(parquet).height == 3
+        assert pl.read_ipc(ipc).height == 3
         assert pl.read_ndjson(b'{"a":1}\n').height == 1
         assert pl.read_lines(b"one\ntwo\n").height == 2
         assert pl.concat([df, df]).height == 6
