@@ -32,7 +32,6 @@ fn default_max_threads() -> u64 {
 }
 
 const IDEAL_MORSEL_SIZE: &str = "POLARS_IDEAL_MORSEL_SIZE";
-const STREAMING_CHUNK_SIZE: &str = "POLARS_STREAMING_CHUNK_SIZE"; // Backwards compatibility.
 const DEFAULT_IDEAL_MORSEL_SIZE: u64 = 100_000;
 
 const ENGINE_AFFINITY: &str = "POLARS_ENGINE_AFFINITY";
@@ -122,7 +121,6 @@ static KNOWN_OPTIONS: &[&str] = &[
     WARN_UNSTABLE,
     MAX_THREADS,
     IDEAL_MORSEL_SIZE,
-    STREAMING_CHUNK_SIZE,
     ENGINE_AFFINITY,
     PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
     PRUNE_PARQUET_METADATA,
@@ -309,7 +307,7 @@ impl Config {
                     .unwrap_or(default_max_threads()),
                 Ordering::Relaxed,
             ),
-            IDEAL_MORSEL_SIZE | STREAMING_CHUNK_SIZE => self.ideal_morsel_size.store(
+            IDEAL_MORSEL_SIZE => self.ideal_morsel_size.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_IDEAL_MORSEL_SIZE),
                 Ordering::Relaxed,
