@@ -1,7 +1,6 @@
 use std::borrow::Borrow;
 
 use arrow::legacy::trusted_len::{FromIteratorReversed, TrustedLenPush};
-
 use polars_array::arrow::import::{binary_from_arrow, boolean_from_arrow, primitive_from_arrow};
 
 use crate::chunked_array::from_iterator::PolarsAsRef;

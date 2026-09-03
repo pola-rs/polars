@@ -1,4 +1,4 @@
-use arrow::array::{Array, PrimitiveArray};
+use arrow::array::PrimitiveArray;
 use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
 use num_traits::Zero;

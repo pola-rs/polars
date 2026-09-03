@@ -2,8 +2,6 @@
 use std::borrow::Cow;
 
 #[cfg(feature = "binary_encoding")]
-use arrow::array::Array;
-#[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
 #[cfg(feature = "binary_encoding")]
 use base64::engine::general_purpose;

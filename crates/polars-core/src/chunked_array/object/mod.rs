@@ -312,6 +312,12 @@ impl<T: PolarsObject> PlArray for ObjectArray<T> {
         Box::new(self.clone())
     }
 
+    /// An object array lives outside `polars-array`, which therefore cannot build one; this is
+    /// where it is built instead.
+    fn full_null_like(&self, length: usize) -> Box<dyn PlArray> {
+        Box::new(Self::new_full_null(length))
+    }
+
     fn eq_dyn(&self, other: &dyn PlArray) -> bool {
         let Some(other) = other.as_any().downcast_ref::<Self>() else {
             return false;

@@ -1,6 +1,5 @@
 use std::hash::Hash;
 
-use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;

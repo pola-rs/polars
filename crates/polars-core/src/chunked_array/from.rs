@@ -173,10 +173,12 @@ where
     }
 
     /// A [`ChunkedArray`] of `length` nulls, laid out like `ca`. The nulls keep the
-    /// [`scalar`](polars_array::broadcast) representation, so this is `O(1)` in memory.
+    /// [`scalar`](polars_array::broadcast) representation wherever the array admits it, so this
+    /// is `O(1)` in memory for all but the arrays that hold one value per element either way —
+    /// see [`polars_array::PlArray::full_null_like`].
     pub fn full_null_like(ca: &Self, length: usize) -> Self {
         let prototype = ca.chunks.first().expect("a ChunkedArray has a chunk");
-        let chunks = vec![polars_array::builder::full_null_like(&**prototype, length)];
+        let chunks = vec![prototype.full_null_like(length)];
         unsafe {
             let mut out = Self::from_chunks_and_dtype_unchecked(
                 ca.name().clone(),

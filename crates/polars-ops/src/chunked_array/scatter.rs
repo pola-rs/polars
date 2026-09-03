@@ -1,5 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
-use arrow::array::{Array, BinaryViewArrayGeneric, BooleanArray, PrimitiveArray, View, ViewType};
+use arrow::array::{BinaryViewArrayGeneric, BooleanArray, PrimitiveArray, View, ViewType};
 use polars_array::arrow::bridge::{chunk_from_arrow, chunk_to_arrow};
 use polars_buffer::Buffer;
 use polars_core::prelude::*;

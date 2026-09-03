@@ -41,9 +41,8 @@ pub(crate) fn split_at(
         // SAFETY: `remaining_offset` is within this chunk, which is what ended the loop above.
         unsafe {
             new_chunks_left.push(chunk.sliced_unchecked(0, remaining_offset));
-            new_chunks_right.push(
-                chunk.sliced_unchecked(remaining_offset, chunk_len - remaining_offset),
-            );
+            new_chunks_right
+                .push(chunk.sliced_unchecked(remaining_offset, chunk_len - remaining_offset));
         }
         break;
     }

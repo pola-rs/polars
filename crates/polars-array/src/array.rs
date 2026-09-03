@@ -238,6 +238,19 @@ pub trait PlArray: std::fmt::Debug + Send + Sync + 'static {
     /// This function is `O(1)`: every backing buffer is cheaply cloneable.
     fn to_boxed(&self) -> Box<dyn PlArray>;
 
+    /// Returns an array of `length` nulls, laid out like this array.
+    ///
+    /// The arrays of this crate all take the default implementation, which is
+    /// [`full_null_like`](crate::builder::full_null_like); this is the dispatch point that array
+    /// types outside the crate — a `polars_core::ObjectArray`, which that function cannot
+    /// construct — override with their own.
+    #[must_use]
+    fn full_null_like(&self, length: usize) -> Box<dyn PlArray> {
+        // `full_null_like` reads the shape of a `&dyn PlArray`, which `&Self` does not coerce to
+        // in a default method. Boxing is `O(1)`, so going through one costs nothing.
+        crate::builder::full_null_like(&*self.to_boxed(), length)
+    }
+
     /// Compares this array element-wise against `other`, returning `false` if `other` is not of
     /// the same concrete type.
     ///

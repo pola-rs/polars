@@ -1,8 +1,7 @@
 use arrow::bitmap::Bitmap;
 use polars_buffer::Buffer;
 use polars_core::prelude::{
-    Column, DataType, PlBinaryArray, PlBinaryViewArray, PlFixedSizeBinaryArray,
-    PlPrimitiveArray,
+    Column, DataType, PlBinaryArray, PlBinaryViewArray, PlFixedSizeBinaryArray, PlPrimitiveArray,
 };
 use polars_core::with_match_physical_integer_type;
 

@@ -1,18 +1,20 @@
 use std::sync::{Arc, OnceLock};
 
-#[cfg(feature = "python")]
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{
-    BooleanChunked, ChunkAgg, DataType, NamedFrom, PlBooleanArray, PlIndexMap, PlListArray,
-};
+use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, NamedFrom, PlIndexMap};
+#[cfg(feature = "python")]
+use polars_core::prelude::{PlBooleanArray, PlListArray};
 use polars_core::schema::{Schema, SchemaRef};
+#[cfg(feature = "python")]
 use polars_core::series::Series;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_error::{PolarsResult, feature_gated, polars_bail, polars_err};
+#[cfg(feature = "python")]
+use polars_error::polars_err;
+use polars_error::{PolarsResult, feature_gated, polars_bail};
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};

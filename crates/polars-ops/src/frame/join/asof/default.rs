@@ -1,4 +1,3 @@
-use arrow::array::Array;
 use arrow::bitmap::Bitmap;
 use num_traits::Zero;
 use polars_core::prelude::*;

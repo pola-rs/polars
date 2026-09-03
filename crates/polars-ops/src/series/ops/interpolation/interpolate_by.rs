@@ -1,6 +1,5 @@
 use std::ops::{Add, Div, Mul, Sub};
 
-use arrow::array::PrimitiveArray;
 use arrow::bitmap::MutableBitmap;
 use bytemuck::allocation::zeroed_vec;
 use num_traits::{NumCast, Zero};

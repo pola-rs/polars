@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_array::{PlArray, PlStructArray};
 use polars_core::chunked_array::StructChunked;
-use polars_core::datatypes::{CompatLevel, DataType, Field, ListChunked};
+use polars_core::datatypes::{DataType, Field, ListChunked};
 use polars_core::runtime::RAYON;
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
@@ -25,7 +25,6 @@ pub trait ToStruct: AsList {
         })?;
 
         let field_dtype = ca.inner_dtype();
-        let field_phys_dtype = field_dtype.to_physical();
         let outer_validity = ca.rechunk_validity();
 
         Ok(unsafe {

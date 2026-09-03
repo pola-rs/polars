@@ -123,13 +123,11 @@ unsafe fn target_get_unchecked<'a, A: StaticArray>(
     arr.get_unchecked(arr_idx)
 }
 
-unsafe fn gather_idx_array_unchecked<A: StaticArray>(
-    targets: &[&A],
-    has_nulls: bool,
-    indices: &[IdxSize],
-) -> A
+unsafe fn gather_idx_array_unchecked<A>(targets: &[&A], has_nulls: bool, indices: &[IdxSize]) -> A
 where
-    A: for<'a> ArrayFromIter<Option<A::ValueT<'a>>> + for<'a> ArrayFromIter<A::ValueT<'a>>,
+    A: StaticArray
+        + for<'a> ArrayFromIter<Option<A::ValueT<'a>>>
+        + for<'a> ArrayFromIter<A::ValueT<'a>>,
 {
     let it = indices.iter().copied();
     if targets.len() == 1 {

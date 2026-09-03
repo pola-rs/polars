@@ -37,12 +37,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         // SAFETY: the chunks were just written out flat, and writing one out changes neither its
         // length nor which of its elements are null.
         let flat = unsafe {
-            let mut out = Self::new_with_dims(
-                self.field.clone(),
-                chunks,
-                self.length,
-                self.null_count,
-            );
+            let mut out =
+                Self::new_with_dims(self.field.clone(), chunks, self.length, self.null_count);
             out.set_flags(self.get_flags());
             Flat::new(out)
         };
@@ -195,7 +191,8 @@ mod test {
     #[test]
     fn cont_slice_needs_one_chunk_and_no_nulls() {
         let mut ca = Int32Chunked::new(PlSmallStr::EMPTY, &[1, 2]);
-        ca.append(&Int32Chunked::new(PlSmallStr::EMPTY, &[3])).unwrap();
+        ca.append(&Int32Chunked::new(PlSmallStr::EMPTY, &[3]))
+            .unwrap();
         assert!(ca.to_flat().cont_slice().is_err());
 
         let ca = Int32Chunked::new(PlSmallStr::EMPTY, &[Some(1), None]);
