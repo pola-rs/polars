@@ -12,17 +12,13 @@ from typing import (
 
 import polars._reexport as pl
 import polars._utils.construction as plc
-from polars._dependencies import (
-    _PYARROW_AVAILABLE,
-    _check_for_numpy,
-    dataclasses,
-)
+from polars._dependencies import _PYARROW_AVAILABLE, _check_for_numpy
 from polars._dependencies import numpy as np
-from polars._dependencies import pandas as pd
 from polars._dependencies import pyarrow as pa
 from polars._utils.construction.dataframe import _sequence_of_dict_to_pydf
 from polars._utils.construction.utils import (
     get_first_non_none,
+    is_dataclass_instance,
     is_namedtuple,
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
@@ -111,7 +107,7 @@ def sequence_to_pyseries(
     value = get_first_non_none(values)
     if value is not None:
         if (
-            dataclasses.is_dataclass(value)
+            is_dataclass_instance(value)
             or is_pydantic_model(value)
             or is_namedtuple(value.__class__)
             or is_sqlalchemy_row(value)
