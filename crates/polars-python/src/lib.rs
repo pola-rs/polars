@@ -58,6 +58,12 @@ pub mod c_api;
 // example: 1.35.0-beta.1
 pub static PYPOLARS_VERSION: &str = "2.0.0-rc.1";
 
+// Set by the release CI workflow; absent for local/source builds.
+pub static PYPOLARS_BUILD_COMMIT: &str = match option_env!("POLARS_BUILD_COMMIT") {
+    Some(s) => s,
+    None => "<unknown>",
+};
+
 use crate::conversion::Wrap;
 
 pub type PyDataType = Wrap<polars_core::datatypes::DataType>;

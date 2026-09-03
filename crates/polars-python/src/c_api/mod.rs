@@ -467,6 +467,7 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Build info
     m.add("__version__", crate::PYPOLARS_VERSION)?;
     m.add("RUNTIME_REPR", RUNTIME_REPR)?;
+    m.add("_BUILD_COMMIT", crate::PYPOLARS_BUILD_COMMIT)?;
 
     // Plugins
     #[cfg(feature = "ffi_plugin")]
