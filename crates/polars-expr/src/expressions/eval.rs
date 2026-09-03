@@ -507,6 +507,8 @@ impl PhysicalExpr for EvalExpr {
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let input = self.input.evaluate(df, state)?;
+        // @scalar-opt: every variant but `Cumulative` maps rows independently, so a scalar
+        // input could be evaluated once and broadcast instead of expanded to full length.
         let out = match self.variant {
             EvalVariant::List => {
                 let lst = input.list()?;

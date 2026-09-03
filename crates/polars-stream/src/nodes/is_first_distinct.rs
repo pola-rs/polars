@@ -67,10 +67,10 @@ impl ComputeNode for IsFirstDistinctNode {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await {
                 let morsel = morsel
-                    .map(|mut df| {
-                        let key_df = df.select(slf.key_schema.iter_names()).unwrap();
+                    .try_map(|mut df| {
+                        let key_df = df.select(slf.key_schema.iter_names())?;
                         let hash_keys =
-                            HashKeys::from_df(&key_df, slf.random_state.clone(), true, false);
+                            HashKeys::from_df(&key_df, slf.random_state.clone(), true, false)?;
                         let mut distinct = BitmapBuilder::with_capacity(df.height());
                         unsafe {
                             slf.subset
@@ -91,10 +91,10 @@ impl ComputeNode for IsFirstDistinctNode {
                         let arr = BooleanArray::from(distinct.freeze());
                         let col =
                             BooleanChunked::with_chunk(slf.out_name.clone(), arr).into_column();
-                        df.with_column(col).unwrap();
-                        df
+                        df.with_column(col)?;
+                        PolarsResult::Ok(df)
                     })
-                    .await;
+                    .await?;
                 if send.send(morsel).await.is_err() {
                     break;
                 }

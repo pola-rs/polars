@@ -316,14 +316,17 @@ impl DataFrame {
     /// Returns true if the chunks of the columns do not align and re-chunking should be done
     pub fn should_rechunk(&self) -> bool {
         // Fast check. It is also needed for correctness, as code below doesn't check if the number
-        // of chunks is equal.
-        if !self.columns().iter().map(Column::n_chunks).all_equal() {
+        // of chunks is equal. Columns without chunks of their own align with any layout.
+        if !self
+            .columns()
+            .iter()
+            .filter_map(Column::lazy_as_materialized_series)
+            .map(|s| s.n_chunks())
+            .all_equal()
+        {
             return true;
         }
 
-        // From here we check chunk lengths. Skipping the columns without chunks is
-        // safe because the counts are equal: either every count is 1, or there is
-        // no such column left.
         let mut chunk_lengths = self
             .columns()
             .iter()
@@ -2147,8 +2150,7 @@ impl DataFrame {
                     .map(|c| c.field().to_arrow(compat_level))
                     .collect(),
             ),
-            idx: 0,
-            n_chunks: usize::max(1, self.first_col_n_chunks()),
+            cursor: ChunkCursor::new(self),
             compat_level,
             parallel,
         })
@@ -2171,16 +2173,14 @@ impl DataFrame {
         }
 
         RecordBatchIterWrap::PhysicalBatches(PhysRecordBatchIter {
+            df: self,
             schema: Arc::new(
                 self.columns()
                     .iter()
                     .map(|c| c.field().to_arrow(CompatLevel::newest()))
                     .collect(),
             ),
-            arr_iters: self
-                .materialized_column_iter()
-                .map(|s| s.chunks().iter())
-                .collect(),
+            cursor: ChunkCursor::new(self),
         })
     }
 
@@ -2671,11 +2671,57 @@ impl DataFrame {
     }
 }
 
+/// Cursor over the chunks a [`DataFrame`] is laid out along.
+struct ChunkCursor<'a> {
+    /// The chunks of the first column that has any; empty when no column does.
+    chunks: &'a [ArrayRef],
+    height: usize,
+    idx: usize,
+}
+
+impl<'a> ChunkCursor<'a> {
+    fn new(df: &'a DataFrame) -> Self {
+        let chunks = match df
+            .columns()
+            .iter()
+            .find_map(Column::lazy_as_materialized_series)
+        {
+            Some(s) => s.chunks().as_slice(),
+            None => &[],
+        };
+
+        Self {
+            chunks,
+            height: df.height(),
+            idx: 0,
+        }
+    }
+
+    fn n_chunks(&self) -> usize {
+        usize::max(1, self.chunks.len())
+    }
+
+    /// The index and number of rows of the next chunk.
+    fn next(&mut self) -> Option<(usize, usize)> {
+        let idx = self.idx;
+        if idx >= self.n_chunks() {
+            return None;
+        }
+
+        self.idx += 1;
+        Some((idx, self.chunks.get(idx).map_or(self.height, |c| c.len())))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let n = self.n_chunks() - self.idx;
+        (n, Some(n))
+    }
+}
+
 pub struct RecordBatchIter<'a> {
     df: &'a DataFrame,
     schema: ArrowSchemaRef,
-    idx: usize,
-    n_chunks: usize,
+    cursor: ChunkCursor<'a>,
     compat_level: CompatLevel,
     parallel: bool,
 }
@@ -2684,66 +2730,55 @@ impl Iterator for RecordBatchIter<'_> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx >= self.n_chunks {
-            return None;
-        }
+        let (idx, length) = self.cursor.next()?;
 
-        // Create a batch of the columns with the same chunk no.
-        let batch_cols: Vec<ArrayRef> = if self.parallel {
-            let iter = self
-                .df
-                .columns()
-                .par_iter()
-                .map(Column::as_materialized_series)
-                .map(|s| s.to_arrow(self.idx, self.compat_level));
-            RAYON.install(|| iter.collect())
-        } else {
-            self.df
-                .columns()
-                .iter()
-                .map(Column::as_materialized_series)
-                .map(|s| s.to_arrow(self.idx, self.compat_level))
-                .collect()
+        let to_arrow = |c: &Column| match c.lazy_as_materialized_series() {
+            Some(s) => s.to_arrow(idx, self.compat_level),
+            None => c.slice(0, length).rechunk_to_arrow(self.compat_level),
         };
 
-        let length = batch_cols.first().map_or(0, |arr| arr.len());
-
-        self.idx += 1;
+        let batch_cols: Vec<ArrayRef> = if self.parallel {
+            let iter = self.df.columns().par_iter().map(to_arrow);
+            RAYON.install(|| iter.collect())
+        } else {
+            self.df.columns().iter().map(to_arrow).collect()
+        };
 
         Some(RecordBatch::new(length, self.schema.clone(), batch_cols))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let n = self.n_chunks - self.idx;
-        (n, Some(n))
+        self.cursor.size_hint()
     }
 }
 
 pub struct PhysRecordBatchIter<'a> {
+    df: &'a DataFrame,
     schema: ArrowSchemaRef,
-    arr_iters: Vec<std::slice::Iter<'a, ArrayRef>>,
+    cursor: ChunkCursor<'a>,
 }
 
 impl Iterator for PhysRecordBatchIter<'_> {
     type Item = RecordBatch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let arrs = self
-            .arr_iters
-            .iter_mut()
-            .map(|phys_iter| phys_iter.next().cloned())
-            .collect::<Option<Vec<_>>>()?;
+        let (idx, length) = self.cursor.next()?;
 
-        let length = arrs.first().map_or(0, |arr| arr.len());
+        let arrs = self
+            .df
+            .columns()
+            .iter()
+            .map(|c| match c.lazy_as_materialized_series() {
+                Some(s) => s.chunks()[idx].clone(),
+                None => c.slice(0, length).as_materialized_series().chunks()[0].clone(),
+            })
+            .collect::<Vec<_>>();
+
         Some(RecordBatch::new(length, self.schema.clone(), arrs))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        if let Some(iter) = self.arr_iters.first() {
-            iter.size_hint()
-        } else {
-            (0, None)
-        }
+        self.cursor.size_hint()
     }
 }
 
@@ -2972,6 +3007,28 @@ mod test {
 
         df.vstack_mut(&df.slice(0, 3)).unwrap();
         assert_eq!(df.first_col_n_chunks(), 2)
+    }
+
+    #[test]
+    fn test_vstack_scalar_chunk_alignment() {
+        // Appending equal scalars keeps the column unmaterialized.
+        let mut df = df! {
+            "int" => [0],
+            "str" => ["a"],
+        }
+        .unwrap();
+        df.vstack_mut(&df! { "int" => [1], "str" => ["a"] }.unwrap())
+            .unwrap();
+
+        assert_eq!(df.column("int").unwrap().n_chunks(), 2);
+        assert!(df.column("str").unwrap().as_scalar_column().is_some());
+        assert!(!df.should_rechunk());
+
+        let batches = df
+            .iter_chunks(CompatLevel::newest(), false)
+            .collect::<Vec<_>>();
+        assert_eq!(batches.len(), 2);
+        assert!(batches.iter().all(|b| b.len() == 1));
     }
 
     #[test]
