@@ -53,6 +53,11 @@ pub mod utils;
 #[cfg(feature = "c_api")]
 pub mod c_api;
 
+// Since Python Polars cannot share its version into here and we need to be able to build this
+// package correctly without `py-polars`, we need to mirror the version here.
+// example: 1.35.0-beta.1
+pub static PYPOLARS_VERSION: &str = "2.0.0-rc.1";
+
 use crate::conversion::Wrap;
 
 pub type PyDataType = Wrap<polars_core::datatypes::DataType>;
