@@ -2,6 +2,7 @@ use std::hash::Hash;
 use std::sync::Mutex;
 
 use deletion::DeletionFilesList;
+use polars_buffer::Buffer;
 use polars_core::schema::iceberg::IcebergSchemaRef;
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_io::cloud::CloudOptions;
@@ -308,7 +309,7 @@ pub enum FileScanIR {
         /// per source in `sources` order; `Some` only when every source has
         /// a known size.
         #[cfg_attr(feature = "dsl-schema", serde(skip))]
-        bytes_per_source: Option<Arc<[u64]>>,
+        bytes_per_source: Option<Buffer<u64>>,
     },
 
     #[cfg(feature = "ipc")]
@@ -663,8 +664,8 @@ mod _file_scan_eq_hash {
     }
 
     /// # Hash / Eq safety
-    /// * All usizes originate from `Arc<>`s, and the lifetime of this enum is bound to that of the
-    ///   input ref.
+    /// * All usizes originate from `Arc<>`s or `Buffer<>`s, and the lifetime of this enum is bound
+    ///   to that of the input ref.
     #[derive(PartialEq, Hash)]
     pub enum FileScanEqHashWrap<'a> {
         #[cfg(feature = "csv")]
@@ -681,7 +682,7 @@ mod _file_scan_eq_hash {
         Parquet {
             options: &'a polars_io::prelude::ParquetOptions,
             metadata_per_source: Option<usize>,
-            bytes_per_source: Option<usize>,
+            bytes_per_source: Option<(usize, usize)>,
         },
 
         #[cfg(feature = "ipc")]
@@ -732,7 +733,9 @@ mod _file_scan_eq_hash {
                 } => FileScanEqHashWrap::Parquet {
                     options,
                     metadata_per_source: metadata_per_source.as_arc_ptr(),
-                    bytes_per_source: bytes_per_source.as_ref().map(arc_as_ptr),
+                    bytes_per_source: bytes_per_source
+                        .as_ref()
+                        .map(|v| (v.as_ptr() as usize, v.len())),
                 },
 
                 #[cfg(feature = "ipc")]

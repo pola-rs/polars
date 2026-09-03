@@ -60,7 +60,7 @@ pub(super) async fn dsl_to_ir(
                 let (sources, bytes) = sources
                     .expand_paths_with_hive_update(unified_scan_args)
                     .await?;
-                bytes_per_source = bytes.or(bytes_per_source);
+                bytes_per_source = bytes.map(Buffer::from_owner).or(bytes_per_source);
                 sources
             },
             #[cfg(feature = "ipc")]
@@ -1383,7 +1383,7 @@ impl SourcesToFileInfo {
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
         // Per-source byte sizes from path expansion, aligned with `sources`.
-        bytes_per_source: Option<Arc<[u64]>>,
+        bytes_per_source: Option<Buffer<u64>>,
         unified_scan_args: &mut UnifiedScanArgs,
         #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
             LazyLock<PyScanResolveThreadPool>,
@@ -1670,7 +1670,7 @@ impl SourcesToFileInfo {
         scan_type: &FileScanDsl,
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
-        bytes_per_source: Option<Arc<[u64]>>,
+        bytes_per_source: Option<Buffer<u64>>,
         unified_scan_args: &mut UnifiedScanArgs,
         #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
             LazyLock<PyScanResolveThreadPool>,

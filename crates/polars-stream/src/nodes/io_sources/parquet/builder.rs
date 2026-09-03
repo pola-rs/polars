@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_async::primitives::wait_group::WaitGroup;
+use polars_buffer::Buffer;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency::get_request_budget;
@@ -19,7 +20,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 #[derive(Clone)]
 pub struct ParquetReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
-    pub bytes_per_source: Option<Arc<[u64]>>,
+    pub bytes_per_source: Option<Buffer<u64>>,
     pub options: Arc<ParquetOptions>,
     pub pipeline_budget: std::sync::OnceLock<PipelineBudget>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,

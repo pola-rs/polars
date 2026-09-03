@@ -6,6 +6,7 @@ use polars::prelude::{
     CastColumnsPolicy, CloudScheme, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy,
     PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
 };
+use polars_buffer::Buffer;
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
@@ -138,7 +139,7 @@ impl PyScanOptions<'_> {
             deletion_files,
             table_statistics: table_statistics.map(|x| x.0),
             row_count,
-            source_sizes: source_sizes.map(Arc::from),
+            source_sizes: source_sizes.map(Buffer::from),
         };
 
         Ok(unified_scan_args)
