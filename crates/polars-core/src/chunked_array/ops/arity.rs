@@ -9,10 +9,8 @@ use polars_array::{
 
 use crate::prelude::PlArrayRef;
 
-/// An Arrow array, which is what the kernels that hand a [`Series`] back produce: the [`DataType`]
+/// An Arrow array, which is what the kernels that hand a [`Series`] back produce: the `DataType`
 /// of the result is read off the Arrow data type when the chunks are imported.
-///
-/// [`DataType`]: crate::prelude::DataType
 type ArrowArrayRef = arrow::array::ArrayRef;
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
@@ -22,11 +20,8 @@ use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
 use crate::prelude::{ChunkedArray, PolarsDataType, Series, StringChunked};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
 
-/// Returns `ret` masked off wherever either input has a null, on top of its own mask.
-///
-/// The three masks all cover the same elements. A scalar one among them is combined as the single
-/// bit it stands for rather than written out first, so a kernel over two chunks that are fully
-/// null hands back a result that is still `O(1)` in memory.
+/// Returns `ret` masked off wherever either input has a null, on top of its own mask. A scalar
+/// mask among the three is combined as the single bit it stands for, not written out first.
 #[inline]
 fn mask_with_inputs<A: StaticArray>(
     ret: A,
@@ -34,20 +29,14 @@ fn mask_with_inputs<A: StaticArray>(
     rhs: Option<PlBitmapRef<'_>>,
 ) -> A {
     // The combined mask covers the inputs' elements, which is what `ret` holds too: a kernel that
-    // handed back a result of a different height than its inputs panics here, or in the setter
-    // below.
+    // handed back a result of a different height than its inputs panics here.
     let inputs = combine_validities_and(lhs, rhs);
     let validity = combine_validities_and(inputs.as_ref().map(PlBitmap::as_ref), ret.validity());
     ret.with_validity_broadcast_typed(validity.map(PlBitmap::into_flat_or_scalar))
 }
 
 /// The height of the output of an elementwise operation over two columns of these lengths, or
-/// `None` if the two do not broadcast.
-///
-/// A column either has the height of the output or is a single element repeated to meet it. This
-/// is [`binary_output_height`](crate::binary_output_height) without the error, leaving the caller
-/// to say what a length mismatch is — the operations here answer it with a panic, as they always
-/// have.
+/// `None` if the two do not broadcast. The operations here answer a mismatch with a panic.
 #[inline]
 pub fn broadcast_height(lhs: usize, rhs: usize) -> Option<usize> {
     match (lhs, rhs) {
@@ -138,11 +127,8 @@ where
     ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
 }
 
-/// Applies a kernel written against the [`flat`](polars_array::broadcast) representation.
-///
-/// This is [`unary_kernel`] for a kernel that reads the backing buffers directly: every chunk
-/// reaches it as a [`Flat`] array, written out first if it was not laid out flat — see
-/// [`as_flat`].
+/// Applies a kernel written against the [`flat`](polars_array::broadcast) representation: this is
+/// [`unary_kernel`] with every chunk written out flat first.
 #[inline]
 pub fn unary_kernel_flat<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
 where
@@ -169,10 +155,8 @@ where
     ChunkedArray::from_chunk_iter(name, iter)
 }
 
-/// Applies an owned kernel written against the [`flat`](polars_array::broadcast) representation.
-///
-/// This is [`unary_kernel_owned`] for a kernel that reads the backing buffers directly — see
-/// [`unary_kernel_flat`].
+/// Applies an owned kernel written against the [`flat`](polars_array::broadcast) representation:
+/// [`unary_kernel_owned`] for a kernel that reads the backing buffers directly.
 #[inline]
 pub fn unary_kernel_owned_flat<T, V, F, Arr>(ca: ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
 where
@@ -291,9 +275,7 @@ where
 }
 
 /// Applies a kernel written against the [`flat`](polars_array::broadcast) representation, putting
-/// the input's validity mask back on the result.
-///
-/// This is [`unary_mut_values`] for a kernel that reads the backing buffers directly.
+/// the input's validity mask back on the result: [`unary_mut_values`] over the buffers.
 #[inline]
 pub fn unary_mut_values_flat<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
 where
@@ -321,10 +303,8 @@ where
     ChunkedArray::from_chunk_iter(ca.name().clone(), ca.downcast_iter().map(op))
 }
 
-/// Applies a kernel written against the [`flat`](polars_array::broadcast) representation,
-/// leaving the result's own validity mask alone.
-///
-/// This is [`unary_mut_with_options`] for a kernel that reads the backing buffers directly.
+/// Applies a kernel written against the [`flat`](polars_array::broadcast) representation, leaving
+/// the result's own validity mask alone: [`unary_mut_with_options`] over the buffers.
 #[inline]
 pub fn unary_mut_with_options_flat<T, V, F, Arr>(ca: &ChunkedArray<T>, mut op: F) -> ChunkedArray<V>
 where
@@ -563,10 +543,7 @@ where
 }
 
 /// Applies a binary kernel written against the [`flat`](polars_array::broadcast) representation,
-/// masking off every element that either side has a null at.
-///
-/// This is [`binary_mut_values`] for a kernel that reads the backing buffers directly — see
-/// [`binary_kernel_flat`].
+/// masking off every element that either side has a null at: [`binary_mut_values`] over buffers.
 #[inline]
 pub fn binary_mut_values_flat<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
@@ -639,10 +616,7 @@ where
 }
 
 /// Applies a binary kernel written against the [`flat`](polars_array::broadcast) representation.
-///
-/// This is the `(flat, flat)` path of a broadcasting operation — see
-/// [`apply_binary_kernel_broadcast`], which dispatches to it once the two sides are known to be
-/// of the same length.
+/// This is the `(flat, flat)` path of [`apply_binary_kernel_broadcast`].
 pub fn binary_kernel_flat<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
@@ -937,8 +911,7 @@ where
     let length = broadcast_height(lhs.len(), rhs.len())
         .expect("cannot apply operation on arrays of different lengths");
 
-    // A side that repeats one element is read once and handed to the unary walk over the other,
-    // which is what keeps a column that stands for a single value from being read `length` times.
+    // A side that repeats one element is read once and handed to the unary walk over the other.
     // A column of one element repeats it by definition, so this subsumes the length-one case.
     match (lhs.scalar_value(), rhs.scalar_value()) {
         (Some(a), _) if rhs.len() == length => {
@@ -1023,15 +996,8 @@ where
     let length = broadcast_height(lhs.len(), rhs.len())
         .expect("cannot apply operation on arrays of different lengths");
 
-    // The broadcast paths come first: a side that repeats a single value is handed to the kernel
-    // as the value it is, so that the other side reaches a kernel whose second argument is flat
-    // without that repeated value ever being written out. A column of one element repeats it by
-    // definition, and one whose only chunk is in the [`scalar`](polars_array::broadcast)
-    // representation repeats it over its whole height — so this subsumes the length-one case
-    // rather than sitting beside it, and `as_flat` no longer has a scalar chunk to expand.
-    //
-    // The `(flat, flat)` path is what is left: two columns of the same height, neither of which
-    // stands for a single value, which is what the specialized kernels are written for.
+    // The broadcast paths come first, so that a side repeating a single value reaches the kernel
+    // as that value rather than being written out. What is left is the `(flat, flat)` path.
     let out = match (lhs.scalar_value(), rhs.scalar_value()) {
         // broadcast right path
         (_, Some(rhs)) if lhs.len() == length => match rhs {

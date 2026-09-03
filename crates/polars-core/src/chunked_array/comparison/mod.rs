@@ -727,9 +727,7 @@ where
     F: Fn(&Flat<PlListArray>, &Flat<PlListArray>) -> Bitmap,
     B: Fn(&Flat<PlListArray>, &Box<dyn Array>) -> Bitmap,
 {
-    // Broadcast: a side that repeats a single list — a column of one element, or one whose only
-    // chunk is scalar — is compared against that list, not written out. Its one element is the
-    // values it covers, handed to the kernel as the Arrow array they are.
+    // Broadcast: a side that repeats a single list is compared against that list, not written out.
     let length = arity::broadcast_height(lhs.len(), rhs.len())
         .expect("cannot compare arrays of different lengths");
     match (lhs.scalar_value(), rhs.scalar_value()) {
@@ -1038,17 +1036,15 @@ impl ChunkCompareEq<&ArrayChunked> for ArrayChunked {
     }
 }
 
-/// The number of elements of `arr` that are both valid and `true`.
-///
-/// A chunk whose values and mask are both scalar is one bit each, so this is `O(1)` for it.
+/// The number of elements of `arr` that are both valid and `true`. A chunk whose values and mask
+/// are both scalar is one bit each, so this is `O(1)` for it.
 fn true_count(arr: &PlBooleanArray) -> usize {
     let values = arr.values();
     match arr.validity() {
         None => values.set_bits(),
         Some(validity) => match (values.scalar_value(), validity.scalar_value()) {
-            // A scalar side shares one bit with every element, which is enough to settle the
-            // `and` on its own wherever that bit is unset, and to leave the other side alone
-            // wherever it is set. Only two flat masks are walked.
+            // A scalar side shares one bit with every element, which settles the `and` on its own
+            // wherever that bit is unset. Only two flat masks are walked.
             (Some(false), _) | (_, Some(false)) => 0,
             (Some(true), Some(true)) => arr.len(),
             (Some(true), None) => validity.set_bits(),

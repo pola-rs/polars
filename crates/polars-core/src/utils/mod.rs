@@ -1338,10 +1338,8 @@ where
     None
 }
 
-/// The number of set bits `mask` starts with.
-///
-/// A scalar mask is the one bit it holds covering every element, so it is either all ones or all
-/// zeros and never walked.
+/// The number of set bits `mask` starts with. A scalar mask is all ones or all zeros, being the
+/// one bit it holds covering every element, so it is never walked.
 fn leading_ones(mask: &PlBitmapRef<'_>) -> usize {
     match mask.scalar_value() {
         Some(true) => mask.len(),

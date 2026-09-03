@@ -10,11 +10,8 @@ use polars_utils::itertools::Itertools;
 use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
 
-/// Lays `elements` out as the chunk of a [`ListChunked`] of `inner_dtype`.
-///
-/// The values are the elements laid end to end, so an element that is null contributes nothing to
-/// them; `inner_dtype` is what says what the values are when every element is null, the chunks
-/// carrying no logical type of their own.
+/// Lays `elements` out as the chunk of a [`ListChunked`] of `inner_dtype`, whose values are the
+/// elements laid end to end — a null element contributing nothing to them.
 pub(crate) fn collect_list_chunk(
     elements: Vec<Option<PlArrayRef>>,
     inner_dtype: &DataType,
@@ -53,14 +50,8 @@ pub(crate) fn collect_list_chunk(
     }
 }
 
-/// Returns `arr` with its values replaced, keeping its offsets and validity mask.
-///
-/// The offsets are handed over in whatever representation they are in — a
-/// [`scalar`](polars_array::broadcast) list array holds the single range every element covers —
-/// so this is `O(1)`.
-///
-/// # Panics
-/// Panics if `values` is not as long as the values `arr` is taken over.
+/// Returns `arr` with its values replaced, keeping its offsets and validity mask. Panics if
+/// `values` is not as long as the values `arr` is taken over.
 pub(crate) fn list_with_values(arr: &PlListArray, values: PlArrayRef) -> PlListArray {
     assert_eq!(arr.values().len(), values.len());
     let offsets_are_flat = arr.offsets_are_flat();

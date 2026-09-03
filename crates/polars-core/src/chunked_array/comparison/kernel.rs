@@ -1,9 +1,5 @@
-//! The comparison kernels of `polars-compute`, over the arrays of `polars-array`.
-//!
-//! These mirror [`TotalEqKernel`] and [`TotalOrdKernel`] method for method, and every one of them
-//! dispatches to the Arrow kernel of the same name after handing the backing buffers over — see
-//! [`ToArrow`], which is where that crossing is `O(1)`, and why these are defined on [`Flat`]
-//! arrays rather than on the arrays themselves.
+//! The comparison kernels of `polars-compute`, over the arrays of `polars-array`: these mirror
+//! [`TotalEqKernel`] and [`TotalOrdKernel`] once [`ToArrow`] has handed the buffers over.
 
 use arrow::bitmap::Bitmap;
 use polars_array::Flat;

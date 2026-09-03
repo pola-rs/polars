@@ -301,9 +301,8 @@ pub fn row_encoding_decode(
             .collect(),
     );
 
-    // The decoder is written against the Arrow arrays, so the chunks cross over and the results
-    // cross back — see `polars_array::arrow::bridge`. The rows it hands back borrow from the Arrow arrays, which
-    // is why they are all crossed over first.
+    // The decoder is written against the Arrow arrays, and the rows it hands back borrow from
+    // them, which is why they are all crossed over first.
     let arrows = ca.downcast_iter().map(chunk_to_arrow).collect::<Vec<_>>();
     let mut rows = Vec::new();
     let chunks = arrows

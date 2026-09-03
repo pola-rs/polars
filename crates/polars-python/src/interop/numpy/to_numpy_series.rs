@@ -33,10 +33,6 @@ impl PySeries {
     /// WARNING: The resulting view will show the underlying value for nulls,
     /// which may be any value. The caller is responsible for handling nulls
     /// appropriately.
-    ///
-    /// The values are handed over as they are, so the array shares its memory with this Series
-    /// wherever the layout allows it; a copy is made only where there is no single run of values
-    /// to point at — see `handle_chunks`.
     fn to_numpy_view(&self, py: Python) -> Option<Py<PyAny>> {
         let (view, _) = try_series_to_numpy_view(py, &self.series.read(), true, true)?;
         Some(view)
@@ -96,11 +92,8 @@ fn try_series_to_numpy_view(
 
 /// Rechunk and lay out the Series flat if required.
 ///
-/// NumPy arrays are always contiguous, so we may have to rechunk before creating a view. A Series
-/// that is not flat has to be written out as well: a scalar chunk holds a single value standing
-/// for every element, where the view needs one slot per element. Either is a copy, so both are
-/// gated on `allow_copy`; if one is needed, we can flag the resulting array as writable. The
-/// writing out itself is left to the functions that take the pointer, which know the element type.
+/// NumPy arrays are always contiguous and need one slot per element, so we may have to rechunk or
+/// write out a scalar chunk before creating a view. If we do so, we can flag it as writable.
 fn handle_chunks(py: Python<'_>, s: &Series, allow_copy: bool) -> Option<(Series, bool)> {
     let needs_copy = s.n_chunks() > 1 || !series_is_flat(s);
     match (needs_copy, allow_copy) {
@@ -136,13 +129,8 @@ fn numeric_series_to_numpy_view(py: Python<'_>, mut s: Series, writable: bool) -
             flags::NPY_ARRAY_FARRAY_RO
         };
 
-        // The view is a pointer into the values, so the Series it is taken from and that is kept
-        // alive behind it is the one left flat, rather than a copy of it. `handle_chunks` is what
-        // decided that writing a scalar chunk out here is allowed.
-        //
-        // TODO(polars-array-scalar): a NumPy array carries its own strides, so a scalar chunk is
-        // the single value a zero-strided array reads for every element. `create_borrowed_np_array`
-        // leaves the strides to NumPy to derive from the shape, so the chunk is written out here.
+        // The view points into the values, so it is the Series kept alive behind it that is left
+        // flat; `handle_chunks` is what decided that writing a scalar chunk out here is allowed.
         let ca: &mut ChunkedArray<$T> = s._get_inner_mut().as_mut();
         ca.flatten_mut();
         let slice = ca.as_flat().unwrap().data_views().next().unwrap();
@@ -170,12 +158,8 @@ fn temporal_series_to_numpy_view(py: Python<'_>, s: Series, writable: bool) -> P
         flags::NPY_ARRAY_FARRAY_RO
     };
 
-    // The view is a pointer into the values of the physical Series, which shares them with `s`, so
-    // it is that one which is left flat and kept alive behind the view. `handle_chunks` is what
-    // decided that writing a scalar chunk out here is allowed.
-    //
-    // TODO(polars-array-scalar): as in `numeric_series_to_numpy_view`, a zero-strided NumPy array
-    // would read a scalar chunk in place rather than have it written out.
+    // The view points into the values of the physical Series, which is the one left flat and kept
+    // alive behind it; `handle_chunks` decided that writing a scalar chunk out here is allowed.
     let mut phys = s.to_physical_repr().into_owned();
     let ca: &mut Int64Chunked = phys._get_inner_mut().as_mut();
     ca.flatten_mut();

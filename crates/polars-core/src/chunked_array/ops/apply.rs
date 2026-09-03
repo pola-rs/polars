@@ -123,10 +123,8 @@ where
 {
     use arrow::Either::*;
     let chunks = chunks.into_iter().map(|arr| {
-        // The kernel writes over the values buffer where it can, which asks for the Arrow array
-        // that shares it — see `polars_array::arrow::bridge`. A scalar chunk is written out by the crossing.
-        // TODO(polars-array-scalar): a scalar chunk holds one value standing for every element,
-        // so `f` could be applied to that single value in `O(1)` instead of writing it out.
+        // TODO(polars-array-scalar): the crossing to Arrow writes a scalar chunk out, where `f`
+        // could be applied to the single value it stands for in `O(1)`.
         let owned_arr = chunk_to_arrow(
             arr.as_any()
                 .downcast_ref::<PlPrimitiveArray<S::Native>>()
@@ -624,12 +622,8 @@ impl StringChunked {
     }
 }
 
-/// Runs an Arrow kernel over every chunk of `ca`, handing the results back as chunks.
-///
-/// The kernels of the crates around this one are written against the Arrow arrays, so each chunk
-/// crosses over and the result crosses back — see [`bridge`](polars_array::arrow::bridge).
-/// A chunk in the [`scalar`](polars_array::broadcast) representation is written out by the
-/// crossing.
+/// Runs an Arrow kernel over every chunk of `ca`, handing the results back as chunks. A chunk in
+/// the [`scalar`](polars_array::broadcast) representation is written out by the crossing.
 fn apply_arrow_kernel<T: PolarsDataType>(
     ca: &ChunkedArray<T>,
     f: &dyn Fn(&<T::Array as ToArrow>::Arrow) -> ArrayRef,

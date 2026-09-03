@@ -75,12 +75,8 @@ pub(super) fn series_contains_null(s: &Series) -> bool {
     }
 }
 
-/// Returns whether every chunk of the Series is flat, at any level of nesting.
-///
-/// A view is a pointer into the values, so it needs one slot per element; a scalar chunk holds a
-/// single value standing for every element, which has to be written out before it can be viewed.
-/// Of the nested types, only Array types are handled since only those are relevant for NumPy
-/// views.
+/// Returns whether every chunk of the Series is flat, at any level of nesting. Of the nested
+/// types, only Array types are handled since only those are relevant for NumPy views.
 pub(super) fn series_is_flat(s: &Series) -> bool {
     match s.dtype() {
         dt if dt.is_primitive_numeric() => {
@@ -92,8 +88,7 @@ pub(super) fn series_is_flat(s: &Series) -> bool {
             s.to_physical_repr().i64().unwrap().is_flat()
         },
         DataType::Array(_, _) => {
-            // The values of a scalar array hold the single element it repeats rather than one run
-            // per element, so `get_inner` writes them out; the values themselves carry their own
+            // `get_inner` writes out the values of a scalar array; those values carry their own
             // representation, which the recursion is for.
             let ca = s.array().unwrap();
             ca.is_flat() && series_is_flat(&ca.get_inner())

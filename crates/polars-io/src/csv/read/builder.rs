@@ -809,10 +809,8 @@ impl Builder {
                 .unwrap(),
 
             Builder::Utf8(v) => {
-                // SAFETY: every byte pushed into the builder has been validated as UTF-8:
-                // either per field by `parse_bytes` (under `CsvEncoding::LossyUtf8` or
-                // `ignore_errors`), or for the whole chunk up front by `read_impl`'s `check_utf8`
-                // pass. This is the invariant the previous `to_utf8view_unchecked` relied on.
+                // SAFETY: every byte pushed into the builder has been validated as UTF-8, either
+                // per field by `parse_bytes` or for the whole chunk by `read_impl`'s `check_utf8`.
                 let arr = unsafe { v.mutable.freeze().to_utf8view_unchecked() };
                 StringChunked::with_chunk(v.name, import::utf8_view_from_arrow(&arr)).into_series()
             },

@@ -42,9 +42,7 @@ impl<T: fmt::Debug> fmt::Debug for SliceBroadcastIter<'_, T> {
 }
 
 impl<'a, T> SliceBroadcastIter<'a, T> {
-    /// Broadcast `src` to length `n`.
-    ///
-    /// Returns `None` unless `src.len() == n` (normal mode) or
+    /// Broadcast `src` to length `n`. Returns `None` unless `src.len() == n` (normal mode) or
     /// `src.len() == 1` (broadcast mode).
     #[inline]
     pub fn new_broadcast(src: &'a [T], n: usize) -> Option<Self> {
@@ -119,10 +117,8 @@ impl<'a, T> SliceBroadcastIter<'a, T> {
         (i < self.len()).then(|| unsafe { self.get_unchecked(i) })
     }
 
-    /// Collapse the mode into a single branch so the caller can run a
-    /// monomorphic, vectorizable loop.
-    ///
-    /// `Ok(slice)` in normal mode; `Err((item, count))` in broadcast mode.
+    /// Collapse the mode into a single branch so the caller can run a monomorphic, vectorizable
+    /// loop: `Ok(slice)` in normal mode, `Err((item, count))` in broadcast mode.
     #[inline]
     pub fn split(self) -> Result<&'a [T], (&'a T, usize)> {
         let n = self.len();
@@ -178,8 +174,8 @@ impl<'a, T> Iterator for SliceBroadcastIter<'a, T> {
         self.next()
     }
 
-    /// Hoists the mode branch out of the loop. `for_each`, `sum`, `collect`
-    /// and friends route through here.
+    /// Hoists the mode branch out of the loop. `for_each`, `sum`, `collect` and friends route
+    /// through here.
     #[inline]
     fn fold<B, F>(self, init: B, mut f: F) -> B
     where

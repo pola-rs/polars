@@ -41,9 +41,8 @@ pub(super) fn sum_array_numerical(ca: &ArrayChunked, inner_type: &DataType) -> S
             let chunks = ca
                 .downcast_iter()
                 .map(|arr| {
-                    // TODO(polars-array-scalar): the values are read as a slice, so a scalar
-                    // chunk is written out here rather than the one element it stands for being
-                    // summed once.
+                    // TODO(polars-array-scalar): the values are read as a slice, so a scalar chunk
+                    // is written out rather than its one element being summed once.
                     let arr = arr.to_flat();
                     dispatch_sum::<$T, $S>(arr.values(), width, arr.validity())
                 })

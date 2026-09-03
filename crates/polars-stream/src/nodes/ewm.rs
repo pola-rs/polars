@@ -60,9 +60,8 @@ impl ComputeNode for EwmNode {
                 unsafe {
                     let c = df.columns_mut_retain_schema().get_mut(0).unwrap();
 
-                    // TODO(polars-array-scalar): the kernel is stateful over the elements it
-                    // sees, so a scalar chunk is written out on the way to Arrow. A state
-                    // update that takes a repeated value would fold it in `O(1)`.
+                    // TODO(polars-array-scalar): the kernel is stateful over the elements it sees,
+                    // so a scalar chunk is written out on the way to Arrow.
                     let rechunked = c.as_materialized_series().rechunk();
                     let updated = with_arrow_chunk(&*rechunked.chunks()[0], |arr| {
                         self.state.ewm_state_update(arr)

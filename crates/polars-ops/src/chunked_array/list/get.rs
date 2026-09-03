@@ -22,9 +22,8 @@ pub fn lst_get(ca: &ListChunked, index: &Int64Chunked, null_on_oob: bool) -> Pol
         },
         len if len == ca.len() => {
             let tmp = ca.rechunk();
-            // TODO(polars-array-scalar): the ranges are read off the offsets as a slice, so
-            // scalar offsets are written out here rather than the one range they share being
-            // indexed once.
+            // TODO(polars-array-scalar): the ranges are read off the offsets as a slice, so scalar
+            // offsets are written out rather than the one range they share being indexed once.
             let arr = tmp.downcast_as_array().to_flat();
             let offsets = arr.offsets().as_slice();
             let take_by = if ca.null_count() == 0 {

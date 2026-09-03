@@ -56,9 +56,8 @@ where
         // This is only possible if the reference count of the array and its buffers are 1
         // So the logic below is needed to keep the reference count 1 if it is
 
-        // First we must obtain an owned version of the array. The values are written into in
-        // place where this is the only reference to them, which asks for the Arrow array that
-        // shares them — see `polars_array::arrow::bridge`.
+        // First we must obtain an owned version of the array. Writing into the values in place
+        // asks for the Arrow array that shares them.
         let arr = chunk_to_arrow(self.downcast_iter().next().unwrap());
 
         // now we drop our owned ArrayRefs so that

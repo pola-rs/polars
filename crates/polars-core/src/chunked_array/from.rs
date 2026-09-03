@@ -95,11 +95,8 @@ where
         unsafe { ChunkedArray::new_with_dims(field, chunks, length, null_count) }
     }
 
-    /// Creates a [`ChunkedArray`] from Arrow chunks, importing each one.
-    ///
-    /// Importing hands the backing buffers over rather than copying the elements, so this is
-    /// `O(1)` per chunk — see [`polars_array::arrow::import`]. It is what the boundaries where
-    /// data arrives as Arrow use: an I/O reader, an FFI import, a kernel of `polars-compute`.
+    /// Creates a [`ChunkedArray`] from Arrow chunks, importing each one, which hands the backing
+    /// buffers over rather than copying the elements: `O(1)` per chunk.
     ///
     /// # Safety
     /// The physical type of all chunks must match the [`PolarsDataType`] `T`.
@@ -107,10 +104,8 @@ where
         unsafe { Self::from_chunks(name, import_arrow_chunks(chunks)) }
     }
 
-    /// Creates a [`ChunkedArray`] of `dtype` from Arrow chunks, importing each one.
-    ///
-    /// This is [`ChunkedArray::from_arrow_chunks`] for a type whose [`DataType`] the chunks do not
-    /// imply — a nested one, whose inner type the imported chunks no longer carry.
+    /// Creates a [`ChunkedArray`] of `dtype` from Arrow chunks, importing each one. This is
+    /// [`ChunkedArray::from_arrow_chunks`] for a type whose [`DataType`] the chunks do not imply.
     ///
     /// # Safety
     /// The physical type of all chunks must match `dtype`.
@@ -124,9 +119,8 @@ where
 
     /// Create a new [`ChunkedArray`] from existing chunks.
     ///
-    /// The [`DataType`] is the static one of `T`, which for a nested type names no inner type:
-    /// the chunks carry no logical type to recover one from, so a nested [`ChunkedArray`] is built
-    /// with [`ChunkedArray::from_chunks_and_dtype`] instead.
+    /// The [`DataType`] is the static one of `T`, which names no inner type: a nested
+    /// [`ChunkedArray`] is built with [`ChunkedArray::from_chunks_and_dtype`] instead.
     ///
     /// # Safety
     /// The physical type of all chunks must match the [`PolarsDataType`] `T`.
@@ -178,10 +172,8 @@ where
         ChunkedArray::new_with_compute_len(field, chunks)
     }
 
-    /// A [`ChunkedArray`] of `length` nulls, laid out like `ca`.
-    ///
-    /// The nulls keep the [`scalar`](polars_array::broadcast) representation, so this is `O(1)` in
-    /// memory for every type but a struct, which repeats one null per field.
+    /// A [`ChunkedArray`] of `length` nulls, laid out like `ca`. The nulls keep the
+    /// [`scalar`](polars_array::broadcast) representation, so this is `O(1)` in memory.
     pub fn full_null_like(ca: &Self, length: usize) -> Self {
         let prototype = ca.chunks.first().expect("a ChunkedArray has a chunk");
         let chunks = vec![polars_array::builder::full_null_like(&**prototype, length)];

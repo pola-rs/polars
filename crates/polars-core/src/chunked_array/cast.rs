@@ -46,11 +46,8 @@ impl From<CastOptions> for CastOptionsImpl {
     }
 }
 
-/// Casts the chunks of a [`ChunkedArray`] to `dtype`, through the Arrow cast kernel.
-///
-/// Each chunk crosses to Arrow and back, which is `O(1)` in each direction — see
-/// [`with_arrow_chunk`](polars_array::arrow::bridge::with_arrow_chunk) — so what the cast
-/// costs is the cast itself.
+/// Casts the chunks of a [`ChunkedArray`] to `dtype`, through the Arrow cast kernel. Crossing to
+/// Arrow and back is `O(1)`, so what the cast costs is the cast itself.
 pub(crate) fn cast_chunks(
     chunks: &[PlArrayRef],
     dtype: &DataType,
@@ -100,8 +97,7 @@ fn cast_impl_inner(
 ) -> PolarsResult<Series> {
     let chunks = match dtype {
         // @NOTE: We cast to the decimal itself rather than to its physical type, as casting to
-        // the physical type would lower the scale. The chunks carry no logical type, so what is
-        // left of the decimal after the cast is the `i128` it is stored as.
+        // the physical type would lower the scale.
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => cast_chunks(chunks, dtype, options)?,
         _ => cast_chunks(chunks, &dtype.to_physical(), options)?,
@@ -686,8 +682,7 @@ mod test {
     use crate::prelude::*;
 
     /// Every chunk of a string-dtype `ChunkedArray` must be a `PlUtf8ViewArray` trait object, so
-    /// that the UTF-8 promise is recoverable from a `dyn PlArray` without an `unsafe` wrapper —
-    /// see `polars_array::utf8view`.
+    /// that the UTF-8 promise is recoverable from a `dyn PlArray` — see `polars_array::utf8view`.
     #[track_caller]
     fn assert_string_chunks(ca: &StringChunked, ctx: &str) {
         for (i, chunk) in ca.chunks().iter().enumerate() {

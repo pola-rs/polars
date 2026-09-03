@@ -1,19 +1,5 @@
-//! The arithmetic kernels of `polars-compute`, over the arrays of `polars-array`.
-//!
-//! The kernels live in `polars-compute` and are written against the Arrow arrays: they are where
-//! the SIMD is, and porting them is not what swapping the storage of a `ChunkedArray` is about.
-//! What this module is, then, is the boundary between the two — and the reason it is a thin one is
-//! that both arrays lay their elements out the same way and are built on the same
-//! [`Buffer`](polars_buffer::Buffer) and [`Bitmap`](arrow::bitmap::Bitmap): handing a
-//! [`Flat`] array to a kernel and taking its result back is a matter of moving the backing
-//! buffers, not of copying the elements.
-//!
-//! That is why every method here takes a [`Flat`] array rather than a `PlPrimitiveArray`. A flat
-//! array holds one slot per element, which is exactly what an Arrow array is, so the conversion is
-//! `O(1)`; an array in the [`scalar`](polars_array::broadcast) representation has no Arrow
-//! counterpart and would have to be written out first, so it is the *caller* — the dispatch in
-//! [`arity`](crate::chunked_array::ops::arity) — that decides what that costs, and reaches for the
-//! `_scalar` kernels where the value repeated is all the kernel needs.
+//! The arithmetic kernels of `polars-compute`, over the arrays of `polars-array`. Every method
+//! takes a [`Flat`] array, which shares its buffers with the Arrow array the kernel wants.
 
 use arrow::array::PrimitiveArray;
 use arrow::types::NativeType;
@@ -35,11 +21,8 @@ fn from_arrow<T: NativeType>(array: PrimitiveArray<T>) -> PlPrimitiveArray<T> {
     PlPrimitiveArray::new(values, length, validity)
 }
 
-/// The counterpart of [`ArithmeticKernel`] for the arrays of `polars-array`.
-///
-/// Every method dispatches to the Arrow kernel of the same name — see the [module docs](self) for
-/// why that is `O(1)` at the edges. The result is always laid out flat, and is handed back as the
-/// plain array so that it can be the chunk of a `ChunkedArray` directly.
+/// The counterpart of [`ArithmeticKernel`] for the arrays of `polars-array`. Every method
+/// dispatches to the Arrow kernel of the same name; the result is always laid out flat.
 pub trait PlArithmeticKernel: Sized {
     /// The element type of the array this operates on.
     type Native: NativeType;

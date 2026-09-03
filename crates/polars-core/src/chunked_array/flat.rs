@@ -1,35 +1,5 @@
-//! A [`ChunkedArray`] whose every chunk is flat.
-//!
-//! The chunks of a `ChunkedArray` are the arrays of `polars-array`, which store their logical
-//! length separately from their backing buffers: a chunk is either *flat*, with one slot per
-//! element, or *scalar*, one slot standing for every element — see
-//! [`broadcast`](polars_array::broadcast). Most of what a `ChunkedArray` does reads either
-//! representation, so the distinction never surfaces.
-//!
-//! What cannot read both is anything that hands out a *slice* of the values. A scalar chunk holds
-//! one value where a slice would need `len` of them, so there is nothing in it to borrow; the
-//! answer is not to fail at the accessor but to ask for flatness in the type. That is what
-//! [`Flat<ChunkedArray<T>>`](Flat) is here: the promise that every chunk is flat, obtained once
-//! with [`ChunkedArray::as_flat`] or [`ChunkedArray::to_flat`], after which the slices are there to
-//! be taken.
-//!
-//! [`Flat`] comes from `polars-array` and keeps the array it wraps private, so the promise cannot
-//! be forged by writing over a field; the accessors below therefore live on extension traits
-//! rather than on an inherent impl.
-//!
-//! # Example
-//! ```
-//! # use polars_core::prelude::*;
-//! let ca = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 2, 3]);
-//!
-//! // Ask for flatness once, then read the values as the slice they are.
-//! let flat = ca.to_flat();
-//! assert_eq!(flat.cont_slice().unwrap(), [1, 2, 3]);
-//!
-//! // `full` repeats one value in `O(1)`, so its chunk is scalar and has no slice to hand out.
-//! let scalar = Int32Chunked::full(PlSmallStr::from_static("a"), 7, 1_000_000_000);
-//! assert!(scalar.as_flat().is_none());
-//! ```
+//! A [`ChunkedArray`] whose every chunk is flat, which is what handing out a *slice* of the values
+//! needs: a [`scalar`](polars_array::broadcast) chunk has one value where a slice needs `len`.
 
 use std::borrow::Cow;
 
@@ -38,27 +8,21 @@ use polars_array::{Flat, StaticArray};
 use crate::prelude::*;
 
 impl<T: PolarsDataType> ChunkedArray<T> {
-    /// Whether every chunk of this array is [`flat`](polars_array::broadcast).
-    ///
-    /// This is what [`ChunkedArray::as_flat`] answers with a borrow rather than with a `bool`.
+    /// Whether every chunk of this array is [`flat`](polars_array::broadcast). This is what
+    /// [`ChunkedArray::as_flat`] answers with a borrow rather than with a `bool`.
     pub fn is_flat(&self) -> bool {
         self.downcast_iter().all(StaticArray::is_flat)
     }
 
-    /// Borrows this array as one whose every chunk is flat, or `None` if any chunk is scalar.
-    ///
-    /// This is the `O(n_chunks)` half of [`ChunkedArray::to_flat`]: it writes nothing out, so the
-    /// caller decides what an array that is not laid out flat costs.
+    /// Borrows this array as one whose every chunk is flat, or `None` if any chunk is scalar. This
+    /// is the `O(n_chunks)` half of [`ChunkedArray::to_flat`]: it writes nothing out.
     pub fn as_flat(&self) -> Option<&Flat<Self>> {
         // SAFETY: `is_flat` is exactly the invariant of `Flat` for a `ChunkedArray`.
         self.is_flat().then(|| unsafe { Flat::new_ref(self) })
     }
 
-    /// Returns this array with every chunk in the flat representation.
-    ///
-    /// The chunks that are flat already are handed over as they are, so this is `O(n_chunks)` for
-    /// an array that is laid out flat and `O(len)` for the chunks of one that is not, which are
-    /// written out.
+    /// Returns this array with every chunk in the flat representation: `O(n_chunks)` for an array
+    /// that is laid out flat, `O(len)` for the chunks of one that is not, which are written out.
     pub fn to_flat(&self) -> Cow<'_, Flat<Self>> {
         if self.is_flat() {
             // SAFETY: just checked.
@@ -85,10 +49,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         Cow::Owned(flat)
     }
 
-    /// Writes out every scalar chunk of this array in place, leaving it flat.
-    ///
-    /// This is [`ChunkedArray::to_flat`] for a caller that needs the array *itself* to be flat
-    /// rather than a copy of it — because it is about to hand out a pointer into it, say.
+    /// Writes out every scalar chunk of this array in place, leaving it flat. This is
+    /// [`ChunkedArray::to_flat`] for a caller that needs the array *itself* to be flat.
     pub fn flatten_mut(&mut self) {
         if self.is_flat() {
             return;
@@ -105,10 +67,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 }
 
-/// The chunks of a [`ChunkedArray`] that is known to be flat.
-///
-/// See the [module docs](self); this is an extension trait because [`Flat`] belongs to
-/// `polars-array`, which is what keeps the array it wraps out of reach.
+/// The chunks of a [`ChunkedArray`] that is known to be flat. An extension trait because [`Flat`]
+/// belongs to `polars-array`, which is what keeps the array it wraps out of reach.
 pub trait FlatChunkedArray<T: PolarsDataType> {
     /// The chunks, each as the flat array it is.
     fn flat_chunks(&self) -> impl DoubleEndedIterator<Item = &Flat<T::Array>>;
@@ -116,10 +76,7 @@ pub trait FlatChunkedArray<T: PolarsDataType> {
     /// The chunk at `idx`, or `None` if there are fewer chunks than that.
     fn flat_chunk(&self, idx: usize) -> Option<&Flat<T::Array>>;
 
-    /// The single chunk of this array.
-    ///
-    /// # Panics
-    /// Panics if this array does not have exactly one chunk.
+    /// The single chunk of this array. Panics if this array does not have exactly one chunk.
     fn flat_as_array(&self) -> &Flat<T::Array>;
 }
 
@@ -147,28 +104,19 @@ impl<T: PolarsDataType> FlatChunkedArray<T> for Flat<ChunkedArray<T>> {
     }
 }
 
-/// The values of a numeric [`ChunkedArray`] that is known to be flat, as slices.
-///
-/// These are what the flatness is for: a flat chunk holds one slot per element, so its values are
-/// a `&[T::Native]` rather than something to be read through a broadcast — see the
-/// [module docs](self).
+/// The values of a numeric [`ChunkedArray`] that is known to be flat, as slices. This is what the
+/// flatness is for: a flat chunk holds one slot per element, so its values are a `&[T::Native]`.
 pub trait FlatNumericChunkedArray<T: PolarsNumericType> {
-    /// The values of this array as one contiguous slice.
-    ///
-    /// # Errors
-    /// Errors if this array has more than one chunk, or any null: neither leaves one run of
-    /// values to hand out. [`ChunkedArray::rechunk`] and [`ChunkedArray::drop_nulls`] are what
-    /// answer those.
+    /// The values of this array as one contiguous slice. Errors if this array has more than one
+    /// chunk, or any null: neither leaves one run of values to hand out.
     fn cont_slice(&self) -> PolarsResult<&[T::Native]>;
 
     /// The values of this array as one contiguous mutable slice, or `None` if there is no single
     /// run of them to hand out, or the buffer holding them is shared with another array.
     fn cont_slice_mut(&mut self) -> Option<&mut [T::Native]>;
 
-    /// The values of this array, one slice per chunk.
-    ///
-    /// NOTE: null values should be taken into account by the user of these slices, as they are
-    /// handled separately.
+    /// The values of this array, one slice per chunk. NOTE: null values should be taken into
+    /// account by the user of these slices, as they are handled separately.
     fn data_views(&self) -> impl DoubleEndedIterator<Item = &[T::Native]>;
 }
 

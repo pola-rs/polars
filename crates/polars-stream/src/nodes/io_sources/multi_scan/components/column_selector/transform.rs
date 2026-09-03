@@ -88,9 +88,7 @@ impl ColumnTransform {
 
                 for list_arr in input_list_ca.downcast_iter() {
                     // TODO(polars-array-scalar): the offsets have to line up one per element with
-                    // the mask the mapped values come back with, so a scalar chunk is written out
-                    // here. Rebuilding the chunk in the representation it came in would keep a
-                    // repeated list `O(1)`; `cast_list` in `polars-core` wants the same.
+                    // the mask the mapped values come back with, so a scalar chunk is written out.
                     let list_arr = list_arr.to_flat();
 
                     let values: Column = unsafe {

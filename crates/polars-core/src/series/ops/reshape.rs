@@ -28,9 +28,8 @@ impl Series {
             },
             DataType::List(dtype) => {
                 let ca = s.list().unwrap();
-                // The callers pair the leaf values with the offsets of
-                // `list_offsets_and_validities_recursive`, which are one range per element, so a
-                // scalar chunk is written out to hand over the values those ranges reach.
+                // The callers pair the leaf values with offsets that are one range per element,
+                // so a scalar chunk is written out to hand over the values those ranges reach.
                 let chunks = ca
                     .downcast_iter()
                     .map(|arr| arr.to_flat().values().to_boxed())
@@ -55,9 +54,7 @@ impl Series {
         while let DataType::List(inner_dtype) = s.dtype() {
             let ca = s.list().unwrap();
             // The offsets are handed out one range per element, so a chunk that is not laid out
-            // flat is written out — and it is the values it was written out over that the next
-            // level is taken from, so that the ranges reach into them. `get_leaf_array` writes
-            // out the same way.
+            // flat is written out, and the next level is taken from the values it was written to.
             let arr = ca.downcast_as_array().to_flat();
             offsets.push(export::offsets_to_arrow(arr.offsets().clone()));
             validities.push(arr.validity().cloned());
@@ -77,9 +74,8 @@ impl Series {
     /// Wrap each element of this Series in a single-element list.
     /// A Series `[1, 2, 3]` becomes `[[1], [2], [3]]`.
     pub fn to_unit_list(&self) -> ListChunked {
-        // The kernel is the Arrow one, so each chunk crosses over and the result crosses back —
-        // see `polars_array::arrow::bridge`. The chunks carry no logical type, so the inner dtype is this
-        // series'.
+        // The kernel is the Arrow one, so each chunk crosses over and the result crosses back.
+        // The chunks carry no logical type, so the inner dtype is this series'.
         let chunks = self
             .chunks()
             .iter()

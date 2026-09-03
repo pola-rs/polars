@@ -55,8 +55,7 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
                     }
 
                     // TODO(polars-array-scalar): the flatten kernel is an Arrow one, so a scalar
-                    // chunk is written out here rather than the one row it stands for being
-                    // concatenated once.
+                    // chunk is written out rather than its one row being concatenated once.
                     (
                         chunk_to_arrow(arr.downcast_as_array()).values().clone(),
                         *width,

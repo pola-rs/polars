@@ -42,13 +42,7 @@ macro_rules! impl_ufuncs {
                             let (name, validity) = {
                                 let s = self.series.read();
                                 // The Arrow array below takes one flat mask over every element,
-                                // which is what `rechunk_validity` hands over: a scalar chunk
-                                // mask is written out, and several chunks are run together.
-                                //
-                                // TODO(polars-array-scalar): the values come from NumPy and are
-                                // flat either way, so only the mask is written out here; building
-                                // the chunk directly instead of through Arrow would let its single
-                                // bit be carried over.
+                                // which is what `rechunk_validity` hands over.
                                 (s.name().clone(), s.rechunk_validity())
                             };
 

@@ -123,10 +123,6 @@ fn check_df_dtypes_support_view(df: &DataFrame) -> Option<&DataType> {
     Some(first_dtype)
 }
 /// Returns whether all columns of the dataframe are contiguous in memory.
-///
-/// A view borrows the values where they lie, so every column has to hold one run of them: a
-/// scalar chunk holds a single value standing for every element, which is no such run, and
-/// writing one out would be the copy this whole path exists to avoid.
 fn check_df_columns_contiguous(df: &DataFrame) -> bool {
     let columns = df.columns();
 

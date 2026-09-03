@@ -122,9 +122,7 @@ where
     /// Get a value at a certain index location, or `None` if it is null.
     ///
     /// # Safety
-    ///
-    /// This does no bounds check. The caller needs to ensure the index is within the size of the
-    /// array.
+    /// This does no bounds check; the index must be within the size of the array.
     #[inline]
     pub unsafe fn get_unchecked_opt(&self, index: usize) -> Option<&T> {
         unsafe {
@@ -155,11 +153,8 @@ where
         !self.is_valid_unchecked(i)
     }
 
-    /// An array of `length` nulls.
-    ///
-    /// An object array holds one `T` per element even where the mask says there is no value, so
-    /// this is `O(length)` in memory — unlike the arrays of `polars-array`, it has no scalar
-    /// representation to keep.
+    /// An array of `length` nulls. An object array holds one `T` per element even where the mask
+    /// says there is no value, so this is `O(length)` in memory.
     pub fn new_full_null(length: usize) -> Self {
         Self {
             values: vec![T::default(); length].into(),
@@ -235,9 +230,8 @@ impl<T: PolarsObject> PlArray for ObjectArray<T> {
         self.values.len()
     }
 
-    /// Whether this array is one value repeated over its length, which an object array only is
-    /// when it holds a single element: the two representations coincide there, and above one
-    /// element it always holds one `T` per element.
+    /// Whether this array is one value repeated over its length, which an object array — holding
+    /// one `T` per element — only is when it holds a single element.
     #[inline]
     fn is_scalar(&self) -> bool {
         self.values.len() == 1

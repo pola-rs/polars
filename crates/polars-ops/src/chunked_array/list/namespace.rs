@@ -313,8 +313,7 @@ pub trait ListNameSpaceImpl: AsList {
         let mut lengths = Vec::with_capacity(ca.len());
         ca.downcast_iter().for_each(|arr| {
             // TODO(polars-array-scalar): the lengths are read off the offsets as a slice, so
-            // scalar offsets are written out here rather than the single length every element
-            // shares being repeated.
+            // scalar offsets are written out rather than the single length being repeated.
             let arr = arr.to_flat();
             let offsets = arr.offsets().as_slice();
             let mut last = offsets[0];

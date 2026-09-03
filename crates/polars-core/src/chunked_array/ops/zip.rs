@@ -20,15 +20,8 @@ use crate::utils::{align_chunks_binary, align_chunks_ternary};
 const SHAPE_MISMATCH_STR: &str =
     "shapes of `self`, `mask` and `other` are not suitable for `zip_with` operation";
 
-/// The `if_then_else` kernel over the chunks of a [`ChunkedArray`].
-///
-/// This is [`IfThenElseKernel`] over the arrays of `polars-array` rather than over the Arrow ones:
-/// a chunk crosses over to the Arrow kernel and the result crosses back — see
-/// [`bridge`](polars_array::arrow::bridge) — except for an object array, which has no
-/// Arrow counterpart and answers the kernel itself.
-///
-/// The chunks reach it [`Flat`], which is what an Arrow array is; a chunk in the
-/// [`scalar`](polars_array::broadcast) representation is written out at the call site.
+/// The `if_then_else` kernel over the chunks of a [`ChunkedArray`]: [`IfThenElseKernel`] over the
+/// arrays of `polars-array`, which reach it [`Flat`], except for an object array.
 pub trait ChunkZipKernel: StaticArray {
     /// The elements of `if_true` where `mask` is set, and of `if_false` where it is not.
     fn if_then_else(mask: &Bitmap, if_true: &Flat<Self>, if_false: &Flat<Self>) -> Self;
@@ -55,12 +48,8 @@ pub trait ChunkZipKernel: StaticArray {
     ) -> Self;
 }
 
-/// The body of a [`ChunkZipKernel`] that hands its chunks to the Arrow kernel.
-///
-/// `$to_arrow_scalar` maps a single value to the one the Arrow kernel takes — the identity for
-/// every array whose elements are the same on both sides, and the export for a nested one, whose
-/// element is an array of its own. `$dtype` is the Arrow data type of the result, which the
-/// Arrow kernel needs when neither side is an array to read it off.
+/// The body of a [`ChunkZipKernel`] that hands its chunks to the Arrow kernel. `$to_arrow_scalar`
+/// maps a single value to the one the Arrow kernel takes; `$dtype` is the result's Arrow dtype.
 macro_rules! arrow_zip_kernel {
     ($to_arrow_scalar:expr, |$t:ident, $f:ident| $dtype:expr) => {
         #[inline]

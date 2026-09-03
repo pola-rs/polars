@@ -384,8 +384,7 @@ impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
                 }
 
                 // The chunks carry no inner type to build a nested chunk out of, but the target
-                // does: a builder shaped like it is what the elements are appended into, one at a
-                // time, each from whichever chunk holds it.
+                // does: the elements are appended into a builder shaped like it, one at a time.
                 let mut builder = builder_like(targets[0]);
                 builder.reserve(idx_arr.len());
                 for idx in idx_arr.iter() {
@@ -445,8 +444,7 @@ impl ChunkTakeUnchecked<IdxCa> for ListChunked {
                 }
 
                 // The chunks carry no inner type to build a nested chunk out of, but the target
-                // does: a builder shaped like it is what the elements are appended into, one at a
-                // time, each from whichever chunk holds it.
+                // does: the elements are appended into a builder shaped like it, one at a time.
                 let mut builder = builder_like(targets[0]);
                 builder.reserve(idx_arr.len());
                 for idx in idx_arr.iter() {

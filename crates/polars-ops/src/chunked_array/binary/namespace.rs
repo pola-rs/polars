@@ -221,8 +221,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                     unsafe {
                         ca.chunks().iter().map(|chunk| {
                             // TODO(polars-array-scalar): the reinterpret kernels are Arrow ones,
-                            // so a scalar chunk is written out here rather than the one value it
-                            // stands for being reinterpreted once.
+                            // so a scalar chunk is written out rather than reinterpreted once.
                             let chunk = export::to_arrow(&**chunk);
                             binview_to_primitive_dyn::<<$T as PolarsNumericType>::Native>(
                                 &*chunk,

@@ -78,9 +78,8 @@ where
         if T::Native::is_float() {
             *v += ChunkAgg::sum(ca).map(Into::into).unwrap_or(Zero::zero());
         } else {
-            // TODO(polars-array-scalar): a scalar chunk is one value repeated `len` times, so its
-            // sum is that value multiplied by the length. Taking that shortcut needs a `Mul` bound
-            // on `Self::Value`, which the `Reducer` trait does not have.
+            // TODO(polars-array-scalar): a scalar chunk's sum is its value times its length, but
+            // that shortcut needs a `Mul` bound on `Self::Value`, which `Reducer` does not have.
             for arr in ca.downcast_iter() {
                 if arr.has_nulls() {
                     for x in arr.iter() {

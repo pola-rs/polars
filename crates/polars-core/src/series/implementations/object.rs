@@ -260,9 +260,8 @@ where
     fn object_values_to_arrow(&self) -> ArrayRef {
         use crate::chunked_array::object::extension::create_extension;
 
-        // Every value is packed into the bytes it is, which the extension array carries; the
-        // sentinel that would drop them is dropped with the array this is exported to.
-        // Object chunks do not go through the generic rechunk.
+        // Every value is packed into the bytes the extension array carries. Object chunks do not
+        // go through the generic rechunk.
         let ca = self.rechunk_object();
         let values = ca.downcast_iter().next().unwrap().clone();
         let mut extension = create_extension(values.into_iter_cloned());

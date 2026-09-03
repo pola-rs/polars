@@ -13,20 +13,16 @@ use polars_array::concatenate::concatenate;
 use crate::chunked_array::new_empty_chunk;
 use crate::prelude::*;
 
-/// The values `arr` is taken over: the values of every element, laid end to end.
-///
-/// A [`scalar`](polars_array::broadcast) array holds only the values of the single element every
-/// one of them is, so it is written out; a flat array hands its values over as they are.
+/// The values `arr` is taken over: the values of every element, laid end to end. A
+/// [`scalar`](polars_array::broadcast) array is written out first; a flat one is handed over.
 pub(crate) fn array_values(arr: &PlFixedSizeListArray) -> PlArrayRef {
     // TODO(polars-array-scalar): the callers read the values as one run per element, which a
     // scalar array has to be written out to hand over.
     as_flat(arr).values().to_boxed()
 }
 
-/// Returns `arr` with its values replaced, keeping its width and validity mask.
-///
-/// # Panics
-/// Panics if `values` does not hold the width of every element, laid end to end.
+/// Returns `arr` with its values replaced, keeping its width and validity mask. Panics if
+/// `values` does not hold the width of every element, laid end to end.
 pub(crate) fn array_with_values(
     arr: &PlFixedSizeListArray,
     values: PlArrayRef,
@@ -39,15 +35,8 @@ pub(crate) fn array_with_values(
         .with_validity_broadcast(arr.validity().map(|v| v.to_flat_or_scalar()))
 }
 
-/// Lays `elements` out as the chunk of an [`ArrayChunked`] of `width` and `inner_dtype`.
-///
-/// Every element of a fixed size list array covers `width` values, so an element that is null
-/// covers `width` of them too — they are the nulls this writes in its place. The width is not
-/// read off the elements: it belongs to the `ArrayChunked`'s [`DataType`], which is the only thing
-/// that has it when every element is null.
-///
-/// # Panics
-/// Panics if any element is not `width` values long.
+/// Lays `elements` out as the chunk of an [`ArrayChunked`] of `width` and `inner_dtype`, writing
+/// `width` nulls for every null element. Panics if any element is not `width` values long.
 pub(crate) fn collect_array_chunk(
     elements: Vec<Option<PlArrayRef>>,
     width: usize,

@@ -140,8 +140,7 @@ impl Series {
             #[cfg(feature = "object")]
             Object(_) => {
                 // An object column that came in over IPC arrives as the fixed size binary the
-                // pointers to its values are packed into, which is exported back to the Arrow
-                // array the extension is read out of — `O(1)`, the bytes being handed over.
+                // pointers to its values are packed into, which is exported back to Arrow.
                 if let Some(arr) = chunks[0].as_any().downcast_ref::<PlFixedSizeBinaryArray>() {
                     assert_eq!(chunks.len(), 1);
                     // SAFETY:

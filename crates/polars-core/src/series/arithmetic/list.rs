@@ -774,9 +774,8 @@ mod inner {
                     let offsets_lhs = self.data_lhs.0.as_slice();
 
                     let (arr, n_values) = Option::take(&mut self.list_to_prim_lhs).unwrap();
-                    // The kernel writes the results back into the values, which asks for the
-                    // Arrow array that shares them — see `polars_array::arrow::bridge`. Dropping the chunk
-                    // leaves this the only reference to them.
+                    // The kernel writes the results back into the values, which asks for the Arrow
+                    // array that shares them; dropping the chunk leaves this the only reference.
                     let mut arr_lhs = chunk_to_arrow(
                         arr.as_any()
                             .downcast_ref::<PlPrimitiveArray<T::Native>>()

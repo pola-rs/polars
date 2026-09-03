@@ -609,8 +609,7 @@ impl ExternalFilterMask {
     }
 
     // TODO(polars-array-scalar): the callers walk the mask bit by bit, so a scalar chunk is
-    // written out here. A mask that is one repeated bit deletes either every row or none of them,
-    // which the slice arithmetic could answer without a bitmap.
+    // written out here, where one repeated bit deletes either every row or none of them.
     fn get_mask(&self) -> Bitmap {
         match self {
             Self::Iceberg { mask } => mask.rechunk().downcast_get(0).unwrap().values().to_flat(),

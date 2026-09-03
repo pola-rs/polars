@@ -597,21 +597,8 @@ where
         }
     }
 
-    /// The single element this column repeats, if it stands for one.
-    ///
-    /// This is `Some` for a column of one element — which broadcasts to any height — and for a
-    /// single chunk in the [`scalar`](polars_array::broadcast) representation, which is one value
-    /// repeated over its full height in `O(1)` memory. The inner [`Option`] is that element, so a
-    /// column of nothing but nulls yields `Some(None)`.
-    ///
-    /// `None` means the column has to be read element by element. It is what an empty column
-    /// yields, having no element to repeat, and what a column of several chunks yields even when
-    /// each of them is scalar: the chunks need not agree on the value.
-    ///
-    /// This is what an elementwise operation dispatches on to reach the kernel that takes a
-    /// single value, rather than materialize [`ChunkedArray::len`] copies of it to meet the other
-    /// side. Because a column that repeats a value does not have to be one element long, this
-    /// subsumes — and is not implied by — a length of one.
+    /// The single element this column repeats, if it stands for one: a column of one element, or
+    /// one whose only chunk is [`scalar`](polars_array::broadcast). `None` means it does not.
     #[inline]
     pub fn scalar_value(&self) -> Option<Option<T::Physical<'_>>> {
         // A column of one element repeats that element by definition, however its chunks are laid
@@ -875,8 +862,7 @@ impl ArrayChunked {
             .downcast_iter()
             .map(|chunk| {
                 // A fixed size list is a list whose elements are all `width` values long, so the
-                // offsets are the multiples of the width and the values are handed over as they
-                // are.
+                // offsets are the multiples of the width.
                 let offsets = (0..=chunk.len())
                     .map(|i| (i * width) as u64)
                     .collect::<Vec<u64>>();
@@ -1023,8 +1009,7 @@ where
     T: PolarsNumericType,
 {
     // The accessors that hand out a slice of the values live on `Flat<ChunkedArray<T>>` — see
-    // [`crate::chunked_array::flat`]: a chunk in the scalar representation holds one value for
-    // every element rather than one slot each, so there is no slice in it to borrow.
+    // [`crate::chunked_array::flat`]: a scalar chunk has no slice in it to borrow.
 
     #[allow(clippy::wrong_self_convention)]
     pub fn into_no_null_iter(
@@ -1090,11 +1075,8 @@ impl ValueSize for BinaryOffsetChunked {
     }
 }
 
-/// An empty chunk laid out the way `dtype` describes.
-///
-/// The arrays of `polars-array` carry no logical type, so the shape is taken from the Arrow data
-/// type `dtype` maps to and the array is imported from the empty Arrow array of it — which is
-/// `O(1)`, there being no elements to hand over.
+/// An empty chunk laid out the way `dtype` describes. The chunks carry no logical type, so the
+/// shape is taken from the Arrow data type `dtype` maps to.
 pub fn new_empty_chunk(dtype: &DataType) -> PlArrayRef {
     let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
     polars_array::arrow::import::from_arrow(&*new_empty_array(arrow_dtype))

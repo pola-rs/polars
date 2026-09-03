@@ -72,8 +72,7 @@ fn array_get_impl(
             if let Some(index) = index.get(0) {
                 let out = try_unary_to_series(ca, |arr| {
                     // TODO(polars-array-scalar): the gather kernel is an Arrow one, so a scalar
-                    // chunk is written out here rather than the one element it stands for being
-                    // taken once.
+                    // chunk is written out rather than its one element being taken once.
                     sub_fixed_size_list_get_literal(&chunk_to_arrow(arr), index, null_on_oob)
                 })?;
                 unsafe { out.from_physical_unchecked(ca.inner_dtype()) }

@@ -77,8 +77,7 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
             } else {
                 match (ca.has_nulls(), ca.chunks().len()) {
                     // TODO(polars-array-scalar): the take kernels are Arrow ones, so a scalar
-                    // chunk is written out here rather than the one value it stands for being
-                    // taken however many times the group asks for it.
+                    // chunk is written out rather than its one value being taken as often as asked.
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         &chunk_to_arrow(ca.downcast_iter().next().unwrap()),
                         idx.iter().map(|i| *i as usize),
@@ -153,8 +152,7 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
             } else {
                 match (ca.has_nulls(), ca.chunks().len()) {
                     // TODO(polars-array-scalar): the take kernels are Arrow ones, so a scalar
-                    // chunk is written out here rather than the one value it stands for being
-                    // taken however many times the group asks for it.
+                    // chunk is written out rather than its one value being taken as often as asked.
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         &chunk_to_arrow(ca.downcast_iter().next().unwrap()),
                         idx.iter().map(|i| *i as usize),

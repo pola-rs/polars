@@ -670,13 +670,8 @@ pub trait SeriesTrait:
     }
 
     #[cfg(feature = "object")]
-    /// The values of this object column, packed into the fixed size binary array that carries
-    /// them out to Arrow.
-    ///
-    /// The chunks of an object column hold the values themselves, which no Arrow array can; this
-    /// is what packs them into the bytes an Arrow array does hold. It is the object column that
-    /// knows the type of its values, which is why this is dispatched through the [`Series`] rather
-    /// than done on the chunk.
+    /// The values of this object column, packed into the fixed size binary array that carries them
+    /// out to Arrow. Dispatched here because only the column knows the type of its values.
     fn object_values_to_arrow(&self) -> ArrayRef {
         invalid_operation_panic!(object_values_to_arrow, self)
     }

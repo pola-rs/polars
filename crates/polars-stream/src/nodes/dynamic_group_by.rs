@@ -221,9 +221,8 @@ impl DynamicGroupBy {
         } else {
             let mut offset = self.windower.num_seen() - self.buf_df_offset;
             let ca = self.buf_index_column.datetime()?;
-            // TODO(polars-array-scalar): the windower takes the timestamps as a slice, so a
-            // scalar chunk has to be written out. Teaching it to take a broadcasting iterator
-            // would let a run of equal timestamps stay `O(1)`.
+            // TODO(polars-array-scalar): the windower takes the timestamps as a slice, so a scalar
+            // chunk has to be written out; a broadcasting iterator would keep it `O(1)`.
             let physical = ca.physical().to_flat();
             for arr in physical.flat_chunks() {
                 let arr_len = arr.len() as IdxSize;

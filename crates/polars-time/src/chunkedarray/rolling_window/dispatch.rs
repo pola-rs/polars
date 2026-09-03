@@ -172,8 +172,7 @@ where
     }
 
     // TODO(polars-array-scalar): the rolling kernels read `by`, the values and the sorting indices
-    // as slices, so scalar chunks are written out here rather than the single value they stand for
-    // being read once.
+    // as slices, so scalar chunks are written out rather than read once.
     let by_flat = by_physical.to_flat();
     let by_values = by_flat.cont_slice().unwrap();
     let ca_flat = ca_rechunked.to_flat();

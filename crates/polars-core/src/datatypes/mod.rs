@@ -100,16 +100,8 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
     where
         Self: Sized;
 
-    /// An array of `length` nulls, laid out the way [`Self::get_static_dtype`] describes.
-    ///
-    /// The chunks of a [`ChunkedArray`] carry no logical type, so this builds the array the static
-    /// dtype names and nothing more: a nested type has no inner type here, exactly as
-    /// `get_static_dtype` has none. Nulls of a *known* dtype come from
-    /// [`ChunkedArray::full_null_like`], which takes their shape from an array that already has
-    /// one.
-    ///
-    /// The nulls keep the [`scalar`](polars_array::broadcast) representation, so this is `O(1)`
-    /// in memory.
+    /// An array of `length` nulls, laid out the way [`Self::get_static_dtype`] describes — so a
+    /// nested type has no inner type here. Nulls keep the scalar representation: `O(1)` in memory.
     fn full_null_array(length: usize) -> Self::Array;
 }
 

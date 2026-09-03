@@ -113,20 +113,16 @@ pub struct ToArrowConverter {
 }
 
 impl ToArrowConverter {
-    /// Exports one chunk of a [`Series`], crossing it over to Arrow first.
-    ///
-    /// This is [`Self::array_to_arrow`] for a caller that holds the chunk itself rather than an
-    /// Arrow array — the export is written against the Arrow arrays, see
-    /// [`bridge`](polars_array::arrow::bridge). The crossing is `O(1)` for a
-    /// [`flat`](polars_array::broadcast) chunk and `O(len)` for a scalar one, which is written out.
+    /// Exports one chunk of a [`Series`], crossing it over to Arrow first: [`Self::array_to_arrow`]
+    /// for a caller that holds the chunk itself rather than an Arrow array.
     pub fn chunk_to_arrow<'a>(
         &mut self,
         chunk: &dyn polars_array::PlArray,
         dtype: &DataType,
         arrow_field: Cow<'a, ArrowField>,
     ) -> PolarsResult<Box<dyn Array>> {
-        // An object chunk has no Arrow counterpart to cross over to: it is exported as the
-        // fixed size binary array of its pointers directly.
+        // An object chunk has no Arrow counterpart: it is exported as the fixed size binary array
+        // of its pointers directly.
         #[cfg(feature = "object")]
         if let DataType::Object(_) = dtype {
             use crate::chunked_array::object::builder::object_series_to_arrow_array;
@@ -184,8 +180,7 @@ impl ToArrowConverter {
                 use arrow::array::StructArray;
                 let arr: &StructArray = array.as_any().downcast_ref().unwrap();
 
-                // An exported chunk names its fields after their index — see
-                // `polars_array::arrow::export::struct_to_arrow_struct` — so the names the output
+                // An exported chunk names its fields after their index, so the names the output
                 // field asks for are checked against the Polars dtype, which is what carries them.
                 polars_ensure!(
                     arrow_struct_fields.len() == struct_fields.len()

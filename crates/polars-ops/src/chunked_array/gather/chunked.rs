@@ -336,10 +336,8 @@ impl TakeChunked for Series {
     }
 }
 
-/// The builder of the chunks of `ca`, with room for `by.len()` elements.
-///
-/// A `ChunkedArray` always has a chunk, which is the array the built one is shaped like: the
-/// chunks carry no logical type, so there is nothing else to take the shape from.
+/// The builder of the chunks of `ca`, with room for `by.len()` elements. A `ChunkedArray` always
+/// has a chunk, which is the array the built one is shaped like.
 fn gather_builder<T: PolarsDataType, const B: u64>(
     ca: &ChunkedArray<T>,
     by: &[ChunkId<B>],

@@ -69,9 +69,8 @@ fn scatter(s: Series, idx: &Series, values: &Series) -> Result<Series, (Series, 
         Ok(idx) => idx,
         Err(err) => return Err((s, err)),
     };
-    // TODO(polars-array-scalar): the indices are handed on as a slice, which a scalar chunk holds
-    // a single slot of, so one that is not laid out flat is written out here rather than the
-    // single index it stands for being scattered once.
+    // TODO(polars-array-scalar): the indices are handed on as a slice, so a scalar chunk is
+    // written out rather than its single index being scattered once.
     let idx = idx.rechunk();
     let idx = idx.to_flat();
     let idx = idx.flat_as_array();

@@ -58,9 +58,8 @@ impl PreComputedKeys {
                     let arr: &PlPrimitiveArray<$T> = arr.as_any().downcast_ref().unwrap();
                     let width = std::mem::size_of::<$T>();
 
-                    // A scalar chunk holds the one value every element covers, so the keys that
-                    // stand for it are scalar too: the bytes are laid out once rather than once
-                    // per row.
+                    // A scalar chunk holds the one value every element covers, so the keys are
+                    // scalar too: the bytes are laid out once rather than once per row.
                     match arr.scalar_value() {
                         Some(value) => {
                             let bytes = Buffer::from(vec![value.unwrap_or_default()]);

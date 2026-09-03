@@ -23,14 +23,11 @@ where
     Ok((ca.broadcast_to(len)?, by.broadcast_to(len)?))
 }
 
-/// One chunk of the result: element `i` of `arr` repeated `by[i]` times, as one list.
-///
-/// A null repeat count makes the whole list null, which is the empty list every null element of a
-/// list array covers.
+/// One chunk of the result: element `i` of `arr` repeated `by[i]` times, as one list. A null
+/// repeat count makes the whole list null.
 fn repeat_chunk(arr: &dyn PlArray, by: &PlPrimitiveArray<IdxSize>) -> PlListArray {
     // TODO(polars-array-scalar): the repeated values are written out one element at a time, so a
-    // scalar chunk — one value standing for every element — is materialized here rather than the
-    // lists being built as one scalar array of the single repeated value.
+    // scalar chunk is materialized here rather than the lists built as one scalar array.
     let mut values = builder_like(arr);
     let mut offsets = Vec::with_capacity(by.len() + 1);
     offsets.push(0);

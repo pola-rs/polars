@@ -194,8 +194,7 @@ impl<T: PolarsOpsNumericType> ChunkedSet<T::Native> for &mut ChunkedArray<T> {
         let name = ca.name().clone();
 
         // TODO(polars-array-scalar): the scatter kernels are Arrow ones that write into the
-        // backing buffers, so the chunk crosses over to Arrow and back here, and a scalar chunk
-        // is written out on the way.
+        // backing buffers, so the chunk crosses over and back, a scalar one written out on the way.
         let chunk = ca.downcast_into_iter().next().unwrap();
         let mut arr = chunk_to_arrow(&chunk);
         // The chunk held the only other handle on those buffers; dropping it lets the kernel
@@ -220,8 +219,7 @@ impl<'a> ChunkedSet<&'a [u8]> for &mut BinaryChunked {
         let name = ca.name().clone();
 
         // TODO(polars-array-scalar): the scatter kernels are Arrow ones that write into the
-        // backing buffers, so the chunk crosses over to Arrow and back here, and a scalar chunk
-        // is written out on the way.
+        // backing buffers, so the chunk crosses over and back, a scalar one written out on the way.
         let chunk = ca.downcast_into_iter().next().unwrap();
         let mut arr = chunk_to_arrow(&chunk);
         // The chunk held the only other handle on those buffers; dropping it lets the kernel
@@ -246,8 +244,7 @@ impl<'a> ChunkedSet<&'a str> for &mut StringChunked {
         let name = ca.name().clone();
 
         // TODO(polars-array-scalar): the scatter kernels are Arrow ones that write into the
-        // backing buffers, so the chunk crosses over to Arrow and back here, and a scalar chunk
-        // is written out on the way.
+        // backing buffers, so the chunk crosses over and back, a scalar one written out on the way.
         let chunk = ca.downcast_into_iter().next().unwrap();
         let mut arr = chunk_to_arrow(&chunk);
         // The chunk held the only other handle on those buffers; dropping it lets the kernel
@@ -271,8 +268,7 @@ impl ChunkedSet<bool> for &mut BooleanChunked {
         let name = ca.name().clone();
 
         // TODO(polars-array-scalar): the scatter kernels are Arrow ones that write into the
-        // backing buffers, so the chunk crosses over to Arrow and back here, and a scalar chunk
-        // is written out on the way.
+        // backing buffers, so the chunk crosses over and back, a scalar one written out on the way.
         let chunk = ca.downcast_into_iter().next().unwrap();
         let mut arr = chunk_to_arrow(&chunk);
         // The chunk held the only other handle on those buffers; dropping it lets the kernel

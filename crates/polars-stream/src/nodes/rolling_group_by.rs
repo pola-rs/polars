@@ -136,8 +136,7 @@ impl RollingGroupBy {
     fn next_windows(&mut self, finalize: bool) -> PolarsResult<Option<NextWindows>> {
         let buf_index_col_dt = self.buf_index_column.datetime()?;
         // TODO(polars-array-scalar): the windower takes the timestamps as slices, so a scalar
-        // chunk has to be written out. Teaching it to take a broadcasting iterator would let a
-        // run of equal timestamps stay `O(1)`.
+        // chunk has to be written out; a broadcasting iterator would keep it `O(1)`.
         let physical = buf_index_col_dt.physical().to_flat();
         let mut time = Vec::new();
         time.extend(physical.flat_chunks().map(|arr| arr.values().as_slice()));

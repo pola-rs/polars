@@ -449,10 +449,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
 impl SeriesJoin for Series {}
 
-/// The values of every chunk of every array, as the slices they are.
-///
-/// Every array must have been written out flat with [`ChunkedArray::flatten_mut`]: a scalar chunk
-/// holds one value where a slice needs one per element, so there is nothing in it to borrow.
+/// The values of every chunk of every array, as the slices they are. Every array must have been
+/// written out flat with [`ChunkedArray::flatten_mut`] first.
 fn chunks_as_slices<T>(splitted: &[ChunkedArray<T>]) -> Vec<&[T::Native]>
 where
     T: PolarsNumericType,
@@ -468,10 +466,8 @@ where
         .collect()
 }
 
-/// Splits `ca` for `n_threads`, writing out every chunk that is scalar.
-///
-/// TODO(polars-array-scalar): the hash join reads the keys as slices, so a scalar chunk — one key
-/// standing for every row — is written out here rather than hashed once.
+/// Splits `ca` for `n_threads`, writing out every chunk that is scalar. TODO(polars-array-scalar):
+/// the hash join reads the keys as slices, so a repeated key is written out rather than hashed once.
 fn split_flat<T: PolarsDataType>(ca: &ChunkedArray<T>, n_threads: usize) -> Vec<ChunkedArray<T>> {
     let mut splitted = split(ca, n_threads);
     for ca in &mut splitted {

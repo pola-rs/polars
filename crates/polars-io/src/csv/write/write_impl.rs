@@ -156,10 +156,6 @@ impl CsvSerializer {
 
         // The serializers borrow their Arrow array, so the converted chunks are held here for as
         // long as the serializers live. Declared before `serializers_vec` so that it outlives it.
-        //
-        // TODO(polars-array-scalar): the serializers walk their array slot by slot, so a scalar
-        // chunk is written out here rather than the single value it stands for being formatted
-        // once and repeated.
         let arrow_chunks = Self::to_arrow_chunks(df.columns());
 
         let mut serializers_vec = reuse_vec(std::mem::take(&mut self.serializers));
